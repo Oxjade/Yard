@@ -117,7 +117,7 @@ export default function DiscoverPage() {
         {/* Trending */}
         <section aria-labelledby="trending-title" className="mt-24 md:mt-32">
           <div id="trending-title">
-            <SectionHeader title="Trending now" description="Gaining attention this week — ranked by recent momentum, at most two pieces per brand." href="/shop?sort=trending" />
+            <SectionHeader title="Trending now" description="Ranked by this week's momentum, with at most two pieces per brand." href="/shop?sort=trending" />
           </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4 md:grid-rows-[auto_auto]">
             <div className="col-span-2 md:row-span-2">

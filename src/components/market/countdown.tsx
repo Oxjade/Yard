@@ -71,7 +71,7 @@ export function DropStatus({ drop, className }: { drop: Drop; className?: string
   const phase = dropPhaseAt(drop, now, getDemoAnchor())
   const label =
     phase === "live"
-      ? `Live now — ${drop.unitsLeft} of ${drop.totalUnits} left`
+      ? `Live now, ${drop.unitsLeft} of ${drop.totalUnits} left`
       : phase === "upcoming"
         ? drop.releaseOffsetHours < 6
           ? "Releasing soon"

@@ -39,7 +39,7 @@ function merchantSeed(): New[] {
   const brand = brandById.get(studio.brandId)!
   const out: New[] = []
   for (const o of studio.orders.filter((x) => x.status === "paid").slice(0, 5)) {
-    out.push({ eventKey: `m:order:${o.id}`, audience: "merchant", category: "new_order", title: `New order #${o.reference}`, body: `${o.lines.length} item${o.lines.length > 1 ? "s" : ""}, ${formatMoney(o.total, o.currency)}. Payment verified — ready to fulfil.`, href: `/studio/orders/${o.id}`, at: o.placedAt, sample: true })
+    out.push({ eventKey: `m:order:${o.id}`, audience: "merchant", category: "new_order", title: `New order #${o.reference}`, body: `${o.lines.length} item${o.lines.length > 1 ? "s" : ""}, ${formatMoney(o.total, o.currency)}. Payment verified, ready to fulfil.`, href: `/studio/orders/${o.id}`, at: o.placedAt, sample: true })
   }
   // One alert per product, not per size.
   for (const p of studio.products) {
@@ -165,7 +165,7 @@ export function useNotificationEvents() {
           for (const p of s.payouts.filter((p) => p.brandId === STUDIO_BRAND_ID)) {
             const before = prev.payouts.find((x) => x.id === p.id)
             if (before && before.status !== p.status) {
-              push({ eventKey: `m:payout:${p.id}:${p.status}:${Date.now()}`, audience: "merchant", category: "payout_status", title: p.status === "processing" ? "Payout approved — processing" : p.status === "held" ? "Payout on hold" : `Payout ${p.status.replace("_", " ")}`, body: `${formatMoney(p.amountUsd, "USD")} via ${p.method}. It completes when the provider confirms the transfer.`, href: "/studio/payouts", at: new Date().toISOString() })
+              push({ eventKey: `m:payout:${p.id}:${p.status}:${Date.now()}`, audience: "merchant", category: "payout_status", title: p.status === "processing" ? "Payout approved, now processing" : p.status === "held" ? "Payout on hold" : `Payout ${p.status.replace("_", " ")}`, body: `${formatMoney(p.amountUsd, "USD")} via ${p.method}. It completes when the provider confirms the transfer.`, href: "/studio/payouts", at: new Date().toISOString() })
             }
           }
           for (const c of s.campaigns.filter((c) => c.brandId === STUDIO_BRAND_ID)) {

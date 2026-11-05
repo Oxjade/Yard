@@ -36,6 +36,6 @@ export function splitCountdown(ms: number) {
 
 export const dropAccessLabel: Record<Drop["access"], string> = {
   "first-come": "First come, first served",
-  draw: "Draw — enter before release",
+  draw: "Entry by draw before release",
   "early-access": "Early access for followers",
 }
