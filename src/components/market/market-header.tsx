@@ -12,6 +12,7 @@ import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import { useSearchOverlay } from "./search-overlay"
 import { NotificationBell } from "@/components/feedback/notification-bell"
+import { BagPop } from "./bag-pop"
 
 export function Wordmark({ className }: { className?: string }) {
   return (
@@ -87,7 +88,8 @@ export function MarketHeader() {
             <Heart className="size-[19px]" />
           </Link>
           {hydrated && user ? <NotificationBell audience="customer" /> : null}
-          <button type="button" onClick={openBag} aria-label={`Bag, ${hydrated ? count : 0} items`} className="relative inline-flex size-10 items-center justify-center rounded-xl text-ink-2 hover:bg-white/6 hover:text-ink">
+          <div className="relative">
+          <button type="button" onClick={openBag} aria-label={`Bag, ${hydrated ? count : 0} items`} className="relative inline-flex size-10 items-center justify-center rounded-xl text-ink-2 transition-colors duration-150 hover:bg-white/6 hover:text-ink">
             <motion.span key={`pulse-${pulse}`} initial={pulse ? { scale: 1.25, rotate: -8 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 500, damping: 14 }}>
               <ShoppingBag className="size-[19px]" />
             </motion.span>
@@ -102,6 +104,8 @@ export function MarketHeader() {
               </motion.span>
             ) : null}
           </button>
+          <BagPop />
+          </div>
           {hydrated && user ? (
             <Link href="/you" aria-label="Your World" className="ml-1 hidden size-9 items-center justify-center rounded-full bg-purple text-xs font-semibold text-ink sm:inline-flex">
               {user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}

@@ -4,48 +4,42 @@ import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 /**
- * Toasts: concise confirmation of something that happened elsewhere on screen, or failed.
- * Not for every click — inline feedback is preferred when the change is visible in place.
- * Top-centre, below the floating header; at most three visible, the rest stack; hover to
- * expand; each can be dismissed; actions where useful ("View bag", "Undo").
+ * Toasts pop up like comic speech bubbles from the bottom corner (above the phone tab bar):
+ * a quick spring pop, a tail, a hard purple offset shadow. `comic` (marketplace) is a white
+ * bubble with black type; `calm` (Studio, Admin) is a dark bubble — same shape, quieter.
+ * Concise, stackable (3 visible), dismissible, with actions where useful. Not for every
+ * click: inline feedback is preferred when the change is visible in place.
  */
-const Toaster = ({ ...props }: ToasterProps) => {
+const Toaster = ({ tone = "comic", ...props }: ToasterProps & { tone?: "comic" | "calm" }) => {
+  const comic = tone === "comic"
   return (
     <Sonner
-      theme="dark"
-      position="top-center"
-      offset={84}
-      mobileOffset={76}
+      theme={comic ? "light" : "dark"}
+      position="bottom-right"
+      offset={{ bottom: 24, right: 24 }}
+      mobileOffset={comic ? { bottom: 96, left: 12, right: 12 } : { bottom: 16, left: 12, right: 12 }}
       visibleToasts={3}
-      gap={8}
+      gap={14}
       closeButton
       duration={4000}
-      className="toaster group"
+      className={`toaster group pop-toaster pop-${tone}`}
       icons={{
-        success: <CircleCheckIcon className="size-4 text-violet" />,
-        info: <InfoIcon className="size-4 text-ink-2" />,
-        warning: <TriangleAlertIcon className="size-4 text-acid" />,
+        success: <CircleCheckIcon className={comic ? "size-4 text-purple" : "size-4 text-violet"} />,
+        info: <InfoIcon className={comic ? "size-4 text-[#555]" : "size-4 text-ink-2"} />,
+        warning: <TriangleAlertIcon className={comic ? "size-4 text-obsidian" : "size-4 text-acid"} />,
         error: <OctagonXIcon className="size-4 text-danger" />,
-        loading: <Loader2Icon className="size-4 animate-spin text-ink-2" />,
+        loading: <Loader2Icon className={comic ? "size-4 animate-spin text-[#555]" : "size-4 animate-spin text-ink-2"} />,
       }}
-      style={
-        {
-          "--normal-bg": "rgba(22, 22, 22, 0.94)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "rgba(255, 255, 255, 0.1)",
-          "--border-radius": "12px",
-        } as React.CSSProperties
-      }
       toastOptions={{
         classNames: {
-          toast: "cn-toast backdrop-blur-xl font-sans shadow-[0_18px_40px_-20px_rgba(0,0,0,0.9)]",
-          title: "text-[13px] font-medium text-ink",
-          description: "text-[12.5px] text-ink-2",
-          actionButton: "!bg-ink !text-obsidian !rounded-md !text-xs !font-medium",
-          cancelButton: "!bg-transparent !text-ink-2",
-          closeButton: "!bg-[#1b1b1b] !border-white/10 !text-ink-2 hover:!text-ink",
-          error: "!border-danger/30",
-          warning: "!border-acid/30",
+          toast: "pop-toast font-sans",
+          title: "text-[13.5px] font-semibold",
+          description: "pop-desc text-[12.5px]",
+          actionButton: comic ? "!bg-obsidian !text-ink !rounded-md !text-xs !font-semibold" : "!bg-ink !text-obsidian !rounded-md !text-xs !font-semibold",
+          cancelButton: "!bg-transparent",
+          closeButton: "pop-close",
+          error: "pop-error",
+          warning: "pop-warning",
         },
       }}
       {...props}

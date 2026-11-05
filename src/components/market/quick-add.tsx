@@ -3,19 +3,17 @@
 import { useMemo, useState } from "react"
 import { Check, Plus } from "lucide-react"
 import { motion } from "motion/react"
-import { toast } from "sonner"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { availableStock, variantLabel } from "@/lib/data/products"
 import { useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
 
-export function addedToast(p: Product, label: string) {
-  toast("Added to bag", {
-    description: label ? `${p.name}, ${label}` : p.name,
-    action: { label: "View bag", onClick: () => useCart.getState().open() },
-  })
-}
+/**
+ * Kept for callers: confirmation of an add is now the comic bubble that pops out of the
+ * header's bag icon (BagPop), driven by the cart's own `pulse`, so no toast is shown.
+ */
+export function addedToast(_p: Product, _label: string) {}
 
 /** Quick add: one tap when there is one variant; otherwise a small size/colour picker. */
 export function QuickAdd({ product, className }: { product: Product; className?: string }) {

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { BarChart3, Boxes, CalendarClock, LayoutDashboard, LayoutTemplate, Megaphone, Package, PackageSearch, Settings, ShoppingCart, Tags, Users, Zap } from "lucide-react"
+import { BarChart3, Boxes, CalendarClock, LayoutDashboard, LayoutTemplate, Megaphone, Package, PackageSearch, Settings, ShoppingCart, Tags, Users, Wallet, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { BrandMark } from "@/components/market/brand-mark"
 import { AppShell, type ShellNavGroup } from "@/components/dashboard/app-shell"
@@ -44,6 +44,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       label: "Business",
       items: [
         { href: "/studio/orders", label: "Orders", icon: ShoppingCart, badge: hydrated && toFulfil ? toFulfil : undefined },
+        { href: "/studio/payouts", label: "Payouts", icon: Wallet },
         { href: "/studio/customers", label: "Customers", icon: Users },
         { href: "/studio/analytics", label: "Analytics", icon: BarChart3 },
         { href: "/studio/settings", label: "Settings", icon: Settings },

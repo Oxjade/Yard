@@ -3,7 +3,6 @@
 import { useEffect } from "react"
 import { MotionConfig } from "motion/react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { Toaster } from "@/components/ui/sonner"
 import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
@@ -30,7 +29,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <MotionConfig reducedMotion="user" transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.9 }}>
       <TooltipProvider delayDuration={250}>
         {children}
-        <Toaster />
       </TooltipProvider>
     </MotionConfig>
   )

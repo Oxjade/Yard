@@ -4,6 +4,7 @@ import { MarketFooter } from "@/components/market/market-footer"
 import { MarketHeader } from "@/components/market/market-header"
 import { MobileTabBar } from "@/components/market/mobile-tabbar"
 import { SearchOverlay } from "@/components/market/search-overlay"
+import { Toaster } from "@/components/ui/sonner"
 
 /** The customer marketplace shell: floating glass nav, phone tab bar, bag drawer, search. */
 export default function MarketLayout({ children }: LayoutProps<"/">) {
@@ -19,6 +20,7 @@ export default function MarketLayout({ children }: LayoutProps<"/">) {
       <BagDrawer />
       <SearchOverlay />
       <AuthPrompt />
+      <Toaster tone="comic" />
     </div>
   )
 }

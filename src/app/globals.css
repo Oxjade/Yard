@@ -400,6 +400,137 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * Comic pops — confirmations pop out like speech bubbles: a quick spring with a little
+ * overshoot, a tail, and a hard purple offset shadow (no blur, no glow).
+ * ───────────────────────────────────────────────────────────── */
+@layer components {
+  .pop-bubble {
+    position: relative;
+    border-radius: 14px;
+    border: 2px solid #080808;
+    background: #f5f5f5;
+    color: #080808;
+    box-shadow: 5px 5px 0 #6d19d9;
+  }
+  .pop-bubble-dark {
+    position: relative;
+    border-radius: 14px;
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    background: #141414;
+    color: #f5f5f5;
+    box-shadow: 4px 4px 0 #6d19d9;
+  }
+  /* Tail: a rotated square sharing the bubble's fill and border */
+  .pop-tail::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: inherit;
+    border: inherit;
+    border-top: 0;
+    border-left: 0;
+    border-bottom-right-radius: 3px;
+  }
+  .pop-tail-up::after {
+    top: -8px;
+    right: var(--tail-x, 18px);
+    transform: rotate(-135deg);
+  }
+  .pop-tail-right::after {
+    right: -8px;
+    top: 50%;
+    margin-top: -7px;
+    transform: rotate(-45deg);
+  }
+  .pop-tail-down::after {
+    bottom: -8px;
+    right: var(--tail-x, 28px);
+    transform: rotate(45deg);
+  }
+
+  /* Sonner toasts as comic bubbles */
+  .pop-toaster [data-sonner-toast].pop-toast {
+    border-radius: 14px !important;
+    padding: 14px 16px !important;
+    overflow: visible !important;
+  }
+  .pop-comic [data-sonner-toast].pop-toast {
+    background: #f5f5f5 !important;
+    color: #080808 !important;
+    border: 2px solid #080808 !important;
+    box-shadow: 5px 5px 0 #6d19d9 !important;
+  }
+  .pop-comic [data-sonner-toast].pop-toast .pop-desc {
+    color: #4a4a4a !important;
+  }
+  .pop-comic [data-sonner-toast].pop-warning {
+    background: #f5ff00 !important;
+  }
+  .pop-calm [data-sonner-toast].pop-toast {
+    background: #141414 !important;
+    color: #f5f5f5 !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
+    box-shadow: 4px 4px 0 #6d19d9 !important;
+  }
+  .pop-calm [data-sonner-toast].pop-toast .pop-desc {
+    color: #858585 !important;
+  }
+  .pop-toaster [data-sonner-toast].pop-error {
+    box-shadow: 5px 5px 0 #ff5470 !important;
+  }
+  /* The tail, pointing toward the corner the bubble pops from */
+  .pop-toaster [data-sonner-toast].pop-toast::after {
+    content: "";
+    position: absolute;
+    left: auto !important;
+    right: 26px;
+    bottom: -9px;
+    width: 14px;
+    height: 14px;
+    background: inherit;
+    border-right: inherit;
+    border-bottom: inherit;
+    border-bottom-right-radius: 3px;
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  /* Only the front toast in a collapsed stack shows its tail */
+  .pop-toaster [data-sonner-toast][data-front="false"][data-expanded="false"].pop-toast::after {
+    display: none;
+  }
+  .pop-toaster [data-sonner-toast] .pop-close {
+    border-radius: 999px !important;
+  }
+  .pop-comic [data-sonner-toast] .pop-close {
+    background: #f5f5f5 !important;
+    border: 2px solid #080808 !important;
+    color: #080808 !important;
+  }
+  .pop-calm [data-sonner-toast] .pop-close {
+    background: #1b1b1b !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    color: #858585 !important;
+  }
+  /* The pop: scale and a slight tilt settle on a spring-like curve. Independent CSS
+     `scale`/`rotate` properties, so Sonner's own stacking transforms are untouched. */
+  .pop-toaster [data-sonner-toast][data-mounted="true"] {
+    transform-origin: 85% 100%;
+    animation: comic-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes comic-pop {
+    0% {
+      scale: 0.55;
+      rotate: -5deg;
+    }
+    100% {
+      scale: 1;
+      rotate: 0deg;
+    }
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
