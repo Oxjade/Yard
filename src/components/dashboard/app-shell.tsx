@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, Search, X } from "lucide-react"
+import { ListIcon as Menu, MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/feedback/notification-bell"
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"

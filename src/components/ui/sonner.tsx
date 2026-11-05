@@ -1,7 +1,7 @@
 "use client"
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import { CheckCircleIcon as CircleCheckIcon, InfoIcon, WarningIcon as TriangleAlertIcon, XCircleIcon as OctagonXIcon, CircleNotchIcon as Loader2Icon } from "@phosphor-icons/react"
 
 /**
  * Toasts pop up like comic speech bubbles from the bottom corner (above the phone tab bar):
@@ -17,7 +17,7 @@ const Toaster = ({ tone = "comic", ...props }: ToasterProps & { tone?: "comic" |
       theme={comic ? "light" : "dark"}
       position="bottom-right"
       offset={{ bottom: 24, right: 24 }}
-      mobileOffset={comic ? { bottom: 96, left: 12, right: 12 } : { bottom: 16, left: 12, right: 12 }}
+      mobileOffset={comic ? { bottom: 88, left: 12, right: 12 } : { bottom: 16, left: 12, right: 12 }}
       visibleToasts={3}
       gap={14}
       closeButton

@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import type { Brand, Drop, ImageAsset, Product } from "@/lib/data/types"

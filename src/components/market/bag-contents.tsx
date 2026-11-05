@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { Minus, Plus, Truck, X } from "lucide-react"
+import { MinusIcon as Minus, PlusIcon as Plus, TruckIcon as Truck, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { countries } from "@/config/markets"
 import { variantLabel } from "@/lib/data/products"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { ArrowDownToLine, Check, Copy, Landmark, ShieldCheck } from "lucide-react"
+import { ArrowLineDownIcon as ArrowDownToLine, CheckIcon as Check, CopyIcon as Copy, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"

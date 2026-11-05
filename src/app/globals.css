@@ -531,6 +531,18 @@
   }
 }
 
+@layer components {
+  /* Floating navigation legibility: soft shadows that read over any photograph */
+  .text-float {
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.45),
+      0 0 18px rgba(0, 0, 0, 0.35);
+  }
+  .icon-float svg {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 10px rgba(0, 0, 0, 0.3));
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

@@ -2,7 +2,7 @@
 
 import { useId } from "react"
 import { motion } from "motion/react"
-import { ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { AnimatedNumber } from "@/components/dashboard/metric-tile"
 import { cn } from "@/lib/utils"
 import { RevealItem, springs } from "./motion"

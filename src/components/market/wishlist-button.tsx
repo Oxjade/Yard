@@ -1,6 +1,6 @@
 "use client"
 
-import { Heart } from "lucide-react"
+import { HeartIcon as Heart } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { useEffect, useState } from "react"
 import { useHydrated } from "@/hooks/use-hydrated"
@@ -44,7 +44,7 @@ export function WishlistButton({ productId, name, className, variant = "glass" }
       )}
     >
       <motion.span key={String(active)} initial={hydrated ? { scale: 0.6 } : false} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 600, damping: 18 }}>
-        <Heart className={cn("size-[17px] transition-colors", active ? "fill-violet text-violet" : "text-ink")} strokeWidth={1.75} />
+        <Heart className={cn("size-[17px] transition-colors", active ? "text-violet" : "text-ink")} weight={active ? "fill" : "regular"} />
       </motion.span>
       <AnimatePresence>
         {say ? (

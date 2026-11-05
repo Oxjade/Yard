@@ -4,7 +4,8 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { AlertTriangle, BadgeCheck, Bell, BellOff, Box, CheckCheck, CreditCard, Flag, Heart, Megaphone, Package, RotateCcw, ShieldAlert, ShoppingBag, Sparkles, Truck, UserPlus, Wallet, Zap } from "lucide-react"
+import { BellIcon } from "@phosphor-icons/react"
+import { WarningIcon as AlertTriangle, SealCheckIcon as BadgeCheck, BellIcon as Bell, BellSlashIcon as BellOff, CubeIcon as Box, ChecksIcon as CheckCheck, CreditCardIcon as CreditCard, FlagIcon as Flag, HeartIcon as Heart, MegaphoneIcon as Megaphone, PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, ShieldWarningIcon as ShieldAlert, ShoppingBagOpenIcon as ShoppingBag, SparkleIcon as Sparkles, TruckIcon as Truck, UserPlusIcon as UserPlus, WalletIcon as Wallet, LightningIcon as Zap } from "@phosphor-icons/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { spring } from "@/lib/motion"
@@ -119,8 +120,8 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} className={cn("relative inline-flex size-10 items-center justify-center rounded-xl text-ink-2 transition-colors duration-150 hover:bg-white/6 hover:text-ink data-[state=open]:bg-white/6 data-[state=open]:text-ink", className)}>
-          <Bell className="size-[18px]" />
+        <button type="button" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} className={cn("relative inline-flex size-10 items-center justify-center rounded-full text-ink-2 transition-colors duration-150 hover:bg-white/8 hover:text-ink data-[state=open]:bg-white/10 data-[state=open]:text-ink", className)}>
+          <BellIcon className="size-[21px]" />
           <AnimatePresence>
             {unread > 0 ? (
               <motion.span

@@ -2,7 +2,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
-import { Check, Loader2 } from "lucide-react"
+import { CheckIcon as Check, CircleNotchIcon as Loader2 } from "@phosphor-icons/react/ssr"
 
 /**
  * Buttons. Colour budget: `primary` (acid) is the one high-impact action on a view;

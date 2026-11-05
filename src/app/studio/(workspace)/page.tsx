@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarPlus, Eye, Heart, LayoutTemplate, Package, Plus, ShoppingBag, Tags, UserPlus } from "lucide-react"
+import { CalendarPlusIcon as CalendarPlus, EyeIcon as Eye, HeartIcon as Heart, LayoutIcon as LayoutTemplate, PackageIcon as Package, PlusIcon as Plus, ShoppingBagOpenIcon as ShoppingBag, TagIcon as Tags, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { TimeSeriesChart } from "@/components/dashboard/chart-card"
 import { MetricTile } from "@/components/dashboard/metric-tile"

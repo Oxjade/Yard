@@ -15,7 +15,7 @@ import {
   InputGroup,
   InputGroupAddon,
 } from "@/components/ui/input-group"
-import { SearchIcon, CheckIcon } from "lucide-react"
+import { MagnifyingGlassIcon as SearchIcon, CheckIcon } from "@phosphor-icons/react"
 
 function Command({
   className,

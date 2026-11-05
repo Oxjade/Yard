@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { motion } from "motion/react"
-import { AlertTriangle, ArrowUpRight, RotateCcw } from "lucide-react"
+import { WarningIcon as AlertTriangle, ArrowUpRightIcon as ArrowUpRight, ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { RevealItem, springs } from "./motion"
 

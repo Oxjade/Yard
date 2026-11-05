@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { BellOff, CheckCheck } from "lucide-react"
+import { BellSlashIcon as BellOff, ChecksIcon as CheckCheck } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ListSkeleton } from "@/components/feedback/skeletons"
 import { useHydrated } from "@/hooks/use-hydrated"

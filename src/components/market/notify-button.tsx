@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, BellRing } from "lucide-react"
+import { BellIcon as Bell, BellRingingIcon as BellRing } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"

@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Plus } from "lucide-react"
+import { CheckIcon as Check, PlusIcon as Plus } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"

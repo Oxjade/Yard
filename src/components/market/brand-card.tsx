@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { BadgeCheck } from "lucide-react"
+import { SealCheckIcon as BadgeCheck } from "@phosphor-icons/react"
 import { countries } from "@/config/markets"
 import { products } from "@/lib/data/products"
 import { formatNumber } from "@/lib/money"

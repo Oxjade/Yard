@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react"
-import { ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 /** A number that eases to its new value when the period changes. */

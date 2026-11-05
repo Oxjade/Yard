@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ShoppingBag, X } from "lucide-react"
+import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"

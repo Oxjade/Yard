@@ -1,6 +1,6 @@
 "use client"
 
-import { Globe } from "lucide-react"
+import { GlobeIcon as Globe } from "@phosphor-icons/react"
 import { countries, countryCodes, currencies, currencyCodes, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useHydrated } from "@/hooks/use-hydrated"

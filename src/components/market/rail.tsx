@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 /** A horizontal scroller with snap points and desktop arrow buttons. */

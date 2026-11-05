@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { BarChart3, Boxes, CalendarClock, LayoutDashboard, LayoutTemplate, Megaphone, Package, PackageSearch, Settings, ShoppingCart, Tags, Users, Wallet, Zap } from "lucide-react"
+import { ChartBarIcon as BarChart3, StackIcon as Boxes, CalendarDotsIcon as CalendarClock, SquaresFourIcon as LayoutDashboard, LayoutIcon as LayoutTemplate, MegaphoneIcon as Megaphone, PackageIcon as Package, StackIcon as PackageSearch, GearIcon as Settings, ShoppingCartIcon as ShoppingCart, TagIcon as Tags, UsersIcon as Users, WalletIcon as Wallet, LightningIcon as Zap } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { BrandMark } from "@/components/market/brand-mark"
 import { AppShell, type ShellNavGroup } from "@/components/dashboard/app-shell"

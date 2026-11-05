@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Activity, BadgeCheck, Banknote, Flag, LayoutDashboard, LogOut, Megaphone, ShieldCheck, ShoppingCart, Users } from "lucide-react"
+import { PulseIcon as Activity, SealCheckIcon as BadgeCheck, MoneyIcon as Banknote, FlagIcon as Flag, SquaresFourIcon as LayoutDashboard, SignOutIcon as LogOut, MegaphoneIcon as Megaphone, ShieldCheckIcon as ShieldCheck, ShoppingCartIcon as ShoppingCart, UsersIcon as Users } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup } from "@/components/dashboard/app-shell"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { adminRoles, adminUser, healthServices } from "@/lib/data/admin"

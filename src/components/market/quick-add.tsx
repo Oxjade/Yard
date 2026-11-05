@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Check, Plus } from "lucide-react"
+import { CheckIcon as Check, PlusIcon as Plus } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { availableStock, variantLabel } from "@/lib/data/products"
