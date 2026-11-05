@@ -8,6 +8,8 @@ import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import { useStudio } from "@/lib/stores/studio"
+import { useOrders } from "@/lib/stores/orders"
+import { useAdmin } from "@/lib/stores/admin"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -16,6 +18,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     void useSaved.persist.rehydrate()
     void useSession.persist.rehydrate()
     void useStudio.persist.rehydrate()
+    void useOrders.persist.rehydrate()
+    void useAdmin.persist.rehydrate()
   }, [])
 
   return (
