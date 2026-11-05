@@ -60,7 +60,7 @@ export function NotificationRow({ n, onOpen, compact = false }: { n: AppNotifica
   const Icon = icons[n.category] ?? Bell
   const isUrgent = urgent.includes(n.category)
   return (
-    <motion.li layout="position" transition={spring.layout} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="group relative">
+    <motion.li layout="position" transition={spring.layout} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="group relative min-w-0">
       <button
         type="button"
         onClick={() => onOpen?.(n)}
@@ -70,8 +70,8 @@ export function NotificationRow({ n, onOpen, compact = false }: { n: AppNotifica
           <Icon className="size-3.5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className={cn("truncate text-[13px]", n.read ? "text-ink-2" : "font-medium text-ink")}>{n.title}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={cn("min-w-0 truncate text-[13px]", n.read ? "text-ink-2" : "font-medium text-ink")}>{n.title}</span>
           </span>
           <span className={cn("mt-0.5 block text-[12px] leading-snug text-ink-3", compact ? "line-clamp-2" : "")}>{n.body}</span>
           <span className="mt-1 flex items-center gap-2 text-[11px] text-ink-3">

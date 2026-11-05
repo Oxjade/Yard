@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarPlusIcon as CalendarPlus, EyeIcon as Eye, HeartIcon as Heart, LayoutIcon as LayoutTemplate, PackageIcon as Package, PlusIcon as Plus, ShoppingBagOpenIcon as ShoppingBag, TagIcon as Tags, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
+import { BellIcon as Bell, CalendarPlusIcon as CalendarPlus, LayoutIcon as LayoutTemplate, PackageIcon as Package, PlusIcon as Plus, TagIcon as Tags } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { TimeSeriesChart } from "@/components/dashboard/chart-card"
 import { MetricTile } from "@/components/dashboard/metric-tile"
@@ -14,6 +14,8 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { attentionGap, brandDailySeries, sumSeries } from "@/lib/data/analytics"
 import { brandById } from "@/lib/data/brands"
 import { shoppers } from "@/lib/data/orders"
+import { NotificationRow } from "@/components/feedback/notification-bell"
+import { useNotifications } from "@/lib/stores/notifications"
 import { formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 
@@ -28,6 +30,8 @@ export default function StudioOverviewPage() {
   const brandId = useStudio((s) => s.brandId)
   const orders = useStudio((s) => s.orders)
   const products = useStudio((s) => s.products)
+  const notifications = useNotifications((s) => s.items)
+  const activity = useMemo(() => notifications.filter((n) => n.audience === "merchant").slice(0, 5), [notifications])
   const brand = brandById.get(brandId)!
   const cur = brand.currency
 
@@ -45,13 +49,6 @@ export default function StudioOverviewPage() {
   const gap = attentionGap(brandId)[0]
   const recent = orders.slice(0, 6)
 
-  const activity = [
-    { icon: UserPlus, text: `${formatNumber(Math.round(now.followers / Math.max(1, days)) || 12)} new followers today`, when: "Today" },
-    { icon: Heart, text: `${bestSellers[1]?.name ?? "A product"} was saved 14 times`, when: "Today" },
-    { icon: ShoppingBag, text: `${shoppers[3].name} bought ${recent[0]?.lines[0]?.name ?? "a piece"}`, when: relDays(recent[0]?.placedAt ?? "") },
-    { icon: Eye, text: "Your Drop 07 preview page had 1,204 views", when: "Yesterday" },
-    { icon: Tags, text: "Homepage spotlight campaign is in review", when: "Yesterday" },
-  ]
 
   return (
     <div className="grid gap-6">
@@ -170,17 +167,27 @@ export default function StudioOverviewPage() {
           </section>
           <section aria-labelledby="activity-title" className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
             <h2 id="activity-title" className="text-sm font-medium text-ink">Store activity</h2>
-            <ul className="mt-3 grid gap-3">
-              {activity.map((a, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-line"><a.icon className="size-3.5 text-ink-2" /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-ink">{a.text}</span>
-                    <span className="block text-xs text-ink-3">{a.when}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {!hydrated ? (
+              <div className="mt-3 grid gap-3" aria-hidden>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex gap-3">
+                    <span className="skeleton size-7 shrink-0 rounded-full" />
+                    <span className="grid flex-1 gap-1.5"><span className="skeleton h-3.5 w-4/5 rounded" /><span className="skeleton h-3 w-1/3 rounded" /></span>
+                  </div>
+                ))}
+              </div>
+            ) : activity.length ? (
+              <ul className="-mx-2 mt-2 grid">
+                {activity.map((n) => (
+                  <NotificationRow key={n.id} n={n} compact />
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 flex items-center gap-2 text-sm text-ink-2"><Bell className="size-4 text-ink-3" aria-hidden /> Orders, follows and stock alerts show up here as they happen.</p>
+            )}
+            {hydrated && activity.length ? (
+              <Link href="/studio/notifications" className="mt-3 inline-block text-xs text-violet hover:underline">All notifications</Link>
+            ) : null}
           </section>
         </div>
       </div>

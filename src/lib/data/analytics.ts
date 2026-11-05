@@ -38,7 +38,8 @@ export function brandDailySeries(brandId: string, days = 90): DailyPoint[] {
       productViews: Math.round(visits * (2.1 + rand(`${brandId}-${date}-pv`))),
       orders: dayOrders.length,
       revenue: dayOrders.reduce((s, o) => s + o.subtotal, 0),
-      followers: Math.round((brand.followers * brand.followerGrowth30d) / 30 * noise * weekly),
+      // A small share of visitors follow; faster-growing brands convert more of them.
+      followers: Math.round(visits * (0.02 + brand.followerGrowth30d * 0.1) * noise),
       wishlists: Math.round(visits * 0.06 * noise),
     })
   }
