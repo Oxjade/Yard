@@ -1,0 +1,238 @@
+"use client"
+
+import Image from "next/image"
+import { motion } from "motion/react"
+import { CopyIcon as Copy, ShieldWarningIcon as ShieldAlert, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
+import { toast } from "sonner"
+import { StatusBadge } from "@/components/dashboard/status-badge"
+import { BrandMark } from "@/components/market/brand-mark"
+import { countries, type CountryCode } from "@/config/markets"
+import type { AuditEntry } from "@/lib/data/admin"
+import { useAdmin } from "@/lib/stores/admin"
+import { cn } from "@/lib/utils"
+import { ActionBar, DetailSection, DetailSheet, Facts, LinkRow } from "../marketplace/detail-sheet"
+import { disputeStage, groupState, orderTimeline, paymentEvents, type OrderRow } from "./derive"
+import { amountIn, formatDateTime, providerName, signedUsd, usd } from "./format"
+import { fulfilMeta, groupMeta, payMeta } from "./meta"
+
+const countryName = (c: string) => countries[c as CountryCode]?.name ?? c
+const num = (v: React.ReactNode) => <span className="tabular">{v}</span>
+
+/**
+ * One brand order in the context of its checkout: the sibling brand orders the same payment
+ * created, the money events, and the timeline. Built on the Control Center's DetailSheet.
+ * Read-only: an order is a record, so the only action is copying its reference.
+ */
+export function OrderDetail({ rows, id, open, onOpenChange, onSelect }: { rows: OrderRow[]; id: string | null; open: boolean; onOpenChange: (open: boolean) => void; onSelect: (id: string) => void }) {
+  const audit = useAdmin((s) => s.audit)
+  const row = id ? rows.find((r) => r.order.id === id) : undefined
+  if (!row) return null
+  return <OrderBody row={row} rows={rows} audit={audit} open={open} onOpenChange={onOpenChange} onSelect={onSelect} />
+}
+
+function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: OrderRow; rows: OrderRow[]; audit: AuditEntry[]; open: boolean; onOpenChange: (open: boolean) => void; onSelect: (id: string) => void }) {
+  const o = row.order
+  const siblings = rows.filter((r) => r.order.groupId === o.groupId)
+  const groupTotal = siblings.reduce((s, r) => s + r.totalUsd, 0)
+  const gState = groupMeta[groupState(siblings.map((s) => s.order))]
+  const stage = row.dispute ? disputeStage(row.dispute, audit) : undefined
+  const events = paymentEvents(o, row.brand, row.refund, row.dispute, stage)
+  const timeline = orderTimeline(o, audit, row)
+  const net = o.total - o.commission
+  const money = (v: number) => amountIn(v, o.currency)
+
+  async function copyReference() {
+    try {
+      await navigator.clipboard.writeText(o.reference)
+      toast("Reference copied", { description: `#${o.reference} is on your clipboard.` })
+    } catch {
+      toast("Couldn't copy", { description: `Select the reference by hand: #${o.reference}` })
+    }
+  }
+
+  return (
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Order #${o.reference}`}
+      description={`${row.brand.name}, placed ${formatDateTime(o.placedAt)}`}
+      lead={<BrandMark brand={row.brand} size="md" />}
+      badges={
+        <>
+          <StatusBadge tone={payMeta[row.pay].tone}>{payMeta[row.pay].label}</StatusBadge>
+          <StatusBadge tone={fulfilMeta[row.fulfil].tone}>{fulfilMeta[row.fulfil].label}</StatusBadge>
+        </>
+      }
+      actions={
+        <ActionBar
+          note="Read-only. Amounts on an order never change; a refund or correction is a new ledger entry made in Finance."
+          actions={[{ key: "copy", label: "Copy reference", icon: Copy, variant: "secondary", onSelect: copyReference }]}
+        />
+      }
+    >
+      {/* Keyed by order so moving to a sibling brand order cross-fades the body. */}
+      <motion.div key={o.id} className="grid gap-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
+        <DetailSection title="Checkout" aside={<StatusBadge tone={gState.tone}>{gState.label}</StatusBadge>}>
+          <p className="text-[12px] text-ink-2">
+            Checkout <span className="text-ink tabular">{row.groupRef}</span> {siblings.length === 1 ? "was one payment for one brand order." : `was one payment, split into ${siblings.length} brand orders. Each brand fulfils and refunds its own order.`}
+          </p>
+          <ul className="divide-y divide-line-soft overflow-hidden rounded-lg border border-line-soft bg-card">
+            {siblings.map((s) => {
+              const here = s.order.id === o.id
+              return (
+                <li key={s.order.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(s.order.id)}
+                    disabled={here}
+                    aria-current={here ? "true" : undefined}
+                    className={cn("flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors", here ? "bg-purple/[0.08]" : "hover:bg-white/[0.03]")}
+                  >
+                    <BrandMark brand={s.brand} size="xs" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] text-ink">{s.brand.name}</span>
+                      <span className="block truncate text-[11px] text-ink-3 tabular">
+                        #{s.order.reference}
+                        {here ? ", this order" : ""}
+                      </span>
+                    </span>
+                    <StatusBadge tone={fulfilMeta[s.fulfil].tone}>{fulfilMeta[s.fulfil].label}</StatusBadge>
+                    <span className="w-20 shrink-0 text-right text-[13px] text-ink tabular">{usd(s.totalUsd)}</span>
+                  </button>
+                </li>
+              )
+            })}
+            <li className="flex items-center justify-between gap-3 bg-surface/60 px-3 py-2.5">
+              <span className="text-[12px] text-ink-2">Checkout total</span>
+              <span className="text-[13px] font-medium text-ink tabular">{usd(groupTotal)}</span>
+            </li>
+          </ul>
+        </DetailSection>
+
+        <DetailSection title="Amounts" aside={<span className="text-[11px] text-ink-3">{o.currency}, with USD at the demo rate</span>}>
+          <Facts
+            items={[
+              { label: "Items", value: num(money(o.subtotal)) },
+              { label: "Shipping", value: num(money(o.shipping)) },
+              { label: "Total charged", value: num(money(o.total)) },
+              { label: "Total in USD", value: num(usd(row.totalUsd)) },
+              { label: "Commission, 5% of items", value: num(money(o.commission)) },
+              { label: "Brand receives", value: num(money(net)) },
+            ]}
+          />
+        </DetailSection>
+
+        <DetailSection title="Payment events" aside={<span className="text-[11px] text-ink-3">{providerName[events[0]?.provider ?? "stripe"]}</span>}>
+          {events.length ? (
+            <ol className="divide-y divide-line-soft rounded-lg border border-line-soft bg-card">
+              {events.map((e) => (
+                <li key={e.id} className="px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-ink">{e.label}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-3">
+                        <time dateTime={e.at}>{formatDateTime(e.at)}</time>
+                        {e.verified === true ? (
+                          <span className="inline-flex items-center gap-1 text-ink-2">
+                            <ShieldCheck className="size-3 text-violet" aria-hidden /> Webhook verified
+                          </span>
+                        ) : e.verified === false ? (
+                          <span className="inline-flex items-center gap-1 text-danger">
+                            <ShieldAlert className="size-3" aria-hidden /> Not verified
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className={cn("text-[13px] tabular", e.amountUsd < 0 ? "text-ink-2" : "text-ink")}>{e.amountUsd === 0 ? usd(0) : signedUsd(e.amountUsd)}</span>
+                      <StatusBadge tone={e.status.tone}>{e.status.label}</StatusBadge>
+                    </div>
+                  </div>
+                  {e.detail ? <p className="mt-1.5 text-[12px] text-ink-2">{e.detail}</p> : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="rounded-lg border border-dashed border-line px-3 py-3 text-[12px] text-ink-3">No payment yet. Brand orders are only created once the provider confirms the payment.</p>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Items">
+          <ul className="divide-y divide-line-soft rounded-lg border border-line-soft bg-card">
+            {o.lines.map((l) => (
+              <li key={l.variantId} className="flex items-center gap-3 px-3 py-2.5">
+                <span className="relative h-11 w-9 shrink-0 overflow-hidden rounded-md border border-white/8 bg-surface">
+                  <Image src={l.image.src} alt="" fill sizes="36px" className="object-cover" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] text-ink">{l.name}</span>
+                  <span className="block truncate text-[11px] text-ink-3">
+                    {l.variantLabel}, {l.quantity} × {money(l.unitPrice)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[13px] text-ink tabular">{money(l.unitPrice * l.quantity)}</span>
+              </li>
+            ))}
+          </ul>
+        </DetailSection>
+
+        <DetailSection title="Timeline">
+          <ol className="relative grid gap-3 rounded-lg border border-line-soft bg-card p-3">
+            {timeline.map((t, i) => {
+              const sameTime = i > 0 && timeline[i - 1].at === t.at
+              return (
+                <li key={t.id} className="relative flex gap-3">
+                  <span className="relative flex w-3 shrink-0 justify-center pt-1" aria-hidden>
+                    <span className={cn("size-2 rounded-full", t.who ? "bg-violet" : i === timeline.length - 1 ? "bg-ink" : "bg-ink-3")} />
+                    {i < timeline.length - 1 ? <span className="absolute top-3.5 -bottom-3 w-px bg-line" /> : null}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-ink">{t.label}</p>
+                    {t.who || !sameTime ? (
+                      <p className="text-[11px] text-ink-3">
+                        {sameTime ? null : <time dateTime={t.at}>{formatDateTime(t.at)}</time>}
+                        {t.who ? `${sameTime ? "" : ", "}by ${t.who}` : null}
+                      </p>
+                    ) : null}
+                    {t.detail ? <p className="mt-0.5 text-[12px] text-ink-2">{t.detail}</p> : null}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        </DetailSection>
+
+        <DetailSection title="Customer and delivery">
+          <Facts
+            items={[
+              { label: "Customer", value: row.customer.name },
+              { label: "Email", value: row.customer.email },
+              { label: "Ship to", value: `${o.shippingAddress.city}, ${countryName(o.shippingAddress.country)}` },
+              { label: "Method", value: o.shippingMethod.replace(" — ", ", ") },
+              { label: "Carrier", value: o.tracking?.carrier ?? "Not shipped yet" },
+              { label: "Tracking", value: o.tracking ? num(o.tracking.number) : "Not shipped yet" },
+            ]}
+          />
+        </DetailSection>
+
+        <DetailSection title="Links">
+          <ul className="grid gap-1.5">
+            {row.refund ? (
+              <li>
+                <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/finance?tab=refunds&focus=${row.refund.id}`} label="Refund in Finance" hint={`Idempotency key ${row.refund.idempotencyKey}`} />
+              </li>
+            ) : null}
+            {row.dispute ? (
+              <li>
+                <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/finance?tab=disputes&focus=${row.dispute.id}`} label={row.dispute.type === "chargeback" ? "Chargeback in Finance" : "Inquiry in Finance"} hint={`${row.dispute.reason}, ${usd(row.dispute.amountUsd)}`} />
+              </li>
+            ) : null}
+            <li>
+              <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/brands?review=app_${row.brand.handle}`} label="Brand" hint={`${row.brand.name}, verification and activity`} />
+            </li>
+          </ul>
+        </DetailSection>
+      </motion.div>
+    </DetailSheet>
+  )
+}

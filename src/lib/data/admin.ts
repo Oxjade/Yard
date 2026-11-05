@@ -199,7 +199,7 @@ export function healthSeries(days = 14) {
 
 /* ---------- Security ---------- */
 
-export type AuditEntry = { id: string; at: string; actor: string; role: AdminRole; action: string; target: string; reason?: string; ip: string; approvedBy?: string }
+export type AuditEntry = { id: string; at: string; actor: string; role: AdminRole; action: string; target: string; reason?: string; ip: string; approvedBy?: string; /** The record the action was taken on (user, brand, payout…), so lookalike names never share history. */ subjectId?: string }
 
 export const auditLog: AuditEntry[] = [
   { id: "au_1", at: daysAgo(0), actor: "Aisha Bello", role: "trust_safety", action: "Removed listing", target: "Box-logo hoodie (Luxe Replica Hub)", reason: "Counterfeit — logo match and rights-holder notice", ip: "102.89.x.x" },

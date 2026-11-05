@@ -40,7 +40,7 @@ export function ProductCard({
   sizes?: string
   className?: string
 }) {
-  const brand = brandById.get(product.brandId)!
+  const brand = brandById.get(product.brandId) ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
   const soldOut = productStock(product) === 0
   const href = `/products/${product.slug}`
@@ -106,7 +106,7 @@ export function ProductCard({
       {!isFeature ? (
         <div className={cn("flex items-start justify-between gap-3", variant === "compact" ? "mt-2" : "mt-3")}>
           <div className="min-w-0">
-            <Link href={`/brands/${brand.handle}`} className="relative z-10 block truncate text-xs text-ink-2 transition-colors hover:text-violet">
+            <Link href={brand.handle ? `/brands/${brand.handle}` : "#"} className="relative z-10 block truncate text-xs text-ink-2 transition-colors hover:text-violet">
               {brand.name}
             </Link>
             <Link href={href} className="mt-0.5 block truncate text-sm text-ink">
