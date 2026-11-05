@@ -1,0 +1,84 @@
+"use client"
+
+import { useId, useMemo, useState } from "react"
+import { AnimatePresence, motion } from "motion/react"
+import { Chip } from "@/components/market/catalog/chip"
+import { ProductCard } from "@/components/market/product-card"
+import { cn } from "@/lib/utils"
+import type { Product, StorefrontSection } from "@/lib/data/types"
+import { Container, SectionHeading, SectionShell, type StorefrontContext } from "../parts"
+
+type Props = { ctx: StorefrontContext; section: StorefrontSection; index: number; first: boolean; products: Product[] }
+
+/** The standard product grid; templates differ in columns and card variant, not in gaps. */
+const grid: Record<StorefrontContext["template"], string> = {
+  editorial: "grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-3 @5xl:grid-cols-4",
+  minimal: "grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-3 @5xl:grid-cols-4",
+  street: "grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-4",
+  studio: "grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-3",
+}
+
+/** Every published piece, in the brand's own order, with a small category filter. */
+export function AllProductsSection({ ctx, section, index, first, products }: Props) {
+  const layoutId = useId()
+  const [active, setActive] = useState<string>("all")
+
+  const groups = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of products) counts.set(p.subcategory, (counts.get(p.subcategory) ?? 0) + 1)
+    return [...counts.entries()].map(([name, count]) => ({ name, count }))
+  }, [products])
+
+  const current = groups.some((g) => g.name === active) ? active : "all"
+  const shown = current === "all" ? products : products.filter((p) => p.subcategory === current)
+  const options = [{ name: "all", label: "All", count: products.length }, ...groups.map((g) => ({ ...g, label: g.name }))]
+
+  return (
+    <SectionShell ctx={ctx} section={section} first={first}>
+      <Container>
+        <SectionHeading ctx={ctx} section={section} index={index} />
+
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          {groups.length > 1 ? (
+            <div role="group" aria-label={`Filter ${ctx.brand.name} products by category`} className="rail -mx-4 flex gap-2 overflow-x-auto px-4 @3xl:mx-0 @3xl:flex-wrap @3xl:overflow-visible @3xl:px-0">
+              {options.map((o) => {
+                const on = current === o.name
+                return (
+                  <Chip
+                    key={o.name}
+                    selected={on}
+                    onClick={() => setActive(o.name)}
+                    layoutId={`${layoutId}-pill`}
+                    // The marketplace chip, filled in the brand accent instead of purple.
+                    className={cn(on && "border-(color:--sf-accent) text-(color:--sf-on-accent) [&>span:first-child]:bg-(color:--sf-accent)")}
+                  >
+                    {o.label}
+                    <span className={cn("text-xs tabular", on ? "opacity-70" : "text-ink-3")}>{o.count}</span>
+                  </Chip>
+                )
+              })}
+            </div>
+          ) : null}
+          <p className="text-sm text-ink-2 tabular" aria-live="polite">
+            {shown.length} {shown.length === 1 ? "piece" : "pieces"}
+          </p>
+        </div>
+
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={current}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className={grid[ctx.template]}
+          >
+            {shown.map((p) => (
+              <ProductCard key={p.id} product={p} variant={ctx.template === "street" ? "tall" : "default"} />
+            ))}
+          </motion.div>
+        </AnimatePresence>
+      </Container>
+    </SectionShell>
+  )
+}

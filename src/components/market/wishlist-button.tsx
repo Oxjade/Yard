@@ -8,7 +8,7 @@ import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 
-export function WishlistButton({ productId, name, className, variant = "glass" }: { productId: string; name: string; className?: string; variant?: "glass" | "outline" }) {
+export function WishlistButton({ productId, name, className, variant = "glass" }: { productId: string; name: string; className?: string; variant?: "glass" | "outline" | "button" }) {
   const hydrated = useHydrated()
   const saved = useSaved((s) => s.wishlist.includes(productId))
   const toggle = useSaved((s) => s.toggleWishlist)
@@ -36,16 +36,18 @@ export function WishlistButton({ productId, name, className, variant = "glass" }
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      aria-label={active ? `Remove ${name} from wishlist` : `Save ${name} to wishlist`}
+      aria-label={variant === "button" ? (active ? `Saved: ${name}. Remove from wishlist` : `Save ${name} to wishlist`) : active ? `Remove ${name} from wishlist` : `Save ${name} to wishlist`}
       className={cn(
-        "relative inline-flex size-9 items-center justify-center rounded-full text-ink transition-[background-color,transform] duration-200 active:scale-90",
-        variant === "glass" ? "glass hover:bg-[var(--glass-bg-strong)]" : "border border-line hover:bg-elevated",
+        "relative inline-flex items-center justify-center text-ink transition-[background-color,transform] duration-200",
+        variant === "button" ? "h-14 w-14 gap-2 rounded-md border border-line px-0 text-sm font-medium hover:bg-elevated active:scale-[0.97] sm:w-auto sm:px-5" : "size-9 rounded-full active:scale-90",
+        variant === "glass" ? "glass hover:bg-[var(--glass-bg-strong)]" : variant === "outline" ? "border border-line hover:bg-elevated" : null,
         className,
       )}
     >
       <motion.span key={String(active)} initial={hydrated ? { scale: 0.6 } : false} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 600, damping: 18 }}>
-        <Heart className={cn("size-[17px] transition-colors", active ? "text-violet" : "text-ink")} weight={active ? "fill" : "regular"} />
+        <Heart className={cn("transition-colors", variant === "button" ? "size-5" : "size-[17px]", active ? "text-violet" : "text-ink")} weight={active ? "fill" : "regular"} />
       </motion.span>
+      {variant === "button" ? <span className="hidden sm:inline" aria-hidden>{active ? "Saved" : "Save"}</span> : null}
       <AnimatePresence>
         {say ? (
           <motion.span
@@ -67,7 +69,7 @@ export function WishlistButton({ productId, name, className, variant = "glass" }
           <motion.span
             key="burst"
             aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-full border border-violet"
+            className={cn("pointer-events-none absolute inset-0 border border-violet", variant === "button" ? "rounded-md" : "rounded-full")}
             initial={{ scale: 0.7, opacity: 0.9 }}
             animate={{ scale: 1.6, opacity: 0 }}
             exit={{ opacity: 0 }}

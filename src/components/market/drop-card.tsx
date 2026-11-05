@@ -2,8 +2,10 @@
 
 import Image from "next/image"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { getDemoAnchor, useNow } from "@/hooks/use-now"
 import { brandById } from "@/lib/data/brands"
-import { dropAccessLabel } from "@/lib/drops"
+import { dropAccessLabel, dropPhaseAt, initialDropPhase } from "@/lib/drops"
 import { cn } from "@/lib/utils"
 import type { Drop } from "@/lib/data/types"
 import { BrandMark } from "./brand-mark"
@@ -33,9 +35,26 @@ export function DropCard({ drop, className, layout = "stack" }: { drop: Drop; cl
         <Countdown drop={drop} />
         <div className="mt-auto flex items-center justify-between gap-3 pt-1">
           <p className="text-xs text-ink-3">{dropAccessLabel[drop.access]}</p>
-          <NotifyButton drop={drop} size="sm" />
+          <DropAction drop={drop} href={href} />
         </div>
       </div>
     </article>
   )
+}
+
+/** The card's action follows the drop's phase: a reminder before release, the drop while it's live, nothing once it's over. */
+function DropAction({ drop, href }: { drop: Drop; href: string }) {
+  const now = useNow(5000)
+  const phase = now === null ? initialDropPhase(drop) : dropPhaseAt(drop, now, getDemoAnchor())
+  if (phase === "upcoming") return <NotifyButton drop={drop} size="sm" />
+  if (phase === "live") {
+    return (
+      <Button asChild size="sm" variant="secondary" className="relative z-10">
+        <Link href={href}>
+          Shop the drop
+        </Link>
+      </Button>
+    )
+  }
+  return null
 }

@@ -104,16 +104,20 @@ export function ProductCard({
       </div>
 
       {!isFeature ? (
-        <div className={cn("flex items-start justify-between gap-3", variant === "compact" ? "mt-2" : "mt-3")}>
+        <div className={cn("flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3", variant === "compact" ? "mt-2" : "mt-3")}>
           <div className="min-w-0">
-            <Link href={brand.handle ? `/brands/${brand.handle}` : "#"} className="relative z-10 block truncate text-xs text-ink-2 transition-colors hover:text-violet">
-              {brand.name}
-            </Link>
+            {brand.handle ? (
+              <Link href={`/brands/${brand.handle}`} className="relative z-10 block truncate text-xs text-ink-2 transition-colors hover:text-violet">
+                {brand.name}
+              </Link>
+            ) : (
+              <span className="block truncate text-xs text-ink-2">{brand.name}</span>
+            )}
             <Link href={href} className="mt-0.5 block truncate text-sm text-ink">
               {product.name}
             </Link>
           </div>
-          <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} className="pt-[1.125rem]" />
+          <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} className="sm:pt-[1.125rem]" />
         </div>
       ) : null}
     </article>
