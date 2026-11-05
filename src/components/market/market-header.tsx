@@ -86,12 +86,12 @@ export function MarketHeader() {
             <Heart className="size-[19px]" />
           </Link>
           <button type="button" onClick={openBag} aria-label={`Bag, ${hydrated ? count : 0} items`} className="relative inline-flex size-10 items-center justify-center rounded-xl text-ink-2 hover:bg-white/6 hover:text-ink">
-            <motion.span key={pulse} initial={pulse ? { scale: 1.25, rotate: -8 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 500, damping: 14 }}>
+            <motion.span key={`pulse-${pulse}`} initial={pulse ? { scale: 1.25, rotate: -8 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 500, damping: 14 }}>
               <ShoppingBag className="size-[19px]" />
             </motion.span>
             {hydrated && count > 0 ? (
               <motion.span
-                key={count}
+                key={`count-${count}`}
                 initial={{ scale: 0.4 }}
                 animate={{ scale: 1 }}
                 className="absolute top-1 right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-acid px-1 text-[10px] font-semibold text-obsidian tabular"
