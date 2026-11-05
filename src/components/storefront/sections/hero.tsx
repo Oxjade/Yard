@@ -67,7 +67,7 @@ function EditorialHero({ ctx, intro, first, shopHref }: HeroProps) {
   return (
     <section id="sf-hero" aria-labelledby="sf-hero-title" data-section="hero" className="relative isolate overflow-hidden">
       <div className={cn("relative flex flex-col", preview ? "min-h-[600px]" : "min-h-[640px] @3xl:min-h-[min(100svh,960px)]")}>
-        <Image src={brand.cover.src} alt={brand.cover.alt} fill priority={!preview} sizes="100vw" className="-z-10 object-cover" />
+        <Image src={brand.cover.src} alt={brand.cover.alt} fill priority={!preview} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover" />
         {/* A flat tint keeps the masthead legible; the scrims carry the type at the foot. */}
         <span aria-hidden className="absolute inset-0 -z-10 bg-obsidian/30" />
         <span aria-hidden className="scrim-l absolute inset-0 -z-10" />
@@ -136,7 +136,7 @@ function StreetHero({ ctx, intro, first, shopHref }: HeroProps) {
   return (
     <section id="sf-hero" aria-labelledby="sf-hero-title" data-section="hero" className="relative isolate">
       <div className={cn("relative flex flex-col justify-end overflow-hidden", preview ? "min-h-[540px]" : "min-h-[600px] @3xl:min-h-[min(88svh,880px)]")}>
-        <Image src={brand.cover.src} alt={brand.cover.alt} fill priority={!preview} sizes="100vw" className="-z-10 object-cover grayscale-[0.35]" />
+        <Image src={brand.cover.src} alt={brand.cover.alt} fill priority={!preview} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover grayscale-[0.35]" />
         <span aria-hidden className="absolute inset-0 -z-10 bg-obsidian/45" />
         <span aria-hidden className="scrim-b absolute inset-0 -z-10" />
         <Container className={cn("pb-6 @3xl:pb-8", first && !preview ? headerClearance : "pt-10")}>
