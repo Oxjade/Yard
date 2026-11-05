@@ -381,6 +381,25 @@
   }
 }
 
+@layer components {
+  /* Skeleton shimmer: a slow, even sweep (1.5s) — content is coming, nothing is wrong */
+  .skeleton {
+    background-color: rgba(255, 255, 255, 0.04);
+    background-image: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.05) 50%, transparent 80%);
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    animation: skeleton-sweep 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  @keyframes skeleton-sweep {
+    from {
+      background-position: 160% 0;
+    }
+    to {
+      background-position: -60% 0;
+    }
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

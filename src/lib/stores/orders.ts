@@ -8,12 +8,15 @@ import { customerCheckoutGroups, customerOrders } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
 import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
 import type { CartLine } from "./cart"
+import { useStudio } from "./studio"
 
 /**
  * The shopper's orders in the frontend phase. `placeCheckout` mirrors what the backend
  * will do: one checkout group, one merchant order per brand, guarded by an idempotency key
- * so a double submit never creates two orders. In the backend phase this becomes a server
- * action that re-prices, reserves stock atomically and starts payment with the provider.
+ * so a double submit never creates two orders. Orders are created unpaid ("pending_payment")
+ * and only a verified provider webhook may mark them paid — there is no provider in this
+ * build, so they stay unpaid. In the backend phase this becomes a server action that
+ * re-prices, reserves stock atomically and starts payment with the provider.
  */
 
 export type CheckoutInput = {
@@ -60,8 +63,9 @@ export const useOrders = create<OrdersState>()(
             groupId,
             brandId: g.brand.id,
             customerId: "u_ada",
-            status: "paid",
-            paymentStatus: "captured",
+            // Never "paid" until the payment provider confirms it server-side (backend phase).
+            status: "pending_payment",
+            paymentStatus: "pending",
             currency: input.currency,
             lines: g.lines.map((l) => ({ productId: l.product.id, variantId: l.variant.id, name: l.product.name, variantLabel: variantLabel(l.variant.options), image: l.product.images[0], quantity: l.line.quantity, unitPrice: l.unit })),
             subtotal: g.subtotal,
@@ -74,12 +78,16 @@ export const useOrders = create<OrdersState>()(
             shippingMethod: express ? "Express" : "Standard",
             timeline: [
               { at, label: "Order placed" },
-              { at, label: "Payment confirmed by provider (development simulation)" },
+              { at, label: "Waiting for the payment provider to confirm. No provider is connected in this development build, so this order stays unpaid." },
             ],
           }
         })
         const group: CheckoutGroup = { id: groupId, reference, customerId: "u_ada", placedAt: at, currency: input.currency, orderIds: orders.map((o) => o.id), total: orders.reduce((s, o) => s + o.total, 0) }
         set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: groupId } })
+        // The merchant sees their order immediately (in the backend phase: the same database row).
+        const studio = useStudio.getState()
+        const mine = orders.filter((o) => o.brandId === studio.brandId)
+        if (mine.length) useStudio.setState({ orders: [...mine, ...studio.orders] })
         return { groupId, duplicate: false }
       },
     }),

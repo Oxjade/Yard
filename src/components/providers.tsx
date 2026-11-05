@@ -10,6 +10,8 @@ import { useSession } from "@/lib/stores/session"
 import { useStudio } from "@/lib/stores/studio"
 import { useOrders } from "@/lib/stores/orders"
 import { useAdmin } from "@/lib/stores/admin"
+import { useNotifications } from "@/lib/stores/notifications"
+import { useNotificationEvents } from "@/lib/notification-events"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -20,7 +22,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     void useStudio.persist.rehydrate()
     void useOrders.persist.rehydrate()
     void useAdmin.persist.rehydrate()
+    void useNotifications.persist.rehydrate()
   }, [])
+  useNotificationEvents()
 
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.9 }}>

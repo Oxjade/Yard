@@ -3,7 +3,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Bell, Menu, Search, X } from "lucide-react"
+import { Menu, Search, X } from "lucide-react"
+import { NotificationBell } from "@/components/feedback/notification-bell"
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
@@ -125,10 +126,7 @@ export function AppShell({
           </label>
           <div className="ml-auto flex items-center gap-2">
             {topbar}
-            <button type="button" className="relative inline-flex size-9 items-center justify-center rounded-md text-ink-2 hover:bg-white/5 hover:text-ink" aria-label="Notifications">
-              <Bell className="size-4" />
-              <span className="absolute top-2 right-2 size-1.5 rounded-full bg-acid" aria-hidden />
-            </button>
+            <NotificationBell audience={surface === "admin" ? "admin" : "merchant"} className="size-9 rounded-md" />
           </div>
         </header>
         <main id="main" className={cn("mx-auto w-full max-w-[1400px]", density === "dense" ? "px-4 py-5 md:px-5" : "px-4 py-6 md:px-8 md:py-8")}>{children}</main>

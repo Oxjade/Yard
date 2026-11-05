@@ -11,6 +11,7 @@ import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import { useSearchOverlay } from "./search-overlay"
+import { NotificationBell } from "@/components/feedback/notification-bell"
 
 export function Wordmark({ className }: { className?: string }) {
   return (
@@ -82,9 +83,10 @@ export function MarketHeader() {
           <button type="button" onClick={() => openSearch(true)} aria-label="Search" className="inline-flex size-10 items-center justify-center rounded-xl text-ink-2 hover:bg-white/6 hover:text-ink md:hidden">
             <Search className="size-[19px]" />
           </button>
-          <Link href="/wishlist" aria-label="Wishlist" className="hidden size-10 items-center justify-center rounded-xl text-ink-2 hover:bg-white/6 hover:text-ink sm:inline-flex">
+          <Link href="/wishlist" aria-label="Wishlist" className="hidden size-10 items-center justify-center rounded-xl text-ink-2 transition-colors duration-150 hover:bg-white/6 hover:text-ink sm:inline-flex">
             <Heart className="size-[19px]" />
           </Link>
+          {hydrated && user ? <NotificationBell audience="customer" /> : null}
           <button type="button" onClick={openBag} aria-label={`Bag, ${hydrated ? count : 0} items`} className="relative inline-flex size-10 items-center justify-center rounded-xl text-ink-2 hover:bg-white/6 hover:text-ink">
             <motion.span key={`pulse-${pulse}`} initial={pulse ? { scale: 1.25, rotate: -8 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 500, damping: 14 }}>
               <ShoppingBag className="size-[19px]" />
