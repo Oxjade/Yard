@@ -12,7 +12,7 @@ import type { Product } from "@/lib/data/types"
 
 export function addedToast(p: Product, label: string) {
   toast("Added to bag", {
-    description: `${p.name} — ${label}`,
+    description: label ? `${p.name}, ${label}` : p.name,
     action: { label: "View bag", onClick: () => useCart.getState().open() },
   })
 }
