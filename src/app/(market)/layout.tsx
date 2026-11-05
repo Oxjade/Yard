@@ -1,0 +1,24 @@
+import { AuthPrompt } from "@/components/market/auth-prompt"
+import { BagDrawer } from "@/components/market/bag-drawer"
+import { MarketFooter } from "@/components/market/market-footer"
+import { MarketHeader } from "@/components/market/market-header"
+import { MobileTabBar } from "@/components/market/mobile-tabbar"
+import { SearchOverlay } from "@/components/market/search-overlay"
+
+/** The customer marketplace shell: floating glass nav, phone tab bar, bag drawer, search. */
+export default function MarketLayout({ children }: LayoutProps<"/">) {
+  return (
+    <div data-surface="market" className="relative min-h-dvh">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-md focus:bg-acid focus:px-3 focus:py-2 focus:text-obsidian">
+        Skip to content
+      </a>
+      <MarketHeader />
+      <main id="main">{children}</main>
+      <MarketFooter />
+      <MobileTabBar />
+      <BagDrawer />
+      <SearchOverlay />
+      <AuthPrompt />
+    </div>
+  )
+}

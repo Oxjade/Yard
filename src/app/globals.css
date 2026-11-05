@@ -1,26 +1,305 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/space-grotesk/index.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * NOCTURNE design tokens — the single place for shared values.
+ * Palette: Obsidian × Electric Purple × Acid Yellow.
+ * Distribution: ~75% black surfaces, ~15% purple, ~5% acid yellow, ~5% neutral text.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Surfaces */
+  --color-obsidian: #08080b;
+  --color-surface: #15121d;
+  --color-card: #191620;
+  --color-elevated: #211c2a;
+  --color-line: #292333;
+  --color-line-soft: #1e1a26;
+
+  /* Identity */
+  --color-purple: #7b2cff;
+  --color-violet: #a66bff;
+  --color-acid: #e7ff36;
+
+  /* Text */
+  --color-ink: #f4f1f7;
+  --color-ink-2: #96909f;
+  --color-ink-3: #716b79;
+
+  /* Status (not in the brand palette — used only for errors and destructive actions) */
+  --color-danger: #ff5470;
+
+  /* Typefaces */
+  --font-sans: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Variable", "Arial Narrow", ui-sans-serif, sans-serif;
+  --font-heading: var(--font-sans);
+
+  /* Display scale (condensed Archivo) */
+  --text-display-2xl: clamp(3.75rem, 11vw, 11rem);
+  --text-display-2xl--line-height: 0.84;
+  --text-display-xl: clamp(3rem, 8vw, 7.5rem);
+  --text-display-xl--line-height: 0.86;
+  --text-display-lg: clamp(2.5rem, 5.5vw, 5rem);
+  --text-display-lg--line-height: 0.88;
+  --text-display-md: clamp(2rem, 3.6vw, 3.25rem);
+  --text-display-md--line-height: 0.9;
+  --text-display-sm: clamp(1.625rem, 2.4vw, 2.25rem);
+  --text-display-sm--line-height: 0.92;
+
+  /* Layout */
+  --container-page: 90rem;
+  --breakpoint-3xl: 112rem;
+
+  /* Motion */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 @theme inline {
+  /* shadcn/ui semantic tokens, mapped onto the palette */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Radii: restrained 4–10px; 2xl and up are for floating overlays only */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 16px;
+  --radius-3xl: 22px;
+  --radius-4xl: 28px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  color-scheme: dark;
+  --radius: 0.5rem;
+
+  --background: #08080b;
+  --foreground: #f4f1f7;
+  --card-foreground: #f4f1f7;
+  --popover: #211c2a;
+  --popover-foreground: #f4f1f7;
+  /* "primary" in shadcn controls = selected state → electric purple */
+  --primary: #7b2cff;
+  --primary-foreground: #f4f1f7;
+  --secondary: #211c2a;
+  --secondary-foreground: #f4f1f7;
+  --muted: #15121d;
+  --muted-foreground: #96909f;
+  --accent: #211c2a;
+  --accent-foreground: #f4f1f7;
+  --destructive: #ff5470;
+  --border: #292333;
+  --input: #292333;
+  --ring: #a66bff;
+
+  --chart-1: #7b2cff;
+  --chart-2: #a66bff;
+  --chart-3: #e7ff36;
+  --chart-4: #716b79;
+  --chart-5: #3a2f4d;
+
+  --sidebar: #0d0b12;
+  --sidebar-foreground: #f4f1f7;
+  --sidebar-primary: #7b2cff;
+  --sidebar-primary-foreground: #f4f1f7;
+  --sidebar-accent: #191620;
+  --sidebar-accent-foreground: #f4f1f7;
+  --sidebar-border: #1e1a26;
+  --sidebar-ring: #a66bff;
+
+  /* Liquid Glass */
+  --glass-bg: rgba(21, 18, 29, 0.72);
+  --glass-bg-strong: rgba(17, 14, 24, 0.84);
+  --glass-fallback: rgba(21, 18, 29, 0.97);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/60;
+  }
+  html {
+    @apply bg-obsidian font-sans text-ink antialiased;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply min-h-dvh bg-obsidian text-ink;
+    font-feature-settings: "ss01" 0;
+  }
+  ::selection {
+    background: #7b2cff;
+    color: #f4f1f7;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-violet);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  img {
+    -webkit-user-drag: none;
+  }
+  /* Thin dark scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #292333 transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Condensed editorial display type */
+  .font-display {
+    font-family: var(--font-display);
+    font-stretch: 62%;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.005em;
+  }
+  /* Expanded wordmark type */
+  .font-wide {
+    font-family: var(--font-display);
+    font-stretch: 125%;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Liquid Glass — for floating elements and overlays only, never main content */
+  .glass {
+    position: relative;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      var(--glass-shadow);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%);
+  }
+  .glass-strong {
+    position: relative;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      var(--glass-shadow);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    backdrop-filter: blur(28px) saturate(160%);
+  }
+  /* A controlled reflection along the top edge */
+  .glass-sheen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0) 38%
+    );
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass,
+    .glass-strong {
+      background: var(--glass-fallback);
+    }
+  }
+
+  /* Chrome finish — wordmark only */
+  .chrome-text {
+    background: linear-gradient(
+      100deg,
+      #6f6a78 0%,
+      #f4f1f7 22%,
+      #a39dad 38%,
+      #ffffff 52%,
+      #8c869a 68%,
+      #e9e5ee 84%,
+      #77717f 100%
+    );
+    background-size: 220% 100%;
+    background-position: 0% 50%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Editorial image treatment: a quiet scrim so overlaid type stays legible */
+  .scrim-b {
+    background: linear-gradient(180deg, rgba(8, 8, 11, 0) 35%, rgba(8, 8, 11, 0.86) 100%);
+  }
+  .scrim-l {
+    background: linear-gradient(90deg, rgba(8, 8, 11, 0.9) 0%, rgba(8, 8, 11, 0.35) 55%, rgba(8, 8, 11, 0) 100%);
+  }
+
+  /* Hide scrollbars on horizontal rails while keeping them scrollable */
+  .rail {
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
