@@ -15,8 +15,11 @@ import type { Product } from "@/lib/data/types"
  */
 export function addedToast(_p: Product, _label: string) {}
 
+/** When adding is closed (a drop before release, a per-customer limit): why, and what a tap does instead. */
+export type AddBlocked = { describedBy?: string; onAttempt: () => void }
+
 /** Quick add: one tap when there is one variant; otherwise a small size/colour picker. */
-export function QuickAdd({ product, className }: { product: Product; className?: string }) {
+export function QuickAdd({ product, className, addBlocked }: { product: Product; className?: string; addBlocked?: AddBlocked }) {
   const add = useCart((s) => s.add)
   const [open, setOpen] = useState(false)
   const [justAdded, setJustAdded] = useState(false)
@@ -48,13 +51,17 @@ export function QuickAdd({ product, className }: { product: Product; className?:
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
+        if (addBlocked) return addBlocked.onAttempt()
         if (single) commit(product.variants[0].id)
         else setOpen((o) => !o)
       }}
       aria-label={inStock ? `Quick add ${product.name}` : `${product.name} is sold out`}
+      aria-disabled={addBlocked ? true : undefined}
+      aria-describedby={addBlocked?.describedBy}
       className={cn(
         "glass inline-flex size-10 items-center justify-center rounded-full text-ink transition-[background-color,transform] duration-200 hover:bg-acid hover:text-obsidian active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent",
         justAdded && "bg-acid text-obsidian",
+        addBlocked && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-ink",
         className,
       )}
     >
@@ -64,7 +71,7 @@ export function QuickAdd({ product, className }: { product: Product; className?:
     </button>
   )
 
-  if (single) return button
+  if (single || addBlocked) return button
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

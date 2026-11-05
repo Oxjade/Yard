@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
 import { Price } from "./price"
 import { ProductBadge, primaryBadge } from "./product-badge"
-import { QuickAdd } from "./quick-add"
+import { QuickAdd, type AddBlocked } from "./quick-add"
 import { SponsoredTag } from "./sponsored-tag"
 import { WishlistButton } from "./wishlist-button"
 
@@ -32,6 +32,7 @@ export function ProductCard({
   priority = false,
   sizes = "(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 50vw",
   className,
+  addBlocked,
 }: {
   product: Product
   variant?: Variant
@@ -39,6 +40,8 @@ export function ProductCard({
   priority?: boolean
   sizes?: string
   className?: string
+  /** Adding is closed for now (e.g. a drop before release); quick add stays focusable and explains why. */
+  addBlocked?: AddBlocked
 }) {
   const brand = brandById.get(product.brandId) ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
@@ -97,7 +100,7 @@ export function ProductCard({
           </div>
           {variant !== "compact" ? (
             <div className="pointer-events-auto translate-y-1 opacity-100 transition-[opacity,transform] duration-300 ease-out-quint md:opacity-0 md:group-hover/card:translate-y-0 md:group-hover/card:opacity-100 md:group-focus-within/card:translate-y-0 md:group-focus-within/card:opacity-100">
-              <QuickAdd product={product} />
+              <QuickAdd product={product} addBlocked={addBlocked} />
             </div>
           ) : null}
         </div>
