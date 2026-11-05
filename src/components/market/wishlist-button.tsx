@@ -33,7 +33,7 @@ export function WishlistButton({ productId, name, className, variant = "glass" }
       aria-label={active ? `Remove ${name} from wishlist` : `Save ${name} to wishlist`}
       className={cn(
         "relative inline-flex size-9 items-center justify-center rounded-full text-ink transition-[background-color,transform] duration-200 active:scale-90",
-        variant === "glass" ? "glass hover:bg-[rgba(33,28,42,0.85)]" : "border border-line hover:bg-elevated",
+        variant === "glass" ? "glass hover:bg-[var(--glass-bg-strong)]" : "border border-line hover:bg-elevated",
         className,
       )}
     >

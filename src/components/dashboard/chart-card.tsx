@@ -40,8 +40,8 @@ export function TimeSeriesChart({
   className?: string
 }) {
   const labels = Object.fromEntries(series.map((s) => [s.key, s.label]))
-  const colors = ["#7b2cff", "#716b79", "#e7ff36"]
-  const tick = { fill: "#716b79", fontSize: 11 }
+  const colors = ["#6d19d9", "#858585", "#f5ff00"]
+  const tick = { fill: "#858585", fontSize: 11 }
   const xFormat = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
 
   return (
@@ -49,10 +49,10 @@ export function TimeSeriesChart({
       <ResponsiveContainer width="100%" height="100%">
         {kind === "bar" ? (
           <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
-            <CartesianGrid vertical={false} stroke="#1e1a26" />
+            <CartesianGrid vertical={false} stroke="#1a1a1a" />
             <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={24} />
             <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
-            <Tooltip cursor={{ fill: "rgba(123,44,255,0.08)" }} content={<ChartTooltip format={format} labels={labels} />} />
+            <Tooltip cursor={{ fill: "rgba(109,25,217,0.14)" }} content={<ChartTooltip format={format} labels={labels} />} />
             {series.map((s, i) => (
               <Bar key={s.key} dataKey={s.key} fill={s.color ?? colors[i]} radius={[3, 3, 0, 0]} maxBarSize={18} />
             ))}
@@ -62,15 +62,15 @@ export function TimeSeriesChart({
             <defs>
               {series.map((s, i) => (
                 <linearGradient key={s.key} id={`fill-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.32 : 0} />
-                  <stop offset="100%" stopColor={s.color ?? colors[i]} stopOpacity={0} />
+                  <stop offset="0%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
+                  <stop offset="100%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
                 </linearGradient>
               ))}
             </defs>
-            <CartesianGrid vertical={false} stroke="#1e1a26" />
+            <CartesianGrid vertical={false} stroke="#1a1a1a" />
             <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={28} />
             <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
-            <Tooltip cursor={{ stroke: "#3a3247" }} content={<ChartTooltip format={format} labels={labels} />} />
+            <Tooltip cursor={{ stroke: "#3a3a3a" }} content={<ChartTooltip format={format} labels={labels} />} />
             {series.map((s, i) => (
               <Area
                 key={s.key}

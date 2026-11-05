@@ -35,11 +35,13 @@ Next.js 16 differs from older versions — see `AGENTS.md` and `node_modules/nex
 
 All shared values live in `src/app/globals.css`:
 
-- **Palette** — Obsidian `#08080B`, surface `#15121D`, card `#191620`, elevated `#211C2A`,
-  border `#292333`; Electric purple `#7B2CFF` (fills, selected, active) and Soft violet
-  `#A66BFF` (purple text and links); Acid yellow `#E7FF36` (primary CTA, sale, release
-  indicators); text `#F4F1F7` / `#96909F` / `#716B79`. Roughly 75% black, 15% purple,
-  5% yellow, 5% neutral text.
+- **Palette** — Black `#080808` (~75%: backgrounds, navigation, product surfaces), Purple
+  `#6D19D9` (~15%: active navigation, selected elements, interactive states, brand
+  highlights), Yellow `#F5FF00` (~5%: primary CTAs, sale labels, drop announcements,
+  high-priority indicators), White `#F5F5F5` / Grey `#858585` (~5%: type, secondary
+  information, borders, dividers). Surfaces and hairlines are derived from the black and the
+  grey; `violet` (`#9452FF`) is the same purple lifted for small text on black, and `danger`
+  is reserved for errors. Bold and high-contrast — no pastels, soft gradients or glow.
 - **Type** — Archivo (variable width) condensed for marketplace headlines (`.font-display`),
   expanded for the wordmark (`.font-wide`); Space Grotesk for everything else.
 - **Liquid Glass** — `.glass`, `.glass-strong`, `.glass-sheen`, with an opaque fallback where

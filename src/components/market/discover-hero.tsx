@@ -90,7 +90,7 @@ export function DiscoverHero({
                 ))}
               </div>
             </div>
-            <Link href={spotlight.href} className="glass glass-sheen group flex items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-[rgba(33,28,42,0.82)]">
+            <Link href={spotlight.href} className="glass glass-sheen group flex items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--glass-bg-strong)]">
               <span className="relative size-16 shrink-0 overflow-hidden rounded-lg">
                 <Image src={spotlight.image.src} alt="" fill sizes="64px" className="object-cover" />
               </span>

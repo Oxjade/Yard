@@ -33,13 +33,13 @@ function NavList({ groups, root, density, onNavigate }: { groups: ShellNavGroup[
                     onClick={onNavigate}
                     aria-current={on ? "page" : undefined}
                     className={cn(
-                      "relative flex items-center gap-3 rounded-md px-3 transition-colors",
+                      "relative isolate flex items-center gap-3 rounded-md px-3 transition-colors",
                       density === "dense" ? "h-8 text-[13px]" : "h-9 text-sm",
-                      on ? "bg-purple/14 text-ink" : "text-ink-2 hover:bg-white/4 hover:text-ink",
+                      on ? "text-ink" : "text-ink-2 hover:bg-white/4 hover:text-ink",
                     )}
                   >
-                    {on ? <motion.span layoutId={`${root}-nav-active`} className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-purple" /> : null}
-                    <Icon className={cn("size-4 shrink-0", on ? "text-violet" : "text-ink-3")} />
+                    {on ? <motion.span layoutId={`${root}-nav-active`} className="absolute inset-0 -z-10 rounded-md bg-purple" /> : null}
+                    <Icon className={cn("size-4 shrink-0", on ? "text-ink" : "text-ink-3")} />
                     <span className="flex-1 truncate">{item.label}</span>
                     {item.badge !== undefined ? <span className="rounded-[4px] bg-acid px-1.5 text-[10px] font-semibold leading-4 text-obsidian tabular">{item.badge}</span> : null}
                   </Link>

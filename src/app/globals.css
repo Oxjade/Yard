@@ -6,30 +6,35 @@
 
 /*
  * NOCTURNE design tokens — the single place for shared values.
- * Palette: Obsidian × Electric Purple × Acid Yellow.
- * Distribution: ~75% black surfaces, ~15% purple, ~5% acid yellow, ~5% neutral text.
+ * Palette (2026-11-05): Black #080808 · Purple #6D19D9 · Yellow #F5FF00 · White #F5F5F5 / Grey #858585.
+ * Distribution: ~75% black, ~15% purple, ~5% yellow, ~5% white/grey.
+ * Bold, high-contrast, editorial: no pastels, no soft gradients, no glow.
+ * Surfaces and lines are derived from the black and the grey; nothing else is introduced
+ * except `violet` (the same purple, lifted so small text stays legible on black) and
+ * `danger` (errors only).
  */
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
   /* Surfaces */
-  --color-obsidian: #08080b;
-  --color-surface: #15121d;
-  --color-card: #191620;
-  --color-elevated: #211c2a;
-  --color-line: #292333;
-  --color-line-soft: #1e1a26;
+  --color-obsidian: #080808;
+  --color-surface: #0f0f0f;
+  --color-card: #131313;
+  --color-elevated: #1b1b1b;
+  --color-line: #242424;
+  --color-line-soft: #1a1a1a;
 
   /* Identity */
-  --color-purple: #7b2cff;
-  --color-violet: #a66bff;
-  --color-acid: #e7ff36;
+  --color-purple: #6d19d9;
+  /* Purple for TEXT and icons on black: same hue, lifted to stay legible at small sizes */
+  --color-violet: #9452ff;
+  --color-acid: #f5ff00;
 
   /* Text */
-  --color-ink: #f4f1f7;
-  --color-ink-2: #96909f;
-  --color-ink-3: #716b79;
+  --color-ink: #f5f5f5;
+  --color-ink-2: #858585;
+  --color-ink-3: #858585;
 
   /* Status (not in the brand palette — used only for errors and destructive actions) */
   --color-danger: #ff5470;
@@ -108,46 +113,46 @@
   color-scheme: dark;
   --radius: 0.5rem;
 
-  --background: #08080b;
-  --foreground: #f4f1f7;
-  --card-foreground: #f4f1f7;
-  --popover: #211c2a;
-  --popover-foreground: #f4f1f7;
-  /* "primary" in shadcn controls = selected state → electric purple */
-  --primary: #7b2cff;
-  --primary-foreground: #f4f1f7;
-  --secondary: #211c2a;
-  --secondary-foreground: #f4f1f7;
-  --muted: #15121d;
-  --muted-foreground: #96909f;
-  --accent: #211c2a;
-  --accent-foreground: #f4f1f7;
+  --background: #080808;
+  --foreground: #f5f5f5;
+  --card-foreground: #f5f5f5;
+  --popover: #1b1b1b;
+  --popover-foreground: #f5f5f5;
+  /* "primary" in shadcn controls = selected state → purple */
+  --primary: #6d19d9;
+  --primary-foreground: #f5f5f5;
+  --secondary: #1b1b1b;
+  --secondary-foreground: #f5f5f5;
+  --muted: #0f0f0f;
+  --muted-foreground: #858585;
+  --accent: #1b1b1b;
+  --accent-foreground: #f5f5f5;
   --destructive: #ff5470;
-  --border: #292333;
-  --input: #292333;
-  --ring: #a66bff;
+  --border: #242424;
+  --input: #242424;
+  --ring: #9452ff;
 
-  --chart-1: #7b2cff;
-  --chart-2: #a66bff;
-  --chart-3: #e7ff36;
-  --chart-4: #716b79;
-  --chart-5: #3a2f4d;
+  --chart-1: #6d19d9;
+  --chart-2: #858585;
+  --chart-3: #f5ff00;
+  --chart-4: #9452ff;
+  --chart-5: #2a2a2a;
 
-  --sidebar: #0d0b12;
-  --sidebar-foreground: #f4f1f7;
-  --sidebar-primary: #7b2cff;
-  --sidebar-primary-foreground: #f4f1f7;
-  --sidebar-accent: #191620;
-  --sidebar-accent-foreground: #f4f1f7;
-  --sidebar-border: #1e1a26;
-  --sidebar-ring: #a66bff;
+  --sidebar: #0b0b0b;
+  --sidebar-foreground: #f5f5f5;
+  --sidebar-primary: #6d19d9;
+  --sidebar-primary-foreground: #f5f5f5;
+  --sidebar-accent: #131313;
+  --sidebar-accent-foreground: #f5f5f5;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #9452ff;
 
-  /* Liquid Glass */
-  --glass-bg: rgba(21, 18, 29, 0.72);
-  --glass-bg-strong: rgba(17, 14, 24, 0.84);
-  --glass-fallback: rgba(21, 18, 29, 0.97);
+  /* Liquid Glass — neutral black, no tint */
+  --glass-bg: rgba(16, 16, 16, 0.72);
+  --glass-bg-strong: rgba(12, 12, 12, 0.86);
+  --glass-fallback: rgba(16, 16, 16, 0.97);
   --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.07);
   --glass-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
@@ -165,8 +170,8 @@
     font-feature-settings: "ss01" 0;
   }
   ::selection {
-    background: #7b2cff;
-    color: #f4f1f7;
+    background: #6d19d9;
+    color: #f5f5f5;
   }
   :focus-visible {
     outline: 2px solid var(--color-violet);
@@ -227,18 +232,14 @@
     -webkit-backdrop-filter: blur(28px) saturate(160%);
     backdrop-filter: blur(28px) saturate(160%);
   }
-  /* A controlled reflection along the top edge */
+  /* A controlled reflection: one crisp highlight line on the top edge — no soft gradient */
   .glass-sheen::before {
     content: "";
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
+    inset: 0 12% auto 12%;
+    height: 1px;
     pointer-events: none;
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.07) 0%,
-      rgba(255, 255, 255, 0) 38%
-    );
+    background: rgba(255, 255, 255, 0.16);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .glass,

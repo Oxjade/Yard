@@ -48,7 +48,7 @@ export function MarketHeader() {
       <div
         className={cn(
           "glass pointer-events-auto mx-auto flex h-14 max-w-page items-center gap-4 rounded-2xl pr-2 pl-4 transition-[background-color,box-shadow] duration-300 sm:pl-5",
-          scrolled && "bg-[rgba(14,12,20,0.82)]",
+          scrolled && "bg-[var(--glass-bg-strong)]",
         )}
       >
         <Wordmark />

@@ -24,10 +24,10 @@ export function MobileTabBar() {
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href)
           return (
-            <li key={href} className="relative">
+            <li key={href} className="relative isolate">
               <Link href={href} aria-current={active ? "page" : undefined} className={cn("flex h-full flex-col items-center justify-center gap-1 text-[11px] transition-colors", active ? "text-ink" : "text-ink-3")}>
-                {active ? <motion.span layoutId="tab-pill" className="absolute inset-x-1.5 inset-y-1.5 -z-10 rounded-xl bg-purple/22" /> : null}
-                <Icon className={cn("size-5", active && "text-violet")} strokeWidth={active ? 2 : 1.6} />
+                {active ? <motion.span layoutId="tab-pill" className="absolute inset-x-1.5 inset-y-1.5 -z-10 rounded-xl bg-purple" /> : null}
+                <Icon className="size-5" strokeWidth={active ? 2 : 1.6} />
                 {label}
               </Link>
             </li>

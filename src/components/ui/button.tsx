@@ -13,15 +13,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-acid text-obsidian hover:bg-[#efff6e] shadow-[0_0_0_1px_rgba(231,255,54,0.2),0_8px_24px_-12px_rgba(231,255,54,0.55)]",
-        secondary: "border-line bg-transparent text-ink hover:border-[#3a3247] hover:bg-elevated",
-        brand: "bg-purple text-ink hover:bg-[#8a45ff]",
+        primary: "bg-acid text-obsidian hover:bg-acid/85",
+        secondary: "border-line bg-transparent text-ink hover:border-ink-2/50 hover:bg-elevated",
+        brand: "bg-purple text-ink hover:bg-purple/85",
         ghost: "text-ink-2 hover:bg-elevated hover:text-ink",
-        glass: "glass text-ink hover:bg-[rgba(33,28,42,0.82)]",
+        glass: "glass text-ink hover:bg-[var(--glass-bg-strong)]",
         destructive: "bg-danger/12 text-danger hover:bg-danger/20 border-danger/25",
         link: "h-auto px-0 text-violet underline-offset-4 hover:underline",
         // shadcn aliases so generated components keep working
-        default: "bg-acid text-obsidian hover:bg-[#efff6e]",
+        default: "bg-acid text-obsidian hover:bg-acid/85",
         outline: "border-line bg-transparent text-ink hover:bg-elevated",
       },
       size: {

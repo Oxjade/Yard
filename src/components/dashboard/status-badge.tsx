@@ -3,19 +3,28 @@ import { cn } from "@/lib/utils"
 type Tone = "neutral" | "info" | "attention" | "success" | "danger" | "muted"
 
 const tones: Record<Tone, string> = {
-  neutral: "border-white/10 text-ink",
-  info: "border-violet/30 bg-purple/12 text-violet",
-  attention: "border-acid/30 bg-acid/10 text-acid",
-  success: "border-white/10 bg-white/5 text-ink",
-  danger: "border-danger/30 bg-danger/10 text-danger",
-  muted: "border-white/8 text-ink-3",
+  neutral: "border-white/12 text-ink",
+  info: "border-purple bg-purple/20 text-ink",
+  attention: "border-acid/50 text-acid",
+  success: "border-white/12 bg-white/5 text-ink",
+  danger: "border-danger/40 text-danger",
+  muted: "border-white/10 text-ink-3",
+}
+
+const dots: Record<Tone, string> = {
+  neutral: "bg-ink",
+  info: "bg-violet",
+  attention: "bg-acid",
+  success: "bg-ink",
+  danger: "bg-danger",
+  muted: "bg-ink-3",
 }
 
 /** Status pill used in every Studio and Admin table. Acid = needs action; purple = in progress. */
 export function StatusBadge({ tone = "neutral", children, className }: { tone?: Tone; children: React.ReactNode; className?: string }) {
   return (
     <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-[5px] border px-2 text-[11px] font-medium whitespace-nowrap", tones[tone], className)}>
-      <span className="size-1.5 rounded-full bg-current" aria-hidden />
+      <span className={cn("size-1.5 rounded-full", dots[tone])} aria-hidden />
       {children}
     </span>
   )
