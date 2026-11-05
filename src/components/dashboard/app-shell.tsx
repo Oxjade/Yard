@@ -78,13 +78,13 @@ export function AppShell({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div data-surface={surface} className={cn("min-h-dvh bg-obsidian", density === "dense" ? "text-[13px]" : "text-sm")}>
-      <aside className={cn("fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar lg:flex", density === "dense" ? "w-56" : "w-60")}>
-        <div className="border-b border-sidebar-border p-3">{header}</div>
+    <div data-surface={surface} className={cn("min-h-dvh", surface === "admin" ? "bg-[#080808]" : "bg-obsidian", density === "dense" ? "text-[13px]" : "text-sm")}>
+      <aside className={cn("fixed inset-y-0 left-0 z-30 hidden flex-col border-r lg:flex", surface === "admin" ? "border-[var(--admin-hairline)] bg-[#0a0a0a]/75 backdrop-blur-2xl" : "border-sidebar-border bg-sidebar", density === "dense" ? "w-56" : "w-60")}>
+        <div className={cn("border-b p-3", surface === "admin" ? "border-[var(--admin-hairline)]" : "border-sidebar-border")}>{header}</div>
         <div className="flex-1 overflow-y-auto p-3">
           <NavList groups={groups} root={root} density={density} />
         </div>
-        {footer ? <div className="border-t border-sidebar-border p-3">{footer}</div> : null}
+        {footer ? <div className={cn("border-t p-3", surface === "admin" ? "border-[var(--admin-hairline)]" : "border-sidebar-border")}>{footer}</div> : null}
       </aside>
 
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -115,7 +115,7 @@ export function AppShell({
       </DialogPrimitive.Root>
 
       <div className={cn(density === "dense" ? "lg:pl-56" : "lg:pl-60")}>
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line-soft bg-obsidian/85 px-4 backdrop-blur-xl md:px-6">
+        <header className={cn("sticky top-0 z-20 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-xl md:px-6", surface === "admin" ? "border-[var(--admin-hairline)] bg-[#080808]/55" : "border-line-soft bg-obsidian/85")}>
           <button type="button" onClick={() => setOpen(true)} className="inline-flex size-9 items-center justify-center rounded-md border border-line text-ink-2 lg:hidden" aria-label="Open navigation">
             <Menu className="size-4" />
           </button>

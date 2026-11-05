@@ -35,6 +35,16 @@ type AdminState = {
   decideAdjustment: (id: string, decision: "approved" | "rejected", reason: string) => void
 }
 
+const verbs = {
+  brand: { pending_review: "Returned brand to review", verified: "Verified brand", restricted: "Restricted brand", suspended: "Suspended brand" },
+  moderation: { open: "Reopened report", removed: "Removed listing", dismissed: "Dismissed report", escalated: "Escalated to legal" },
+  user: { active: "Reinstated account", restricted: "Restricted account", suspended: "Suspended account" },
+  payout: { scheduled: "Released payout", awaiting_approval: "Sent payout for approval", processing: "Approved payout", paid: "Marked payout as paid", held: "Held payout" },
+  refund: { requested: "Reopened refund request", approved: "Approved refund", issued: "Issued refund", declined: "Declined refund" },
+} as const
+
+const dollars = (cents: number) => "$" + (cents / 100).toFixed(2)
+
 function entry(action: string, target: string, reason?: string): AuditEntry {
   return { id: `au_${Date.now().toString(36)}_${Math.round(performance.now())}`, at: new Date().toISOString(), actor: adminUser.name, role: adminUser.role, action, target, reason, ip: "local" }
 }
@@ -56,23 +66,23 @@ export const useAdmin = create<AdminState>()(
       log: (action, target, reason) => set({ audit: [entry(action, target, reason), ...get().audit] }),
       setApplicationStatus: (id, status, reason) => {
         const a = get().applications.find((x) => x.id === id)
-        set({ applications: get().applications.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(`Set brand to ${status.replace("_", " ")}`, a?.brandName ?? id, reason), ...get().audit] })
+        set({ applications: get().applications.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(verbs.brand[status], a?.brandName ?? id, reason), ...get().audit] })
       },
       setModerationStatus: (id, status, reason) => {
         const m = get().moderation.find((x) => x.id === id)
-        set({ moderation: get().moderation.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(`Listing ${status}`, m?.title ?? id, reason), ...get().audit] })
+        set({ moderation: get().moderation.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(verbs.moderation[status], m?.title ?? id, reason), ...get().audit] })
       },
       setUserStatus: (id, status, reason) => {
         const u = get().users.find((x) => x.id === id)
-        set({ users: get().users.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(`Set account to ${status}`, u?.name ?? id, reason), ...get().audit] })
+        set({ users: get().users.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(verbs.user[status], u?.name ?? id, reason), ...get().audit] })
       },
       setPayoutStatus: (id, status, reason) => {
         const p = get().payouts.find((x) => x.id === id)
-        set({ payouts: get().payouts.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(`Payout ${status.replace("_", " ")}`, p?.brandName ?? id, reason), ...get().audit] })
+        set({ payouts: get().payouts.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(verbs.payout[status], p ? `${p.brandName}, ${dollars(p.amountUsd)}` : id, reason), ...get().audit] })
       },
       setRefundStatus: (id, status, reason) => {
         const r = get().refunds.find((x) => x.id === id)
-        set({ refunds: get().refunds.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(`Refund ${status}`, r ? `#${r.reference}` : id, reason), ...get().audit] })
+        set({ refunds: get().refunds.map((x) => (x.id === id ? { ...x, status } : x)), audit: [entry(verbs.refund[status], r ? `#${r.reference}, ${dollars(r.amountUsd)}` : id, reason), ...get().audit] })
       },
       reviewCampaign: (id, decision, reason) => {
         const c = get().campaigns.find((x) => x.id === id)

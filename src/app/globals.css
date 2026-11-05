@@ -285,6 +285,102 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * Admin Control Center — "control room" layer.
+ * Only on [data-surface="admin"]: atmospheric depth from layered, very low-alpha
+ * gradients and a purple ambient backlight; 1px low-opacity hairlines; deep surfaces.
+ * Type scale (admin): 11 caption · 12 small · 13 body · 15 lead · 18 h2 · 28 h1 · 34/48 metrics.
+ * ───────────────────────────────────────────────────────────── */
+@layer components {
+  /* Condensed numerals for metrics */
+  .font-metric {
+    font-family: var(--font-display);
+    font-stretch: 72%;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.012em;
+    line-height: 0.92;
+  }
+  /* Expanded headings and labels (sentence case, never all caps) */
+  .font-label {
+    font-family: var(--font-display);
+    font-stretch: 118%;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+  }
+
+  [data-surface="admin"] {
+    --admin-hairline: rgba(255, 255, 255, 0.07);
+    --admin-hairline-strong: rgba(255, 255, 255, 0.13);
+    --admin-surface: #0c0c0c;
+    --admin-surface-2: #111111;
+    --admin-glow: rgba(109, 25, 217, 0.16);
+    position: relative;
+    isolation: isolate;
+  }
+  /* Ambient backlight behind everything: purple from the top-left, a whisper of yellow below */
+  [data-surface="admin"]::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 620px at 14% -12%, rgba(109, 25, 217, 0.17), transparent 62%),
+      radial-gradient(760px 460px at 104% 6%, rgba(109, 25, 217, 0.07), transparent 60%),
+      radial-gradient(900px 420px at 60% 118%, rgba(245, 255, 0, 0.025), transparent 60%),
+      linear-gradient(180deg, #0a0a0a 0%, #080808 40%);
+  }
+  /* A barely-there grid texture so large dark areas never read as flat */
+  [data-surface="admin"]::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(1200px 700px at 30% 0%, #000 20%, transparent 75%);
+  }
+
+  /* Layered panel surface: top light falloff, inner highlight, deep drop shadow */
+  .admin-panel {
+    position: relative;
+    border-radius: 14px;
+    border: 1px solid var(--admin-hairline);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0.008) 38%, rgba(255, 255, 255, 0) 100%),
+      var(--admin-surface);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      0 1px 0 rgba(0, 0, 0, 0.6),
+      0 24px 48px -32px rgba(0, 0, 0, 0.95);
+  }
+  /* Optional ambient bloom in a panel's corner (used on the hero metric) */
+  .admin-panel-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(420px 220px at 0% 0%, var(--admin-glow), transparent 70%);
+  }
+  .admin-panel-attention {
+    border-color: rgba(245, 255, 0, 0.28);
+  }
+  .admin-inset {
+    border-radius: 10px;
+    border: 1px solid var(--admin-hairline);
+    background: rgba(255, 255, 255, 0.018);
+  }
+  .admin-divide > * + * {
+    border-top: 1px solid var(--admin-hairline);
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

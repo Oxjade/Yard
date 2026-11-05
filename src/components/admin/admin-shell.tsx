@@ -1,30 +1,60 @@
 "use client"
 
 import Link from "next/link"
-import { Activity, BadgeCheck, Banknote, Flag, LayoutDashboard, Megaphone, Package, ShieldCheck, ShoppingCart, Users } from "lucide-react"
+import { Activity, BadgeCheck, Banknote, Flag, LayoutDashboard, LogOut, Megaphone, ShieldCheck, ShoppingCart, Users } from "lucide-react"
 import { AppShell, type ShellNavGroup } from "@/components/dashboard/app-shell"
-import { adminRoles, adminUser, brandApplications, moderationQueue, refunds } from "@/lib/data/admin"
-import { campaigns } from "@/lib/data/ads"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { adminRoles, adminUser, healthServices } from "@/lib/data/admin"
+import { useAdmin } from "@/lib/stores/admin"
 import { site } from "@/config/site"
+import { cn } from "@/lib/utils"
 
-/** The internal Admin Control Center: dense, operational, data-first. */
+/** System status pill for the top bar: operational, or how many services are degraded. */
+function SystemStatus() {
+  const degraded = healthServices.filter((s) => s.status !== "operational").length
+  return (
+    <Link
+      href="/admin/health"
+      className={cn(
+        "hidden h-8 items-center gap-2 rounded-full border px-3 text-[12px] transition-colors md:inline-flex",
+        degraded ? "border-acid/40 text-acid hover:bg-acid/5" : "border-[var(--admin-hairline-strong)] text-ink-2 hover:text-ink",
+      )}
+    >
+      <span className="relative flex size-2">
+        {degraded ? <span className="absolute inline-flex size-full animate-ping rounded-full bg-acid/70" /> : null}
+        <span className={cn("relative inline-flex size-2 rounded-full", degraded ? "bg-acid" : "bg-violet")} />
+      </span>
+      {degraded ? `${degraded} service degraded` : "All systems operational"}
+    </Link>
+  )
+}
+
+/** The internal Admin Control Center: a control room — dense, operational, data-first. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  const hydrated = useHydrated()
+  const pendingBrands = useAdmin((s) => s.applications.filter((a) => a.status === "pending_review").length)
+  const openModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
+  const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
+  const payoutsToApprove = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
+  const inReview = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
+  const n = (v: number) => (hydrated && v > 0 ? v : undefined)
+
   const groups: ShellNavGroup[] = [
     { items: [{ href: "/admin", label: "Overview", icon: LayoutDashboard }] },
     {
       label: "Marketplace",
       items: [
-        { href: "/admin/brands", label: "Brands", icon: BadgeCheck, badge: brandApplications.filter((a) => a.status === "pending_review").length },
+        { href: "/admin/brands", label: "Brands", icon: BadgeCheck, badge: n(pendingBrands) },
         { href: "/admin/users", label: "Users", icon: Users },
-        { href: "/admin/products", label: "Moderation", icon: Flag, badge: moderationQueue.filter((m) => m.status === "open" || m.status === "escalated").length },
+        { href: "/admin/products", label: "Moderation", icon: Flag, badge: n(openModeration) },
         { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
       ],
     },
     {
       label: "Money",
       items: [
-        { href: "/admin/finance", label: "Finance", icon: Banknote, badge: refunds.filter((r) => r.status === "requested").length || undefined },
-        { href: "/admin/advertising", label: "Advertising", icon: Megaphone, badge: campaigns.filter((c) => c.status === "in_review").length || undefined },
+        { href: "/admin/finance", label: "Finance", icon: Banknote, badge: n(refunds + payoutsToApprove) },
+        { href: "/admin/advertising", label: "Advertising", icon: Megaphone, badge: n(inReview) },
       ],
     },
     {
@@ -43,25 +73,30 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       density="dense"
       groups={groups}
       header={
-        <div className="flex items-center justify-between gap-2 p-1">
+        <div className="flex items-center justify-between gap-2 px-1 py-1.5">
           <div className="min-w-0">
-            <p className="font-wide chrome-text truncate text-[13px] tracking-[0.14em]">{site.name}</p>
-            <p className="mt-1 text-[11px] text-ink-3">Control Center</p>
+            <p className="font-wide chrome-text truncate text-[13px] tracking-[0.16em]">{site.name}</p>
+            <p className="font-label mt-1.5 text-[11px] text-ink-3">Control Center</p>
           </div>
-          <span className="rounded-[4px] border border-acid/30 bg-acid/10 px-1.5 py-0.5 text-[10px] font-medium text-acid">Internal</span>
+          <span className="rounded-[5px] border border-acid/40 px-1.5 py-0.5 text-[10px] font-medium text-acid">Internal</span>
         </div>
       }
       footer={
-        <div className="flex items-center gap-2.5 px-1.5">
-          <span className="inline-flex size-7 items-center justify-center rounded-full bg-elevated text-[11px] font-semibold">KA</span>
+        <div className="flex items-center gap-2.5 px-1">
+          <span className="relative inline-flex size-8 items-center justify-center rounded-full bg-purple text-[11px] font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+            KA
+            <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-[#0a0a0a] bg-violet" aria-label="Online" />
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-ink">{adminUser.name}</p>
+            <p className="truncate text-[12px] text-ink">{adminUser.name}</p>
             <p className="truncate text-[11px] text-ink-3">{adminRoles[adminUser.role].name}, MFA on</p>
           </div>
-          <Link href="/" className="text-[11px] text-ink-3 hover:text-ink">Exit</Link>
+          <Link href="/" aria-label="Leave the Control Center" className="inline-flex size-7 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-white/5 hover:text-ink">
+            <LogOut className="size-3.5" />
+          </Link>
         </div>
       }
-      topbar={<span className="hidden text-xs text-ink-3 md:inline">Production view, development data</span>}
+      topbar={<SystemStatus />}
     >
       {children}
     </AppShell>
