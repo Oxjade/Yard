@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment } from "react"
-import { ProductCard } from "@/components/market/product-card"
+import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, Drop, Product, Story, StorefrontConfig, StorefrontSection } from "@/lib/data/types"
 import { AnnouncementBar, CollectionIndex, Container, PreviewPlaceholder, StorefrontFooter, headerClearance, type StorefrontContext } from "./parts"
@@ -73,12 +73,12 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
       }
       case "drops":
         if (!groupDrops(drops).length) return placeholder(section, first, index, "Schedule a drop to show it here.")
-        return <DropsSection {...common} drops={drops} />
+        return <DropsSection {...common} drops={drops} products={products} />
       case "story":
         if (!brand.story.length) return placeholder(section, first, index, "Write your story in Brand Studio settings.")
         return <StorySection {...common} stories={stories} />
       case "lookbook": {
-        const frames = lookbookFrames(brand, products, config.template === "street" || config.template === "editorial" ? 5 : 4)
+        const frames = lookbookFrames(brand, products, config.template === "street" || config.template === "editorial" ? 5 : 4, { coverInHero: hasHero })
         if (frames.length < 3) return placeholder(section, first, index, "A lookbook needs at least three photographs.")
         return <LookbookSection {...common} frames={frames} />
       }
@@ -183,7 +183,7 @@ function SaleStrip({ ctx, products, first }: { ctx: StorefrontContext; products:
             )}
           >
             {products.map((p) => (
-              <ProductCard key={p.id} product={p} variant="compact" sizes={few ? "(min-width: 768px) 16rem, 45vw" : "(min-width: 1024px) 14vw, 45vw"} />
+              <ShopProductCard key={p.id} product={p} variant="compact" sizes={few ? "(min-width: 768px) 16rem, 45vw" : "(min-width: 1024px) 14vw, 45vw"} />
             ))}
           </div>
         </div>

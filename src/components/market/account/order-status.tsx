@@ -7,14 +7,46 @@ type Tone = NonNullable<React.ComponentProps<typeof StatusBadge>["tone"]>
 
 /** The shopper's words for each order state (Studio uses the merchant's: "To fulfil", …). */
 export const customerOrderStatus: Record<MerchantOrderStatus, { label: string; tone: Tone; note: string }> = {
-  pending_payment: { label: "Awaiting payment", tone: "muted", note: "We'll confirm as soon as the payment provider does." },
+  pending_payment: { label: "Awaiting payment", tone: "muted", note: "Not charged yet. The brand starts preparing it once the payment provider confirms payment." },
   paid: { label: "Confirmed", tone: "neutral", note: "The brand has your order and will start preparing it soon." },
   processing: { label: "Being prepared", tone: "info", note: "The brand is packing your order. Tracking follows when it ships." },
   shipped: { label: "On its way", tone: "info", note: "Your parcel is with the carrier." },
   delivered: { label: "Delivered", tone: "success", note: "Delivered. Something not right? You can request a return." },
-  cancelled: { label: "Cancelled", tone: "muted", note: "This order was cancelled before it shipped and you were refunded in full." },
+  cancelled: { label: "Cancelled", tone: "muted", note: "Cancelled before it shipped." },
   refund_requested: { label: "Return requested", tone: "attention", note: "The brand is reviewing your return request." },
   refunded: { label: "Refunded", tone: "muted", note: "Your refund was issued to your original payment method." },
+}
+
+/**
+ * The status note for one order. A cancellation reads differently depending on whether the
+ * order was ever paid: Studio can cancel unpaid orders, and nothing is refunded for those.
+ */
+export function orderStatusNote(order: Pick<MerchantOrder, "status" | "paymentStatus">) {
+  if (order.status !== "cancelled") return customerOrderStatus[order.status].note
+  if (order.paymentStatus === "pending" || order.paymentStatus === "failed") return "Cancelled before it was paid, so nothing was charged."
+  if (order.paymentStatus === "refunded") return "Cancelled before it shipped, and marked refunded to your original payment method."
+  return "Cancelled before it shipped. The refund goes back to your original payment method once the payment provider processes it."
+}
+
+/**
+ * How a checkout's total reads, from its orders' payment states. "Total charged" only when
+ * every order was captured; refunds, pending payments and unpaid cancellations say so instead.
+ */
+export function checkoutPayment(orders: Pick<MerchantOrder, "status" | "paymentStatus">[]): { label: string; status: string; note?: string; tone?: "violet" | "muted" } {
+  // An order cancelled before it was paid will never be charged.
+  const states = orders.map((o) => (o.status === "cancelled" && (o.paymentStatus === "pending" || o.paymentStatus === "failed") ? "void" : o.paymentStatus))
+  const all = (...s: (typeof states)[number][]) => states.length > 0 && states.every((x) => s.includes(x))
+  const some = (...s: (typeof states)[number][]) => states.some((x) => s.includes(x))
+  if (all("void")) return { label: "Total", status: "Cancelled", note: "Cancelled before payment, nothing was charged", tone: "muted" }
+  if (all("pending")) return { label: "Total", status: "Awaiting confirmation", note: "Not charged, awaiting payment confirmation", tone: "violet" }
+  if (some("pending")) return { label: "Total", status: "Partly awaiting confirmation", note: "Partly awaiting payment confirmation, see each order", tone: "violet" }
+  if (all("captured")) return { label: "Total charged", status: "Confirmed" }
+  if (all("authorized", "captured")) return { label: "Total", status: "Authorised", note: "Authorised, charged as each brand ships", tone: "muted" }
+  if (all("refunded")) return { label: "Total", status: "Refunded in full", note: "Refunded in full", tone: "muted" }
+  if (some("refunded", "partially_refunded")) return { label: "Total", status: "Partly refunded", note: "Partly refunded, see each order", tone: "muted" }
+  if (some("void")) return { label: "Total", status: "Partly cancelled", note: "Partly cancelled, see each order", tone: "muted" }
+  if (all("failed")) return { label: "Total", status: "Didn't go through", note: "Payment didn't go through, nothing was charged", tone: "muted" }
+  return { label: "Total", status: "See each order", note: "See each order for its payment", tone: "muted" }
 }
 
 export function OrderStatusBadge({ status, className }: { status: MerchantOrderStatus; className?: string }) {
@@ -33,13 +65,14 @@ export function trackingUrl(tracking: NonNullable<MerchantOrder["tracking"]>) {
   return `https://parcelsapp.com/en/tracking/${n}`
 }
 
+/** The text is small, so a pseudo-element gives it a 40px tap target without moving anything. */
 export function TrackingLink({ tracking, className }: { tracking: NonNullable<MerchantOrder["tracking"]>; className?: string }) {
   return (
     <a
       href={trackingUrl(tracking)}
       target="_blank"
       rel="noopener noreferrer"
-      className={cn("inline-flex items-center gap-1.5 text-xs text-violet underline-offset-4 hover:underline", className)}
+      className={cn("relative inline-flex items-center gap-1.5 text-xs text-violet underline-offset-4 after:absolute after:-inset-x-1 after:-inset-y-3 hover:underline", className)}
     >
       Track with {tracking.carrier}
       <ExternalLink className="size-3.5" aria-hidden />

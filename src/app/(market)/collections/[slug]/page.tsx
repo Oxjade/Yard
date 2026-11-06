@@ -1,18 +1,22 @@
 import type { Metadata } from "next"
 import Image from "next/image"
+import Link from "next/link"
 import { notFound } from "next/navigation"
+import { PackageIcon } from "@phosphor-icons/react/ssr"
 import { BrandCard } from "@/components/market/brand-card"
-import { ProductCard } from "@/components/market/product-card"
+import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
 import { SectionHeader } from "@/components/market/section-header"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
 import { CollectionTile } from "@/components/market/editorial/collection-tile"
+import { EmptyCard } from "@/components/market/editorial/empty-card"
+import { Button } from "@/components/ui/button"
 import { brandById, curatedCollections, diversify, getCuratedCollection, productById, products } from "@/lib/data"
 import { cn } from "@/lib/utils"
 import type { Brand, Product } from "@/lib/data/types"
 
 /**
- * The slug is checked before anything renders so an unknown collection answers with a real
- * 404. That check needs the URL, so this segment may block; every known edit is prerendered below.
+ * layout.tsx checks the address first, so an unknown edit answers with a real 404 and this
+ * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
 
@@ -98,11 +102,20 @@ export default async function CollectionPage({ params }: PageProps<"/collections
           {picks.length ? (
             <div className={cn("grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4", picks.length % 3 === 0 ? "md:grid-cols-3" : "md:grid-cols-4")}>
               {picks.map((p, i) => (
-                <ProductCard key={p.id} product={p} variant={picks.length % 3 === 0 ? "default" : "tall"} priority={i < 2} />
+                <ShopProductCard key={p.id} product={p} variant={picks.length % 3 === 0 ? "default" : "tall"} priority={i < 2} />
               ))}
             </div>
           ) : (
-            <p className="rounded-lg border border-line-soft bg-card p-6 text-sm text-ink-2">The pieces in this edit are between seasons. The brands above are still open.</p>
+            <EmptyCard
+              icon={<PackageIcon />}
+              title="The pieces in this edit are between seasons"
+              reason="They're sold out or not published right now; the brands above are still open."
+              action={
+                <Button asChild variant="primary">
+                  <Link href={`/shop?brands=${brandHandles}`}>Shop these brands</Link>
+                </Button>
+              }
+            />
           )}
         </section>
 
@@ -113,7 +126,7 @@ export default async function CollectionPage({ params }: PageProps<"/collections
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4">
               {moreRow.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <ShopProductCard key={p.id} product={p} />
               ))}
             </div>
           </section>

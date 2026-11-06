@@ -2,8 +2,9 @@
 
 import { useId, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Chip } from "@/components/market/catalog/chip"
-import { ProductCard } from "@/components/market/product-card"
+import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
+import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
+import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Product, StorefrontSection } from "@/lib/data/types"
 import { Container, SectionHeading, SectionShell, type StorefrontContext } from "../parts"
@@ -40,7 +41,7 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
 
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           {groups.length > 1 ? (
-            <div role="group" aria-label={`Filter ${ctx.brand.name} products by category`} className="rail -mx-4 flex gap-2 overflow-x-auto px-4 @3xl:mx-0 @3xl:flex-wrap @3xl:overflow-visible @3xl:px-0">
+            <ChipRadioGroup label={`Filter ${ctx.brand.name} products by category`} className="rail -mx-4 flex gap-2 overflow-x-auto px-4 @3xl:mx-0 @3xl:flex-wrap @3xl:overflow-visible @3xl:px-0">
               {options.map((o) => {
                 const on = current === o.name
                 return (
@@ -49,6 +50,7 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
                     selected={on}
                     onClick={() => setActive(o.name)}
                     layoutId={`${layoutId}-pill`}
+                    radio
                     // The marketplace chip, filled in the brand accent instead of purple.
                     className={cn(on && "border-(color:--sf-accent) text-(color:--sf-on-accent) [&>span:first-child]:bg-(color:--sf-accent)")}
                   >
@@ -57,7 +59,7 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
                   </Chip>
                 )
               })}
-            </div>
+            </ChipRadioGroup>
           ) : null}
           <p className="text-sm text-ink-2 tabular" aria-live="polite">
             {shown.length} {shown.length === 1 ? "piece" : "pieces"}
@@ -70,11 +72,11 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: duration.page, ease: ease.out }}
             className={grid[ctx.template]}
           >
             {shown.map((p) => (
-              <ProductCard key={p.id} product={p} variant={ctx.template === "street" ? "tall" : "default"} />
+              <ShopProductCard key={p.id} product={p} variant={ctx.template === "street" ? "tall" : "default"} />
             ))}
           </motion.div>
         </AnimatePresence>

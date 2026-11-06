@@ -18,7 +18,7 @@ export function ProductBreadcrumb({ product, category, brand }: { product: Produ
                 /
               </span>
             ) : null}
-            <Link href={c.href} className="rounded-md py-1 transition-colors hover:text-ink">
+            <Link href={c.href} className="-my-2 inline-flex min-h-10 items-center rounded-md transition-colors duration-150 hover:text-ink">
               {c.label}
             </Link>
           </li>

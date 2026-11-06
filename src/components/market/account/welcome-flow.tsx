@@ -1,15 +1,16 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react"
-import { AnimatePresence, motion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { BrandCard } from "@/components/market/brand-card"
 import { Chip } from "@/components/market/catalog/chip"
 import { Button } from "@/components/ui/button"
 import { aestheticLabels, brands, categories, categoryBySlug, recommendBrands } from "@/lib/data"
+import { duration, ease } from "@/lib/motion"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
@@ -40,6 +41,18 @@ function ChipImage({ image }: { image: ImageAsset }) {
     <span className="relative size-9 shrink-0 overflow-hidden rounded-full bg-card" aria-hidden>
       <Image src={image.src} alt="" fill sizes="36px" className="object-cover" />
     </span>
+  )
+}
+
+function StepTitle({ focus, children }: { focus: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (focus) ref.current?.focus({ preventScroll: true })
+  }, [focus])
+  return (
+    <h1 ref={ref} tabIndex={-1} className="font-display text-display-lg text-ink outline-none">
+      {children}
+    </h1>
   )
 }
 
@@ -76,7 +89,20 @@ export function WelcomeFlow() {
       .map((s) => s.b)
   }, [step, cats, looks])
 
+  const topRef = useRef<HTMLDivElement>(null)
+  const [navigated, setNavigated] = useState(false)
+  const reduceMotion = useReducedMotion()
+
+  // After Back or Continue (often pressed at the foot of a long step), bring the new step
+  // into view; its heading takes focus when it mounts (StepTitle) so the change is announced.
+  useEffect(() => {
+    if (!navigated) return
+    const top = topRef.current?.getBoundingClientRect().top ?? 0
+    if (top < 80) window.scrollTo({ top: window.scrollY + top - 112, behavior: reduceMotion ? "auto" : "smooth" })
+  }, [step, navigated, reduceMotion])
+
   function go(to: number) {
+    setNavigated(true)
     setDir(to > step ? 1 : -1)
     setStep(to)
   }
@@ -106,10 +132,10 @@ export function WelcomeFlow() {
   const visual = lastPick ?? { key: "default", label: "Independent brands, found first", image: fallback }
 
   return (
-    <div>
+    <div ref={topRef}>
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-violet">Welcome, {firstName(user.name)}</p>
-        <button type="button" onClick={() => finish(false)} className="text-sm text-ink-2 underline-offset-4 transition-colors hover:text-ink hover:underline">
+        <button type="button" onClick={() => finish(false)} className="relative rounded-sm text-sm text-ink-2 underline-offset-4 transition-colors after:absolute after:-inset-x-2 after:-inset-y-2.5 hover:text-ink hover:underline">
           Skip setup
         </button>
       </div>
@@ -117,7 +143,7 @@ export function WelcomeFlow() {
       <div className="mt-4 grid grid-cols-3 gap-2" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step + 1} aria-valuetext={`Step ${step + 1} of 3`}>
         {steps.map((s, i) => (
           <span key={s.title} className="h-1 overflow-hidden rounded-full bg-line">
-            <motion.span className="block h-full origin-left rounded-full bg-violet" initial={false} animate={{ scaleX: i <= step ? 1 : 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} />
+            <motion.span className="block h-full origin-left rounded-full bg-violet" initial={false} animate={{ scaleX: i <= step ? 1 : 0 }} transition={{ duration: duration.drawer, ease: ease.out }} />
           </span>
         ))}
       </div>
@@ -131,10 +157,10 @@ export function WelcomeFlow() {
             initial={{ opacity: 0, x: 28 * dir }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -28 * dir }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: duration.page, ease: ease.out }}
             className="min-w-0"
           >
-            <h1 className="font-display text-display-lg text-ink">{steps[step].title}</h1>
+            <StepTitle focus={navigated}>{steps[step].title}</StepTitle>
             <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{steps[step].body}</p>
 
             {step === 0 ? (
@@ -192,17 +218,22 @@ export function WelcomeFlow() {
                   <ArrowLeft /> Back
                 </Button>
               ) : null}
+              {step < 2 && picks === 0 ? (
+                <p id="welcome-continue-hint" className="text-xs text-ink-3">
+                  Pick at least one to continue, or skip this step.
+                </p>
+              ) : null}
               <div className="ml-auto flex flex-wrap items-center gap-3">
                 <Button variant="secondary" size="lg" onClick={skip}>
                   {step === 2 ? "Skip and finish" : "Skip"}
                 </Button>
                 {step < 2 ? (
-                  <Button variant="primary" size="lg" disabled={picks === 0} onClick={() => go(step + 1)}>
+                  <Button variant="primary" size="lg" disabled={picks === 0} aria-describedby={picks === 0 ? "welcome-continue-hint" : undefined} onClick={() => go(step + 1)}>
                     {picks ? `Continue with ${picks} ${picks === 1 ? "pick" : "picks"}` : "Continue"}
                   </Button>
                 ) : (
                   <Button variant="primary" size="lg" onClick={() => finish()}>
-                    Finish and go to Discover
+                    {next === "/" ? "Finish and go to Discover" : "Finish"}
                   </Button>
                 )}
               </div>
@@ -213,7 +244,7 @@ export function WelcomeFlow() {
         {step < 2 ? (
           <figure className="relative hidden aspect-[4/5] overflow-hidden rounded-lg bg-card lg:block">
             <AnimatePresence initial={false}>
-              <motion.div key={visual.key} className="absolute inset-0" initial={{ opacity: 0, scale: 1.03 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key={visual.key} className="absolute inset-0" initial={{ opacity: 0, scale: 1.03 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: duration.chart, ease: ease.out }}>
                 <Image src={visual.image.src} alt="" fill sizes="460px" className="object-cover" />
                 <span className="scrim-b absolute inset-0" aria-hidden />
               </motion.div>

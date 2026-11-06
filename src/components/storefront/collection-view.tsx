@@ -6,12 +6,15 @@ import Link from "next/link"
 import { PackageIcon as PackageOpen } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
-import { ProductCard } from "@/components/market/product-card"
+import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
+import { EmptyCard } from "@/components/market/editorial/empty-card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { priceUsd } from "@/lib/data"
+import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, Product } from "@/lib/data/types"
+import { usePublishedStorefront } from "./live-storefront"
 import { AccentLink } from "./parts"
 import { collectionHref } from "./sections/collections"
 import { accentStyle, collectionsAnchorId, storefrontType } from "./theme"
@@ -39,27 +42,30 @@ function sortProducts(list: Product[], sort: Sort) {
  * storefront. The header follows the marketplace's other image-header pages (/collections,
  * /categories): full-bleed photograph, scrim-l and scrim-b, title at the foot.
  */
-export function CollectionView({ brand, collection, products, others }: { brand: Brand; collection: Collection; products: Product[]; others: Collection[] }) {
+export function CollectionView({ brand: seedBrand, collection, products, others }: { brand: Brand; collection: Collection; products: Product[]; others: Collection[] }) {
   const [sort, setSort] = useState<Sort>("featured")
   const sorted = useMemo(() => sortProducts(products, sort), [products, sort])
-  const type = storefrontType[brand.storefront.typePreset] ?? storefrontType.condensed
+  // Accent, headline type, mark and the breadcrumb's anchor follow the storefront the brand has
+  // published (the Studio brand's lives in the Studio store), so the page matches the storefront.
+  const { brand, config } = usePublishedStorefront(seedBrand)
+  const type = storefrontType[config.typePreset] ?? storefrontType.condensed
   const storefront = `/brands/${brand.handle}`
   // Where the storefront lists its collections: the section, or the index under a Street hero.
-  const anchor = collectionsAnchorId(brand.storefront, [collection, ...others])
+  const anchor = collectionsAnchorId(config, [collection, ...others])
   const crumbs = [
     { href: storefront, label: brand.name },
     ...(anchor ? [{ href: `${storefront}#${anchor}`, label: "Collections" }] : []),
   ]
 
   return (
-    <div style={accentStyle(brand.storefront.accent)} className="@container">
+    <div style={accentStyle(config.accent)} className="@container">
       <header className="relative isolate overflow-hidden">
         <Image src={collection.image.src} alt={collection.image.alt} fill preload sizes="100vw" className="-z-10 object-cover" />
         <span aria-hidden className="scrim-l absolute inset-0 -z-10" />
         <span aria-hidden className="scrim-b absolute inset-0 -z-10" />
         <div className="mx-auto flex min-h-[520px] max-w-page flex-col px-4 pt-28 pb-8 md:min-h-[620px] md:px-8 md:pt-32 md:pb-12">
           <nav aria-label="Breadcrumb">
-            <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink/80">
+            <ol className="flex min-w-0 flex-wrap items-center gap-x-2 text-sm text-ink/80 lg:gap-y-1">
               {crumbs.map((c, i) => (
                 <li key={c.href} className="flex items-center gap-2">
                   {i > 0 ? (
@@ -67,7 +73,7 @@ export function CollectionView({ brand, collection, products, others }: { brand:
                       /
                     </span>
                   ) : null}
-                  <Link href={c.href} className="inline-flex items-center gap-2 rounded-sm transition-colors hover:text-(color:--sf-accent)">
+                  <Link href={c.href} className="inline-flex min-h-10 items-center gap-2 rounded-sm transition-colors hover:text-(color:--sf-accent) lg:min-h-0">
                     {i === 0 ? <BrandMark brand={brand} size="xs" /> : null}
                     {c.label}
                   </Link>
@@ -122,27 +128,25 @@ export function CollectionView({ brand, collection, products, others }: { brand:
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: duration.page, ease: ease.out }}
                 className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3 lg:grid-cols-4"
               >
                 {sorted.map((p, i) => (
-                  <ProductCard key={p.id} product={p} priority={i < 2} />
+                  <ShopProductCard key={p.id} product={p} priority={i < 2} />
                 ))}
               </motion.div>
             </AnimatePresence>
           ) : (
-            <div className="flex flex-col items-center gap-4 px-6 py-20 text-center">
-              <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
-                <PackageOpen className="size-6 text-ink-2" />
-              </span>
-              <div>
-                <p className="text-base text-ink">Nothing in this collection right now</p>
-                <p className="mt-1 text-sm text-ink-2">Its pieces have sold out or been taken down. The rest of {brand.name} is still on.</p>
-              </div>
-              <Button asChild variant="primary">
-                <Link href={storefront}>Visit {brand.name}</Link>
-              </Button>
-            </div>
+            <EmptyCard
+              icon={<PackageOpen />}
+              title="Nothing in this collection right now"
+              reason={`Its pieces have sold out or been taken down; the rest of ${brand.name} is still open.`}
+              action={
+                <Button asChild variant="primary">
+                  <Link href={storefront}>Visit {brand.name}</Link>
+                </Button>
+              }
+            />
           )}
         </section>
 

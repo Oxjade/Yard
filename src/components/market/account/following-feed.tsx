@@ -7,13 +7,14 @@ import { ArrowUpRightIcon as ArrowUpRight, RssIcon as Rss } from "@phosphor-icon
 import { AnimatePresence, motion } from "motion/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { BrandMark } from "@/components/market/brand-mark"
-import { Chip } from "@/components/market/catalog/chip"
+import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { DropCard } from "@/components/market/drop-card"
 import { StoryCard } from "@/components/market/editorial/story-card"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
 import { brandById, recommendBrands } from "@/lib/data"
+import { duration, ease } from "@/lib/motion"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import type { Brand } from "@/lib/data/types"
@@ -51,7 +52,7 @@ function FeedCard({ item }: { item: FeedItem }) {
   return (
     <article className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
       <header className="flex items-center gap-3">
-        <Link href={`/brands/${brand.handle}`} aria-label={brand.name} className="shrink-0">
+        <Link href={`/brands/${brand.handle}`} aria-label={brand.name} className="relative shrink-0 after:absolute after:-inset-1">
           <BrandMark brand={brand} size="sm" />
         </Link>
         <p className="min-w-0 flex-1 text-sm text-ink-2">
@@ -128,7 +129,17 @@ export function FollowingFeed() {
   const [filter, setFilter] = useState<Filter>("all")
   const [limit, setLimit] = useState(PAGE)
 
-  const feed = useMemo(() => buildFeed(following), [following])
+  // Rows in "You follow" stay put for the visit: unfollowing one turns its button back to
+  // Follow instead of pulling the row (and focus) out from under the shopper. New follows
+  // join the end of the list.
+  const [visitFollowing] = useState(() => following)
+  const rowIds = useMemo(() => [...visitFollowing, ...following.filter((id) => !visitFollowing.includes(id))], [visitFollowing, following])
+  // The feed is a snapshot too, so cards and filter counts don't shift while the shopper is
+  // working in the list beside it; "Update feed" brings it in line with their follows.
+  const [feedIds, setFeedIds] = useState(() => following)
+  const feedSource = feedIds.length ? feedIds : following
+  const feedStale = feedIds.length > 0 && (feedIds.length !== following.length || feedIds.some((id) => !following.includes(id)))
+  const feed = useMemo(() => buildFeed(feedSource), [feedSource])
   const counts = useMemo(() => {
     const c: Record<Filter, number> = { all: feed.length, products: 0, collection: 0, drop: 0, story: 0 }
     for (const i of feed) c[i.kind] += 1
@@ -137,6 +148,7 @@ export function FollowingFeed() {
   const filtered = filter === "all" ? feed : feed.filter((i) => i.kind === filter)
   const shown = filtered.slice(0, limit)
   const followedBrands = following.map((id) => brandById.get(id)).filter((b): b is Brand => !!b)
+  const rowBrands = rowIds.map((id) => brandById.get(id)).filter((b): b is Brand => !!b)
   // Suggestions are worked out once per visit so a brand doesn't vanish the moment it's followed.
   const [suggested] = useState(() => recommendBrands({ interests, following }, following.length ? 3 : 4))
 
@@ -160,7 +172,7 @@ export function FollowingFeed() {
     </header>
   )
 
-  if (!followedBrands.length) {
+  if (!rowBrands.length) {
     return (
       <>
         {header}
@@ -197,7 +209,7 @@ export function FollowingFeed() {
       <YouNav className="mt-8" />
       <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-14 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">
-          <div role="radiogroup" aria-label="Show updates" className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+          <ChipRadioGroup label="Show updates" className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
             {(Object.keys(filterLabels) as Filter[]).map((k) => (
               <Chip
                 key={k}
@@ -213,14 +225,58 @@ export function FollowingFeed() {
                 {filterLabels[k]}
               </Chip>
             ))}
-          </div>
+          </ChipRadioGroup>
+          {feedStale ? (
+            <div role="status" className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-soft bg-surface py-2 pr-2 pl-4 text-sm text-ink-2">
+              <span>You changed who you follow. The feed updates when you&apos;re ready.</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setFeedIds(following)
+                  setLimit(PAGE)
+                }}
+              >
+                Update feed
+              </Button>
+            </div>
+          ) : null}
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={filter} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="mt-8">
+            <motion.div
+              key={filter}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: duration.page, ease: ease.out } }}
+              exit={{ opacity: 0, transition: { duration: duration.press, ease: ease.in } }}
+              className="mt-8"
+            >
               {shown.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
-                  <p className="text-base text-ink">No {filterLabels[filter].toLowerCase()} yet</p>
-                  <p className="max-w-sm text-sm text-ink-2">The brands you follow haven&apos;t posted any in the last few months.</p>
-                  <Button variant="secondary" size="sm" onClick={() => setFilter("all")}>Show all updates</Button>
+                <div className="flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
+                  <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
+                    <Rss className="size-6 text-ink-2" />
+                  </span>
+                  {filter === "all" ? (
+                    <>
+                      <div>
+                        <p className="text-base text-ink">{following.length ? "No updates yet" : "You're not following any brands now"}</p>
+                        <p className="mt-1 max-w-sm text-sm text-ink-2">
+                          {following.length ? "The brands you follow haven't posted in the last few months." : "Follow a brand and its new pieces, drops and stories show up here."}
+                        </p>
+                      </div>
+                      <Button asChild variant="secondary">
+                        <Link href="/brands">Browse brands</Link>
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-base text-ink">No {filterLabels[filter].toLowerCase()} yet</p>
+                        <p className="mt-1 max-w-sm text-sm text-ink-2">The brands you follow haven&apos;t posted any in the last few months.</p>
+                      </div>
+                      <Button variant="secondary" onClick={() => setFilter("all")}>
+                        Show all updates
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="grid gap-10">
@@ -256,7 +312,7 @@ export function FollowingFeed() {
               <span className="text-xs text-ink-3 tabular">{followedBrands.length}</span>
             </div>
             <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
-              {followedBrands.map((b) => (
+              {rowBrands.map((b) => (
                 <BrandCard key={b.id} brand={b} variant="row" />
               ))}
             </div>

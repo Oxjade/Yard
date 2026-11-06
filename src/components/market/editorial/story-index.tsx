@@ -1,13 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BookOpenIcon as BookOpen } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
-import { Chip } from "@/components/market/catalog/chip"
+import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
+import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Story, StoryKind } from "@/lib/data/types"
+import { EmptyCard } from "./empty-card"
 import { StoryCard, storyKindLabel } from "./story-card"
 
 type KindFilter = "all" | StoryKind
@@ -36,7 +39,7 @@ function writeKind(next: KindFilter) {
  * kept in the URL (?kind=) so a filtered view can be shared. `StoriesIndex` reads it and must
  * sit inside <Suspense>; the fallback is this view unfiltered, so the static page is complete.
  */
-export function StoriesIndexView({ stories, kind }: { stories: Story[]; kind: KindFilter }) {
+export function StoriesIndexView({ stories, kind: requested }: { stories: Story[]; kind: KindFilter }) {
   // Animate only after the shopper picks a filter, not on the first render.
   const [touched, setTouched] = useState(false)
 
@@ -46,12 +49,19 @@ export function StoriesIndexView({ stories, kind }: { stories: Story[]; kind: Ki
   }
 
   const kinds = (Object.keys(storyKindLabel) as StoryKind[]).filter((k) => stories.some((s) => s.kind === k))
+  // A kind with no stories (an old or hand-typed ?kind=) shows everything, so one chip is always
+  // checked and the row keeps its tab stop.
+  const kind: KindFilter = requested !== "all" && kinds.includes(requested) ? requested : "all"
+  const stale = requested !== kind
+  useEffect(() => {
+    if (stale) writeKind("all")
+  }, [stale])
   const visible = kind === "all" ? stories : stories.filter((s) => s.kind === kind)
   const [lead, ...rest] = visible
 
   return (
     <div>
-      <div className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="radiogroup" aria-label="Filter stories by kind">
+      <ChipRadioGroup label="Filter stories by kind" className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         <Chip selected={kind === "all"} onClick={() => choose("all")} count={stories.length} layoutId="story-kind" size="sm" radio>
           All stories
         </Chip>
@@ -60,7 +70,7 @@ export function StoriesIndexView({ stories, kind }: { stories: Story[]; kind: Ki
             {storyKindLabel[k]}
           </Chip>
         ))}
-      </div>
+      </ChipRadioGroup>
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
@@ -68,7 +78,7 @@ export function StoriesIndexView({ stories, kind }: { stories: Story[]; kind: Ki
           initial={touched ? { opacity: 0, y: 10 } : false}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: duration.page, ease: ease.out }}
           className="mt-8 md:mt-10"
         >
           {lead ? (
@@ -83,18 +93,16 @@ export function StoriesIndexView({ stories, kind }: { stories: Story[]; kind: Ki
               ) : null}
             </>
           ) : (
-            <div className="flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
-              <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
-                <BookOpen className="size-6 text-ink-2" />
-              </span>
-              <div>
-                <p className="text-base text-ink">No stories of this kind yet</p>
-                <p className="mt-1 text-sm text-ink-2">Brands publish new stories every week. Try another kind for now.</p>
-              </div>
-              <Button variant="primary" onClick={() => choose("all")}>
-                Show all stories
-              </Button>
-            </div>
+            <EmptyCard
+              icon={<BookOpen />}
+              title="No stories yet"
+              reason="Brands publish origins, process and collaborations here; follow a few and their stories come to you."
+              action={
+                <Button asChild variant="primary">
+                  <Link href="/brands">Browse brands</Link>
+                </Button>
+              }
+            />
           )}
         </motion.div>
       </AnimatePresence>

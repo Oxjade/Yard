@@ -35,7 +35,7 @@ export function SignInView({ image, caption }: { image: ImageAsset; caption?: st
 
   if (user && !leaving) {
     return (
-      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}.`} image={image} caption={caption}>
+      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}.`} image={image} caption={caption} joinNote={false}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Button variant="primary" size="lg" onClick={() => router.push(target)}>Continue</Button>
           <Button variant="secondary" size="lg" onClick={() => signOut()}>Use another account</Button>

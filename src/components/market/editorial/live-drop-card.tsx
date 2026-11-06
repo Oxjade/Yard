@@ -44,7 +44,7 @@ export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boole
         <StockBar drop={drop} className="mt-6 sm:mt-auto sm:pt-6" />
         <div className="mt-5 flex items-center justify-between gap-3">
           <p className="text-xs text-ink-2">{limitText(drop)}</p>
-          <Button asChild size="sm" variant="secondary">
+          <Button asChild size="sm" variant="secondary" className="h-10 sm:h-8">
             <Link href={`${href}#in-this-drop`}>Shop the drop</Link>
           </Button>
         </div>

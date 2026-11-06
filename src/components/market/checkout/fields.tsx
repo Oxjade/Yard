@@ -4,6 +4,7 @@ import { InfoIcon as Info } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { Label } from "@/components/ui/label"
+import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 /** aria wiring for a control inside <Field>. */
@@ -103,7 +104,7 @@ export function OptionCard({
       )}
     >
       {checked ? (
-        <motion.span layoutId={ringId} aria-hidden className="pointer-events-none absolute inset-0 rounded-lg border-2 border-violet" transition={{ type: "spring", stiffness: 520, damping: 40 }} />
+        <motion.span layoutId={ringId} aria-hidden className="pointer-events-none absolute inset-0 rounded-lg border-2 border-violet" transition={spring.indicator} />
       ) : null}
       <span
         aria-hidden

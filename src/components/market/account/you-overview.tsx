@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { SparkleIcon as Sparkles } from "@phosphor-icons/react"
+import { HeartIcon as Heart, PackageIcon as Package, SparkleIcon as Sparkles, StorefrontIcon as Storefront } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { DropCard } from "@/components/market/drop-card"
 import { ProductCard } from "@/components/market/product-card"
@@ -27,14 +27,18 @@ function greeting(hour: number) {
   return "Good evening"
 }
 
-function InlineEmpty({ title, body, href, action }: { title: string; body: string; href: string; action: string }) {
+/** The marketplace empty state, laid out in a row so a quiet section stays short. */
+function InlineEmpty({ icon: Icon, title, body, href, action }: { icon: React.ComponentType<{ className?: string }>; title: string; body: string; href: string; action: string }) {
   return (
-    <div className="flex flex-col items-start gap-3 rounded-lg border border-line-soft bg-card px-5 py-8 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+    <div className="flex flex-col items-start gap-4 rounded-lg border border-line-soft bg-card px-5 py-6 sm:flex-row sm:items-center">
+      <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full border border-line">
+        <Icon className="size-6 text-ink-2" />
+      </span>
+      <div className="min-w-0 flex-1">
         <p className="text-base text-ink">{title}</p>
         <p className="mt-1 text-sm text-ink-2">{body}</p>
       </div>
-      <Button asChild variant="secondary" size="sm">
+      <Button asChild variant="secondary">
         <Link href={href}>{action}</Link>
       </Button>
     </div>
@@ -57,6 +61,12 @@ export function YouOverview() {
   const [hour] = useState(() => new Date().getHours())
 
   const followedBrands = following.map((id) => brandById.get(id)).filter((b): b is Brand => !!b)
+  // The rows stay for the visit: unfollowing one turns its button back to Follow rather than
+  // pulling the row, and focus, out from under the shopper. New follows join the end.
+  const [visitFollowing] = useState(() => following)
+  const rowBrands = [...visitFollowing, ...following.filter((id) => !visitFollowing.includes(id))]
+    .map((id) => brandById.get(id))
+    .filter((b): b is Brand => !!b)
   const allUpcoming = upcomingDrops()
   const followedUpcoming = allUpcoming.filter((d) => following.includes(d.brandId))
   const drops = followedUpcoming.length ? followedUpcoming : allUpcoming
@@ -133,16 +143,16 @@ export function YouOverview() {
 
       <section aria-labelledby="you-brands" className="mt-24 md:mt-32">
         <div id="you-brands">
-          <SectionHeader title="Brands you follow" description="Their new pieces, collections, drops and stories arrive in Following." href={followedBrands.length ? "/following" : undefined} action="Open your feed" />
+          <SectionHeader title="Brands you follow" description="Their new pieces, collections, drops and stories arrive in Following." href={rowBrands.length ? "/following" : undefined} action="Open your feed" />
         </div>
-        {followedBrands.length ? (
+        {rowBrands.length ? (
           <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-4">
-            {followedBrands.map((b) => (
+            {rowBrands.map((b) => (
               <BrandCard key={b.id} brand={b} variant="row" />
             ))}
           </div>
         ) : (
-          <InlineEmpty title="No brands yet" body="Follow a studio to see its drops and new pieces here first." href="/brands" action="Browse brands" />
+          <InlineEmpty icon={Storefront} title="No brands yet" body="Follow a studio to see its drops and new pieces here first." href="/brands" action="Browse brands" />
         )}
       </section>
 
@@ -157,7 +167,7 @@ export function YouOverview() {
             ))}
           </div>
         ) : (
-          <InlineEmpty title="Nothing saved yet" body="Tap the heart on any piece to keep it here." href="/shop" action="Browse the shop" />
+          <InlineEmpty icon={Heart} title="Nothing saved yet" body="Tap the heart on any piece to keep it here." href="/shop" action="Browse the shop" />
         )}
       </section>
 
@@ -230,7 +240,7 @@ export function YouOverview() {
               })}
             </ul>
           ) : (
-            <InlineEmpty title="No orders yet" body="Every brand's order and tracking shows up here." href="/shop" action="Start shopping" />
+            <InlineEmpty icon={Package} title="No orders yet" body="Every brand's order and tracking shows up here." href="/shop" action="Start shopping" />
           )}
         </section>
 

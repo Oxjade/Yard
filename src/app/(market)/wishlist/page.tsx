@@ -11,7 +11,7 @@ export default function WishlistPage() {
       <AccountGate
         invite={{
           title: "Wishlist",
-          body: "Sign in to save pieces from any brand. Your wishlist stays on your account, on every device, until you're ready.",
+          body: "Sign in to save pieces from any brand and keep them in one place until you're ready.",
           image: img("objects/accessories-editorial/1"),
         }}
       >

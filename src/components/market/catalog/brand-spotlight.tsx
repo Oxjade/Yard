@@ -36,7 +36,9 @@ export function BrandSpotlight({ brand, products, flip = false }: { brand: Brand
         <div className="flex flex-col p-5 md:p-8">
           <p className="text-xs text-violet">Brand spotlight</p>
           <h3 className="mt-2 flex items-center gap-2 font-display text-display-sm text-ink">
-            <Link href={href}>{brand.name}</Link>
+            <Link href={href} className="-my-2 inline-flex min-h-10 items-center rounded-md">
+              {brand.name}
+            </Link>
             {brand.verified ? <BadgeCheck className="size-5 shrink-0 text-violet" aria-label="Verified brand" /> : null}
           </h3>
           <p className="mt-1 text-sm text-ink-2">
@@ -44,12 +46,13 @@ export function BrandSpotlight({ brand, products, flip = false }: { brand: Brand
           </p>
           <p className="mt-4 max-w-md text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{brand.tagline}</p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <FollowButton brandId={brand.id} brandName={brand.name} />
-            <Button asChild variant="secondary" size="sm">
+            {/* 40px targets on phones and tablets; the denser size from the desktop layout up. */}
+            <FollowButton brandId={brand.id} brandName={brand.name} size="default" className="lg:h-8 lg:px-3 lg:text-[0.8125rem]" />
+            <Button asChild variant="secondary" className="lg:h-8 lg:px-3 lg:text-[0.8125rem]">
               <Link href={href}>Visit storefront</Link>
             </Button>
             {story ? (
-              <Link href={`/stories/${story.slug}`} className="text-sm text-violet underline-offset-4 hover:underline sm:ml-2">
+              <Link href={`/stories/${story.slug}`} className="inline-flex min-h-10 items-center rounded-md px-1 text-sm text-violet underline-offset-4 hover:underline sm:ml-1 lg:min-h-8">
                 Read their story
               </Link>
             ) : null}

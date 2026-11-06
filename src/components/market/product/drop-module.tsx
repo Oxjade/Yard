@@ -16,7 +16,10 @@ export function DropModule({ drop, phase }: { drop: Drop; phase: DropPhase }) {
     <section aria-labelledby="pdp-drop-title" className="rounded-lg border border-line bg-card p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <DropStatus drop={drop} />
-        <Link href={`/drops/${drop.slug}`} className="group inline-flex items-center gap-1 text-xs text-ink-2 transition-colors hover:text-ink">
+        <Link
+          href={`/drops/${drop.slug}`}
+          className="group -my-3 -mr-1 inline-flex min-h-10 items-center gap-1 rounded-md px-1 text-xs text-ink-2 transition-colors hover:text-ink"
+        >
           Drop details
           <ArrowUpRight className="size-3.5 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </Link>

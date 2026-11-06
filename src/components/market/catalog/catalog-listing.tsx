@@ -1,14 +1,16 @@
 "use client"
 
-import { useCallback, useId, useMemo, useRef, useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
 import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useInView } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { countries } from "@/config/markets"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { brandByHandle, categories, categoryBySlug, type ProductSort } from "@/lib/data"
+import { brandByHandle, categories, categoryBySlug, searchProducts, type ProductSort } from "@/lib/data"
+import { duration, ease, spring } from "@/lib/motion"
 import { useSession } from "@/lib/stores/session"
 import type { CategorySlug } from "@/lib/data/types"
 import { CatalogGrid } from "./catalog-grid"
@@ -17,6 +19,7 @@ import {
   activeFilterCount,
   buildListing,
   emptyState,
+  filterProducts,
   panelFilterCount,
   parseCatalogParams,
   serializeCatalogParams,
@@ -25,18 +28,22 @@ import {
   type CatalogScope,
   type CatalogState,
 } from "./catalog-state"
-import { Chip } from "./chip"
+import { Chip, ChipRadioGroup } from "./chip"
 import { FilterControls, priceLabel, type FilterPatch } from "./filter-controls"
 import { FilterSheet } from "./filter-sheet"
+
+/** Panel filters (what the desktop panel and the phone sheet change), all cleared. */
+const NO_PANEL_FILTERS = { brands: [], min: undefined, max: undefined, sizes: [], inStock: false, country: undefined } satisfies FilterPatch
 
 /**
  * The product listing shared by /shop and /categories/[slug]. All state is in the URL
  * (q, category, sub, brands, min, max, size, stock, country, sort, page), read with
- * useSearchParams, so this must render inside <Suspense>.
+ * useSearchParams, so this must render inside <Suspense>. The catalogue is filtered in the
+ * browser, so changes are written with history.replaceState (which Next keeps in sync with
+ * useSearchParams) rather than a router navigation: no server round trip per click.
  */
 export function CatalogListing({ category }: { category?: CategorySlug }) {
   const scope: CatalogScope = useMemo(() => ({ category }), [category])
-  const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const state = useMemo(() => parseCatalogParams(params, scope), [params, scope])
@@ -51,6 +58,9 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   const [changed, setChanged] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [draft, setDraft] = useState<CatalogState>(state)
+  // Said once per "Load more" press. The results heading is the live region for filter changes,
+  // so the count is never announced twice.
+  const [loadedNote, setLoadedNote] = useState("")
 
   const rootRef = useRef<HTMLDivElement>(null)
   const inView = useInView(rootRef, { margin: "0px 0px -35% 0px" })
@@ -58,9 +68,9 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   const navigate = useCallback(
     (next: CatalogState) => {
       const qs = serializeCatalogParams(next, scope)
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname)
     },
-    [router, pathname, scope],
+    [pathname, scope],
   )
 
   const resultsRef = useRef<HTMLDivElement>(null)
@@ -70,11 +80,12 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
     (next: CatalogState) => {
       setRevealFrom(Infinity)
       setChanged(true)
+      setLoadedNote("")
       navigate({ ...next, page: 1 })
       const top = resultsRef.current?.getBoundingClientRect().top ?? 0
       if (top < 0) {
         const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        window.scrollTo({ top: window.scrollY + top - 104, behavior: reduce ? "auto" : "smooth" })
+        window.scrollTo({ top: window.scrollY + top - 96, behavior: reduce ? "auto" : "smooth" })
       }
     },
     [navigate],
@@ -83,10 +94,33 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   const patch = (p: FilterPatch) => apply({ ...state, ...p })
   const onSearch = useCallback((q: string) => apply({ ...parseCatalogParams(new URLSearchParams(window.location.search), scope), q }), [apply, scope])
   const clearAll = () => apply({ ...emptyState(scope), sort: state.sort })
+  const clearPanel = () => patch(NO_PANEL_FILTERS)
+
+  // "Load more" appends below the button's old place; keyboard focus moves to the first new card.
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [focusFrom, setFocusFrom] = useState<number | null>(null)
+  useEffect(() => {
+    if (focusFrom === null) return
+    const link = gridRef.current?.querySelector<HTMLElement>(`[data-index="${focusFrom}"] a[href]`)
+    if (link) {
+      link.focus({ preventScroll: true })
+      setFocusFrom(null)
+    }
+  }, [focusFrom, listing.cardCount])
 
   function loadMore() {
+    const after = listing.shown + listing.nextCount
     setRevealFrom(listing.cardCount)
+    setFocusFrom(listing.cardCount)
+    setLoadedNote(`${listing.nextCount} more ${listing.nextCount === 1 ? "piece" : "pieces"} loaded. Showing ${after} of ${listing.total}.`)
     navigate({ ...state, page: listing.page + 1 })
+  }
+
+  /** Desktop: the panel has ~35 tab stops, so a skip link jumps straight to the results. */
+  const resultsHeadingRef = useRef<HTMLHeadingElement>(null)
+  function skipToResults(e: React.MouseEvent) {
+    e.preventDefault()
+    resultsHeadingRef.current?.focus()
   }
 
   function openSheet() {
@@ -113,6 +147,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
 
   const shown = listing.shown
   const progress = listing.total ? shown / listing.total : 0
+  const empty = listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name) : null
 
   return (
     <div ref={rootRef}>
@@ -121,38 +156,52 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
         <CatalogSearch
           value={state.q}
           onCommit={onSearch}
+          state={state}
           label={cat ? `Search ${cat.name}` : "Search the shop"}
           placeholder={cat ? `Search ${cat.name.toLowerCase()}` : "Search pieces, brands and materials"}
           className="md:max-w-xl"
         />
-        <div role="radiogroup" aria-label={cat ? `${cat.name} subcategories` : "Categories"} className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+        {/* One choice at a time: a radio group (one tab stop, arrow keys move the choice). The
+            vertical padding keeps focus rings clear of the rail's scroll clipping on phones. */}
+        <ChipRadioGroup
+          label={cat ? `${cat.name} subcategories` : "Categories"}
+          className="rail -mx-4 -my-1 flex scroll-px-4 gap-2 overflow-x-auto px-4 py-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+        >
           {cat ? (
             <>
-              <Chip radio selected={!state.sub} layoutId="catalog-sub" onClick={() => patch({ sub: undefined })}>
+              <Chip radio selected={!state.sub} layoutId="catalog-sub" onClick={() => state.sub && patch({ sub: undefined })}>
                 All {cat.name.toLowerCase()}
               </Chip>
               {cat.subcategories.map((s) => (
-                <Chip key={s} radio selected={state.sub === s} layoutId="catalog-sub" onClick={() => patch({ sub: state.sub === s ? undefined : s })}>
+                <Chip key={s} radio selected={state.sub === s} layoutId="catalog-sub" onClick={() => state.sub !== s && patch({ sub: s })}>
                   {s}
                 </Chip>
               ))}
             </>
           ) : (
             <>
-              <Chip radio selected={!state.category} layoutId="catalog-category" onClick={() => patch({ category: undefined, sub: undefined })}>
+              <Chip radio selected={!state.category} layoutId="catalog-category" onClick={() => state.category && patch({ category: undefined, sub: undefined })}>
                 All
               </Chip>
               {categories.map((c) => (
-                <Chip key={c.slug} radio selected={state.category === c.slug} layoutId="catalog-category" onClick={() => patch({ category: state.category === c.slug ? undefined : c.slug, sub: undefined })}>
+                <Chip key={c.slug} radio selected={state.category === c.slug} layoutId="catalog-category" onClick={() => state.category !== c.slug && patch({ category: c.slug, sub: undefined })}>
                   {c.name}
                 </Chip>
               ))}
             </>
           )}
-        </div>
+        </ChipRadioGroup>
       </div>
 
-      <div className="mt-8 border-t border-line-soft pt-6 md:mt-10 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-10 xl:gap-14">
+      <div className="relative mt-8 border-t border-line-soft pt-6 md:mt-10 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-10 xl:gap-14">
+        {/* Desktop: visible on keyboard focus only, out of the grid's flow. */}
+        <a
+          href={`#${idBase}-results`}
+          onClick={skipToResults}
+          className="pointer-events-none absolute top-2 left-0 z-20 hidden h-10 items-center rounded-md bg-elevated px-3 text-sm text-ink opacity-0 ring-1 ring-line focus-visible:pointer-events-auto focus-visible:opacity-100 lg:inline-flex"
+        >
+          Skip to results
+        </a>
         {/* Desktop filter panel */}
         <aside className="hidden lg:block" aria-labelledby="catalog-filters-title">
           <div className="rail sticky top-24 max-h-[calc(100dvh-7rem)] overflow-y-auto pr-1 pb-8">
@@ -161,8 +210,8 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
                 Filters
               </h2>
               {panelCount ? (
-                <button type="button" onClick={() => patch({ brands: [], min: undefined, max: undefined, sizes: [], inStock: false, country: undefined })} className="rounded-md text-sm text-ink-2 transition-colors hover:text-ink">
-                  Reset
+                <button type="button" onClick={clearPanel} className="-mr-1.5 min-h-9 rounded-md px-1.5 text-sm text-ink-2 transition-colors hover:text-ink">
+                  Clear filters
                 </button>
               ) : null}
             </div>
@@ -173,7 +222,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
         <section aria-labelledby={`${idBase}-results`} className="min-w-0">
           {/* Toolbar */}
           <div ref={resultsRef} className="flex scroll-mt-28 items-center justify-between gap-3">
-            <h2 id={`${idBase}-results`} className="text-sm font-normal text-ink-2" aria-live="polite">
+            <h2 ref={resultsHeadingRef} id={`${idBase}-results`} tabIndex={-1} className="scroll-mt-28 rounded-sm text-sm font-normal text-ink-2 outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-4 focus-visible:ring-offset-obsidian" aria-live="polite">
               <span className="tabular text-ink">{listing.total}</span> {listing.total === 1 ? "piece" : "pieces"}
               {listing.total ? (
                 <span className="hidden sm:inline">
@@ -182,8 +231,9 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
                 </span>
               ) : null}
             </h2>
+            {/* Phones sort in the "Filter and sort" sheet, so the page has one sort control per size. */}
             <Select value={state.sort} onValueChange={(v) => patch({ sort: v as ProductSort })}>
-              <SelectTrigger aria-label="Sort" className="h-11 min-w-44 rounded-md border-line bg-surface px-3 text-sm data-[size=default]:h-11">
+              <SelectTrigger aria-label="Sort" className="hidden h-11 min-w-44 rounded-md border-line bg-surface px-3 text-sm transition-colors hover:border-ink-3/60 data-[size=default]:h-11 lg:flex">
                 <span className="text-ink-3">Sort</span>
                 <SelectValue />
               </SelectTrigger>
@@ -210,17 +260,17 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ type: "spring", stiffness: 520, damping: 38 }}
+                    transition={spring.snappy}
                     aria-label={`Remove filter ${c.label}`}
-                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-purple/45 bg-purple/15 pr-2 pl-3 text-[0.8125rem] text-ink transition-colors hover:border-violet hover:bg-purple/25"
+                    className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border border-purple/45 bg-purple/15 pr-2.5 pl-3 text-[0.8125rem] text-ink transition-colors duration-150 hover:border-violet hover:bg-purple/25 active:scale-[0.97] lg:h-8"
                   >
                     <span className="truncate">{c.label}</span>
                     <X className="size-3.5 shrink-0 text-ink-2" aria-hidden />
                   </motion.button>
                 ))}
               </AnimatePresence>
-              {chips.length ? (
-                <button type="button" onClick={clearAll} className="h-8 rounded-md px-2 text-[0.8125rem] text-violet underline-offset-4 hover:underline">
+              {chips.length > 1 ? (
+                <button type="button" onClick={clearAll} className="h-9 rounded-md px-2 text-[0.8125rem] text-violet underline-offset-4 hover:underline lg:h-8">
                   Clear all
                 </button>
               ) : null}
@@ -228,41 +278,67 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
           ) : null}
 
           {/* Results */}
-          <motion.div key={signature} className="mt-6" initial={changed ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.28 }}>
+          <motion.div
+            key={signature}
+            ref={gridRef}
+            className="mt-6"
+            initial={changed ? { opacity: 0 } : false}
+            animate={{ opacity: 1 }}
+            transition={{ duration: duration.page, ease: ease.out }}
+          >
             {listing.total ? (
               <CatalogGrid cycles={listing.cycles} revealFrom={revealFrom} />
-            ) : (
+            ) : empty ? (
               <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center md:py-20">
                 <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
                   <SearchX className="size-6 text-ink-2" />
                 </span>
                 <div>
-                  <p className="text-base text-ink">Nothing matches those filters</p>
-                  <p className="mx-auto mt-1 max-w-sm text-sm text-ink-2">
-                    {state.q && activeCount === 1 ? `No piece matches “${state.q}”. Try a brand name, a city or a material.` : "Try removing a filter or widening the price range."}
-                  </p>
+                  <p className="text-base text-ink">{empty.title}</p>
+                  <p className="mx-auto mt-1 max-w-sm text-pretty text-sm text-ink-2">{empty.reason}</p>
                 </div>
-                <Button variant="primary" onClick={clearAll}>
-                  Clear filters
-                </Button>
+                {empty.action === "shop" ? (
+                  <Button asChild variant="primary">
+                    <Link href={`/shop?q=${encodeURIComponent(state.q)}`}>Search the whole shop</Link>
+                  </Button>
+                ) : empty.action === "category" ? (
+                  <Button variant="primary" onClick={() => patch({ category: scope.category, sub: undefined })}>
+                    {cat ? `Search all ${cat.name.toLowerCase()}` : "Search all categories"}
+                  </Button>
+                ) : empty.action === "panel" ? (
+                  <Button variant="primary" onClick={clearPanel}>
+                    Clear filters
+                  </Button>
+                ) : empty.action === "search" ? (
+                  <Button variant="primary" onClick={() => patch({ q: "" })}>
+                    Clear search
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={clearAll}>
+                    Clear all filters
+                  </Button>
+                )}
               </div>
-            )}
+            ) : null}
           </motion.div>
 
           {/* Pagination */}
           {listing.total > 0 ? (
             <div className="mt-14 flex flex-col items-center gap-4 md:mt-16">
-              <p className="text-sm text-ink-2 tabular" aria-live="polite">
+              <p className="text-sm text-ink-2 tabular">
                 {listing.hasMore ? `Showing ${shown} of ${listing.total}` : listing.total > 1 ? `That's all ${listing.total} pieces` : "That's the only piece"}
+              </p>
+              <p className="sr-only" aria-live="polite">
+                {loadedNote}
               </p>
               {listing.pages > 1 ? (
                 <div className="h-0.5 w-48 overflow-hidden rounded-full bg-line" aria-hidden>
-                  <motion.div className="h-full origin-left bg-violet" initial={false} animate={{ scaleX: progress }} transition={{ type: "spring", stiffness: 200, damping: 30 }} />
+                  <motion.div className="h-full origin-left bg-violet" initial={false} animate={{ scaleX: progress }} transition={{ duration: duration.chart, ease: ease.out }} />
                 </div>
               ) : null}
               {listing.hasMore ? (
-                <Button variant="primary" size="lg" onClick={loadMore} className="mt-2 min-w-48">
-                  Load more
+                <Button variant="secondary" size="lg" onClick={loadMore} className="mt-2 min-w-48">
+                  Load {listing.nextCount} more
                 </Button>
               ) : null}
             </div>
@@ -270,21 +346,23 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
         </section>
       </div>
 
-      {/* Phone: a floating glass pill opens the filter sheet */}
+      {/* Phone: a floating glass pill opens the filter sheet. It stays mounted while the sheet is
+          open (under its overlay) so closing the sheet returns focus to it. */}
       <AnimatePresence>
-        {inView && !sheetOpen ? (
+        {inView || sheetOpen ? (
           <motion.div
             className="pointer-events-none fixed inset-x-0 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+4.75rem)] z-30 flex justify-center lg:hidden"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
-            transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            transition={spring.snappy}
           >
             <button
               type="button"
               onClick={openSheet}
               aria-haspopup="dialog"
-              className="glass glass-sheen pointer-events-auto inline-flex h-12 items-center gap-2.5 rounded-full pr-4 pl-5 text-sm font-medium text-ink transition-transform active:scale-[0.97]"
+              aria-label={panelCount ? `Filter and sort, ${panelCount} active` : undefined}
+              className="glass glass-sheen pointer-events-auto inline-flex h-12 items-center gap-2.5 rounded-full pr-4 pl-5 text-sm font-medium text-ink transition-transform duration-100 active:scale-[0.97]"
             >
               <SlidersHorizontal className="size-4" />
               Filter and sort
@@ -299,7 +377,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
         onOpenChange={setSheetOpen}
         draft={draft}
         onDraftChange={(p) => setDraft((d) => ({ ...d, ...p }))}
-        onClear={() => setDraft((d) => ({ ...d, brands: [], min: undefined, max: undefined, sizes: [], inStock: false, country: undefined }))}
+        onClear={() => setDraft((d) => ({ ...d, ...NO_PANEL_FILTERS }))}
         onApply={() => {
           apply(draft)
           setSheetOpen(false)
@@ -308,4 +386,54 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
       />
     </div>
   )
+}
+
+type EmptyAdvice = { title: string; reason: string; action: "shop" | "category" | "panel" | "search" | "all" }
+
+const pieces = (n: number) => `${n} ${n === 1 ? "piece" : "pieces"}`
+
+/**
+ * What to say when nothing matches, and the one action most likely to bring pieces back:
+ * filters that hide every match are cleared on their own; a search narrowed to one category
+ * that matches elsewhere widens to all of them (or, on a category page, opens the whole shop);
+ * otherwise the search, or everything, is cleared.
+ */
+function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string): EmptyAdvice {
+  if (panelCount) {
+    const without = filterProducts({ ...state, ...NO_PANEL_FILTERS }).length
+    if (without > 0) {
+      const priced = state.min !== undefined || state.max !== undefined
+      return {
+        title: "Nothing matches those filters",
+        reason: `${pieces(without)} without them. ${priced ? "Try removing one, or widen the price range." : "Try removing one."}`,
+        action: "panel",
+      }
+    }
+  }
+  if (state.q && !panelCount) {
+    const narrowed = Boolean(state.sub || (state.category && !scope.category))
+    if (narrowed) {
+      const wider = filterProducts({ ...state, category: scope.category, sub: undefined }).length
+      if (wider > 0) {
+        const narrowedTo = state.sub ?? categoryBySlug.get(state.category!)!.name
+        return {
+          title: `No ${narrowedTo.toLowerCase()} matches “${state.q}”`,
+          reason: `${pieces(wider)} ${wider === 1 ? "matches" : "match"} in ${categoryName ? `all of ${categoryName.toLowerCase()}` : "other categories"}.`,
+          action: "category",
+        }
+      }
+    }
+    if (scope.category && categoryName) {
+      const elsewhere = searchProducts({ q: state.q }).length
+      if (elsewhere > 0) {
+        return {
+          title: `No ${categoryName.toLowerCase()} matches “${state.q}”`,
+          reason: `${pieces(elsewhere)} ${elsewhere === 1 ? "matches" : "match"} elsewhere in the shop.`,
+          action: "shop",
+        }
+      }
+    }
+    if (activeCount === 1) return { title: `No pieces match “${state.q}”`, reason: "Try a brand name, a material or a simpler word.", action: "search" }
+  }
+  return { title: "Nothing matches those filters", reason: "Try removing a filter or a word from your search.", action: "all" }
 }

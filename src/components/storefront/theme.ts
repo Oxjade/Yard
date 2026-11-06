@@ -180,8 +180,13 @@ export function saleProducts(products: Product[]) {
 
 export type LookbookFrame = { image: ImageAsset; product?: Product }
 
-/** Product photography, de-duplicated, with the brand cover as a fallback frame. */
-export function lookbookFrames(brand: Brand, products: Product[], count: number): LookbookFrame[] {
+/**
+ * Product photography, de-duplicated: campaign and detail shots first (so the lookbook doesn't
+ * repeat the product grid), then each piece's main photograph. The brand cover is the hero's
+ * photograph and links to no piece, so it only fills the last frame, and when the hero already
+ * shows it (`coverInHero`), only if the lookbook would otherwise fall short of `minimum`.
+ */
+export function lookbookFrames(brand: Brand, products: Product[], count: number, { coverInHero = false, minimum = 3 }: { coverInHero?: boolean; minimum?: number } = {}): LookbookFrame[] {
   const seen = new Set<string>()
   const frames: LookbookFrame[] = []
   const push = (image: ImageAsset, product?: Product) => {
@@ -189,10 +194,9 @@ export function lookbookFrames(brand: Brand, products: Product[], count: number)
     seen.add(image.src)
     frames.push({ image, product })
   }
-  // Campaign and detail shots first, so the lookbook doesn't repeat the product grid.
   for (const p of products) p.images.slice(1).forEach((image) => push(image, p))
-  push(brand.cover)
   for (const p of products) push(p.images[0], p)
+  if (!coverInHero || frames.length < minimum) push(brand.cover)
   return frames
 }
 

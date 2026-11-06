@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import { BrandDirectory, BrandDirectoryFallback } from "@/components/market/brands/brand-directory"
+import { BrandDirectory, BrandDirectoryFallback } from "@/components/market/brands/directory"
 import { BrandSections } from "@/components/market/brands/brand-sections"
 import { brands } from "@/lib/data"
 

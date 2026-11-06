@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SectionHeader } from "@/components/market/section-header"
 import type { Drop } from "@/lib/data/types"
 import { DropArchive } from "./drop-archive"
+import { EmptyCard } from "./empty-card"
 import { isSponsoredDrop } from "./drop-facts"
 import { LiveDropCard } from "./live-drop-card"
 import { ReleaseCalendar } from "./release-calendar"
@@ -37,20 +38,19 @@ export function DropsBoard({ drops }: { drops: Drop[] }) {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-start gap-4 rounded-lg border border-line-soft bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full border border-line">
-                <Zap className="size-6 text-ink-2" />
-              </span>
-              <div>
-                <p className="text-base text-ink">Nothing is live right now</p>
-                <p className="mt-1 text-sm text-ink-2">The next release is in the calendar below. Set a reminder and we&apos;ll tell you when it opens.</p>
-              </div>
-            </div>
-            <Button asChild variant="secondary">
-              <Link href="#upcoming">See the calendar</Link>
-            </Button>
-          </div>
+          <EmptyCard
+            layout="inline"
+            icon={<Zap />}
+            title="Nothing is live right now"
+            reason={upcoming.length ? "The next release is in the calendar below; set a reminder and you'll get an alert when it opens." : "No release is scheduled yet; past drops keep their pages below."}
+            action={
+              upcoming.length ? (
+                <Button asChild variant="secondary">
+                  <Link href="#upcoming">See the calendar</Link>
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </section>
 
@@ -61,20 +61,17 @@ export function DropsBoard({ drops }: { drops: Drop[] }) {
         {upcoming.length ? (
           <ReleaseCalendar drops={upcoming} now={now} anchor={anchor} />
         ) : (
-          <div className="flex flex-col items-start gap-4 rounded-lg border border-line-soft bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full border border-line">
-                <CalendarClock className="size-6 text-ink-2" />
-              </span>
-              <div>
-                <p className="text-base text-ink">No drops scheduled</p>
-                <p className="mt-1 text-sm text-ink-2">Brands announce releases here first. Follow the ones you like to hear about the next one.</p>
-              </div>
-            </div>
-            <Button asChild variant="secondary">
-              <Link href="/brands">Browse brands</Link>
-            </Button>
-          </div>
+          <EmptyCard
+            layout="inline"
+            icon={<CalendarClock />}
+            title="No drops scheduled"
+            reason="Brands announce releases here first; follow the ones you like and their next drop shows up in Following."
+            action={
+              <Button asChild variant="secondary">
+                <Link href="/brands">Browse brands</Link>
+              </Button>
+            }
+          />
         )}
       </section>
 

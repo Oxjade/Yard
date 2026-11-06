@@ -1,10 +1,12 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { flushSync } from "react-dom"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CircleNotchIcon as Loader2, PackageIcon as Package } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { duration, ease } from "@/lib/motion"
 import { AuthPanel } from "@/components/market/account/auth-panel"
 import { AuthForm } from "@/components/market/auth-prompt"
 import { Price } from "@/components/market/price"
@@ -33,6 +35,7 @@ import {
   type PaymentMethod,
 } from "./rules"
 import { CheckoutSkeleton } from "./skeletons"
+import { clearCheckoutDraft, readCheckoutDraft, writeCheckoutDraft } from "./draft"
 import { checkoutSteps, StepIndicator } from "./step-indicator"
 import { AddressStep, ContactStep, PaymentStep, ReviewStep, ShippingStep } from "./steps"
 import { shippingPrice, type ShippingMethod } from "./shipping"
@@ -73,9 +76,14 @@ export function CheckoutFlow() {
 
   function onPlaced(groupId: string) {
     placedRef.current = true
-    setPlaced(true)
+    clearCheckoutDraft()
+    // Settle this page (placed, bag emptied) in one commit before navigating, so nothing
+    // here updates while the confirmation route renders in the navigation's transition.
+    flushSync(() => {
+      setPlaced(true)
+      clear()
+    })
     router.push(`/checkout/confirmation?group=${encodeURIComponent(groupId)}`)
-    clear()
   }
 
   if (ready && !empty && !user && !placed) {
@@ -96,17 +104,15 @@ export function CheckoutFlow() {
 
   if (ready && !empty && user && !placed) return <CheckoutSteps userName={user.name} userEmail={user.email} onPlaced={onPlaced} />
 
+  if (!placed) return <CheckoutSkeleton withTitle />
+
   return (
     <>
       <CheckoutTitle />
-      {placed ? (
-        <div role="status" className="mt-10 flex items-center gap-3 rounded-lg border border-line-soft bg-card px-5 py-6 text-sm text-ink-2">
-          <Loader2 className="size-4 animate-spin text-violet" aria-hidden />
-          Order placed. Opening your confirmation.
-        </div>
-      ) : (
-        <CheckoutSkeleton />
-      )}
+      <div role="status" className="mt-10 flex items-center gap-3 rounded-lg border border-line-soft bg-card px-5 py-6 text-sm text-ink-2">
+        <Loader2 className="size-4 animate-spin text-violet" aria-hidden />
+        Order placed. Opening your confirmation.
+      </div>
     </>
   )
 }
@@ -131,16 +137,21 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const placeCheckout = useOrders((s) => s.placeCheckout)
   const reduceMotion = useReducedMotion()
 
-  const [step, setStep] = useState(0)
+  // The draft survives a reload in this tab (sessionStorage). Card number, expiry and
+  // security code are never written anywhere, so they are asked for again.
+  const [saved] = useState(() => readCheckoutDraft(userEmail))
+  const [contact, setContact] = useState<ContactDraft>(() => saved?.contact ?? { name: userName, email: userEmail, phone: "" })
+  const [address, setAddress] = useState<AddressDraft>(() => saved?.address ?? { line1: "", line2: "", city: "", region: "", postcode: "", landmark: "" })
+  const [shipping, setShipping] = useState<Record<string, ShippingMethod>>(() => saved?.shipping ?? {})
+  const [payment, setPayment] = useState<PaymentDraft>(() => ({ cardName: userName, ussdBank: "", momoNetwork: "", momoNumber: "", ...saved?.payment, method: saved?.payment.method ?? "card", cardNumber: "", expiry: "", cvc: "" }))
+  const [step, setStep] = useState(() => resumeStep(saved, country))
   const [dir, setDir] = useState(1)
-  const [furthest, setFurthest] = useState(0)
+  const [furthest, setFurthest] = useState(() => saved?.furthest ?? 0)
   const [reviewing, setReviewing] = useState(false)
   const [navigated, setNavigated] = useState(false)
   const [attempted, setAttempted] = useState<Record<number, boolean>>({})
-  const [contact, setContact] = useState<ContactDraft>({ name: userName, email: userEmail, phone: "" })
-  const [address, setAddress] = useState<AddressDraft>({ line1: "", line2: "", city: "", region: "", postcode: "", landmark: "" })
-  const [shipping, setShipping] = useState<Record<string, ShippingMethod>>({})
-  const [payment, setPayment] = useState<PaymentDraft>({ method: "card", cardNumber: "", expiry: "", cvc: "", cardName: userName, ussdBank: "", momoNetwork: "", momoNumber: "" })
+  /** Fields left with a value in them: checked on blur, before the shopper presses Continue. */
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
   /** One key per checkout attempt: a repeated submit returns the same checkout group. */
   const idempotencyKey = useRef<string | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
@@ -156,7 +167,21 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
 
   const stepErrors: FieldErrors[] = [validateContact(contact, country), validateAddress(address, country), {}, validatePayment(payment, method, country), {}]
   const isValid = (i: number) => Object.keys(stepErrors[i]).length === 0
-  const shownErrors = attempted[step] ? stepErrors[step] : {}
+  const shownErrors = attempted[step] ? stepErrors[step] : Object.fromEntries(Object.entries(stepErrors[step]).filter(([id]) => touched[id]))
+  const cardCleared = !!saved && saved.furthest >= 3 && saved.payment.method === "card" && !payment.cardNumber
+
+  const doneRef = useRef(false)
+  useEffect(() => {
+    if (doneRef.current) return
+    // Card number, expiry and security code stay in memory only.
+    const keep = { method: payment.method, cardName: payment.cardName, ussdBank: payment.ussdBank, momoNetwork: payment.momoNetwork, momoNumber: payment.momoNumber }
+    writeCheckoutDraft({ owner: userEmail, step, furthest, contact, address, shipping, payment: keep })
+  }, [userEmail, step, furthest, contact, address, shipping, payment])
+
+  function onFieldBlur(e: React.FocusEvent<HTMLFormElement>) {
+    const t = e.target
+    if (t instanceof HTMLInputElement && t.id && t.value.trim() && !touched[t.id]) setTouched((x) => ({ ...x, [t.id]: true }))
+  }
 
   useEffect(() => {
     if (!navigated) return
@@ -219,7 +244,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
     setAttempted((a) => ({ ...a, 3: false }))
   }
 
-  // Payments are simulated: placeCheckout records the orders unpaid, as the backend will
+  // No payment provider is connected: placeCheckout records the orders unpaid, as the backend will
   // before the provider confirms. The in-flight guard blocks a second submit while this
   // runs, and the idempotency key makes any repeat return the same checkout group.
   const submit = useAsyncAction(
@@ -244,7 +269,10 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
     },
     {
       error: "Your order wasn't placed. Nothing was charged. Try again.",
-      onSuccess: ({ groupId }) => onPlaced(groupId),
+      onSuccess: ({ groupId }) => {
+        doneRef.current = true
+        onPlaced(groupId)
+      },
     },
   )
   const submitting = submit.pending
@@ -286,11 +314,12 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: duration.page, ease: ease.out }}
             >
               <form
                 noValidate
                 aria-labelledby={`step-title-${step}`}
+                onBlur={onFieldBlur}
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (step === REVIEW) placeOrder()
@@ -307,13 +336,13 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                   ) : step === 2 ? (
                     <ShippingStep groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onChange={(b, m) => setShipping((s) => ({ ...s, [b]: m }))} today={today} />
                   ) : step === 3 ? (
-                    <PaymentStep value={payment} method={method} methods={methods} onChange={setPayment} onMethodChange={changeMethod} errors={shownErrors} country={country} />
+                    <PaymentStep value={payment} method={method} methods={methods} onChange={setPayment} onMethodChange={changeMethod} errors={shownErrors} country={country} cardCleared={cardCleared} />
                   ) : (
                     <ReviewStep contact={contact} address={address} payment={payment} method={method} groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onEdit={edit} today={today} />
                   )}
                 </div>
 
-                {Object.keys(shownErrors).length > 0 ? (
+                {attempted[step] && Object.keys(shownErrors).length > 0 ? (
                   <p role="alert" className="mt-5 text-sm text-danger">
                     {Object.keys(shownErrors).length === 1 ? "One field needs attention." : `${Object.keys(shownErrors).length} fields need attention.`}
                   </p>
@@ -325,7 +354,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                       {bag.groups.length === 1
                         ? `Placing this order creates one order with ${bag.groups[0].brand.name}.`
                         : `Placing this order creates ${bag.groups.length} orders, one for each brand. Each ships and tracks separately.`}{" "}
-                      Payments are simulated in this development build.
+                      No payment provider is connected in this development build, so nothing is charged and the orders are recorded as awaiting payment confirmation.
                     </Notice>
                     <div className="flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
                       <span className="text-base text-ink">Total to pay</span>
@@ -334,7 +363,8 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                   </div>
                 ) : null}
 
-                <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {/* Phones: the step's actions stay within reach at the foot of the screen. */}
+                <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex items-center gap-3 border-t border-line-soft bg-obsidian/92 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:static sm:mx-0 sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
                   {step === 0 ? (
                     <Button asChild variant="secondary" size="lg">
                       <Link href="/bag">Back to bag</Link>
@@ -345,11 +375,11 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                     </Button>
                   )}
                   {step === REVIEW ? (
-                    <Button type="submit" variant="primary" size="xl" loading={submitting} className="sm:min-w-64">
+                    <Button type="submit" variant="primary" size="xl" loading={submitting} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
                       Place order
                     </Button>
                   ) : (
-                    <Button type="submit" variant="primary" size="lg" className="sm:min-w-56">
+                    <Button type="submit" variant="primary" size="lg" className="flex-1 sm:min-w-56 sm:flex-none">
                       {reviewing ? "Save and review" : nextLabel[step]}
                     </Button>
                   )}
@@ -363,6 +393,20 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
       <OrderSummaryAside {...summaryProps} />
     </div>
   )
+}
+
+/**
+ * Where a restored draft picks up: the step the shopper was on, or the first earlier step
+ * that no longer validates (card details are never kept, so a card payment reopens Payment).
+ */
+function resumeStep(saved: ReturnType<typeof readCheckoutDraft>, country: CountryCode) {
+  if (!saved) return 0
+  const payment: PaymentDraft = { ...saved.payment, cardNumber: "", expiry: "", cvc: "" }
+  const method = paymentMethodsFor(country).includes(payment.method) ? payment.method : paymentMethodsFor(country)[0]
+  const errors = [validateContact(saved.contact, country), validateAddress(saved.address, country), {}, validatePayment(payment, method, country)]
+  const firstInvalid = errors.findIndex((e) => Object.keys(e).length > 0)
+  const target = Math.min(saved.step, REVIEW)
+  return firstInvalid === -1 ? target : Math.min(target, firstInvalid)
 }
 
 function StepHeading({ index, title, description, focus }: { index: number; title: string; description: string; focus: boolean }) {

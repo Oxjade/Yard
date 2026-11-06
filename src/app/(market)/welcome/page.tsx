@@ -10,9 +10,9 @@ export const metadata: Metadata = { title: "Welcome" }
 export default function WelcomePage() {
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
-      <Suspense fallback={<AccountSkeleton variant="form" />}>
+      <Suspense fallback={<AccountSkeleton variant="welcome" />}>
         <AccountGate
-          skeleton="form"
+          skeleton="welcome"
           invite={{
             title: "Make it yours",
             body: "Sign in and tell us what you shop for. Three quick picks, under a minute, and Discover starts with your kind of brands.",

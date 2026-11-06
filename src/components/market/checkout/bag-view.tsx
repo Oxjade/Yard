@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { PackageIcon as Package, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
+import { AnimatePresence, motion } from "motion/react"
 import { BagGroups } from "@/components/market/bag-contents"
 import { Price } from "@/components/market/price"
 import { ProductCard } from "@/components/market/product-card"
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
 import { priceCart } from "@/lib/cart"
 import { productById, productStock } from "@/lib/data/products"
+import { duration, ease } from "@/lib/motion"
 import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
@@ -48,6 +50,41 @@ export function BagView() {
   }
 
   const brandCount = bag.groups.length
+
+  // Phones: until the summary scrolls into view, a compact total with Checkout floats above
+  // the tab bar so the next step is always one tap away.
+  const summaryRef = useRef<HTMLElement>(null)
+  const [summaryAhead, setSummaryAhead] = useState(false)
+  const hasLines = ready && brandCount > 0
+  useEffect(() => {
+    const el = summaryRef.current
+    if (!hasLines || !el) return
+    const io = new IntersectionObserver(([e]) => setSummaryAhead(!e.isIntersecting && e.boundingClientRect.top > 0), { rootMargin: "0px 0px -96px 0px" })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasLines])
+  // Removing a line (its ×, or − at quantity 1) unmounts it. Focus moves to the next line's
+  // remove button (or the one before), or to the empty state once the bag is empty, so
+  // keyboard users keep their place. The capture runs before the line's own click handler,
+  // the bubble after it, so the cart can be compared across the click.
+  const emptyTitle = useRef<HTMLParagraphElement>(null)
+  const removal = useRef<{ count: number; next: HTMLElement | null } | null>(null)
+  function onLinesClickCapture(e: React.MouseEvent<HTMLDivElement>) {
+    removal.current = null
+    const li = (e.target as HTMLElement).closest("button")?.closest("li")
+    if (!li) return
+    const rows = [...e.currentTarget.querySelectorAll("li")]
+    const i = rows.indexOf(li)
+    const next = (rows[i + 1] ?? rows[i - 1])?.querySelector<HTMLElement>('button[aria-label^="Remove "]') ?? null
+    removal.current = { count: useCart.getState().lines.length, next }
+  }
+  function onLinesClick() {
+    const r = removal.current
+    removal.current = null
+    if (!r || useCart.getState().lines.length >= r.count) return
+    window.requestAnimationFrame(() => (r.next?.isConnected ? r.next : emptyTitle.current)?.focus())
+  }
+
   const returns = bag.groups.map((g) => g.brand.returnsDays)
   const [minReturns, maxReturns] = [Math.min(...returns), Math.max(...returns)]
 
@@ -70,7 +107,9 @@ export function BagView() {
             <ShoppingBag className="size-6 text-ink-2" />
           </span>
           <div>
-            <p className="text-base text-ink">Your bag is empty</p>
+            <p ref={emptyTitle} tabIndex={-1} className="text-base text-ink outline-none">
+              Your bag is empty
+            </p>
             <p className="mt-1 max-w-sm text-sm text-ink-2">Add pieces from any brand and they check out together, one order per brand.</p>
           </div>
           <Button asChild variant="primary">
@@ -83,10 +122,12 @@ export function BagView() {
             <Notice icon={Package} className="mb-4">
               One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.
             </Notice>
-            <BagGroups groups={bag.groups} currency={currency} />
+            <div onClickCapture={onLinesClickCapture} onClick={onLinesClick}>
+              <BagGroups groups={bag.groups} currency={currency} />
+            </div>
           </div>
 
-          <aside aria-labelledby="bag-summary-title" className="rounded-lg border border-line-soft bg-card p-5 md:p-6 lg:sticky lg:top-28">
+          <aside ref={summaryRef} aria-labelledby="bag-summary-title" className="rounded-lg border border-line-soft bg-card p-5 md:p-6 lg:sticky lg:top-28">
             <h2 id="bag-summary-title" className="text-base font-medium text-ink">
               Summary
             </h2>
@@ -112,7 +153,7 @@ export function BagView() {
                 </ul>
               </div>
             </dl>
-            <p className="mt-4 text-xs text-ink-3">Taxes and duties confirmed at checkout</p>
+            <p className="mt-4 text-xs text-ink-3">Taxes are included in prices. Any import duties are explained at checkout.</p>
             <div className="mt-5 flex items-baseline justify-between gap-4 border-t border-line-soft pt-5">
               <span className="text-base text-ink">Total</span>
               <Price amount={bag.total} currency={currency} size="lg" />
@@ -136,6 +177,26 @@ export function BagView() {
           </aside>
         </div>
       )}
+
+      <AnimatePresence>
+        {hasLines && summaryAhead ? (
+          <motion.div
+            key="bag-bar"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: duration.dropdown, ease: ease.out } }}
+            exit={{ opacity: 0, y: 12, transition: { duration: duration.press, ease: ease.in } }}
+            className="fixed inset-x-4 bottom-[calc(max(0.875rem,env(safe-area-inset-bottom))+4.125rem)] z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
+          >
+            <p className="min-w-0 text-xs text-ink-2">
+              Total, {plural(bag.count, "item")}
+              <Price amount={bag.total} currency={currency} className="flex text-base text-ink" />
+            </p>
+            <Button variant="primary" size="lg" onClick={checkout} className="min-w-36">
+              Checkout
+            </Button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {ready && brandCount > 0 && saved.length > 0 ? (
         <section aria-labelledby="saved-title" className="mt-24 md:mt-32">

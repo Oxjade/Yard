@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import { StoriesIndex, StoriesIndexView } from "@/components/market/editorial/stories-index"
+import { StoriesIndex, StoriesIndexView } from "@/components/market/editorial/story-index"
 import { byNewest } from "@/components/market/editorial/story-card"
 import { stories } from "@/lib/data"
 

@@ -1,5 +1,5 @@
 import { countries, type CountryCode } from "@/config/markets"
-import { brandByHandle, brandById, brands, categoryBySlug, priceUsd, searchProducts, sponsoredProducts, type ProductSort } from "@/lib/data"
+import { brandByHandle, brandById, brands, categoryBySlug, priceUsd, products, searchProducts, sponsoredProducts, type ProductSort } from "@/lib/data"
 import { withSponsoredSlots } from "@/lib/data/ads"
 import { availableStock, productStock } from "@/lib/data/products"
 import type { Brand, CategorySlug, Product } from "@/lib/data/types"
@@ -219,6 +219,71 @@ export function computeFacets(state: CatalogState) {
 
 export type Facets = ReturnType<typeof computeFacets>
 
+/* ---------- search suggestions ---------- */
+
+/**
+ * Every term the catalogue can answer: piece names, brand names, subcategories and tags.
+ * Tags are stored lowercase; they are shown with a capital first letter so the list reads in
+ * one case beside names ("Leather" next to "MO-2 Leather"). Matching ignores case either way.
+ */
+const vocabulary: string[] = (() => {
+  const seen = new Map<string, string>()
+  // "Hoodies" and "hoodie" are one suggestion: the first spelling met wins.
+  const add = (term: string) => {
+    const t = term.trim()
+    const key = t.toLowerCase().replace(/s$/, "")
+    if (t.length > 1 && !seen.has(key)) seen.set(key, t)
+  }
+  const capitalise = (tag: string) => tag.trim().charAt(0).toUpperCase() + tag.trim().slice(1)
+  for (const p of products) {
+    if (p.status !== "published") continue
+    add(p.name)
+    add(p.subcategory)
+    p.tags.forEach((tag) => add(capitalise(tag)))
+  }
+  brands.forEach((b) => add(b.name))
+  return [...seen.values()]
+})()
+
+export type SearchSuggestion = { term: string; count: number }
+
+/** Matches inside a word ("lea" in "Pleated") are offered only when nothing starts with the text. */
+const MID_WORD_FALLBACK = 1
+
+/**
+ * Completions for what the shopper is typing, each with the number of pieces it would list
+ * under the current filters (a suggestion that would list nothing is left out). Terms that
+ * start with the text come first, then terms with a word that does. A match inside a word
+ * ("neck" in "Turtleneck") is offered only when no term or word starts with the text, and only
+ * from three letters.
+ */
+export function searchSuggestions(typed: string, state: CatalogState, limit = 6): SearchSuggestion[] {
+  const t = typed.trim().toLowerCase()
+  if (t.length < 2) return []
+  const rank = (term: string) => {
+    const lower = term.toLowerCase()
+    if (lower.startsWith(t)) return 0
+    if (lower.split(/[\s-]+/).some((w) => w.startsWith(t))) return 1
+    return 2
+  }
+  const out: SearchSuggestion[] = []
+  const candidates = vocabulary
+    .filter((term) => term.toLowerCase().includes(t) && term.toLowerCase() !== t)
+    .sort((a, b) => rank(a) - rank(b) || a.length - b.length || a.localeCompare(b))
+  let wordStart = 0
+  for (const term of candidates) {
+    const r = rank(term)
+    if (r === 2 && (t.length < 3 || wordStart >= MID_WORD_FALLBACK)) break
+    const count = filterProducts({ ...state, q: term }).length
+    if (count > 0) {
+      out.push({ term, count })
+      if (r < 2) wordStart++
+    }
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 /** A search for a brand's own name is navigational: it stays ad-free. */
 export function isNavigationalSearch(q: string) {
   const term = q.trim().toLowerCase()
@@ -299,11 +364,16 @@ function planCycles(merged: ListingEntry[], editorial: boolean): ListingCycle[] 
  * designated slots. A sponsored product must match the active filters and be in stock, at most
  * one per brand. It is never shown twice: if it already ranks at or above its slot organically
  * the slot stays organic; otherwise it moves into the labelled slot and leaves its organic spot.
- * Editorial spotlights are for browsing; a search stays a clean grid.
+ *
+ * Sponsored slots exist only in the default Trending ranking. A sort the shopper chose (price,
+ * newest) is a promise about order, so those listings carry no paid placements at all; neither
+ * does a search for a brand's own name. Editorial spotlights are for browsing; a search stays a
+ * clean grid.
  */
 export function buildListing(state: CatalogState) {
   const results = filterProducts(state)
-  const candidates = state.q && isNavigationalSearch(state.q) ? [] : sponsoredProducts(state.category)
+  const paidAllowed = state.sort === "trending" && !(state.q && isNavigationalSearch(state.q))
+  const candidates = paidAllowed ? sponsoredProducts(state.category) : []
   const placed: Product[] = []
   for (const p of candidates) {
     if (placed.length >= SPONSORED_SLOTS.length) break
@@ -325,6 +395,8 @@ export function buildListing(state: CatalogState) {
   const page = Math.min(state.page, pages)
   const cycles = all.slice(0, page)
   const last = cycles.at(-1)
+  // A later cycle's spotlight pulls pieces from further down, so the next page can add more than 24.
+  const next = all[page]
   return {
     total: results.length,
     cycles,
@@ -335,6 +407,8 @@ export function buildListing(state: CatalogState) {
     page,
     pages,
     hasMore: page < pages,
+    /** Pieces the next "Load more" adds: its cards plus its spotlight's pieces (0 on the last page). */
+    nextCount: next ? next.entries.length + (next.spotlight?.products.length ?? 0) : 0,
     brandCount: new Set(results.map((p) => p.brandId)).size,
   }
 }

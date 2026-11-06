@@ -1,14 +1,15 @@
 "use client"
 
-import { useId } from "react"
+import { useId, useState } from "react"
 import { MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
+import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { ColourValue } from "@/lib/data/types"
 import { LOW_STOCK, type ProductSelection } from "./use-product-selection"
 
-const pillSpring = { type: "spring", stiffness: 520, damping: 40 } as const
+const pillSpring = spring.indicator
 
 /** Colour swatches: a radio group. A colour with nothing left stays selectable so its sizes can be seen. */
 export function ColourSwatches({
@@ -40,7 +41,7 @@ export function ColourSwatches({
               value={c.name}
               aria-label={out ? `${c.name}, sold out` : c.name}
               title={c.name}
-              className="relative inline-flex size-10 items-center justify-center rounded-full outline-offset-2"
+              className="relative inline-flex size-10 items-center justify-center rounded-full outline-offset-2 transition-transform duration-100 active:scale-95"
             >
               {checked ? <motion.span layoutId={`${layoutKey}-colour`} transition={pillSpring} className="absolute inset-0 rounded-full border-2 border-violet" /> : null}
               <span className="relative block size-7 overflow-hidden rounded-full border border-white/15" style={{ background: c.hex }}>
@@ -63,6 +64,8 @@ export function SizeGrid({
   disabled = false,
   layoutKey,
   labelledBy,
+  describedBy,
+  invalid = false,
 }: {
   sizes: string[]
   stockBySize: Map<string, number>
@@ -71,12 +74,17 @@ export function SizeGrid({
   disabled?: boolean
   layoutKey: string
   labelledBy: string
+  /** The hint shown when Add to bag was pressed without a size. */
+  describedBy?: string
+  invalid?: boolean
 }) {
   return (
     <RadioGroupPrimitive.Root
       value={value ?? ""}
       onValueChange={onChange}
       aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      aria-invalid={invalid || undefined}
       disabled={disabled}
       className="grid grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))] gap-2"
     >
@@ -90,8 +98,8 @@ export function SizeGrid({
             disabled={out || disabled}
             aria-label={out ? `${s}, sold out` : s}
             className={cn(
-              "relative isolate flex aspect-square max-h-16 items-center justify-center rounded-md border text-sm tabular transition-[border-color,color] duration-200",
-              checked ? "border-purple text-ink" : "border-line text-ink hover:border-ink-2/60",
+              "relative isolate flex aspect-square max-h-16 min-h-11 items-center justify-center rounded-md border text-sm tabular transition-[border-color,color,transform,scale] duration-150 active:scale-[0.96] active:duration-100",
+              checked ? "border-purple text-ink" : invalid ? "border-danger/50 text-ink hover:border-danger/80" : "border-line text-ink hover:border-ink-2/60",
               out && "cursor-not-allowed border-line-soft text-ink-3 line-through decoration-ink-3 hover:border-line-soft",
               disabled && !out && "cursor-not-allowed text-ink-2 hover:border-line",
             )}
@@ -105,12 +113,18 @@ export function SizeGrid({
   )
 }
 
-/** One line of availability for the current choice: in stock, only N left (acid) or sold out. */
-export function StockLine({ selection, className }: { selection: ProductSelection; className?: string }) {
+/**
+ * One line of availability for the current choice: in stock, only N left (acid) or sold out.
+ * Before a drop's release nothing can be chosen yet, so it says when sizes open instead of
+ * counting them (which would read as buyable now), matching the drop module.
+ */
+export function StockLine({ selection, locked = false, className }: { selection: ProductSelection; locked?: boolean; className?: string }) {
   const { variant, stock, sizes, needsSize, colourStock, sizesInStock, colour } = selection
   let text: string
   let tone: "ok" | "low" | "out" | "muted"
-  if (variant && stock !== null) {
+  if (locked) {
+    ;[text, tone] = [sizes.length ? "Sizes open at release" : "Opens at release", "muted"]
+  } else if (variant && stock !== null) {
     if (stock === 0) [text, tone] = ["Sold out", "out"]
     else if (stock <= LOW_STOCK) [text, tone] = [`Only ${stock} left`, "low"]
     else [text, tone] = ["In stock", "ok"]
@@ -132,7 +146,7 @@ export function StockLine({ selection, className }: { selection: ProductSelectio
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.18 }}
+          transition={{ duration: duration.hover, ease: ease.out }}
           className={cn(tone === "ok" ? "text-ink" : tone === "low" ? "text-acid" : tone === "out" ? "text-ink-3" : "text-ink-2")}
         >
           {text}
@@ -143,8 +157,21 @@ export function StockLine({ selection, className }: { selection: ProductSelectio
 }
 
 /** Quantity stepper, bounded by what can still be bought. */
+const roll = {
+  enter: (dir: number) => ({ y: 14 * dir, opacity: 0 }),
+  center: { y: 0, opacity: 1 },
+  exit: (dir: number) => ({ y: -14 * dir, opacity: 0 }),
+}
+
 export function QuantityStepper({ value, max, onChange, disabled = false }: { value: number; max: number; onChange: (n: number) => void; disabled?: boolean }) {
   const top = Math.max(1, max)
+  // Up rolls the number up, down rolls it down.
+  const [last, setLast] = useState(value)
+  const [dir, setDir] = useState(1)
+  if (value !== last) {
+    setDir(value > last ? 1 : -1)
+    setLast(value)
+  }
   return (
     <div className={cn("inline-flex h-12 items-center rounded-md border border-line", disabled && "opacity-45")} role="group" aria-label="Quantity">
       <button
@@ -152,13 +179,26 @@ export function QuantityStepper({ value, max, onChange, disabled = false }: { va
         onClick={() => onChange(Math.max(1, value - 1))}
         disabled={disabled || value <= 1}
         aria-label="Decrease quantity"
-        className="inline-flex size-12 items-center justify-center rounded-l-md text-ink-2 transition hover:bg-elevated hover:text-ink disabled:pointer-events-none disabled:opacity-35"
+        className="inline-flex size-12 items-center justify-center rounded-l-md text-ink-2 transition-[background-color,color,transform,scale] duration-150 hover:bg-elevated hover:text-ink active:scale-90 active:duration-100 disabled:pointer-events-none disabled:opacity-35"
       >
         <Minus className="size-4" />
       </button>
-      <span className="relative inline-flex h-full w-9 items-center justify-center overflow-hidden text-base tabular" aria-live="polite" aria-label={`Quantity ${value}`}>
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span key={value} initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -14, opacity: 0 }} transition={{ duration: 0.18 }}>
+      <span className="relative inline-flex h-full w-9 items-center justify-center overflow-hidden text-base tabular">
+        {/* The number rolls in the direction it moved; the live text is read once, without the roll. */}
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          Quantity {value}
+        </span>
+        <AnimatePresence mode="popLayout" initial={false} custom={dir}>
+          <motion.span
+            key={value}
+            aria-hidden
+            custom={dir}
+            variants={roll}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: duration.press, ease: ease.out }}
+          >
             {value}
           </motion.span>
         </AnimatePresence>
@@ -168,7 +208,7 @@ export function QuantityStepper({ value, max, onChange, disabled = false }: { va
         onClick={() => onChange(Math.min(top, value + 1))}
         disabled={disabled || value >= top}
         aria-label="Increase quantity"
-        className="inline-flex size-12 items-center justify-center rounded-r-md text-ink-2 transition hover:bg-elevated hover:text-ink disabled:pointer-events-none disabled:opacity-35"
+        className="inline-flex size-12 items-center justify-center rounded-r-md text-ink-2 transition-[background-color,color,transform,scale] duration-150 hover:bg-elevated hover:text-ink active:scale-90 active:duration-100 disabled:pointer-events-none disabled:opacity-35"
       >
         <Plus className="size-4" />
       </button>

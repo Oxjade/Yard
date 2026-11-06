@@ -51,7 +51,7 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
         <span className="scrim-l absolute inset-0 -z-10" aria-hidden />
         <span className="scrim-b absolute inset-0 -z-10" aria-hidden />
         <div className="mx-auto flex min-h-[360px] max-w-page flex-col justify-end px-4 pt-28 pb-8 md:min-h-[460px] md:px-8 md:pb-12">
-          <Link href="/categories" className="inline-flex w-fit items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink">
+          <Link href="/categories" className="-my-1.5 inline-flex min-h-10 w-fit items-center gap-1 rounded-md text-sm text-ink-2 transition-colors duration-150 hover:text-ink">
             <ChevronLeft className="size-4" />
             All categories
           </Link>

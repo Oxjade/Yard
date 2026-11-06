@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { PackageIcon as Package } from "@phosphor-icons/react"
+import { FunnelSimpleIcon as Funnel, PackageIcon as Package } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
@@ -11,9 +11,11 @@ import { brandById } from "@/lib/data/brands"
 import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
-import { Chip } from "@/components/market/catalog/chip"
+import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
+import { duration, ease, spring } from "@/lib/motion"
+import { cn } from "@/lib/utils"
 import { formatDay } from "./format"
-import { OrderStatusBadge, TrackingLink } from "./order-status"
+import { checkoutPayment, OrderStatusBadge, TrackingLink } from "./order-status"
 import { YouNav } from "./you-nav"
 
 type Filter = "all" | "open" | "closed"
@@ -64,19 +66,27 @@ export function OrderRow({ order, showCurrency = false }: { order: MerchantOrder
   )
 }
 
-export function CheckoutGroupCard({ group, orders }: { group: CheckoutGroup; orders: MerchantOrder[] }) {
+export function CheckoutGroupCard({ group, orders, highlighted = false }: { group: CheckoutGroup; orders: MerchantOrder[]; highlighted?: boolean }) {
+  const payment = checkoutPayment(orders)
   return (
-    <article className="overflow-hidden rounded-lg border border-line-soft bg-card" aria-labelledby={`g-${group.id}`}>
+    <article
+      className={cn("overflow-hidden rounded-lg border bg-card transition-colors duration-200", highlighted ? "border-violet/60" : "border-line-soft")}
+      aria-labelledby={`g-${group.id}`}
+    >
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-line-soft px-4 py-4 md:px-6">
         <div>
-          <h2 id={`g-${group.id}`} className="text-base font-medium text-ink tabular">Checkout {group.reference}</h2>
+          {/* Order pages link here as /you/orders#g-<id>: the heading takes focus so the checkout is announced. */}
+          <h2 id={`g-${group.id}`} tabIndex={-1} className="scroll-mt-28 text-base font-medium text-ink tabular outline-none">
+            Checkout {group.reference}
+          </h2>
           <p className="mt-1 text-sm text-ink-2">
             Placed {formatDay(group.placedAt, { year: true })}, {orders.length === 1 ? "1 brand" : `${orders.length} brands shipping separately`}
           </p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="text-xs text-ink-3">{orders.every((o) => o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded") ? "Total charged" : "Total"}</p>
+          <p className="text-xs text-ink-3">{payment.label}</p>
           <p className="text-lg text-ink tabular">{formatMoney(group.total, group.currency)}</p>
+          {payment.note ? <p className={cn("mt-0.5 text-xs", payment.tone === "violet" ? "text-violet" : "text-ink-3")}>{payment.note}</p> : null}
         </div>
       </header>
       <ul className="divide-y divide-line-soft">
@@ -88,11 +98,30 @@ export function CheckoutGroupCard({ group, orders }: { group: CheckoutGroup; ord
   )
 }
 
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange)
+  window.addEventListener("popstate", onChange)
+  return () => {
+    window.removeEventListener("hashchange", onChange)
+    window.removeEventListener("popstate", onChange)
+  }
+}
+
 /** Order history: one card per checkout, one row per brand order inside it. */
 export function OrdersList() {
   const groups = useOrders((s) => s.groups)
   const orders = useOrders((s) => s.orders)
   const [filter, setFilter] = useState<Filter>("all")
+  // Arriving from an order page's "part of checkout" link: bring that checkout into view,
+  // mark it, and move focus to its heading.
+  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "")
+  const target = hash.startsWith("#g-") ? hash.slice(3) : null
+  useEffect(() => {
+    const el = target ? document.getElementById(`g-${target}`) : null
+    if (!el) return
+    el.scrollIntoView({ block: "start" })
+    el.focus({ preventScroll: true })
+  }, [target])
 
   const rows = useMemo(() => {
     const byId = new Map(orders.map((o) => [o.id, o]))
@@ -132,7 +161,7 @@ export function OrdersList() {
         </div>
       ) : (
         <>
-          <div role="radiogroup" aria-label="Show orders" className="rail -mx-4 mt-10 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+          <ChipRadioGroup label="Show orders" className="rail -mx-4 mt-10 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
             {(
               [
                 { value: "all", label: "All", count: rows.length },
@@ -144,25 +173,30 @@ export function OrdersList() {
                 {o.label}
               </Chip>
             ))}
-          </div>
+          </ChipRadioGroup>
           <div className="mt-6 grid gap-6">
             <AnimatePresence mode="popLayout" initial={false}>
               {visible.map((r) => (
-                <motion.div key={r.group.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <CheckoutGroupCard group={r.group} orders={r.orders} />
+                <motion.div key={r.group.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: duration.press, ease: ease.in } }} transition={spring.layout}>
+                  <CheckoutGroupCard group={r.group} orders={r.orders} highlighted={r.group.id === target} />
                 </motion.div>
               ))}
             </AnimatePresence>
             {visible.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
-                <p className="text-base text-ink">{filter === "open" ? "Nothing in progress" : "No completed orders yet"}</p>
-                <p className="text-sm text-ink-2">{filter === "open" ? "Every order you've placed has arrived or been closed." : "Orders move here once they're delivered, refunded or cancelled."}</p>
-                <Button variant="secondary" size="sm" onClick={() => setFilter("all")}>Show all orders</Button>
+              <div className="flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
+                <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
+                  <Funnel className="size-6 text-ink-2" />
+                </span>
+                <div>
+                  <p className="text-base text-ink">{filter === "open" ? "Nothing in progress" : "No completed orders yet"}</p>
+                  <p className="mt-1 text-sm text-ink-2">{filter === "open" ? "Every order you've placed has arrived or been closed." : "Orders move here once they're delivered, refunded or cancelled."}</p>
+                </div>
+                <Button variant="secondary" onClick={() => setFilter("all")}>Show all orders</Button>
               </div>
             ) : null}
           </div>
           <p className="mt-8 text-xs text-ink-3">
-            Checkout totals are in the currency you paid in. Each brand order shows the amount in that brand&apos;s own currency. Returns are handled by each brand, within its own return window.
+            Checkout totals are in the currency you checked out in. Each brand order shows its amount in that brand&apos;s own currency. Returns are handled by each brand, within its own return window.
           </p>
         </>
       )}

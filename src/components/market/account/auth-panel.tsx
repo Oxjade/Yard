@@ -8,12 +8,12 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { useSession } from "@/lib/stores/session"
 import type { ImageAsset } from "@/lib/data/types"
 import { safeNext } from "./format"
-import { AccountSkeleton } from "./skeletons"
+import { AccountSkeleton, type AccountSkeletonVariant } from "./skeletons"
 
 export type Invite = { title: string; body: string; image: ImageAsset; caption?: string }
 
 const benefits = [
-  { icon: Heart, text: "Save pieces from any brand and find them on every device." },
+  { icon: Heart, text: "Save pieces from any brand. Once accounts are connected, they follow you to every device." },
   { icon: Bell, text: "Get drop reminders and new pieces from the brands you follow." },
   { icon: Package, text: "Check out once and track each brand's order separately." },
 ]
@@ -34,7 +34,16 @@ export function useAfterSignIn(next?: string) {
 }
 
 /** Full-page sign-in: editorial photograph on one side, the shared AuthForm on the other. */
-export function AuthPanel({ title, body, image, caption, next, eyebrow, children }: Invite & { next?: string; eyebrow?: string; children?: React.ReactNode }) {
+export function AuthPanel({
+  title,
+  body,
+  image,
+  caption,
+  next,
+  eyebrow,
+  joinNote = true,
+  children,
+}: Invite & { next?: string; eyebrow?: string; /** The "continuing creates your account" note; off once signed in. */ joinNote?: boolean; children?: React.ReactNode }) {
   const afterSignIn = useAfterSignIn(next)
 
   return (
@@ -51,9 +60,11 @@ export function AuthPanel({ title, body, image, caption, next, eyebrow, children
         <div className="mt-8 max-w-md">
           {children ?? <AuthForm onDone={afterSignIn} />}
         </div>
-        <p className="mt-4 max-w-md text-xs leading-relaxed text-ink-3">
-          New here? Continuing creates your account. You choose which updates reach you, and how, in Settings.
-        </p>
+        {joinNote ? (
+          <p className="mt-4 max-w-md text-xs leading-relaxed text-ink-3">
+            New here? Continuing creates your account. You choose which updates reach you, and how, in Settings.
+          </p>
+        ) : null}
         <ul className="mt-10 grid max-w-md gap-3 border-t border-line-soft pt-6">
           {benefits.map(({ icon: Icon, text }) => (
             <li key={text} className="flex items-start gap-3 text-sm text-ink-2">
@@ -71,7 +82,7 @@ export function AuthPanel({ title, body, image, caption, next, eyebrow, children
  * Your World pages need an account. Until the saved session has loaded the page shows
  * skeletons; guests get a sign-in invitation in place of the page.
  */
-export function AccountGate({ invite, skeleton = "grid", children }: { invite: Invite; skeleton?: "grid" | "list" | "form" | "split"; children: React.ReactNode }) {
+export function AccountGate({ invite, skeleton = "grid", children }: { invite: Invite; skeleton?: AccountSkeletonVariant; children: React.ReactNode }) {
   const hydrated = useHydrated()
   const user = useSession((s) => s.user)
   if (!hydrated) return <AccountSkeleton variant={skeleton} />

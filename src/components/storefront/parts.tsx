@@ -144,7 +144,7 @@ export function SectionHeading({
 /** A text link in the brand accent, used for section actions. */
 export function AccentLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
   return (
-    <Link href={href} className={cn("group inline-flex shrink-0 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-(color:--sf-accent)", className)}>
+    <Link href={href} className={cn("group inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-(color:--sf-accent) lg:min-h-0", className)}>
       {children}
       <ArrowUpRight className="size-4 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
     </Link>
@@ -229,7 +229,7 @@ export function SocialLinks({ brand, className, tone = "default" }: { brand: Bra
   const links = socialLinksOf(brand)
   if (!links.length) return null
   return (
-    <ul className={cn("flex flex-wrap items-center gap-x-5 gap-y-2", className)} aria-label={`${brand.name} elsewhere`}>
+    <ul className={cn("flex flex-wrap items-center gap-x-5 lg:gap-y-2", className)} aria-label={`${brand.name} elsewhere`}>
       {links.map((l) => (
         <li key={l.label}>
           <a
@@ -238,7 +238,7 @@ export function SocialLinks({ brand, className, tone = "default" }: { brand: Bra
             rel="noopener noreferrer"
             aria-label={`${brand.name} on ${l.label} (opens in a new tab)`}
             className={cn(
-              "group inline-flex items-center gap-1 text-sm transition-colors hover:text-(color:--sf-accent)",
+              "group inline-flex min-h-10 items-center gap-1 rounded-sm text-sm transition-colors hover:text-(color:--sf-accent) lg:min-h-0",
               tone === "onImage" ? "text-ink/85" : "text-ink-2",
             )}
           >
@@ -342,7 +342,7 @@ export function StorefrontFooter({ ctx }: { ctx: StorefrontContext }) {
           <div>
             <p className="text-sm text-ink">{brand.name}</p>
             <p className="mt-1 max-w-xs text-xs leading-relaxed text-ink-2">
-              Sold and shipped by {brand.name}. Paid securely through {site.name}.
+              Sold and shipped by {brand.name}. Checkout runs through {site.name}.
             </p>
           </div>
         </div>

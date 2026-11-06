@@ -3,13 +3,15 @@
 import { useEffect, useId, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { SealCheckIcon as BadgeCheck, CheckIcon as Check, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
+import { SealCheckIcon as BadgeCheck, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { productStock, variantLabel } from "@/lib/data/products"
+import { productStock } from "@/lib/data/products"
+import { duration, ease, spring } from "@/lib/motion"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import type { Brand, Drop, Product } from "@/lib/data/types"
@@ -18,7 +20,6 @@ import { FollowButton } from "../follow-button"
 import { NotifyButton } from "../notify-button"
 import { Price } from "../price"
 import { ProductBadge, primaryBadge } from "../product-badge"
-import { addedToast } from "../quick-add"
 import { WishlistButton } from "../wishlist-button"
 import { DeliverySummary, ReturnsDetails, ShippingDetails } from "./delivery"
 import { DropModule } from "./drop-module"
@@ -42,6 +43,10 @@ const actionLabel: Record<Action, string> = {
  * The product page body: gallery, buy box and (on phones) the floating add-to-bag bar.
  * Everything below the buy box (the rails) comes in as children so the bar can step aside
  * when the page reaches its end.
+ *
+ * Adding runs through useAsyncAction: the button shows a check while it succeeds and ignores
+ * repeat presses meanwhile; the header's bag bubble (BagPop) is the confirmation, so there is
+ * no toast. Pressing "Select a size" points at the size grid instead of doing nothing.
  */
 export function ProductView({ product, brand, drop, children }: { product: Product; brand: Brand; drop: Drop | null; children?: React.ReactNode }) {
   const sel = useProductSelection(product)
@@ -54,11 +59,13 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   const inBagStored = useCart((s) => (variantId ? (s.lines.find((l) => l.variantId === variantId)?.quantity ?? 0) : 0))
   const inBag = hydrated ? inBagStored : 0
 
-  const [justAdded, setJustAdded] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
-  const addedTimer = useRef<number | undefined>(undefined)
+  const [sizePrompt, setSizePrompt] = useState(false)
   const sizeLabelId = useId()
+  const sizeHintId = useId()
   const sheetSizeLabelId = useId()
+  const sizeGridRef = useRef<HTMLDivElement>(null)
+  const sheetGridRef = useRef<HTMLDivElement>(null)
 
   // What can still go in the bag: stock, the 10-per-line cap and, during a live drop, its per-customer limit.
   const limit = phase === "live" && drop ? drop.limitPerCustomer : MAX_QTY_PER_LINE
@@ -83,21 +90,47 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
     return useSaved.persist.onFinishHydration(record)
   }, [product.id])
 
-  useEffect(() => () => window.clearTimeout(addedTimer.current), [])
+  const adding = useAsyncAction(
+    (variantId: string, quantity: number) => {
+      add(product.id, variantId, quantity)
+      sel.setQuantity(1)
+      return true
+    },
+    { error: "That piece couldn't be added to your bag. Try again in a moment.", successFlashMs: 1200 },
+  )
 
-  function addToBag() {
-    if (action !== "ready" || !sel.variant) return false
-    add(product.id, sel.variant.id, qty)
-    addedToast(product, [variantLabel(sel.variant.options), qty > 1 ? `quantity ${qty}` : ""].filter(Boolean).join(", "))
-    sel.setQuantity(1)
-    setJustAdded(true)
-    window.clearTimeout(addedTimer.current)
-    addedTimer.current = window.setTimeout(() => setJustAdded(false), 1600)
-    return true
+  /** Move focus to the first size that can be chosen, and say why. */
+  function promptSize(grid: HTMLElement | null) {
+    setSizePrompt(true)
+    const first = grid?.querySelector<HTMLButtonElement>('[role="radio"]:not(:disabled)')
+    if (!first) return
+    first.focus({ preventScroll: true })
+    const r = first.getBoundingClientRect()
+    if (r.top < 96 || r.bottom > window.innerHeight - 120) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      first.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" })
+    }
   }
 
-  // Phone bar: shown while the in-page buttons are off screen, and gone once the footer comes up.
-  // Measured on scroll (not IntersectionObserver) so a jump straight past the end still counts.
+  function chooseSize(size: string) {
+    sel.setSize(size)
+    setSizePrompt(false)
+  }
+
+  /** Resolves true once the piece is in the bag. */
+  async function addToBag(grid: HTMLElement | null = sizeGridRef.current) {
+    if (adding.pending || adding.succeeded) return false
+    if (action === "choose-size") {
+      promptSize(grid)
+      return false
+    }
+    if (action !== "ready" || !sel.variant) return false
+    return (await adding.run(sel.variant.id, qty)) === true
+  }
+
+  // Phone bar: shown once the in-page buttons have scrolled up past the header (so it never
+  // covers the title on arrival), and gone once the footer comes up. Measured on scroll (not
+  // IntersectionObserver) so a jump straight past the end still counts.
   const ctaRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const [showBar, setShowBar] = useState(false)
@@ -109,9 +142,9 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
       const end = endRef.current?.getBoundingClientRect()
       if (!cta || !end) return
       const vh = window.innerHeight
-      const ctaOnScreen = cta.bottom > 0 && cta.top < vh
+      const ctaPassed = cta.bottom < 72
       const reachedEnd = end.top < vh
-      setShowBar(!ctaOnScreen && !reachedEnd)
+      setShowBar(ctaPassed && !reachedEnd)
     }
     const schedule = () => {
       if (!frame) frame = window.requestAnimationFrame(update)
@@ -139,21 +172,28 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           ? `Sold out for now. Save it to keep it in your wishlist, or see more from ${brand.name} below.`
           : null
 
+  // The label changes with the selection (Select a size, Add to bag, Sold out): a short roll.
   const addButtonContent = (
     <AnimatePresence mode="popLayout" initial={false}>
       <motion.span
-        key={justAdded ? "added" : actionLabel[action]}
-        initial={{ y: 14, opacity: 0 }}
+        key={actionLabel[action]}
+        initial={{ y: 12, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: -14, opacity: 0 }}
-        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        exit={{ y: -12, opacity: 0 }}
+        transition={{ duration: duration.hover, ease: ease.out }}
         className="inline-flex items-center gap-2"
       >
-        {justAdded ? <Check className="size-5" /> : action === "ready" ? <ShoppingBag className="size-5" /> : null}
-        {justAdded ? "Added to bag" : actionLabel[action]}
+        {action === "ready" ? <ShoppingBag className="size-5" /> : null}
+        {actionLabel[action]}
       </motion.span>
     </AnimatePresence>
   )
+  // Blocked states are disabled, except while the success check is still showing.
+  const blocked = action === "locked" || action === "sold-out" || action === "limit"
+  const addDisabled = !adding.succeeded && blocked
+  // Acid is for the action the shopper can take (add, choose a size, get notified). A blocked
+  // state is not an action, so it drops to the quiet secondary slab instead of a dimmed acid one.
+  const addVariant = addDisabled ? "secondary" : "primary"
 
   return (
     <>
@@ -187,7 +227,8 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                 </span>
               </span>
             </Link>
-            <FollowButton brandId={brand.id} brandName={brand.name} size="sm" />
+            {/* 40px on phones and tablets; the compact size beside the desktop buy box. */}
+            <FollowButton brandId={brand.id} brandName={brand.name} size="sm" className="max-lg:h-10 max-lg:px-4" />
           </div>
 
           <h1 className="mt-6 font-display text-display-lg text-balance text-ink lg:text-display-md">{product.name}</h1>
@@ -219,9 +260,20 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                     </p>
                     <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
                   </div>
-                  <div className="mt-3">
-                    <SizeGrid sizes={sel.sizes} stockBySize={sel.stockBySize} value={sel.size} onChange={sel.setSize} disabled={action === "locked"} layoutKey="pdp" labelledBy={sizeLabelId} />
+                  <div ref={sizeGridRef} className="mt-3 scroll-mt-28">
+                    <SizeGrid
+                      sizes={sel.sizes}
+                      stockBySize={sel.stockBySize}
+                      value={sel.size}
+                      onChange={chooseSize}
+                      disabled={action === "locked"}
+                      layoutKey="pdp"
+                      labelledBy={sizeLabelId}
+                      describedBy={sizePrompt && !sel.size ? sizeHintId : undefined}
+                      invalid={sizePrompt && !sel.size}
+                    />
                   </div>
+                  <SizeHint id={sizeHintId} show={sizePrompt && !sel.size} />
                 </div>
               ) : null}
             </div>
@@ -231,28 +283,48 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           <div ref={ctaRef} className="mt-8">
             <div className="flex items-center justify-between gap-4">
               <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={action === "locked" || action === "sold-out" || action === "limit"} />
-              <StockLine selection={sel} className="justify-end text-right" />
+              <StockLine selection={sel} locked={action === "locked"} className="justify-end text-right" />
             </div>
             <div className="mt-3 flex gap-2">
               {action === "locked" && activeDrop ? (
                 <NotifyButton drop={activeDrop} variant="primary" size="lg" className="h-14 flex-1 text-base" />
               ) : (
-                <Button type="button" variant="primary" size="xl" onClick={addToBag} disabled={action !== "ready" && !justAdded} className="flex-1 overflow-hidden">
+                <Button
+                  type="button"
+                  variant={addVariant}
+                  size="xl"
+                  onClick={() => void addToBag()}
+                  loading={adding.pending}
+                  success={adding.succeeded}
+                  disabled={addDisabled}
+                  className="flex-1 overflow-hidden"
+                >
                   {addButtonContent}
                 </Button>
               )}
               <WishlistButton variant="button" productId={product.id} name={product.name} />
             </div>
-            {helper ? (
-              <p className="mt-3 text-xs text-ink-2">
-                {helper}{" "}
-                {inBag > 0 ? (
-                  <button type="button" onClick={openBag} className="text-violet underline-offset-4 hover:underline">
-                    View bag
-                  </button>
-                ) : null}
-              </p>
-            ) : null}
+            <AnimatePresence initial={false}>
+              {helper ? (
+                <motion.p
+                  key="helper"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, transition: { duration: duration.press, ease: ease.in } }}
+                  transition={{ duration: duration.hover, ease: ease.out }}
+                  className="mt-3 text-xs text-ink-2"
+                  aria-live="polite"
+                >
+                  {helper}{" "}
+                  {inBag > 0 ? (
+                    // A 40px target that keeps the line's height (negative margin, as the breadcrumb does).
+                    <button type="button" onClick={openBag} className="-my-3 inline-flex min-h-10 items-center rounded-md text-violet underline-offset-4 hover:underline">
+                      View bag
+                    </button>
+                  ) : null}
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
           </div>
 
           <div className="mt-8">
@@ -306,7 +378,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             initial={{ y: 24, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 420, damping: 36 }}
+            transition={spring.snappy}
             className="fixed inset-x-0 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+4.75rem)] z-30 px-3 lg:hidden"
           >
             <div className="glass glass-sheen mx-auto flex max-w-md items-center gap-3 rounded-2xl p-2">
@@ -331,7 +403,16 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                   View bag
                 </Button>
               ) : (
-                <Button type="button" variant="primary" size="lg" className="h-11 overflow-hidden px-4" onClick={addToBag} disabled={action !== "ready" && !justAdded}>
+                <Button
+                  type="button"
+                  variant={addVariant}
+                  size="lg"
+                  className="h-11 overflow-hidden px-4"
+                  onClick={() => void addToBag()}
+                  loading={adding.pending}
+                  success={adding.succeeded}
+                  disabled={addDisabled}
+                >
                   {addButtonContent}
                 </Button>
               )}
@@ -351,17 +432,19 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           footer={
             <>
               <div className="flex items-center justify-between gap-3">
-                <StockLine selection={sel} />
+                <StockLine selection={sel} locked={action === "locked"} />
                 <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
               </div>
               <Button
                 type="button"
-                variant="primary"
+                variant={addVariant}
                 size="xl"
                 className="w-full overflow-hidden"
-                disabled={action !== "ready"}
-                onClick={() => {
-                  if (addToBag()) setSheetOpen(false)
+                loading={adding.pending}
+                disabled={addDisabled}
+                onClick={async () => {
+                  // The sheet closes on success; the bag bubble in the header confirms.
+                  if (await addToBag(sheetGridRef.current)) setSheetOpen(false)
                 }}
               >
                 {addButtonContent}
@@ -369,9 +452,43 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             </>
           }
         >
-          <SizeGrid sizes={sel.sizes} stockBySize={sel.stockBySize} value={sel.size} onChange={sel.setSize} layoutKey="sheet" labelledBy={sheetSizeLabelId} />
+          <div ref={sheetGridRef}>
+            <SizeGrid
+              sizes={sel.sizes}
+              stockBySize={sel.stockBySize}
+              value={sel.size}
+              onChange={chooseSize}
+              layoutKey="sheet"
+              labelledBy={sheetSizeLabelId}
+              describedBy={sizePrompt && !sel.size ? `${sizeHintId}-sheet` : undefined}
+              invalid={sizePrompt && !sel.size}
+            />
+          </div>
+          <SizeHint id={`${sizeHintId}-sheet`} show={sizePrompt && !sel.size} />
         </SizeSheet>
       ) : null}
     </>
+  )
+}
+
+/** "Choose a size" under the size grid, shown after Add to bag was pressed without one. */
+function SizeHint({ id, show }: { id: string; show: boolean }) {
+  return (
+    <AnimatePresence initial={false}>
+      {show ? (
+        <motion.p
+          key="hint"
+          id={id}
+          role="alert"
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, transition: { duration: duration.press, ease: ease.in } }}
+          transition={{ duration: duration.hover, ease: ease.out }}
+          className="mt-2 text-xs text-danger"
+        >
+          Choose a size to add this to your bag.
+        </motion.p>
+      ) : null}
+    </AnimatePresence>
   )
 }

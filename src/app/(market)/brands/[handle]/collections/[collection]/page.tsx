@@ -5,8 +5,8 @@ import { brandById, collections, collectionsOf, getBrand, productById } from "@/
 import type { Product } from "@/lib/data/types"
 
 /**
- * The handle is checked before anything renders so an unknown collection answers with a real
- * 404. That check needs the URL, so this segment may block; every known collection is prerendered.
+ * layout.tsx checks the address first, so an unknown collection answers with a real 404 and this
+ * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
 

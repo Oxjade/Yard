@@ -1,19 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { CalendarXIcon as CalendarX2 } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
+import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
 import { BrandMark } from "@/components/market/brand-mark"
-import { Chip } from "@/components/market/catalog/chip"
-import { NotifyButton } from "@/components/market/notify-button"
+import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
 import { brandById } from "@/lib/data/brands"
 import { dropWindow } from "@/lib/drops"
+import { duration, ease } from "@/lib/motion"
 import type { Drop } from "@/lib/data/types"
+import { DropReminderButton } from "./drop-actions"
 import { accessName, isSponsoredDrop, limitText } from "./drop-facts"
+import { EmptyCard } from "./empty-card"
 import { releasesInShort } from "./use-drop-phase"
 
 type AccessFilter = "all" | Drop["access"]
@@ -26,6 +30,28 @@ const filters: { value: AccessFilter; label: string }[] = [
 ]
 
 const DAY = 86_400_000
+
+const isAccess = (v: string | null): v is Drop["access"] => filters.some((f) => f.value !== "all" && f.value === v)
+
+/**
+ * Writes the release type to the URL (?type=) without a navigation; useSearchParams follows it.
+ * Filter rows on /brands, /stories and /drops all replace the entry, like the shop's filters,
+ * so Back leaves the page instead of stepping through every chip that was tried.
+ */
+function writeType(next: AccessFilter) {
+  const url = new URL(window.location.href)
+  if (next === "all") url.searchParams.delete("type")
+  else url.searchParams.set("type", next)
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
+}
+
+type CalendarProps = { drops: Drop[]; now: number | null; anchor: number | null }
+
+/** Reads ?type= from the URL; must sit inside <Suspense>. */
+function UrlReleaseCalendar(props: CalendarProps) {
+  const fromUrl = useSearchParams().get("type")
+  return <ReleaseCalendarView {...props} filter={isAccess(fromUrl) ? fromUrl : "all"} />
+}
 
 function startOfDay(ms: number) {
   const d = new Date(ms)
@@ -43,10 +69,19 @@ function relativeDay(dayStart: number, today: number) {
 /**
  * Upcoming releases as a calendar, grouped by day in the shopper's own time zone. Dates come
  * from the demo clock, so they are only rendered after mount; until then the rows show with
- * placeholder dates of the same size.
+ * placeholder dates of the same size. The release-type filter lives in the URL (?type=), so a
+ * filtered calendar survives a reload and can be shared; the static page renders it unfiltered.
  */
-export function ReleaseCalendar({ drops, now, anchor }: { drops: Drop[]; now: number | null; anchor: number | null }) {
-  const [filter, setFilter] = useState<AccessFilter>("all")
+export function ReleaseCalendar(props: CalendarProps) {
+  return (
+    <Suspense fallback={<ReleaseCalendarView {...props} filter="all" />}>
+      <UrlReleaseCalendar {...props} />
+    </Suspense>
+  )
+}
+
+function ReleaseCalendarView({ drops, now, anchor, filter }: CalendarProps & { filter: AccessFilter }) {
+  const setFilter = writeType
   const visible = filter === "all" ? drops : drops.filter((d) => d.access === filter)
   const counts = (value: AccessFilter) => (value === "all" ? drops.length : drops.filter((d) => d.access === value).length)
 
@@ -70,36 +105,34 @@ export function ReleaseCalendar({ drops, now, anchor }: { drops: Drop[]; now: nu
 
   return (
     <div>
-      <div className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="radiogroup" aria-label="Filter by release type">
+      <ChipRadioGroup label="Filter by release type" className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {filters.map((f) => (
           <Chip key={f.value} selected={filter === f.value} onClick={() => setFilter(f.value)} count={counts(f.value)} layoutId="release-filter" size="sm" radio>
             {f.label}
           </Chip>
         ))}
-      </div>
+      </ChipRadioGroup>
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={filter}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          exit={{ opacity: 0, y: -4, transition: { duration: 0.14, ease: ease.in } }}
+          transition={{ duration: duration.page, ease: ease.out }}
           className="mt-8"
         >
           {visible.length === 0 ? (
-            <div className="flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center">
-              <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
-                <CalendarX2 className="size-6 text-ink-2" />
-              </span>
-              <div>
-                <p className="text-base text-ink">No {accessName[filter as Drop["access"]].toLowerCase()} releases scheduled</p>
-                <p className="mt-1 text-sm text-ink-2">Brands announce new drops here first. Check the other release types for now.</p>
-              </div>
-              <Button variant="secondary" onClick={() => setFilter("all")}>
-                Show all releases
-              </Button>
-            </div>
+            <EmptyCard
+              icon={<CalendarX2 />}
+              title={`No ${accessName[filter as Drop["access"]].toLowerCase()} releases scheduled`}
+              reason="Brands announce new drops here first; the other release types have dates set."
+              action={
+                <Button variant="secondary" onClick={() => setFilter("all")}>
+                  Show all releases
+                </Button>
+              }
+            />
           ) : (
             <div className="grid gap-10 md:gap-12">
               {groups.map((g) => (
@@ -107,8 +140,8 @@ export function ReleaseCalendar({ drops, now, anchor }: { drops: Drop[]; now: nu
                   <header className="md:sticky md:top-28 md:self-start">
                     {g.dayStart === null || today === null ? (
                       <div aria-hidden>
-                        <div className="h-8 w-40 animate-pulse rounded-md bg-card md:h-9" />
-                        <div className="mt-2 h-4 w-20 animate-pulse rounded bg-card" />
+                        <Bone className="h-8 w-40 md:h-9" />
+                        <Bone className="mt-2 h-4 w-28" />
                       </div>
                     ) : (
                       <>
@@ -148,7 +181,10 @@ function CalendarRow({ drop, release, now }: { drop: Drop; release: number | nul
       {/* Time: its own column on desktop, inline above the name on phones */}
       <div className="hidden md:block">
         {time === null ? (
-          <div aria-hidden className="h-6 w-14 animate-pulse rounded bg-card" />
+          <div aria-hidden>
+            <Bone className="h-6 w-16" />
+            <Bone className="mt-1 h-3 w-12" />
+          </div>
         ) : (
           <>
             <p className="text-lg text-ink tabular">{time}</p>
@@ -163,15 +199,15 @@ function CalendarRow({ drop, release, now }: { drop: Drop; release: number | nul
 
       <div className="min-w-0 flex-1 md:contents">
         <div className="min-w-0">
-          <p className="mb-1.5 text-xs md:hidden">
+          <div className="mb-1.5 flex h-4 items-center gap-1 text-xs md:hidden">
             {time === null ? (
-              <span aria-hidden className="inline-block h-3.5 w-24 animate-pulse rounded bg-card align-middle" />
+              <Bone className="h-3.5 w-24" />
             ) : (
               <>
                 <span className="text-ink tabular">{time}</span> <span className={soon ? "text-acid" : "text-ink-3"}>{until}</span>
               </>
             )}
-          </p>
+          </div>
           <div className="flex items-center gap-2">
             <BrandMark brand={brand} size="xs" />
             <Link href={`/brands/${brand.handle}`} className="truncate text-xs text-ink-2 transition-colors hover:text-violet">
@@ -188,7 +224,7 @@ function CalendarRow({ drop, release, now }: { drop: Drop; release: number | nul
           <span className="block text-ink-3 md:text-xs">{limitText(drop)}</span>
         </p>
         <div className="mt-3 md:mt-0 md:justify-self-end">
-          <NotifyButton drop={drop} size="sm" />
+          <DropReminderButton drop={drop} size="sm" className="h-10 md:h-8" />
         </div>
       </div>
     </li>

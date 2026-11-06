@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { countries, countryCodes, type CountryCode, type CurrencyCode } from "@/config/markets"
+import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { BrandGroup } from "@/lib/cart"
 import { describedBy, Field, inputClass, Notice, OptionCard, OptionGroup } from "./fields"
@@ -45,7 +46,7 @@ export function ContactStep({ value, onChange, errors, country }: { value: Conta
       <Field id="co-name" label="Full name" error={errors["co-name"]} className="sm:col-span-2">
         <Input {...describedBy("co-name", errors["co-name"])} autoComplete="name" value={value.name} onChange={set("name")} className={inputClass} />
       </Field>
-      <Field id="co-email" label="Email" hint="Your receipt and every brand's shipping updates go here." error={errors["co-email"]}>
+      <Field id="co-email" label="Email" hint="Order updates appear in Notifications. Email receipts start once email is connected." error={errors["co-email"]}>
         <Input {...describedBy("co-email", errors["co-email"], "hint")} type="email" inputMode="email" autoComplete="email" value={value.email} onChange={set("email")} className={inputClass} />
       </Field>
       <Field id="co-phone" label="Phone" hint={phoneHint} error={errors["co-phone"]}>
@@ -240,6 +241,7 @@ export function PaymentStep({
   onMethodChange,
   errors,
   country,
+  cardCleared = false,
 }: {
   value: PaymentDraft
   method: PaymentMethod
@@ -248,6 +250,8 @@ export function PaymentStep({
   onMethodChange: (m: PaymentMethod) => void
   errors: FieldErrors
   country: CountryCode
+  /** The rest of the checkout was restored after a reload; card details never are. */
+  cardCleared?: boolean
 }) {
   const set = (k: keyof PaymentDraft, format?: (v: string) => string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange({ ...value, [k]: format ? format(e.target.value) : e.target.value })
@@ -257,7 +261,7 @@ export function PaymentStep({
   return (
     <div className="grid grid-cols-1 gap-5">
       <Notice icon={ShieldCheck}>
-        <span className="text-ink">Payments are simulated in this development build.</span> Nothing is charged. Card details are checked for format only, then discarded.
+        <span className="text-ink">No payment provider is connected in this development build.</span> Placing the order records it as awaiting payment confirmation and nothing is charged. Card details are checked for format only and never stored.
       </Notice>
 
       <OptionGroup value={method} onValueChange={(v) => onMethodChange(v as PaymentMethod)} label="Payment method" className={cn(methods.length === 2 && "sm:grid-cols-2", methods.length === 3 && "md:grid-cols-3")}>
@@ -271,9 +275,12 @@ export function PaymentStep({
       ) : null}
 
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={method} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
+        <motion.div key={method} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: duration.dropdown, ease: ease.out }} className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
           {method === "card" ? (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {cardCleared ? (
+                <p className="text-xs leading-relaxed text-ink-2 sm:col-span-2">Your other details were kept. Card details never are, so enter them again to continue.</p>
+              ) : null}
               <Field id="pay-number" label="Card number" hint="To test, use 4242 4242 4242 4242 with any future date." error={errors["pay-number"]} className="sm:col-span-2">
                 <div className="relative">
                   <Input
@@ -283,7 +290,7 @@ export function PaymentStep({
                     placeholder="1234 5678 9012 3456"
                     value={value.cardNumber}
                     onChange={set("cardNumber", formatCardNumber)}
-                    className={cn(inputClass, "pr-36 tabular")}
+                    className={cn(inputClass, brand ? "pr-36" : undefined, "tabular")}
                   />
                   {brand ? <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-2">{brand}</span> : null}
                 </div>
@@ -311,14 +318,14 @@ export function PaymentStep({
               <p className="text-ink">{country === "ZA" ? "Pay by Instant EFT" : "Pay into a one-time account"}</p>
               <p>
                 {country === "ZA"
-                  ? "After you place the order, you choose your bank and approve the payment in its app. The brands are paid only once it clears."
-                  : "After you place the order, you get an account number and the exact amount to send from your banking app. The account expires after 30 minutes."}
+                  ? "Once a provider is connected, you choose your bank after placing the order and approve the payment in its app. Brands start preparing orders only once it clears."
+                  : "Once a provider is connected, you get an account number and the exact amount to send from your banking app after placing the order. The account expires after 30 minutes."}
               </p>
-              <p className="text-xs text-ink-3">In this development build the transfer is confirmed straight away.</p>
+              <p className="text-xs text-ink-3">Not connected in this development build: no account details are issued, and the order stays awaiting payment confirmation.</p>
             </div>
           ) : method === "ussd" ? (
             <div className="grid gap-4">
-              <Field id="pay-bank" label="Your bank" hint="We show the code to dial once the order is placed." error={errors["pay-bank"]}>
+              <Field id="pay-bank" label="Your bank" hint="Once a provider is connected, the code to dial appears after you place the order." error={errors["pay-bank"]}>
                 <Select value={value.ussdBank || undefined} onValueChange={(v) => onChange({ ...value, ussdBank: v })}>
                   <SelectTrigger {...describedBy("pay-bank", errors["pay-bank"], "hint")} className={selectClass}>
                     <SelectValue placeholder="Choose your bank" />
@@ -332,7 +339,7 @@ export function PaymentStep({
                   </SelectContent>
                 </Select>
               </Field>
-              <p className="text-xs leading-relaxed text-ink-3">Dial from the phone number linked to your account. No data connection needed.</p>
+              <p className="text-xs leading-relaxed text-ink-3">Dial from the phone number linked to your bank account. No data connection needed. Not connected in this development build, so no code is issued and the order stays awaiting payment confirmation.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -350,7 +357,7 @@ export function PaymentStep({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field id="pay-momo" label="Mobile money number" hint="You approve the payment on this phone." error={errors["pay-momo"]}>
+              <Field id="pay-momo" label="Mobile money number" hint="Once a provider is connected, you approve the payment on this phone. No prompt is sent in this development build." error={errors["pay-momo"]}>
                 <div className="relative">
                   <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-2 tabular">
                     {countryRules[country].dial}
@@ -384,7 +391,7 @@ function ReviewBlock({ title, onChange, children }: { title: string; onChange: (
         <h3 className="text-xs text-ink-3">{title}</h3>
         <div className="mt-1.5 text-sm leading-relaxed text-ink">{children}</div>
       </div>
-      <Button type="button" variant="link" size="sm" onClick={onChange} className="h-auto shrink-0 py-0.5" aria-label={`Change ${title.toLowerCase()}`}>
+      <Button type="button" variant="link" size="sm" onClick={onChange} className="h-auto shrink-0 py-0.5 after:absolute after:-inset-x-2 after:-inset-y-2" aria-label={`Change ${title.toLowerCase()}`}>
         Change
       </Button>
     </section>

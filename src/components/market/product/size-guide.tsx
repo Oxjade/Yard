@@ -4,6 +4,7 @@ import { useState } from "react"
 import { RulerIcon as Ruler } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { chartFor, formatMeasure } from "./size-charts"
 
@@ -13,12 +14,12 @@ export function SizeGuide({ sizes, selected, brandName, fitNote }: { sizes: stri
   const [unit, setUnit] = useState<"cm" | "in">("cm")
   if (!chart) return null
 
-  const unitLine = chart.convertible ? `Measurements in ${unit}` : chart.unitNote
   const unitName = chart.convertible ? (unit === "cm" ? "centimetres" : "inches") : null
+  const unitLine = unitName ? `Measurements in ${unitName}` : chart.unitNote
 
   return (
     <Dialog>
-      <DialogTrigger className="inline-flex items-center gap-1.5 rounded-md py-1 text-sm text-violet underline-offset-4 hover:underline">
+      <DialogTrigger className="-my-1.5 inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm text-violet underline-offset-4 hover:underline">
         <Ruler className="size-4" />
         Size guide
       </DialogTrigger>
@@ -52,9 +53,9 @@ export function SizeGuide({ sizes, selected, brandName, fitNote }: { sizes: stri
                     type="button"
                     aria-pressed={unit === u}
                     onClick={() => setUnit(u)}
-                    className={cn("relative isolate h-8 w-12 rounded-[5px] text-xs transition-colors", unit === u ? "text-ink" : "text-ink-2 hover:text-ink")}
+                    className={cn("relative isolate h-9 w-12 rounded-[5px] text-xs transition-colors duration-150", unit === u ? "text-ink" : "text-ink-2 hover:text-ink")}
                   >
-                    {unit === u ? <motion.span layoutId="size-guide-unit" className="absolute inset-0 -z-10 rounded-[5px] bg-purple" /> : null}
+                    {unit === u ? <motion.span layoutId="size-guide-unit" transition={spring.indicator} className="absolute inset-0 -z-10 rounded-[5px] bg-purple" /> : null}
                     {u}
                   </button>
                 ))}

@@ -10,8 +10,8 @@ import { StoryCard, byNewest, storyDate, storyKindLabel } from "@/components/mar
 import { brandById, getStory, stories } from "@/lib/data"
 
 /**
- * The slug is checked before anything renders so an unknown story answers with a real 404.
- * That check needs the URL, so this segment may block; every known story is prerendered below.
+ * layout.tsx checks the address first, so an unknown story answers with a real 404 and this
+ * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
 
@@ -41,11 +41,11 @@ export default async function StoryPage({ params }: PageProps<"/stories/[slug]">
       <article aria-labelledby="story-title">
         <header>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Link href="/stories" className="inline-flex items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink">
+            <Link href="/stories" className="inline-flex min-h-10 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink lg:min-h-0">
               <ChevronLeft className="size-4" />
               All stories
             </Link>
-            <Link href={`/stories?kind=${story.kind}`} className="text-sm text-violet hover:underline hover:underline-offset-4">
+            <Link href={`/stories?kind=${story.kind}`} className="inline-flex min-h-10 items-center rounded-md text-sm text-violet hover:underline hover:underline-offset-4 lg:min-h-0">
               {storyKindLabel[story.kind]}
             </Link>
           </div>

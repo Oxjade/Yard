@@ -17,8 +17,8 @@ import { brandById, drops, getDrop, productById, upcomingDrops } from "@/lib/dat
 import type { Product } from "@/lib/data/types"
 
 /**
- * The slug is checked before anything renders so an unknown drop answers with a real 404.
- * That check needs the URL, so this segment may block; every known drop is prerendered below.
+ * layout.tsx checks the address first, so an unknown drop answers with a real 404 and this
+ * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
 
@@ -47,7 +47,7 @@ export default async function DropPage({ params }: PageProps<"/drops/[slug]">) {
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
-      <Link href="/drops" className="inline-flex items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink">
+      <Link href="/drops" className="inline-flex min-h-10 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink lg:min-h-0">
         <ChevronLeft className="size-4" />
         All drops
       </Link>
@@ -73,13 +73,16 @@ export default async function DropPage({ params }: PageProps<"/drops/[slug]">) {
           </div>
         </div>
 
-        {/* Release panel and brand: right column on desktop, straight after the photo on phones */}
+        {/* Release panel and brand: right column on desktop, straight after the photo on phones,
+            so the countdown and the one action stay in the first screen. */}
         <aside className="grid content-start gap-4 lg:col-span-4 lg:row-start-2">
           <DropReleasePanel drop={drop} brandName={brand.name} />
+          {/* Phones: what the drop is, between the action and the brand (desktop has it beside the title). */}
+          <p className="py-2 text-pretty text-[0.9375rem] leading-relaxed text-ink-2 lg:hidden">{drop.description}</p>
           <BrandCard brand={brand} variant="row" className="border border-line-soft bg-card/40" />
         </aside>
 
-        <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2 md:text-base lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-end">
+        <p className="hidden max-w-xl text-pretty text-base leading-relaxed text-ink-2 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:block lg:self-end">
           {drop.description}
         </p>
       </div>

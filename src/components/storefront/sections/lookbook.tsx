@@ -57,7 +57,11 @@ function Frame({
 
 export function LookbookSection({ ctx, section, index, first, frames }: Props) {
   const { template } = ctx
-  const heading = <SectionHeading ctx={ctx} section={section} index={index} description="Tap a photograph to shop the piece in it." />
+  // Each template shows every frame it is given (the renderer sizes the list per template).
+  const allShoppable = frames.every((f) => f.product)
+  const heading = (
+    <SectionHeading ctx={ctx} section={section} index={index} description={allShoppable ? "Tap a photograph to shop the piece in it." : "Tap a named photograph to shop it."} />
+  )
 
   if (template === "editorial") {
     // A magazine spread: one tall frame, two stacked beside it, then a wide closer.

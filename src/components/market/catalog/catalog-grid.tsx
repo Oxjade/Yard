@@ -1,7 +1,9 @@
 "use client"
 
+import { memo } from "react"
 import { motion } from "motion/react"
 import { ProductCard } from "@/components/market/product-card"
+import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Brand, Product } from "@/lib/data/types"
 import { BrandSpotlight } from "./brand-spotlight"
@@ -17,7 +19,15 @@ import { cyclePattern, type ListingCycle, type ListingEntry } from "./catalog-st
 const GRID = "grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3"
 const SIZES = "(min-width: 1024px) 25vw, (min-width: 768px) 31vw, 50vw"
 const WIDE = "(min-width: 1024px) 25vw, (min-width: 768px) 31vw, 100vw"
-const EASE = [0.22, 1, 0.36, 1] as const
+
+/** Gap between appended cards; capped at one page transition so the last never waits long. */
+const STAGGER = 0.03
+
+/** Appended cards rise in once, in reading order, at the shared page timing. */
+const reveal = (index: number, revealFrom: number) =>
+  index >= revealFrom
+    ? { initial: { opacity: 0, y: 12 }, transition: { duration: duration.page, ease: ease.out, delay: Math.min((index - revealFrom) * STAGGER, duration.page) } }
+    : { initial: false as const, transition: { duration: 0 } }
 
 type Segment =
   | { kind: "grid" | "feature" | "tall"; start: number; items: ListingEntry[]; cycle: number }
@@ -43,7 +53,8 @@ function segment(cycles: ListingCycle[]): Segment[] {
   return out
 }
 
-export function CatalogGrid({
+/** Memoised: the listing re-renders for its own UI state (sheet, search panel) without the cards. */
+export const CatalogGrid = memo(function CatalogGrid({
   cycles,
   revealFrom,
 }: {
@@ -54,13 +65,7 @@ export function CatalogGrid({
   const segments = segment(cycles)
 
   const cell = (entry: ListingEntry, index: number, variant: "default" | "tall" | "feature", className?: string, sizes = SIZES) => (
-    <motion.div
-      key={`${entry.item.id}-${entry.sponsored ? "s" : "o"}`}
-      className={className}
-      initial={index >= revealFrom ? { opacity: 0, y: 14 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: EASE, delay: index >= revealFrom ? Math.min((index - revealFrom) * 0.035, 0.35) : 0 }}
-    >
+    <motion.div key={`${entry.item.id}-${entry.sponsored ? "s" : "o"}`} data-index={index} className={className} animate={{ opacity: 1, y: 0 }} {...reveal(index, revealFrom)}>
       <ProductCard product={entry.item} variant={variant} sponsored={entry.sponsored} priority={index < 3} sizes={sizes} />
     </motion.div>
   )
@@ -69,14 +74,8 @@ export function CatalogGrid({
     <div className="flex flex-col gap-8">
       {segments.map((seg) => {
         if (seg.kind === "spotlight") {
-          const reveal = seg.start >= revealFrom
           return (
-            <motion.div
-              key={`spot-${seg.brand.id}`}
-              initial={reveal ? { opacity: 0, y: 14 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: EASE, delay: reveal ? Math.min((seg.start - revealFrom) * 0.035, 0.35) : 0 }}
-            >
+            <motion.div key={`spot-${seg.brand.id}`} animate={{ opacity: 1, y: 0 }} {...reveal(seg.start, revealFrom)}>
               <BrandSpotlight brand={seg.brand} products={seg.products} flip={seg.cycle % 2 === 1} />
             </motion.div>
           )
@@ -107,4 +106,4 @@ export function CatalogGrid({
       })}
     </div>
   )
-}
+})

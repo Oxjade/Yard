@@ -1,12 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Image from "next/image"
-import { ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
@@ -27,45 +26,89 @@ export type ReturnRequest = { reason: string; reasonLabel: string; variantIds: s
 const NOTE_MAX = 500
 
 /**
- * Request a return for one brand order. In the frontend phase the request lives in the
- * page; the backend turns it into a return record the brand approves or declines.
+ * Request a return for one brand order. useOrders().requestReturn stores it on the order,
+ * mirrors it to the brand's Studio order and the admin refund queue, and the notification
+ * events tell the shopper, the brand and the admins. The order page shows the result in
+ * place, so there is no toast; after sending, focus moves to that status (onSent).
  */
-export function ReturnDialog({ order, brand, onRequested }: { order: MerchantOrder; brand: Brand; onRequested: (r: ReturnRequest) => boolean }) {
-  const [open, setOpen] = useState(false)
+export function ReturnDialog({
+  order,
+  brand,
+  open,
+  onOpenChange,
+  onRequested,
+  onSent,
+  onCancelled,
+}: {
+  order: MerchantOrder
+  brand: Brand
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRequested: (r: ReturnRequest) => boolean
+  /** Called once the dialog has closed after a request was recorded. */
+  onSent?: () => void
+  /** Called once the dialog has closed without sending: return focus to whatever opened it. */
+  onCancelled?: () => void
+}) {
   const [selected, setSelected] = useState<string[]>(order.lines.map((l) => l.variantId))
   const [reason, setReason] = useState("")
   const [note, setNote] = useState("")
   const [errors, setErrors] = useState<{ items?: string; reason?: string; note?: string }>({})
+  const sent = useRef(false)
+
+  const send = useAsyncAction(
+    (r: ReturnRequest) => {
+      if (!onRequested(r)) throw new Error("not-returnable")
+      return true
+    },
+    {
+      error: "This order can't take a return right now. It may already have a request, or it isn't marked delivered yet.",
+      onSuccess: () => {
+        sent.current = true
+        onOpenChange(false)
+      },
+    },
+  )
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    // The action is synchronous, so its in-flight guard has already cleared by a second
+    // click; while the dialog animates closed after a recorded request, ignore repeats.
+    if (send.pending || send.succeeded || sent.current) return
     const next: typeof errors = {}
     if (selected.length === 0) next.items = "Choose at least one item to return."
     if (!reason) next.reason = "Choose a reason so the brand can help."
     if (reason === "other" && note.trim().length < 5) next.note = "Tell the brand a little about what went wrong."
     if (note.length > NOTE_MAX) next.note = `Keep the note under ${NOTE_MAX} characters.`
     setErrors(next)
-    if (Object.keys(next).length) return
-    const ok = onRequested({ reason, reasonLabel: returnReasons.find((r) => r.value === reason)?.label ?? "Other", variantIds: selected, note: note.trim() })
-    setOpen(false)
-    if (ok) toast("Return requested", { description: `${brand.name} sees it in their Studio now. You'll get a notification here when they reply.` })
-    else toast.error("This order can't take a return", { description: "It may already have a request, or it isn't delivered yet." })
+    if (Object.keys(next).length) {
+      const firstId = next.items ? `ret-${order.lines[0]?.variantId}` : next.reason ? `reason-${returnReasons[0].value}` : "ret-note"
+      window.requestAnimationFrame(() => document.getElementById(firstId)?.focus())
+      return
+    }
+    void send.run({ reason, reasonLabel: returnReasons.find((r) => r.value === reason)?.label ?? "Other", variantIds: selected, note: note.trim() })
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        setOpen(o)
+        onOpenChange(o)
         if (!o) setErrors({})
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant="secondary" className="w-full">
-          <RotateCcw /> Request a return
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[480px]">
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[480px]"
+        onCloseAutoFocus={(e) => {
+          // Opened without a DialogTrigger, so focus is placed here: on the recorded status
+          // once sent (the opening button is gone by then), or back on the opener.
+          e.preventDefault()
+          if (sent.current) {
+            sent.current = false
+            onSent?.()
+          } else onCancelled?.()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="font-display text-display-sm">Request a return</DialogTitle>
           <DialogDescription className="text-ink-2">
@@ -158,8 +201,12 @@ export function ReturnDialog({ order, brand, onRequested }: { order: MerchantOrd
           </div>
 
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="primary">Send request</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={send.pending}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={send.pending} success={send.succeeded} aria-disabled={send.succeeded || undefined}>
+              Send request
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

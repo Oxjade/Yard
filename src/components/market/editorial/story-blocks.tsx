@@ -1,5 +1,5 @@
 import Image from "next/image"
-import { ProductCard } from "@/components/market/product-card"
+import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
 import { SectionHeader } from "@/components/market/section-header"
 import { productById } from "@/lib/data/products"
 import { cn } from "@/lib/utils"
@@ -87,7 +87,7 @@ export function StoryBlocks({ blocks }: { blocks: StoryBlock[] }) {
                 </div>
                 <div className={cn("grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4", items.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>
                   {items.map((p) => (
-                    <ProductCard key={p.id} product={p} sizes="(min-width: 1024px) 320px, 50vw" />
+                    <ShopProductCard key={p.id} product={p} sizes="(min-width: 1024px) 320px, 50vw" />
                   ))}
                 </div>
               </section>

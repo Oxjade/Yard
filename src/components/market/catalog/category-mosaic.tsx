@@ -3,31 +3,19 @@ import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react/ssr"
 import { cn } from "@/lib/utils"
 import type { Category } from "@/lib/data/types"
+import { MOSAIC_GRID, mosaicLayout as layout } from "./category-mosaic-layout"
 
 /**
  * The category index: one photo tile per category in an asymmetric editorial grid.
  * Phones get their own two-column composition rather than the desktop grid squeezed.
  * Spans are per position, so the composition holds as categories are added (it repeats).
  */
-const layout = [
-  // [phone, desktop] — desktop is a 12-column grid with fixed-height rows
-  { m: "col-span-2 row-span-2", d: "md:col-span-7 md:row-span-2", size: "lg" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-5 md:row-span-1", size: "md" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-5 md:row-span-1", size: "md" },
-  { m: "col-span-1 row-span-2", d: "md:col-span-4 md:row-span-2", size: "lg" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-4 md:row-span-1", size: "sm" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-4 md:row-span-1", size: "sm" },
-  { m: "col-span-2 row-span-1", d: "md:col-span-8 md:row-span-1", size: "md" },
-  { m: "col-span-1 row-span-2", d: "md:col-span-5 md:row-span-2", size: "lg" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-7 md:row-span-1", size: "md" },
-  { m: "col-span-1 row-span-1", d: "md:col-span-7 md:row-span-1", size: "md" },
-] as const
 
 export type CategoryTileData = { category: Category; pieces: number; brands: number }
 
 export function CategoryMosaic({ items }: { items: CategoryTileData[] }) {
   return (
-    <ul className="grid auto-rows-[180px] grid-cols-2 gap-3 sm:auto-rows-[220px] md:auto-rows-[240px] md:grid-cols-12 md:gap-4 lg:auto-rows-[280px]">
+    <ul className={MOSAIC_GRID}>
       {items.map((item, i) => {
         const spot = layout[i % layout.length]
         return (
@@ -44,7 +32,7 @@ function CategoryTile({ category, pieces, brands, index, size, phoneWide }: Cate
   return (
     <Link
       href={`/categories/${category.slug}`}
-      className="group relative isolate flex h-full flex-col justify-between overflow-hidden rounded-lg bg-card p-4 md:p-6"
+      className="group relative isolate flex h-full flex-col justify-between overflow-hidden rounded-lg bg-card p-4 transition-transform duration-150 active:scale-[0.99] md:p-6"
     >
       <Image
         src={category.image.src}
@@ -56,7 +44,7 @@ function CategoryTile({ category, pieces, brands, index, size, phoneWide }: Cate
       />
       <span className="scrim-b absolute inset-0 -z-10" aria-hidden />
       <div className="flex justify-end">
-        <span className="glass inline-flex size-9 items-center justify-center rounded-full text-ink transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" aria-hidden>
+        <span className="glass inline-flex size-9 items-center justify-center rounded-full text-ink transition-transform duration-200 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-focus-visible:translate-x-0.5 group-focus-visible:-translate-y-0.5" aria-hidden>
           <ArrowUpRight className="size-4" />
         </span>
       </div>

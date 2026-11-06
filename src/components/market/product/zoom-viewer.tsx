@@ -5,13 +5,16 @@ import Image from "next/image"
 import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, MinusIcon as Minus, PlusIcon as Plus, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, type PanInfo } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { ImageAsset } from "@/lib/data/types"
+import { useReturnFocus } from "../catalog/phone-sheet"
 
 const ZOOM_STEP = 0.75
 const ZOOM_TAP = 2.5
 const ZOOM_MAX = 4
-const spring = { type: "spring", stiffness: 380, damping: 40, mass: 0.8 } as const
+/** Scale and pan settle like a drawer: firm, no visible overshoot. */
+const zoomSpring = spring.drawer
 
 /**
  * Full-screen zoom view. The image opens fitted to the screen at full resolution; a tap or
@@ -33,6 +36,7 @@ export function ZoomViewer({
   onOpenChange: (open: boolean) => void
   title: string
 }) {
+  const returnFocus = useReturnFocus()
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AnimatePresence>
@@ -44,16 +48,16 @@ export function ZoomViewer({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: duration.modal, ease: ease.out }}
               />
             </DialogPrimitive.Overlay>
-            <DialogPrimitive.Content asChild forceMount aria-describedby={undefined}>
+            <DialogPrimitive.Content asChild forceMount aria-describedby={undefined} {...returnFocus}>
               <motion.div
                 className="fixed inset-0 z-50 flex flex-col outline-none"
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.98 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: duration.modal, ease: ease.out }}
               >
                 <ZoomStage images={images} index={index} onIndexChange={onIndexChange} title={title} />
               </motion.div>
@@ -110,7 +114,7 @@ function ZoomStage({ images, index, onIndexChange, title }: { images: ImageAsset
       const l = limits(s)
       const tx = s === 1 ? 0 : Math.max(-l.x, Math.min(l.x, fx))
       const ty = s === 1 ? 0 : Math.max(-l.y, Math.min(l.y, fy))
-      const t = reduce ? { duration: 0 } : spring
+      const t = reduce ? { duration: 0 } : zoomSpring
       animate(scale, s, t)
       animate(x, tx, t)
       animate(y, ty, t)
@@ -129,12 +133,24 @@ function ZoomStage({ images, index, onIndexChange, title }: { images: ImageAsset
   }
   const go = (dir: 1 | -1) => select((index + dir + images.length) % images.length)
 
+  /**
+   * The dialog is portalled, but React still bubbles its key events to the gallery behind it.
+   * Every key handled here stops there, so an arrow while zoomed in never changes the image
+   * behind the viewer (and keeps the "a new image starts fitted" rule).
+   */
   function onKeyDown(e: React.KeyboardEvent) {
+    const handled = ["ArrowRight", "ArrowLeft", "+", "=", "-"].includes(e.key)
+    if (!handled) return
+    e.stopPropagation()
     if (e.key === "ArrowRight" && many && zoom === 1) go(1)
     else if (e.key === "ArrowLeft" && many && zoom === 1) go(-1)
     else if (e.key === "+" || e.key === "=") zoomTo(zoom + ZOOM_STEP)
     else if (e.key === "-") zoomTo(zoom - ZOOM_STEP)
   }
+
+  // At a limit the button stays focusable (aria-disabled), so a keyboard user keeps their place.
+  const atMin = zoom <= 1
+  const atMax = zoom >= ZOOM_MAX
 
   function onClick(e: React.MouseEvent) {
     if (dragged.current) return
@@ -171,11 +187,23 @@ function ZoomStage({ images, index, onIndexChange, title }: { images: ImageAsset
           ) : null}
         </DialogPrimitive.Title>
         <div className="glass flex shrink-0 items-center gap-1 rounded-full p-1">
-          <button type="button" onClick={() => zoomTo(zoom - ZOOM_STEP)} disabled={zoom <= 1} aria-label="Zoom out" className="inline-flex size-10 items-center justify-center rounded-full text-ink transition hover:bg-white/8 disabled:opacity-30">
+          <button
+            type="button"
+            onClick={() => !atMin && zoomTo(zoom - ZOOM_STEP)}
+            aria-disabled={atMin || undefined}
+            aria-label="Zoom out"
+            className="inline-flex size-10 items-center justify-center rounded-full text-ink transition hover:bg-white/8 aria-disabled:cursor-default aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
+          >
             <Minus className="size-4" />
           </button>
           <span className="w-12 text-center text-xs text-ink-2 tabular" aria-live="polite">{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => zoomTo(zoom + ZOOM_STEP)} disabled={zoom >= ZOOM_MAX} aria-label="Zoom in" className="inline-flex size-10 items-center justify-center rounded-full text-ink transition hover:bg-white/8 disabled:opacity-30">
+          <button
+            type="button"
+            onClick={() => !atMax && zoomTo(zoom + ZOOM_STEP)}
+            aria-disabled={atMax || undefined}
+            aria-label="Zoom in"
+            className="inline-flex size-10 items-center justify-center rounded-full text-ink transition hover:bg-white/8 aria-disabled:cursor-default aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
+          >
             <Plus className="size-4" />
           </button>
           <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
@@ -193,7 +221,7 @@ function ZoomStage({ images, index, onIndexChange, title }: { images: ImageAsset
             style={{ width: fitW, height: fitH, marginLeft: -fitW / 2, marginTop: -fitH / 2, x, y, scale }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: duration.page, ease: ease.out }}
             drag={zoom > 1 ? true : many ? "x" : false}
             dragConstraints={zoom > 1 ? { left: -l.x, right: l.x, top: -l.y, bottom: l.y } : { left: 0, right: 0, top: 0, bottom: 0 }}
             dragElastic={zoom > 1 ? 0.08 : 0.25}

@@ -1,30 +1,23 @@
 "use client"
 
 import { useId } from "react"
-import { toast } from "sonner"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
-import { useHydrated } from "@/hooks/use-hydrated"
-import { useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import type { Drop, Product } from "@/lib/data/types"
-import { releasesIn, useDropClock } from "./use-drop-phase"
+import { useDropAddBlock } from "./use-drop-add-block"
+import { releasesIn } from "./use-drop-phase"
 
 /**
  * The pieces in a drop, as ProductCards. Before release they are previews: quick add is shown
  * disabled and a tap explains when it opens. While live, adding works up to the per-customer
  * limit across the whole drop. Once sold out, adding stays closed; once ended, leftover pieces
- * are ordinary catalogue items again.
+ * are ordinary catalogue items again. The same rules hold on every other card for these pieces
+ * (useDropAddBlock), so the storefront and collections never let one in early.
  */
 export function DropProducts({ drop, products, brandName }: { drop: Drop; products: Product[]; brandName: string }) {
-  const { phase, now, release } = useDropClock(drop, 1000)
-  const hydrated = useHydrated()
-  const lines = useCart((s) => s.lines)
-  const inBag = hydrated ? lines.filter((l) => drop.productIds.includes(l.productId)).reduce((n, l) => n + l.quantity, 0) : 0
-  const atLimit = phase === "live" && inBag >= drop.limitPerCustomer
-  const locked = phase === "upcoming" || phase === "sold-out"
-  const blocked = locked || atLimit
   const noteId = useId()
+  const { phase, now, release, inBag, atLimit, addBlocked } = useDropAddBlock(drop, { describedBy: noteId, intervalMs: 1000, onDropPage: true })
 
   // The time left changes every minute, so it stays outside the live region; only the status
   // sentence (preview, live, at the limit, sold out) is announced when it changes.
@@ -39,34 +32,19 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
             ? `Live now. Your bag has ${inBag} of the ${drop.limitPerCustomer} allowed per customer.`
             : `Live now. Limit ${drop.limitPerCustomer} per customer across the drop.`
         : phase === "sold-out"
-          ? `Sold out. Follow ${brandName} to hear about restocks and the next run.`
+          ? `Sold out. Follow ${brandName} and their next run shows up in Following.`
           : `This drop has ended. Anything left is back in ${brandName}'s shop.`
 
-  // A tap on a closed quick add explains why instead of adding.
-  function onAttempt() {
-    if (phase === "upcoming") {
-      toast("Not released yet", {
-        description: now !== null && release !== null ? `${drop.name} opens in ${releasesIn(release - now)}. Set a reminder and we'll tell you when.` : `${drop.name} hasn't opened yet.`,
-      })
-    } else if (phase === "sold-out") {
-      toast("Sold out", { description: `Every piece in ${drop.name} has gone.` })
-    } else {
-      toast("Drop limit reached", {
-        description: `${drop.name} allows ${drop.limitPerCustomer} per customer, and your bag already has ${inBag}.`,
-        action: { label: "View bag", onClick: () => useCart.getState().open() },
-      })
-    }
-  }
-
-  const addBlocked = blocked ? { describedBy: noteId, onAttempt } : undefined
+  const single = products.length === 1
   const split = products.length <= 2
-  const grid = (
+  const grid = single ? (
+    // One piece: the tall card in the release panel's column, not a second full-width photograph.
+    <ProductCard product={withFreshLead(products[0], drop)} variant="tall" priority sizes="(min-width: 1024px) 30vw, 100vw" addBlocked={addBlocked} />
+  ) : (
     <div className={cn("grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4", !split && (products.length >= 4 ? "md:grid-cols-4" : "md:grid-cols-3"))}>
-      {products.length === 1 ? (
-        <ProductCard product={products[0]} variant="feature" priority className="col-span-2" addBlocked={addBlocked} />
-      ) : (
-        products.map((p, i) => <ProductCard key={p.id} product={p} variant={split ? "tall" : "default"} priority={i < 2} sizes={split ? "(min-width: 1024px) 30vw, 50vw" : undefined} addBlocked={addBlocked} />)
-      )}
+      {products.map((p, i) => (
+        <ProductCard key={p.id} product={withFreshLead(p, drop)} variant={split ? "tall" : "default"} priority={i < 2} sizes={split ? "(min-width: 1024px) 30vw, 50vw" : undefined} addBlocked={addBlocked} />
+      ))}
     </div>
   )
 
@@ -88,7 +66,7 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
     <section id="in-this-drop" aria-labelledby="in-this-drop-title" className="mt-24 scroll-mt-28 md:mt-32">
       {split ? (
         <div className="grid gap-8 lg:grid-cols-12 lg:gap-8">
-          <div className="lg:col-span-4">
+          <div className={single ? "lg:col-span-7" : "lg:col-span-4"}>
             {intro}
             <ul className="mt-6 divide-y divide-line-soft border-y border-line-soft">
               {products.map((p) => (
@@ -99,7 +77,7 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
               ))}
             </ul>
           </div>
-          <div className="lg:col-span-8">{grid}</div>
+          <div className={single ? "sm:max-w-sm lg:col-span-4 lg:col-start-9 lg:max-w-none" : "lg:col-span-8"}>{grid}</div>
         </div>
       ) : (
         <>
@@ -109,6 +87,13 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
       )}
     </section>
   )
+}
+
+/** The page's photograph is the drop image; a card showing the same one leads with the piece's next photograph instead. */
+function withFreshLead(p: Product, drop: Drop): Product {
+  if (p.images.length < 2 || p.images[0].src !== drop.image.src) return p
+  const [first, second, ...rest] = p.images
+  return { ...p, images: [second, first, ...rest] }
 }
 
 /** "Sizes 39 to 45", "One size", "2 colours": what the shopper will choose from at release. */

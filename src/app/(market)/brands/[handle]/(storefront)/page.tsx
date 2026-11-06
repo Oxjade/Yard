@@ -7,8 +7,8 @@ import { brands, collectionsOf, dropsOf, getBrand, productsOf, storiesOf } from 
 import type { Brand } from "@/lib/data/types"
 
 /**
- * The handle is checked before anything renders so an unknown storefront answers with a real
- * 404. That check needs the URL, so this segment may block; every known brand is prerendered.
+ * layout.tsx checks the address first, so an unknown storefront answers with a real 404 and this
+ * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
 

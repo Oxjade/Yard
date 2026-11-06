@@ -1,16 +1,72 @@
 "use client"
 
 import Link from "next/link"
-import { CalendarPlusIcon as CalendarPlus, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
+import { BellIcon as Bell, BellRingingIcon as BellRing, CalendarPlusIcon as CalendarPlus, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { NotifyButton } from "@/components/market/notify-button"
 import { site } from "@/config/site"
+import { useHydrated } from "@/hooks/use-hydrated"
 import { getDemoAnchor } from "@/hooks/use-now"
 import { dropAccessLabel, dropWindow } from "@/lib/drops"
+import { useSaved } from "@/lib/stores/saved"
+import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import type { Drop } from "@/lib/data/types"
 import { useDropClock } from "./use-drop-phase"
+
+/**
+ * Set a reminder, or enter the draw, before a drop opens. Both are saved in this browser (the
+ * saved store); a reminder turns into an alert in Notifications when the drop opens while
+ * NOCTURNE is open, and email, push and the draw itself need backends this build doesn't have,
+ * so the feedback says exactly that. `quiet` skips the toast where the page already explains the
+ * result next to the button (the drop page's release panel).
+ *
+ * This is the shared NotifyButton with honest wording; see the shared-changes note to fold it
+ * back into components/market/notify-button.tsx.
+ */
+export function DropReminderButton({
+  drop,
+  size = "sm",
+  variant = "secondary",
+  quiet = false,
+  className,
+}: {
+  drop: Drop
+  size?: "sm" | "default" | "lg"
+  variant?: "secondary" | "glass" | "primary"
+  quiet?: boolean
+  className?: string
+}) {
+  const hydrated = useHydrated()
+  const on = useSaved((s) => s.notify.includes(drop.id))
+  const toggle = useSaved((s) => s.toggleNotify)
+  const requireAuth = useSession((s) => s.requireAuth)
+  const active = hydrated && on
+  const draw = drop.access === "draw"
+  const label = draw ? (active ? "Entered" : "Enter the draw") : active ? "Reminder set" : "Notify me"
+
+  function onClick(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const run = () => {
+      const now = toggle(drop.id)
+      if (quiet) return
+      if (draw) toast(now ? "Entry saved in this browser" : "Entry withdrawn", { description: now ? "Picking winners isn't connected in this build." : undefined })
+      else
+        toast(now ? "Reminder saved in this browser" : "Reminder removed", {
+          description: now ? "You'll see an alert in Notifications when it opens while NOCTURNE is open. Email and push aren't connected in this build." : undefined,
+        })
+    }
+    if (requireAuth("notify", run)) run()
+  }
+
+  return (
+    <Button type="button" size={size} variant={active ? "brand" : variant} aria-pressed={active} onClick={onClick} className={cn("relative z-10", className)}>
+      {active ? <BellRing /> : <Bell />}
+      {label}
+    </Button>
+  )
+}
 
 /** On a purple surface the active (purple) reminder state needs an outline to stay visible. */
 export const onPurple = "data-[variant=brand]:border-ink/45"
@@ -24,15 +80,18 @@ export function DropPrimaryAction({
   size = "lg",
   className,
   shopHref,
+  quiet = false,
 }: {
   drop: Drop
   size?: "sm" | "default" | "lg"
   className?: string
   /** Where "Shop the drop" goes while live. Defaults to the drop page's product grid. */
   shopHref?: string
+  /** The reminder or entry is explained beside the button, so no toast (see DropReminderButton). */
+  quiet?: boolean
 }) {
   const { phase } = useDropClock(drop, 5000)
-  if (phase === "upcoming") return <NotifyButton drop={drop} size={size} variant="primary" className={className} />
+  if (phase === "upcoming") return <DropReminderButton drop={drop} size={size} variant="primary" quiet={quiet} className={className} />
   if (phase === "live") {
     return (
       <Button asChild variant="primary" size={size} className={className}>

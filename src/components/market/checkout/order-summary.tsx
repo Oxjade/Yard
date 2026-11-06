@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { CaretDownIcon as ChevronDown, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
+import { duration, ease } from "@/lib/motion"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Price } from "@/components/market/price"
 import { countries, shippingZone, type CountryCode, type CurrencyCode } from "@/config/markets"
@@ -184,7 +185,7 @@ export function OrderSummaryDisclosure(props: SummaryProps) {
         aria-expanded={open}
         aria-controls={open ? "order-summary-panel" : undefined}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3.5 text-left"
+        className="flex min-h-13 w-full items-center justify-between gap-3 rounded-lg px-4 py-3.5 text-left transition-colors outline-none hover:bg-elevated/50 focus-visible:ring-2 focus-visible:ring-violet"
       >
         <span className="flex items-center gap-2 text-sm text-ink">
           <ShoppingBag className="size-4 text-ink-2" />
@@ -192,7 +193,7 @@ export function OrderSummaryDisclosure(props: SummaryProps) {
         </span>
         <span className="flex items-center gap-2">
           <Price amount={props.totals.total} currency={props.currency} />
-          <ChevronDown className={cn("size-4 text-ink-2 transition-transform duration-300", open && "rotate-180")} />
+          <ChevronDown className={cn("size-4 text-ink-2 transition-transform duration-200 ease-out-quint", open && "rotate-180")} />
         </span>
       </button>
       <AnimatePresence initial={false}>
@@ -200,11 +201,9 @@ export function OrderSummaryDisclosure(props: SummaryProps) {
           <motion.div
             id="order-summary-panel"
             key="panel"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: duration.dropdown, ease: ease.out } }}
+            exit={{ opacity: 0, transition: { duration: duration.press, ease: ease.in } }}
           >
             <div className="border-t border-line-soft px-4 pt-4 pb-5">
               <SummaryLines {...props} />

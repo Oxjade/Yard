@@ -68,7 +68,7 @@ export function FeaturedDrop({ drop, sponsored }: { drop: Drop; sponsored: boole
         </dl>
 
         <div className="mt-7">
-          <DropPrimaryAction drop={drop} size="lg" />
+          <DropPrimaryAction drop={drop} size="lg" className="w-full sm:w-auto" />
         </div>
       </div>
     </article>

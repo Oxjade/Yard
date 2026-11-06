@@ -1,8 +1,9 @@
 "use client"
 
+import { useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CaretLeftIcon as ChevronLeft, ArrowSquareOutIcon as ExternalLink, StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +14,7 @@ import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 import { daysSince, formatDay } from "./format"
-import { OrderStatusBadge, OrderStepper, customerOrderStatus, trackingUrl } from "./order-status"
+import { OrderStatusBadge, OrderStepper, TrackingLink, orderStatusNote, trackingUrl } from "./order-status"
 import { ReturnDialog } from "./return-dialog"
 import { YouNav } from "./you-nav"
 
@@ -34,6 +35,8 @@ export function OrderDetail({ id }: { id: string }) {
   const order = useOrders((s) => s.orders.find((o) => o.id === id))
   const group = useOrders((s) => s.groups.find((g) => g.orderIds.includes(id)))
   const requestReturn = useOrders((s) => s.requestReturn)
+  const [returnOpen, setReturnOpen] = useState(false)
+  const returnOpener = useRef<HTMLButtonElement | null>(null)
 
   if (!order) {
     return (
@@ -46,8 +49,8 @@ export function OrderDetail({ id }: { id: string }) {
             <PackageSearch className="size-6 text-ink-2" />
           </span>
           <div>
-            <p className="text-base text-ink">We can&apos;t find this order on this device</p>
-            <p className="mt-1 max-w-sm text-sm text-ink-2">Orders placed on another device show up once you sign in there with the same account.</p>
+            <p className="text-base text-ink">We can&apos;t find this order in this browser</p>
+            <p className="mt-1 max-w-sm text-sm text-ink-2">In this development build orders are kept in the browser they were placed in, so one from another browser or device won&apos;t show here.</p>
           </div>
           <Button asChild variant="primary">
             <Link href="/you/orders">See your orders</Link>
@@ -60,7 +63,7 @@ export function OrderDetail({ id }: { id: string }) {
   const brand = brandById.get(order.brandId)!
   const returnRequest = order.returnRequest ?? null
   const status = order.status
-  const meta = customerOrderStatus[status]
+  const note = orderStatusNote(order)
   const delivered = order.timeline.find((t) => t.label.toLowerCase().startsWith("delivered"))
   const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
   const returnDaysLeft = daysSinceDelivery === null ? null : brand.returnsDays - daysSinceDelivery
@@ -73,25 +76,51 @@ export function OrderDetail({ id }: { id: string }) {
   const returnsPanel = (
     <Panel title="Returns">
       {returnRequest ? (
-        <p className="text-sm text-ink-2">
-          Request sent {formatDay(returnRequest.at)}. {brand.name} reviews it and replies with return instructions; you&apos;ll get a notification here. Keep the items unworn with their tags until then.
-        </p>
+        // Focused after the dialog closes, so the result of sending is announced in place.
+        <div data-return-status tabIndex={-1} role="status" className="flex gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-violet">
+          <CheckCircle className="mt-0.5 size-5 shrink-0 text-violet" weight="fill" aria-hidden />
+          <div className="min-w-0 text-sm text-ink-2">
+            <p className="text-ink">Return requested {formatDay(returnRequest.at)}</p>
+            <p className="mt-1">
+              {returnRequest.reasonLabel}, {returnRequest.variantIds.length} {returnRequest.variantIds.length === 1 ? "item" : "items"}.{" "}
+              {status === "refund_requested"
+                ? `${brand.name} reviews it and replies with return instructions, and you'll get a notification when they do. Keep the items unworn with their tags until then.`
+                : status === "refunded"
+                  ? `${brand.name} accepted the return and marked it refunded.`
+                  : `${brand.name} has updated this return. The timeline shows what changed.`}
+            </p>
+          </div>
+        </div>
       ) : canReturn ? (
         <>
           <p className="text-sm text-ink-2">
             {brand.name} accepts returns for {brand.returnsDays} days after delivery.{" "}
             <span className="text-ink">{returnDaysLeft === 0 ? "Today is the last day." : `${returnDaysLeft} ${returnDaysLeft === 1 ? "day" : "days"} left.`}</span>
           </p>
-          <div className="mt-4">
-            <ReturnDialog order={order} brand={brand} onRequested={(r) => requestReturn(order.id, r)} />
-          </div>
+          <Button
+            variant="secondary"
+            className="mt-4 w-full"
+            aria-haspopup="dialog"
+            onClick={(e) => {
+              returnOpener.current = e.currentTarget
+              setReturnOpen(true)
+            }}
+          >
+            <RotateCcw /> Request a return
+          </Button>
         </>
       ) : (
         <p className="text-sm text-ink-2">
           {order.status === "delivered"
             ? `The ${brand.returnsDays}-day return window for this order closed ${Math.abs(returnDaysLeft ?? 0)} days ago.`
-            : order.status === "refunded" || order.status === "cancelled"
+            : order.status === "refunded"
               ? "This order has been refunded, so there's nothing to return."
+              : order.status === "cancelled"
+                ? order.paymentStatus === "pending" || order.paymentStatus === "failed"
+                  ? "This order was cancelled before it was paid, so there's nothing to return or refund."
+                  : order.paymentStatus === "refunded"
+                    ? "This order was cancelled and marked refunded, so there's nothing to return."
+                    : "This order was cancelled, so there's nothing to return. The refund goes back to your original payment method once the payment provider processes it."
               : order.status === "refund_requested"
                 ? `${brand.name} is reviewing a return for this order.`
                 : `You can request a return once it's delivered. ${brand.name} accepts returns for ${brand.returnsDays} days after delivery.`}
@@ -125,7 +154,14 @@ export function OrderDetail({ id }: { id: string }) {
           <h1 className="mt-4 font-display text-display-lg text-ink">Order {order.reference}</h1>
           <p className="mt-3 text-sm text-ink-2">
             Placed {formatDay(order.placedAt, { year: true })}
-            {group ? <>, part of checkout <Link href="/you/orders" className="text-violet underline-offset-4 hover:underline">{group.reference}</Link></> : null}
+            {group ? (
+              <>
+                , part of checkout{" "}
+                <Link href={`/you/orders#g-${group.id}`} className="relative whitespace-nowrap text-violet underline-offset-4 after:absolute after:-inset-x-1 after:-inset-y-2.5 hover:underline">
+                  {group.reference}
+                </Link>
+              </>
+            ) : null}
           </p>
         </div>
         <OrderStatusBadge status={status} />
@@ -140,7 +176,7 @@ export function OrderDetail({ id }: { id: string }) {
             ) : (
               <OrderStepper status={status} />
             )}
-            <p className="mt-6 text-sm text-ink-2">{returnRequest ? `${brand.name} is reviewing your return request and will reply within 2 business days.` : meta.note}</p>
+            <p className="mt-6 text-sm text-ink-2">{returnRequest && status === "refund_requested" ? `${brand.name} is reviewing your return request.` : note}</p>
             {order.tracking ? (
               <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-md border border-line-soft bg-surface px-4 py-3">
                 <div className="min-w-0">
@@ -217,9 +253,20 @@ export function OrderDetail({ id }: { id: string }) {
                 <dd className="text-ink tabular">{formatMoney(order.total, order.currency)}</dd>
               </div>
             </dl>
-            <p className="mt-3 text-xs text-ink-3">
-              Charged in {order.currency} by {brand.name}.
-              {order.paymentStatus === "refunded" ? " Refunded in full." : ""}
+            <p className="mt-3 text-xs leading-relaxed text-ink-3">
+              {order.paymentStatus === "pending" && order.status === "cancelled"
+                ? "Not charged: the order was cancelled before it was paid."
+                : order.paymentStatus === "pending"
+                ? `Not charged. In ${order.currency}, awaiting payment confirmation: no payment provider is connected in this development build.`
+                : order.paymentStatus === "failed"
+                  ? "The payment didn't go through, so nothing was charged."
+                  : order.paymentStatus === "authorized"
+                    ? `Authorised in ${order.currency}. The charge completes when ${brand.name} ships it.`
+                : order.paymentStatus === "refunded"
+                  ? `Charged in ${order.currency} by ${brand.name}, then refunded in full.`
+                  : order.paymentStatus === "partially_refunded"
+                    ? `Charged in ${order.currency} by ${brand.name}, then partly refunded.`
+                    : `Charged in ${order.currency} by ${brand.name}.`}
             </p>
           </Panel>
 
@@ -253,10 +300,12 @@ export function OrderDetail({ id }: { id: string }) {
                 <dt className="text-xs text-ink-3">Tracking</dt>
                 <dd className="mt-1">
                   {order.tracking ? (
-                    <a href={trackingUrl(order.tracking)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-violet underline-offset-4 hover:underline">
-                      {order.tracking.carrier}, {order.tracking.number}
-                      <ExternalLink className="size-3.5" aria-hidden />
-                    </a>
+                    <>
+                      <span className="block text-ink tabular">
+                        {order.tracking.carrier}, {order.tracking.number}
+                      </span>
+                      <TrackingLink tracking={order.tracking} className="mt-1.5" />
+                    </>
                   ) : (
                     <span className="text-ink-2">Added when {brand.name} ships your order</span>
                   )}
@@ -269,6 +318,22 @@ export function OrderDetail({ id }: { id: string }) {
           <div className="lg:hidden">{timelinePanel}</div>
         </aside>
       </div>
+
+      {order.status === "delivered" || returnRequest ? (
+        <ReturnDialog
+          order={order}
+          brand={brand}
+          open={returnOpen}
+          onOpenChange={setReturnOpen}
+          onRequested={(r) => requestReturn(order.id, r)}
+          onSent={() => {
+            // The panel is rendered for phones and for desktop; focus the one on screen.
+            const visible = [...document.querySelectorAll<HTMLElement>("[data-return-status]")].find((el) => el.offsetParent !== null)
+            visible?.focus()
+          }}
+          onCancelled={() => returnOpener.current?.focus()}
+        />
+      ) : null}
     </>
   )
 }

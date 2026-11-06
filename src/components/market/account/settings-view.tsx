@@ -1,9 +1,11 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { BellRingingIcon as BellRing, SignOutIcon as LogOut } from "@phosphor-icons/react"
+import { BellRingingIcon as BellRing, CheckIcon as Check, SignOutIcon as LogOut } from "@phosphor-icons/react"
 import { toast } from "sonner"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { Notice } from "@/components/market/checkout/fields"
 import { LocaleSelect } from "@/components/market/locale-select"
 import { SectionHeader } from "@/components/market/section-header"
@@ -26,8 +28,8 @@ const topics: { key: keyof NotificationPrefs; label: string; body: string }[] = 
 ]
 
 const channels: { key: keyof NotificationPrefs; label: string; body: string }[] = [
-  { key: "email", label: "Email", body: "Sent to the address on your account." },
-  { key: "push", label: "Push", body: "On this device, when the app or site is allowed to notify you." },
+  { key: "email", label: "Email", body: "Sent to the address on your account. Not connected in this development build." },
+  { key: "push", label: "Push", body: "On this device, once you allow it. Not connected in this development build." },
 ]
 
 const providerName = { google: "Google", apple: "Apple", email: "email and password" } as const
@@ -36,11 +38,31 @@ function Row({ id, label, body, checked, onChange }: { id: string; label: string
   return (
     <div className="flex items-start justify-between gap-6 py-4 first:pt-0 last:pb-0">
       <div className="min-w-0">
-        <Label htmlFor={id} className="text-sm text-ink">{label}</Label>
-        <p className="mt-1 text-sm text-ink-2">{body}</p>
+        <Label htmlFor={id} className="text-sm text-ink">
+          {label}
+        </Label>
+        <p id={`${id}-desc`} className="mt-1 text-sm text-ink-2">
+          {body}
+        </p>
       </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} className="mt-0.5" />
+      <Switch id={id} checked={checked} onCheckedChange={onChange} aria-describedby={`${id}-desc`} className="mt-0.5" />
     </div>
+  )
+}
+
+/** A quiet "Saved" that confirms a change in place and fades back to the resting hint. */
+function SavedNote({ message, idle }: { message: string | null; idle: string }) {
+  return (
+    <p aria-live="polite" className="flex min-h-5 items-center gap-1.5 text-xs text-ink-3">
+      {message ? (
+        <>
+          <Check className="size-3.5 text-violet" aria-hidden />
+          <span className="text-ink-2">{message}</span>
+        </>
+      ) : (
+        idle
+      )}
+    </p>
   )
 }
 
@@ -61,27 +83,48 @@ function AccountForm() {
   const [name, setName] = useState(user.name)
   const [email, setEmail] = useState(user.email)
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({})
+  const [justSaved, setJustSaved] = useState(false)
   const managed = user.provider !== "email"
   const dirty = name.trim() !== user.name || email.trim() !== user.email
 
+  // Saved in place: the button shows its check and the note confirms it, so no toast.
+  const save = useAsyncAction((details: { name: string; email: string }) => updateProfile(details), {
+    error: "Your details weren't saved. Try again.",
+    onSuccess: () => setJustSaved(true),
+  })
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (save.pending || !dirty) return
     const next: typeof errors = {}
     const n = name.trim()
     if (n.length < 2) next.name = "Enter the name you'd like on orders, at least 2 characters."
     else if (n.length > 60) next.name = "Keep your name under 60 characters."
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = "Enter a valid email address."
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = "Enter an email address like name@example.com."
     setErrors(next)
-    if (Object.keys(next).length) return
-    updateProfile({ name: n, email: email.trim() })
-    toast("Account updated", { description: "New orders and receipts will use these details." })
+    if (Object.keys(next).length) {
+      window.requestAnimationFrame(() => document.getElementById(next.name ? "acc-name" : "acc-email")?.focus())
+      return
+    }
+    void save.run({ name: n, email: email.trim() })
   }
 
   return (
     <form onSubmit={submit} noValidate className="grid gap-5">
       <div className="grid gap-1.5">
         <Label htmlFor="acc-name">Name</Label>
-        <Input id="acc-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" aria-invalid={!!errors.name} aria-describedby={errors.name ? "acc-name-error" : undefined} className="h-11" />
+        <Input
+          id="acc-name"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value)
+            setJustSaved(false)
+          }}
+          autoComplete="name"
+          aria-invalid={!!errors.name}
+          aria-describedby={errors.name ? "acc-name-error" : undefined}
+          className="h-11"
+        />
         {errors.name ? <p id="acc-name-error" className="text-xs text-danger">{errors.name}</p> : null}
       </div>
       <div className="grid gap-1.5">
@@ -90,7 +133,10 @@ function AccountForm() {
           id="acc-email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            setJustSaved(false)
+          }}
           autoComplete="email"
           disabled={managed}
           aria-invalid={!!errors.email}
@@ -101,7 +147,9 @@ function AccountForm() {
         {managed ? <p id="acc-email-note" className="text-xs text-ink-3">Signed in with {providerName[user.provider]}. Change this email in your {providerName[user.provider]} account.</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" disabled={!dirty}>Save changes</Button>
+        <Button type="submit" variant="primary" disabled={!dirty && !save.succeeded} loading={save.pending} success={save.succeeded}>
+          Save changes
+        </Button>
         {dirty ? (
           <Button
             type="button"
@@ -114,6 +162,8 @@ function AccountForm() {
           >
             Discard
           </Button>
+        ) : justSaved ? (
+          <SavedNote message="Saved. New orders use these details." idle="" />
         ) : !managed ? (
           <span className="text-xs text-ink-3">Signed in with {providerName[user.provider]}</span>
         ) : null}
@@ -133,10 +183,12 @@ export function SettingsView() {
   const following = useSaved((s) => s.following.length)
   const reminders = useSaved((s) => s.notify.length)
   const anyChannel = prefs.email || prefs.push
+  const [lastChange, setLastChange] = useState<string | null>(null)
 
+  // Each switch saves at once (the session store persists); the note under the list says so.
   function change(key: keyof NotificationPrefs, label: string, value: boolean) {
     setNotifications({ [key]: value })
-    toast(`${label} ${value ? "on" : "off"}`, { description: "Saved. Every alert we send follows these settings." })
+    setLastChange(`${label} ${value ? "on" : "off"}. Saved.`)
   }
 
   return (
@@ -148,20 +200,25 @@ export function SettingsView() {
       </header>
       <YouNav className="mt-8" />
 
-      <Section id="set-account" title="Account" description="Your name goes on orders and receipts. Receipts and shipping updates go to your email.">
+      <Section id="set-account" title="Account" description="Your name goes on your orders. Order updates appear in Notifications. Email receipts start once email is connected.">
         <AccountForm />
       </Section>
 
       <Section id="set-notify" title="Notifications" description="Choose what you hear about and how. Brands only ever reach you through these settings.">
         <Notice icon={BellRing}>
-          <p className="text-ink">
-            Notifications respect these settings. Updates from brands you follow and the drop reminders you set only reach you for the topics switched on below, through the channels switched on below.
-          </p>
+          <p className="text-ink">Brands you follow and the drop reminders you set only reach you for the topics, and through the channels, switched on below.</p>
           {following || reminders ? (
             <p className="mt-1">
               Right now that covers {following === 1 ? "1 brand" : `${following} brands`} and {reminders === 1 ? "1 drop reminder" : `${reminders} drop reminders`}.
             </p>
           ) : null}
+          <p className="mt-1">
+            Email and push aren&apos;t connected in this development build, so nothing is sent yet. Your choices are saved and apply once they are. Every update also appears in{" "}
+            <Link href="/notifications" className="text-violet underline-offset-4 hover:underline">
+              Notifications
+            </Link>
+            .
+          </p>
         </Notice>
         <h3 className="mt-6 text-xs text-ink-3">Tell me about</h3>
         <div className="mt-3 divide-y divide-line-soft">
@@ -175,7 +232,10 @@ export function SettingsView() {
             <Row key={c.key} id={`n-${c.key}`} label={c.label} body={c.body} checked={prefs[c.key]} onChange={(v) => change(c.key, `${c.label} notifications`, v)} />
           ))}
         </div>
-        {!anyChannel ? <p className="mt-5 text-xs text-acid">Email and push are both off. Updates still appear in your Following feed, but nothing is sent to you.</p> : null}
+        {!anyChannel ? <p className="mt-5 text-xs text-acid">Email and push are both off. Updates still appear in Notifications and your Following feed, but nothing will be sent to you.</p> : null}
+        <div className="mt-5 border-t border-line-soft pt-4">
+          <SavedNote message={lastChange} idle="Changes save as you switch." />
+        </div>
       </Section>
 
       <Section id="set-region" title="Region and currency" description="Where you ship to sets delivery times and shipping costs. Prices show in your currency as an estimate; checkout confirms the rate.">

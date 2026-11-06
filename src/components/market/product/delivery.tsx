@@ -12,6 +12,14 @@ import { arrivalRange, deliveryDays, shippingMethodLabel, shippingPrice } from "
 import { LocaleSelect } from "../locale-select"
 import { Price } from "../price"
 
+/** Country names that take "the" inside a sentence ("to the United Kingdom"). */
+const takesArticle = new Set<CountryCode>(["GB", "US"])
+
+/** A country as it reads mid-sentence: "the United Kingdom", "Nigeria". */
+export function countryInSentence(code: CountryCode) {
+  return takesArticle.has(code) ? `the ${countries[code].name}` : countries[code].name
+}
+
 /**
  * Delivery estimate to the shopper's ship-to country, worked out with checkout's own helpers
  * (the brand's processing time plus transit, in business days) so the page promises what
@@ -24,7 +32,7 @@ export function useDelivery(brand: Brand) {
   const to: CountryCode = hydrated ? shipTo : "NG"
   const days = deliveryDays(brand, to, "standard")
   const arrival = now === null ? null : arrivalRange(new Date(now), days)
-  return { to, country: countries[to].name, zone: shippingZone(brand.shipsFrom, to), days, arrival }
+  return { to, country: countryInSentence(to), zone: shippingZone(brand.shipsFrom, to), days, arrival }
 }
 
 /** Three short lines under Add to bag: arrival, who ships it, returns. */

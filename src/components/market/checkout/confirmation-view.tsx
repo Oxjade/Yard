@@ -4,10 +4,11 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { CheckIcon as Check, CopyIcon as Copy, StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { CheckIcon as Check, CopyIcon as Copy, HourglassMediumIcon as Hourglass, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { toast } from "sonner"
-import { customerOrderStatus, OrderStatusBadge } from "@/components/market/account/order-status"
+import { spring } from "@/lib/motion"
+import { checkoutPayment, OrderStatusBadge, orderStatusNote } from "@/components/market/account/order-status"
 import { formatDay } from "@/components/market/account/format"
 import { BrandMark } from "@/components/market/brand-mark"
 import { SectionHeader } from "@/components/market/section-header"
@@ -49,8 +50,8 @@ export function ConfirmationView() {
             <PackageSearch className="size-6 text-ink-2" />
           </span>
           <div>
-            <p className="text-base text-ink">We can&apos;t find that checkout on this device</p>
-            <p className="mt-1 max-w-sm text-sm text-ink-2">The link may be incomplete, or the order was placed on another device.</p>
+            <p className="text-base text-ink">We can&apos;t find that checkout in this browser</p>
+            <p className="mt-1 max-w-sm text-sm text-ink-2">The link may be incomplete. In this development build orders are kept in the browser they were placed in, so a checkout from another browser or device won&apos;t show here.</p>
           </div>
           <Button asChild variant="primary">
             <Link href="/you/orders">See your orders</Link>
@@ -69,18 +70,23 @@ export function ConfirmationView() {
   // heading and labels follow the orders' real status instead of assuming success.
   const awaitingPayment = orders.some((o) => o.status === "pending_payment")
   const allPaid = orders.every((o) => o.status === "paid")
+  const payment = checkoutPayment(orders)
 
   return (
     <>
       <section aria-labelledby="confirmed-title">
+        {/* A check only once the provider has confirmed payment; until then, a pending mark. */}
         <motion.span
-          initial={{ scale: 0.5, opacity: 0 }}
+          initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 420, damping: 18, delay: 0.1 }}
-          className="inline-flex size-12 items-center justify-center rounded-full bg-acid text-obsidian"
+          transition={spring.snappy}
+          className={cn(
+            "inline-flex size-12 items-center justify-center rounded-full",
+            awaitingPayment ? "border border-violet/50 bg-purple/15 text-violet" : "bg-acid text-obsidian",
+          )}
           aria-hidden
         >
-          <Check className="size-6" strokeWidth={2.5} />
+          {awaitingPayment ? <Hourglass className="size-6" /> : <Check className="size-6" weight="bold" />}
         </motion.span>
         <h1 id="confirmed-title" className="mt-6 font-display text-display-lg text-ink">
           {awaitingPayment ? "Order placed" : "Order confirmed"}
@@ -96,7 +102,7 @@ export function ConfirmationView() {
               : `Here is where ${single ? "the order" : `each of the ${orders.length} brand orders`} from this checkout stands.`}
         </p>
 
-        <dl className="mt-8 grid gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-3">
+        <dl className="mt-8 grid gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-card px-4 py-3.5 md:px-5">
             <dt className="text-xs text-ink-3">Checkout reference</dt>
             <dd className="mt-1 flex items-center gap-1.5">
@@ -109,14 +115,18 @@ export function ConfirmationView() {
             <dd className="mt-1 text-lg text-ink tabular">{formatDay(group.placedAt, { year: true })}</dd>
           </div>
           <div className="bg-card px-4 py-3.5 md:px-5">
-            <dt className="text-xs text-ink-3">{awaitingPayment ? "Total" : "Total charged"}</dt>
+            <dt className="text-xs text-ink-3">{payment.label}</dt>
             <dd className="mt-1 text-lg text-ink tabular">{formatMoney(group.total, group.currency)}</dd>
+          </div>
+          <div className="bg-card px-4 py-3.5 md:px-5">
+            <dt className="text-xs text-ink-3">Payment</dt>
+            <dd className="mt-1 text-lg text-ink">{payment.status}</dd>
           </div>
         </dl>
         <p className="mt-3 text-xs leading-relaxed text-ink-3">
           {awaitingPayment
-            ? "Payments are simulated in this development build. No payment provider is connected, so nothing was charged and these orders stay awaiting payment."
-            : "Payments are simulated in this development build."}{" "}
+            ? "No payment provider is connected in this development build, so nothing was charged and these orders stay awaiting payment confirmation. "
+            : ""}
           Quote the reference if you contact us or a brand.
         </p>
 
@@ -197,7 +207,7 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
           </Link>
           <OrderStatusBadge status={order.status} className="shrink-0" />
         </div>
-        <p className="mt-2.5 text-xs leading-relaxed text-ink-2">{customerOrderStatus[order.status].note}</p>
+        <p className="mt-2.5 text-xs leading-relaxed text-ink-2">{orderStatusNote(order)}</p>
       </header>
       <ul className="divide-y divide-line-soft px-4 md:px-5">
         {order.lines.map((l) => (
@@ -248,15 +258,25 @@ function CopyReference({ value }: { value: string }) {
     try {
       await navigator.clipboard.writeText(value)
       setCopied(true)
-      toast("Reference copied", { description: value })
       window.setTimeout(() => setCopied(false), 1600)
     } catch {
-      toast("Couldn't copy the reference", { description: "Select it and copy it instead." })
+      toast.error("Couldn't copy the reference", { description: "Select it and copy it instead." })
     }
   }
+  // The check in place is the confirmation; a toast would repeat it.
   return (
-    <button type="button" onClick={copy} aria-label="Copy checkout reference" className="inline-flex size-8 items-center justify-center rounded-md text-ink-2 transition hover:bg-elevated hover:text-ink">
-      {copied ? <Check className="size-4 text-acid" /> : <Copy className="size-4" />}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy checkout reference"
+        className="-my-1.5 inline-flex size-10 items-center justify-center rounded-md text-ink-2 transition-[background-color,color,transform] duration-150 hover:bg-elevated hover:text-ink focus-visible:ring-2 focus-visible:ring-violet focus-visible:outline-none active:scale-95"
+      >
+        {copied ? <Check className="size-4 text-acid" /> : <Copy className="size-4" />}
+      </button>
+      <span className="sr-only" role="status">
+        {copied ? "Reference copied" : ""}
+      </span>
+    </>
   )
 }

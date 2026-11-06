@@ -24,8 +24,10 @@ export function DropArchive({ drops }: { drops: Drop[] }) {
                   {drop.name}
                 </Link>
               </h3>
-              <p className="mt-1 truncate text-xs text-ink-3">
-                {runText(drop)}, released {releasedAgo(drop)}
+              {/* Two short facts on their own lines, so neither is cut off on a phone. */}
+              <p className="mt-1 text-xs leading-snug text-ink-3">
+                <span className="block">{runText(drop)}</span>
+                <span className="block">Released {releasedAgo(drop)}</span>
               </p>
             </div>
             <DropStatus drop={drop} className="shrink-0" />

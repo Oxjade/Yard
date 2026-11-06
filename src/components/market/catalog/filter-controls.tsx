@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useState } from "react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { convert, formatMoney, toMajor } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import { Chip } from "./chip"
+import { Chip, ChipRadioGroup } from "./chip"
 import { computeFacets, priceBands, sortOptions, type CatalogState } from "./catalog-state"
 
 /* ---------- price labels in the shopper's currency ---------- */
@@ -31,21 +31,35 @@ export function priceLabel(min: number | undefined, max: number | undefined, cur
 
 export type FilterPatch = Partial<Omit<CatalogState, "page">>
 
+const pieces = (n: number) => `${n} ${n === 1 ? "piece" : "pieces"}`
+
 /**
  * Every filter the panel (desktop) and the sheet (phone) offer. Controlled: it renders the
  * state it is given and reports changes, so the sheet can work on a draft.
+ *
+ * The custom price range commits two ways. On the desktop panel ("apply") it has its own Apply
+ * button, because every change there rewrites the listing. In the phone sheet ("live") the typed
+ * range goes into the draft as soon as it is valid, so the sheet's one footer button includes it;
+ * while it is not valid the sheet is told (onPriceValidityChange) and holds its footer.
  */
 export function FilterControls({
   state,
   onChange,
   currency,
   showSort = false,
+  priceMode = "apply",
+  onPriceValidityChange,
+  resetKey,
   className,
 }: {
   state: CatalogState
   onChange: (patch: FilterPatch) => void
   currency: CurrencyCode
   showSort?: boolean
+  priceMode?: "apply" | "live"
+  onPriceValidityChange?: (valid: boolean) => void
+  /** Changing it empties the typed price range, even when the draft's min and max did not change. */
+  resetKey?: number
   className?: string
 }) {
   const facets = useMemo(() => computeFacets(state), [state])
@@ -59,36 +73,46 @@ export function FilterControls({
     <div className={cn("divide-y divide-line-soft", className)}>
       {showSort ? (
         <FilterSection title="Sort">
-          <div role="radiogroup" aria-label="Sort" className="flex flex-wrap gap-2">
+          <ChipRadioGroup label="Sort" className="flex flex-wrap gap-2">
             {sortOptions.map((o) => (
-              <Chip key={o.value} radio size="sm" selected={state.sort === o.value} onClick={() => onChange({ sort: o.value })}>
+              <Chip key={o.value} radio size="sm" layoutId={`${id}-sort`} selected={state.sort === o.value} onClick={() => onChange({ sort: o.value })}>
                 {o.label}
               </Chip>
             ))}
-          </div>
+          </ChipRadioGroup>
         </FilterSection>
       ) : null}
 
       <FilterSection title="Price" note={currency !== "USD" ? `Shown in ${currency} at an indicative rate.` : undefined}>
-        <div role="radiogroup" aria-label="Price band" className="flex flex-wrap gap-2">
+        {/* At most one band, and none is a valid choice: toggles (a second press clears it). */}
+        <div role="group" aria-label="Price band" className="flex flex-wrap gap-2">
           {facets.priceFacet.map((band) => {
             const selected = state.min === band.min && state.max === band.max
+            const label = priceLabel(band.min, band.max, currency)
             return (
               <Chip
                 key={`${band.min}-${band.max}`}
-                radio
                 size="sm"
                 selected={selected}
                 count={band.count}
                 disabled={!selected && band.count === 0}
                 onClick={() => onChange(selected ? { min: undefined, max: undefined } : { min: band.min, max: band.max })}
+                aria-label={`${label}, ${pieces(band.count)}`}
               >
-                {priceLabel(band.min, band.max, currency)}
+                {label}
               </Chip>
             )
           })}
         </div>
-        <PriceRange min={state.min} max={state.max} currency={currency} onApply={(min, max) => onChange({ min, max })} />
+        <PriceRange
+          min={state.min}
+          max={state.max}
+          currency={currency}
+          mode={priceMode}
+          resetKey={resetKey}
+          onApply={(min, max) => onChange({ min, max })}
+          onValidityChange={onPriceValidityChange}
+        />
       </FilterSection>
 
       {facets.brandFacet.length ? (
@@ -99,7 +123,7 @@ export function FilterControls({
               const cid = `${id}-brand-${brand.handle}`
               return (
                 <li key={brand.id}>
-                  <div className={cn("flex items-center gap-3 rounded-md px-1 py-1.5 transition-colors hover:bg-card", count === 0 && !checked && "opacity-50")}>
+                  <div className={cn("flex min-h-10 items-center gap-3 rounded-md px-1 transition-colors duration-150 hover:bg-card lg:min-h-9", count === 0 && !checked && "opacity-50")}>
                     <Checkbox id={cid} checked={checked} onCheckedChange={() => onChange({ brands: toggle(state.brands, brand.handle) })} />
                     <Label htmlFor={cid} className={cn("min-w-0 flex-1 cursor-pointer gap-2.5 font-normal", checked ? "text-ink" : "text-ink-2")}>
                       <BrandMark brand={brand} size="xs" />
@@ -112,7 +136,7 @@ export function FilterControls({
             })}
           </ul>
           {facets.brandFacet.length > 6 ? (
-            <button type="button" onClick={() => setAllBrands((v) => !v)} className="mt-2 rounded-md px-1 py-1 text-sm text-violet hover:underline hover:underline-offset-4" aria-expanded={allBrands}>
+            <button type="button" onClick={() => setAllBrands((v) => !v)} className="mt-2 min-h-10 rounded-md px-1 text-sm text-violet underline-offset-4 hover:underline lg:min-h-9" aria-expanded={allBrands}>
               {allBrands ? "Show fewer brands" : `Show all ${facets.brandFacet.length} brands`}
             </button>
           ) : null}
@@ -136,7 +160,7 @@ export function FilterControls({
                         disabled={!selected && count === 0}
                         onClick={() => onChange({ sizes: toggle(state.sizes, value) })}
                         className="min-w-11 px-2.5"
-                        aria-label={`${group.label} ${value}, ${count} ${count === 1 ? "piece" : "pieces"}`}
+                        aria-label={`${group.label} ${value}, ${pieces(count)}`}
                       >
                         {value}
                       </Chip>
@@ -150,22 +174,36 @@ export function FilterControls({
       ) : null}
 
       <FilterSection title="Availability">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex min-h-10 items-center justify-between gap-4">
           <Label htmlFor={`${id}-stock`} className="cursor-pointer font-normal text-ink-2">
             In stock only
             <span className="tabular text-xs text-ink-3">{facets.inStockCount}</span>
           </Label>
-          <Switch id={`${id}-stock`} checked={state.inStock} onCheckedChange={(v) => onChange({ inStock: v })} />
+          {/* Named explicitly (like the size chips) so the count reads with its unit. */}
+          <Switch
+            id={`${id}-stock`}
+            checked={state.inStock}
+            onCheckedChange={(v) => onChange({ inStock: v })}
+            aria-label={`In stock only, ${pieces(facets.inStockCount)}`}
+          />
         </div>
       </FilterSection>
 
       {facets.countryFacet.length > 1 || state.country ? (
         <FilterSection title="Brand country">
-          <div role="radiogroup" aria-label="Brand country" className="flex flex-wrap gap-2">
+          <div role="group" aria-label="Brand country" className="flex flex-wrap gap-2">
             {facets.countryFacet.map((c) => {
               const selected = state.country === c.code
               return (
-                <Chip key={c.code} radio size="sm" selected={selected} count={c.count} disabled={!selected && c.count === 0} onClick={() => onChange({ country: selected ? undefined : c.code })}>
+                <Chip
+                  key={c.code}
+                  size="sm"
+                  selected={selected}
+                  count={c.count}
+                  disabled={!selected && c.count === 0}
+                  onClick={() => onChange({ country: selected ? undefined : c.code })}
+                  aria-label={`${c.name}, ${pieces(c.count)}`}
+                >
                   {c.name}
                 </Chip>
               )
@@ -192,55 +230,116 @@ function FilterSection({ title, count, note, children }: { title: string; count?
 
 /* ---------- custom price range (validated) ---------- */
 
+type RangeErrors = { lo?: string; hi?: string }
+
+const parseAmount = (v: string) => (v.trim() === "" ? undefined : Number(v.replace(/[\s,]/g, "")))
+
+/** Format errors belong to one field; "max below min" is a cross-field error, kept on Max. */
+function validateRange(lo: string, hi: string): { errors: RangeErrors; crossField: boolean; a?: number; b?: number } {
+  const a = parseAmount(lo)
+  const b = parseAmount(hi)
+  const errors: RangeErrors = {}
+  if (a !== undefined && (!Number.isFinite(a) || a < 0)) errors.lo = "Enter an amount of zero or more."
+  if (b !== undefined && (!Number.isFinite(b) || b <= 0)) errors.hi = "Enter an amount above zero."
+  let crossField = false
+  if (!errors.lo && !errors.hi && a !== undefined && b !== undefined && a > b) {
+    errors.hi = "Max must be higher than min."
+    crossField = true
+  }
+  return { errors, crossField, a, b }
+}
+
 function PriceRange({
   min,
   max,
   currency,
+  mode,
+  resetKey = 0,
   onApply,
+  onValidityChange,
 }: {
   min?: number
   max?: number
   currency: CurrencyCode
+  mode: "apply" | "live"
+  resetKey?: number
   onApply: (min: number | undefined, max: number | undefined) => void
+  onValidityChange?: (valid: boolean) => void
 }) {
   const id = useId()
+  const live = mode === "live"
   const minor = currencies[currency].minor
   const toDisplay = (usd?: number) => (usd === undefined ? "" : String(Math.round(toMajor(convert(Math.round(usd * 100), "USD", currency), currency))))
   const toUsd = (value: number | undefined, round: (n: number) => number) =>
     value === undefined ? undefined : round(convert(Math.round(value * 10 ** minor), currency, "USD") / 100)
+  const keyOf = (lo?: number, hi?: number) => `${lo}|${hi}|${currency}|${resetKey}`
 
-  // Keep the inputs in step with the URL (a band chip or "Clear all" changes min/max).
-  const key = `${min}|${max}|${currency}`
+  // Keep the inputs in step with the URL or draft (a band chip or "Clear filters" changes min/max).
+  const key = keyOf(min, max)
   const [synced, setSynced] = useState(key)
   const [lo, setLo] = useState(toDisplay(min))
   const [hi, setHi] = useState(toDisplay(max))
-  const [errors, setErrors] = useState<{ lo?: string; hi?: string }>({})
+  const [errors, setErrors] = useState<RangeErrors>({})
+  // Live mode: errors show once a field has been left (or at once for a malformed amount).
+  const [touched, setTouched] = useState<{ lo?: boolean; hi?: boolean }>({})
   if (synced !== key) {
     setSynced(key)
     setLo(toDisplay(min))
     setHi(toDisplay(max))
     setErrors({})
+    setTouched({})
+  }
+
+  const check = validateRange(lo, hi)
+  const invalid = Boolean(check.errors.lo || check.errors.hi)
+  useEffect(() => {
+    onValidityChange?.(!invalid)
+  }, [invalid, onValidityChange])
+  // A sheet that closes with a half-typed range must not stay held.
+  useEffect(() => () => onValidityChange?.(true), [onValidityChange])
+
+  const shown: RangeErrors = live
+    ? {
+        lo: check.errors.lo,
+        // "Max below min" waits until Max has been left, so typing 1, 10, 100 never flashes it.
+        hi: check.errors.hi && (!check.crossField || touched.hi) ? check.errors.hi : undefined,
+      }
+    : errors
+
+  /** Live mode: a valid range goes straight into the draft (the inputs keep what was typed). */
+  function commitLive(nextLo: string, nextHi: string) {
+    const next = validateRange(nextLo, nextHi)
+    if (next.errors.lo || next.errors.hi) return
+    const usdMin = toUsd(next.a, Math.floor)
+    const usdMax = toUsd(next.b, Math.ceil)
+    if (usdMin === min && usdMax === max) return
+    setSynced(keyOf(usdMin, usdMax))
+    onApply(usdMin, usdMax)
+  }
+
+  /**
+   * Live mode: Enter shows any error and, on a touch screen, puts the keyboard away (the range is
+   * already in the draft). A hardware keyboard keeps its place in the field.
+   */
+  function finishTyping(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!live || e.key !== "Enter") return
+    e.preventDefault()
+    setTouched({ lo: true, hi: true })
+    if (window.matchMedia("(pointer: coarse)").matches) e.currentTarget.blur()
   }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const parse = (v: string) => (v.trim() === "" ? undefined : Number(v.replace(/[\s,]/g, "")))
-    const a = parse(lo)
-    const b = parse(hi)
-    const next: { lo?: string; hi?: string } = {}
-    if (a !== undefined && (!Number.isFinite(a) || a < 0)) next.lo = "Enter an amount of zero or more."
-    if (b !== undefined && (!Number.isFinite(b) || b <= 0)) next.hi = "Enter an amount above zero."
-    if (!next.lo && !next.hi && a !== undefined && b !== undefined && a > b) next.hi = "Max must be higher than min."
-    setErrors(next)
-    if (next.lo || next.hi) return
-    onApply(toUsd(a, Math.floor), toUsd(b, Math.ceil))
+    if (live) return
+    setErrors(check.errors)
+    if (invalid) return
+    onApply(toUsd(check.a, Math.floor), toUsd(check.b, Math.ceil))
   }
 
   const symbol = currencies[currency].symbol
   const field = (which: "lo" | "hi") => {
     const value = which === "lo" ? lo : hi
-    const set = which === "lo" ? setLo : setHi
-    const error = errors[which]
+    const error = shown[which]
     const fid = `${id}-${which}`
     return (
       <div className="grid min-w-0 flex-1 gap-1.5">
@@ -252,9 +351,19 @@ function PriceRange({
           <Input
             id={fid}
             inputMode="numeric"
+            enterKeyHint={live ? "done" : "go"}
             autoComplete="off"
             value={value}
-            onChange={(e) => set(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value
+              if (which === "lo") setLo(v)
+              else setHi(v)
+              if (live) commitLive(which === "lo" ? v : lo, which === "hi" ? v : hi)
+              // A shown error follows the value, so it clears the moment the amount is fixed.
+              else if (errors[which]) setErrors(validateRange(which === "lo" ? v : lo, which === "hi" ? v : hi).errors)
+            }}
+            onBlur={() => live && setTouched((t) => ({ ...t, [which]: true }))}
+            onKeyDown={finishTyping}
             placeholder={which === "lo" ? "0" : "Any"}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? `${fid}-error` : undefined}
@@ -271,14 +380,16 @@ function PriceRange({
   }
 
   return (
-    <form onSubmit={submit} noValidate className="mt-4">
+    <form onSubmit={submit} noValidate className="mt-4" aria-label="Custom price range">
       <div className="flex items-start gap-2">
         {field("lo")}
         {field("hi")}
       </div>
-      <Button type="submit" variant="secondary" size="sm" className="mt-3 w-full">
-        Apply price range
-      </Button>
+      {live ? null : (
+        <Button type="submit" variant="secondary" size="sm" className="mt-3 h-10 w-full lg:h-8">
+          Apply price range
+        </Button>
+      )}
     </form>
   )
 }
