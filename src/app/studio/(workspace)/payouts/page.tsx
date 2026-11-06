@@ -23,6 +23,7 @@ import { currencies } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { brandById } from "@/lib/data/brands"
+import { hash } from "@/lib/data/seed"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useNotifications } from "@/lib/stores/notifications"
@@ -46,11 +47,13 @@ const historyCell = "block w-[calc(100vw-5rem)] max-w-[24rem] md:w-auto md:max-w
 
 /**
  * A short reference that stays unique: a request's id ends in its own time code
- * (po_req_<brand>_<time>), so that tail is the reference; seeded payouts keep their name.
+ * (po_req_<brand>_<time>), so that tail is the reference. A seeded payout's id is a slug
+ * (po_<brand handle>), so its reference is a stable code made from the id, in the same
+ * shape: every row reads like a transfer reference.
  */
 function payoutRef(id: string) {
   const req = /^po_req_.+_([a-z0-9]+)$/.exec(id)
-  return req ? `PO-${req[1].toUpperCase()}` : id.replace(/^po_/, "PO-").toUpperCase()
+  return `PO-${(req ? req[1] : hash(id).toString(36).padStart(8, "0").slice(-8)).toUpperCase()}`
 }
 
 const payoutTone: Record<Payout["status"], { label: string; tone: "muted" | "info" | "attention" | "success" | "danger" }> = {

@@ -22,13 +22,22 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import type { Drop } from "@/lib/data/types"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
-import { phoneCellWide, useFocusReturn } from "@/components/studio/business/shared"
+import { PhoneSort, phoneCellWide, useFocusReturn } from "@/components/studio/business/shared"
 import { CATALOGUE_NOTE, dropsDescription } from "./copy"
 import { ListSkeleton } from "./form"
 import { useGrowth, useGrowthReady } from "./store"
 import { brandZone, dropRevenue, localId, dropStatusMeta, dropUnitsSold, formatInZone, notifyCount, relativeTime, studioDropStatus, zoneAbbr, type StudioDropStatus } from "./utils"
 
 type Tab = "all" | "scheduled" | "live" | "drafts" | "past"
+type Sort = "status" | "release" | "notify" | "name"
+
+/** The phone sort menu: the same orders the desktop column headers give. */
+const sortOptions: { value: Sort; label: string }[] = [
+  { value: "status", label: "Live and next first" },
+  { value: "release", label: "Latest release first" },
+  { value: "notify", label: "Most sign-ups" },
+  { value: "name", label: "Name, A to Z" },
+]
 
 type Row = {
   drop: Drop
@@ -60,6 +69,7 @@ function DropsIndexView({ now }: { now: number }) {
   const zone = brandZone(brand)
   const anchor = getDemoAnchor()
   const [tab, setTab] = useState<Tab>("all")
+  const [sort, setSort] = useState<Sort>("status")
   const [confirm, setConfirm] = useState<Row | null>(null)
   // The dialog keeps the last drop while it animates closed.
   const [lastConfirm, setLastConfirm] = useState<Row | null>(null)
@@ -68,6 +78,7 @@ function DropsIndexView({ now }: { now: number }) {
   // Opened from a row menu: focus returns to the drop's link, or to the list once it's removed.
   const focus = useFocusReturn(() => (asked ? document.querySelector<HTMLElement>(`a[href="/studio/drops/${asked.drop.id}"]`) : null) ?? document.getElementById("drop-list"))
 
+  // Rows arrive sorted by the phone sort menu (live and next up first by default); the column headers re-sort on wider screens.
   const rows: Row[] = (() => {
     const order: Record<StudioDropStatus, number> = { live: 0, scheduled: 1, draft: 2, "sold-out": 3, ended: 3 }
     return drops
@@ -76,7 +87,9 @@ function DropsIndexView({ now }: { now: number }) {
         const { release, end } = dropWindow(drop, anchor)
         return { drop, status, release, end, notify: notifyCount(drop, status, brand.followers), sold: dropUnitsSold(drop), revenue: dropRevenue(drop, brand.currency) }
       })
-      .sort((a, b) => order[a.status] - order[b.status] || (order[a.status] === 3 ? b.release - a.release : a.release - b.release))
+      .sort((a, b) =>
+        sort === "release" ? b.release - a.release : sort === "notify" ? b.notify - a.notify : sort === "name" ? a.drop.name.localeCompare(b.drop.name) : order[a.status] - order[b.status] || (order[a.status] === 3 ? b.release - a.release : a.release - b.release),
+      )
   })()
 
   const counts = {
@@ -207,7 +220,11 @@ function DropsIndexView({ now }: { now: number }) {
               ]}
             />
 
-            <section id="drop-list" aria-label="Drops" tabIndex={-1} className="outline-none">
+            <section id="drop-list" aria-label="Drops" tabIndex={-1} className="grid gap-3 outline-none">
+              {/* Phones only: the table shows just its first column there, so sorting moves here. */}
+              <div className="flex justify-end md:hidden">
+                <PhoneSort value={sort} onChange={setSort} options={sortOptions} />
+              </div>
               <DataTable
                 label="Drops"
                 rows={visible}

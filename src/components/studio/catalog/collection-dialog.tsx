@@ -176,7 +176,7 @@ function CollectionForm({ collection, collections, brandId, onDone, returnFocus 
 
       <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
         <Field id="col-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{name.length}/{NAME_MAX}</span>}>
-          <Input {...control("col-name", errors.name)} value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Drop 08: Lagoon" className={inputClass} />
+          <Input {...control("col-name", errors.name)} value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="e.g. Drop 08: Lagoon" className={inputClass} />
         </Field>
         <Field id="col-description" label="Description" optional error={errors.description} aside={<span className="text-xs text-ink-3 tabular">{description.length}/{DESCRIPTION_MAX}</span>}>
           <Textarea {...control("col-description", errors.description)} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={DESCRIPTION_MAX} rows={2} placeholder="What ties these pieces together." className="min-h-16" />

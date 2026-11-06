@@ -24,13 +24,22 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import type { Collection, Product } from "@/lib/data/types"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
-import { phoneCell, useFocusReturn } from "@/components/studio/business/shared"
+import { PhoneSort, phoneCell, useFocusReturn } from "@/components/studio/business/shared"
 import { PROMOTIONS_NOTE, promotionsDescription } from "./copy"
 import { control, Field, inputClass, ListSkeleton, Segmented, selectClass } from "./form"
 import { useGrowth, useGrowthReady, type DiscountType, type Promotion, type PromotionKind, type PromotionScope } from "./store"
 import { brandZone, discountLabel, localId, formatDate, promotionStatus, promotionStatusMeta, todayIn, type PromotionStatus } from "./utils"
 
 type Tab = "all" | "active" | "scheduled" | "paused" | "ended"
+type Sort = "status" | "start" | "used" | "name"
+
+/** The phone sort menu: the same orders the desktop column headers give. */
+const sortOptions: { value: Sort; label: string }[] = [
+  { value: "status", label: "Active first" },
+  { value: "start", label: "Latest start date" },
+  { value: "used", label: "Most redeemed" },
+  { value: "name", label: "Name, A to Z" },
+]
 
 type Row = { p: Promotion; status: PromotionStatus }
 
@@ -64,6 +73,7 @@ function PromotionsView({ now }: { now: number }) {
   const today = todayIn(brandZone(brand).tz, now)
   const collections = collectionsOf(brandId)
   const [tab, setTab] = useState<Tab>("all")
+  const [sort, setSort] = useState<Sort>("status")
   const [editing, setEditing] = useState<Promotion | "new" | null>(null)
   const [confirm, setConfirm] = useState<Promotion[] | null>(null)
   // The dialog keeps what it asked about while it animates closed.
@@ -73,12 +83,15 @@ function PromotionsView({ now }: { now: number }) {
   // Opened from a row menu or the bulk bar: focus returns to the promotion, or to the list once it's gone.
   const deleteFocus = useFocusReturn(() => (asked?.length === 1 ? document.querySelector<HTMLElement>(`[data-promo="${CSS.escape(asked[0].id)}"]`) : null) ?? document.getElementById("promotion-list"))
 
+  // Rows arrive sorted by the phone sort menu (active first by default); the column headers re-sort on wider screens.
   const rows: Row[] = (() => {
     const rank: Record<PromotionStatus, number> = { active: 0, scheduled: 1, paused: 2, "used-up": 3, expired: 3 }
     return all
       .filter((p) => p.brandId === brandId)
       .map((p) => ({ p, status: promotionStatus(p, today) }))
-      .sort((a, b) => rank[a.status] - rank[b.status] || b.p.startsOn.localeCompare(a.p.startsOn))
+      .sort((a, b) =>
+        sort === "start" ? b.p.startsOn.localeCompare(a.p.startsOn) : sort === "used" ? b.p.used - a.p.used : sort === "name" ? (a.p.code ?? a.p.title).localeCompare(b.p.code ?? b.p.title) : rank[a.status] - rank[b.status] || b.p.startsOn.localeCompare(a.p.startsOn),
+      )
   })()
 
   const count = (s: PromotionStatus[]) => rows.filter((r) => s.includes(r.status)).length
@@ -213,7 +226,8 @@ function PromotionsView({ now }: { now: number }) {
                 rows={visible}
                 columns={columns}
                 getId={(r) => r.p.id}
-                search={{ placeholder: "Search codes and sale names", text: (r) => `${r.p.code ?? ""} ${r.p.title}` }}
+                search={{ placeholder: "Search codes and sales", text: (r) => `${r.p.code ?? ""} ${r.p.title}` }}
+                toolbar={<PhoneSort value={sort} onChange={setSort} options={sortOptions} className="ml-auto" />}
                 rowActions={rowActions}
                 bulkActions={bulkActions}
                 minWidth={300}

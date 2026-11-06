@@ -283,7 +283,7 @@ export function ContentControls({
                 <Input
                   {...control("sf-announcement-text", errors["announcement-text"])}
                   value={announcement.text}
-                  placeholder="Drop 08 lands Friday at 6pm. Follow to get the alert."
+                  placeholder="e.g. Drop 08 lands Friday at 6pm"
                   className={inputClass}
                   onChange={(e) => {
                     const text = e.target.value

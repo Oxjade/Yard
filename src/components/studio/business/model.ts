@@ -214,6 +214,8 @@ export type BrandCustomer = {
 
 const shopperById = new Map<string, ShopperProfile>([...shoppers.map((s) => [s.id, s] as const), [demoCustomer.id, { id: demoCustomer.id, name: demoCustomer.name, email: demoCustomer.email, city: demoCustomer.city, country: demoCustomer.country }]])
 export const shopperName = (id: string) => shopperById.get(id)?.name ?? "Customer"
+/** The customer's name on an order: their profile, else the name the order ships to (a checkout order from someone new). */
+export const orderCustomerName = (o: Pick<MerchantOrder, "customerId" | "shippingAddress">) => shopperById.get(o.customerId)?.name ?? o.shippingAddress.name
 
 export function vipThreshold(currency: CurrencyCode) {
   return convert(VIP_SPEND_USD, "USD", currency)

@@ -75,7 +75,9 @@ export function AccountStep({ onNext }: StepProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink">{signedIn.name}</p>
-              <p className="truncate text-xs text-ink-2">{signedIn.email}, signed in with {signedIn.provider === "email" ? "email" : `a demo ${providerLabel[signedIn.provider]} account`}</p>
+              {/* The email may truncate; how they signed in (a demo account) always shows in full. */}
+              <p className="truncate text-xs text-ink-2">{signedIn.email}</p>
+              <p className="text-xs text-ink-3">{`Demo ${signedIn.provider === "email" ? "email" : providerLabel[signedIn.provider]} account on this device`}</p>
             </div>
           </div>
           <Button

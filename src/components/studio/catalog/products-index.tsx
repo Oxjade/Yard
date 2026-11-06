@@ -19,6 +19,7 @@ import type { CategorySlug, Product, ProductStatus } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
+import { PhoneSort } from "@/components/studio/business/shared"
 import { ConfirmDialog, selectedTabFor } from "./fields"
 import { productsCopy } from "./page-copy"
 import { CatalogueNote, ProductStock, Thumb } from "./parts"
@@ -28,6 +29,15 @@ import { productUpdatedAt, restoreProductStatuses, setProductStatuses, useCatalo
 import { formatDateTime, plural, productIdFor, relativeDay, totalAvailable } from "./utils"
 
 type Tab = "all" | ProductStatus
+type Sort = "updated" | "name" | "stock" | "price"
+
+/** The phone sort menu: the same orders the desktop column headers give. */
+const sortOptions: { value: Sort; label: string }[] = [
+  { value: "updated", label: "Recently updated" },
+  { value: "name", label: "Name, A to Z" },
+  { value: "stock", label: "Lowest stock first" },
+  { value: "price", label: "Highest price first" },
+]
 
 const tabOrder: { value: Tab; label: string }[] = [
   { value: "all", label: "All" },
@@ -108,6 +118,7 @@ export function ProductsIndex() {
 
   const [tab, setTab] = useState<Tab>("all")
   const [category, setCategory] = useState<CategorySlug | "all">("all")
+  const [sort, setSort] = useState<Sort>("updated")
   const [archiving, setArchiving] = useState<Product[] | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
 
@@ -124,7 +135,14 @@ export function ProductsIndex() {
     return slugs.map((s) => ({ value: s, label: categoryBySlug.get(s)?.name ?? s })).sort((a, b) => a.label.localeCompare(b.label))
   }, [products])
 
-  const rows = useMemo(() => products.filter((p) => (tab === "all" || p.status === tab) && (category === "all" || p.category === category)), [products, tab, category])
+  // Rows arrive sorted by the phone sort menu (recently updated first by default); the column headers re-sort on wider screens.
+  const rows = useMemo(
+    () =>
+      products
+        .filter((p) => (tab === "all" || p.status === tab) && (category === "all" || p.category === category))
+        .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : sort === "stock" ? totalAvailable(a) - totalAvailable(b) : sort === "price" ? b.price - a.price : productUpdatedAt(b).localeCompare(productUpdatedAt(a)))),
+    [products, tab, category, sort],
+  )
 
   /* ---------- actions ---------- */
 
@@ -349,21 +367,23 @@ export function ProductsIndex() {
               loading={!ready}
               search={{ placeholder: "Search by name, tag or SKU", text: (p) => [p.name, p.subcategory, ...p.tags, ...p.variants.map((v) => v.sku)].join(" ") }}
               toolbar={
-                <Select value={category} onValueChange={(v) => setCategory(v as CategorySlug | "all")}>
-                  <SelectTrigger aria-label="Category" className={cn("w-full sm:w-48", "data-[size=default]:h-9")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value="all">All categories</SelectItem>
-                    {categoryOptions.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  <Select value={category} onValueChange={(v) => setCategory(v as CategorySlug | "all")}>
+                    <SelectTrigger aria-label="Category" className={cn("min-w-0 flex-1 sm:w-48 sm:flex-none", "data-[size=default]:h-9")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper">
+                      <SelectItem value="all">All categories</SelectItem>
+                      {categoryOptions.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <PhoneSort value={sort} onChange={setSort} options={sortOptions} className="shrink-0" />
+                </div>
               }
               rowActions={rowActions}
               bulkActions={bulkActions}
-              initialSort={{ key: "updated", dir: "desc" }}
               empty={empty}
               minWidth={340}
             />

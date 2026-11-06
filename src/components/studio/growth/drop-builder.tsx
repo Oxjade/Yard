@@ -404,10 +404,10 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           <Panel title="Details" description="Shown on the drop page and in the notification followers get.">
             <div className="grid gap-4">
               <Field id="drop-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{values.name.length}/60</span>}>
-                <Input {...control("drop-name", errors.name)} value={values.name} maxLength={80} onChange={(e) => set("name", e.target.value)} placeholder="Drop 08: Night bus" className={inputClass} />
+                <Input {...control("drop-name", errors.name)} value={values.name} maxLength={80} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Drop 08: Night bus" className={inputClass} />
               </Field>
-              <Field id="drop-description" label="Description" error={errors.description} hint="What's in it, how many, and why it's limited.">
-                <Textarea {...control("drop-description", errors.description, true)} value={values.description} maxLength={600} onChange={(e) => set("description", e.target.value)} placeholder="Hoodies and tees printed with long exposures of the bridge. 180 pieces across the run." className="min-h-24" />
+              <Field id="drop-description" label="Description" error={errors.description} hint="What's in it, how many, and why it's limited. For example: hoodies and tees printed with long exposures of the bridge, 180 pieces across the run.">
+                <Textarea {...control("drop-description", errors.description, true)} value={values.description} maxLength={600} onChange={(e) => set("description", e.target.value)} placeholder="e.g. What's in the run and how many" className="min-h-24" />
               </Field>
             </div>
           </Panel>

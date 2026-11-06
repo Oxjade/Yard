@@ -19,14 +19,13 @@ import { Button } from "@/components/ui/button"
 import type { CurrencyCode } from "@/config/markets"
 import { getDemoAnchor, useNow } from "@/hooks/use-now"
 import { ATTRIBUTION, campaignTypes } from "@/lib/data/ads"
-import { brandDailySeries, sumSeries } from "@/lib/data/analytics"
 import { brandById } from "@/lib/data/brands"
 import { dropWindow } from "@/lib/drops"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
-import type { MerchantOrder } from "@/lib/data/types"
 import { DAY_MS, countryName, formatDate, noise, plural, returningRate } from "./model"
 import { Thumb } from "@/components/studio/catalog/parts"
+import { bestSellers, lowConversion, periodSummary, productTraffic, salesByProduct, useBrandSeries, type ProductSales } from "./brand-series"
 import { ShareBar } from "./shared"
 import { AnalyticsBodySkeleton, analyticsDescription } from "./skeletons"
 
@@ -64,10 +63,7 @@ export function AnalyticsView() {
   )
 }
 
-/** The orders this page counts: paid orders placed in the period, before refunds. Cancelled and unpaid ones never count. */
-const counted = (o: MerchantOrder) => o.status !== "cancelled" && o.status !== "pending_payment"
-
-type ProductRow = { id: string; name: string; image: MerchantOrder["lines"][number]["image"]; units: number; revenue: number }
+type ProductRow = ProductSales
 
 function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: Period; brandId: string; currency: CurrencyCode; followers: number }) {
   const orders = useStudio((s) => s.orders)
@@ -79,37 +75,29 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   const [trend, setTrend] = useState<TrendMetric>("revenue")
 
   /*
-   * One source for every order figure on the page: the orders in Studio. Only visits, product
-   * views and saves come from the sample generator (labelled as sample data in the header).
+   * One source for every order figure on the page, shared with the Overview: the orders in
+   * Studio. Only visits, product views and saves come from the sample generator (labelled as
+   * sample data in the header).
    */
-  const sample = useMemo(() => brandDailySeries(brandId, 180), [brandId])
-  const series = useMemo(() => {
-    const byDay = new Map<string, { orders: number; revenue: number }>()
-    for (const o of orders) {
-      if (!counted(o)) continue
-      const day = o.placedAt.slice(0, 10)
-      const row = byDay.get(day) ?? { orders: 0, revenue: 0 }
-      row.orders += 1
-      row.revenue += o.subtotal
-      byDay.set(day, row)
-    }
-    return sample.map((p) => ({ ...p, orders: byDay.get(p.date)?.orders ?? 0, revenue: byDay.get(p.date)?.revenue ?? 0 }))
-  }, [sample, orders])
+  const brandSeries = useBrandSeries(brandId)
+  const { series } = brandSeries
 
   const days = periodDays[period]
-  const now = sumSeries(series, series.length - days)
-  const prev = sumSeries(series, series.length - days * 2, series.length - days)
-  const delta = (a: number, b: number) => change(a, b)
+  const summary = useMemo(() => periodSummary(brandSeries, days), [brandSeries, days])
+  const { now, prev, comparable, firstDay, lastDay, orders: current } = summary
+  // Order figures compare only when the period before lies inside the order history, as on the Overview.
+  const delta = (a: number, b: number) => (comparable ? change(a, b) : null)
+  const trafficDelta = (a: number, b: number) => change(a, b)
   const versus = `the ${periodLabel[period].toLowerCase()} before`
 
   // The period is the last `days` calendar days of the series, so lists and tiles cover the same orders.
-  const firstDay = series[series.length - days].date
-  const lastDay = series[series.length - 1].date
   const from = Date.parse(`${firstDay}T00:00:00Z`)
   const to = Date.parse(`${lastDay}T00:00:00Z`) + DAY_MS
-  const current = useMemo(() => orders.filter((o) => counted(o) && o.placedAt.slice(0, 10) >= firstDay && o.placedAt.slice(0, 10) <= lastDay), [orders, firstDay, lastDay])
   const ret = returningRate(orders, from, to)
   const retPrev = returningRate(orders, from - days * DAY_MS, from)
+  // A rate changes in points: 47% to 69% is up 22 points, not 45%. Taken from the rounded
+  // percentages the page shows, so the difference is the one a reader works out.
+  const retPoints = comparable && retPrev.customers ? Math.round(ret.rate * 100) - Math.round(retPrev.rate * 100) : null
 
   const money = (n: number) => formatMoney(Math.round(n), cur, { compact: true })
   // The chart covers exactly the selected period, so its total matches the figure above it.
@@ -130,19 +118,8 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   ]
 
   /* Units ordered per product in the period */
-  const sold = useMemo(() => {
-    const m = new Map<string, ProductRow>()
-    for (const o of current) {
-      for (const l of o.lines) {
-        const row = m.get(l.productId) ?? { id: l.productId, name: l.name, image: l.image, units: 0, revenue: 0 }
-        row.units += l.quantity
-        row.revenue += l.unitPrice * l.quantity
-        m.set(l.productId, row)
-      }
-    }
-    return m
-  }, [current])
-  const best = [...sold.values()].sort((a, b) => b.units - a.units || b.revenue - a.revenue).slice(0, 5)
+  const sold = useMemo(() => salesByProduct(current), [current])
+  const best: ProductRow[] = bestSellers(sold)
 
   /* Locations */
   const locations = useMemo(() => {
@@ -151,32 +128,11 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
     return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
   }, [current])
 
-  /*
-   * Views and saves per product: the period's sample totals, shared out by how often each live
-   * product is viewed and saved, so they add up to the funnel and the wishlist figures above.
-   */
-  const live = products.filter((p) => p.status === "published")
-  const share = (total: number, weight: (p: (typeof live)[number]) => number) => {
-    const sum = live.reduce((s, p) => s + weight(p), 0)
-    return new Map(live.map((p) => [p.id, sum ? Math.round((total * weight(p)) / sum) : 0]))
-  }
-  const viewsBy = share(now.productViews, (p) => p.stats?.views7d ?? 0)
-  const savesBy = share(now.wishlists, (p) => p.stats?.wishlists ?? 0)
-
-  const bestIds = new Set(best.map((b) => b.id))
-  const viewCounts = live.map((p) => viewsBy.get(p.id) ?? 0).sort((a, b) => a - b)
-  const medianViews = viewCounts[Math.floor(viewCounts.length / 2)] ?? 0
-  const lowConversion = live
-    .filter((p) => !bestIds.has(p.id) && (viewsBy.get(p.id) ?? 0) > 0 && (viewsBy.get(p.id) ?? 0) >= medianViews)
-    .map((p) => {
-      const views = viewsBy.get(p.id) ?? 0
-      const units = sold.get(p.id)?.units ?? 0
-      return { product: p, views, units, rate: units / views, soldOut: p.variants.filter((v) => v.stock <= 0).length }
-    })
-    .sort((a, b) => a.rate - b.rate || b.views - a.views)
-    .slice(0, 3)
-  const mostSaved = live
-    .map((p) => ({ product: p, saves: savesBy.get(p.id) ?? 0 }))
+  /* Views and saves per product, shared out from the period's totals (the same split as the Overview). */
+  const traffic = productTraffic(products, now.productViews, now.wishlists)
+  const lowConv = lowConversion(traffic, sold, best)
+  const mostSaved = traffic.live
+    .map((p) => ({ product: p, saves: traffic.savesBy.get(p.id) ?? 0 }))
     .filter((r) => r.saves > 0)
     .sort((a, b) => b.saves - a.saves)
     .slice(0, 4)
@@ -200,8 +156,9 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
         <StatCard icon={Cart} label="Orders" value={now.orders} format={(n) => formatNumber(Math.round(n))} delta={delta(now.orders, prev.orders)} deltaContext={versus} hint={<MetricHint tip="Paid orders placed in the period. Cancelled and unpaid orders don't count.">Paid orders</MetricHint>} href="/studio/orders" hrefLabel="Open orders" />
         <StatCard icon={Funnel} label="Conversion rate" value={now.conversion} format={(n) => formatPercent(n, 2)} delta={delta(now.conversion, prev.conversion)} deltaContext={versus} hint={<MetricHint tip="Orders divided by store visits in the same period. Visits are sample traffic in this build.">Orders ÷ visits</MetricHint>} href="/studio/products" hrefLabel="Open products" />
         <StatCard icon={Receipt} label="Average order value" value={now.aov} format={money} delta={delta(now.aov, prev.aov)} deltaContext={versus} hint={<MetricHint tip="Revenue divided by orders in the period.">Revenue ÷ orders</MetricHint>} href="/studio/orders" hrefLabel="Open orders" />
-        <StatCard icon={Returning} label="Returning customers" value={ret.rate} format={(n) => formatPercent(n, 0)} delta={delta(ret.rate, retPrev.rate)} deltaContext={versus} hint={<MetricHint tip="Customers who ordered in the period and had ordered from you before, as a share of everyone who ordered in the period.">{`${ret.returning} of ${plural(ret.customers, "customer")}`}</MetricHint>} href="/studio/customers" hrefLabel="Open customers" />
-        <StatCard icon={Heart} label="Wishlist adds" value={now.wishlists} format={(n) => formatNumber(Math.round(n))} delta={delta(now.wishlists, prev.wishlists)} deltaContext={versus} hint={<MetricHint tip="Times shoppers saved one of your products. Sample traffic in this build.">Saves of your products</MetricHint>} href="/studio/products" hrefLabel="Open products" />
+        {/* A share changes in points, so the change sits in the footnote ("up 22 pts") rather than in a percent chip. */}
+        <StatCard icon={Returning} label="Returning customers" value={ret.rate} format={(n) => formatPercent(n, 0)} hint={<MetricHint tip={`Customers who ordered in the period and had ordered from you before, as a share of everyone who ordered in the period.${retPoints === null ? "" : ` ${formatPercent(retPrev.rate, 0)} in ${versus}.`}`}>{`${ret.returning} of ${plural(ret.customers, "customer")}${pointsText(retPoints)}`}</MetricHint>} href="/studio/customers" hrefLabel="Open customers" />
+        <StatCard icon={Heart} label="Wishlist adds" value={now.wishlists} format={(n) => formatNumber(Math.round(n))} delta={trafficDelta(now.wishlists, prev.wishlists)} deltaContext={versus} hint={<MetricHint tip="Times shoppers saved one of your products. Sample traffic in this build.">Saves of your products</MetricHint>} href="/studio/products" hrefLabel="Open products" />
       </section>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -274,10 +231,10 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
         </Panel>
 
         <Panel className="min-w-0" title="High views, low conversion" description={`The products with the most views for each order in the last ${periodLabel[period].toLowerCase()}. Best sellers are left out.`}>
-          {lowConversion.length ? (
+          {lowConv.length ? (
             <>
               <ul className="divide-y divide-line-soft">
-                {lowConversion.map(({ product, views, units, rate, soldOut }) => (
+                {lowConv.map(({ product, views, units, rate, soldOut }) => (
                   <li key={product.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                     <Thumb image={product.images[0]} size={48} />
                     <span className="grid min-w-0 flex-1 gap-0.5">
@@ -347,7 +304,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
             <div className="flex items-center gap-2"><span className="size-2 rounded-full bg-purple" aria-hidden /><dt className="text-ink-2">Returning</dt><dd className="ml-auto text-ink tabular">{ret.returning}</dd></div>
             <div className="flex items-center gap-2"><span className="size-2 rounded-full bg-white/20" aria-hidden /><dt className="text-ink-2">First order</dt><dd className="ml-auto text-ink tabular">{ret.customers - ret.returning}</dd></div>
           </dl>
-          <p className="mt-4 border-t border-line-soft pt-3 text-xs text-ink-3">Counted across all your orders, not just this period. Previous period: {formatPercent(retPrev.rate, 0)}.</p>
+          <p className="mt-4 border-t border-line-soft pt-3 text-xs text-ink-3">Counted across all your orders, not just this period. Previous period: {formatPercent(retPrev.rate, 0)}{retPoints === null ? "" : retPoints === 0 ? ", no change" : `, ${retPoints > 0 ? "up" : "down"} ${Math.abs(retPoints)} ${Math.abs(retPoints) === 1 ? "point" : "points"}`}.</p>
         </Panel>
       </div>
 
@@ -468,6 +425,12 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
       </Panel>
     </div>
   )
+}
+
+/** ", up 22 pts" for a share's change in percentage points; nothing when there's no period to compare. */
+function pointsText(points: number | null) {
+  if (points === null) return ""
+  return points === 0 ? ", no change" : `, ${points > 0 ? "up" : "down"} ${Math.abs(points)} pts`
 }
 
 /** A KPI card's footnote with the metric's definition behind an info icon. */

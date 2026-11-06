@@ -531,10 +531,16 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
           <Panel title="Details" description="Say what it is, what it's made of and how it fits.">
             <div className="grid gap-4">
               <Field id="pf-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{form.name.length}/80</span>}>
-                <Input {...control("pf-name", errors.name)} value={form.name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Danfo heavyweight hoodie" className={inputClass} />
+                <Input {...control("pf-name", errors.name)} value={form.name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Heavyweight hoodie" className={inputClass} />
               </Field>
-              <Field id="pf-description" label="Description" error={errors.description} aside={<span className="text-xs text-ink-3 tabular">{form.description.length}/2000</span>}>
-                <Textarea {...control("pf-description", errors.description)} value={form.description} onChange={(e) => patch({ description: e.target.value })} rows={5} maxLength={2000} placeholder="480gsm loopback fleece with a puff-printed back graphic. Dropped shoulders, double-layer hood. Made in a run of 180." className="min-h-28" />
+              <Field
+                id="pf-description"
+                label="Description"
+                error={errors.description}
+                hint="For example: 480gsm loopback fleece with a puff-printed back graphic. Dropped shoulders, double-layer hood."
+                aside={<span className="text-xs text-ink-3 tabular">{form.description.length}/2000</span>}
+              >
+                <Textarea {...control("pf-description", errors.description, true)} value={form.description} onChange={(e) => patch({ description: e.target.value })} rows={5} maxLength={2000} placeholder="e.g. Fabric, fit and care" className="min-h-28" />
               </Field>
             </div>
           </Panel>

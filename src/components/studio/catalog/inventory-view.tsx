@@ -15,6 +15,7 @@ import { availableStock, variantLabel } from "@/lib/data/products"
 import type { Product, Variant } from "@/lib/data/types"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
+import { PhoneSort } from "@/components/studio/business/shared"
 import { AdjustStockDialog, reasonLabel } from "./adjust-dialog"
 import { selectedTabFor } from "./fields"
 import { inventoryCopy } from "./page-copy"
@@ -27,6 +28,15 @@ type Filter = "all" | "low" | "out"
 type Row = { id: string; product: Product; variant: Variant; label: string; hex?: string; available: number; sold: number; level: StockLevel }
 
 const levelRank: Record<StockLevel, number> = { out: 0, low: 1, in: 2 }
+
+type Sort = "product" | "available" | "sold"
+
+/** The phone sort menu: the same orders the desktop column headers give. A product's variants stay in their own order. */
+const sortOptions: { value: Sort; label: string }[] = [
+  { value: "product", label: "Product, A to Z" },
+  { value: "available", label: "Lowest available first" },
+  { value: "sold", label: "Most sold first" },
+]
 
 /** A number that fades in when it changes (after an adjustment), and not on first paint. */
 function Changing({ value, className }: { value: number; className?: string }) {
@@ -48,6 +58,7 @@ export function InventoryView() {
   const [target, setTarget] = useState<{ productId: string; variantId: string } | null>(null)
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   const [shown, setShown] = useState(10)
+  const [sort, setSort] = useState<Sort>("product")
 
   const rows: Row[] = useMemo(
     () =>
@@ -65,7 +76,14 @@ export function InventoryView() {
   )
 
   const counts = useMemo(() => ({ all: rows.length, low: rows.filter((r) => r.level === "low").length, out: rows.filter((r) => r.level === "out").length }), [rows])
-  const filtered = useMemo(() => rows.filter((r) => filter === "all" || r.level === filter), [rows, filter])
+  // Rows arrive sorted by the phone sort menu; the column headers re-sort on wider screens.
+  const filtered = useMemo(
+    () =>
+      rows
+        .filter((r) => filter === "all" || r.level === filter)
+        .sort((a, b) => (sort === "available" ? a.available - b.available : sort === "sold" ? b.sold - a.sold : a.product.name.localeCompare(b.product.name))),
+    [rows, filter, sort],
+  )
 
   const live = target ? products.find((p) => p.id === target.productId) : undefined
   const liveVariant = live?.variants.find((v) => v.id === target?.variantId)
@@ -214,10 +232,13 @@ export function InventoryView() {
             loading={!ready}
             search={{ placeholder: "Search product, size or SKU", text: (r) => [r.product.name, r.label, r.variant.sku].join(" ") }}
             toolbar={
-              <p className="flex items-center gap-1 text-xs text-ink-3 sm:ml-auto">
-                Available is on hand minus reserved
-                <InfoTip label="How available is counted">Units on hand minus units reserved for open orders. Archived products aren&apos;t listed. Sold in 30 days is sample data.</InfoTip>
-              </p>
+              <>
+                <PhoneSort value={sort} onChange={setSort} options={sortOptions} />
+                <p className="flex items-center gap-1 text-xs text-ink-3 sm:ml-auto">
+                  Available is on hand minus reserved
+                  <InfoTip label="How available is counted">Units on hand minus units reserved for open orders. Archived products aren&apos;t listed. Sold in 30 days is sample data.</InfoTip>
+                </p>
+              </>
             }
             rowActions={rowActions}
             empty={empty}

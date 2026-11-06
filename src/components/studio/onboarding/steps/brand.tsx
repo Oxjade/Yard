@@ -145,7 +145,7 @@ export function BrandStep({ onNext }: StepProps) {
               onChange={(ev) => set({ description: ev.target.value })}
               maxLength={160}
               rows={3}
-              placeholder="Heavyweight streetwear, cut and printed in small runs in Yaba."
+              placeholder="e.g. Heavyweight streetwear, printed in small runs"
               className="min-h-20 resize-none"
             />
           </Field>

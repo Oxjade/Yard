@@ -162,16 +162,16 @@ export function ProductStep({ onNext }: StepProps) {
       <Panel title="Details" description="Say what it is, what it's made of and how it fits.">
         <div className="grid gap-4">
           <Field id="ob-product-name" label="Product name" error={e.name}>
-            <Input {...control("ob-product-name", e.name)} value={product.name} onChange={(ev) => set({ name: ev.target.value })} maxLength={80} placeholder="Danfo heavyweight hoodie" className={inputClass} />
+            <Input {...control("ob-product-name", e.name)} value={product.name} onChange={(ev) => set({ name: ev.target.value })} maxLength={80} placeholder="e.g. Heavyweight hoodie" className={inputClass} />
           </Field>
-          <Field id="ob-product-description" label="Description" error={e.description}>
+          <Field id="ob-product-description" label="Description" error={e.description} hint="For example: 480gsm loopback fleece with a puff-printed back graphic. Dropped shoulders, double-layer hood.">
             <Textarea
-              {...control("ob-product-description", e.description)}
+              {...control("ob-product-description", e.description, true)}
               value={product.description}
               onChange={(ev) => set({ description: ev.target.value })}
               rows={4}
               maxLength={1200}
-              placeholder="480gsm loopback fleece with a puff-printed back graphic. Dropped shoulders, double-layer hood. Made in a run of 180."
+              placeholder="e.g. Fabric, fit and care"
               className="min-h-24"
             />
           </Field>

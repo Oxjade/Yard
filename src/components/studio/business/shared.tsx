@@ -113,13 +113,14 @@ export function ShareBar({ share, tone = "purple", className }: { share: number;
 /**
  * Sorting for phones, where a DataTable shows only its first column and the sortable headers
  * are hidden. The page sorts its rows by this choice; on wider screens the headers take over.
+ * The 36px button has a 40px tap area.
  */
 export function PhoneSort<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; className?: string }) {
   const current = options.find((o) => o.value === value)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="secondary" size="sm" className={cn("h-9 md:hidden", className)} aria-label={`Sort: ${current?.label ?? ""}`}>
+        <Button type="button" variant="secondary" size="sm" className={cn("h-9 after:absolute after:inset-x-0 after:-inset-y-0.5 md:hidden", className)} aria-label={`Sort: ${current?.label ?? ""}`}>
           <SortIcon className="text-ink-3" /> {current?.label}
         </Button>
       </DropdownMenuTrigger>

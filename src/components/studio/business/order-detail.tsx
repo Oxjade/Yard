@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { ProhibitIcon as Ban, CheckIcon as Check, CopyIcon as Copy, HourglassIcon as Hourglass, SealCheckIcon as PackageCheck, XCircleIcon as PackageX, ShieldCheckIcon as ShieldCheck, TruckIcon as Truck, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { EmptyState } from "@/components/dashboard/empty-state"
-import { PageHeader } from "@/components/dashboard/page-header"
+import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
 import { InfoTip } from "@/components/feedback/info-tip"
 import { Button } from "@/components/ui/button"
@@ -15,13 +15,14 @@ import { brandById } from "@/lib/data/brands"
 import type { Brand, MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { spring } from "@/lib/motion"
-import { useStudio } from "@/lib/stores/studio"
+import { studioSeedOrders, useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { useBrandSettings, useSettingsReady } from "./settings-store"
 import { CancelOrderDialog, DeclineRefundDialog, ApproveRefundDialog, TrackingDialog } from "./order-dialogs"
-import { DEMO_NOW, DAY_MS, countryName, formatDateTime, formatDateYear, formatTime, formatWeekday, itemCount, paymentView, payoutEstimate, plural, refundRequest, shipBy, shopperName } from "./model"
+import { DEMO_NOW, DAY_MS, countryName, formatDateYear, formatWeekday, itemCount, paymentView, payoutEstimate, plural, refundRequest, shipBy, shopperName } from "./model"
 import { Panel } from "@/components/studio/catalog/fields"
 import { Thumb } from "@/components/studio/catalog/parts"
+import { brandZone, formatInZone, formatTimeInZone, zoneAbbr } from "@/components/studio/growth/utils"
 import { BackLink, DefinitionList, useStudioReady } from "./shared"
 import { OrderDetailSkeleton } from "./skeletons"
 
@@ -54,6 +55,22 @@ export function OrderDetail({ id }: { id: string }) {
 
 type DialogKind = "tracking" | "cancel" | "approve" | "decline" | null
 
+/** Orders that came with the sample data (not placed at checkout in this browser). */
+const seededIds = new Set(studioSeedOrders.map((o) => o.id))
+
+/** "3 Nov 2026 at 13:00 WAT": an instant in the brand's time zone, as Drops and Promotions show times. */
+function placedIn(iso: string, tz: string) {
+  const ms = Date.parse(iso)
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short", year: "numeric" }).format(ms)
+  return `${day} at ${formatTimeInZone(ms, tz)} ${zoneAbbr(tz, ms)}`
+}
+
+/** "3 Nov, 13:00 WAT" for a timeline entry. */
+function stampIn(iso: string, tz: string) {
+  const ms = Date.parse(iso)
+  return `${formatInZone(ms, tz, { weekday: false })} ${zoneAbbr(tz, ms)}`
+}
+
 const steps = [
   { key: "paid", label: "To fulfil" },
   { key: "processing", label: "Processing" },
@@ -76,6 +93,8 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   const status = orderStatusMeta[o.status]
   const pay = paymentView(o)
   const verified = o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded"
+  const sample = seededIds.has(o.id)
+  const tz = brandZone(brand).tz
 
   // A status change swaps the header buttons, and the new primary lands under the cursor.
   // Clicks in the first moments after a change are ignored, so a double-click never takes the next step.
@@ -140,10 +159,11 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
         <BackLink href="/studio/orders">Orders</BackLink>
         <PageHeader
           title={`Order #${o.reference}`}
-          description={`Placed ${formatDateYear(o.placedAt)} at ${formatTime(o.placedAt)} UTC. ${plural(itemCount(o), "item")}, ${formatMoney(o.total, cur)}.`}
+          description={`Placed ${placedIn(o.placedAt, tz)}. ${plural(itemCount(o), "item")}, ${formatMoney(o.total, cur)}.`}
           actions={actions}
         >
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            {sample ? <SampleDataNote /> : null}
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
             <StatusBadge tone={pay.tone}>{pay.label}</StatusBadge>
             {verified ? (
@@ -169,7 +189,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
         </aside>
 
         <div className="min-w-0 xl:col-start-1">
-          <TimelinePanel order={o} />
+          <TimelinePanel order={o} tz={tz} />
         </div>
       </div>
 
@@ -487,7 +507,7 @@ function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
 
 /* ---------- Timeline ---------- */
 
-function TimelinePanel({ order: o }: { order: MerchantOrder }) {
+function TimelinePanel({ order: o, tz }: { order: MerchantOrder; tz: string }) {
   const entries = o.timeline.map((t, i) => ({ ...t, i })).reverse()
   return (
     <Panel title="Timeline" className="min-w-0" description="Every change to this order, newest first. Entries can't be edited.">
@@ -499,7 +519,7 @@ function TimelinePanel({ order: o }: { order: MerchantOrder }) {
               <span aria-hidden className={cn("relative mt-1.5 size-[11px] shrink-0 rounded-full border-2 border-card", n === 0 ? "bg-violet" : "bg-ink-3")} />
               <span className="grid min-w-0 gap-0.5">
                 <span className={cn("text-sm", n === 0 ? "text-ink" : "text-ink-2")}>{t.label}</span>
-                <span className="text-xs text-ink-3 tabular">{formatDateTime(t.at)}</span>
+                <span className="text-xs text-ink-3 tabular">{stampIn(t.at, tz)}</span>
               </span>
             </motion.li>
           ))}
