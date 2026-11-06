@@ -68,7 +68,7 @@ export default function DiscoverPage() {
         drop={heroDrop}
         image={img("fashion/campaign/5", "Lagos Static, Drop 07 campaign")}
         headline={["Third", "Mainland"]}
-        products={[...heroProducts, productById.get("p_signal_beanie")!]}
+        products={heroProducts}
         spotlight={{ brand: spotlightBrand, title: "Bags, saddle-stitched in Paris", image: spotlightBrand.cover, href: `/brands/${spotlightBrand.handle}` }}
       />
 
@@ -133,7 +133,7 @@ export default function DiscoverPage() {
                   <Image src={c.image.src} alt="" fill sizes={i === 0 ? "(min-width: 768px) 33vw, 100vw" : "(min-width: 768px) 33vw, 100vw"} className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]" />
                   <span className="scrim-b absolute inset-0 -z-10" />
                   {sponsor ? <SponsoredTag by={sponsor.name} className="absolute top-4 left-4" /> : null}
-                  <h3 className={`font-display text-ink ${i === 0 ? "text-display-lg" : "text-display-sm"}`}>{c.name}</h3>
+                  <h3 className={`font-display text-balance text-ink ${i === 0 ? "text-display-lg md:text-display-md" : "text-display-sm"}`}>{c.name}</h3>
                   <p className="mt-2 max-w-sm text-sm text-ink/80">{c.description}</p>
                   <p className="mt-3 text-xs text-ink-2">{c.brandIds.length} brands</p>
                 </Link>

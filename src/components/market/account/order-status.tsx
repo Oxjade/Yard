@@ -1,7 +1,25 @@
 import { CheckIcon as Check, ArrowSquareOutIcon as ExternalLink } from "@phosphor-icons/react/ssr"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { customerCheckoutGroups } from "@/lib/data/orders"
 import { cn } from "@/lib/utils"
 import type { MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
+
+/**
+ * The demo shopper's seeded order history is sample data: it shows how paid, shipped and
+ * refunded orders read, and no payment was taken for any of it. Orders placed at checkout in
+ * this browser are not sample (they stay awaiting payment until a provider confirms them).
+ */
+const sampleGroupIds = new Set(customerCheckoutGroups.map((g) => g.id))
+export const isSampleCheckout = (groupId: string | undefined) => !!groupId && sampleGroupIds.has(groupId)
+
+/** The quiet "Sample" mark, as notifications use it, beside a sample checkout's reference. */
+export function SampleChip({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex h-5 items-center rounded-[3px] border border-white/10 px-1.5 align-middle text-[10px] font-normal text-ink-3", className)}>
+      Sample
+    </span>
+  )
+}
 
 type Tone = NonNullable<React.ComponentProps<typeof StatusBadge>["tone"]>
 

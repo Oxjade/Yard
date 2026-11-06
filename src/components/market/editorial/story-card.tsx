@@ -23,7 +23,8 @@ export const byNewest = (a: Story, b: Story) => b.publishedAt.localeCompare(a.pu
 
 /**
  * A story tile. `lead` is the large opening story on /stories: photograph and text side by
- * side on desktop, stacked on phones.
+ * side on desktop, stacked on phones. `wide` is a lone story spanning a row inside a container
+ * (a storefront's journal): photograph and text side by side once the container is wide enough.
  */
 export function StoryCard({
   story,
@@ -33,7 +34,7 @@ export function StoryCard({
   className,
 }: {
   story: Story
-  variant?: "default" | "lead"
+  variant?: "default" | "lead" | "wide"
   as?: "h2" | "h3"
   priority?: boolean
   className?: string
@@ -56,6 +57,28 @@ export function StoryCard({
           </Heading>
           <p className="mt-4 text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{story.dek}</p>
           <p className="mt-5 text-xs text-ink-3">
+            {brand.name}, {story.readMinutes} min read
+          </p>
+        </div>
+      </article>
+    )
+  }
+
+  if (variant === "wide") {
+    return (
+      <article className={cn("group relative grid gap-4 @2xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] @2xl:items-center @2xl:gap-10", className)}>
+        <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-card @2xl:aspect-[16/9]">
+          <Image src={story.cover.src} alt={story.cover.alt} fill preload={priority} sizes="(min-width: 768px) 56vw, 100vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.03]" />
+        </div>
+        <div className="max-w-md">
+          <p className="text-xs text-violet">{storyKindLabel[story.kind]}</p>
+          <Heading className="mt-1 text-xl font-medium text-ink @2xl:text-2xl">
+            <Link href={href} className="after:absolute after:inset-0">
+              {story.title}
+            </Link>
+          </Heading>
+          <p className="mt-2 text-pretty text-sm leading-relaxed text-ink-2">{story.dek}</p>
+          <p className="mt-3 text-xs text-ink-3">
             {brand.name}, {story.readMinutes} min read
           </p>
         </div>

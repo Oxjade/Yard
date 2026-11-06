@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import type { Brand, Collection, Drop, Product, Story, StorefrontConfig, StorefrontSection } from "@/lib/data/types"
 import { AnnouncementBar, CollectionIndex, Container, PreviewPlaceholder, StorefrontFooter, headerClearance, type StorefrontContext } from "./parts"
 import { AllProductsSection } from "./sections/all-products"
-import { CollectionsSection } from "./sections/collections"
+import { CollectionsSection, collectionHref } from "./sections/collections"
 import { DropsSection, groupDrops } from "./sections/drops"
 import { FeaturedProductsSection } from "./sections/featured-products"
 import { HeroSection } from "./sections/hero"
@@ -52,6 +52,13 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
   const shopTarget = products.length ? (allProducts ?? featuredSection) : undefined
   const shopHref = shopTarget ? `#sf-${shopTarget.id}` : undefined
 
+  const featuredCount = config.template === "editorial" ? 5 : config.template === "studio" ? 3 : 4
+  // Drop and collection photographs: a lookbook frame showing one links to that release.
+  const releases = [
+    ...drops.map((d) => ({ image: d.image, href: `/drops/${d.slug}`, label: d.name })),
+    ...collections.map((c) => ({ image: c.image, href: collectionHref(brand.handle, c), label: c.name })),
+  ]
+
   // Sections other than the hero are numbered in the order they appear.
   let counter = 0
   let rendered = 0
@@ -63,7 +70,7 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
       case "hero":
         return <HeroSection ctx={ctx} section={section} first={first} opening={opening} intro={config.intro || brand.description} products={products} shopHref={shopHref} />
       case "featured-products": {
-        const featured = resolveFeatured(section, products, config.template === "editorial" ? 5 : config.template === "studio" ? 3 : 4)
+        const featured = resolveFeatured(section, products, featuredCount)
         if (!featured.length) return placeholder(section, first, index, "Add products in Brand Studio, or pick some for this section.")
         return <FeaturedProductsSection {...common} products={featured} allHref={allProducts && products.length > featured.length ? `#sf-${allProducts.id}` : undefined} />
       }
@@ -79,7 +86,14 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
         if (!brand.story.length) return placeholder(section, first, index, "Write your story in Brand Studio settings.")
         return <StorySection {...common} stories={stories} />
       case "lookbook": {
-        const frames = lookbookFrames(brand, products, config.template === "street" || config.template === "editorial" ? 5 : 4, { coverInHero: hasHero })
+        // Pieces already on the page above the lookbook: the sale strip under the hero, and the
+        // featured edit when it comes first. The lookbook fills with other pieces before those.
+        const featuredAbove = featuredSection && sections.indexOf(featuredSection) < sections.indexOf(section) ? resolveFeatured(featuredSection, products, featuredCount) : []
+        const frames = lookbookFrames(brand, products, config.template === "street" || config.template === "editorial" ? 5 : 4, {
+          coverInHero: hasHero,
+          releases,
+          shownAbove: [featuredAbove.map((p) => p.id), sale.map((p) => p.id)],
+        })
         if (frames.length < 3) return placeholder(section, first, index, "A lookbook needs at least three photographs.")
         return <LookbookSection {...common} frames={frames} />
       }
@@ -158,7 +172,8 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
 /**
  * Promotions: reduced pieces, shown whenever the brand has any. On phones it reads as a
  * section with the standard two-up grid; from tablet up it is a card with the note beside
- * the pieces. One or two pieces keep a fixed card width so names and both prices fit.
+ * the pieces. One or two pieces keep a fixed card width so names and both prices fit, and the
+ * card hugs them: the pieces sit right after the note instead of across an empty band.
  */
 function SaleStrip({ ctx, products, first }: { ctx: StorefrontContext; products: Product[]; first: boolean }) {
   const n = products.length
@@ -169,7 +184,7 @@ function SaleStrip({ ctx, products, first }: { ctx: StorefrontContext; products:
         <div
           className={cn(
             "grid gap-6 border-t border-line-soft pt-6 @3xl:items-center @3xl:gap-10 @3xl:rounded-lg @3xl:border @3xl:bg-card @3xl:p-6",
-            few ? "@3xl:grid-cols-[minmax(0,1fr)_auto]" : "@3xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]",
+            few ? "@3xl:w-fit @3xl:grid-cols-[minmax(0,20rem)_auto]" : "@3xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]",
           )}
         >
           <div className="max-w-md">

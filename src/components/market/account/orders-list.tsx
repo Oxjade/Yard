@@ -8,14 +8,13 @@ import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
 import { brandById } from "@/lib/data/brands"
-import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { formatDay } from "./format"
-import { checkoutPayment, OrderStatusBadge, TrackingLink } from "./order-status"
+import { formatDay, formatOrderMoney } from "./format"
+import { checkoutPayment, isSampleCheckout, OrderStatusBadge, SampleChip, TrackingLink } from "./order-status"
 import { YouNav } from "./you-nav"
 
 type Filter = "all" | "open" | "closed"
@@ -28,7 +27,7 @@ function itemsSummary(o: MerchantOrder) {
 }
 
 /** One brand's part of a checkout: what's in it, where it is, and how to track it. */
-export function OrderRow({ order, showCurrency = false }: { order: MerchantOrder; showCurrency?: boolean }) {
+export function OrderRow({ order }: { order: MerchantOrder }) {
   const brand = brandById.get(order.brandId)
   const count = order.lines.reduce((n, l) => n + l.quantity, 0)
   return (
@@ -49,8 +48,7 @@ export function OrderRow({ order, showCurrency = false }: { order: MerchantOrder
           ) : null}
           <Link href={`/you/orders/${order.id}`} className="mt-1.5 block truncate text-sm text-ink">{itemsSummary(order)}</Link>
           <p className="mt-0.5 text-xs text-ink-3 tabular">
-            Order {order.reference}, {count} {count === 1 ? "item" : "items"}, {formatMoney(order.total, order.currency)}
-            {showCurrency ? ` ${order.currency}` : ""}
+            Order {order.reference}, {count} {count === 1 ? "item" : "items"}, {formatOrderMoney(order.total, order.currency)}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
             <OrderStatusBadge status={order.status} order={order} />
@@ -76,22 +74,25 @@ export function CheckoutGroupCard({ group, orders, highlighted = false }: { grou
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-line-soft px-4 py-4 md:px-6">
         <div>
           {/* Order pages link here as /you/orders#g-<id>: the heading takes focus so the checkout is announced. */}
-          <h2 id={`g-${group.id}`} tabIndex={-1} className="scroll-mt-28 text-base font-medium text-ink tabular outline-none">
-            Checkout {group.reference}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 id={`g-${group.id}`} tabIndex={-1} className="scroll-mt-28 text-base font-medium text-ink tabular outline-none">
+              Checkout {group.reference}
+            </h2>
+            {isSampleCheckout(group.id) ? <SampleChip /> : null}
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             Placed {formatDay(group.placedAt, { year: true })}, {orders.length === 1 ? "1 brand" : `${orders.length} brands shipping separately`}
           </p>
         </div>
         <div className="text-left sm:text-right">
           <p className="text-xs text-ink-3">{payment.label}</p>
-          <p className="text-lg text-ink tabular">{formatMoney(group.total, group.currency)}</p>
+          <p className="text-lg text-ink tabular">{formatOrderMoney(group.total, group.currency)}</p>
           {payment.note ? <p className={cn("mt-0.5 text-xs", payment.tone === "violet" ? "text-violet" : "text-ink-3")}>{payment.note}</p> : null}
         </div>
       </header>
       <ul className="divide-y divide-line-soft">
         {orders.map((o) => (
-          <OrderRow key={o.id} order={o} showCurrency={o.currency !== group.currency} />
+          <OrderRow key={o.id} order={o} />
         ))}
       </ul>
     </article>
@@ -197,6 +198,7 @@ export function OrdersList() {
           </div>
           <p className="mt-8 text-xs text-ink-3">
             Checkout totals are in the currency you checked out in. Each brand order shows its amount in that brand&apos;s own currency. Returns are handled by each brand, within its own return window.
+            {rows.some((r) => isSampleCheckout(r.group.id)) ? " Checkouts marked Sample are seeded history for the demo account: no payment was taken for them." : ""}
           </p>
         </>
       )}

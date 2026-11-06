@@ -12,11 +12,10 @@ import { countries } from "@/config/markets"
 import { site } from "@/config/site"
 import { brandById } from "@/lib/data/brands"
 import { productById } from "@/lib/data/products"
-import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
-import { daysSince, formatDay } from "./format"
-import { OrderStatusBadge, OrderStepper, TrackingLink, orderStatusNote, returnOutcome, trackingUrl } from "./order-status"
+import { daysSince, formatDay, formatOrderMoney } from "./format"
+import { isSampleCheckout, OrderStatusBadge, OrderStepper, SampleChip, TrackingLink, orderStatusNote, returnOutcome, trackingUrl } from "./order-status"
 import { ReturnDialog } from "./return-dialog"
 import { YouNav } from "./you-nav"
 
@@ -72,7 +71,7 @@ export function OrderDetail({ id }: { id: string }) {
   const note = orderStatusNote(order)
   // Who decided a return: the brand, or the platform (site.name) when its team did.
   const decidedBy = decision?.by === "platform" ? site.name : brand.name
-  const refundAmount = decision?.status === "approved" ? formatMoney(decision.amount ?? order.refund?.amount ?? 0, order.currency) : null
+  const refundAmount = decision?.status === "approved" ? formatOrderMoney(decision.amount ?? order.refund?.amount ?? 0, order.currency) : null
   // "Delivered" in the sample history, "Marked delivered by brand" when the brand marks it in Studio; the latest counts.
   const delivered = [...order.timeline].reverse().find((t) => /^(marked )?delivered\b/i.test(t.label))
   const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
@@ -83,6 +82,7 @@ export function OrderDetail({ id }: { id: string }) {
   const timeline = [...order.timeline].reverse()
   const count = order.lines.reduce((n, l) => n + l.quantity, 0)
   const address = order.shippingAddress
+  const sample = isSampleCheckout(order.groupId)
 
   // On phones the return action sits right under the items and the timeline goes last.
   const returnsPanel = (
@@ -186,6 +186,7 @@ export function OrderDetail({ id }: { id: string }) {
                 </Link>
               </>
             ) : null}
+            {sample ? <SampleChip className="ml-2" /> : null}
           </p>
         </div>
         <OrderStatusBadge status={status} order={order} />
@@ -241,7 +242,7 @@ export function OrderDetail({ id }: { id: string }) {
                           <p className="mt-0.5 truncate text-xs text-ink-2">{l.variantLabel}</p>
                           <p className="mt-0.5 text-xs text-ink-3 tabular">Qty {l.quantity}</p>
                         </div>
-                        <p className="shrink-0 text-sm text-ink tabular">{formatMoney(l.unitPrice * l.quantity, order.currency)}</p>
+                        <p className="shrink-0 text-sm text-ink tabular">{formatOrderMoney(l.unitPrice * l.quantity, order.currency)}</p>
                       </div>
                       {returning ? (
                         <StatusBadge tone={outcome ? outcome.tone : "attention"} className="mt-auto self-start">
@@ -264,25 +265,27 @@ export function OrderDetail({ id }: { id: string }) {
             <dl className="grid gap-2 text-sm">
               <div className="flex justify-between gap-4 text-ink-2">
                 <dt>Subtotal</dt>
-                <dd className="text-ink tabular">{formatMoney(order.subtotal, order.currency)}</dd>
+                <dd className="text-ink tabular">{formatOrderMoney(order.subtotal, order.currency)}</dd>
               </div>
               <div className="flex justify-between gap-4 text-ink-2">
                 <dt>Shipping</dt>
-                <dd className="text-ink tabular">{order.shipping === 0 ? "Free" : formatMoney(order.shipping, order.currency)}</dd>
+                <dd className="text-ink tabular">{order.shipping === 0 ? "Free" : formatOrderMoney(order.shipping, order.currency)}</dd>
               </div>
               {order.tax ? (
                 <div className="flex justify-between gap-4 text-ink-2">
                   <dt>Taxes and duties</dt>
-                  <dd className="text-ink tabular">{formatMoney(order.tax, order.currency)}</dd>
+                  <dd className="text-ink tabular">{formatOrderMoney(order.tax, order.currency)}</dd>
                 </div>
               ) : null}
               <div className="mt-2 flex justify-between gap-4 border-t border-line-soft pt-3 text-base">
                 <dt className="text-ink">Total</dt>
-                <dd className="text-ink tabular">{formatMoney(order.total, order.currency)}</dd>
+                <dd className="text-ink tabular">{formatOrderMoney(order.total, order.currency)}</dd>
               </div>
             </dl>
             <p className="mt-3 text-xs leading-relaxed text-ink-3">
-              {order.paymentStatus === "pending" && order.status === "cancelled"
+              {sample
+                ? `Sample order history for the demo account, in ${order.currency}: it shows how a paid order reads, and no payment was taken.${order.refund ? ` A refund of ${formatOrderMoney(order.refund.amount, order.currency)} is approved and recorded.` : ""}`
+                : order.paymentStatus === "pending" && order.status === "cancelled"
                 ? "Not charged: the order was cancelled before it was paid."
                 : order.paymentStatus === "pending"
                 ? `Not charged. In ${order.currency}, awaiting payment confirmation: no payment provider is connected in this development build.`
@@ -291,7 +294,7 @@ export function OrderDetail({ id }: { id: string }) {
                   : order.paymentStatus === "authorized"
                     ? `Authorised in ${order.currency}. The charge completes when ${brand.name} ships it.`
                 : order.refund
-                  ? `Charged in ${order.currency} by ${brand.name}. A refund of ${formatMoney(order.refund.amount, order.currency)} is approved and recorded; it's sent once a payment provider is connected.`
+                  ? `Charged in ${order.currency} by ${brand.name}. A refund of ${formatOrderMoney(order.refund.amount, order.currency)} is approved and recorded; it's sent once a payment provider is connected.`
                   : order.paymentStatus === "refunded"
                     ? `Charged in ${order.currency} by ${brand.name}, then refunded in full.`
                     : order.paymentStatus === "partially_refunded"
@@ -311,7 +314,8 @@ export function OrderDetail({ id }: { id: string }) {
                   <br />
                   {address.city}
                   {address.postcode ? ` ${address.postcode}` : ""}, {countries[address.country].name}
-                  {address.phone ? (
+                  {/* The demo account has no phone number on file, so sample orders show none. */}
+                  {address.phone && !sample ? (
                     <>
                       <br />
                       <span className="text-ink-2 tabular">{address.phone}</span>

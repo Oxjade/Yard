@@ -4,6 +4,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import type { Brand, Drop, ImageAsset, Product } from "@/lib/data/types"
 import { BrandMark } from "./brand-mark"
 import { FollowButton } from "./follow-button"
@@ -77,16 +78,18 @@ export function DiscoverHero({
 
           <aside style={delay(850)} className="hero-lift grid gap-3" aria-label="Also on now">
             <div className="glass glass-sheen rounded-2xl p-3">
-              <p className="px-1 pb-2 text-xs text-ink-2">In the drop</p>
-              <div className="grid grid-cols-3 gap-2">
+              <p className="px-1 pb-2 text-xs text-ink-2">{products.length === 1 ? "In the drop" : `In the drop, ${products.length} pieces`}</p>
+              <div className={cn("grid gap-2", products.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
                 {products.slice(0, 3).map((p) => (
                   <Link key={p.id} href={`/products/${p.slug}`} className="group relative aspect-[4/5] overflow-hidden rounded-lg bg-surface">
-                    <Image src={p.images[0].src} alt={p.images[0].alt} fill sizes="110px" className="object-cover transition-transform duration-700 ease-out-quint group-hover:scale-105" />
+                    <Image src={p.images[0].src} alt={p.images[0].alt} fill sizes={products.length >= 3 ? "110px" : "(min-width: 1024px) 160px, 45vw"} className="object-cover transition-transform duration-700 ease-out-quint group-hover:scale-105" />
                   </Link>
                 ))}
               </div>
             </div>
-            <Link href={spotlight.href} className="glass glass-sheen group flex items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--glass-bg-strong)]">
+            {/* On phones this paid card would sit under the tab bar on first paint, its disclosure
+                covered; there the same sponsored brand is in Featured brands, marked as such. */}
+            <Link href={spotlight.href} className="glass glass-sheen group hidden items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--glass-bg-strong)] sm:flex">
               <span className="relative size-16 shrink-0 overflow-hidden rounded-lg">
                 <Image src={spotlight.image.src} alt="" fill sizes="64px" className="object-cover" />
               </span>

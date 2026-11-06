@@ -9,7 +9,7 @@ import type { LookbookFrame } from "../theme"
 
 type Props = { ctx: StorefrontContext; section: StorefrontSection; index: number; first: boolean; frames: LookbookFrame[] }
 
-/** One photograph. Frames that show a product link to it and name it. */
+/** One photograph. Frames that show a piece or a release link to it and name it. */
 function Frame({
   frame,
   className,
@@ -27,28 +27,28 @@ function Frame({
   /** From the 3xl container size up, fill the grid cell's height instead of keeping a ratio. */
   stretch?: boolean
 }) {
-  const { image, product } = frame
+  const { image, link } = frame
   const fill = stretch && "@3xl:h-full @3xl:min-h-0"
   const picture = (
     <span className={cn("relative block overflow-hidden rounded-lg bg-card", className, stretch && "@3xl:aspect-auto @3xl:h-full")}>
       <Image src={image.src} alt={image.alt} fill sizes={sizes} className={cn("object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.03]", position)} />
-      {product && caption === "overlay" ? (
+      {link && caption === "overlay" ? (
         <>
           <span aria-hidden className="scrim-b absolute inset-0" />
-          <span className="absolute inset-x-0 bottom-0 p-3 text-xs text-ink @3xl:p-4 @3xl:text-sm">{product.name}</span>
+          <span className="absolute inset-x-0 bottom-0 p-3 text-xs text-ink @3xl:p-4 @3xl:text-sm">{link.label}</span>
         </>
       ) : null}
     </span>
   )
-  if (!product) return <figure className={cn("group", fill)}>{picture}</figure>
+  if (!link) return <figure className={cn("group", fill)}>{picture}</figure>
   return (
     <figure className={cn("group", fill)}>
-      <Link href={`/products/${product.slug}`} aria-label={`Shop ${product.name}`} className={cn("block", fill)}>
+      <Link href={link.href} aria-label={link.kind === "piece" ? `Shop ${link.label}` : link.label} className={cn("block", fill)}>
         {picture}
       </Link>
       {caption === "below" ? (
         <figcaption className="mt-2 truncate text-xs text-ink-2">
-          <Link href={`/products/${product.slug}`} className="transition-colors hover:text-(color:--sf-accent)">{product.name}</Link>
+          <Link href={link.href} className="transition-colors hover:text-(color:--sf-accent)">{link.label}</Link>
         </figcaption>
       ) : null}
     </figure>
@@ -58,9 +58,10 @@ function Frame({
 export function LookbookSection({ ctx, section, index, first, frames }: Props) {
   const { template } = ctx
   // Each template shows every frame it is given (the renderer sizes the list per template).
-  const allShoppable = frames.every((f) => f.product)
+  // A frame names what it links to: a piece, or the drop or collection it was shot for.
+  const allShoppable = frames.every((f) => f.link)
   const heading = (
-    <SectionHeading ctx={ctx} section={section} index={index} description={allShoppable ? "Tap a photograph to shop the piece in it." : "Tap a named photograph to shop it."} />
+    <SectionHeading ctx={ctx} section={section} index={index} description={allShoppable ? "Tap a photograph to shop what's in it." : "Tap a named photograph to shop it."} />
   )
 
   if (template === "editorial") {
@@ -129,8 +130,8 @@ export function LookbookSection({ ctx, section, index, first, frames }: Props) {
               <div key={f.image.src} className="w-[70%] shrink-0 snap-start rounded-lg border border-line-soft bg-card p-3 @3xl:w-auto">
                 <Frame frame={f} className="aspect-[4/5] rounded-md" sizes="(min-width: 768px) 24vw, 70vw" caption="none" />
                 <p className="mt-3 flex items-baseline justify-between gap-3 text-xs">
-                  {f.product ? (
-                    <Link href={`/products/${f.product.slug}`} className="truncate text-ink-2 transition-colors hover:text-(color:--sf-accent)">{f.product.name}</Link>
+                  {f.link ? (
+                    <Link href={f.link.href} className="truncate text-ink-2 transition-colors hover:text-(color:--sf-accent)">{f.link.label}</Link>
                   ) : (
                     <span className="truncate text-ink-2">{ctx.brand.name}</span>
                   )}

@@ -11,14 +11,13 @@ import { SectionHeader } from "@/components/market/section-header"
 import { useUpcomingDrops } from "@/components/market/editorial/use-drop-phase"
 import { Button } from "@/components/ui/button"
 import { brandById, drops as allDrops, productById, recommendBrands } from "@/lib/data"
-import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import type { Brand, MerchantOrder, Product } from "@/lib/data/types"
-import { firstName, formatDay } from "./format"
+import { firstName, formatDay, formatOrderMoney } from "./format"
 import { InterestEditor } from "./interest-editor"
-import { OrderStatusBadge } from "./order-status"
+import { isSampleCheckout, OrderStatusBadge, SampleChip } from "./order-status"
 import { YouNav } from "./you-nav"
 
 function greeting(hour: number) {
@@ -216,9 +215,12 @@ export function YouOverview() {
                 return (
                   <li key={g.id} className="rounded-lg border border-line-soft bg-card">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line-soft px-4 py-3">
-                      <p className="text-sm text-ink tabular">Checkout {g.reference}</p>
+                      <p className="flex items-center gap-2 text-sm text-ink tabular">
+                        Checkout {g.reference}
+                        {isSampleCheckout(g.id) ? <SampleChip /> : null}
+                      </p>
                       <p className="text-xs text-ink-2">
-                        {formatDay(g.placedAt)}, <span className="tabular">{formatMoney(g.total, g.currency)}</span>
+                        {formatDay(g.placedAt)}, <span className="tabular">{formatOrderMoney(g.total, g.currency)}</span>
                       </p>
                     </div>
                     <ul className="divide-y divide-line-soft">

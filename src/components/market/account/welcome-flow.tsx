@@ -252,7 +252,8 @@ export function WelcomeFlow() {
             <figcaption className="absolute inset-x-5 bottom-5">
               <p className="font-display text-display-sm text-ink">{visual.label}</p>
               <p className="mt-2 text-xs text-ink-2 tabular">
-                {cats.length + looks.length ? `${cats.length + looks.length} picked so far` : "Nothing picked yet"}
+                {/* This step's picks, the same number the Continue button carries. */}
+                {picks ? `${picks} ${step === 0 ? (picks === 1 ? "category" : "categories") : picks === 1 ? "look" : "looks"} picked` : "Nothing picked yet"}
               </p>
             </figcaption>
           </figure>

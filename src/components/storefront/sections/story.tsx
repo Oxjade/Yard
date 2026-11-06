@@ -28,17 +28,25 @@ function Founder({ brand, className }: { brand: Brand; className?: string }) {
   )
 }
 
-/** The brand's journal, in the marketplace's own story cards. */
+/**
+ * The brand's journal, in the marketplace's own story cards. Columns follow the number of
+ * stories, so a lone story spans the row (photograph beside its text) instead of sitting in a
+ * third of it, and two stories share the row in halves.
+ */
 function Journal({ stories }: { stories: Story[] }) {
   if (!stories.length) return null
   return (
     <div className="mt-14 @3xl:mt-16">
       <h3 className="mb-5 text-sm text-ink">From the journal</h3>
-      <div className="grid gap-x-4 gap-y-10 @2xl:grid-cols-2 @5xl:grid-cols-3">
-        {stories.map((s) => (
-          <StoryCard key={s.id} story={s} />
-        ))}
-      </div>
+      {stories.length === 1 ? (
+        <StoryCard story={stories[0]} variant="wide" />
+      ) : (
+        <div className={cn("grid gap-x-4 gap-y-10 @2xl:grid-cols-2", stories.length >= 3 && "@5xl:grid-cols-3")}>
+          {stories.map((s) => (
+            <StoryCard key={s.id} story={s} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

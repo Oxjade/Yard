@@ -8,14 +8,13 @@ import { CheckIcon as Check, CopyIcon as Copy, HourglassMediumIcon as Hourglass,
 import { motion } from "motion/react"
 import { toast } from "sonner"
 import { spring } from "@/lib/motion"
-import { checkoutPayment, OrderStatusBadge, orderStatusNote } from "@/components/market/account/order-status"
-import { formatDay } from "@/components/market/account/format"
+import { checkoutPayment, isSampleCheckout, OrderStatusBadge, orderStatusNote, SampleChip } from "@/components/market/account/order-status"
+import { formatDay, formatOrderMoney } from "@/components/market/account/format"
 import { BrandMark } from "@/components/market/brand-mark"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
 import { brandById } from "@/lib/data/brands"
-import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
@@ -71,6 +70,7 @@ export function ConfirmationView() {
   const awaitingPayment = orders.some((o) => o.status === "pending_payment")
   const allPaid = orders.every((o) => o.status === "paid")
   const payment = checkoutPayment(orders)
+  const sample = isSampleCheckout(group.id)
 
   return (
     <>
@@ -108,6 +108,7 @@ export function ConfirmationView() {
             <dd className="mt-1 flex items-center gap-1.5">
               <span className="text-lg text-ink tabular">{group.reference}</span>
               <CopyReference value={group.reference} />
+              {sample ? <SampleChip className="ml-0.5" /> : null}
             </dd>
           </div>
           <div className="bg-card px-4 py-3.5 md:px-5">
@@ -116,7 +117,7 @@ export function ConfirmationView() {
           </div>
           <div className="bg-card px-4 py-3.5 md:px-5">
             <dt className="text-xs text-ink-3">{payment.label}</dt>
-            <dd className="mt-1 text-lg text-ink tabular">{formatMoney(group.total, group.currency)}</dd>
+            <dd className="mt-1 text-lg text-ink tabular">{formatOrderMoney(group.total, group.currency)}</dd>
           </div>
           <div className="bg-card px-4 py-3.5 md:px-5">
             <dt className="text-xs text-ink-3">Payment</dt>
@@ -126,7 +127,9 @@ export function ConfirmationView() {
         <p className="mt-3 text-xs leading-relaxed text-ink-3">
           {awaitingPayment
             ? "No payment provider is connected in this development build, so nothing was charged and these orders stay awaiting payment confirmation. "
-            : ""}
+            : sample
+              ? "This is sample order history for the demo account. It shows how a paid checkout reads; no payment was taken. "
+              : ""}
           Quote the reference if you contact us or a brand.
         </p>
 
@@ -220,7 +223,7 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
               <p className="truncate text-xs text-ink-2">{l.variantLabel}</p>
               <p className="text-xs text-ink-3 tabular">Qty {l.quantity}</p>
             </div>
-            <p className="text-sm text-ink tabular">{formatMoney(l.unitPrice * l.quantity, order.currency)}</p>
+            <p className="text-sm text-ink tabular">{formatOrderMoney(l.unitPrice * l.quantity, order.currency)}</p>
           </li>
         ))}
       </ul>
@@ -228,7 +231,7 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-ink-2">Shipping</dt>
           <dd className="text-right text-ink tabular">
-            {shippingMethodLabel[method]}, {order.shipping === 0 ? "free" : formatMoney(order.shipping, order.currency)}
+            {shippingMethodLabel[method]}, {order.shipping === 0 ? "free" : formatOrderMoney(order.shipping, order.currency)}
           </dd>
         </div>
         {expecting.has(order.status) ? (
@@ -245,7 +248,7 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
         </div>
         <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-line-soft pt-3">
           <dt className="text-ink">Order total</dt>
-          <dd className="text-base text-ink tabular">{formatMoney(order.total, order.currency)}</dd>
+          <dd className="text-base text-ink tabular">{formatOrderMoney(order.total, order.currency)}</dd>
         </div>
       </dl>
     </article>

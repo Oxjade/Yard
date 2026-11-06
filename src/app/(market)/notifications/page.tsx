@@ -22,11 +22,15 @@ export default function CustomerNotificationsPage() {
         ) : user ? (
           <NotificationsList audience="customer" />
         ) : (
-          <div className="flex flex-col items-center rounded-xl border border-white/8 bg-card px-6 py-16 text-center">
-            <span className="inline-flex size-11 items-center justify-center rounded-full border border-white/10"><Bell className="size-5 text-ink-2" /></span>
-            <p className="mt-3 text-ink">Sign in to see your notifications</p>
-            <p className="mt-1 max-w-sm text-sm text-ink-2">Order updates and drop alerts are tied to your account.</p>
-            <Button variant="primary" className="mt-6" onClick={() => requireAuth("account")}>Sign in</Button>
+          <div className="flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-16 text-center">
+            <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
+              <Bell className="size-6 text-ink-2" />
+            </span>
+            <div>
+              <p className="text-base text-ink">Sign in to see your notifications</p>
+              <p className="mt-1 max-w-sm text-sm text-ink-2">Order updates and drop alerts are tied to your account.</p>
+            </div>
+            <Button variant="primary" onClick={() => requireAuth("account")}>Sign in</Button>
           </div>
         )}
       </div>

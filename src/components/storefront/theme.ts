@@ -181,24 +181,60 @@ export function saleProducts(products: Product[]) {
   return products.filter((p) => p.compareAt !== undefined && p.compareAt > p.price)
 }
 
-export type LookbookFrame = { image: ImageAsset; product?: Product }
+/** A lookbook photograph and, when we know what it shows, where tapping it goes. */
+export type LookbookFrame = { image: ImageAsset; link?: { href: string; label: string; kind: "piece" | "release" } }
+
+/** A drop or collection photograph: the brand shot it for that release, so it links there. */
+export type LookbookRelease = { image: ImageAsset; href: string; label: string }
 
 /**
- * Product photography, de-duplicated: campaign and detail shots first (so the lookbook doesn't
- * repeat the product grid), then each piece's main photograph. The brand cover is the hero's
- * photograph and links to no piece, so it only fills the last frame, and when the hero already
- * shows it (`coverInHero`), only if the lookbook would otherwise fall short of `minimum`.
+ * The brand's photography for its lookbook, de-duplicated, never claiming a photograph shows a
+ * piece it may not:
+ *
+ * 1. Each piece's extra photographs. One that also fronts a drop or collection (`releases`) is
+ *    that release's campaign shot, so it links to the release under the release's name rather
+ *    than to the piece that happens to list it; the others are the piece's own detail shots.
+ * 2. Main product photographs to fill the spread, pieces the page doesn't already show above
+ *    (`shownAbove`: lists such as the featured edit, then the sale strip, most prominent first)
+ *    first, so the lookbook repeats the product grid as little as it can.
+ * 3. The brand cover, which links to no piece, only in the last frame, and when the hero already
+ *    shows it (`coverInHero`), only if the lookbook would otherwise fall short of `minimum`.
  */
-export function lookbookFrames(brand: Brand, products: Product[], count: number, { coverInHero = false, minimum = 3 }: { coverInHero?: boolean; minimum?: number } = {}): LookbookFrame[] {
+export function lookbookFrames(
+  brand: Brand,
+  products: Product[],
+  count: number,
+  {
+    coverInHero = false,
+    minimum = 3,
+    releases = [],
+    shownAbove = [],
+  }: { coverInHero?: boolean; minimum?: number; releases?: LookbookRelease[]; shownAbove?: string[][] } = {},
+): LookbookFrame[] {
   const seen = new Set<string>()
   const frames: LookbookFrame[] = []
-  const push = (image: ImageAsset, product?: Product) => {
+  const push = (image: ImageAsset, link?: LookbookFrame["link"]) => {
     if (seen.has(image.src) || frames.length >= count) return
     seen.add(image.src)
-    frames.push({ image, product })
+    frames.push({ image, link })
   }
-  for (const p of products) p.images.slice(1).forEach((image) => push(image, p))
-  for (const p of products) push(p.images[0], p)
+  const productLink = (p: Product) => ({ href: `/products/${p.slug}`, label: p.name, kind: "piece" as const })
+  const releaseBySrc = new Map<string, LookbookRelease>()
+  for (const r of releases) if (!releaseBySrc.has(r.image.src)) releaseBySrc.set(r.image.src, r)
+
+  for (const p of products) {
+    for (const image of p.images.slice(1)) {
+      const release = releaseBySrc.get(image.src)
+      // A release frame takes the release's own description of the photograph, not the piece's.
+      if (release) push(release.image, { href: release.href, label: release.label, kind: "release" })
+      else push(image, productLink(p))
+    }
+  }
+  // How prominently a piece already appears above the lookbook (`shownAbove` lists the most
+  // prominent first, so the featured edit outweighs the sale strip); the least shown fill first.
+  const shown = (p: Product) => shownAbove.reduce((n, ids, i) => n + (ids.includes(p.id) ? shownAbove.length - i : 0), 0)
+  const byShown = products.map((p, i) => ({ p, i, n: shown(p) })).sort((a, b) => a.n - b.n || a.i - b.i)
+  for (const { p } of byShown) push(p.images[0], productLink(p))
   if (!coverInHero || frames.length < minimum) push(brand.cover)
   return frames
 }
