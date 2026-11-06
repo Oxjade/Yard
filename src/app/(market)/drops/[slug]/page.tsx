@@ -66,7 +66,7 @@ export default async function DropPage({ params }: PageProps<"/drops/[slug]">) {
 
         {/* The photograph, with the status floating over it */}
         <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-card lg:col-span-8 lg:row-start-2 lg:aspect-auto lg:min-h-[620px]">
-          <Image src={drop.image.src} alt={drop.image.alt} fill priority sizes="(min-width: 1024px) 64vw, 100vw" className="object-cover" />
+          <Image src={drop.image.src} alt={drop.image.alt} fill preload sizes="(min-width: 1024px) 64vw, 100vw" className="object-cover" />
           <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 md:top-4 md:left-4">
             <DropStatus drop={drop} />
             {sponsored ? <SponsoredTag /> : null}

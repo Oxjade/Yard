@@ -39,6 +39,8 @@ type SessionState = {
   /** The action a guest attempted, which opens the sign-in prompt. */
   authPrompt: { intent: AuthIntent; then?: () => void } | null
   signIn: (user: SessionUser) => void
+  /** Change the signed-in shopper's name and email. */
+  updateProfile: (details: { name: string; email: string }) => void
   signOut: () => void
   setCurrency: (c: CurrencyCode) => void
   setShipTo: (c: CountryCode) => void
@@ -71,6 +73,10 @@ export const useSession = create<SessionState>()(
         const pending = get().authPrompt?.then
         set({ user, authPrompt: null })
         pending?.()
+      },
+      updateProfile: ({ name, email }) => {
+        const user = get().user
+        if (user) set({ user: { ...user, name, email } })
       },
       signOut: () => set({ user: null }),
       setCurrency: (currency) => set({ currency }),

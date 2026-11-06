@@ -75,7 +75,7 @@ export function CheckoutGroupCard({ group, orders }: { group: CheckoutGroup; ord
           </p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="text-xs text-ink-3">Total charged</p>
+          <p className="text-xs text-ink-3">{orders.every((o) => o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded") ? "Total charged" : "Total"}</p>
           <p className="text-lg text-ink tabular">{formatMoney(group.total, group.currency)}</p>
         </div>
       </header>

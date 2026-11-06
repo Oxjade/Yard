@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ChevronLeft, ExternalLink, PackageSearch } from "lucide-react"
@@ -15,7 +14,7 @@ import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 import { daysSince, formatDay } from "./format"
 import { OrderStatusBadge, OrderStepper, customerOrderStatus, trackingUrl } from "./order-status"
-import { ReturnDialog, returnReasons, type ReturnRequest } from "./return-dialog"
+import { ReturnDialog } from "./return-dialog"
 import { YouNav } from "./you-nav"
 
 function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
@@ -34,7 +33,7 @@ const methodLabel = (m: string) => m.replace(/\s+—\s+/g, ", ")
 export function OrderDetail({ id }: { id: string }) {
   const order = useOrders((s) => s.orders.find((o) => o.id === id))
   const group = useOrders((s) => s.groups.find((g) => g.orderIds.includes(id)))
-  const [returnRequest, setReturnRequest] = useState<ReturnRequest | null>(null)
+  const requestReturn = useOrders((s) => s.requestReturn)
 
   if (!order) {
     return (
@@ -59,16 +58,14 @@ export function OrderDetail({ id }: { id: string }) {
   }
 
   const brand = brandById.get(order.brandId)!
-  const status = returnRequest ? "refund_requested" : order.status
+  const returnRequest = order.returnRequest ?? null
+  const status = order.status
   const meta = customerOrderStatus[status]
   const delivered = order.timeline.find((t) => t.label.toLowerCase().startsWith("delivered"))
   const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
   const returnDaysLeft = daysSinceDelivery === null ? null : brand.returnsDays - daysSinceDelivery
   const canReturn = order.status === "delivered" && !returnRequest && returnDaysLeft !== null && returnDaysLeft >= 0
-  const timeline = [
-    ...order.timeline,
-    ...(returnRequest ? [{ at: returnRequest.at, label: `You requested a return: ${returnReasons.find((r) => r.value === returnRequest.reason)?.label.toLowerCase()}` }] : []),
-  ].reverse()
+  const timeline = [...order.timeline].reverse()
   const count = order.lines.reduce((n, l) => n + l.quantity, 0)
   const address = order.shippingAddress
 
@@ -77,7 +74,7 @@ export function OrderDetail({ id }: { id: string }) {
     <Panel title="Returns">
       {returnRequest ? (
         <p className="text-sm text-ink-2">
-          Request sent {formatDay(returnRequest.at)}. {brand.name} will email you a return label and instructions. Keep the items unworn with their tags until then.
+          Request sent {formatDay(returnRequest.at)}. {brand.name} reviews it and replies with return instructions; you&apos;ll get a notification here. Keep the items unworn with their tags until then.
         </p>
       ) : canReturn ? (
         <>
@@ -86,7 +83,7 @@ export function OrderDetail({ id }: { id: string }) {
             <span className="text-ink">{returnDaysLeft === 0 ? "Today is the last day." : `${returnDaysLeft} ${returnDaysLeft === 1 ? "day" : "days"} left.`}</span>
           </p>
           <div className="mt-4">
-            <ReturnDialog order={order} brand={brand} onRequested={setReturnRequest} />
+            <ReturnDialog order={order} brand={brand} onRequested={(r) => requestReturn(order.id, r)} />
           </div>
         </>
       ) : (

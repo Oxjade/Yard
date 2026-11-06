@@ -47,7 +47,7 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
     <>
       {/* Short banner: the category photograph with the title over it */}
       <header className="relative isolate overflow-hidden">
-        <Image src={category.image.src} alt="" fill priority sizes="100vw" className="-z-10 object-cover" />
+        <Image src={category.image.src} alt="" fill preload sizes="100vw" className="-z-10 object-cover" />
         <span className="scrim-l absolute inset-0 -z-10" aria-hidden />
         <span className="scrim-b absolute inset-0 -z-10" aria-hidden />
         <div className="mx-auto flex min-h-[360px] max-w-page flex-col justify-end px-4 pt-28 pb-8 md:min-h-[460px] md:px-8 md:pb-12">

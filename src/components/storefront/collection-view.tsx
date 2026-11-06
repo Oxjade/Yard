@@ -54,7 +54,7 @@ export function CollectionView({ brand, collection, products, others }: { brand:
   return (
     <div style={accentStyle(brand.storefront.accent)} className="@container">
       <header className="relative isolate overflow-hidden">
-        <Image src={collection.image.src} alt={collection.image.alt} fill priority sizes="100vw" className="-z-10 object-cover" />
+        <Image src={collection.image.src} alt={collection.image.alt} fill preload sizes="100vw" className="-z-10 object-cover" />
         <span aria-hidden className="scrim-l absolute inset-0 -z-10" />
         <span aria-hidden className="scrim-b absolute inset-0 -z-10" />
         <div className="mx-auto flex min-h-[520px] max-w-page flex-col px-4 pt-28 pb-8 md:min-h-[620px] md:px-8 md:pt-32 md:pb-12">

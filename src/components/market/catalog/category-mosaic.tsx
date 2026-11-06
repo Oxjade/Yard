@@ -50,7 +50,7 @@ function CategoryTile({ category, pieces, brands, index, size, phoneWide }: Cate
         src={category.image.src}
         alt=""
         fill
-        priority={index < 3}
+        preload={index < 3}
         sizes={size === "lg" ? "(min-width: 768px) 58vw, 100vw" : "(min-width: 768px) 42vw, 50vw"}
         className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]"
       />

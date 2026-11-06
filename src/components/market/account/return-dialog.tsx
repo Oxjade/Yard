@@ -22,7 +22,7 @@ export const returnReasons = [
   { value: "other", label: "Something else" },
 ] as const
 
-export type ReturnRequest = { at: string; reason: string; variantIds: string[]; note: string }
+export type ReturnRequest = { reason: string; reasonLabel: string; variantIds: string[]; note: string }
 
 const NOTE_MAX = 500
 
@@ -30,7 +30,7 @@ const NOTE_MAX = 500
  * Request a return for one brand order. In the frontend phase the request lives in the
  * page; the backend turns it into a return record the brand approves or declines.
  */
-export function ReturnDialog({ order, brand, onRequested }: { order: MerchantOrder; brand: Brand; onRequested: (r: ReturnRequest) => void }) {
+export function ReturnDialog({ order, brand, onRequested }: { order: MerchantOrder; brand: Brand; onRequested: (r: ReturnRequest) => boolean }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>(order.lines.map((l) => l.variantId))
   const [reason, setReason] = useState("")
@@ -46,9 +46,10 @@ export function ReturnDialog({ order, brand, onRequested }: { order: MerchantOrd
     if (note.length > NOTE_MAX) next.note = `Keep the note under ${NOTE_MAX} characters.`
     setErrors(next)
     if (Object.keys(next).length) return
-    onRequested({ at: new Date().toISOString(), reason, variantIds: selected, note: note.trim() })
+    const ok = onRequested({ reason, reasonLabel: returnReasons.find((r) => r.value === reason)?.label ?? "Other", variantIds: selected, note: note.trim() })
     setOpen(false)
-    toast("Return requested", { description: `${brand.name} will reply within 2 business days with return instructions.` })
+    if (ok) toast("Return requested", { description: `${brand.name} sees it in their Studio now. You'll get a notification here when they reply.` })
+    else toast.error("This order can't take a return", { description: "It may already have a request, or it isn't delivered yet." })
   }
 
   return (

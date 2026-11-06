@@ -124,6 +124,42 @@ export function useNotificationEvents() {
               push({ eventKey: `m:order:${o.id}`, audience: "merchant", category: "new_order", title: `New order #${o.reference}`, body: `${o.lines.length} item${o.lines.length > 1 ? "s" : ""}, ${formatMoney(o.total, o.currency)}. Wait for payment confirmation before fulfilling.`, href: `/studio/orders`, at: o.placedAt })
             }
           }
+          // Customer, merchant, admin: a return request on a delivered order.
+          for (const o of s.orders) {
+            const before = prev.orders.find((x) => x.id === o.id)
+            if (!o.returnRequest || before?.returnRequest) continue
+            const brand = brandById.get(o.brandId)
+            const r = o.returnRequest
+            push({ eventKey: `c:return:${o.id}`, audience: "customer", category: "refund", title: `Return requested for #${o.reference}`, body: `${brand?.name ?? "The brand"} will reply with return instructions.`, href: `/you/orders/${o.id}`, at: r.at })
+            if (o.brandId === STUDIO_BRAND_ID) push({ eventKey: `m:return:${o.id}`, audience: "merchant", category: "refund_request", title: `Return requested on #${o.reference}`, body: `${o.shippingAddress.name}: ${r.reasonLabel.toLowerCase()}.`, href: `/studio/orders/${o.id}`, at: r.at })
+            push({ eventKey: `a:return:${o.id}`, audience: "admin", category: "refund_request", title: `Refund requested on #${o.reference}`, body: `${brand?.name ?? "Brand"}: ${r.reasonLabel.toLowerCase()}.`, href: "/admin/finance?tab=refunds", at: r.at })
+          }
+        }),
+      )
+
+      // Customer: the brand moves one of the shopper's orders on in Studio. In this build the
+      // shopper's copy and the brand's copy are two stores; this keeps them in step (the backend
+      // phase has one row) and tells the shopper.
+      unsubs.push(
+        useStudio.subscribe((s, prev) => {
+          const mine = useOrders.getState().orders
+          for (const o of s.orders) {
+            const before = prev.orders.find((x) => x.id === o.id)
+            if (!before || (before.status === o.status && before.tracking === o.tracking)) continue
+            const theirs = mine.find((x) => x.id === o.id)
+            if (!theirs) continue
+            useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === o.id ? { ...x, status: o.status, paymentStatus: o.paymentStatus, tracking: o.tracking, timeline: o.timeline } : x)) })
+            if (before.status === o.status) continue
+            const brand = brandById.get(o.brandId)?.name ?? "The brand"
+            const copy: Partial<Record<typeof o.status, { category: AppNotification["category"]; title: string; body: string }>> = {
+              shipped: { category: "order_shipped", title: `#${o.reference} is on its way`, body: o.tracking ? `${brand} shipped it with ${o.tracking.carrier}, tracking ${o.tracking.number}.` : `${brand} shipped it.` },
+              delivered: { category: "order_delivered", title: `#${o.reference} was delivered`, body: `Returns are open for ${brandById.get(o.brandId)?.returnsDays ?? 14} days.` },
+              refunded: { category: "refund", title: `Refund issued for #${o.reference}`, body: `${brand} refunded it. In this build no money moves; with a provider connected it goes back to how you paid.` },
+              cancelled: { category: "refund", title: `#${o.reference} was cancelled`, body: o.cancelReason ? `${brand}: ${o.cancelReason}` : `${brand} cancelled it.` },
+            }
+            const c = copy[o.status]
+            if (c) push({ eventKey: `c:status:${o.id}:${o.status}`, audience: "customer", ...c, href: `/you/orders/${o.id}`, at: new Date().toISOString() })
+          }
         }),
       )
 

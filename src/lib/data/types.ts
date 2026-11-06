@@ -153,6 +153,12 @@ export type Product = {
   badges: ProductBadge[]
   status: ProductStatus
   createdAt: string
+  /** Last edit in Brand Studio. */
+  updatedAt?: string
+  /** When a scheduled product goes live. */
+  publishAt?: string
+  /** Overrides the brand's processing time for this product, in business days [min, max]. */
+  processingDays?: [number, number]
   collectionIds: string[]
   dropId?: string
   stats: { views7d: number; wishlists: number; sales30d: number; trend: number }
@@ -279,6 +285,10 @@ export type MerchantOrder = {
   shippingMethod: string
   tracking?: { carrier: string; number: string; url?: string }
   timeline: { at: string; label: string }[]
+  /** The shopper's return request, once they've made one. */
+  returnRequest?: { at: string; reason: string; reasonLabel: string; note?: string; variantIds: string[] }
+  /** Why the brand cancelled, when it did. */
+  cancelReason?: string
 }
 
 export type CheckoutGroup = {

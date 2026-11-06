@@ -72,7 +72,7 @@ export default async function StoryPage({ params }: PageProps<"/stories/[slug]">
         </header>
 
         <div className="relative -mx-4 mt-8 aspect-[4/5] overflow-hidden bg-card sm:aspect-[3/2] md:mx-0 md:mt-10 md:rounded-lg lg:aspect-[16/8]">
-          <Image src={story.cover.src} alt={story.cover.alt} fill priority sizes="(min-width: 1440px) 1376px, 100vw" className="object-cover object-[50%_30%]" />
+          <Image src={story.cover.src} alt={story.cover.alt} fill preload sizes="(min-width: 1440px) 1376px, 100vw" className="object-cover object-[50%_30%]" />
         </div>
 
         <div className="mt-12 md:mt-20">

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -87,6 +88,7 @@ export function AuthPrompt() {
   const prompt = useSession((s) => s.authPrompt)
   const dismiss = useSession((s) => s.dismissAuthPrompt)
   const intent = prompt?.intent ?? "account"
+  const pathname = usePathname()
 
   return (
     <Dialog open={!!prompt} onOpenChange={(o) => !o && dismiss()}>
@@ -97,7 +99,7 @@ export function AuthPrompt() {
         </DialogHeader>
         <AuthForm />
         <p className="text-center text-xs text-ink-3">
-          New here? Continuing creates your account. <Link href="/sign-in" onClick={dismiss} className="text-violet hover:underline">More options</Link>
+          New here? Continuing creates your account. <Link href={`/sign-in?next=${encodeURIComponent(pathname || "/")}`} onClick={dismiss} className="text-violet hover:underline">More options</Link>
         </p>
       </DialogContent>
     </Dialog>

@@ -27,13 +27,15 @@ type StudioState = {
   inventoryLog: InventoryEvent[]
   storefront: { draft: StorefrontConfig; published: StorefrontConfig; publishedAt: string | null; savedAt: string | null }
   upsertProduct: (p: Product) => void
-  removeProduct: (id: string) => void
+  /** Refuses (returns false) when the product has orders: archive it instead, so order history keeps its product. */
+  removeProduct: (id: string) => boolean
   setProductStatus: (id: string, status: Product["status"]) => void
   adjustStock: (productId: string, variantId: string, delta: number, reason: InventoryEvent["reason"], note?: string) => void
   upsertDrop: (d: Drop) => void
   removeDrop: (id: string) => void
   upsertCampaign: (c: Campaign) => void
   setOrderStatus: (id: string, status: MerchantOrderStatus, label?: string) => void
+  /** Adds or corrects tracking. The first time on a paid or processing order it also marks the order shipped. */
   setTracking: (id: string, carrier: string, number: string) => void
   saveStorefrontDraft: (draft: StorefrontConfig) => void
   publishStorefront: () => void
@@ -64,7 +66,11 @@ export const useStudio = create<StudioState>()(
         const exists = get().products.some((x) => x.id === p.id)
         set({ products: exists ? get().products.map((x) => (x.id === p.id ? p : x)) : [p, ...get().products] })
       },
-      removeProduct: (id) => set({ products: get().products.filter((p) => p.id !== id) }),
+      removeProduct: (id) => {
+        if (get().orders.some((o) => o.lines.some((l) => l.productId === id))) return false
+        set({ products: get().products.filter((p) => p.id !== id) })
+        return true
+      },
       setProductStatus: (id, status) => set({ products: get().products.map((p) => (p.id === id ? { ...p, status } : p)) }),
       adjustStock: (productId, variantId, delta, reason, note) =>
         set({
@@ -84,14 +90,25 @@ export const useStudio = create<StudioState>()(
       },
       setOrderStatus: (id, status, label) =>
         set({
-          orders: get().orders.map((o) =>
-            o.id === id ? { ...o, status, timeline: [...o.timeline, { at: now(), label: label ?? `Status changed to ${status.replace(/_/g, " ")}` }] } : o,
-          ),
+          orders: get().orders.map((o) => {
+            if (o.id !== id) return o
+            // Money that was taken goes back on a cancel or refund; an unpaid order simply closes.
+            const taken = o.paymentStatus === "captured" || o.paymentStatus === "authorized" || o.paymentStatus === "partially_refunded"
+            const paymentStatus = (status === "refunded" || status === "cancelled") && taken ? "refunded" : o.paymentStatus
+            return { ...o, status, paymentStatus, timeline: [...o.timeline, { at: now(), label: label ?? `Status changed to ${status.replace(/_/g, " ")}` }] }
+          }),
         }),
       setTracking: (id, carrier, number) =>
         set({
           orders: get().orders.map((o) =>
-            o.id === id ? { ...o, tracking: { carrier, number }, status: o.status === "processing" || o.status === "paid" ? "shipped" : o.status, timeline: [...o.timeline, { at: now(), label: `Shipped with ${carrier}, tracking ${number}` }] } : o,
+            o.id !== id
+              ? o
+              : {
+                  ...o,
+                  tracking: { carrier, number },
+                  status: o.status === "processing" || o.status === "paid" ? "shipped" : o.status,
+                  timeline: [...o.timeline, { at: now(), label: o.tracking ? `Tracking updated: ${carrier}, ${number}` : `Shipped with ${carrier}, tracking ${number}` }],
+                },
           ),
         }),
       saveStorefrontDraft: (draft) => set({ storefront: { ...get().storefront, draft, savedAt: now() } }),

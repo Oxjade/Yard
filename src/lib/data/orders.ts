@@ -1,7 +1,7 @@
 import { convert } from "@/lib/money"
 import { brands, brandById } from "./brands"
 import { products, variantLabel } from "./products"
-import { daysAgo, hash, pick, randInt, rand } from "./seed"
+import { DEMO_TODAY, daysAgo, hash, pick, randInt, rand } from "./seed"
 import type { CheckoutGroup, Customer, MerchantOrder, MerchantOrderStatus, OrderLine } from "./types"
 
 /** The signed-in shopper in the frontend prototype. */
@@ -46,14 +46,27 @@ function weightedStatus(key: string): MerchantOrderStatus {
   return "delivered"
 }
 
-function timeline(status: MerchantOrderStatus, placed: string) {
-  const t = [{ at: placed, label: "Order placed" }, { at: placed, label: "Payment confirmed by provider" }]
-  if (["processing", "shipped", "delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: placed, label: "Brand started processing" })
-  if (["shipped", "delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: placed, label: "Shipped with tracking" })
-  if (["delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: placed, label: "Delivered" })
-  if (status === "refund_requested") t.push({ at: placed, label: "Customer requested a refund" })
-  if (status === "refunded") t.push({ at: placed, label: "Refund issued" })
-  if (status === "cancelled") t.push({ at: placed, label: "Cancelled before fulfilment" })
+const HOUR = 3_600_000
+const demoNow = new Date(`${DEMO_TODAY}T12:00:00Z`).getTime()
+
+/**
+ * An order's history with realistic gaps (payment in minutes, processing and shipping over the
+ * next days, delivery after transit), never later than the demo's "now".
+ */
+function timeline(status: MerchantOrderStatus, placed: string, domestic: boolean, key: string) {
+  const t0 = new Date(placed).getTime()
+  const at = (hours: number) => new Date(Math.min(t0 + hours * HOUR, demoNow - HOUR)).toISOString()
+  const processing = 14 + randInt(`${key}-tp`, 0, 20)
+  const shipped = processing + 18 + randInt(`${key}-ts`, 0, 30)
+  const delivered = shipped + (domestic ? 48 : 120) + randInt(`${key}-td`, 0, 72)
+  const requested = delivered + 24 + randInt(`${key}-tr`, 0, 96)
+  const t = [{ at: placed, label: "Order placed" }, { at: at(0.05), label: "Payment confirmed by provider" }]
+  if (["processing", "shipped", "delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: at(processing), label: "Brand started processing" })
+  if (["shipped", "delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: at(shipped), label: "Shipped with tracking" })
+  if (["delivered", "refund_requested", "refunded"].includes(status)) t.push({ at: at(delivered), label: "Delivered" })
+  if (status === "refund_requested" || status === "refunded") t.push({ at: at(requested), label: "Customer requested a refund" })
+  if (status === "refunded") t.push({ at: at(requested + 30), label: "Refund issued" })
+  if (status === "cancelled") t.push({ at: at(4 + randInt(`${key}-tc`, 0, 10)), label: "Cancelled before fulfilment" })
   return t
 }
 
@@ -93,9 +106,9 @@ function makeOrder(brandId: string, n: number, customer: ShopperProfile, daysBac
     commission: Math.round(subtotal * 0.05),
     placedAt,
     shippingAddress: { name: customer.name, line1: `${randInt(`${key}-a`, 2, 220)} ${pick(`${key}-s`, ["Admiralty Way", "High Street", "Rue Oberkampf", "Ring Road", "Gangnam-daero", "Calle Regina", "Long Street", "Bedford Ave"])}`, city: customer.city, country: customer.country, postcode: String(randInt(`${key}-pc`, 10000, 99999)), phone: `+${randInt(`${key}-ph`, 100000000, 999999999)}` },
-    shippingMethod: customer.country === brand.shipsFrom ? "Standard — domestic" : "Standard — international",
+    shippingMethod: customer.country === brand.shipsFrom ? "Standard, domestic" : "Standard, international",
     tracking: tracked ? { carrier: pick(`${key}-car`, ["GIG Logistics", "DHL Express", "Royal Mail", "UPS", "Aramex", "CJ Logistics"]), number: `TRK${hash(`${key}-trk`) % 1_000_000_000}` } : undefined,
-    timeline: timeline(status, placedAt),
+    timeline: timeline(status, placedAt, customer.country === brand.shipsFrom, key),
   }
 }
 

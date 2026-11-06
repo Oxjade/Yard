@@ -57,7 +57,7 @@ function Section({ id, title, description, children }: { id: string; title: stri
 
 function AccountForm() {
   const user = useSession((s) => s.user)!
-  const signIn = useSession((s) => s.signIn)
+  const updateProfile = useSession((s) => s.updateProfile)
   const [name, setName] = useState(user.name)
   const [email, setEmail] = useState(user.email)
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({})
@@ -73,8 +73,7 @@ function AccountForm() {
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = "Enter a valid email address."
     setErrors(next)
     if (Object.keys(next).length) return
-    // The frontend session has no profile endpoint yet; re-signing with new details updates it.
-    signIn({ ...user, name: n, email: email.trim() })
+    updateProfile({ name: n, email: email.trim() })
     toast("Account updated", { description: "New orders and receipts will use these details." })
   }
 

@@ -45,7 +45,7 @@ export function StoryCard({
     return (
       <article className={cn("group relative grid gap-5 md:grid-cols-12 md:items-end md:gap-8", className)}>
         <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-card md:col-span-8 md:aspect-[16/11]">
-          <Image src={story.cover.src} alt={story.cover.alt} fill priority={priority} sizes="(min-width: 768px) 64vw, 100vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.03]" />
+          <Image src={story.cover.src} alt={story.cover.alt} fill preload={priority} sizes="(min-width: 768px) 64vw, 100vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.03]" />
         </div>
         <div className="md:col-span-4 md:pb-2">
           <p className="text-xs text-violet">{storyKindLabel[story.kind]}</p>
@@ -66,7 +66,7 @@ export function StoryCard({
   return (
     <article className={cn("group relative", className)}>
       <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-card">
-        <Image src={story.cover.src} alt={story.cover.alt} fill priority={priority} sizes="(min-width: 768px) 33vw, 100vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]" />
+        <Image src={story.cover.src} alt={story.cover.alt} fill preload={priority} sizes="(min-width: 768px) 33vw, 100vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]" />
       </div>
       <p className="mt-4 text-xs text-violet">{storyKindLabel[story.kind]}</p>
       <Heading className="mt-1 text-xl font-medium text-ink">

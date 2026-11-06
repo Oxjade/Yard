@@ -3,11 +3,14 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
+import { brandById } from "@/lib/data/brands"
+import { convert } from "@/lib/money"
 import { priceCart } from "@/lib/cart"
 import { customerCheckoutGroups, customerOrders } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
 import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
 import type { CartLine } from "./cart"
+import { useAdmin } from "./admin"
 import { useStudio } from "./studio"
 
 /**
@@ -36,6 +39,12 @@ type OrdersState = {
   orders: MerchantOrder[]
   processedKeys: Record<string, string>
   placeCheckout: (input: CheckoutInput) => { groupId: string; duplicate: boolean }
+  /**
+   * A return request on a delivered order. It lands on the brand's order in Studio and in the
+   * admin refund queue (in the backend phase: one row both read). Returns false when the order
+   * can't take a request (not delivered, or already requested).
+   */
+  requestReturn: (orderId: string, request: { reason: string; reasonLabel: string; note?: string; variantIds: string[] }) => boolean
 }
 
 let seq = 0
@@ -89,6 +98,35 @@ export const useOrders = create<OrdersState>()(
         const mine = orders.filter((o) => o.brandId === studio.brandId)
         if (mine.length) useStudio.setState({ orders: [...mine, ...studio.orders] })
         return { groupId, duplicate: false }
+      },
+      requestReturn: (orderId, request) => {
+        const o = get().orders.find((x) => x.id === orderId)
+        if (!o || o.status !== "delivered" || o.returnRequest) return false
+        const at = new Date().toISOString()
+        const returnRequest = { at, ...request }
+        const entry = { at, label: `Return requested: ${request.reasonLabel.toLowerCase()}` }
+        const next: MerchantOrder = { ...o, status: "refund_requested", returnRequest, timeline: [...o.timeline, entry] }
+        set({ orders: get().orders.map((x) => (x.id === orderId ? next : x)) })
+
+        const studio = useStudio.getState()
+        if (o.brandId === studio.brandId) {
+          const known = studio.orders.some((x) => x.id === orderId)
+          useStudio.setState({
+            orders: known ? studio.orders.map((x) => (x.id === orderId ? { ...x, status: "refund_requested", returnRequest, timeline: [...x.timeline, entry] } : x)) : [next, ...studio.orders],
+          })
+        }
+
+        const lines = o.lines.filter((l) => request.variantIds.includes(l.variantId))
+        const amount = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
+        const admin = useAdmin.getState()
+        const id = `rf_${orderId}`
+        useAdmin.setState({
+          refunds: [
+            { id, reference: o.reference, brandName: brandById.get(o.brandId)?.name ?? "Brand", customer: o.shippingAddress.name, amountUsd: convert(amount, o.currency, "USD"), reason: request.reasonLabel, requestedAt: at, status: "requested", idempotencyKey: `rfnd_${orderId}` },
+            ...admin.refunds.filter((r) => r.id !== id),
+          ],
+        })
+        return true
       },
     }),
     { name: "nocturne-orders", storage: createJSONStorage(() => localStorage), skipHydration: true },

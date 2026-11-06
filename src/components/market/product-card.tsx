@@ -57,7 +57,7 @@ export function ProductCard({
             src={product.images[0].src}
             alt={product.images[0].alt}
             fill
-            priority={priority}
+            preload={priority}
             sizes={isFeature ? "(min-width: 768px) 50vw, 100vw" : sizes}
             className={cn(
               "object-cover transition-[transform,filter] duration-[900ms] ease-out-quint group-hover/card:scale-[1.045]",

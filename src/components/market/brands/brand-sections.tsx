@@ -42,7 +42,7 @@ function FeaturedLead({ brand, headline, note }: { brand: Brand; headline: strin
         src={brand.cover.src}
         alt={brand.cover.alt}
         fill
-        priority
+        preload
         sizes="(min-width: 1024px) 50vw, 100vw"
         className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover/lead:scale-[1.03]"
       />

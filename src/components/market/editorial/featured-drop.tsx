@@ -24,7 +24,7 @@ export function FeaturedDrop({ drop, sponsored }: { drop: Drop; sponsored: boole
           src={drop.image.src}
           alt={drop.image.alt}
           fill
-          priority
+          preload
           sizes="(min-width: 768px) 58vw, 100vw"
           className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/feature:scale-[1.03]"
         />

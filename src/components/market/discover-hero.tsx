@@ -45,7 +45,7 @@ export function DiscoverHero({
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 1.6, ease }}
       >
-        <Image src={image.src} alt={image.alt} fill priority sizes="100vw" className="object-cover object-[60%_30%]" />
+        <Image src={image.src} alt={image.alt} fill preload sizes="100vw" className="object-cover object-[60%_30%]" />
       </motion.div>
       <div className="absolute inset-0 -z-10 bg-gradient-to-t from-obsidian via-obsidian/30 to-obsidian/40" aria-hidden />
       <div className="scrim-l absolute inset-0 -z-10 md:w-2/3" aria-hidden />
