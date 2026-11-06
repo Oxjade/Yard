@@ -4,10 +4,11 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { DropCard } from "@/components/market/drop-card"
+import { useDropPhases } from "@/components/market/editorial/use-drop-phase"
 import { initialDropPhase } from "@/lib/drops"
 import { formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import type { Drop, Product, StorefrontSection } from "@/lib/data/types"
+import type { Drop, DropPhase, Product, StorefrontSection } from "@/lib/data/types"
 import { Container, SectionHeading, SectionShell, type StorefrontContext } from "../parts"
 
 type Props = {
@@ -20,16 +21,23 @@ type Props = {
   products?: Product[]
 }
 
-/** Group drops by where they are in their life: on now, coming up, already gone. */
-export function groupDrops(drops: Drop[]) {
-  const live = drops.filter((d) => initialDropPhase(d) === "live")
-  const upcoming = drops.filter((d) => initialDropPhase(d) === "upcoming").sort((a, b) => a.releaseOffsetHours - b.releaseOffsetHours)
+/**
+ * Group drops by where they are in their life: on now, coming up, entries closed (a draw that
+ * has released sells only to its drawn winners, so it is not "Live now"), already gone. The
+ * phase defaults to the one the demo loads with (safe on the server); the section passes the
+ * demo clock's once mounted.
+ */
+export function groupDrops(drops: Drop[], phaseOf: (d: Drop) => DropPhase = initialDropPhase) {
+  const live = drops.filter((d) => phaseOf(d) === "live" && d.access !== "draw")
+  const upcoming = drops.filter((d) => phaseOf(d) === "upcoming").sort((a, b) => a.releaseOffsetHours - b.releaseOffsetHours)
+  const closed = drops.filter((d) => phaseOf(d) === "live" && d.access === "draw")
   const past = drops
-    .filter((d) => ["sold-out", "ended"].includes(initialDropPhase(d)))
+    .filter((d) => ["sold-out", "ended"].includes(phaseOf(d)))
     .sort((a, b) => b.releaseOffsetHours - a.releaseOffsetHours)
   return [
     { key: "live", title: "Live now", items: live },
     { key: "upcoming", title: "Coming up", items: upcoming },
+    { key: "draw-closed", title: "Entries closed", items: closed },
     { key: "past", title: "Past drops", items: past },
   ].filter((g) => g.items.length)
 }
@@ -90,7 +98,10 @@ function DropNotes({ drop, accent, products }: { drop: Drop; accent: boolean; pr
 const organic = (drop: Drop): Drop => (drop.sponsored ? { ...drop, sponsored: false } : drop)
 
 export function DropsSection({ ctx, section, index, first, drops, products = [] }: Props) {
-  const groups = groupDrops(drops)
+  // On the demo clock once mounted, so a drop that opens (or a draw that releases) while the
+  // page is up moves to the right group; the server's grouping until then.
+  const { phases } = useDropPhases(drops)
+  const groups = groupDrops(drops, (d) => phases.get(d.id) ?? initialDropPhase(d))
   const street = ctx.template === "street"
   // Only invite a reminder when there is a release still to come.
   const has = (key: string) => groups.some((g) => g.key === key)
@@ -100,7 +111,9 @@ export function DropsSection({ ctx, section, index, first, drops, products = [] 
       : "Limited releases. Set a reminder for the next one."
     : has("live")
       ? "Open now, while stock lasts."
-      : `Past releases from ${ctx.brand.name}. Follow to hear about the next one.`
+      : has("draw-closed")
+        ? "The draw has released: entries are closed and only drawn winners can buy."
+        : `Past releases from ${ctx.brand.name}. Follow to hear about the next one.`
 
   return (
     <SectionShell ctx={ctx} section={section} first={first}>

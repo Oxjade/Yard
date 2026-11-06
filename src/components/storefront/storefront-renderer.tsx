@@ -39,6 +39,7 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
   const ctx: StorefrontContext = {
     brand,
     template: config.template,
+    accent: config.accent,
     type: storefrontType[config.typePreset] ?? storefrontType.condensed,
     preview,
   }
@@ -55,12 +56,12 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
   let counter = 0
   let rendered = 0
 
-  function renderSection(section: StorefrontSection, first: boolean) {
+  function renderSection(section: StorefrontSection, first: boolean, opening: boolean) {
     const index = section.type === "hero" ? 0 : ++counter
     const common = { ctx, section, first, index }
     switch (section.type) {
       case "hero":
-        return <HeroSection ctx={ctx} section={section} first={first} intro={config.intro || brand.description} products={products} shopHref={shopHref} />
+        return <HeroSection ctx={ctx} section={section} first={first} opening={opening} intro={config.intro || brand.description} products={products} shopHref={shopHref} />
       case "featured-products": {
         const featured = resolveFeatured(section, products, config.template === "editorial" ? 5 : config.template === "studio" ? 3 : 4)
         if (!featured.length) return placeholder(section, first, index, "Add products in Brand Studio, or pick some for this section.")
@@ -128,8 +129,9 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
       {topLeadIns}
 
       {sections.map((section) => {
-        const first = rendered === 0 && !announcement && topLeadIns.length === 0
-        const node = renderSection(section, first)
+        const opening = rendered === 0 && topLeadIns.length === 0
+        const first = opening && !announcement
+        const node = renderSection(section, first, opening)
         if (node) rendered++
         return (
           <Fragment key={section.id}>

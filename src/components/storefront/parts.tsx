@@ -1,22 +1,37 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowUpRightIcon as ArrowUpRight, PlusIcon as Plus } from "@phosphor-icons/react"
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  GlobeSimpleIcon as Globe,
+  InstagramLogoIcon as Instagram,
+  PlusIcon as Plus,
+  ShareNetworkIcon as ShareNetwork,
+  TiktokLogoIcon as Tiktok,
+  XLogoIcon as XLogo,
+  type Icon,
+} from "@phosphor-icons/react"
+import { toast } from "sonner"
 import { BrandMark } from "@/components/market/brand-mark"
 import { FollowButton } from "@/components/market/follow-button"
 import { Button } from "@/components/ui/button"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { countries } from "@/config/markets"
 import { site } from "@/config/site"
 import { formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import type { Brand, Collection, StorefrontSection, StorefrontTemplate } from "@/lib/data/types"
+import type { Brand, Collection, StorefrontAccent, StorefrontSection, StorefrontTemplate } from "@/lib/data/types"
 import { collectionIndexId, sectionTitle, type TypeTokens } from "./theme"
 
 /** Everything a section needs to know about the storefront it sits in. */
 export type StorefrontContext = {
   brand: Brand
   template: StorefrontTemplate
+  /** The accent the brand picked; the colour itself reaches classes as --sf-accent. */
+  accent: StorefrontAccent
   type: TypeTokens
   preview: boolean
 }
@@ -171,79 +186,128 @@ export function placeOf(brand: Brand) {
 }
 
 /** Follow, or an inert stand-in inside the editor so a brand never follows itself. */
-export function FollowAction({ ctx, variant = "default", size = "default", className }: { ctx: StorefrontContext; variant?: "default" | "glass"; size?: "sm" | "default" | "lg"; className?: string }) {
+export function FollowAction({ ctx, className }: { ctx: StorefrontContext; className?: string }) {
   if (ctx.preview) {
     return (
-      <Button type="button" size={size} variant={variant === "glass" ? "glass" : "secondary"} disabled className={className}>
+      <Button type="button" variant="secondary" disabled className={className}>
         <Plus />
         Follow
       </Button>
     )
   }
-  return <FollowButton brandId={ctx.brand.id} brandName={ctx.brand.name} size={size} variant={variant} className={className} />
+  return <FollowButton brandId={ctx.brand.id} brandName={ctx.brand.name} size="default" className={className} />
 }
 
-/** Where the brand is, when it started and how many people follow it, as separate facts. */
-type Fact = "place" | "founded" | "followers"
+type ShareResult = "copied" | "sheet" | "dismissed"
 
-export function BrandFacts({
-  brand,
-  className,
-  tone = "default",
-  show = ["place", "founded", "followers"],
-}: {
-  brand: Brand
-  className?: string
-  tone?: "default" | "onImage"
-  show?: Fact[]
-}) {
-  const all: Record<Fact, { label: string; value: string }> = {
-    place: { label: "Based in", value: placeOf(brand) },
-    founded: { label: "Founded", value: String(brand.founded) },
-    followers: { label: "Followers", value: formatNumber(brand.followers, { compact: true }) },
+/**
+ * Share the storefront. On phones and tablets it opens the device's share sheet, which is its
+ * own feedback (nothing claims the link was sent); elsewhere, or if the sheet can't open, it
+ * copies the storefront's address, and the check in place of the icon is the confirmation (a
+ * toast would repeat it; screen readers hear "Link copied"). Only a failed copy toasts, with
+ * what to do instead. In the editor it is an inert stand-in, as Follow is.
+ */
+export function ShareAction({ ctx, className }: { ctx: StorefrontContext; className?: string }) {
+  const { brand } = ctx
+  const [result, setResult] = useState<ShareResult | null>(null)
+  const share = useAsyncAction(
+    async (): Promise<ShareResult> => {
+      const url = new URL(`/brands/${brand.handle}`, window.location.origin).toString()
+      if (typeof navigator.share === "function" && window.matchMedia("(pointer: coarse)").matches) {
+        try {
+          await navigator.share({ title: brand.name, text: brand.tagline, url })
+          return "sheet"
+        } catch (e) {
+          // Closing the sheet is an answer, not a failure. Anything else falls back to copying.
+          if (e instanceof DOMException && e.name === "AbortError") return "dismissed"
+        }
+      }
+      await navigator.clipboard.writeText(url)
+      return "copied"
+    },
+    {
+      onSuccess: setResult,
+      errorToast: false,
+      onError: () => toast.error("Couldn't copy the link", { id: "sf-share", description: "Copy it from your browser's address bar instead." }),
+    },
+  )
+  const copied = share.succeeded && result === "copied"
+  const label = `Share ${brand.name}`
+  const shape = cn("rounded-full", className)
+
+  if (ctx.preview) {
+    return (
+      <Button type="button" size="icon" variant="secondary" disabled aria-label={label} className={shape}>
+        <ShareNetwork />
+      </Button>
+    )
   }
-  const facts = show.map((key) => all[key])
+
   return (
-    <dl className={cn("flex flex-wrap gap-x-8 gap-y-3", className)}>
-      {facts.map((f) => (
-        <div key={f.label}>
-          <dt className={cn("text-xs", tone === "onImage" ? "text-ink/70" : "text-ink-3")}>{f.label}</dt>
-          <dd className="mt-0.5 text-sm text-ink tabular">{f.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <Button type="button" size="icon" variant="secondary" aria-label={label} onClick={() => void share.run()} className={shape}>
+      {copied ? <Check className="text-ink" /> : <ShareNetwork />}
+      <span className="sr-only" role="status">{copied ? "Link copied" : ""}</span>
+    </Button>
   )
 }
 
-export function socialLinksOf(brand: Brand) {
-  const s = brand.social
-  return [
-    s.instagram ? { label: "Instagram", href: `https://instagram.com/${s.instagram}` } : null,
-    s.tiktok ? { label: "TikTok", href: `https://www.tiktok.com/@${s.tiktok}` } : null,
-    s.x ? { label: "X", href: `https://x.com/${s.x}` } : null,
-    s.website ? { label: "Website", href: `https://${s.website}` } : null,
-  ].filter((l): l is { label: string; href: string } => !!l)
+/** The brand's key facts, each shown as its own label and value. */
+export type BrandFact = "founded" | "followers" | "pieces" | "shipsFrom"
+
+/**
+ * The facts in the order asked for. `pieces` is the number of published pieces the storefront
+ * lists (the renderer's products), so it is only shown when it is passed.
+ */
+export function brandFacts(brand: Brand, show: BrandFact[], { pieces }: { pieces?: number } = {}) {
+  const all: Record<BrandFact, { label: string; value: string } | null> = {
+    founded: { label: "Founded", value: String(brand.founded) },
+    followers: { label: "Followers", value: formatNumber(brand.followers, { compact: true }) },
+    pieces: pieces === undefined ? null : { label: pieces === 1 ? "Piece" : "Pieces", value: formatNumber(pieces) },
+    shipsFrom: { label: "Ships from", value: countries[brand.shipsFrom].name },
+  }
+  return show.flatMap((key) => {
+    const fact = all[key]
+    return fact ? [{ key, ...fact }] : []
+  })
 }
 
-export function SocialLinks({ brand, className, tone = "default" }: { brand: Brand; className?: string; tone?: "default" | "onImage" }) {
+type SocialLink = { key: string; label: string; href: string; icon: Icon; text: string }
+
+/** A website as people write it: no scheme, no "www.", no trailing slash. */
+const bareHost = (url: string) => url.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "")
+
+export function socialLinksOf(brand: Brand): SocialLink[] {
+  const s = brand.social
+  const site = s.website?.trim()
+  return [
+    s.instagram ? { key: "instagram", label: "Instagram", text: "Instagram", href: `https://instagram.com/${s.instagram}`, icon: Instagram } : null,
+    s.tiktok ? { key: "tiktok", label: "TikTok", text: "TikTok", href: `https://www.tiktok.com/@${s.tiktok}`, icon: Tiktok } : null,
+    s.x ? { key: "x", label: "X", text: "X", href: `https://x.com/${s.x}`, icon: XLogo } : null,
+    site ? { key: "website", label: "Website", text: bareHost(site), href: /^https?:\/\//i.test(site) ? site : `https://${site}`, icon: Globe } : null,
+  ].filter((l): l is SocialLink => !!l)
+}
+
+/**
+ * Where else the brand is, as a profile shows it: each network's glyph and name, and the
+ * website by its address. Every link opens in a new tab and says so to screen readers.
+ */
+export function SocialLinks({ brand, className }: { brand: Brand; className?: string }) {
   const links = socialLinksOf(brand)
   if (!links.length) return null
   return (
     <ul className={cn("flex flex-wrap items-center gap-x-5 lg:gap-y-2", className)} aria-label={`${brand.name} elsewhere`}>
       {links.map((l) => (
-        <li key={l.label}>
+        <li key={l.key}>
+          {/* The padding, taken back by the margin, gives a short name such as X a 40px tap. */}
           <a
             href={l.href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`${brand.name} on ${l.label} (opens in a new tab)`}
-            className={cn(
-              "group inline-flex min-h-10 items-center gap-1 rounded-sm text-sm transition-colors hover:text-(color:--sf-accent) lg:min-h-0",
-              tone === "onImage" ? "text-ink/85" : "text-ink-2",
-            )}
+            aria-label={l.key === "website" ? `${brand.name} website, ${l.text} (opens in a new tab)` : `${brand.name} on ${l.label} (opens in a new tab)`}
+            className="-mx-1.5 inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-sm px-1.5 text-sm text-ink-2 transition-colors duration-150 hover:text-(color:--sf-accent) lg:min-h-0"
           >
-            {l.label}
-            <ArrowUpRight className="size-3.5 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            <l.icon className="size-4 shrink-0" aria-hidden />
+            {l.text}
           </a>
         </li>
       ))}
@@ -266,7 +330,7 @@ export function AnnouncementBar({ ctx, text, href }: { ctx: StorefrontContext; t
   )
   const bar = "flex items-center justify-center gap-2.5 rounded-md border border-(color:--sf-accent) bg-(color:--sf-accent-soft) px-4 py-2.5 text-center text-sm text-ink"
   return (
-    <div className={cn(!ctx.preview && announcementClearance)}>
+    <div className={cn(ctx.preview ? "pt-4" : announcementClearance)}>
       <Container>
         <div role="note" aria-label={`Announcement from ${ctx.brand.name}`}>
           {href ? (

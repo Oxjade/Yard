@@ -72,10 +72,13 @@ export type TypeTokens = {
   description: string
   /** Family, weight, case and tracking. */
   family: string
-  /** Full-width hero name. Sizes use container units so drafts render correctly in an editor pane. */
-  hero: string
-  /** Hero name when it shares the row with other content. */
+  /**
+   * The largest display size: collection titles, and Street's brand name beside its actions.
+   * Sizes use container units so drafts render correctly in an editor pane.
+   */
   heroSplit: string
+  /** The brand name in the storefront's profile header, beside the Follow, Share and Shop actions. */
+  profile: string
   /** Section headings. */
   heading: string
   /** Card and tile titles. */
@@ -87,8 +90,8 @@ export const storefrontType: Record<StorefrontTypePreset, TypeTokens> = {
     label: "Condensed",
     description: "Tall, narrow capitals. Loud at any size.",
     family: "font-display",
-    hero: "text-[clamp(3.5rem,15cqw,12.5rem)] leading-[0.82]",
     heroSplit: "text-[clamp(3.25rem,9cqw,8rem)] leading-[0.84]",
+    profile: "text-[clamp(2.75rem,6.4cqw,5.5rem)] leading-[0.86]",
     heading: "text-[clamp(2.25rem,5.6cqw,4.25rem)] leading-[0.88]",
     title: "text-[clamp(1.625rem,3cqw,2.5rem)] leading-[0.9]",
   },
@@ -96,8 +99,8 @@ export const storefrontType: Record<StorefrontTypePreset, TypeTokens> = {
     label: "Grotesk",
     description: "Bold sentence case. Direct and modern.",
     family: "font-sans font-bold tracking-[-0.045em]",
-    hero: "text-[clamp(2.75rem,9.5cqw,8rem)] leading-[0.9]",
     heroSplit: "text-[clamp(2.5rem,5.6cqw,5.25rem)] leading-[0.92]",
+    profile: "text-[clamp(2.25rem,4.4cqw,3.75rem)] leading-[0.95]",
     heading: "text-[clamp(1.875rem,3.8cqw,3rem)] leading-[0.98]",
     title: "text-[clamp(1.25rem,2.2cqw,1.75rem)] leading-[1.05]",
   },
@@ -105,8 +108,8 @@ export const storefrontType: Record<StorefrontTypePreset, TypeTokens> = {
     label: "Expanded",
     description: "Wide capitals with a lot of presence.",
     family: "font-display font-stretch-expanded font-bold tracking-[0.01em]",
-    hero: "text-[clamp(2rem,6.8cqw,6rem)] leading-[0.94]",
     heroSplit: "text-[clamp(1.875rem,4cqw,3.75rem)] leading-[0.96]",
+    profile: "text-[clamp(1.75rem,3.4cqw,3rem)] leading-[1]",
     heading: "text-[clamp(1.5rem,3cqw,2.5rem)] leading-[1]",
     title: "text-[clamp(1.125rem,1.8cqw,1.5rem)] leading-[1.05]",
   },
@@ -115,14 +118,14 @@ export const storefrontType: Record<StorefrontTypePreset, TypeTokens> = {
 /* ---------- Templates and sections (for the editor and the renderer) ---------- */
 
 export const storefrontTemplates: Record<StorefrontTemplate, { label: string; description: string }> = {
-  editorial: { label: "Editorial", description: "A masthead over full-bleed photography, large type and magazine spreads." },
+  editorial: { label: "Editorial", description: "Your tagline as a standfirst, numbered sections and magazine spreads." },
   minimal: { label: "Minimal", description: "Whitespace and a quiet grid. The product does the talking." },
-  street: { label: "Street", description: "Heavy type, dense grids and drops up front." },
+  street: { label: "Street", description: "Heavy type, an accent-ruled stats bar and drops up front." },
   studio: { label: "Studio", description: "A gallery for objects and editions, with plated images and numbered pieces." },
 }
 
 export const storefrontSections: Record<StorefrontSectionType, { label: string; description: string; defaultTitle: string }> = {
-  hero: { label: "Hero", description: "Cover image, mark, name, tagline, location, followers and links.", defaultTitle: "Hero" },
+  hero: { label: "Hero", description: "Cover banner, mark, name, tagline, location, stats and links.", defaultTitle: "Hero" },
   "featured-products": { label: "Featured products", description: "A short edit of pieces you choose, or your first four.", defaultTitle: "Featured" },
   collections: { label: "Collections", description: "Your collections as image tiles.", defaultTitle: "Collections" },
   drops: { label: "Drops", description: "Live, upcoming and past releases.", defaultTitle: "Drops" },
