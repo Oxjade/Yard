@@ -44,7 +44,7 @@ export function ConfirmationView() {
     return (
       <>
         <h1 className="font-display text-display-lg text-ink">Order confirmation</h1>
-        <div className="mt-10 flex flex-col items-center gap-4 rounded-lg border border-dashed border-line px-6 py-16 text-center">
+        <div className="mt-10 flex flex-col items-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-16 text-center">
           <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
             <PackageSearch className="size-6 text-ink-2" />
           </span>
