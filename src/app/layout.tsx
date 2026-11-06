@@ -15,7 +15,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Sidebar: apply the saved collapsed preference before first paint (no layout shift). */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{if(localStorage.getItem("nocturne-sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed"}catch(e){}})()` }} />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>

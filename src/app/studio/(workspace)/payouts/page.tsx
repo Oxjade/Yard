@@ -18,10 +18,10 @@ import { brandById } from "@/lib/data/brands"
 import { convert, formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useStudio } from "@/lib/stores/studio"
+import { PAYOUT_HOLD_DAYS, payoutBalances } from "@/lib/payouts"
 import type { Payout } from "@/lib/data/admin"
 
-const HOLD_DAYS = 7
-const TODAY = new Date("2026-11-05T12:00:00Z").getTime()
+const HOLD_DAYS = PAYOUT_HOLD_DAYS
 
 const payoutTone: Record<Payout["status"], { label: string; tone: "muted" | "info" | "attention" | "success" | "danger" }> = {
   awaiting_approval: { label: "Under review", tone: "attention" },
@@ -63,19 +63,8 @@ export default function StudioPayoutsPage() {
   const cur = brand.currency
   const mine = payouts.filter((p) => p.brandId === brandId)
 
-  const balances = useMemo(() => {
-    const net = (o: (typeof orders)[number]) => o.subtotal - o.commission
-    const age = (o: (typeof orders)[number]) => (TODAY - new Date(o.placedAt).getTime()) / 86_400_000
-    const delivered = orders.filter((o) => o.status === "delivered")
-    const eligible = delivered.filter((o) => age(o) >= HOLD_DAYS).reduce((s, o) => s + net(o), 0)
-    const holding = delivered.filter((o) => age(o) < HOLD_DAYS).reduce((s, o) => s + net(o), 0)
-    const inFlight = orders.filter((o) => ["paid", "processing", "shipped"].includes(o.status)).reduce((s, o) => s + net(o), 0)
-    const inReview = mine.filter((p) => p.status === "awaiting_approval" || p.status === "held").reduce((s, p) => s + convert(p.amountUsd, "USD", cur), 0)
-    const processing = mine.filter((p) => p.status === "processing" || p.status === "scheduled").reduce((s, p) => s + convert(p.amountUsd, "USD", cur), 0)
-    const paid = mine.filter((p) => p.status === "paid").reduce((s, p) => s + convert(p.amountUsd, "USD", cur), 0)
-    const committed = inReview + processing + paid
-    return { available: Math.max(0, eligible - committed), pending: holding + inFlight, inReview, processing, paid }
-  }, [orders, mine, cur])
+  // Shared with the Studio sidebar card, so the two figures can never disagree.
+  const balances = useMemo(() => payoutBalances(orders, payouts, brandId, cur), [orders, payouts, brandId, cur])
 
   // Request flow
   const [open, setOpen] = useState(false)

@@ -1,6 +1,7 @@
 "use client"
 
 import { motion, type Variants } from "motion/react"
+import { useHydrated } from "@/hooks/use-hydrated"
 import { cn } from "@/lib/utils"
 
 /** Spring presets for the Control Center. Mass/stiffness/damping are explicit on purpose. */
@@ -18,9 +19,10 @@ const container: Variants = {
   show: { transition: { staggerChildren: 0.055, delayChildren: 0.04 } },
 }
 
+// Transform and opacity only (only the admin overview uses this; grepped).
 const item: Variants = {
-  hidden: { opacity: 0, y: 14, filter: "blur(4px)" },
-  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: springs.reveal },
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0, transition: springs.reveal },
 }
 
 /**
@@ -28,10 +30,11 @@ const item: Variants = {
  * wrapped in <RevealItem>. Opacity only (no movement) for people who prefer reduced motion —
  * MotionConfig at the root strips the transform.
  */
-export function Reveal({ children, className, as = "div" }: { children: React.ReactNode; className?: string; as?: "div" | "section" | "ul" }) {
+export function Reveal({ children, className, as = "div", ssrVisible = false }: { children: React.ReactNode; className?: string; as?: "div" | "section" | "ul"; /** Render the server HTML visible (skeletons and all) and stagger only on client-side navigation, so nothing is blank before hydration. */ ssrVisible?: boolean }) {
   const Comp = as === "section" ? motion.section : as === "ul" ? motion.ul : motion.div
+  const hydrated = useHydrated()
   return (
-    <Comp variants={container} initial="hidden" animate="show" className={className}>
+    <Comp variants={container} initial={ssrVisible && !hydrated ? false : "hidden"} animate="show" className={className}>
       {children}
     </Comp>
   )

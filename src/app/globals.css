@@ -5,6 +5,21 @@
 @import "@fontsource-variable/space-grotesk/index.css";
 
 /*
+ * A metric-matched stand-in for Space Grotesk while the webfont loads (the same numbers
+ * next/font derives: size-adjust from average glyph width, overrides from ascent/descent).
+ * Text set in the fallback wraps where it will wrap once Space Grotesk arrives, so nothing
+ * shifts when the font swaps in.
+ */
+@font-face {
+  font-family: "Space Grotesk Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica");
+  size-adjust: 109.69%;
+  ascent-override: 89.71%;
+  descent-override: 26.62%;
+  line-gap-override: 0%;
+}
+
+/*
  * NOCTURNE design tokens — the single place for shared values.
  * Palette (2026-11-05): Black #080808 · Purple #6D19D9 · Yellow #F5FF00 · White #F5F5F5 / Grey #858585.
  * Distribution: ~75% black, ~15% purple, ~5% yellow, ~5% white/grey.
@@ -40,7 +55,7 @@
   --color-danger: #ff5470;
 
   /* Typefaces */
-  --font-sans: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Space Grotesk Variable", "Space Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Archivo Variable", "Arial Narrow", ui-sans-serif, sans-serif;
   --font-heading: var(--font-sans);
 
@@ -269,10 +284,10 @@
 
   /* Editorial image treatment: a quiet scrim so overlaid type stays legible */
   .scrim-b {
-    background: linear-gradient(180deg, rgba(8, 8, 11, 0) 35%, rgba(8, 8, 11, 0.86) 100%);
+    background: linear-gradient(180deg, rgba(8, 8, 8, 0) 35%, rgba(8, 8, 8, 0.86) 100%);
   }
   .scrim-l {
-    background: linear-gradient(90deg, rgba(8, 8, 11, 0.9) 0%, rgba(8, 8, 11, 0.35) 55%, rgba(8, 8, 11, 0) 100%);
+    background: linear-gradient(90deg, rgba(8, 8, 8, 0.9) 0%, rgba(8, 8, 8, 0.35) 55%, rgba(8, 8, 8, 0) 100%);
   }
 
   /* Hide scrollbars on horizontal rails while keeping them scrollable */
@@ -560,5 +575,87 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Sidebar — the floating, collapsible panel shared by Brand Studio and the Control Center.
+ * The collapsed preference is applied to <html data-sidebar="collapsed"> by a pre-paint
+ * script in app/layout.tsx, so widths, padding and label visibility are right on the first
+ * paint (no layout shift). `sidebar-collapsed:` only ever applies on desktop (lg and up):
+ * the phone drawer is always expanded.
+ * ───────────────────────────────────────────────────────────── */
+@custom-variant sidebar-collapsed {
+  @media (width >= 64rem) {
+    html[data-sidebar="collapsed"] & {
+      @slot;
+    }
+  }
+}
+/* Short desktop windows (laptops under ~896px tall): the panel tightens so every section
+   still fits without scrolling. Desktop only: the phone drawer keeps its 40px tap targets. */
+@custom-variant sidebar-short {
+  @media (width >= 64rem) and (height <= 56rem) {
+    @slot;
+  }
+}
+/* Shorter still (under ~752px tall: 1536×730, 1366×657, 1280×720): items drop to 32px, the
+   group rows close up and the status card becomes one row, so no destination scrolls out of
+   view. Declared after sidebar-short so its rules come later and win where both apply. */
+@custom-variant sidebar-shorter {
+  @media (width >= 64rem) and (height <= 47rem) {
+    @slot;
+  }
+}
+
+:root {
+  /* spring.drawer (stiffness 380, damping 38, mass 0.9) sampled as a CSS easing curve, so
+     the collapse can run in CSS from the first paint. Falls back to ease-out-quint. Used as
+     ease-(--shell-spring) duration-(--shell-spring-duration) on the panel width, the content
+     gap and the toggle. */
+  --shell-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --shell-spring-duration: 420ms;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --shell-spring: linear(0, 0.072, 0.211, 0.365, 0.506, 0.624, 0.716, 0.79, 0.845, 0.887, 0.917, 0.94, 0.957, 0.969, 0.977, 0.984, 0.988, 0.992, 0.994, 0.996, 1);
+  }
+}
+
+@layer components {
+  /* The floating panel: a step above the page, a hairline edge and one crisp top highlight. */
+  .shell-panel {
+    background: #0e0e0e;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 24px 48px -28px rgba(0, 0, 0, 0.9);
+  }
+  /* Admin: slightly translucent so the control-room backlight reads through. No blur halo. */
+  [data-surface="admin"] .shell-panel {
+    background: rgba(13, 13, 13, 0.82);
+  }
+  /* The active item: a raised pill. */
+  .shell-pill {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+  /* The purple edge indicator beside the active item. */
+  .shell-indicator {
+    background: #6d19d9;
+    box-shadow: 0 0 8px rgba(109, 25, 217, 0.35);
+  }
+  /* The section list fades out at an edge only while it has more to scroll there. */
+  .shell-scroll[data-fade="bottom"] {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  }
+  .shell-scroll[data-fade="top"] {
+    mask-image: linear-gradient(to bottom, transparent, #000 32px);
+  }
+  .shell-scroll[data-fade="both"] {
+    mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent);
   }
 }

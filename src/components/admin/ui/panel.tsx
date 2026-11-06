@@ -11,6 +11,7 @@ import { RevealItem, springs } from "./motion"
  * falloff and an inner highlight. `interactive` panels lift slightly on hover.
  */
 export function Panel({
+  id: sectionId,
   title,
   description,
   action,
@@ -25,6 +26,8 @@ export function Panel({
   as = "section",
   labelledBy,
 }: {
+  /** An id for the panel itself, so a link can jump to it (`/admin#decision-queue`). */
+  id?: string
   title?: string
   description?: string
   action?: React.ReactNode
@@ -43,6 +46,7 @@ export function Panel({
   return (
     <RevealItem
       as={as}
+      id={sectionId}
       aria-labelledby={title ? id : undefined}
       className={cn("admin-panel overflow-hidden", glow && "admin-panel-glow", attention && "admin-panel-attention", className)}
       {...(interactive ? { whileHover: { y: -2 }, transition: springs.tactile } : {})}
@@ -56,7 +60,7 @@ export function Panel({
           <div className="flex shrink-0 items-center gap-2">
             {action}
             {href ? (
-              <Link href={href} className="group inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-ink-2 transition-colors hover:bg-white/[0.04] hover:text-ink">
+              <Link href={href} className="group relative inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] before:absolute before:inset-x-0 before:-inset-y-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-violet text-ink-2 transition-colors hover:bg-white/[0.04] hover:text-ink">
                 {hrefLabel}
                 <ArrowUpRight className="size-3.5 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </Link>

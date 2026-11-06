@@ -6,7 +6,22 @@ import { motion } from "motion/react"
  * A ring gauge for a ratio (0–1) with a threshold tick. Purple arc on a hairline track;
  * the value turns yellow when it falls under the threshold.
  */
-export function RingGauge({ value, threshold, size = 132, label, sublabel }: { value: number; threshold?: number; size?: number; label: string; sublabel?: string }) {
+export function RingGauge({
+  value,
+  threshold,
+  size = 132,
+  label,
+  sublabel,
+  entrance = "draw",
+}: {
+  value: number
+  threshold?: number
+  size?: number
+  label: string
+  sublabel?: string
+  /** "draw" sweeps the arc in; "fade" shows the final arc and fades and turns it in (transform and opacity only). */
+  entrance?: "draw" | "fade"
+}) {
   const stroke = 9
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
@@ -16,7 +31,16 @@ export function RingGauge({ value, threshold, size = 132, label, sublabel }: { v
   const ty = size / 2 + r * Math.sin((tickAngle * Math.PI) / 180)
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${(value * 100).toFixed(1)}%`}>
+      <motion.svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`${label}: ${(value * 100).toFixed(1)}%`}
+        initial={entrance === "fade" ? { opacity: 0, rotate: -30 } : false}
+        animate={entrance === "fade" ? { opacity: 1, rotate: 0 } : undefined}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      >
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={stroke} />
         <motion.circle
           cx={size / 2}
@@ -27,13 +51,13 @@ export function RingGauge({ value, threshold, size = 132, label, sublabel }: { v
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}
-          initial={{ strokeDashoffset: c }}
+          initial={entrance === "fade" ? false : { strokeDashoffset: c }}
           animate={{ strokeDashoffset: c * (1 - value) }}
           transition={{ type: "spring", stiffness: 60, damping: 18, mass: 1 }}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
         {threshold !== undefined ? <circle cx={tx} cy={ty} r={3} fill="#f5f5f5" stroke="#080808" strokeWidth={2} /> : null}
-      </svg>
+      </motion.svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
         <span className="font-metric text-[1.75rem] text-ink">{(value * 100).toFixed(1)}%</span>
         {sublabel ? <span className="mt-1 text-[11px] text-ink-3">{sublabel}</span> : null}

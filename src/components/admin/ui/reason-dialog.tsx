@@ -20,6 +20,7 @@ export function ReasonDialog({
   confirmLabel,
   destructive = false,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -28,6 +29,8 @@ export function ReasonDialog({
   confirmLabel: string
   destructive?: boolean
   onConfirm: (reason: string) => void | Promise<void>
+  /** Where focus goes when the dialog closes, for when the control that opened it is gone (call preventDefault to take over). */
+  onCloseAutoFocus?: (e: Event) => void
 }) {
   const [reason, setReason] = useState("")
   const [touched, setTouched] = useState(false)
@@ -51,7 +54,7 @@ export function ReasonDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !pending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[440px]" onCloseAutoFocus={onCloseAutoFocus}>
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle className="font-label text-base">{title}</DialogTitle>

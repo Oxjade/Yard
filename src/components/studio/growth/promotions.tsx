@@ -100,7 +100,7 @@ function PromotionsView({ now }: { now: number }) {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Campaigns"
+        title="Promotions"
         description="Promotions for your shop: discount codes shoppers type at checkout, and sales that apply on their own. You fund the discount; it comes off the price the customer pays."
         actions={
           <Button variant="primary" size="sm" onClick={() => setEditing("new")}>
