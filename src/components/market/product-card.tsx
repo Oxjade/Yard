@@ -80,9 +80,12 @@ export function ProductCard({
           {isFeature ? <span className="scrim-b absolute inset-0" aria-hidden /> : null}
         </Link>
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between p-3">
-          <div className="flex gap-1.5">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
+          {/* The paid-placement disclosure sits with the badges, where the quick-add capsule
+              (bottom right) can never cover it; on a narrow card it wraps under the badge. */}
+          <div className="flex min-w-0 flex-wrap gap-1.5">
             {soldOut ? <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span> : badge ? <ProductBadge kind={badge} /> : null}
+            {sponsored ? <SponsoredTag /> : null}
           </div>
           <div className="pointer-events-auto">
             <WishlistButton productId={product.id} name={product.name} />
@@ -91,7 +94,6 @@ export function ProductCard({
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-3 p-3">
           <div className="min-w-0">
-            {sponsored ? <SponsoredTag className="mb-2" /> : null}
             {isFeature ? (
               <div className="pointer-events-auto max-w-[90%]">
                 <p className="text-sm text-ink-2">{brand.name}</p>
@@ -103,7 +105,11 @@ export function ProductCard({
             ) : null}
           </div>
           {variant !== "compact" ? (
-            <div className="pointer-events-auto translate-y-1 opacity-100 transition-[opacity,transform] duration-300 ease-out-quint md:opacity-0 md:group-hover/card:translate-y-0 md:group-hover/card:opacity-100 md:group-focus-within/card:translate-y-0 md:group-focus-within/card:opacity-100">
+            // The "+" keeps a fixed 40px slot: quick add widens into its capsule over the
+            // photograph, so nothing beside or below it ever moves. On wider screens with a mouse
+            // it rises in on hover or focus (and stays while its picker is open or it confirms an
+            // add); on phones and touch screens it is always there.
+            <div className="pointer-events-auto relative size-10 shrink-0 transition-[opacity,transform] duration-300 ease-out-quint md:pointer-fine:translate-y-1 md:pointer-fine:opacity-0 md:pointer-fine:group-hover/card:translate-y-0 md:pointer-fine:group-hover/card:opacity-100 md:pointer-fine:group-focus-within/card:translate-y-0 md:pointer-fine:group-focus-within/card:opacity-100 md:pointer-fine:has-data-expanded:translate-y-0 md:pointer-fine:has-data-expanded:opacity-100">
               <QuickAdd product={product} addBlocked={addBlocked} />
             </div>
           ) : null}
