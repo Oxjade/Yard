@@ -2,7 +2,7 @@
 
 import { useId, useMemo } from "react"
 import { ClockIcon, HourglassIcon, IdentificationCardIcon, ShieldWarningIcon, EyeIcon } from "@phosphor-icons/react"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
@@ -44,7 +44,9 @@ export function BrandsView() {
   const reviewing = reviewId ? applications.find((a) => a.id === reviewId) : undefined
   // A link to a record shows the tab it's in; otherwise the tab in the URL, else the queue.
   const tab: BrandReviewStatus = isTab(linkedTab) ? linkedTab : reviewing && !linkedTab ? reviewing.status : "pending_review"
-  const { ask, dialog } = useDecision(() => document.getElementById(segmentedTabId(qid, tab)))
+  // When the control that asked has gone or turned disabled: back to the selection bar while rows
+  // stay selected (a search hid some of them), else the status tab.
+  const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, tab)))
 
   const counts = useMemo(() => {
     const c: Record<BrandReviewStatus, number> = { pending_review: 0, verified: 0, restricted: 0, suspended: 0 }
@@ -76,9 +78,11 @@ export function BrandsView() {
   const risky = applications.filter((a) => a.risk === "high" && a.status !== "suspended")
 
   const open = (a: BrandApplication) => writeParams({ review: a.id })
+  // What `ask` returns goes back to the bulk bar, so a cancelled decision keeps the selection
+  // and the rows leave it only once the decision is made.
   const decide = (key: BrandActionKey, list: BrandApplication[], announce = true) => {
     const d = brandDecision(key, list, { announce })
-    if (d) ask(d)
+    return d ? ask(d) : false
   }
 
   const columns: Column<BrandApplication>[] = [

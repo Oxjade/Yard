@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useInView } from "motion/react"
 import { BrandCard } from "@/components/market/brand-card"
-import { BrandSearch } from "./brand-search"
+import { CatalogSearch } from "@/components/market/catalog/catalog-search"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { PhoneSheet } from "@/components/market/catalog/phone-sheet"
 import { Button } from "@/components/ui/button"
@@ -233,7 +233,9 @@ function DirectoryView({ filters, onChange, children }: { filters: BrandFilters;
   const results = useMemo(() => resultsFor(filters), [filters])
 
   const set = (next: Partial<BrandFilters>) => onChange?.({ ...filters, ...next })
-  // BrandSearch settles typing for a moment before it commits, so the URL isn't rewritten per keystroke.
+  // The search field settles typing for a moment before it commits, so the URL isn't rewritten per keystroke.
+  // Brands match on name, city, tagline and description; without catalogue state it offers no
+  // completions (they count pieces, which wouldn't fit a list of brands).
   const commitQuery = useCallback((q: string) => onChange?.({ ...filters, q }), [filters, onChange])
   const clear = () => onChange?.(emptyFilters)
 
@@ -266,7 +268,7 @@ function DirectoryView({ filters, onChange, children }: { filters: BrandFilters;
       {/* Toolbar */}
       <div className="mt-10 grid gap-4 md:mt-12">
         <div className="flex items-center gap-3">
-          <BrandSearch value={filters.q} onCommit={commitQuery} className="min-w-0 flex-1 lg:max-w-md" />
+          <CatalogSearch value={filters.q} onCommit={commitQuery} label="Search brands" placeholder="Search brands or cities" className="min-w-0 flex-1 lg:max-w-md" />
           <div className="ml-auto hidden items-center gap-3 lg:flex">
             <CountrySelect value={filters.country} onChange={(v) => set({ country: v })} />
             <SortSelect value={sort} narrowing={narrowing} onChange={setSort} />

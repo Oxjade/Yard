@@ -111,7 +111,8 @@ export function AdminNotificationsView() {
             panelId={`${tid}-panel`}
             options={[
               { value: "all", label: "All" },
-              { value: "unread", label: "Unread", count: unread.length },
+              // Unread is a plain total, not work waiting on a person: grey, not the attention acid.
+              { value: "unread", label: "Unread", count: unread.length, countTone: "neutral" },
             ]}
           />
           <DropdownMenu>

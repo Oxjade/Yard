@@ -3,7 +3,6 @@
 import { useEffect, useSyncExternalStore } from "react"
 import { create } from "zustand"
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware"
-import type { Campaign } from "@/lib/data/ads"
 import { STUDIO_BRAND_ID } from "@/lib/data/brands"
 import { useStudio } from "@/lib/stores/studio"
 
@@ -198,29 +197,3 @@ export function useGrowthReady() {
   }, [])
   return studio && growth
 }
-
-/* ---------- Campaign review (Studio ⇄ Admin) ---------- */
-
-/*
- * In this build Studio and the Admin Control Center keep separate copies of a campaign (in the
- * backend phase: one row). The stores keep them in step inside their actions: the Studio store's
- * upsertCampaign puts a submission in the admin review queue and takes a withdrawn one out, and
- * the Admin store's reviewCampaign brings its decision back to the Studio copy. Copies saved
- * before that are brought in step once, by the stores' persist migrations.
- *
- * The helpers below no longer write to either store. They stay only so their remaining callers
- * keep compiling, and can be deleted together with those calls.
- */
-
-/** @deprecated upsertCampaign sends a submission to review. Does nothing. */
-export function sendCampaignToReview(c: Campaign) {
-  void c
-}
-
-/** @deprecated upsertCampaign withdraws a campaign from review. Does nothing. */
-export function withdrawCampaignFromReview(id: string) {
-  void id
-}
-
-/** @deprecated The Admin store's reviewCampaign updates the Studio copy. Does nothing. */
-export function useCampaignReviewSync() {}

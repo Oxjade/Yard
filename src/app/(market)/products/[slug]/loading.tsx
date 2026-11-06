@@ -6,8 +6,7 @@ import { cn } from "@/lib/utils"
  *
  * The product page's own layout in bones: same container, breadcrumb row, the gallery with its
  * thumbnail strip (edge to edge on phones) and the buy box in the same columns and gaps as
- * ProductView, so nothing moves when the page lands. (The shared ProductDetailSkeleton uses a
- * generic 1.2fr/1fr grid without the strip, which would shift on arrival.)
+ * ProductView, so nothing moves when the page lands.
  */
 export default function Loading() {
   return (

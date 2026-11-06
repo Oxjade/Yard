@@ -9,6 +9,11 @@ type Options<R> = {
   successDescription?: string | ((result: R) => string | undefined)
   /** Message shown when the operation throws. Never shows raw error text. */
   error?: string
+  /**
+   * Toast the failure (the default). Pass false when the control shows `error` inline next to
+   * itself (a dialog's own message), so the failure isn't announced twice.
+   */
+  errorToast?: boolean
   /** How long the button's success check stays visible. */
   successFlashMs?: number
   onSuccess?: (result: R) => void
@@ -57,7 +62,7 @@ export function useAsyncAction<A extends unknown[], R>(fn: (...args: A) => R | P
       } catch (e) {
         const message = optsRef.current.error ?? "That didn't go through. Check your connection and try again."
         setError(message)
-        toast.error(message)
+        if (optsRef.current.errorToast !== false) toast.error(message)
         optsRef.current.onError?.(e)
         return undefined
       } finally {

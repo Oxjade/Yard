@@ -28,7 +28,7 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { ChipToggle, ChoiceCard, ChoiceGroup, ChoiceTick, control, Field, inputClass, NumberStepper, Panel, Segmented, WizardSkeleton } from "./form"
 import { PlacementPreview, resolveTarget } from "./placement-preview"
-import { sendCampaignToReview, useGrowth, useGrowthReady } from "./store"
+import { useGrowth, useGrowthReady } from "./store"
 import { addDays, adVatRate, brandZone, campaignCost, daysBetween, formatDate, impressionEstimate, needsCategory, placementMeta, studioDropStatus, targetKindLabel, localId, todayIn, typeTargets, usdAndLocal, usdAndLocalText, utcToZoned, type TargetKind } from "./utils"
 
 const STEPS = [
@@ -348,8 +348,8 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
   function submit() {
     if (leaving) return
     const c = build("in_review")
+    // The store also puts it in the platform's review queue.
     upsertCampaign(c)
-    sendCampaignToReview(c)
     savedRef.current = true
     setLeaving(true)
     toast.success("Submitted for review", { description: "It's in the platform's review queue. Its status here changes when the team decides." })

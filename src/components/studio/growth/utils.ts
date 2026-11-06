@@ -4,6 +4,7 @@ import { productById } from "@/lib/data/products"
 import { randInt } from "@/lib/data/seed"
 import { dropPhaseAt, initialDropPhase } from "@/lib/drops"
 import { convert, formatMoney } from "@/lib/money"
+import { countryTimeZone } from "@/lib/data/zones"
 import type { Brand, Drop, DropPhase } from "@/lib/data/types"
 import type { DropMeta, Promotion } from "./store"
 
@@ -17,20 +18,27 @@ export function localId(prefix: "d_local_" | "cmp_local_" | "promo_") {
 
 /* ---------- Time zones ---------- */
 
-/** Each market's main time zone, with a stable abbreviation for zones Intl only names as "GMT+n". */
-export const countryZone: Record<CountryCode, { tz: string; city: string; abbr?: string }> = {
-  NG: { tz: "Africa/Lagos", city: "Lagos", abbr: "WAT" },
-  GH: { tz: "Africa/Accra", city: "Accra", abbr: "GMT" },
-  KE: { tz: "Africa/Nairobi", city: "Nairobi", abbr: "EAT" },
-  ZA: { tz: "Africa/Johannesburg", city: "Johannesburg", abbr: "SAST" },
-  GB: { tz: "Europe/London", city: "London" },
-  FR: { tz: "Europe/Paris", city: "Paris" },
-  DE: { tz: "Europe/Berlin", city: "Berlin" },
-  US: { tz: "America/New_York", city: "New York" },
-  MX: { tz: "America/Mexico_City", city: "Mexico City", abbr: "CST" },
-  JP: { tz: "Asia/Tokyo", city: "Tokyo", abbr: "JST" },
-  KR: { tz: "Asia/Seoul", city: "Seoul", abbr: "KST" },
+type CountryZone = { tz: string; city: string; abbr?: string }
+
+/** The city each market's zone is named after, with a stable abbreviation for zones Intl only names as "GMT+n". */
+const zoneNames: Record<CountryCode, Omit<CountryZone, "tz">> = {
+  NG: { city: "Lagos", abbr: "WAT" },
+  GH: { city: "Accra", abbr: "GMT" },
+  KE: { city: "Nairobi", abbr: "EAT" },
+  ZA: { city: "Johannesburg", abbr: "SAST" },
+  GB: { city: "London" },
+  FR: { city: "Paris" },
+  DE: { city: "Berlin" },
+  US: { city: "New York" },
+  MX: { city: "Mexico City", abbr: "CST" },
+  JP: { city: "Tokyo", abbr: "JST" },
+  KR: { city: "Seoul", abbr: "KST" },
 }
+
+/** Each market's main time zone (from the shared table in lib/data/zones), with its city and abbreviation. */
+export const countryZone = Object.fromEntries(
+  (Object.keys(zoneNames) as CountryCode[]).map((code) => [code, { tz: countryTimeZone[code], ...zoneNames[code] }]),
+) as Record<CountryCode, CountryZone>
 
 export function brandZone(brand: Pick<Brand, "country">) {
   return countryZone[brand.country]

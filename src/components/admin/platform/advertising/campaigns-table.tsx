@@ -8,9 +8,10 @@ import { DataTable, type Column, type RowAction } from "@/components/dashboard/d
 import { Filters } from "@/components/admin/marketplace/filters"
 import { campaignStatusMeta, StatusBadge } from "@/components/dashboard/status-badge"
 import { brandById } from "@/lib/data"
-import { campaignTypes, type Campaign, type CampaignStatus } from "@/lib/data/ads"
+import { campaignDates, campaignTypes, type Campaign, type CampaignStatus } from "@/lib/data/ads"
+import { useNow } from "@/hooks/use-now"
 import { formatPercent } from "@/lib/money"
-import { campaignWindow, formatRange, int, usd } from "../format"
+import { formatRange, int, usd } from "../format"
 import { resolveCreative } from "./creative"
 import { useRequested } from "./decisions"
 import { placementRules } from "./placements"
@@ -23,6 +24,10 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
   const router = useRouter()
   const [status, setStatus] = useState<string>(ALL)
   const requested = useRequested(campaigns)
+  // Dates are the brand's calendar days from today, the same ones Studio, the review queue and
+  // the merchant's notification give. The rows render once the store and the clock are known.
+  const now = useNow(60_000)
+  const shown = ready && now !== null
 
   const sorted = useMemo(() => [...campaigns].sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || a.startDaysFromToday - b.startDaysFromToday), [campaigns])
   const rows = useMemo(() => (status === ALL ? sorted : sorted.filter((c) => c.status === status)), [sorted, status])
@@ -92,10 +97,11 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
       key: "dates",
       header: "Dates",
       hideBelow: "md",
-      sortValue: (c) => c.startDaysFromToday,
+      // By the start date shown, so brands in different time zones sort by the day they read.
+      sortValue: (c) => campaignDates(c, now ?? 0).start,
       cell: (c) => {
-        const w = campaignWindow(c.startDaysFromToday, c.days)
-        return <span className="whitespace-nowrap text-ink-2 tabular">{formatRange(w.start, w.end)}</span>
+        const w = campaignDates(c, now ?? 0)
+        return <span className="whitespace-nowrap text-ink-2 tabular">{formatRange(`${w.start}T12:00:00Z`, `${w.end}T12:00:00Z`)}</span>
       },
     },
     { key: "budget", header: "Budget", align: "right", hideBelow: "sm", sortValue: (c) => c.budget, cell: (c) => <span className="text-ink">{usd(c.budget)}</span> },
@@ -132,8 +138,8 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
   return (
     <DataTable
       label="All campaigns"
-      rows={ready ? rows : []}
-      loading={!ready}
+      rows={shown ? rows : []}
+      loading={!shown}
       columns={columns}
       getId={(c) => c.id}
       rowActions={rowActions}

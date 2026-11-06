@@ -22,14 +22,13 @@ import { cn } from "@/lib/utils"
 import { campaignDates, roasText } from "./advertising-index"
 import { EditorSkeleton, Panel } from "./form"
 import { PlacementPreview, resolveTarget } from "./placement-preview"
-import { useCampaignReviewSync, useGrowthReady, withdrawCampaignFromReview } from "./store"
+import { useGrowthReady } from "./store"
 import { addDays, brandZone, campaignMetrics, campaignPriceUsd, campaignSpends, countryName, formatDate, placementMeta, todayIn, usdAndLocalText } from "./utils"
 
 export function CampaignResults({ id }: { id: string }) {
   const ready = useGrowthReady()
   const now = useNow(60_000)
   const campaign = useStudio((s) => s.campaigns.find((c) => c.id === id))
-  useCampaignReviewSync()
   if (!ready || now === null) return <EditorSkeleton />
   if (!campaign) {
     return (
@@ -78,10 +77,10 @@ function Results({ c, now }: { c: Campaign; now: number }) {
   const price = usdAndLocalText(campaignPriceUsd(c), cur)
   const perDay = usdAndLocalText(Math.round(campaignPriceUsd(c) / Math.max(1, c.days)), cur)
 
-  // The status badge and timeline change in place; that is the confirmation.
+  // The status badge and timeline change in place; that is the confirmation. The store takes it
+  // out of the admin review queue.
   function confirmWithdraw() {
     upsertCampaign({ ...c, status: "draft" })
-    withdrawCampaignFromReview(c.id)
     setWithdraw(false)
   }
 

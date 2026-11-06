@@ -82,7 +82,8 @@ export function ReasonDialog({
   const [reason, setReason] = useState("")
   const [attempted, setAttempted] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
-  const action = useAsyncAction((r: string) => onConfirm(r), { error: FAILED, onSuccess: () => onOpenChange(false) })
+  // A failure shows only the dialog's own message, next to the reason (no toast as well).
+  const action = useAsyncAction((r: string) => onConfirm(r), { error: FAILED, errorToast: false, onSuccess: () => onOpenChange(false) })
   const { pending } = action
   const failed = !!action.error
 

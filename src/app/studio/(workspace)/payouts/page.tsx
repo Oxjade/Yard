@@ -234,7 +234,7 @@ export default function StudioPayoutsPage() {
             <div key={t.label} className={cn(surfaceClass, "flex min-w-0 flex-col p-4 md:p-5", t.primary && payoutTilePrimary)}>
               <h3 className="font-label flex min-w-0 items-center gap-1 text-[11px] tracking-[0.07em] text-ink-3 uppercase sm:tracking-[0.1em]">
                 <span className="truncate">{t.label}</span>
-                <InfoTip label={`About ${t.label.toLowerCase()}`} className="relative shrink-0 normal-case after:absolute after:-inset-2.5">{t.tip}</InfoTip>
+                <InfoTip label={`About ${t.label.toLowerCase()}`} className="shrink-0 normal-case">{t.tip}</InfoTip>
               </h3>
               <p className={cn("mt-4 truncate font-metric leading-none text-ink tabular", t.primary ? "text-[2.25rem] md:text-[2.5rem] xl:text-[3rem]" : "text-[1.75rem] md:text-[2rem]")}>{formatMoney(t.value, cur)}</p>
               {t.primary ? <p className="mt-auto hidden pt-4 text-xs text-ink-3 xl:block">{t.tip}</p> : null}

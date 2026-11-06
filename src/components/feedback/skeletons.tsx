@@ -9,16 +9,28 @@ export function Bone({ className }: { className?: string }) {
   return <div className={cn("skeleton rounded-md", className)} aria-hidden />
 }
 
-export function ProductCardSkeleton({ ratio = "aspect-[4/5]" }: { ratio?: string }) {
+/**
+ * A ProductCard while it loads, with the card's text rhythm: the gap under the photo (21px
+ * below lg, where the brand line's tap area needs it; 12px from lg, 8px for `compact`), a
+ * 16px brand line and a 20px name line, and the 20px price under them on phones and beside
+ * them from sm. Each bone sits inside a box the height of the line it stands for.
+ */
+export function ProductCardSkeleton({ ratio = "aspect-[4/5]", compact = false }: { ratio?: string; compact?: boolean }) {
   return (
     <div aria-hidden>
       <Bone className={cn("w-full rounded-lg", ratio)} />
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <Bone className="h-3 w-1/3" />
-          <Bone className="mt-2 h-4 w-2/3" />
+      <div className={cn("flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3", compact ? "mt-[21px] lg:mt-2" : "mt-[21px] lg:mt-3")}>
+        <div className="min-w-0 flex-1">
+          <div className="flex h-4 items-center">
+            <Bone className="h-3 w-1/3" />
+          </div>
+          <div className="mt-1 flex h-5 items-center lg:mt-0.5">
+            <Bone className="h-4 w-2/3" />
+          </div>
         </div>
-        <Bone className="mt-[1.125rem] h-4 w-14" />
+        <div className="flex h-5 shrink-0 items-center sm:mt-5 lg:mt-[1.125rem]">
+          <Bone className="h-4 w-14" />
+        </div>
       </div>
     </div>
   )

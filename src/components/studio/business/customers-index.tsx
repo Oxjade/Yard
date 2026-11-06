@@ -176,7 +176,7 @@ export function CustomersIndex() {
                 <PhoneSort value={sort} onChange={setSort} options={sortOptions} />
                 <p className="flex items-center gap-1 text-xs text-ink-3 sm:ml-auto">
                   How segments work
-                  <InfoTip label="How segments work" side="left" className="relative after:absolute after:-inset-2.5">Orders are the ones that went through; cancelled orders don&apos;t count. New: fewer than two orders with you. Repeat: two or more. VIP: {formatMoney(vipThreshold(cur), cur)} or more spent with you, refunds excluded.</InfoTip>
+                  <InfoTip label="How segments work">Orders are the ones that went through; cancelled orders don&apos;t count. New: fewer than two orders with you. Repeat: two or more. VIP: {formatMoney(vipThreshold(cur), cur)} or more spent with you, refunds excluded.</InfoTip>
                 </p>
                 </>
               }

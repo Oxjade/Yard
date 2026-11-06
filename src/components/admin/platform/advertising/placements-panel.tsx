@@ -3,10 +3,11 @@
 import { useMemo } from "react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { brandById, categoryBySlug } from "@/lib/data"
-import { campaignTypes, type Campaign, type Placement } from "@/lib/data/ads"
+import { campaignDates, campaignTypes, type Campaign, type Placement } from "@/lib/data/ads"
 import type { CategorySlug } from "@/lib/data/types"
+import { useNow } from "@/hooks/use-now"
 import { useAdmin } from "@/lib/stores/admin"
-import { campaignWindow, formatDay, usd } from "../format"
+import { formatDay, usd } from "../format"
 import { SlotDiagram } from "./creative-preview"
 import { placementOrder, placementRules, typesFor } from "./placements"
 
@@ -23,6 +24,9 @@ function filledPerView(p: Placement, live: Campaign[]) {
 /** Every sponsored placement, its slot rules, what it sells for and who occupies it now. */
 export function PlacementsPanel({ campaigns }: { campaigns: Campaign[] }) {
   const pricing = useAdmin((s) => s.pricing)
+  // End dates are the brand's calendar days, as Studio and the campaigns table give them; known
+  // on the client only, so a placeholder of the same size stands in until then.
+  const now = useNow(60_000)
 
   const rows = useMemo(
     () =>
@@ -87,12 +91,12 @@ export function PlacementsPanel({ campaigns }: { campaigns: Campaign[] }) {
               {live.length ? (
                 <ul className="mt-1 admin-divide">
                   {live.map((c) => {
-                    const w = campaignWindow(c.startDaysFromToday, c.days)
+                    const end = now !== null ? campaignDates(c, now).end : null
                     return (
                       <li key={c.id} className="py-2">
                         <p className="truncate text-[13px] text-ink">{c.name}</p>
                         <p className="truncate text-[11px] text-ink-3">
-                          {brandById.get(c.brandId)?.name}, until {formatDay(w.end)}
+                          {brandById.get(c.brandId)?.name}, until {end ? formatDay(`${end}T12:00:00Z`) : <span aria-hidden className="skeleton inline-block h-2.5 w-11 rounded-sm align-middle" />}
                         </p>
                       </li>
                     )

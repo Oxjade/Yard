@@ -28,6 +28,9 @@ export function isActive(pathname: string, href: string) {
 }
 
 /** A floating group's backdrop, shown once the page has scrolled (see MarketHeader). */
+/** "Bag, 1 item", "Bag, 3 items": the bag button's accessible name. */
+const bagLabel = (count: number) => `Bag, ${count} ${count === 1 ? "item" : "items"}`
+
 function Backdrop({ shown }: { shown: boolean }) {
   return (
     <span
@@ -120,7 +123,7 @@ export function MarketHeader() {
             </Link>
             {hydrated && user ? <NotificationBell audience="customer" className={floatIcon} /> : null}
             <div className="relative">
-              <button type="button" onClick={openBag} aria-label={`Bag, ${hydrated ? count : 0} items`} className={floatIcon}>
+              <button type="button" onClick={openBag} aria-label={bagLabel(hydrated ? count : 0)} className={floatIcon}>
                 <motion.span key={`pulse-${pulse}`} initial={pulse ? { scale: 1.22, rotate: -10 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 520, damping: 16 }} className="inline-flex">
                   <ShoppingBagOpenIcon className="size-[21px]" />
                 </motion.span>

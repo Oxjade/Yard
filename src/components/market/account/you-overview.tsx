@@ -230,7 +230,7 @@ export function YouOverview() {
                                 {o.lines.length > 1 ? ` and ${o.lines.length - 1} more` : ""}
                               </span>
                             </span>
-                            <OrderStatusBadge status={o.status} />
+                            <OrderStatusBadge order={o} />
                           </Link>
                         </li>
                       ))}

@@ -63,27 +63,9 @@ export function BagView() {
     io.observe(el)
     return () => io.disconnect()
   }, [hasLines])
-  // Removing a line (its ×, or − at quantity 1) unmounts it. Focus moves to the next line's
-  // remove button (or the one before), or to the empty state once the bag is empty, so
-  // keyboard users keep their place. The capture runs before the line's own click handler,
-  // the bubble after it, so the cart can be compared across the click.
+  // Removing a line moves focus to the next line (BagGroups handles that); removing the last
+  // one moves it to the empty state's title, so keyboard users keep their place.
   const emptyTitle = useRef<HTMLParagraphElement>(null)
-  const removal = useRef<{ count: number; next: HTMLElement | null } | null>(null)
-  function onLinesClickCapture(e: React.MouseEvent<HTMLDivElement>) {
-    removal.current = null
-    const li = (e.target as HTMLElement).closest("button")?.closest("li")
-    if (!li) return
-    const rows = [...e.currentTarget.querySelectorAll("li")]
-    const i = rows.indexOf(li)
-    const next = (rows[i + 1] ?? rows[i - 1])?.querySelector<HTMLElement>('button[aria-label^="Remove "]') ?? null
-    removal.current = { count: useCart.getState().lines.length, next }
-  }
-  function onLinesClick() {
-    const r = removal.current
-    removal.current = null
-    if (!r || useCart.getState().lines.length >= r.count) return
-    window.requestAnimationFrame(() => (r.next?.isConnected ? r.next : emptyTitle.current)?.focus())
-  }
 
   const returns = bag.groups.map((g) => g.brand.returnsDays)
   const [minReturns, maxReturns] = [Math.min(...returns), Math.max(...returns)]
@@ -122,9 +104,7 @@ export function BagView() {
             <Notice icon={Package} className="mb-4">
               One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.
             </Notice>
-            <div onClickCapture={onLinesClickCapture} onClick={onLinesClick}>
-              <BagGroups groups={bag.groups} currency={currency} />
-            </div>
+            <BagGroups groups={bag.groups} currency={currency} focusWhenEmpty={emptyTitle} />
           </div>
 
           <aside ref={summaryRef} aria-labelledby="bag-summary-title" className="rounded-lg border border-line-soft bg-card p-5 md:p-6 lg:sticky lg:top-28">

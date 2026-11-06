@@ -205,7 +205,7 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
               <p className="truncate text-xs text-ink-2 tabular">Order {order.reference}</p>
             </div>
           </Link>
-          <OrderStatusBadge status={order.status} className="shrink-0" />
+          <OrderStatusBadge order={order} className="shrink-0" />
         </div>
         <p className="mt-2.5 text-xs leading-relaxed text-ink-2">{orderStatusNote(order)}</p>
       </header>

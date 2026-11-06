@@ -58,7 +58,11 @@ export const usd = (cents: number) => formatMoney(Math.round(cents), "USD")
 export const usdCompact = (cents: number) => formatMoney(Math.round(cents), "USD", { compact: true })
 export const int = (n: number) => formatNumber(Math.round(n))
 
-/** A campaign's start and end as ISO dates, from its offset to the demo's reference day. */
+/**
+ * A campaign's start and end as ISO dates, from its offset to the demo's reference day. Only for
+ * comparing bookings with each other (slot clashes); the dates a person reads come from
+ * campaignDates in @/lib/data/ads, the brand's calendar days that Studio and notifications use.
+ */
 export function campaignWindow(startDaysFromToday: number, days: number) {
   return { start: daysAgo(-startDaysFromToday), end: daysAgo(-(startDaysFromToday + days - 1)) }
 }

@@ -2,7 +2,7 @@
 
 import { useId, useMemo } from "react"
 import { EyeIcon, FlagIcon, GavelIcon, ShieldWarningIcon, SealWarningIcon } from "@phosphor-icons/react"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
@@ -44,7 +44,9 @@ export function ModerationView() {
   const caseId = useSearchParam("case")
   const viewing = caseId ? moderation.find((m) => m.id === caseId) : undefined
   const tab: Tab = isTab(linkedTab) ? linkedTab : viewing && !linkedTab ? viewing.status : "open"
-  const { ask, dialog } = useDecision(() => document.getElementById(segmentedTabId(qid, tab)))
+  // When the control that asked has gone or turned disabled: back to the selection bar while rows
+  // stay selected (a search hid some of them), else the status tab.
+  const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, tab)))
 
   const counts = useMemo(() => {
     const c: Record<Status, number> = { open: 0, escalated: 0, removed: 0, dismissed: 0 }
@@ -71,9 +73,11 @@ export function ModerationView() {
   // in either tab), not to the Open tab alone.
   const ipOldest = ipCases.filter((m) => m.status === "open" || m.status === "escalated").sort((a, b) => a.reportedAt.localeCompare(b.reportedAt))[0]
   const openCase = (m: ModerationItem) => writeParams({ case: m.id })
+  // What `ask` returns goes back to the bulk bar, so a cancelled decision keeps the selection
+  // and the rows leave it only once the decision is made.
   const decide = (key: ModActionKey, list: ModerationItem[], announce = true) => {
     const d = modDecision(key, list, { announce })
-    if (d) ask(d)
+    return d ? ask(d) : false
   }
 
   const columns: Column<ModerationItem>[] = [

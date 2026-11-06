@@ -21,7 +21,7 @@ import { StatusTabs } from "@/components/studio/catalog/status-tabs"
 import { phoneCellWide, useFocusReturn } from "@/components/studio/business/shared"
 import { advertisingDescription } from "./copy"
 import { ListSkeleton } from "./form"
-import { useCampaignReviewSync, useGrowthReady, withdrawCampaignFromReview } from "./store"
+import { useGrowthReady } from "./store"
 import { addDays, brandZone, campaignMetrics, campaignPriceUsd, campaignSpends, formatDate, todayIn, usdAndLocal, usdAndLocalText } from "./utils"
 
 type Tab = "current" | "past"
@@ -37,7 +37,6 @@ const lockedReason: Partial<Record<Campaign["status"], string>> = {
 export function AdvertisingIndex() {
   const ready = useGrowthReady()
   const now = useNow(60_000)
-  useCampaignReviewSync()
   if (!ready || now === null) return <ListSkeleton title="Advertising" description={advertisingDescription} tiles={5} tabs={2} />
   return <AdvertisingView now={now} />
 }
@@ -73,10 +72,8 @@ function AdvertisingView({ now }: { now: number }) {
 
   function withdrawAndEdit(c: Campaign) {
     const now = useStudio.getState().campaigns.find((x) => x.id === c.id)
-    if (now?.status === "in_review") {
-      upsertCampaign({ ...now, status: "draft" })
-      withdrawCampaignFromReview(c.id)
-    }
+    // The store takes it out of the admin review queue as it goes back to drafts.
+    if (now?.status === "in_review") upsertCampaign({ ...now, status: "draft" })
     setWithdrawing(null)
     router.push(`/studio/advertising/${c.id}/edit`)
   }

@@ -1,5 +1,6 @@
 "use client"
 
+import { useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/react"
@@ -32,6 +33,8 @@ export function BagDrawer() {
   const bag = priceCart(lines, shipTo, currency)
   const close = () => setOpen(false)
   const focus = useFocusReturn(bagButton)
+  // Removing the last line moves focus to the empty state's title (see BagGroups).
+  const emptyTitle = useRef<HTMLParagraphElement>(null)
 
   function checkout() {
     const go = () => {
@@ -80,7 +83,9 @@ export function BagDrawer() {
                       <ShoppingBag className="size-6 text-ink-2" />
                     </span>
                     <div>
-                      <p className="text-base text-ink">Your bag is empty</p>
+                      <p ref={emptyTitle} tabIndex={-1} className="text-base text-ink outline-none">
+                        Your bag is empty
+                      </p>
                       <p className="mt-1 text-sm text-ink-2">Add pieces from any brand and they check out together, one order per brand.</p>
                     </div>
                     <Button asChild variant="primary" onClick={close}>
@@ -95,7 +100,7 @@ export function BagDrawer() {
                           {bag.groups.length} brands, one checkout. Each brand ships its own order.
                         </p>
                       ) : null}
-                      <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} />
+                      <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
                     </div>
                     <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
                       <dl className="space-y-1.5 text-sm">

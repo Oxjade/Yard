@@ -2,10 +2,13 @@
 
 import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
 import type { BrandApplication, Refund } from "@/lib/data/admin"
+import { customerOrders, merchantOrders, sampleReturnRequest } from "@/lib/data/orders"
 import { formatMoney } from "@/lib/money"
+import { returnRefund } from "@/lib/payouts"
 import { useAdmin } from "@/lib/stores/admin"
 import { useNotifications } from "@/lib/stores/notifications"
 import { useOrders } from "@/lib/stores/orders"
+import { useStudio } from "@/lib/stores/studio"
 
 /*
  * Notifications for the other audiences when a Control Center decision here is about them.
@@ -78,43 +81,41 @@ export function notifyListingDecision(brand: { id?: string; name: string }, titl
   useNotifications.getState().push({ eventKey: `m:listing:${title}:${lastAuditId()}`, audience: "merchant", category: "product_report", ...copy, href: "/studio/products", at: new Date().toISOString() })
 }
 
-/**
- * A Finance decision on a refund. The shopper hears about it when the order is theirs (placed
- * in this browser), and the merchant when it is the Studio brand's. Approving records the
- * decision only: no payments provider is connected, so nothing says money has moved.
- */
 /** Who hears about a refund decision in this browser: the shopper when the order is theirs, the merchant when it's the Studio brand's. */
 export function refundAudience(r: Refund) {
   const orderId = r.id.replace(/^rf_/, "")
   return { shopper: useOrders.getState().orders.some((o) => o.id === orderId), merchant: r.brandName === studioBrandName() }
 }
 
+/**
+ * A Finance decision on a refund, for the one case the event layer can't see. When the order has
+ * a copy in this browser's stores (the shopper's own orders, the Studio brand's), setRefundStatus
+ * puts the decision on the order and src/lib/notification-events.ts tells the shopper and the
+ * brand from it, in the order's currency, under the same keys (so this never sends it twice).
+ * What's left is a Studio brand refund whose order the stores don't hold: the merchant hears in
+ * the event layer's words. A shopper can only be told about their own orders, which are always
+ * in the stores. Approving records the decision only: nothing says money has moved.
+ */
 export function notifyRefundDecision(r: Refund, status: "approved" | "declined", reason: string) {
-  const push = useNotifications.getState().push
+  if (r.brandName !== studioBrandName()) return
   const orderId = r.id.replace(/^rf_/, "")
-  const order = useOrders.getState().orders.find((o) => o.id === orderId)
-  const key = lastAuditId()
-  const amount = formatMoney(r.amountUsd, "USD", { showCents: true })
-  if (order) {
-    push({
-      eventKey: `c:refund-decision:${r.id}:${key}`,
-      audience: "customer",
-      category: "refund",
-      title: status === "approved" ? `Refund approved for #${r.reference}` : `Refund declined for #${r.reference}`,
-      body: status === "approved" ? `${amount} is approved. No payments provider is connected in this build, so nothing has been sent to your card yet.` : `NOCTURNE couldn't approve this refund: ${reason}`,
-      href: `/you/orders/${order.id}`,
-      at: new Date().toISOString(),
-    })
-  }
-  if (r.brandName === studioBrandName()) {
-    push({
-      eventKey: `m:refund-decision:${r.id}:${key}`,
-      audience: "merchant",
-      category: "refund_request",
-      title: status === "approved" ? `Refund approved on #${r.reference}` : `Refund declined on #${r.reference}`,
-      body: status === "approved" ? `${amount} approved by Finance. It's sent once the payments provider is connected; your share and the commission reverse then.` : `Finance declined it: ${reason}`,
-      href: `/studio/orders/${orderId}`,
-      at: new Date().toISOString(),
-    })
-  }
+  const held = (list: { id: string }[]) => list.some((o) => o.id === orderId)
+  if (held(useOrders.getState().orders) || held(useStudio.getState().orders)) return
+  // The sample order the refund was raised on gives the amount in the order's own currency.
+  const order = [...customerOrders, ...merchantOrders].find((o) => o.id === orderId)
+  const amount = order ? formatMoney(returnRefund(order, (order.returnRequest ?? sampleReturnRequest(order)).variantIds).amount, order.currency) : null
+  const why = reason.trim().replace(/\.$/, "")
+  useNotifications.getState().push({
+    eventKey: `m:refund-decision:${r.id}:${lastAuditId()}`,
+    audience: "merchant",
+    category: "refund_request",
+    title: status === "declined" ? `Return declined on #${r.reference}` : `Refund approved on #${r.reference}`,
+    body:
+      status === "declined"
+        ? `Finance declined the return${why ? `: ${why}` : ""}.`
+        : `Finance approved ${amount ?? "the refund"}. It's recorded and sent once a payment provider is connected; your share and the commission reverse then.`,
+    // The order isn't in Studio's store, so the link opens the orders list rather than a missing order.
+    href: "/studio/orders",
+    at: new Date().toISOString(),
+  })
 }
