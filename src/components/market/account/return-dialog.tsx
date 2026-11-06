@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { RotateCcw } from "lucide-react"
+import { ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"

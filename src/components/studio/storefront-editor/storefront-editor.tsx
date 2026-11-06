@@ -3,7 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { motion } from "motion/react"
-import { ArrowUpRight, Eye } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight, EyeIcon as Eye } from "@phosphor-icons/react"
 import { Tabs as TabsPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/dashboard/page-header"

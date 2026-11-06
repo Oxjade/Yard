@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { Loader2 } from "lucide-react"
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "./fields"
 

@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowUpRight, Plus } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight, PlusIcon as Plus } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { FollowButton } from "@/components/market/follow-button"
 import { Button } from "@/components/ui/button"

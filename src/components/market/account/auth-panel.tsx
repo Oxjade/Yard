@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { Bell, Heart, Package } from "lucide-react"
+import { BellIcon as Bell, HeartIcon as Heart, PackageIcon as Package } from "@phosphor-icons/react"
 import { AuthForm } from "@/components/market/auth-prompt"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSession } from "@/lib/stores/session"

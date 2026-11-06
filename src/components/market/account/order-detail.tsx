@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { ChevronLeft, ExternalLink, PackageSearch } from "lucide-react"
+import { CaretLeftIcon as ChevronLeft, ArrowSquareOutIcon as ExternalLink, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"

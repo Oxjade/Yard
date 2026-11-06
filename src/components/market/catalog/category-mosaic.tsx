@@ -1,6 +1,6 @@
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react/ssr"
 import { cn } from "@/lib/utils"
 import type { Category } from "@/lib/data/types"
 

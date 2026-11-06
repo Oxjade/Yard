@@ -1,7 +1,7 @@
 "use client"
 
 import { useId } from "react"
-import { Minus, Plus } from "lucide-react"
+import { MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"

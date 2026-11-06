@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Sparkles } from "lucide-react"
+import { SparkleIcon as Sparkles } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { DropCard } from "@/components/market/drop-card"
 import { ProductCard } from "@/components/market/product-card"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Copy, MoreHorizontal, Pause, Pencil, Play, Plus, Shuffle, Tags, Trash2 } from "lucide-react"
+import { CopyIcon as Copy, DotsThreeIcon as MoreHorizontal, PauseIcon as Pause, PencilSimpleIcon as Pencil, PlayIcon as Play, PlusIcon as Plus, ShuffleIcon as Shuffle, TagIcon as Tags, TrashIcon as Trash2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"

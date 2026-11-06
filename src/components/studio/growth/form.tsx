@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useId } from "react"
 import { motion } from "motion/react"
-import { Check, Minus, Plus } from "lucide-react"
+import { CheckIcon as Check, MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"

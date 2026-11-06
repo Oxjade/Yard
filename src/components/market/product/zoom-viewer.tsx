@@ -2,7 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import Image from "next/image"
-import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react"
+import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, MinusIcon as Minus, PlusIcon as Plus, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, type PanInfo } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"

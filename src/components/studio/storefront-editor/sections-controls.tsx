@@ -3,20 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import { AnimatePresence, Reorder, motion, useDragControls } from "motion/react"
-import {
-  ArrowDown,
-  ArrowUp,
-  BookOpen,
-  CalendarClock,
-  GripVertical,
-  Images,
-  LayoutGrid,
-  Lock,
-  PanelTop,
-  ShoppingBag,
-  Star,
-  type LucideIcon,
-} from "lucide-react"
+import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, BookOpenIcon as BookOpen, CalendarDotsIcon as CalendarClock, DotsSixVerticalIcon as GripVertical, ImagesIcon as Images, SquaresFourIcon as LayoutGrid, LockIcon as Lock, BrowserIcon as PanelTop, ShoppingBagOpenIcon as ShoppingBag, StarIcon as Star, type Icon } from "@phosphor-icons/react"
 import { storefrontSections, storefrontTemplates } from "@/components/storefront/theme"
 import { Field, FieldMessage, control, inputClass } from "@/components/studio/catalog/fields"
 import { Button } from "@/components/ui/button"
@@ -31,7 +18,7 @@ import { COLLECTIONS_MAX, FEATURED_MAX, HEADING_MAX, autoFeaturedCount, type Edi
 import type { Update } from "./content-controls"
 import { ControlGroup } from "./parts"
 
-const icons: Record<StorefrontSectionType, LucideIcon> = {
+const icons: Record<StorefrontSectionType, Icon> = {
   hero: PanelTop,
   "featured-products": Star,
   collections: LayoutGrid,

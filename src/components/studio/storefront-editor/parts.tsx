@@ -1,6 +1,6 @@
 "use client"
 
-import { Monitor, Smartphone } from "lucide-react"
+import { MonitorIcon as Monitor, DeviceMobileIcon as Smartphone } from "@phosphor-icons/react"
 import { Segmented } from "@/components/studio/catalog/fields"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"

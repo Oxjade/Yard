@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { SearchX, SlidersHorizontal, X } from "lucide-react"
+import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useInView } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { BrandCard } from "@/components/market/brand-card"

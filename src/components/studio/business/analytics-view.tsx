@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { motion } from "motion/react"
-import { CalendarClock, ChevronRight, Eye, MapPin, Megaphone, PackageSearch } from "lucide-react"
+import { CalendarDotsIcon as CalendarClock, CaretRightIcon as ChevronRight, EyeIcon as Eye, MapPinIcon as MapPin, MegaphoneIcon as Megaphone, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { TimeSeriesChart } from "@/components/dashboard/chart-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"

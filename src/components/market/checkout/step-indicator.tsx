@@ -1,6 +1,6 @@
 "use client"
 
-import { Check } from "lucide-react"
+import { CheckIcon as Check } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { cn } from "@/lib/utils"
 

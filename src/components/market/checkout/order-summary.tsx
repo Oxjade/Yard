@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
-import { ChevronDown, ShoppingBag } from "lucide-react"
+import { CaretDownIcon as ChevronDown, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Price } from "@/components/market/price"

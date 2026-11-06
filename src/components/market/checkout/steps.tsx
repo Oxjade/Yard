@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { AnimatePresence, motion } from "motion/react"
-import { CreditCard, Hash, Landmark, ShieldCheck, Smartphone, Truck } from "lucide-react"
+import { CreditCardIcon as CreditCard, HashIcon as Hash, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck, DeviceMobileIcon as Smartphone, TruckIcon as Truck } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Price } from "@/components/market/price"
 import { Button } from "@/components/ui/button"

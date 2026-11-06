@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Package, RotateCcw, Truck } from "lucide-react"
+import { PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, TruckIcon as Truck } from "@phosphor-icons/react"
 import { countries, freeShippingThresholdUsd, shippingZone, type CountryCode } from "@/config/markets"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"

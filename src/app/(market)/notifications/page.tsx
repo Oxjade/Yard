@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell } from "lucide-react"
+import { BellIcon as Bell } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { NotificationsList } from "@/components/feedback/notifications-page"
 import { ListSkeleton } from "@/components/feedback/skeletons"

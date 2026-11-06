@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, History, PackageSearch, Search, SearchX, SlidersHorizontal, X } from "lucide-react"
+import { WarningIcon as AlertTriangle, ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, StackIcon as PackageSearch, MagnifyingGlassIcon as Search, MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { ListSkeleton, TableSkeleton } from "@/components/feedback/skeletons"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"

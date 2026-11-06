@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Ruler } from "lucide-react"
+import { RulerIcon as Ruler } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
-import { ChevronRight, Lock, Search, SearchX, Users, X } from "lucide-react"
+import { CaretRightIcon as ChevronRight, LockIcon as Lock, MagnifyingGlassIcon as Search, MagnifyingGlassMinusIcon as SearchX, UsersIcon as Users, XIcon as X } from "@phosphor-icons/react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"

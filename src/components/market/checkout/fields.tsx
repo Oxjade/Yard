@@ -1,6 +1,6 @@
 "use client"
 
-import { Info } from "lucide-react"
+import { InfoIcon as Info } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { Label } from "@/components/ui/label"

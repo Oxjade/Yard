@@ -4,7 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarX, Check, Dices, ImagePlus, Lock, Rocket, Users, Zap } from "lucide-react"
+import { CalendarXIcon as CalendarX, CheckIcon as Check, DiceFiveIcon as Dices, ImageSquareIcon as ImagePlus, LockIcon as Lock, RocketIcon as Rocket, UsersIcon as Users, LightningIcon as Zap } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -520,7 +520,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
             <span className="text-xs text-ink-3">As shoppers see it on Drops</span>
           </div>
           <div inert className="pointer-events-none select-none">
-            <DropCard drop={previewDrop} />
+            <DropCard drop={previewDrop} eager />
           </div>
           <dl className="grid gap-2 rounded-lg border border-line-soft bg-card p-4 text-xs">
             <SummaryRow label="Release" value={releaseUtc ? `${formatInZone(releaseUtc, tz)} ${zoneAbbr(tz, releaseUtc)}` : "Not set"} />

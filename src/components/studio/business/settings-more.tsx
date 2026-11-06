@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Percent, Trash2, UserPlus } from "lucide-react"
+import { PercentIcon as Percent, TrashIcon as Trash2, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { InfoTip } from "@/components/feedback/info-tip"

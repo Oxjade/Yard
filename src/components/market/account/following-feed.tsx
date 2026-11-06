@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowUpRight, Rss } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight, RssIcon as Rss } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { BrandMark } from "@/components/market/brand-mark"

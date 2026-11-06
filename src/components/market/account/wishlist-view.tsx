@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Heart } from "lucide-react"
+import { HeartIcon as Heart } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import { ProductCard } from "@/components/market/product-card"

@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { BadgeCheck } from "lucide-react"
+import { SealCheckIcon as BadgeCheck } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -67,7 +67,7 @@ function EditorialHero({ ctx, intro, first, shopHref }: HeroProps) {
   return (
     <section id="sf-hero" aria-labelledby="sf-hero-title" data-section="hero" className="relative isolate overflow-hidden">
       <div className={cn("relative flex flex-col", preview ? "min-h-[600px]" : "min-h-[640px] @3xl:min-h-[min(100svh,960px)]")}>
-        <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover" />
+        <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} loading={preview ? "eager" : undefined} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover" />
         {/* A flat tint keeps the masthead legible; the scrims carry the type at the foot. */}
         <span aria-hidden className="absolute inset-0 -z-10 bg-obsidian/30" />
         <span aria-hidden className="scrim-l absolute inset-0 -z-10" />
@@ -108,7 +108,7 @@ function MinimalHero({ ctx, intro, first, shopHref }: HeroProps) {
     <section id="sf-hero" aria-labelledby="sf-hero-title" data-section="hero" className={cn(first && !preview ? headerClearance : "pt-8")}>
       <Container className="grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] @4xl:items-end @4xl:gap-14">
         <figure className="relative aspect-[4/3] overflow-hidden rounded-lg bg-card @4xl:order-last @4xl:aspect-[4/5]">
-          <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
+          <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} loading={preview ? "eager" : undefined} sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
         </figure>
         <div className="@4xl:pb-2">
           <div className="flex items-center gap-3">
@@ -136,7 +136,7 @@ function StreetHero({ ctx, intro, first, shopHref }: HeroProps) {
   return (
     <section id="sf-hero" aria-labelledby="sf-hero-title" data-section="hero" className="relative isolate">
       <div className={cn("relative flex flex-col justify-end overflow-hidden", preview ? "min-h-[540px]" : "min-h-[600px] @3xl:min-h-[min(88svh,880px)]")}>
-        <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover grayscale-[0.35]" />
+        <Image src={brand.cover.src} alt={brand.cover.alt} fill preload={!preview} loading={preview ? "eager" : undefined} sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"} className="-z-10 object-cover grayscale-[0.35]" />
         <span aria-hidden className="absolute inset-0 -z-10 bg-obsidian/45" />
         <span aria-hidden className="scrim-b absolute inset-0 -z-10" />
         <Container className={cn("pb-6 @3xl:pb-8", first && !preview ? headerClearance : "pt-10")}>

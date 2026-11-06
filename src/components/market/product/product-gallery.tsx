@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import Image from "next/image"
-import { ChevronLeft, ChevronRight, Expand } from "lucide-react"
+import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsOutIcon as Expand } from "@phosphor-icons/react"
 import { AnimatePresence, motion, type PanInfo } from "motion/react"
 import { cn } from "@/lib/utils"
 import type { ImageAsset } from "@/lib/data/types"
@@ -63,7 +63,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
               aria-current={i === index}
               className="group/thumb relative aspect-[4/5] w-full overflow-hidden rounded-md bg-card"
             >
-              <Image src={img.src} alt="" fill sizes="72px" className={cn("object-cover transition-opacity duration-300", i === index ? "opacity-100" : "opacity-55 group-hover/thumb:opacity-90")} />
+              <Image src={img.src} alt="" fill sizes="72px" loading="eager" className={cn("object-cover transition-opacity duration-300", i === index ? "opacity-100" : "opacity-55 group-hover/thumb:opacity-90")} />
               {i === index ? <motion.span layoutId="pdp-thumb-ring" className="absolute inset-0 rounded-md border-2 border-violet" /> : null}
             </button>
           ))}
@@ -94,7 +94,8 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
               src={image.src}
               alt={image.alt}
               fill
-              preload={index === 0}
+              loading={index === 0 ? "eager" : "lazy"}
+              fetchPriority={index === 0 ? "high" : undefined}
               draggable={false}
               sizes="(min-width: 1024px) 50vw, (min-width: 768px) 48vw, 100vw"
               className="pointer-events-none object-cover select-none"

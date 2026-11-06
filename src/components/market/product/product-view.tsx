@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { BadgeCheck, Check, ShoppingBag } from "lucide-react"
+import { SealCheckIcon as BadgeCheck, CheckIcon as Check, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"

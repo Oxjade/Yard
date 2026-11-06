@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { ImageIcon, Plus } from "lucide-react"
+import { ImageIcon, PlusIcon as Plus } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { accentStyle, storefrontSections, storefrontType } from "@/components/storefront/theme"
 import { countries } from "@/config/markets"

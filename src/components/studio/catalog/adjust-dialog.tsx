@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Minus, Plus } from "lucide-react"
+import { MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"

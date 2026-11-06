@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Info, Megaphone, Plus } from "lucide-react"
+import { WarningIcon as AlertTriangle, InfoIcon as Info, MegaphoneIcon as Megaphone, PlusIcon as Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"

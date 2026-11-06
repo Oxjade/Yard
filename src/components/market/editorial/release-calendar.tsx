@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarX2 } from "lucide-react"
+import { CalendarXIcon as CalendarX2 } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { BrandMark } from "@/components/market/brand-mark"

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Package } from "lucide-react"
+import { PackageIcon as Package } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"

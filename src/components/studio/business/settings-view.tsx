@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Check, Info, Landmark, Loader2, ShieldCheck } from "lucide-react"
+import { CheckIcon as Check, InfoIcon as Info, BankIcon as Landmark, CircleNotchIcon as Loader2, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"

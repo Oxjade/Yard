@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Plus, X } from "lucide-react"
+import { PlusIcon as Plus, XIcon as X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 /**

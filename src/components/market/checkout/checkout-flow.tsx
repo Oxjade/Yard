@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Loader2, Package } from "lucide-react"
+import { CircleNotchIcon as Loader2, PackageIcon as Package } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { AuthPanel } from "@/components/market/account/auth-panel"
 import { AuthForm } from "@/components/market/auth-prompt"

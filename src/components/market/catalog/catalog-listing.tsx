@@ -2,7 +2,7 @@
 
 import { useCallback, useId, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { SearchX, SlidersHorizontal, X } from "lucide-react"
+import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useInView } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"

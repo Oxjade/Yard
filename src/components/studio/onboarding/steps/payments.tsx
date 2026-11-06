@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Landmark, ShieldCheck, Smartphone } from "lucide-react"
+import { BankIcon as Landmark, ShieldCheckIcon as ShieldCheck, DeviceMobileIcon as Smartphone } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"

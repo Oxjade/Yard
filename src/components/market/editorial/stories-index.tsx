@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { BookOpen } from "lucide-react"
+import { BookOpenIcon as BookOpen } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Chip } from "@/components/market/catalog/chip"

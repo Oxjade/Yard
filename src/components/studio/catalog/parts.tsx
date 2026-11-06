@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { ImageOff } from "lucide-react"
+import { ImageBrokenIcon as ImageOff } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import type { ImageAsset } from "@/lib/data/types"
 import { cn } from "@/lib/utils"

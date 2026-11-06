@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Plus, Trash2 } from "lucide-react"
+import { PlusIcon as Plus, TrashIcon as Trash2 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"

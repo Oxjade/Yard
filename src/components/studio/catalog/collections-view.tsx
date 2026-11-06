@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Image from "next/image"
-import { Boxes, Pencil, Plus } from "lucide-react"
+import { StackIcon as Boxes, PencilSimpleIcon as Pencil, PlusIcon as Plus } from "@phosphor-icons/react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { Bone } from "@/components/feedback/skeletons"

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { motion } from "motion/react"
-import { ArrowLeft, ArrowRight, Check, ImagePlus, Loader2, Upload, X } from "lucide-react"
+import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { DropCard } from "@/components/market/drop-card"
 import { initialDropPhase } from "@/lib/drops"
 import { formatNumber } from "@/lib/money"

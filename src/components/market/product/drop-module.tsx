@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import type { Drop, DropPhase } from "@/lib/data/types"
 import { Countdown, DropStatus } from "../countdown"
 import { accessRule, limitText } from "../editorial/drop-facts"

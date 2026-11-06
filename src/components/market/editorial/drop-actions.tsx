@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { CalendarPlus, ShoppingBag } from "lucide-react"
+import { CalendarPlusIcon as CalendarPlus, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { NotifyButton } from "@/components/market/notify-button"

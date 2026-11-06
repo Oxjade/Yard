@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import { BrandCard } from "@/components/market/brand-card"

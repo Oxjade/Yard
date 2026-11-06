@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
-import { Check, ImagePlus, Loader2, Plus, Star, Upload, X } from "lucide-react"
+import { CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, PlusIcon as Plus, StarIcon as Star, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"

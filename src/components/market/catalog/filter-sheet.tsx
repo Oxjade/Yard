@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { X } from "lucide-react"
+import { XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"

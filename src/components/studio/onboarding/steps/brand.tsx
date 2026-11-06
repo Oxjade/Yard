@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { Check, Loader2, Upload, X } from "lucide-react"
+import { CheckIcon as Check, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

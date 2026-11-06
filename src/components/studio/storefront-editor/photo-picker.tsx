@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState } from "react"
 import Image from "next/image"
-import { ImagePlus, Loader2 } from "lucide-react"
+import { ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2 } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import type { ImageAsset } from "@/lib/data/types"

@@ -1,6 +1,6 @@
 "use client"
 
-import { Check } from "lucide-react"
+import { CheckIcon as Check } from "@phosphor-icons/react"
 import { storefrontAccents, storefrontTemplates, storefrontType } from "@/components/storefront/theme"
 import { ChoiceCard, ChoiceGroup } from "@/components/studio/growth/form"
 import type { ImageAsset, StorefrontAccent, StorefrontTemplate, StorefrontTypePreset } from "@/lib/data/types"

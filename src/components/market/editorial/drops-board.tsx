@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { CalendarClock, Zap } from "lucide-react"
+import { CalendarDotsIcon as CalendarClock, LightningIcon as Zap } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { SectionHeader } from "@/components/market/section-header"
 import type { Drop } from "@/lib/data/types"

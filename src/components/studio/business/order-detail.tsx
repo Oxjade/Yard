@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { AnimatePresence, motion } from "motion/react"
-import { Ban, Check, Copy, PackageCheck, PackageX, ShieldCheck, Truck, Undo2 } from "lucide-react"
+import { ProhibitIcon as Ban, CheckIcon as Check, CopyIcon as Copy, SealCheckIcon as PackageCheck, XCircleIcon as PackageX, ShieldCheckIcon as ShieldCheck, TruckIcon as Truck, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { BellRing, LogOut } from "lucide-react"
+import { BellRingingIcon as BellRing, SignOutIcon as LogOut } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Notice } from "@/components/market/checkout/fields"
 import { LocaleSelect } from "@/components/market/locale-select"

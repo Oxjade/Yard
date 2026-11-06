@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
-import { Check, Loader2, Upload } from "lucide-react"
+import { CheckIcon as Check, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { ChoiceCard, ChoiceGroup, FieldMessage, Panel } from "@/components/studio/growth/form"
 import { TemplateThumb } from "@/components/studio/storefront-editor/template-thumb"

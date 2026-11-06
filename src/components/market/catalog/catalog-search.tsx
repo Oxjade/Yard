@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useState } from "react"
-import { Search, X } from "lucide-react"
+import { MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 /**

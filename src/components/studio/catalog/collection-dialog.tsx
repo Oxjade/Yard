@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Image from "next/image"
-import { Check, Search, Trash2 } from "lucide-react"
+import { CheckIcon as Check, MagnifyingGlassIcon as Search, TrashIcon as Trash2 } from "@phosphor-icons/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"

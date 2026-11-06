@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Check, Clock, Info, Pencil, Plus, SearchX, Undo2, X } from "lucide-react"
+import { WarningIcon as AlertTriangle, CheckIcon as Check, ClockIcon as Clock, InfoIcon as Info, PencilSimpleIcon as Pencil, PlusIcon as Plus, MagnifyingGlassMinusIcon as SearchX, ArrowUUpLeftIcon as Undo2, XIcon as X } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"

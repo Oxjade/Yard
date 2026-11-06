@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 import Link from "next/link"
-import { ChevronLeft } from "lucide-react"
+import { CaretLeftIcon as ChevronLeft } from "@phosphor-icons/react"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 

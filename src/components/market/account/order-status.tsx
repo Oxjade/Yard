@@ -1,4 +1,4 @@
-import { Check, ExternalLink } from "lucide-react"
+import { CheckIcon as Check, ArrowSquareOutIcon as ExternalLink } from "@phosphor-icons/react/ssr"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { cn } from "@/lib/utils"
 import type { MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"

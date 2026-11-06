@@ -3,7 +3,7 @@
 import { useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Package, ShoppingBag } from "lucide-react"
+import { PackageIcon as Package, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { BagGroups } from "@/components/market/bag-contents"
 import { Price } from "@/components/market/price"
 import { ProductCard } from "@/components/market/product-card"

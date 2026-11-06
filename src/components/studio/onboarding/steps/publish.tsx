@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, CircleDashed } from "lucide-react"
+import { CheckIcon as Check, CircleDashedIcon as CircleDashed } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"

@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { CollectionTile } from "@/components/market/editorial/collection-tile"
 import { DropCard } from "@/components/market/drop-card"

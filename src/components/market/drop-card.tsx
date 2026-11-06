@@ -13,13 +13,13 @@ import { Countdown, DropStatus } from "./countdown"
 import { NotifyButton } from "./notify-button"
 import { SponsoredTag } from "./sponsored-tag"
 
-export function DropCard({ drop, className, layout = "stack" }: { drop: Drop; className?: string; layout?: "stack" | "wide" }) {
+export function DropCard({ drop, className, layout = "stack", eager = false }: { drop: Drop; className?: string; layout?: "stack" | "wide"; /** Above the fold (e.g. a builder preview): load the image straight away. */ eager?: boolean }) {
   const brand = brandById.get(drop.brandId)!
   const href = `/drops/${drop.slug}`
   return (
     <article className={cn("group/drop relative flex overflow-hidden rounded-lg border border-white/8 bg-obsidian", layout === "wide" ? "flex-col md:flex-row" : "flex-col", className)}>
       <Link href={href} className={cn("relative block overflow-hidden", layout === "wide" ? "aspect-[4/3] md:aspect-auto md:w-1/2" : "aspect-[4/3]")} aria-label={drop.name}>
-        <Image src={drop.image.src} alt={drop.image.alt} fill sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
+        <Image src={drop.image.src} alt={drop.image.alt} fill loading={eager ? "eager" : undefined} sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
         <span className="absolute inset-0 bg-gradient-to-t from-obsidian/80 via-transparent to-transparent" aria-hidden />
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
           <DropStatus drop={drop} />
