@@ -8,6 +8,7 @@ import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { useNow } from "@/hooks/use-now"
 import type { PlatformUser } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
@@ -51,6 +52,8 @@ function inFilter(u: PlatformUser, f: Filter) {
 
 export function UsersView() {
   const ready = useAdminReady()
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
   const users = useAdmin((s) => s.users)
@@ -111,7 +114,7 @@ export function UsersView() {
     { key: "joined", header: "Joined", hideBelow: "lg", sortValue: (u) => u.joinedAt, cell: (u) => <time dateTime={u.joinedAt} className="whitespace-nowrap text-ink-2">{formatDate(u.joinedAt)}</time> },
     { key: "orders", header: "Orders", align: "right", hideBelow: "md", sortValue: (u) => u.orders, cell: (u) => <span className="text-ink">{u.orders}</span> },
     { key: "reports", header: "Reports", align: "right", hideBelow: "sm", sortValue: (u) => u.reports, cell: (u) => <span className={u.reports ? "font-medium text-danger" : "text-ink-3"}>{u.reports}</span> },
-    { key: "active", header: "Last active", hideBelow: "md", sortValue: (u) => u.lastActive, cell: (u) => <span className="whitespace-nowrap text-ink-2">{relDays(u.lastActive)}</span> },
+    { key: "active", header: "Last active", hideBelow: "md", sortValue: (u) => u.lastActive, cell: (u) => <span className="whitespace-nowrap text-ink-2">{relDays(u.lastActive, now)}</span> },
     { key: "status", header: "Status", hideBelow: "sm", sortValue: (u) => u.status, cell: (u) => <StatusBadge tone={userStatusMeta[u.status].tone}>{userStatusMeta[u.status].label}</StatusBadge> },
   ]
 
@@ -140,7 +143,7 @@ export function UsersView() {
             <StatCard surface="admin" icon={UsersIcon} label="Shopper accounts" value={counts.all} format={n} hint="In this sample" href="/admin/users#accounts" hrefLabel="Show all accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, still active" value={counts.reported} format={n} hint="Worth a look first" href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, active" value={counts.reported} format={n} hint="Worth a look first" href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={n} hint="Can browse, can't buy" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />

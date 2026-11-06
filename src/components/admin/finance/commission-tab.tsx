@@ -13,11 +13,12 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { Panel } from "@/components/admin/ui/panel"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { useNow } from "@/hooks/use-now"
 import { site } from "@/config/site"
 import { merchantOrders } from "@/lib/data/orders"
 import { formatPercent } from "@/lib/money"
 import { commissionReport, commissionSeries, type CommissionRow } from "./derive"
-import { cap, plural, usd, usdCompact } from "./format"
+import { anchorDay, cap, demoLag, formatDate, plural, usd, usdCompact } from "./format"
 import { downloadCsv } from "./table"
 import { usePhone } from "../marketplace/url-state"
 
@@ -30,7 +31,7 @@ function exportCsv(rows: CommissionRow[], days: number, filename: string) {
     filename,
     ["Brand", "Orders", "Item subtotal (USD)", "Commission at 5% (USD)", "Reversed by refunds (USD)", "Net commission (USD)"],
     rows.map((r) => [r.brand.name, r.orders, money(r.baseUsd), money(r.assessedUsd), money(r.reversedUsd), money(r.netUsd)]),
-    `Commission report, last ${days} days to 5 Nov 2026, sample data`,
+    `Commission report, last ${days} days to ${formatDate(`${anchorDay(Date.now())}T12:00:00Z`)}, sample data`,
   )
 }
 
@@ -41,8 +42,12 @@ export function CommissionTab() {
   const [period, setPeriod] = useState<Period>("30d")
   const [bucket, setBucket] = useState<Bucket>("daily")
   const days = periodDays[period]
-  const rows = useMemo(() => commissionReport(days), [days])
-  const series = useMemo(() => commissionSeries(180), [])
+  // Windows end on the same today as every other Control Center page (see anchorDay).
+  const now = useNow(60_000)
+  // The chart remounts when today moves on, so its highlighted bar starts on the new latest day.
+  const lag = demoLag(now)
+  const rows = useMemo(() => commissionReport(days, now), [days, now])
+  const series = useMemo(() => commissionSeries(180, now), [now])
   const historyStart = useMemo(() => merchantOrders.reduce((m, o) => (o.placedAt.slice(0, 10) < m ? o.placedAt.slice(0, 10) : m), series[series.length - 1].date), [series])
   const total = rows.reduce((s, r) => ({ orders: s.orders + r.orders, base: s.base + r.baseUsd, assessed: s.assessed + r.assessedUsd, reversed: s.reversed + r.reversedUsd, net: s.net + r.netUsd }), { orders: 0, base: 0, assessed: 0, reversed: 0, net: 0 })
   const top = Math.max(1, ...rows.map((r) => r.netUsd))
@@ -118,7 +123,7 @@ export function CommissionTab() {
           </div>
           <Switch label="Bucket size" size="sm" value={bucket} onChange={setBucket} options={(Object.keys(buckets) as Bucket[]).map((b) => ({ value: b, label: buckets[b].label }))} />
         </div>
-        <BarChart key={bucket} className="mt-4" data={bars} format={usdCompact} formatFull={usd} label={`Net commission by ${bucket === "daily" ? "day" : bucket === "weekly" ? "week" : "30 days"}`} deltaContext={bucket === "daily" ? "the day before" : bucket === "weekly" ? "the week before" : "the 30 days before"} height={220} />
+        <BarChart key={`${bucket}-${lag}`} className="mt-4" data={bars} format={usdCompact} formatFull={usd} label={`Net commission by ${bucket === "daily" ? "day" : bucket === "weekly" ? "week" : "30 days"}`} deltaContext={bucket === "daily" ? "the day before" : bucket === "weekly" ? "the week before" : "the 30 days before"} height={220} />
       </Panel>
 
       <Panel

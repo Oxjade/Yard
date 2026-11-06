@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { FlagIcon } from "@phosphor-icons/react"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
+import { useNow } from "@/hooks/use-now"
 import { brandById } from "@/lib/data"
 import type { AuditEntry, PlatformUser } from "@/lib/data/admin"
 import { merchantOrders } from "@/lib/data/orders"
@@ -37,6 +38,8 @@ const unattributable = (e: AuditEntry, user: PlatformUser) => !e.subjectId && e.
  * (its own decision dialog), because the shell's command palette opens it over any page.
  */
 export function UserDetail({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const shown = useLast(id)
   const user = useAdmin((s) => s.users.find((u) => u.id === shown))
   const audit = useAdmin((s) => s.audit)
@@ -87,7 +90,7 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
             { label: "Country", value: countryName(user.country) },
             { label: "Joined", value: <time dateTime={user.joinedAt}>{formatDate(user.joinedAt)}</time> },
             { label: "Orders", value: <span className="tabular">{user.orders}</span> },
-            { label: "Last active", value: relDays(user.lastActive) },
+            { label: "Last active", value: relDays(user.lastActive, now) },
           ]}
         />
 
@@ -100,7 +103,7 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-[13px] text-ink">{r.reason}</span>
-                      <time dateTime={r.at} className="shrink-0 text-[11px] text-ink-3">{relDays(r.at)}</time>
+                      <time dateTime={r.at} className="shrink-0 text-[11px] text-ink-3">{relDays(r.at, now)}</time>
                     </span>
                     <span className="mt-0.5 block text-[11px] text-ink-3">Reported by {r.reportedBy}</span>
                     <span className="mt-1 block text-[12px] text-ink-2">{r.context}</span>
@@ -127,7 +130,7 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
                     >
                       <span className="min-w-0">
                         <span className="block text-[13px] text-ink tabular group-hover:text-violet">#{o.reference}</span>
-                        <span className="block truncate text-[11px] text-ink-3">{brandById.get(o.brandId)?.name}, {relDays(o.placedAt).toLowerCase()}</span>
+                        <span className="block truncate text-[11px] text-ink-3">{brandById.get(o.brandId)?.name}, {relDays(o.placedAt, now).toLowerCase()}</span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2.5">
                         <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>

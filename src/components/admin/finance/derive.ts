@@ -5,7 +5,7 @@ import { demoCustomer, merchantOrders, shoppers } from "@/lib/data/orders"
 import { hash } from "@/lib/data/seed"
 import type { Brand, CheckoutGroup, MerchantOrder } from "@/lib/data/types"
 import type { AdjustmentRequest } from "@/lib/stores/admin"
-import { DEMO_NOW, providerName } from "./format"
+import { providerName, sampleNow } from "./format"
 import type { DisputeStage, FulfilState, GroupState, Meta, PayState } from "./meta"
 import { disputeMeta, refundMeta, txStatusMeta } from "./meta"
 
@@ -52,7 +52,7 @@ export function groupReference(groupId: string, groups: CheckoutGroup[]) {
   const known = groups.find((g) => g.id === groupId)
   if (known) return known.reference
   const h = hash(groupId).toString(36).toUpperCase().padStart(6, "0")
-  return `NCT-${h.slice(-4)}-${String(hash(`${groupId}-n`) % 100).padStart(2, "0")}`
+  return `YRD-${h.slice(-4)}-${String(hash(`${groupId}-n`) % 100).padStart(2, "0")}`
 }
 
 /* ---------- Order axes (payment and fulfilment are shown separately) ---------- */
@@ -166,6 +166,13 @@ export function buildOrderRows(clientOrders: MerchantOrder[], groups: CheckoutGr
     ]
   })
 }
+
+/**
+ * Whether an order counts towards volume, the one rule the Overview and the Orders page share for
+ * GMV and paid order counts: its payment went through and it wasn't cancelled. A refund or a
+ * dispute later doesn't take it out; an order awaiting payment or with a declined charge never counts.
+ */
+export const isPaidOrder = (r: Pick<OrderRow, "pay" | "fulfil">) => r.fulfil !== "cancelled" && r.pay !== "pending" && r.pay !== "failed"
 
 /* ---------- Payment events for one order ---------- */
 
@@ -336,15 +343,22 @@ export const adjustmentAccounts = [PLATFORM_ACCOUNT, ...brands.map((b) => b.name
 
 export type CommissionRow = { brand: Brand; orders: number; baseUsd: number; assessedUsd: number; reversedUsd: number; netUsd: number }
 
-function inWindow(o: MerchantOrder, days: number) {
-  return new Date(o.placedAt).getTime() > DEMO_NOW - days * DAY
+/**
+ * Whether a sample order falls in the last `days` days, ending on the same today as every other
+ * Control Center page (see anchorDay); `now` is useNow's reading.
+ */
+function inWindow(o: MerchantOrder, days: number, now?: number | null) {
+  return new Date(o.placedAt).getTime() > sampleNow(now) - days * DAY
 }
 
-export function commissionReport(days: number): CommissionRow[] {
+/** Commission is assessed only on money that arrived: cancelled orders and declined charges earn nothing. */
+const assessed = (o: MerchantOrder) => o.status !== "cancelled" && !failedCharges.has(o.id)
+
+export function commissionReport(days: number, now?: number | null): CommissionRow[] {
   const rows = new Map<string, CommissionRow>()
   for (const b of brands) rows.set(b.id, { brand: b, orders: 0, baseUsd: 0, assessedUsd: 0, reversedUsd: 0, netUsd: 0 })
   for (const o of merchantOrders) {
-    if (o.status === "cancelled" || !inWindow(o, days)) continue
+    if (!assessed(o) || !inWindow(o, days, now)) continue
     const r = rows.get(o.brandId)
     if (!r) continue
     const c = convert(o.commission, o.currency, "USD")
@@ -357,11 +371,11 @@ export function commissionReport(days: number): CommissionRow[] {
   return [...rows.values()].sort((a, b) => b.netUsd - a.netUsd)
 }
 
-export function commissionSeries(days: number) {
+export function commissionSeries(days: number, now?: number | null) {
   const byDay = new Map<string, number>()
-  for (let i = days - 1; i >= 0; i--) byDay.set(new Date(DEMO_NOW - i * DAY).toISOString().slice(0, 10), 0)
+  for (let i = days - 1; i >= 0; i--) byDay.set(new Date(sampleNow(now) - i * DAY).toISOString().slice(0, 10), 0)
   for (const o of merchantOrders) {
-    if (o.status === "cancelled" || o.status === "refunded" || !inWindow(o, days)) continue
+    if (!assessed(o) || o.status === "refunded" || !inWindow(o, days, now)) continue
     const k = o.placedAt.slice(0, 10)
     if (byDay.has(k)) byDay.set(k, byDay.get(k)! + convert(o.commission, o.currency, "USD"))
   }

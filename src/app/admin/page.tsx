@@ -21,7 +21,7 @@ import { SampleDataNote } from "@/components/dashboard/page-header"
 import { ArrowLink } from "@/components/dashboard/insight/arrow-link"
 import { BarChart, type BarDatum } from "@/components/dashboard/insight/bar-chart"
 import { CountUp } from "@/components/dashboard/insight/count-up"
-import { addDays, buckets, change, longDate, periodWindows, rangeLabel, shortDate, slices, today, weekdayByWeek, weekdays, type Bucket } from "@/components/dashboard/insight/derive"
+import { addDays, buckets, change, longDate, periodWindows, rangeLabel, shortDate, slices, weekdayByWeek, weekdays, type Bucket } from "@/components/dashboard/insight/derive"
 import { DeltaChip } from "@/components/dashboard/insight/delta-chip"
 import { DonutChart, type DonutSegment } from "@/components/dashboard/insight/donut-chart"
 import { Heatmap, PeakSwatch } from "@/components/dashboard/insight/heatmap"
@@ -35,14 +35,19 @@ import { Reveal, RevealItem, springs } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { notifyRefundDecision, refundAudience } from "@/components/admin/marketplace/notify"
+import { buildOrderRows, isPaidOrder, type OrderRow } from "@/components/admin/finance/derive"
+import { anchorDay } from "@/components/admin/finance/format"
+import { recordTime } from "@/components/admin/platform/format"
+import { actionLabel, readable } from "@/components/admin/platform/security/audit-words"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { useNow } from "@/hooks/use-now"
 import { chartEasing, chartIn } from "@/lib/motion"
 import { adminUser, failedJobs, healthServices, platformOverview, transactions, webhookFailures, type Refund } from "@/lib/data/admin"
 import { campaignTypes, type CampaignType } from "@/lib/data/ads"
-import { merchantOrders } from "@/lib/data/orders"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
+import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 
 const usd = (n: number) => formatMoney(Math.round(n), "USD", { compact: true })
@@ -50,6 +55,7 @@ const usdFull = (n: number) => formatMoney(Math.round(n), "USD")
 /** Whole dollars, for headline figures where cents are noise. */
 const usdWhole = (n: number) => formatMoney(Math.round(n / 100) * 100, "USD")
 const int = (n: number) => formatNumber(Math.round(n))
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 
 type Period = "7d" | "30d" | "90d"
 const periodDays: Record<Period, number> = { "7d": 7, "30d": 30, "90d": 90 }
@@ -64,45 +70,40 @@ const REPLAY_ACTION = "Replayed webhook"
 const MotionLink = motion.create(Link)
 
 /**
- * Every brand's sample orders per day, in USD cents: GMV and order count for every order that
- * was not cancelled, and commission only on sales that stand (refunds reverse it), so the
- * commission card, the volume chart and the revenue mix all add up to the same figures.
+ * Paid orders per day across every brand, in USD cents, ending on `anchor` (the Control Center's
+ * today, see anchorDay). The orders are the Orders page's own rows, sample orders and checkouts
+ * made here alike, counted by the same rule (isPaidOrder), so a 30-day total here matches the
+ * Orders page to the dollar. Commission counts only on sales that stand (a refund or a lost
+ * dispute reverses it), so the commission card, the volume chart and the revenue mix add up.
  */
-function platformDaily(days: number) {
+function platformDaily(paid: OrderRow[], days: number, anchor: string) {
   const byDate = new Map<string, { gmv: number; orders: number; commission: number }>()
-  for (const o of merchantOrders) {
-    if (o.status === "cancelled") continue
-    const date = o.placedAt.slice(0, 10)
+  for (const r of paid) {
+    const date = r.order.placedAt.slice(0, 10)
     const e = byDate.get(date) ?? { gmv: 0, orders: 0, commission: 0 }
-    e.gmv += convert(o.total, o.currency, "USD")
+    e.gmv += r.totalUsd
     e.orders += 1
-    if (o.status !== "refunded") e.commission += convert(o.commission, o.currency, "USD")
+    if (r.pay !== "refunded" && r.pay !== "charged_back") e.commission += convert(r.order.commission, r.order.currency, "USD")
     byDate.set(date, e)
   }
   return Array.from({ length: days }, (_, i) => {
-    const date = addDays(today, i - days + 1)
+    const date = addDays(anchor, i - days + 1)
     return { date, ...(byDate.get(date) ?? { gmv: 0, orders: 0, commission: 0 }) }
   })
-}
-
-function relTime(iso: string) {
-  const mins = Math.round((new Date(`${today}T12:00:00Z`).getTime() - new Date(iso).getTime()) / 60000)
-  if (mins < 60) return "Just now"
-  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`
-  const d = Math.round(mins / 1440)
-  return d === 1 ? "Yesterday" : `${d} days ago`
 }
 
 /* ── Command strip: who, when, and what needs a decision ─────────────── */
 
 function CommandStrip() {
   const hydrated = useHydrated()
+  const now = useNow(60_000)
   const pendingBrands = useAdmin((s) => s.applications.filter((a) => a.status === "pending_review").length)
   const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
   const payouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
   const campaigns = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   const moderation = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
-  // The greeting follows the viewer's clock; the date is the sample data's today, the day every figure on the page counts up to.
+  // The greeting follows the viewer's clock; the date is the Control Center's today (anchorDay), the
+  // day every figure on this page and the others counts up to. It waits for the client's clock.
   const hour = hydrated ? new Date().getHours() : 12
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
   const chips = [
@@ -120,7 +121,7 @@ function CommandStrip() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <SampleDataNote />
-            <span className="text-[12px] text-ink-3 tabular">{longDate(today)}</span>
+            {now !== null ? <span className="text-[12px] text-ink-3 tabular">{longDate(anchorDay(now))}</span> : <span aria-hidden className="skeleton inline-block h-3 w-32 rounded" />}
           </div>
           <h1 id="cc-title" className="font-label mt-4 text-[clamp(1.5rem,2.6vw,2rem)] leading-tight text-ink">
             {hydrated ? `${greeting}, ${adminUser.name.split(" ")[0]}` : `Welcome back, ${adminUser.name.split(" ")[0]}`}
@@ -287,7 +288,8 @@ function DecisionQueue({ className }: { className?: string }) {
 
   return (
     // The sidebar's "Decisions waiting" card links here; scroll-mt-24 clears the sticky top bar.
-    // A flex column, so when the row is taller than the queue the footer sits on the bottom edge.
+    // The queue is as tall as its rows, and on wide screens it sets the row's height: the audit
+    // trail beside it shows as many entries as fit (see AuditTrail), so neither card has a gap.
     <Panel
       id="decision-queue"
       title="Decision queue"
@@ -313,7 +315,7 @@ function DecisionQueue({ className }: { className?: string }) {
           ]}
         />
       </div>
-      <div ref={panelRef} id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="flex min-h-52 flex-1 flex-col border-t border-[var(--admin-hairline)]">
+      <div ref={panelRef} id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="flex flex-1 flex-col border-t border-[var(--admin-hairline)]">
         {/* Rows are held at 65px, so the skeleton (one row per queued item) and the list match. */}
         {!hydrated ? (
           <ul aria-hidden className="admin-divide">
@@ -356,7 +358,7 @@ function DecisionQueue({ className }: { className?: string }) {
                 )}
               </ul>
               {tab === "payouts" && scheduled ? (
-                <p className="mt-auto border-t border-[var(--admin-hairline)] px-4 py-3 text-[12px] text-ink-3 md:px-5">
+                <p className="border-t border-[var(--admin-hairline)] px-4 py-3 text-[12px] text-ink-3 md:px-5">
                   {scheduled === 1 ? "1 scheduled payout goes out on its own, with no decision needed." : `${scheduled} scheduled payouts go out on their own, with no decision needed.`}
                 </p>
               ) : null}
@@ -373,14 +375,25 @@ function DecisionQueue({ className }: { className?: string }) {
 
 function AuditTrail({ className }: { className?: string }) {
   const hydrated = useHydrated()
+  const now = useNow(60_000)
   const audit = useAdmin((s) => s.audit)
   return (
-    <Panel title="Audit trail" description="Every decision, who made it and why. Read-only." action={<ArrowLink href="/admin/security" label="Open the full audit log" />} className={cn("rounded-[20px]", className)}>
-      <ol className="relative flex min-w-0 flex-col gap-0.5">
+    // On wide screens the panel takes no height of its own ([contain:size]), so the Decision queue
+    // beside it sets the row and this card fills it. The list then wraps whole entries that don't
+    // fit into a second column, which is clipped: only complete entries show, never half of one.
+    // Below that it stacks under the queue and shows the latest six.
+    <Panel
+      title="Audit trail"
+      description="Every decision, who made it and why. Read-only."
+      action={<ArrowLink href="/admin/security" label="Open the full audit log" />}
+      className={cn("flex flex-col rounded-[20px] @5xl:[contain:size]", className)}
+      bodyClassName="min-h-0 flex-1"
+    >
+      <ol className="relative flex min-w-0 flex-col gap-0.5 @5xl:h-full @5xl:flex-wrap @5xl:content-start @5xl:overflow-hidden @max-5xl:[&>li:nth-of-type(n+7)]:hidden">
         <span className="absolute top-2 bottom-2 left-[15px] w-px bg-[var(--admin-hairline)]" aria-hidden />
         {!hydrated
           ? [0, 1, 2, 3, 4, 5].map((i) => (
-              <li key={i} aria-hidden className="relative flex h-[56px] items-center gap-3 py-2 pr-2">
+              <li key={i} aria-hidden className="relative flex h-[56px] w-full items-center gap-3 py-2 pr-2">
                 <span className="skeleton relative z-10 size-[31px] shrink-0 rounded-full" />
                 <span className="grid flex-1 gap-1.5">
                   <span className="skeleton h-3.5 w-2/3 rounded" />
@@ -391,18 +404,18 @@ function AuditTrail({ className }: { className?: string }) {
           : null}
         <AnimatePresence initial={false}>
           {hydrated
-            ? audit.slice(0, 6).map((a) => (
-                <motion.li key={a.id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={springs.pill} className="relative flex min-h-[56px] gap-3 rounded-lg py-2 pr-2">
+            ? audit.slice(0, 10).map((a) => (
+                <motion.li key={a.id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={springs.pill} className="relative flex h-[56px] w-full gap-3 rounded-lg py-2 pr-2">
                   <span className="relative z-10 mt-0.5 inline-flex size-[31px] shrink-0 items-center justify-center rounded-full border border-[var(--admin-hairline-strong)] bg-[#0c0c0c] text-[10.5px] font-semibold text-ink">
                     {a.actor.split(" ").map((x) => x[0]).join("")}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] text-ink" title={`${a.actor} ${a.action.charAt(0).toLowerCase() + a.action.slice(1)}`}>
-                      <span className="text-ink">{a.actor}</span> <span className="text-ink-2">{a.action.charAt(0).toLowerCase() + a.action.slice(1)}</span>
+                    <p className="truncate text-[13px] text-ink" title={`${a.actor} ${lower(actionLabel(a.action))}`}>
+                      <span className="text-ink">{a.actor}</span> <span className="text-ink-2">{lower(actionLabel(a.action))}</span>
                     </p>
-                    <p className="mt-0.5 truncate text-[12px] text-ink-3" title={`${a.target}${a.reason ? `. ${a.reason}` : ""}`}>{a.target}{a.reason ? `. ${a.reason}` : ""}</p>
+                    <p className="mt-0.5 truncate text-[12px] text-ink-3" title={`${readable(a.target)}${a.reason ? `. ${a.reason}` : ""}`}>{readable(a.target)}{a.reason ? `. ${a.reason}` : ""}</p>
                   </div>
-                  <span className="shrink-0 pt-0.5 text-[11px] text-ink-3 tabular">{relTime(a.at)}</span>
+                  <time dateTime={a.at} title={recordTime(a.at, now).title} className="shrink-0 pt-0.5 text-[11px] text-ink-3 tabular">{recordTime(a.at, now).label}</time>
                 </motion.li>
               ))
             : null}
@@ -553,15 +566,25 @@ function LatencyBars() {
 
 export default function AdminOverviewPage() {
   const hydrated = useHydrated()
+  // Every window ends on the Control Center's today (anchorDay), the same day the Orders page and
+  // the others count from: the demo's on the server, the real one once the client knows the time.
+  const now = useNow(60_000)
+  const anchor = anchorDay(now)
+  const ready = hydrated && now !== null
   const [period, setPeriod] = useState<Period>("30d")
   const [bucket, setBucket] = useState<Bucket>("daily")
   const payoutsState = useAdmin((s) => s.payouts)
   const campaignsState = useAdmin((s) => s.campaigns)
+  const refundsState = useAdmin((s) => s.refunds)
+  const disputesState = useAdmin((s) => s.disputes)
+  const clientOrders = useOrders((s) => s.orders)
+  const groups = useOrders((s) => s.groups)
   const o = platformOverview()
 
-  const series = useMemo(() => platformDaily(180), [])
-  const sold = useMemo(() => merchantOrders.filter((m) => m.status !== "cancelled"), [])
-  const historyStart = useMemo(() => sold.reduce((m, x) => (x.placedAt.slice(0, 10) < m ? x.placedAt.slice(0, 10) : m), today), [sold])
+  // The Orders page's rows, so both pages count the same orders by the same rule.
+  const paid = useMemo(() => buildOrderRows(clientOrders, groups, refundsState, disputesState).filter(isPaidOrder), [clientOrders, groups, refundsState, disputesState])
+  const series = useMemo(() => platformDaily(paid, 180, anchor), [paid, anchor])
+  const historyStart = useMemo(() => paid.reduce((m, r) => (r.order.placedAt.slice(0, 10) < m ? r.order.placedAt.slice(0, 10) : m), anchor), [paid, anchor])
 
   const days = periodDays[period]
   const win = periodWindows(series, days, historyStart)
@@ -617,7 +640,7 @@ export default function AdminOverviewPage() {
     return [{ key: "commission", label: "Sales commission", value: commission, href: "/admin/finance" }, ...top, ...(rest ? [{ key: "other-ads", label: `Other placements (${ads.length - 3})`, value: rest, href: "/admin/advertising" }] : [])]
   })()
 
-  const heat = useMemo(() => weekdayByWeek(sold.map((x) => x.placedAt.slice(0, 10)), 13, historyStart), [sold, historyStart])
+  const heat = useMemo(() => weekdayByWeek(paid.map((r) => r.order.placedAt.slice(0, 10)), 13, historyStart), [paid, historyStart])
   const ordersUnit = (n: number) => `${n} ${n === 1 ? "order" : "orders"}`
 
   const charges = transactions.filter((t) => t.type === "charge")
@@ -645,13 +668,13 @@ export default function AdminOverviewPage() {
       {/* Headline metrics */}
       <section aria-label="Headline metrics" className="grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">
         <RevealItem className="min-w-0">
-          <StatCard surface="admin" icon={ChartLineUpIcon} label="GMV" value={gmv} format={usd} delta={d(gmv, gmvPrev)} deltaContext={versus} hint={hint} href="/admin/orders" hrefLabel="Open orders behind GMV" ready={hydrated} className="h-full" />
+          <StatCard surface="admin" icon={ChartLineUpIcon} label="GMV" value={gmv} format={usd} delta={d(gmv, gmvPrev)} deltaContext={versus} hint={hint} href="/admin/orders" hrefLabel="Open orders behind GMV" ready={ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0">
-          <StatCard surface="admin" icon={CoinsIcon} label="Commission earned" value={commission} format={usd} delta={d(commission, commissionPrev)} deltaContext={versus} hint="5% of sales not refunded" href="/admin/finance" hrefLabel="Open finance" ready={hydrated} className="h-full" />
+          <StatCard surface="admin" icon={CoinsIcon} label="Commission earned" value={commission} format={usd} delta={d(commission, commissionPrev)} deltaContext={versus} hint="5% of sales not refunded" href="/admin/finance" hrefLabel="Open finance" ready={ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0">
-          <StatCard surface="admin" icon={ShoppingCartIcon} label="Orders" value={orders} format={int} delta={d(orders, ordersPrev)} deltaContext={versus} hint={`${int(series[series.length - 1].orders)} today`} href="/admin/orders" hrefLabel="Open orders" ready={hydrated} className="h-full" />
+          <StatCard surface="admin" icon={ShoppingCartIcon} label="Paid orders" value={orders} format={int} delta={d(orders, ordersPrev)} deltaContext={versus} hint={`${int(series[series.length - 1].orders)} today`} href="/admin/orders" hrefLabel="Open orders" ready={ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0">
           <StatCard surface="admin" variant="brand" icon={HourglassIcon} label="Pending payouts" value={pendingUsd} format={usd} hint={hydrated ? `To ${pendingBrands} ${pendingBrands === 1 ? "brand" : "brands"}` : <span aria-hidden className="skeleton inline-block h-3 w-20 rounded align-middle" />} href="/admin/finance?tab=payouts" hrefLabel="Open payouts" ready={hydrated} className="h-full" />
@@ -664,7 +687,7 @@ export default function AdminOverviewPage() {
         <Panel title="Signal ledger" description={`Last ${days} days`} className="flex flex-col rounded-[20px] @5xl:col-span-3" bodyClassName="flex flex-1 flex-col">
           <SignalList
             className="flex-1 auto-rows-fr"
-            ready={hydrated}
+            ready={ready}
             deltaContext={versus}
             items={[
               { key: "aov", label: "Average order value", value: usdFull(orders ? gmv / orders : 0), delta: d(orders ? gmv / orders : 0, ordersPrev ? gmvPrev / ordersPrev : 0) },
@@ -684,7 +707,7 @@ export default function AdminOverviewPage() {
         >
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
-              {hydrated ? (
+              {ready ? (
                 <>
                   <p className="font-metric text-[2rem] leading-none text-ink">
                     <CountUp value={chartTotal} format={usdWhole} />
@@ -697,7 +720,7 @@ export default function AdminOverviewPage() {
             </div>
             <Switch label="Bucket size" size="sm" value={bucket} onChange={setBucket} options={(Object.keys(buckets) as Bucket[]).map((b) => ({ value: b, label: buckets[b].label }))} />
           </div>
-          <BarChart key={bucket} className="mt-4" data={bars} format={usd} formatFull={usdWhole} label={`GMV by ${bucket === "daily" ? "day" : bucket === "weekly" ? "week" : "30 days"}`} deltaContext={bucket === "daily" ? "the day before" : bucket === "weekly" ? "the week before" : "the 30 days before"} height={236} />
+          <BarChart key={`${bucket}-${anchor}`} className="mt-4" data={bars} format={usd} formatFull={usdWhole} label={`GMV by ${bucket === "daily" ? "day" : bucket === "weekly" ? "week" : "30 days"}`} deltaContext={bucket === "daily" ? "the day before" : bucket === "weekly" ? "the week before" : "the 30 days before"} height={236} />
         </Panel>
 
         <Panel title="Revenue mix" description={`Platform revenue, last ${days} days`} action={<ArrowLink href="/admin/finance" label="Open revenue in finance" />} className="rounded-[20px] @5xl:col-span-3">
@@ -719,6 +742,7 @@ export default function AdminOverviewPage() {
         </RevealItem>
         <Panel title="Orders by weekday" description="Every brand. Each square is a day, last 13 weeks" className="rounded-[20px] @5xl:col-span-8">
           <Heatmap
+            ready={ready}
             rows={weekdays}
             columns={heat.columns}
             cells={heat.cells}
@@ -735,7 +759,7 @@ export default function AdminOverviewPage() {
 
       {/* Health + payments */}
       <div className="grid gap-3 @2xl:grid-cols-2 @5xl:grid-cols-12">
-        <Panel title="System health" description="Live service status, measured against each service's p95 target." className="rounded-[20px] @5xl:col-span-7" action={<ArrowLink href="/admin/health" label="Open system health" />}>
+        <Panel title="System health" description="Service status, measured against each service's p95 target." className="rounded-[20px] @5xl:col-span-7" action={<ArrowLink href="/admin/health" label="Open system health" />}>
           <LatencyBars />
         </Panel>
         <Panel title="Payments" description="Success is counted only when the provider's webhook is verified." className="rounded-[20px] @5xl:col-span-5" action={<ArrowLink href="/admin/finance" label="Open payments in finance" />}>

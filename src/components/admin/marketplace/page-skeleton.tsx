@@ -90,16 +90,17 @@ export function AdminIndexSkeleton({
       {stats > 0 ? (
         <StatRow label="Loading figures">
           {Array.from({ length: stats }, (_, i) => (
-            // StatCard's rows at its sizes: the label and arrow, the numeral, the hint line.
-            <div key={i} className="admin-panel rounded-[20px] p-4 md:p-5">
+            // StatCard's rows at its sizes: the label and arrow, the numeral, the hint line
+            // (compact on phones, as StatRow draws the real cards there).
+            <div key={i} className="admin-panel rounded-[20px] p-4 @max-lg:p-3 md:p-5">
               <div className="flex h-7 items-center justify-between gap-3">
                 <Bone className="h-3 w-full max-w-28" />
                 <Bone className="size-7 shrink-0 rounded-full" />
               </div>
-              <div className="mt-5 flex h-10 items-center">
-                <Bone className="h-9 w-24 md:h-10" />
+              <div className="mt-5 flex h-10 items-center @max-lg:mt-3 @max-lg:h-8">
+                <Bone className="h-9 w-24 @max-lg:h-7 @max-lg:w-20 md:h-10" />
               </div>
-              <div className="mt-2 flex h-[18px] items-center">
+              <div className="mt-2 flex h-[18px] items-center @max-lg:hidden">
                 <Bone className="h-3 w-full max-w-36" />
               </div>
             </div>

@@ -13,7 +13,7 @@ import { CopyValue } from "../marketplace/bits"
 import { DetailSection, DetailSheet, EmptyLine, Facts, LinkRow, insetClass } from "../marketplace/detail-sheet"
 import { useLast } from "../marketplace/use-last"
 import { disputeStage, groupState, orderTimeline, paymentEvents, providerFor, type OrderRow } from "./derive"
-import { amountIn, formatDateTime, providerName, signedUsd, usd } from "./format"
+import { amountIn, formatWhen, providerName, signedUsd, usd } from "./format"
 import { fulfilMeta, groupMeta, payMeta, txStatusMeta } from "./meta"
 
 const countryName = (c: string) => countries[c as CountryCode]?.name ?? c
@@ -52,7 +52,7 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
       open={open}
       onOpenChange={onOpenChange}
       title={`Order #${o.reference}`}
-      description={`${row.brand.name}, placed ${formatDateTime(o.placedAt)}`}
+      description={`${row.brand.name}, placed ${formatWhen(o.placedAt)}`}
       lead={<BrandMark brand={row.brand} size="md" />}
       badges={
         <>
@@ -133,7 +133,7 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
                     <div className="min-w-0">
                       <p className="text-[13px] text-ink">{e.label}</p>
                       <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-3">
-                        <time dateTime={e.at}>{formatDateTime(e.at)}</time>
+                        <time dateTime={e.at}>{formatWhen(e.at)}</time>
                         {e.verified === true ? (
                           <span className="inline-flex items-center gap-1 text-ink-2">
                             <ShieldCheck className="size-3 text-violet" aria-hidden /> Webhook verified
@@ -193,7 +193,7 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
                     <p className="text-[13px] text-ink">{t.label}</p>
                     {t.who || !sameTime ? (
                       <p className="text-[11px] text-ink-3">
-                        {sameTime ? null : <time dateTime={t.at}>{formatDateTime(t.at)}</time>}
+                        {sameTime ? null : <time dateTime={t.at}>{formatWhen(t.at)}</time>}
                         {t.who ? `${sameTime ? "" : ", "}by ${t.who}` : null}
                       </p>
                     ) : null}

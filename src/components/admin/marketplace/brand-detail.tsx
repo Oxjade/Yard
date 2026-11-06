@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useNow } from "@/hooks/use-now"
 import { STUDIO_BRAND_ID } from "@/lib/data/brands"
 import type { AuditEntry, BrandApplication } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
@@ -36,6 +37,8 @@ function isAbout(e: AuditEntry, a: BrandApplication) {
 
 export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void; onDecide: (key: BrandActionKey, a: BrandApplication) => void }) {
   // Keep the last record while the sheet animates out.
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const shown = useLast(id)
   const app = useAdmin((s) => s.applications.find((a) => a.id === shown))
   const audit = useAdmin((s) => s.audit)
@@ -50,7 +53,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
   const cases = moderation.filter((m) => m.brandName === app.brandName)
   const openCases = cases.filter((m) => m.status === "open" || m.status === "escalated").length
   const status = brandStatusMeta[app.status]
-  const age = daysSince(app.submittedAt)
+  const age = daysSince(app.submittedAt, now)
 
   return (
     <DetailSheet
@@ -112,7 +115,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
               {notes.map((x) => (
                 <li key={x.id} className="px-3 py-2.5">
                   <p className="text-[13px] text-ink">{x.reason}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-3">{x.actor}, {relDays(x.at).toLowerCase()}</p>
+                  <p className="mt-0.5 text-[11px] text-ink-3">{x.actor}, {relDays(x.at, now).toLowerCase()}</p>
                 </li>
               ))}
             </ul>

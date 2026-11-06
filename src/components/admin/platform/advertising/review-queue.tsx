@@ -51,8 +51,8 @@ function checksFor(c: Campaign, all: Campaign[], pricing: Record<CampaignType, n
     { label: target.startsWith("p_") ? "Product is published" : "Destination is live", ok: destinationOk, detail: destinationOk ? undefined : "The promoted page isn't published yet." },
     { label: "Brand is verified", ok: !!brand?.verified, detail: brand?.verified ? undefined : "Verification is still in review." },
     { label: "Slot is free for these dates", ok: clashes.length === 0, detail: clashes.length ? `${placementRules[clashes[0]].name} is fully booked.` : undefined },
-    { label: "Paid the rate card price", ok: rate === c.budget, detail: rate === c.budget ? undefined : `Booked at ${usd(c.budget)}; today's rate is ${usd(rate)}. The brand keeps the price it paid.` },
-    { label: "One admin can decide", ok: !needsSecond(c), detail: needsSecond(c) ? `${secondApproverLabel}, so a second admin confirms the decision.` : undefined },
+    { label: "Booked at the rate card price", ok: rate === c.budget, detail: rate === c.budget ? undefined : `Booked at ${usd(c.budget)}; today's rate is ${usd(rate)}. The brand keeps the price it booked.` },
+    { label: "No second approver needed", ok: !needsSecond(c), detail: needsSecond(c) ? `${secondApproverLabel}, so a second admin confirms the decision.` : undefined },
   ]
 }
 
@@ -240,7 +240,7 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
             <AnimatePresence initial={false}>
               {recent.map((a) => {
                 const approved = a.action.startsWith("Approved")
-                const when = recordTime(a.at)
+                const when = recordTime(a.at, now)
                 return (
                   <motion.li key={a.id} layout initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={springs.pill} className="grid gap-x-3 gap-y-0.5 py-2 text-[12px] sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-baseline">
                     <span className="flex min-w-0 items-center gap-2">

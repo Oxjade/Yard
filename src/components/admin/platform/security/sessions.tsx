@@ -5,6 +5,7 @@ import { SignOutIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { DataTable, type BulkAction, type Column } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { useNow } from "@/hooks/use-now"
 import { adminRoles } from "@/lib/data/admin"
 import { cn } from "@/lib/utils"
 import { formatDateTime, relTime } from "../format"
@@ -16,6 +17,9 @@ const nameOf = (s: AdminSession) => memberById.get(s.memberId)?.name ?? "Unknown
 
 /** Active admin sessions. A revoke is reasoned, recorded and shown as pending until the auth service signs the device out. */
 export function Sessions({ ready, revoked, onRevoke }: { ready: boolean; revoked: Set<string>; onRevoke: (sessions: AdminSession[]) => void }) {
+  // Counted from the same today as every other Control Center page; this device is active now.
+  const now = useNow(60_000)
+  const lastActive = (s: AdminSession) => (s.id === CURRENT_SESSION_ID ? "Active now" : relTime(s.lastActiveAt, now))
   // Flagged first, then most recent; revoked ones sink to the bottom.
   const rows = useMemo(
     () => [...adminSessions].sort((a, b) => Number(revoked.has(a.id)) - Number(revoked.has(b.id)) || Number(!!b.flag) - Number(!!a.flag) || b.lastActiveAt.localeCompare(a.lastActiveAt)),
@@ -89,7 +93,7 @@ export function Sessions({ ready, revoked, onRevoke }: { ready: boolean; revoked
       ),
     },
     { key: "signed", header: "Signed in", className: "hidden min-[1400px]:table-cell", sortValue: (s) => s.signedInAt, cell: (s) => <span className="whitespace-nowrap text-ink-2 tabular">{formatDateTime(s.signedInAt)}</span> },
-    { key: "last", header: "Last active", hideBelow: "sm", sortValue: (s) => s.lastActiveAt, cell: (s) => <span className="whitespace-nowrap text-ink-2">{relTime(s.lastActiveAt)}</span> },
+    { key: "last", header: "Last active", hideBelow: "sm", sortValue: (s) => s.lastActiveAt, cell: (s) => <span className="whitespace-nowrap text-ink-2">{lastActive(s)}</span> },
     { key: "status", header: "Status", hideBelow: "sm", cell: status },
     {
       // Inline rather than in a row menu: only revocable sessions get the button, and the others say why not.

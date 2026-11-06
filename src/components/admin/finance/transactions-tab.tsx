@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 import { CopyValue } from "../marketplace/bits"
 import { Filters } from "../marketplace/filters"
 import { ledgerRows, orderIdOf, type LedgerRow } from "./derive"
-import { formatDateTime, plural, providerName, relDays, signedUsd, usd } from "./format"
+import { formatWhen, isDayPrecision, plural, providerName, relDays, signedUsd, usd } from "./format"
 import { txStatus, txTypeLabel } from "./meta"
 import { downloadCsv, useSearchParam, writeParams } from "./table"
 import { usePhone } from "../marketplace/url-state"
@@ -45,7 +45,7 @@ function exportRows(rows: LedgerRow[], name: string) {
   downloadCsv(
     name,
     ["Date (UTC)", "Reference", "Brand", "Type", "Provider", "Amount (USD)", "Status", "Webhook"],
-    rows.map((r) => [r.at, refText(r), r.brandName, txTypeLabel[r.type], providerName[r.provider], (r.amountUsd / 100).toFixed(2), txStatus(r).label, r.webhookVerified === null ? "Internal" : r.webhookVerified ? "Verified" : "Not verified"]),
+    rows.map((r) => [isDayPrecision(r.at) ? r.at.slice(0, 10) : r.at, refText(r), r.brandName, txTypeLabel[r.type], providerName[r.provider], (r.amountUsd / 100).toFixed(2), txStatus(r).label, r.webhookVerified === null ? "Internal" : r.webhookVerified ? "Verified" : "Not verified"]),
     `${site.name} ledger transactions, sample data`,
   )
 }
@@ -91,7 +91,8 @@ export function TransactionsTab({ ready }: { ready: boolean }) {
       sortValue: (r) => r.at,
       cell: (r) => (
         <span className="block whitespace-nowrap">
-          <time dateTime={r.at} className="block text-ink-2 tabular">{formatDateTime(r.at)}</time>
+          {/* Sample entries carry a day only, so they show the date; entries made here keep their time. */}
+          <time dateTime={isDayPrecision(r.at) ? r.at.slice(0, 10) : r.at} className="block text-ink-2 tabular">{formatWhen(r.at)}</time>
           <span className="block text-[11px] text-ink-3">{relDays(r.at, now)}</span>
         </span>
       ),
@@ -107,7 +108,7 @@ export function TransactionsTab({ ready }: { ready: boolean }) {
             {txTypeLabel[r.type]}, {r.brandName}
             {r.status !== "succeeded" || r.type === "chargeback" ? <span className="sm:hidden">, {txStatus(r).label.toLowerCase()}</span> : null}
           </span>
-          <time dateTime={r.at} className="block text-[11px] text-ink-3 tabular md:hidden">{formatDateTime(r.at)}</time>
+          <time dateTime={isDayPrecision(r.at) ? r.at.slice(0, 10) : r.at} className="block text-[11px] text-ink-3 tabular md:hidden">{formatWhen(r.at)}</time>
         </span>
       ),
     },

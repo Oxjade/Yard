@@ -8,6 +8,7 @@ import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { useNow } from "@/hooks/use-now"
 import { productById, products } from "@/lib/data"
 import type { ModerationItem } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
@@ -36,6 +37,8 @@ const n = (v: number) => formatNumber(Math.round(v))
 
 export function ModerationView() {
   const ready = useAdminReady()
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
   const moderation = useAdmin((s) => s.moderation)
@@ -105,7 +108,7 @@ export function ModerationView() {
     { key: "brand", header: "Brand", hideBelow: "md", sortValue: (m) => m.brandName, cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.brandName}</span> },
     { key: "reason", header: "Reason", hideBelow: "sm", sortValue: (m) => moderationReasonMeta[m.reason].label, cell: (m) => <StatusBadge tone={moderationReasonMeta[m.reason].tone}>{moderationReasonMeta[m.reason].label}</StatusBadge> },
     { key: "by", header: "Reported by", hideBelow: "lg", cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.reportedBy}</span> },
-    { key: "at", header: "Reported", hideBelow: "md", sortValue: (m) => m.reportedAt, cell: (m) => <time dateTime={m.reportedAt} title={formatDateTime(m.reportedAt)} className="whitespace-nowrap text-ink-2">{relDays(m.reportedAt)}</time> },
+    { key: "at", header: "Reported", hideBelow: "md", sortValue: (m) => m.reportedAt, cell: (m) => <time dateTime={m.reportedAt} title={formatDateTime(m.reportedAt)} className="whitespace-nowrap text-ink-2">{relDays(m.reportedAt, now)}</time> },
   ]
 
   const allowedHere = tab === "listings" ? [] : modAllowed[tab]
@@ -136,7 +139,7 @@ export function ModerationView() {
             <StatCard surface="admin" icon={SealWarningIcon} label="Counterfeit or IP" value={unresolved} format={n} hint={ready ? `${n(ipOpen)} open, ${n(ipEscalated)} with legal` : "Open or escalated"} href={ipOldest ? `/admin/products?case=${ipOldest.id}` : "/admin/products?tab=removed#moderation-queue"} hrefLabel={ipOldest ? "Open the oldest counterfeit or IP case" : "Show removed listings"} ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted listings" value={restricted.size} format={n} hint={`Of ${n(products.length)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={restricted.size} format={n} hint={`Of ${n(products.length)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>

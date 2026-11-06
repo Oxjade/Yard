@@ -23,7 +23,7 @@ import { useAdmin, type AdjustmentRequest } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { useDecision } from "../marketplace/decision"
 import { PLATFORM_ACCOUNT } from "./derive"
-import { formatDateTime, plural, signedUsd, usd } from "./format"
+import { formatWhen, plural, signedUsd, usd } from "./format"
 import { adjustmentMeta } from "./meta"
 import type { AdjustmentPrefill } from "./reconciliation-tab"
 import { useSearchParam, writeParams } from "./table"
@@ -62,7 +62,7 @@ export function AdjustmentsTab({ prefill, prefillKey, onPrefillUsed, ready }: { 
     ask({
       title: to === "approved" ? `Approve the ${signedUsd(a.amountUsd)} adjustment to ${a.brandName}?` : mine ? `Withdraw your ${signedUsd(a.amountUsd)} adjustment request?` : `Reject the adjustment to ${a.brandName}?`,
       description: [
-        `Requested by ${mine ? "you" : a.requestedBy}, ${formatDateTime(a.at)}. ${mine ? "Your" : "Their"} reason: ${a.reason}${/[.!?]$/.test(a.reason.trim()) ? "" : "."}`,
+        `Requested by ${mine ? "you" : a.requestedBy}, ${formatWhen(a.at)}. ${mine ? "Your" : "Their"} reason: ${a.reason}${/[.!?]$/.test(a.reason.trim()) ? "" : "."}`,
         to === "approved" ? "It posts as a new, balanced entry in the ledger with both your names on it. Nothing already recorded changes." : "Nothing is posted. The request is closed as rejected with your reason, and a corrected one can be raised.",
       ].join(" "),
       confirmLabel: to === "approved" ? "Approve adjustment" : mine ? "Withdraw request" : "Reject adjustment",
@@ -121,7 +121,7 @@ export function AdjustmentsTab({ prefill, prefillKey, onPrefillUsed, ready }: { 
                         <div className="min-w-0">
                           <p className="truncate text-[13px] text-ink">{a.brandName}</p>
                           <p className="text-[11.5px] text-ink-3">
-                            Requested by {mine ? "you" : a.requestedBy}, <time dateTime={a.at}>{formatDateTime(a.at)}</time>
+                            Requested by {mine ? "you" : a.requestedBy}, <time dateTime={a.at}>{formatWhen(a.at)}</time>
                           </p>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -161,7 +161,7 @@ export function AdjustmentsTab({ prefill, prefillKey, onPrefillUsed, ready }: { 
                         <p className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
                           <UserCheckIcon className="size-3.5" aria-hidden />
                           {a.status === "approved" ? "Approved" : "Rejected"} by {a.decidedBy === adminUser.name ? "you" : a.decidedBy}
-                          {a.decidedAt ? `, ${formatDateTime(a.decidedAt)}` : ""}
+                          {a.decidedAt ? `, ${formatWhen(a.decidedAt)}` : ""}
                         </p>
                       ) : null}
                     </AdjustmentRow>

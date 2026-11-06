@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { useNow } from "@/hooks/use-now"
 import { brandById, productById } from "@/lib/data"
 import type { ModerationItem } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
@@ -16,6 +17,8 @@ import { modActions, modAllowed, type ModActionKey } from "./moderation-actions"
 import { useLast } from "./use-last"
 
 export function ModerationDetail({ id, open, onOpenChange, onDecide }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void; onDecide: (key: ModActionKey, m: ModerationItem) => void }) {
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const shown = useLast(id)
   const item = useAdmin((s) => s.moderation.find((m) => m.id === shown))
   const all = useAdmin((s) => s.moderation)
@@ -73,7 +76,7 @@ export function ModerationDetail({ id, open, onOpenChange, onDecide }: { id: str
         <Facts
           items={[
             { label: "Reported by", value: item.reportedBy },
-            { label: "Reported", value: <time dateTime={item.reportedAt} title={formatDateTime(item.reportedAt)}>{relDays(item.reportedAt)}</time> },
+            { label: "Reported", value: <time dateTime={item.reportedAt} title={formatDateTime(item.reportedAt)}>{relDays(item.reportedAt, now)}</time> },
           ]}
         />
         <blockquote className="rounded-[10px] border-l-2 border-violet/60 bg-white/[0.02] px-3 py-2.5 text-[13px] text-ink-2">{item.detail}</blockquote>

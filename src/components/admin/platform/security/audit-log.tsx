@@ -6,27 +6,16 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type BulkAction, type Column } from "@/components/dashboard/data-table"
 import { Filters } from "@/components/admin/marketplace/filters"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useNow } from "@/hooks/use-now"
 import { adminRoles, type AuditEntry } from "@/lib/data/admin"
-import { DEMO_TODAY } from "@/lib/data/seed"
 import { useAdmin } from "@/lib/stores/admin"
+import { anchorDay } from "../../finance/format"
 import { isDayPrecision, recordTime } from "../format"
+import { actionLabel, readable } from "./audit-words"
 
 const ALL = "all"
 const csvCell = (v: string | undefined) => `"${(v ?? "").replace(/"/g, '""')}"`
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
-/**
- * Operational actions are recorded now and carried out once the job runner, payments service
- * or auth service is connected, so the log says what was recorded, not that it already ran.
- */
-const pendingLabel: Record<string, string> = {
-  "Retried background job": "Recorded a job retry",
-  "Replayed webhook": "Recorded a webhook replay",
-  "Revoked session": "Recorded a session revoke",
-  "Required MFA": "Recorded an MFA requirement",
-}
-const actionLabel = (action: string) => pendingLabel[action] ?? action
-/** The store writes price changes as "$14/day → $15/day"; on screen it reads as words. */
-const readable = (s: string) => s.replace(/\s*→\s*/g, " to ")
 
 /** How many entries each actor or action has, for the filter options. */
 function tally(audit: AuditEntry[], key: "actor" | "action") {
@@ -52,6 +41,8 @@ function download(rows: AuditEntry[], name: string) {
 /** The audit log: every decision, who made it, why and who approved it. Read-only; exports are logged too. */
 export function AuditLog({ ready }: { ready: boolean }) {
   const audit = useAdmin((s) => s.audit)
+  // Counted from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const log = useAdmin((s) => s.log)
   const [actor, setActor] = useState(ALL)
   const [action, setAction] = useState(ALL)
@@ -63,7 +54,7 @@ export function AuditLog({ ready }: { ready: boolean }) {
 
   const exportRows = useAsyncAction(
     (list: AuditEntry[], scope: string) => {
-      download(list, `audit-log-${DEMO_TODAY}.csv`)
+      download(list, `audit-log-${anchorDay(Date.now())}.csv`)
       log("Exported audit log", `${list.length} ${list.length === 1 ? "entry" : "entries"}, ${scope}`)
       return list.length
     },
@@ -108,7 +99,7 @@ export function AuditLog({ ready }: { ready: boolean }) {
       align: "right",
       sortValue: (a) => a.at,
       cell: (a) => {
-        const t = recordTime(a.at)
+        const t = recordTime(a.at, now)
         return (
           <span className="block whitespace-nowrap">
             <time dateTime={isDayPrecision(a.at) ? a.at.slice(0, 10) : a.at} title={t.title} className="block text-ink-2">{t.label}</time>

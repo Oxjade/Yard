@@ -8,6 +8,7 @@ import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { useNow } from "@/hooks/use-now"
 import type { BrandApplication, BrandReviewStatus } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
@@ -16,7 +17,7 @@ import { BrandDetail } from "./brand-detail"
 import { brandActions, brandAllowed, brandDecision, type BrandActionKey } from "./brand-actions"
 import { useDecision } from "./decision"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
-import { kycMeta, riskMeta } from "./meta"
+import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 
@@ -33,6 +34,8 @@ const days = (v: number) => `${n(v)} ${Math.round(v) === 1 ? "day" : "days"}`
 
 export function BrandsView() {
   const ready = useAdminReady()
+  // Relative days count from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
   const applications = useAdmin((s) => s.applications)
@@ -76,6 +79,15 @@ export function BrandsView() {
     .map(([label, count]) => `${count} ${label}`)
     .join(", ")
   const risky = applications.filter((a) => a.risk === "high" && a.status !== "suspended")
+  // Each brand's own status, so the card never calls a restricted brand live.
+  const riskyHint =
+    risky.length === 1
+      ? `${risky[0].brandName}, ${brandStatusMeta[risky[0].status].label.toLowerCase()}`
+      : risky.length
+        ? Object.entries(risky.reduce<Record<string, number>>((m, a) => ({ ...m, [brandStatusMeta[a.status].label.toLowerCase()]: (m[brandStatusMeta[a.status].label.toLowerCase()] ?? 0) + 1 }), {}))
+            .map(([label, count]) => `${count} ${label}`)
+            .join(", ")
+        : "None right now"
 
   const open = (a: BrandApplication) => writeParams({ review: a.id })
   // What `ask` returns goes back to the bulk bar, so a cancelled decision keeps the selection
@@ -105,7 +117,7 @@ export function BrandsView() {
     },
     { key: "country", header: "Country", hideBelow: "md", sortValue: (a) => countryName(a.country), cell: (a) => <span className="whitespace-nowrap text-ink-2">{countryName(a.country)}</span> },
     { key: "category", header: "Category", hideBelow: "lg", cell: (a) => <span className="whitespace-nowrap text-ink-2">{categoryName(a.category)}</span> },
-    { key: "submitted", header: "Submitted", hideBelow: "md", sortValue: (a) => a.submittedAt, cell: (a) => <time dateTime={a.submittedAt} title={formatDate(a.submittedAt)} className="whitespace-nowrap text-ink-2">{relDays(a.submittedAt)}</time> },
+    { key: "submitted", header: "Submitted", hideBelow: "md", sortValue: (a) => a.submittedAt, cell: (a) => <time dateTime={a.submittedAt} title={formatDate(a.submittedAt)} className="whitespace-nowrap text-ink-2">{relDays(a.submittedAt, now)}</time> },
     { key: "kyc", header: "KYC", hideBelow: "sm", cell: (a) => <StatusBadge tone={kycMeta[a.kyc].tone}>{kycMeta[a.kyc].label}</StatusBadge> },
     { key: "risk", header: "Risk", hideBelow: "sm", sortValue: (a) => ["low", "medium", "high"].indexOf(a.risk), cell: (a) => <StatusBadge tone={riskMeta[a.risk].tone}>{riskMeta[a.risk].label}</StatusBadge> },
     { key: "products", header: "Products", align: "right", hideBelow: "lg", sortValue: (a) => a.products, cell: (a) => <span className="text-ink">{a.products}</span> },
@@ -133,13 +145,13 @@ export function BrandsView() {
             <StatCard surface="admin" variant={ready && counts.pending_review ? "brand" : "default"} icon={HourglassIcon} label="Awaiting review" value={counts.pending_review} format={n} hint="Worked first in, first out" href="/admin/brands?tab=pending_review#brand-review" hrefLabel="Show the review queue" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ClockIcon} label="Oldest application" value={oldest ? daysSince(oldest.submittedAt) : 0} format={days} hint={oldest ? `${oldest.brandName}, target 2 days` : "Nothing waiting"} href={oldest ? `/admin/brands?review=${oldest.id}` : "/admin/brands?tab=pending_review#brand-review"} hrefLabel={oldest ? `Open ${oldest.brandName}` : "Show the review queue"} ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ClockIcon} label="Oldest application" value={oldest ? daysSince(oldest.submittedAt, now) : 0} format={days} hint={oldest ? `${oldest.brandName}, target 2 days` : "Nothing waiting"} href={oldest ? `/admin/brands?review=${oldest.id}` : "/admin/brands?tab=pending_review#brand-review"} hrefLabel={oldest ? `Open ${oldest.brandName}` : "Show the review queue"} ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" icon={IdentificationCardIcon} label="KYC incomplete" value={kycIncomplete} format={n} hint={kycBreakdown || "Nothing waiting on KYC"} href={kycOldest ? `/admin/brands?review=${kycOldest.id}` : "/admin/brands?tab=pending_review#brand-review"} hrefLabel={kycOldest ? `Open ${kycOldest.brandName}, KYC ${kycMeta[kycOldest.kyc].label.toLowerCase()}` : "Show the review queue"} ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="High risk, live" value={risky.length} format={n} hint={risky.length === 1 ? `${risky[0].brandName}, not suspended` : "Not suspended"} href={risky.length === 1 ? `/admin/brands?review=${risky[0].id}` : "/admin/brands?tab=restricted#brand-review"} hrefLabel={risky.length === 1 ? `Open ${risky[0].brandName}` : "Show restricted brands"} ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="High risk, not suspended" value={risky.length} format={n} hint={riskyHint} href={risky.length === 1 ? `/admin/brands?review=${risky[0].id}` : "/admin/brands?tab=restricted#brand-review"} hrefLabel={risky.length === 1 ? `Open ${risky[0].brandName}` : "Show restricted brands"} ready={ready} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>

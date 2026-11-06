@@ -15,6 +15,7 @@ import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useNow } from "@/hooks/use-now"
 import { failedJobs, healthSeries, healthServices, webhookFailures } from "@/lib/data/admin"
 import { formatPercent } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
@@ -222,6 +223,8 @@ function Trend() {
 
 function JobRow({ job, done }: { job: Job; done: boolean }) {
   const retryJob = useAdmin((s) => s.retryJob)
+  // Counted from the same today as every other Control Center page.
+  const now = useNow(60_000)
   // The label carries the job id: the Overview counts open jobs from it.
   const retry = useAsyncAction(() => {
     retryJob(job.id, `${job.name} (${job.id})`, `Manual retry after: ${job.error}`)
@@ -242,7 +245,7 @@ function JobRow({ job, done }: { job: Job; done: boolean }) {
         </div>
         <p className="mt-1 text-[12px] text-ink-2">{job.error}</p>
         <p className="mt-0.5 text-[11px] text-ink-3">
-          {job.queue.charAt(0).toUpperCase() + job.queue.slice(1)} queue, {job.attempts} attempts, failed {relDay(job.failedAt)}
+          {job.queue.charAt(0).toUpperCase() + job.queue.slice(1)} queue, {job.attempts} attempts, failed {relDay(job.failedAt, now)}
         </p>
         {done ? (
           <p className="mt-1.5 text-[11.5px] text-ink-2">It goes back in the {job.queue} queue once the job runner is connected. Recorded in the audit log.</p>
@@ -282,6 +285,7 @@ function FailedJobs({ retried, ready }: { retried: Set<string>; ready: boolean }
 
 function WebhookFailures({ replayed, ready }: { replayed: Set<string>; ready: boolean }) {
   const replayWebhook = useAdmin((s) => s.replayWebhook)
+  const now = useNow(60_000)
   const [target, setTarget] = useState<Hook | null>(null)
   const [open, setOpen] = useState(false)
   // A recorded replay disables its button, so focus moves on to the next open failure.
@@ -313,7 +317,7 @@ function WebhookFailures({ replayed, ready }: { replayed: Set<string>; ready: bo
                     </div>
                     <p className="mt-1 text-[12px] text-ink-2">{w.reason}</p>
                     <p className="mt-0.5 text-[11px] text-ink-3">
-                      Event {w.id}, received {relDay(w.receivedAt)}
+                      Event {w.id}, received {relDay(w.receivedAt, now)}
                     </p>
                     {done ? <p className="mt-1.5 text-[11.5px] text-ink-2">Our handler runs it again once the payments service is connected. Recorded in the audit log.</p> : null}
                   </div>

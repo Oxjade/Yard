@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { Bone } from "@/components/feedback/skeletons"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useNow } from "@/hooks/use-now"
 import { adminRoles, adminUser } from "@/lib/data/admin"
 import { campaignTypes, type Campaign, type CampaignType } from "@/lib/data/ads"
 import { spring } from "@/lib/motion"
@@ -18,6 +19,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { recordTime, usd } from "../format"
 import { useDialogReturn } from "../ready"
+import { readable } from "../security/audit-words"
 import { placementRules } from "./placements"
 
 const types = Object.keys(campaignTypes) as CampaignType[]
@@ -41,6 +43,8 @@ export function PricingPanel({ campaigns, ready }: { campaigns: Campaign[]; read
   const [open, setOpen] = useState(false)
   const history = useMemo(() => audit.filter((a) => a.action === PRICE_ACTION), [audit])
   const focus = useDialogReturn()
+  // Counted from the same today as every other Control Center page.
+  const now = useNow(60_000)
 
   return (
     <div>
@@ -62,7 +66,7 @@ export function PricingPanel({ campaigns, ready }: { campaigns: Campaign[]; read
                 {ct.placements.map((p) => placementRules[p].name).join(", ")}
               </p>
               <p className="text-[12px] text-ink-3">
-                {!ready ? <Bone className="h-3 w-28" /> : a ? <span title={recordTime(a.at).title}>Changed {recordTime(a.at).label.toLowerCase()} by {a.actor}</span> : "Launch price"}
+                {!ready ? <Bone className="h-3 w-28" /> : a ? <span title={recordTime(a.at, now).title}>Changed {recordTime(a.at, now).label.toLowerCase()} by {a.actor}</span> : "Launch price"}
               </p>
               <div className="flex items-center justify-between gap-4 @3xl:justify-end">
                 <p className="whitespace-nowrap">
@@ -101,9 +105,9 @@ export function PricingPanel({ campaigns, ready }: { campaigns: Campaign[]; read
             <AnimatePresence initial={false}>
               {history.map((a) => (
                 <motion.li key={a.id} layout initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={spring.layout} className="grid gap-x-4 gap-y-0.5 py-2.5 @3xl:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]">
-                  <time dateTime={a.at} title={recordTime(a.at).title} className="text-[11px] text-ink-3 @3xl:text-[12px] @3xl:text-ink-2">{recordTime(a.at).label}</time>
+                  <time dateTime={a.at} title={recordTime(a.at, now).title} className="text-[11px] text-ink-3 @3xl:text-[12px] @3xl:text-ink-2">{recordTime(a.at, now).label}</time>
                   <span className="min-w-0">
-                    <span className="block text-[13px] text-ink tabular">{a.target.replace(" → ", " to ")}</span>
+                    <span className="block text-[13px] text-ink tabular">{readable(a.target)}</span>
                     <span className="block text-[11px] text-ink-3">
                       {a.actor}, {adminRoles[a.role]?.name.toLowerCase() ?? a.role}
                     </span>

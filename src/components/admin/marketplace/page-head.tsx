@@ -50,15 +50,22 @@ export function PanelRail({ children, className, value }: { children: React.Reac
 }
 
 /**
- * The headline figures. Four across on wide screens, two by two on tablets; on phones a row
- * you swipe through (each card snaps into place), so the table below is one glance away
- * rather than four screens of cards down.
+ * The headline figures. Four across on wide screens, two by two below that. On phones the
+ * cards turn compact (tighter padding and label, no icon, a smaller numeral, no hint line), so
+ * all four figures fit in one glance above the table instead of a row you swipe through. The styles
+ * reach into StatCard's parts (its article, numeral row and hint), so every index page gets
+ * the same compact card without a prop on each one.
  */
 export function StatRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section
       aria-label={label}
-      className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 @lg:mx-0 @lg:grid @lg:grid-cols-2 @lg:overflow-visible @lg:px-0 @5xl:grid-cols-4 [&>*]:w-[80%] [&>*]:shrink-0 [&>*]:snap-start @lg:[&>*]:w-auto"
+      className={cn(
+        "grid grid-cols-2 gap-2 @lg:gap-3 @5xl:grid-cols-4",
+        "@max-lg:[&_article]:p-3 @max-lg:[&_article>div:first-child]:gap-2 @max-lg:[&_article_h3]:text-[10.5px] @max-lg:[&_article_h3]:tracking-[0.06em] @max-lg:[&_article_h3>svg]:hidden",
+        "@max-lg:[&_article>div:nth-child(2)]:mt-3 @max-lg:[&_article>div:nth-child(2)]:min-h-8 @max-lg:[&_article>p]:hidden",
+        "@max-lg:[&_article_.font-metric]:text-[1.625rem] @max-lg:[&_article>div:nth-child(2)>span[aria-hidden]]:h-7 @max-lg:[&_article>div:nth-child(2)>span[aria-hidden]]:w-20",
+      )}
     >
       {children}
     </section>

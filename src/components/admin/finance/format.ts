@@ -37,6 +37,26 @@ export function demoLag(now?: number | null) {
 }
 
 /**
+ * The calendar day (UTC, "2026-11-05") every Control Center page counts as today: the demo's on
+ * the server and while hydrating, the real one once the client knows the time. Windows such as
+ * "30 days" end on it, so the Overview and the Orders page count the same days.
+ */
+export function anchorDay(now?: number | null) {
+  return new Date(DEMO_NOW + demoLag(now) * DAY).toISOString().slice(0, 10)
+}
+
+/** The moment a sample record's age is measured from: the demo's now, moved on by demoLag. */
+export function sampleNow(now?: number | null) {
+  return DEMO_NOW + demoLag(now) * DAY
+}
+
+/**
+ * Sample records carry a day only (stored at noon UTC); a time of "12:00 UTC" on every one of
+ * them would be false precision, so they show the date alone. Records made here keep their time.
+ */
+export const isDayPrecision = (iso: string) => new Date(iso).getTime() % DAY === DAY / 2
+
+/**
  * Whole days before today that `iso` falls on (negative for a later day): calendar days (UTC) from
  * the real clock for a live record, from the demo's today moved on by demoLag for a sample row.
  */
@@ -80,6 +100,8 @@ const dateTimeFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "s
 export const formatDate = (iso: string) => dateFmt.format(new Date(iso))
 export const formatDay = (iso: string) => dayFmt.format(new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso))
 export const formatDateTime = (iso: string) => `${dateTimeFmt.format(new Date(iso))} UTC`
+/** The date alone for a day-precision sample record, the date and time for anything else. */
+export const formatWhen = (iso: string) => (isDayPrecision(iso) ? formatDate(iso) : formatDateTime(iso))
 
 /** USD in cents, always with cents so a column of figures lines up. */
 export const usd = (cents: number) => formatMoney(Math.round(cents), "USD", { showCents: true })

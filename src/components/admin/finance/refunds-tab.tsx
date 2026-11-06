@@ -18,7 +18,7 @@ import { useDecision, type Decision } from "../marketplace/decision"
 import { Filters } from "../marketplace/filters"
 import { notifyRefundDecision, refundAudience } from "../marketplace/notify"
 import { orderIdOf, providerFor } from "./derive"
-import { formatDateTime, plural, providerName, relDays, usd } from "./format"
+import { formatWhen, plural, providerName, relDays, usd } from "./format"
 import { refundMeta } from "./meta"
 import { FocusCallout, refLinkClass, useSearchParam, writeParams } from "./table"
 import { usePhone } from "../marketplace/url-state"
@@ -170,7 +170,7 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
     },
     { key: "reason", header: "Reason", hideBelow: "lg", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reason}</span> },
     { key: "amount", header: "Amount", align: "right", sortValue: (r) => r.amountUsd, cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.amountUsd)}</span> },
-    { key: "requested", header: "Requested", hideBelow: "md", sortValue: (r) => r.requestedAt, cell: (r) => <time dateTime={r.requestedAt} title={formatDateTime(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt, now)}</time> },
+    { key: "requested", header: "Requested", hideBelow: "md", sortValue: (r) => r.requestedAt, cell: (r) => <time dateTime={r.requestedAt} title={formatWhen(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt, now)}</time> },
     { key: "key", header: "Idempotency key", hideBelow: "lg", cell: (r) => <CopyValue value={r.idempotencyKey} label="Copy idempotency key" className="text-[12px] text-ink-2" /> },
     { key: "status", header: "Status", hideBelow: "sm", sortValue: (r) => ORDER.indexOf(r.status), cell: statusCell },
   ]

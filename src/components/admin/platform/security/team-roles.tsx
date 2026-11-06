@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
+import { useNow } from "@/hooks/use-now"
 import { adminRoles, adminTeam, adminUser, type AdminRole } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
@@ -23,6 +24,8 @@ const can = (r: AdminRole, p: string) => adminRoles[r].can.includes("everything"
 /** The admin team, each member's MFA status, and what every role is allowed to do. */
 export function TeamRoles({ ready, revoked, mfaRequired, onRevoke }: { ready: boolean; revoked: Set<string>; mfaRequired: Set<string>; onRevoke: (sessions: AdminSession[], opts: { announce: boolean }) => void }) {
   const requireMfa = useAdmin((s) => s.requireMfa)
+  // Counted from the same today as every other Control Center page.
+  const now = useNow(60_000)
   const [target, setTarget] = useState<TeamMember | null>(null)
   const [open, setOpen] = useState(false)
   // The Require MFA button goes away once MFA is required; focus then moves to the tab.
@@ -34,7 +37,8 @@ export function TeamRoles({ ready, revoked, mfaRequired, onRevoke }: { ready: bo
   const lastActive = (m: TeamMember) => {
     // Revoked sessions count until the auth service has actually signed them out.
     const s = adminSessions.filter((x) => x.memberId === m.id).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0]
-    return s ? relTime(s.lastActiveAt) : "Not signed in"
+    if (!s) return "Not signed in"
+    return s.id === CURRENT_SESSION_ID ? "Active now" : relTime(s.lastActiveAt, now)
   }
 
   function ask(m: TeamMember) {

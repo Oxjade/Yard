@@ -1,25 +1,21 @@
 import { countries, type CountryCode } from "@/config/markets"
 import { categoryBySlug } from "@/lib/data"
 import type { CategorySlug } from "@/lib/data/types"
+import { daysUntil, relDays as relDaysFrom } from "../finance/format"
 
 /**
- * Formatting for the marketplace management screens. Dates are relative to the demo's
- * reference day and formatted in UTC so the server HTML and the client always agree.
+ * Formatting for the marketplace management screens, in UTC. Relative days count from the same
+ * today as every other Control Center page (see demoLag in ../finance/format): the demo's on the
+ * server and while hydrating, the real one once the client knows the time. Pass useNow's reading
+ * as `now`; without it they count from the demo's today.
  */
 
-const DEMO_NOW = new Date("2026-11-05T12:00:00Z").getTime()
-
-export function relDays(iso: string) {
-  const d = Math.floor((DEMO_NOW - new Date(iso).getTime()) / 86_400_000)
-  if (d <= 0) return "Today"
-  if (d === 1) return "Yesterday"
-  if (d < 31) return `${d} days ago`
-  const m = Math.round(d / 30)
-  return m <= 1 ? "A month ago" : `${m} months ago`
+export function relDays(iso: string, now?: number | null) {
+  return relDaysFrom(iso, now)
 }
 
-export function daysSince(iso: string) {
-  return Math.max(0, Math.floor((DEMO_NOW - new Date(iso).getTime()) / 86_400_000))
+export function daysSince(iso: string, now?: number | null) {
+  return Math.max(0, -daysUntil(iso, now))
 }
 
 const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })

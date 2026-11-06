@@ -20,8 +20,8 @@ import { useOrders } from "@/lib/stores/orders"
 import { useNow } from "@/hooks/use-now"
 import { Filters } from "../marketplace/filters"
 import { AdminPageHead, PanelRail, StatRow } from "../marketplace/page-head"
-import { buildOrderRows, groupState, type OrderRow } from "./derive"
-import { amountIn, daysUntil, formatDateTime, relDays, usd, usdCompact } from "./format"
+import { buildOrderRows, groupState, isPaidOrder, type OrderRow } from "./derive"
+import { amountIn, daysUntil, formatWhen, relDays, usd, usdCompact } from "./format"
 import { fulfilMeta, groupMeta, payMeta, type FulfilState } from "./meta"
 import { OrderDetail } from "./order-detail"
 import { downloadCsv, InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./table"
@@ -111,11 +111,12 @@ export function OrdersView() {
   const openOrder = (id: string) => writeParams({ order: id })
 
   // Whole days since an order was placed, from the same today as its Placed column (see relDays),
-  // so "today" and "30 days" mean what the column says.
+  // so "today" and "30 days" mean what the column says. Paid orders and GMV follow the Overview's
+  // rule (isPaidOrder) on the same days, so the two pages agree to the dollar.
   const age = (r: OrderRow) => -daysUntil(r.order.placedAt, now)
-  const recent = rows.filter((r) => age(r) < 30)
-  const today = rows.filter((r) => age(r) <= 0).length
-  const gmv = recent.filter((r) => r.fulfil !== "cancelled" && r.pay !== "pending" && r.pay !== "failed").reduce((s, r) => s + r.totalUsd, 0)
+  const recent = rows.filter((r) => age(r) < 30 && isPaidOrder(r))
+  const today = recent.filter((r) => age(r) <= 0).length
+  const gmv = recent.reduce((s, r) => s + r.totalUsd, 0)
   const unfulfilled = rows.filter((r) => r.fulfil === "unfulfilled").length
   const refundAsks = refunds.filter((r) => r.status === "requested").length
   const awaiting = rows.filter((r) => r.pay === "pending").length
@@ -165,7 +166,7 @@ export function OrdersView() {
       ),
     },
     { key: "customer", header: "Customer", hideBelowContainer: "5xl", sortValue: (r) => r.customer.name, cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.customer.name}</span> },
-    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (r) => r.order.placedAt, cell: (r) => <time dateTime={r.order.placedAt} title={formatDateTime(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt, now)}</time> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (r) => r.order.placedAt, cell: (r) => <time dateTime={r.order.placedAt} title={formatWhen(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt, now)}</time> },
     {
       key: "total",
       header: "Total",
@@ -205,7 +206,7 @@ export function OrdersView() {
       ),
     },
     { key: "customer", header: "Customer", hideBelow: "md", sortValue: (c) => c.customer, cell: (c) => <span className="whitespace-nowrap text-ink-2">{c.customer}</span> },
-    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (c) => c.placedAt, cell: (c) => <time dateTime={c.placedAt} title={formatDateTime(c.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(c.placedAt, now)}</time> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (c) => c.placedAt, cell: (c) => <time dateTime={c.placedAt} title={formatWhen(c.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(c.placedAt, now)}</time> },
     { key: "orders", header: "Brand orders", align: "right", hideBelow: "sm", sortValue: (c) => c.orders.length, cell: (c) => <span className="text-ink">{c.orders.length}</span> },
     { key: "total", header: "Total", align: "right", sortValue: (c) => c.totalUsd, cell: (c) => <span className="whitespace-nowrap text-ink">{usd(c.totalUsd)}</span> },
     {
@@ -233,10 +234,10 @@ export function OrdersView() {
       <InPageLinks>
         <StatRow label="Order figures">
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShoppingCartIcon} label="Orders, 30 days" value={recent.length} format={n} hint={`${n(today)} today${awaiting ? `, ${n(awaiting)} awaiting payment` : ""}`} href="/admin/orders#orders" hrefLabel="Show all orders" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShoppingCartIcon} label="Paid orders" value={recent.length} format={n} hint={`30 days, ${n(today)} today${awaiting ? `, ${n(awaiting)} awaiting payment` : ""}`} href="/admin/orders#orders" hrefLabel="Show all orders" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ChartLineUpIcon} label="GMV, 30 days" value={gmv} format={usdCompact} hint="Paid orders, converted to USD" href="/admin/finance" hrefLabel="Open transactions in Finance" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ChartLineUpIcon} label="GMV" value={gmv} format={usdCompact} hint="30 days of paid orders, in USD" href="/admin/finance" hrefLabel="Open transactions in Finance" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" variant={ready && unfulfilled ? "brand" : "default"} icon={PackageIcon} label="Unfulfilled" value={unfulfilled} format={n} hint="Paid, not yet processing" href="/admin/orders?status=unfulfilled#orders" hrefLabel="Show unfulfilled orders" ready={ready} className="h-full" />
