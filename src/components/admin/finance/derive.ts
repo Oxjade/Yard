@@ -45,7 +45,7 @@ for (const t of transactions) {
   const k = orderIdOf(t.id)
   txByOrder.set(k, [...(txByOrder.get(k) ?? []), t])
 }
-const disputeByOrder = new Map(disputes.map((d) => [orderIdOf(d.id), d]))
+const seededDisputes = new Map(disputes.map((d) => [orderIdOf(d.id), d]))
 const failedCharges = new Set(transactions.filter((t) => t.type === "charge" && t.status === "failed").map((t) => orderIdOf(t.id)))
 
 export function groupReference(groupId: string, groups: CheckoutGroup[]) {
@@ -133,7 +133,8 @@ export type OrderRow = {
  * Every merchant order on the platform: the seeded marketplace orders plus the ones the demo
  * shopper placed through checkout (which is where multi-brand checkouts come from). Newest first.
  */
-export function buildOrderRows(clientOrders: MerchantOrder[], groups: CheckoutGroup[], refunds: Refund[]): OrderRow[] {
+export function buildOrderRows(clientOrders: MerchantOrder[], groups: CheckoutGroup[], refunds: Refund[], liveDisputes?: Dispute[]): OrderRow[] {
+  const disputeByOrder = liveDisputes ? new Map(liveDisputes.map((d) => [orderIdOf(d.id), d])) : seededDisputes
   const seen = new Set<string>()
   const all = [...clientOrders, ...merchantOrders].filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)))
   all.sort((a, b) => b.placedAt.localeCompare(a.placedAt))
@@ -190,6 +191,8 @@ export function paymentEvents(o: MerchantOrder, brand: Brand, refund?: Refund, d
   const commission = convert(o.commission, o.currency, "USD")
   const out: PaymentEvent[] = []
   const recorded = txByOrder.get(o.id)
+  // A declined charge earns nothing: no commission is assessed on money that never arrived.
+  const chargeFailed = failedCharges.has(o.id)
 
   if (recorded) {
     for (const t of recorded) {
@@ -210,6 +213,7 @@ export function paymentEvents(o: MerchantOrder, brand: Brand, refund?: Refund, d
           verified: t.webhookVerified,
         })
       } else if (t.type === "commission") {
+        if (chargeFailed) continue
         out.push({ id: t.id, at: t.at, label: "Commission assessed", detail: "5% of the item subtotal. Shipping passes through to the brand.", provider, amountUsd: t.amountUsd, status: txStatusMeta[t.status], verified: null })
       } else if (t.type === "refund") {
         out.push({ id: t.id, at: t.at, label: "Refund processed", detail: refund ? `Idempotency key ${refund.idempotencyKey}` : undefined, provider, amountUsd: t.amountUsd, status: txStatusMeta[t.status], verified: t.webhookVerified })
@@ -225,8 +229,8 @@ export function paymentEvents(o: MerchantOrder, brand: Brand, refund?: Refund, d
   if (refund && !(refund.status === "issued" && hasRefundTx)) {
     const base = { id: refund.id, at: refund.requestedAt, provider, amountUsd: -refund.amountUsd, verified: null }
     if (refund.status === "requested") out.push({ ...base, label: "Refund requested", detail: `${refund.reason}. Waiting for a Finance decision.`, status: { label: "Requested", tone: "attention" } })
-    if (refund.status === "approved") out.push({ ...base, label: "Refund approved", detail: `Idempotency key ${refund.idempotencyKey}. A retry with the same key can't pay twice.`, status: refundMeta.approved })
-    if (refund.status === "issued") out.push({ ...base, label: "Refund issued", detail: `${providerName[provider]} confirmed it. Idempotency key ${refund.idempotencyKey}`, status: txStatusMeta.succeeded, verified: true })
+    if (refund.status === "approved") out.push({ ...base, label: "Refund approved", detail: `Idempotency key ${refund.idempotencyKey}. Not sent: no payments provider is connected in this build, so no money has moved. When it is, a retry with the same key can't pay twice.`, status: refundMeta.approved })
+    if (refund.status === "issued") out.push({ ...base, label: "Refund recorded as issued", detail: `Through ${providerName[provider]}, idempotency key ${refund.idempotencyKey}.`, status: txStatusMeta.succeeded, verified: null })
     if (refund.status === "declined") out.push({ ...base, amountUsd: 0, label: "Refund declined", detail: refund.reason, status: refundMeta.declined })
   }
 
@@ -254,25 +258,48 @@ type TimelineItem = { id: string; at: string; label: string; who?: string; detai
 
 /**
  * The order's own timeline, with Control Center decisions about it merged in. Where the
- * provider's record disagrees with the order's (a failed charge), the provider's record wins,
- * and a hold on fulfilment is shown where it starts.
+ * provider's record disagrees with the order's (a failed charge), the provider's record wins:
+ * the order was placed, the charge failed and fulfilment went on hold, and nothing the
+ * brand's status implies after that (processing, shipping) happened on an unpaid order.
  */
-export function orderTimeline(o: MerchantOrder, audit: AuditEntry[], state?: { pay: PayState; fulfil: FulfilState; dispute?: Dispute }): TimelineItem[] {
+export function orderTimeline(o: MerchantOrder, audit: AuditEntry[], state?: { pay: PayState; fulfil: FulfilState; refund?: Refund; dispute?: Dispute }): TimelineItem[] {
   const failed = state?.pay === "failed"
-  const own: TimelineItem[] = o.timeline.map((t, i) => ({ id: `t${i}`, at: t.at, label: failed && t.label === "Payment confirmed by provider" ? "Charge failed at the provider" : t.label }))
-  if (state?.fulfil === "on_hold") {
-    const last = own.at(-1)?.at ?? o.placedAt
-    const at = failed || !state.dispute || state.dispute.openedAt < last ? last : state.dispute.openedAt
-    own.push({ id: "hold", at, label: "Fulfilment put on hold", detail: failed ? "Nothing ships until the customer pays." : "Nothing ships while the dispute is open." })
+  let own: TimelineItem[]
+  if (failed) {
+    const charge = txByOrder.get(o.id)?.find((t) => t.type === "charge")
+    const failedAt = [charge?.at ?? o.placedAt, o.placedAt].sort().at(-1)!
+    own = [
+      { id: "placed", at: o.placedAt, label: "Order placed" },
+      { id: "charge", at: failedAt, label: "Charge failed at the provider", detail: "The provider declined it, so nothing was captured." },
+      { id: "hold", at: failedAt, label: "Fulfilment put on hold", detail: "Nothing ships until the customer pays." },
+    ]
+  } else {
+    own = o.timeline.map((t, i) => ({ id: `t${i}`, at: t.at, label: t.label }))
+    if (state?.fulfil === "on_hold") {
+      const last = own.at(-1)?.at ?? o.placedAt
+      const at = !state.dispute || state.dispute.openedAt < last ? last : state.dispute.openedAt
+      own.push({ id: "hold", at, label: "Fulfilment put on hold", detail: "Nothing ships while the dispute is open." })
+    }
   }
-  const decisions = audit.filter((a) => a.target === `#${o.reference}`).map((a) => ({ id: a.id, at: a.at, label: a.action, who: a.actor, detail: a.reason }))
+  // Finance writes refund and dispute decisions as "#REF, $amount" with the refund or dispute
+  // id as the subject, so match on either.
+  const ref = `#${o.reference}`
+  const subjects = new Set([state?.refund?.id, state?.dispute?.id].filter(Boolean))
+  const about = (a: AuditEntry) => (a.subjectId && subjects.has(a.subjectId)) || a.target === ref || a.target.startsWith(`${ref},`)
+  const decisions = audit.filter(about).map((a) => ({ id: a.id, at: a.at, label: a.action, who: a.actor, detail: a.reason }))
   return [...own, ...decisions].sort((a, b) => a.at.localeCompare(b.at))
 }
 
 /* ---------- Finance ---------- */
 
+/**
+ * A dispute's stage as Finance should read it. Evidence saved in this browser can't reach the
+ * provider (no payments backend), so a dispute whose evidence was saved here reads "Evidence
+ * saved", not "Under review" as if the provider had it.
+ */
 export function disputeStage(d: Dispute, audit: AuditEntry[]): DisputeStage {
-  if (d.stage === "needs_evidence" && audit.some((a) => a.action === EVIDENCE_ACTION && a.target === `#${d.reference}`)) return "evidence_submitted"
+  const saved = audit.some((a) => a.action === EVIDENCE_ACTION && (a.subjectId ? a.subjectId === d.id : a.target === `#${d.reference}` || a.target.startsWith(`#${d.reference},`)))
+  if (saved && (d.stage === "needs_evidence" || d.stage === "under_review")) return "evidence_submitted"
   return d.stage
 }
 export const EVIDENCE_ACTION = "Submitted dispute evidence"
@@ -295,8 +322,11 @@ export type LedgerRow = Omit<Transaction, "provider" | "webhookVerified"> & { pr
 export function ledgerRows(adjustments: AdjustmentRequest[]): LedgerRow[] {
   const adj: LedgerRow[] = adjustments
     .filter((a) => a.status === "approved")
-    .map((a) => ({ id: `tx_${a.id}`, reference: a.id.replace("adj_", "ADJ-").toUpperCase(), at: a.at, brandName: a.brandName, type: "adjustment", provider: "internal", amountUsd: a.amountUsd, status: "succeeded", webhookVerified: null, memo: a.reason }))
-  return [...adj, ...transactions].sort((a, b) => b.at.localeCompare(a.at))
+    // An adjustment posts when the second admin approves it, so that's its ledger date.
+    .map((a) => ({ id: `tx_${a.id}`, reference: a.id.replace("adj_", "ADJ-").toUpperCase(), at: a.decidedAt ?? a.at, brandName: a.brandName, type: "adjustment", provider: "internal", amountUsd: a.amountUsd, status: "succeeded", webhookVerified: null, memo: a.reason }))
+  // A declined charge posts nothing, so its commission never reaches the ledger.
+  const posted = transactions.filter((t) => !(t.type === "commission" && failedCharges.has(orderIdOf(t.id))))
+  return [...adj, ...posted].sort((a, b) => b.at.localeCompare(a.at))
 }
 
 export const PLATFORM_ACCOUNT = "Platform (reconciliation suspense)"

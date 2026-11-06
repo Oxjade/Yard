@@ -1,99 +1,102 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { MetricTile } from "@/components/dashboard/metric-tile"
-import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
-import { campaignStatusMeta } from "@/components/dashboard/status-badge"
-import { campaignTypes, type CampaignStatus } from "@/lib/data/ads"
-import { useAdmin } from "@/lib/stores/admin"
-import { int, usd } from "../format"
-import { SectionTabs } from "../section-tabs"
-import { FilterSelect, SearchField } from "../table"
-import { CampaignsTable, filterCampaigns, statusOrder } from "./campaigns-table"
+import { useId, useState } from "react"
+import { CoinsIcon, LayoutIcon, MegaphoneIcon, PlayCircleIcon } from "@phosphor-icons/react"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
+import { Reveal, RevealItem } from "@/components/admin/ui/motion"
+import { Panel } from "@/components/admin/ui/panel"
+import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { int, usdCompact } from "../format"
+import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplace/page-head"
+import { useAdminReady, useStudioReady } from "../ready"
+import { inPageTab, TabParam, writeTabParam } from "../tab-param"
+import { CampaignsTable } from "./campaigns-table"
+import { useAllCampaigns, useCampaignDecision } from "./decisions"
 import { PlacementsPanel, SlotLegend } from "./placements-panel"
 import { placementOrder } from "./placements"
 import { PricingPanel } from "./pricing-panel"
-import { ReviewQueue } from "./review-queue"
+import { DECIDE_WITHIN, ReviewQueue } from "./review-queue"
 
-type Tab = "campaigns" | "placements" | "pricing"
+const TABS = ["campaigns", "placements", "pricing"] as const
+type Tab = (typeof TABS)[number]
 
 export function AdvertisingView() {
-  const campaigns = useAdmin((s) => s.campaigns)
+  const adminReady = useAdminReady()
+  const studioReady = useStudioReady()
+  const ready = adminReady && studioReady
+  const campaigns = useAllCampaigns()
+  const { ask, dialog } = useCampaignDecision()
   const [tab, setTab] = useState<Tab>("campaigns")
-  const [status, setStatus] = useState<string>("all")
-  const [query, setQuery] = useState("")
+  const tid = useId()
 
-  const inReview = campaigns.filter((c) => c.status === "in_review").length
+  const queue = campaigns.filter((c) => c.status === "in_review").sort((a, b) => a.startDaysFromToday - b.startDaysFromToday)
   const live = campaigns.filter((c) => c.status === "active")
   const booked = campaigns.filter((c) => ["active", "scheduled", "completed"].includes(c.status)).reduce((s, c) => s + c.budget, 0)
   const occupied = placementOrder.filter((p) => live.some((c) => c.placements.includes(p))).length
-  const rows = useMemo(() => filterCampaigns(campaigns, status, query), [campaigns, status, query])
 
-  const counts = useMemo(() => {
-    const m = new Map<CampaignStatus, number>()
-    for (const c of campaigns) m.set(c.status, (m.get(c.status) ?? 0) + 1)
-    return m
-  }, [campaigns])
+  function choose(v: Tab) {
+    setTab(v)
+    writeTabParam(v)
+  }
+  const open = (v: Tab) => ({ onClickCapture: inPageTab(choose, v, "ad-sections") })
 
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Advertising" description="Review sponsored campaigns before they run, see who holds each placement and set the fixed prices brands pay.">
-        <SampleDataNote className="mt-2" />
-      </PageHeader>
+    <Reveal ssrVisible className="@container grid gap-3">
+      <TabParam values={TABS} onChange={setTab} />
+      <AdminPageHead
+        title="Advertising"
+        description="Review sponsored campaigns before they run, see who holds each placement and set the fixed prices brands pay."
+        note="Decisions and prices are recorded here and in the audit log. In this build the marketplace's sponsored slots read the sample campaign list, so a decision reaches shoppers once the ads backend is connected."
+      />
 
-      <section aria-label="Advertising figures" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <MetricTile density="dense" label="Waiting for review" value={inReview} format={int} highlight={inReview > 0} hint="decide within 1 business day" />
-        <MetricTile density="dense" label="Live campaigns" value={live.length} format={int} hint={`from ${new Set(live.map((c) => c.brandId)).size} brands`} />
-        <MetricTile density="dense" label="Booked ad revenue" value={booked} format={usd} hint="live, scheduled and completed" />
-        <MetricTile density="dense" label="Placements in use" value={occupied} format={(n) => `${int(n)} of ${placementOrder.length}`} hint="with a live campaign" />
-      </section>
+      <StatRow label="Advertising figures">
+        <RevealItem className="min-w-0">
+          <StatCard surface="admin" variant={ready && queue.length ? "brand" : "default"} icon={MegaphoneIcon} label="In review" value={queue.length} format={int} hint={DECIDE_WITHIN} href="#review-queue" hrefLabel="Open the review queue" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("campaigns")}>
+          <StatCard surface="admin" icon={PlayCircleIcon} label="Live campaigns" value={live.length} format={int} hint={ready ? `From ${new Set(live.map((c) => c.brandId)).size} brands` : undefined} href="?tab=campaigns#ad-sections" hrefLabel="Open all campaigns" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("placements")}>
+          <StatCard surface="admin" icon={LayoutIcon} label="Placements in use" value={occupied} format={(n) => `${int(n)} of ${placementOrder.length}`} hint="With a live campaign" href="?tab=placements#ad-sections" hrefLabel="Open placements" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("pricing")}>
+          <StatCard surface="admin" icon={CoinsIcon} label="Booked ad revenue" value={booked} format={usdCompact} hint="Live, scheduled and completed" href="?tab=pricing#ad-sections" hrefLabel="Open the rate card" ready={ready} className="h-full" />
+        </RevealItem>
+      </StatRow>
 
-      <ReviewQueue />
+      <ReviewQueue campaigns={campaigns} ready={ready} onDecide={ask} />
 
-      <section aria-labelledby="ads-sections-title" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-        <h2 id="ads-sections-title" className="sr-only">Campaigns, placements and pricing</h2>
-        <SectionTabs
-          label="Advertising sections"
-          value={tab}
-          onValueChange={setTab}
-          tabs={[
-            { value: "campaigns", label: "All campaigns", short: "Campaigns", count: campaigns.length },
-            { value: "placements", label: "Placements", count: placementOrder.length },
-            { value: "pricing", label: "Pricing", count: Object.keys(campaignTypes).length },
-          ]}
-          toolbar={
-            tab === "campaigns" ? (
-              <>
-                <SearchField value={query} onChange={setQuery} label="Search campaigns" placeholder="Search campaigns" className="md:w-48 xl:w-52" />
-                <FilterSelect
-                  value={status}
-                  onChange={setStatus}
-                  label="Filter by status"
-                  className="md:w-[164px]"
-                  options={[{ value: "all", label: `All statuses (${campaigns.length})` }, ...statusOrder.filter((s) => counts.get(s)).map((s) => ({ value: s, label: `${campaignStatusMeta[s].label} (${counts.get(s)})` }))]}
-                />
-              </>
-            ) : tab === "placements" ? (
-              <SlotLegend />
-            ) : null
-          }
-        >
-          {tab === "campaigns" ? (
-            <CampaignsTable
-              rows={rows}
-              filtered={status !== "all" || !!query.trim()}
-              onClear={() => {
-                setStatus("all")
-                setQuery("")
-              }}
+      <Panel
+        id="ad-sections"
+        title="Campaigns, placements and pricing"
+        description={tab === "campaigns" ? "Every campaign on the platform, with its slot, dates, spend and delivery." : tab === "placements" ? "Where sponsored items may appear, how many per view, and who holds each slot now." : "The fixed price of each campaign type, and every change to it."}
+        className="scroll-mt-24 rounded-[20px]"
+        bodyClassName="px-0 pb-0 md:px-0 md:pb-0"
+      >
+        <div className="flex flex-col @3xl:flex-row @3xl:items-center @3xl:justify-between">
+          <PanelRail value={tab}>
+            <Segmented
+              label="Advertising sections"
+              size="sm"
+              value={tab}
+              onChange={choose}
+              loading={!ready}
+              idBase={tid}
+              panelId={`${tid}-panel`}
+              options={[
+                { value: "campaigns", label: "Campaigns" },
+                { value: "placements", label: "Placements" },
+                { value: "pricing", label: "Pricing" },
+              ]}
             />
-          ) : tab === "placements" ? (
-            <PlacementsPanel />
-          ) : (
-            <PricingPanel />
-          )}
-        </SectionTabs>
-      </section>
-    </div>
+          </PanelRail>
+          {tab === "placements" ? <SlotLegend className="px-4 pb-3 md:px-5" /> : null}
+        </div>
+        <div id={`${tid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(tid, tab)} className={tab === "campaigns" ? "px-4 pb-4 md:px-5 md:pb-5" : "border-t border-[var(--admin-hairline)]"}>
+          {tab === "campaigns" ? <CampaignsTable campaigns={campaigns} ready={ready} /> : tab === "placements" ? <PlacementsPanel campaigns={campaigns} /> : <PricingPanel campaigns={campaigns} ready={ready} />}
+        </div>
+      </Panel>
+      {dialog}
+    </Reveal>
   )
 }

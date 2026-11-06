@@ -14,7 +14,7 @@ export const payMeta: Record<PayState, Meta> = {
   pending: { label: "Awaiting payment", tone: "muted" },
   failed: { label: "Charge failed", tone: "danger" },
   refund_requested: { label: "Refund requested", tone: "attention" },
-  refund_approved: { label: "Refund sending to provider", tone: "info" },
+  refund_approved: { label: "Refund approved", tone: "info" },
   refunded: { label: "Refunded", tone: "muted" },
   disputed: { label: "Disputed", tone: "attention" },
   charged_back: { label: "Charged back", tone: "danger" },
@@ -51,9 +51,15 @@ export const txTypeLabel: Record<Transaction["type"], string> = {
 }
 
 export const txStatusMeta: Record<Transaction["status"], Meta> = {
-  succeeded: { label: "Succeeded", tone: "success" },
+  succeeded: { label: "Completed", tone: "success" },
   pending: { label: "Pending", tone: "info" },
   failed: { label: "Failed", tone: "danger" },
+}
+
+/** A transaction's status as Finance reads it: a completed chargeback is money taken back, so it reads Reversed. */
+export function txStatus(t: Pick<Transaction, "status"> & { type: Transaction["type"] }): Meta {
+  if (t.type === "chargeback" && t.status === "succeeded") return { label: "Reversed", tone: "danger" }
+  return txStatusMeta[t.status]
 }
 
 export const payoutMeta: Record<Payout["status"], Meta> = {
@@ -61,13 +67,13 @@ export const payoutMeta: Record<Payout["status"], Meta> = {
   held: { label: "Held", tone: "danger" },
   scheduled: { label: "Scheduled", tone: "neutral" },
   processing: { label: "Processing", tone: "info" },
-  paid: { label: "Paid", tone: "muted" },
+  paid: { label: "Completed", tone: "success" },
 }
 
 export const refundMeta: Record<Refund["status"], Meta> = {
   requested: { label: "Requested", tone: "attention" },
-  approved: { label: "Sending to provider", tone: "info" },
-  issued: { label: "Issued", tone: "success" },
+  approved: { label: "Approved", tone: "info" },
+  issued: { label: "Completed", tone: "success" },
   declined: { label: "Declined", tone: "muted" },
 }
 
@@ -75,7 +81,7 @@ export type DisputeStage = Dispute["stage"] | "evidence_submitted"
 
 export const disputeMeta: Record<DisputeStage, Meta> = {
   needs_evidence: { label: "Needs evidence", tone: "attention" },
-  evidence_submitted: { label: "Evidence submitted", tone: "info" },
+  evidence_submitted: { label: "Evidence saved", tone: "info" },
   under_review: { label: "Under review", tone: "info" },
   won: { label: "Won", tone: "success" },
   lost: { label: "Lost", tone: "danger" },

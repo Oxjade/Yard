@@ -1,23 +1,26 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { FlagIcon as Flag, MagnifyingGlassMinusIcon as SearchX } from "@phosphor-icons/react"
-import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/dashboard/empty-state"
-import { MetricTile } from "@/components/dashboard/metric-tile"
-import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
+import { useId, useMemo } from "react"
+import { EyeIcon, FlagIcon, GavelIcon, ShieldWarningIcon, SealWarningIcon } from "@phosphor-icons/react"
+import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
+import { Reveal, RevealItem } from "@/components/admin/ui/motion"
+import { Panel } from "@/components/admin/ui/panel"
+import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { productById, products } from "@/lib/data"
 import type { ModerationItem } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
-import { DataTable, SearchField, Thumb, type Column } from "./data-table"
+import { Thumb } from "./bits"
+import { useDecision } from "./decision"
 import { formatDateTime, relDays } from "./format"
 import { ListingsTable, useRestrictedListings } from "./listings-table"
 import { moderationReasonMeta } from "./meta"
+import { modActions, modAllowed, modDecision, type ModActionKey } from "./moderation-actions"
 import { ModerationDetail } from "./moderation-detail"
-import { QueueTabs } from "./queue-tabs"
-import { useUrlRecord } from "./use-url-record"
+import { AdminPageHead, PanelRail, StatRow } from "./page-head"
+import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 
 type Status = ModerationItem["status"]
 type Tab = Status | "listings"
@@ -28,28 +31,20 @@ const STATUS_TABS: { value: Status; label: string; empty: string; emptyBody: str
   { value: "removed", label: "Removed", empty: "No removed listings", emptyBody: "Listings taken down after review are kept here. Reopen a case if a listing was removed in error." },
   { value: "dismissed", label: "Dismissed", empty: "No dismissed cases", emptyBody: "Reports closed with no action are kept here." },
 ]
-
+const isTab = (v: string | null): v is Tab => v === "listings" || STATUS_TABS.some((t) => t.value === v)
 const n = (v: number) => formatNumber(Math.round(v))
 
-function matches(m: ModerationItem, q: string) {
-  return !q || [m.title, m.brandName, m.reportedBy, moderationReasonMeta[m.reason].label].join(" ").toLowerCase().includes(q)
-}
-
 export function ModerationView() {
+  const ready = useAdminReady()
+  const phone = usePhone()
+  const qid = useId()
   const moderation = useAdmin((s) => s.moderation)
   const restricted = useRestrictedListings()
-  const [tab, setTab] = useState<Tab>("open")
-  const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-  const q = query.trim().toLowerCase()
-  const clearUrl = useUrlRecord("case", (id) => {
-    const m = moderation.find((x) => x.id === id)
-    if (!m) return
-    setTab(m.status)
-    setSelected(m.id)
-    setOpen(true)
-  })
+  const linkedTab = useSearchParam("tab")
+  const caseId = useSearchParam("case")
+  const viewing = caseId ? moderation.find((m) => m.id === caseId) : undefined
+  const tab: Tab = isTab(linkedTab) ? linkedTab : viewing && !linkedTab ? viewing.status : "open"
+  const { ask, dialog } = useDecision(() => document.getElementById(segmentedTabId(qid, tab)))
 
   const counts = useMemo(() => {
     const c: Record<Status, number> = { open: 0, escalated: 0, removed: 0, dismissed: 0 }
@@ -62,106 +57,122 @@ export function ModerationView() {
       tab === "listings"
         ? []
         : moderation
-            .filter((m) => m.status === tab && matches(m, q))
+            .filter((m) => m.status === tab)
             // Live queues are worked oldest first; closed cases show the most recent first.
             .sort((a, b) => (tab === "open" || tab === "escalated" ? a.reportedAt.localeCompare(b.reportedAt) : b.reportedAt.localeCompare(a.reportedAt))),
-    [moderation, tab, q],
+    [moderation, tab],
   )
 
-  const counterfeitOrIp = moderation.filter((m) => (m.reason === "counterfeit" || m.reason === "ip_complaint") && (m.status === "open" || m.status === "escalated")).length
+  const ipCases = moderation.filter((m) => m.reason === "counterfeit" || m.reason === "ip_complaint")
+  const ipOpen = ipCases.filter((m) => m.status === "open").length
+  const ipEscalated = ipCases.filter((m) => m.status === "escalated").length
+  const unresolved = ipOpen + ipEscalated
+  // The card counts open and escalated cases, so it links to the oldest of them (which can be
+  // in either tab), not to the Open tab alone.
+  const ipOldest = ipCases.filter((m) => m.status === "open" || m.status === "escalated").sort((a, b) => a.reportedAt.localeCompare(b.reportedAt))[0]
+  const openCase = (m: ModerationItem) => writeParams({ case: m.id })
+  const decide = (key: ModActionKey, list: ModerationItem[], announce = true) => {
+    const d = modDecision(key, list, { announce })
+    if (d) ask(d)
+  }
 
   const columns: Column<ModerationItem>[] = [
     {
       key: "listing",
       header: "Listing",
-      primary: true,
+      sortValue: (m) => m.title.toLowerCase(),
       cell: (m) => {
         const p = m.productId ? productById.get(m.productId) : undefined
         return (
-          <span className="flex min-w-0 items-center gap-2.5">
+          <button type="button" onClick={() => openCase(m)} className="group flex max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
             <Thumb src={p?.images[0]?.src} />
             <span className="min-w-0">
-              <span className="block truncate font-medium text-ink">{m.title}</span>
-              <span className="block truncate text-[11px] text-ink-3">{p ? "In the catalogue" : "Not in the public catalogue"}</span>
+              <span className="block max-w-[36vw] sm:max-w-[260px] truncate font-medium text-ink group-hover:text-violet">{m.title}</span>
+              <span className="block max-w-[36vw] sm:max-w-[260px] truncate text-[11.5px] text-ink-3">
+                <span className="sm:hidden">{moderationReasonMeta[m.reason].label}, {m.brandName}</span>
+                <span className="hidden sm:inline md:hidden">{m.brandName}, </span>
+                <span className="hidden sm:inline">{p ? "In the catalogue" : "Not in the public catalogue"}</span>
+              </span>
             </span>
-          </span>
+          </button>
         )
       },
     },
-    { key: "brand", header: "Brand", cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.brandName}</span> },
-    { key: "reason", header: "Reason", cell: (m) => <StatusBadge tone={moderationReasonMeta[m.reason].tone}>{moderationReasonMeta[m.reason].label}</StatusBadge> },
-    { key: "by", header: "Reported by", cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.reportedBy}</span> },
-    { key: "at", header: "Reported", cell: (m) => <time dateTime={m.reportedAt} title={formatDateTime(m.reportedAt)} className="whitespace-nowrap text-ink-2">{relDays(m.reportedAt)}</time> },
+    { key: "brand", header: "Brand", hideBelow: "md", sortValue: (m) => m.brandName, cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.brandName}</span> },
+    { key: "reason", header: "Reason", hideBelow: "sm", sortValue: (m) => moderationReasonMeta[m.reason].label, cell: (m) => <StatusBadge tone={moderationReasonMeta[m.reason].tone}>{moderationReasonMeta[m.reason].label}</StatusBadge> },
+    { key: "by", header: "Reported by", hideBelow: "lg", cell: (m) => <span className="whitespace-nowrap text-ink-2">{m.reportedBy}</span> },
+    { key: "at", header: "Reported", hideBelow: "md", sortValue: (m) => m.reportedAt, cell: (m) => <time dateTime={m.reportedAt} title={formatDateTime(m.reportedAt)} className="whitespace-nowrap text-ink-2">{relDays(m.reportedAt)}</time> },
   ]
 
+  const allowedHere = tab === "listings" ? [] : modAllowed[tab]
+  const rowActions: RowAction<ModerationItem>[] = [
+    { label: "Review case", icon: EyeIcon, onSelect: openCase },
+    ...allowedHere.map((key, i) => ({ label: modActions[key].label, icon: modActions[key].icon, destructive: modActions[key].destructive, separatorBefore: i === 0, onSelect: (m: ModerationItem) => decide(key, [m]) })),
+  ]
+  const bulkActions: BulkAction<ModerationItem>[] = allowedHere.map((key) => ({ label: key === "remove" ? "Remove listings" : modActions[key].label, destructive: modActions[key].destructive, onSelect: (list) => decide(key, list) }))
   const current = STATUS_TABS.find((t) => t.value === tab)
 
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Moderation" description="Work through reports and automated flags, and restrict any listing on the marketplace.">
-        <SampleDataNote className="mt-2" />
-      </PageHeader>
+    <Reveal ssrVisible className="@container grid gap-3">
+      <AdminPageHead
+        title="Moderation"
+        description="Work through reports and automated flags, and restrict any listing on the marketplace."
+        note="Decisions are recorded here and in the audit log with your reason. The marketplace reads the sample catalogue in this build, so a listing changes there once moderation comes from the backend."
+      />
 
-      <section aria-label="Moderation figures" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <MetricTile density="dense" label="Open cases" value={counts.open} format={n} highlight={counts.open > 0} hint="oldest first" />
-        <MetricTile density="dense" label="Escalated to legal" value={counts.escalated} format={n} highlight={counts.escalated > 0} hint="waiting on a decision" />
-        <MetricTile density="dense" label="Counterfeit or IP" value={counterfeitOrIp} format={n} hint="unresolved" />
-        <MetricTile density="dense" label="Restricted listings" value={restricted.size} format={n} hint={`of ${n(products.length)} listings`} />
-      </section>
+      <InPageLinks>
+        <StatRow label="Moderation figures">
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" variant={ready && counts.open ? "brand" : "default"} icon={FlagIcon} label="Open cases" value={counts.open} format={n} hint="Oldest first" href="/admin/products?tab=open#moderation-queue" hrefLabel="Show open cases" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={GavelIcon} label="Escalated to legal" value={counts.escalated} format={n} hint="Waiting on legal" href="/admin/products?tab=escalated#moderation-queue" hrefLabel="Show escalated cases" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={SealWarningIcon} label="Counterfeit or IP" value={unresolved} format={n} hint={ready ? `${n(ipOpen)} open, ${n(ipEscalated)} with legal` : "Open or escalated"} href={ipOldest ? `/admin/products?case=${ipOldest.id}` : "/admin/products?tab=removed#moderation-queue"} hrefLabel={ipOldest ? "Open the oldest counterfeit or IP case" : "Show removed listings"} ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted listings" value={restricted.size} format={n} hint={`Of ${n(products.length)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
+          </RevealItem>
+        </StatRow>
+      </InPageLinks>
 
-      <section aria-labelledby="moderation-title" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-        <h2 id="moderation-title" className="sr-only">Moderation queue</h2>
-        <QueueTabs
-          label="Moderation status"
-          value={tab}
-          onValueChange={setTab}
-          tabs={[
-            ...STATUS_TABS.map((t) => ({ value: t.value as Tab, label: t.label, count: counts[t.value], urgent: t.value === "open" || t.value === "escalated" })),
-            { value: "listings" as Tab, label: "All listings", short: "Listings", count: products.length, divider: true },
-          ]}
-          toolbar={tab === "listings" ? undefined : <SearchField value={query} onChange={setQuery} label="Search cases" placeholder="Search listing, brand or reason" />}
-        >
+      <Panel id="moderation-queue" title="Moderation queue" description="Open a case for the listing, the evidence and its history. Every decision asks for a reason." className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+        <PanelRail value={tab}>
+          <Segmented
+            label="Moderation status"
+            size="sm"
+            value={tab}
+            onChange={(t) => writeParams({ tab: t === "open" ? null : t, category: null })}
+            loading={!ready}
+            idBase={qid}
+            panelId={`${qid}-panel`}
+            options={[...STATUS_TABS.map((t) => ({ value: t.value as Tab, label: t.label, count: t.value === "open" || t.value === "escalated" ? counts[t.value] : undefined })), { value: "listings" as Tab, label: "All listings" }]}
+          />
+        </PanelRail>
+        <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
           {tab === "listings" ? (
-            <ListingsTable />
-          ) : rows.length ? (
+            <ListingsTable ask={ask} loading={!ready} />
+          ) : (
             <DataTable
+              key={tab}
+              label={`${current?.label} moderation cases`}
               rows={rows}
               columns={columns}
-              rowKey={(m) => m.id}
-              onOpen={(m) => {
-                setSelected(m.id)
-                setOpen(true)
-              }}
-              openLabel={(m) => `Review ${m.title}`}
-              selectedKey={open ? selected : null}
-              caption={`${current?.label} moderation cases`}
-              minWidth={820}
-              mobileRow={(m) => {
-                const p = m.productId ? productById.get(m.productId) : undefined
-                return {
-                  lead: <Thumb src={p?.images[0]?.src} />,
-                  title: m.title,
-                  meta: `${m.brandName}, ${relDays(m.reportedAt).toLowerCase()}`,
-                  trail: <StatusBadge tone={moderationReasonMeta[m.reason].tone}>{moderationReasonMeta[m.reason].label}</StatusBadge>,
-                }
-              }}
+              getId={(m) => m.id}
+              loading={!ready}
+              search={{ placeholder: "Search listing, brand or reason", text: (m) => [m.title, m.brandName, m.reportedBy, moderationReasonMeta[m.reason].label].join(" ") }}
+              rowActions={rowActions}
+              bulkActions={phone ? undefined : bulkActions}
+              empty={{ title: current?.empty ?? "", body: current?.emptyBody }}
+              minWidth={300}
             />
-          ) : q ? (
-            <EmptyState icon={SearchX} className="m-4" title={`No ${current?.label.toLowerCase()} cases match “${query.trim()}”`} body="Search by listing title, brand, reporter or reason." action={<Button size="sm" variant="secondary" onClick={() => setQuery("")}>Clear search</Button>} />
-          ) : (
-            <EmptyState icon={Flag} className="m-4" title={current?.empty ?? ""} body={current?.emptyBody} />
           )}
-        </QueueTabs>
-      </section>
+        </div>
+      </Panel>
 
-      <ModerationDetail
-        id={selected}
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o)
-          if (!o) clearUrl()
-        }}
-      />
-    </div>
+      <ModerationDetail id={viewing?.id ?? null} open={!!viewing} onDecide={(key, m) => decide(key, [m], false)} onOpenChange={(o) => !o && writeParams({ case: null })} />
+      {dialog}
+    </Reveal>
   )
 }

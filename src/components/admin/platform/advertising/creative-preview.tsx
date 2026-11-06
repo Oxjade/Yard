@@ -25,7 +25,8 @@ export function CreativePreview({ campaign, className, sizes = "220px", eager = 
       </div>
       <figcaption className="mt-2 min-w-0">
         <span className="block truncate text-[11px] text-ink-3">{c.subtitle}</span>
-        <span className="block truncate text-[13px] text-ink">{c.title}</span>
+        {/* Two lines on phones, where the preview is narrow: what's promoted stays readable. */}
+        <span className="line-clamp-2 text-[13px] leading-snug text-ink sm:line-clamp-1" title={c.title}>{c.title}</span>
       </figcaption>
     </figure>
   )

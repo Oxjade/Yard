@@ -1,13 +1,8 @@
-"use client"
+import type { Metadata } from "next"
+import { AdminNotificationsView } from "./notifications-view"
 
-import { PageHeader } from "@/components/dashboard/page-header"
-import { NotificationsList } from "@/components/feedback/notifications-page"
+export const metadata: Metadata = { title: "Notifications" }
 
 export default function AdminNotificationsPage() {
-  return (
-    <div className="grid gap-5">
-      <PageHeader title="Notifications" description="Applications, reports, payment failures, chargebacks and system alerts." />
-      <NotificationsList audience="admin" />
-    </div>
-  )
+  return <AdminNotificationsView />
 }

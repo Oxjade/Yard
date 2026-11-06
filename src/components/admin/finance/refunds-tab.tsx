@@ -1,29 +1,31 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef } from "react"
 import Link from "next/link"
-import { CheckIcon as Check, CopyIcon as Copy, CircleNotchIcon as Loader2, ArrowCounterClockwiseIcon as RotateCcw, XIcon as X } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
+import { ArrowSquareOutIcon, CheckIcon, XIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/dashboard/empty-state"
+import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { Panel } from "@/components/admin/ui/panel"
 import type { Refund } from "@/lib/data/admin"
 import { brands } from "@/lib/data/brands"
 import { useAdmin } from "@/lib/stores/admin"
-import { ReasonDialog, type ReasonAction } from "../platform/reason-dialog"
-import { FilterSelect } from "../platform/table"
+import { CopyValue } from "../marketplace/bits"
+import { useDecision, type Decision } from "../marketplace/decision"
+import { Filters } from "../marketplace/filters"
+import { notifyRefundDecision, refundAudience } from "../marketplace/notify"
 import { orderIdOf, providerFor } from "./derive"
 import { formatDateTime, plural, providerName, relDays, usd } from "./format"
 import { refundMeta } from "./meta"
-import { AdminTable, TablePanel, useScrollToRow, type Column } from "./table"
+import { FocusCallout, refLinkClass, useSearchParam, writeParams } from "./table"
+import { usePhone } from "../marketplace/url-state"
 
 type Filter = "all" | Refund["status"]
-
+type Kind = "approve" | "decline"
 const ORDER: Refund["status"][] = ["requested", "approved", "issued", "declined"]
-type Decision = { refund: Refund; kind: "approve" | "decline"; action: ReasonAction }
-
-/** Refunds sent to the provider and not yet confirmed. Module-level so a confirmation survives a tab change. */
-const inFlight = new Set<string>()
+const isFilter = (v: string | null): v is Filter => v === "all" || ORDER.includes(v as Refund["status"])
 
 function providerOf(r: Refund) {
   const b = brands.find((x) => x.name === r.brandName)
@@ -31,133 +33,130 @@ function providerOf(r: Refund) {
 }
 
 /**
- * Confirms a refund with the provider. In the frontend phase the provider's answer is simulated
- * after a short delay; in the backend it is the provider's webhook plus a verify call, keyed by
- * the refund's idempotency key so a retry can never pay twice.
- *
- * The confirmation is the provider's, not an admin decision, so it moves the refund to issued
- * without setRefundStatus: that action records an "Issued refund" decision in the signed-in
- * admin's name. The admin's one decision is the approval. (Shared change requested: a store
- * action such as markRefundIssued(id, by: "Stripe webhook") that logs the provider as actor.)
+ * Who sees the decision outside the Control Center. Declining quotes your reason to the
+ * shopper (on their own order) and to the Studio brand; approving tells them it's approved.
  */
-function confirmWithProvider(r: Refund, delay = 1600) {
-  if (inFlight.has(r.id)) return
-  inFlight.add(r.id)
-  window.setTimeout(() => {
-    inFlight.delete(r.id)
-    const now = useAdmin.getState().refunds.find((x) => x.id === r.id)
-    if (now?.status !== "approved") return
-    useAdmin.setState((s) => ({ refunds: s.refunds.map((x) => (x.id === r.id ? { ...x, status: "issued" } : x)) }))
-    toast(`Refund for #${r.reference} issued`, { description: `${providerOf(r)} confirmed it. The customer is told by email.` })
-  }, delay)
+function audience(items: Refund[], kind: Kind) {
+  const shopper = items.find((r) => refundAudience(r).shopper)
+  const merchant = items.find((r) => refundAudience(r).merchant)
+  if (!shopper && !merchant) return null
+  const person = shopper ? (items.length === 1 ? shopper.customer : "The shopper") : null
+  const who = person && merchant ? `${person} and ${merchant.brandName} are notified` : person ? `${person} is notified in their account` : `${merchant!.brandName} is notified in Studio`
+  const both = !!(person && merchant)
+  return kind === "decline" ? `${who} and ${both ? "see" : "sees"} your reason.` : `${who} that it's approved; your reason stays in the audit log.`
 }
 
-/** Refund requests: approve and issue, or decline, each with a reason. The idempotency key is shown so support can trace a retry. */
-export function RefundsTab({ focus }: { focus?: string | null }) {
-  const refunds = useAdmin((s) => s.refunds)
-  const setRefundStatus = useAdmin((s) => s.setRefundStatus)
-  const focused = focus ? refunds.find((r) => r.id === focus) : undefined
-  const [filter, setFilter] = useState<Filter>(focused ? focused.status : "requested")
-  const [decision, setDecision] = useState<Decision | null>(null)
-  const [open, setOpen] = useState(false)
-  useScrollToRow(focus)
+/** Why a bulk action changed nothing: every selected refund has been decided already. */
+function nothingApplies(kind: Kind, count: number) {
+  const done = kind === "approve" ? "approved" : "declined"
+  return count === 1 ? `The selected refund has already been decided, so nothing was ${done}.` : `None of the ${count} selected refunds is waiting for a decision, so nothing was ${done}.`
+}
 
-  // A refund left sending by a reload is picked up again: ask the provider where it is.
-  const sending = refunds.filter((r) => r.status === "approved").map((r) => r.id).join(",")
-  useEffect(() => {
-    for (const r of useAdmin.getState().refunds) if (r.status === "approved") confirmWithProvider(r, 2400)
-  }, [sending])
-
-  const count = (s: Refund["status"]) => refunds.filter((r) => r.status === s).length
-  const rows = refunds.filter((r) => filter === "all" || r.status === filter)
-
-  function decide(r: Refund, kind: Decision["kind"]) {
-    const facts = [
-      { label: "Amount", value: usd(r.amountUsd) },
-      { label: "Customer", value: r.customer },
-      { label: "Brand", value: r.brandName },
-      { label: "Customer's reason", value: r.reason },
-    ]
-    setDecision(
-      kind === "approve"
-        ? {
-            refund: r,
-            kind,
-            action: {
-              title: `Approve and issue a ${usd(r.amountUsd)} refund for #${r.reference}?`,
-              body: `It goes to ${providerOf(r)} with idempotency key ${r.idempotencyKey}, so a retry can't pay twice. The brand's share and the 5% commission are reversed as new ledger entries.`,
-              confirmLabel: "Approve and issue",
-              tone: "primary",
-              facts,
-              presets: ["Return received and checked by the brand", "Damage confirmed from the customer's photos", "Carrier confirmed the parcel was lost"],
-            },
-          }
-        : {
-            refund: r,
-            kind,
-            action: {
-              title: `Decline the refund for #${r.reference}?`,
-              body: "The customer and the brand are told why. No money moves and nothing is posted to the ledger.",
-              confirmLabel: "Decline refund",
-              tone: "destructive",
-              facts,
-              presets: ["Outside the return window", "Item came back worn or damaged", "Tracking shows delivery; no fault found"],
-            },
-          },
-    )
-    setOpen(true)
-  }
-
-  async function copyKey(key: string) {
-    try {
-      await navigator.clipboard.writeText(key)
-      toast("Idempotency key copied", { description: key })
-    } catch {
-      toast("Couldn't copy", { description: `Select the key by hand: ${key}` })
+function refundDecision(kind: Kind, list: Refund[]): Decision | null {
+  const items = list.filter((r) => r.status === "requested")
+  if (!items.length) return null
+  const one = items.length === 1 ? items[0] : null
+  const total = items.reduce((s, r) => s + r.amountUsd, 0)
+  const skipped = list.length - items.length
+  const skip = skipped ? `${plural(skipped, "selected refund")} ${skipped === 1 ? "has" : "have"} already been decided and ${skipped === 1 ? "is" : "are"} left as ${skipped === 1 ? "it is" : "they are"}.` : null
+  if (kind === "approve") {
+    return {
+      title: one ? `Approve the ${usd(one.amountUsd)} refund for #${one.reference}?` : `Approve ${plural(items.length, "refund")}, ${usd(total)}?`,
+      description: [
+        one ? `${one.customer} asked for it: ${one.reason.toLowerCase()}.` : null,
+        `Approval is recorded with ${one ? `idempotency key ${one.idempotencyKey}` : "each refund's idempotency key"}, so a retry can never refund twice. No payments provider is connected in this build, so nothing is sent to ${one ? providerOf(one) : "the provider"} and no money moves yet; the brand's share and the 5% commission reverse when the provider confirms.`,
+        audience(items, "approve"),
+        skip,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      confirmLabel: one ? "Approve refund" : `Approve ${plural(items.length, "refund")}`,
+      run: (reason) => {
+        const set = useAdmin.getState().setRefundStatus
+        for (const r of items) {
+          set(r.id, "approved", reason)
+          notifyRefundDecision(r, "approved", reason)
+        }
+        toast.success(one ? `Refund for #${one.reference} approved` : `${plural(items.length, "refund")} approved`, { description: "Approval recorded. Not sent: no payments provider in this build." })
+      },
     }
   }
+  return {
+    title: one ? `Decline the refund for #${one.reference}?` : `Decline ${plural(items.length, "refund")}?`,
+    description: ["No money moves and nothing is posted to the ledger. Your reason is recorded in the audit log.", audience(items, "decline"), skip].filter(Boolean).join(" "),
+    confirmLabel: one ? "Decline refund" : `Decline ${plural(items.length, "refund")}`,
+    destructive: true,
+    run: (reason) => {
+      const set = useAdmin.getState().setRefundStatus
+      for (const r of items) {
+        set(r.id, "declined", reason)
+        notifyRefundDecision(r, "declined", reason)
+      }
+      toast.success(one ? `Refund for #${one.reference} declined` : `${plural(items.length, "refund")} declined`, { description: "Recorded in the audit log with your reason." })
+    },
+  }
+}
 
-  function actions(r: Refund) {
-    if (r.status === "requested")
-      return (
-        <>
-          <Button type="button" size="xs" variant="secondary" onClick={() => decide(r, "approve")}>
-            <Check /> Approve and issue
-          </Button>
-          <Button type="button" size="xs" variant="ghost" onClick={() => decide(r, "decline")}>
-            <X /> Decline
-          </Button>
-        </>
-      )
-    if (r.status === "approved")
-      return (
-        <span role="status" className="inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap text-ink-2">
-          <Loader2 className="size-3.5 animate-spin" aria-hidden /> Waiting for {providerOf(r)}
-        </span>
-      )
-    return <span className="text-[11px] whitespace-nowrap text-ink-3">{r.status === "issued" ? "Done" : "Closed"}</span>
+/** Refund requests: approve or decline, each with a reason. The idempotency key is shown so support can trace a retry. */
+export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boolean }) {
+  const router = useRouter()
+  const phone = usePhone()
+  const refunds = useAdmin((s) => s.refunds)
+  const focused = focus ? refunds.find((r) => r.id === focus) : undefined
+  // The status filter lives in the URL (?status=…, the queue of requests when absent), so a
+  // reload keeps it. A linked refund opens on its own status, once, so it's in the table.
+  const linked = useSearchParam("status")
+  const filter: Filter = isFilter(linked) ? linked : "requested"
+  const setFilter = (f: Filter) => writeParams({ status: f === "requested" ? null : f })
+  const focusedStatus = ready ? focused?.status : undefined
+  // Once per linked record: a decision on it mustn't move the table.
+  const applied = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focus || !focusedStatus || applied.current === focus) return
+    applied.current = focus
+    if (!new URLSearchParams(window.location.search).get("status")) writeParams({ status: focusedStatus === "requested" ? null : focusedStatus })
+  }, [focus, focusedStatus])
+  // A decided row can leave the filtered table; focus then goes to the table's search.
+  const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  const decide = (kind: Kind, list: Refund[]) => {
+    const d = refundDecision(kind, list)
+    if (d) ask(d)
+    else toast.info(nothingApplies(kind, list.length))
   }
 
-  const keyCell = (r: Refund) => (
-    <button type="button" onClick={() => copyKey(r.idempotencyKey)} className="group inline-flex items-center gap-1.5 rounded-sm text-[11px] whitespace-nowrap text-ink-2 tabular hover:text-ink" aria-label={`Copy idempotency key ${r.idempotencyKey}`}>
-      {r.idempotencyKey}
-      <Copy className="size-3 text-ink-3 group-hover:text-ink" aria-hidden />
-    </button>
+  const count = (s: Refund["status"]) => refunds.filter((r) => r.status === s).length
+  const rows = refunds.filter((r) => filter === "all" || r.status === filter).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
+  const requested = refunds.filter((r) => r.status === "requested")
+
+  const statusCell = (r: Refund) => (
+    <span className="grid justify-items-start gap-1">
+      <StatusBadge tone={refundMeta[r.status].tone}>{refundMeta[r.status].label}</StatusBadge>
+      {r.status === "approved" ? <span className="max-w-48 text-[11px] leading-snug whitespace-normal text-ink-3">Not sent: no payments provider in this build.</span> : null}
+    </span>
   )
 
   const columns: Column<Refund>[] = [
     {
       key: "ref",
       header: "Order",
+      sortValue: (r) => r.reference,
       cell: (r) => (
-        <Link href={`/admin/orders?order=${orderIdOf(r.id)}`} className="font-medium whitespace-nowrap text-ink tabular hover:text-violet">
-          #{r.reference}
-        </Link>
+        <span className="block min-w-0">
+          <Link href={`/admin/orders?order=${orderIdOf(r.id)}`} className={refLinkClass}>
+            #{r.reference}
+          </Link>
+          <span className="block max-w-[36vw] truncate text-[11.5px] text-ink-3 md:hidden">
+            {r.brandName}
+            <span className="sm:hidden">, {refundMeta[r.status].label.toLowerCase()}</span>
+          </span>
+        </span>
       ),
     },
     {
       key: "who",
       header: "Brand and customer",
+      hideBelow: "md",
+      sortValue: (r) => r.brandName,
       cell: (r) => (
         <span className="block min-w-0">
           <span className="block truncate text-ink">{r.brandName}</span>
@@ -165,89 +164,69 @@ export function RefundsTab({ focus }: { focus?: string | null }) {
         </span>
       ),
     },
-    { key: "reason", header: "Reason", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reason}</span> },
-    { key: "amount", header: "Amount", align: "right", cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.amountUsd)}</span> },
-    { key: "requested", header: "Requested", cell: (r) => <time dateTime={r.requestedAt} title={formatDateTime(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt)}</time> },
-    { key: "key", header: "Idempotency key", cell: keyCell },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge tone={refundMeta[r.status].tone}>{refundMeta[r.status].label}</StatusBadge> },
-    { key: "actions", header: "Decision", align: "right", cell: (r) => <span className="inline-flex items-center justify-end gap-1.5">{actions(r)}</span> },
+    { key: "reason", header: "Reason", hideBelow: "lg", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reason}</span> },
+    { key: "amount", header: "Amount", align: "right", sortValue: (r) => r.amountUsd, cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.amountUsd)}</span> },
+    { key: "requested", header: "Requested", hideBelow: "md", sortValue: (r) => r.requestedAt, cell: (r) => <time dateTime={r.requestedAt} title={formatDateTime(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt)}</time> },
+    { key: "key", header: "Idempotency key", hideBelow: "lg", cell: (r) => <CopyValue value={r.idempotencyKey} label="Copy idempotency key" className="text-[12px] text-ink-2" /> },
+    { key: "status", header: "Status", hideBelow: "sm", sortValue: (r) => ORDER.indexOf(r.status), cell: statusCell },
   ]
 
-  const requested = refunds.filter((r) => r.status === "requested")
+  const rowActions: RowAction<Refund>[] = [
+    { label: "Approve refund", icon: CheckIcon, disabled: (r) => r.status !== "requested", onSelect: (r) => decide("approve", [r]) },
+    { label: "Decline refund", icon: XIcon, destructive: true, disabled: (r) => r.status !== "requested", onSelect: (r) => decide("decline", [r]) },
+    { label: "Open the order", icon: ArrowSquareOutIcon, separatorBefore: true, onSelect: (r) => router.push(`/admin/orders?order=${orderIdOf(r.id)}`) },
+  ]
+  const bulkActions: BulkAction<Refund>[] = [
+    { label: "Approve", onSelect: (list) => decide("approve", list) },
+    { label: "Decline", destructive: true, onSelect: (list) => decide("decline", list) },
+  ]
 
   return (
-    <>
-      <TablePanel
-        id="refunds-title"
-        title="Refunds"
-        description={`${plural(requested.length, "request")} to decide, ${usd(requested.reduce((s, r) => s + r.amountUsd, 0))}. Each refund carries one idempotency key from request to provider.`}
-        toolbar={
-          <FilterSelect
-            label="Filter by status"
-            value={filter}
-            onChange={(v) => setFilter(v as Filter)}
-            className="md:w-[200px]"
-            options={[{ value: "all", label: `All statuses (${refunds.length})` }, ...ORDER.filter((s) => count(s) || s === filter).map((s) => ({ value: s, label: `${refundMeta[s].label} (${count(s)})` }))]}
-          />
-        }
-      >
-        {rows.length ? (
-          <AdminTable
-            rows={rows}
-            columns={columns}
-            rowKey={(r) => r.id}
-            caption="Refunds"
-            minWidth={1060}
-            selectedKey={focus}
-            mobileRow={(r) => ({
-              title: (
-                <>
-                  <span className="tabular">#{r.reference}</span> <span className="text-ink-2">{r.brandName}</span>
-                </>
-              ),
-              meta: `${r.customer}, ${r.reason.toLowerCase()}`,
-              trail: (
-                <>
-                  <span className="text-[13px] text-ink tabular">{usd(r.amountUsd)}</span>
-                  <StatusBadge tone={refundMeta[r.status].tone}>{refundMeta[r.status].label}</StatusBadge>
-                </>
-              ),
-              footer: (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  {keyCell(r)}
-                  <div className="flex flex-wrap gap-1.5">{actions(r)}</div>
-                </div>
-              ),
-            })}
-          />
-        ) : (
-          <EmptyState
-            icon={RotateCcw}
-            className="m-4"
-            title={filter === "requested" ? "No refunds to decide" : filter === "approved" ? "No refunds sending to provider" : `No ${filter === "all" ? "" : `${filter} `}refunds`}
-            body={filter === "requested" ? "New requests from brands and support land here." : "Refunds move here as they're decided."}
-            action={filter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all refunds</Button> : null}
-          />
-        )}
-      </TablePanel>
-
-      <ReasonDialog
-        action={decision?.action ?? null}
-        open={open}
-        onOpenChange={setOpen}
-        onConfirm={async (reason) => {
-          if (!decision) return
-          const r = decision.refund
-          if (decision.kind === "approve") {
-            setRefundStatus(r.id, "approved", reason)
-            toast(`Refund for #${r.reference} approved`, { description: `Sent to ${providerOf(r)} with key ${r.idempotencyKey}.` })
-            confirmWithProvider(r)
-          } else {
-            setRefundStatus(r.id, "declined", reason)
-            toast(`Refund for #${r.reference} declined`, { description: "The customer and the brand will see your reason." })
+    <div className="grid gap-3">
+      {focused ? (
+        <FocusCallout
+          title={`Refund for #${focused.reference}, ${usd(focused.amountUsd)}`}
+          badge={<StatusBadge tone={refundMeta[focused.status].tone}>{refundMeta[focused.status].label}</StatusBadge>}
+          meta={
+            <>
+              {focused.customer}, {focused.reason.toLowerCase()}. Key <CopyValue value={focused.idempotencyKey} label="Copy idempotency key" className="text-ink" />
+            </>
           }
-        }}
-      />
-    </>
+          actions={
+            focused.status === "requested" ? (
+              <>
+                <Button type="button" size="sm" variant="destructive" className="h-10 sm:h-8" onClick={() => decide("decline", [focused])}>Decline</Button>
+                <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => decide("approve", [focused])}>Approve</Button>
+              </>
+            ) : null
+          }
+          onDismiss={() => writeParams({ focus: null })}
+        />
+      ) : null}
+
+      <Panel title="Refunds" description={ready ? `${plural(requested.length, "request")} to decide, ${usd(requested.reduce((s, r) => s + r.amountUsd, 0))}. Amounts in USD; each refund carries one idempotency key from request to provider.` : "Refund requests and the decisions on them."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">
+        <DataTable
+          label="Refunds"
+          rows={rows}
+          columns={columns}
+          getId={(r) => r.id}
+          loading={!ready}
+          search={{ placeholder: "Order, brand, customer or key", text: (r) => `${r.reference} ${r.brandName} ${r.customer} ${r.idempotencyKey}` }}
+          toolbar={
+            <Filters
+              noun="refunds"
+              results={rows.length}
+              onClear={() => setFilter("all")}
+              filters={[{ key: "status", label: "Status", value: filter, onChange: (v) => setFilter(v as Filter), all: { value: "all", label: `All statuses (${refunds.length})` }, options: ORDER.map((s) => ({ value: s, label: `${refundMeta[s].label} (${count(s)})` })), width: "w-[196px]" }]}
+            />
+          }
+          rowActions={rowActions}
+          bulkActions={phone ? undefined : bulkActions}
+          empty={{ title: filter === "requested" ? "No refunds to decide" : `No ${filter === "all" ? "" : `${refundMeta[filter as Refund["status"]].label.toLowerCase()} `}refunds`, body: filter === "requested" ? "Return requests from shoppers and support land here." : "Refunds move here as they're decided.", action: filter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all refunds</Button> : undefined }}
+          minWidth={300}
+        />
+      </Panel>
+      {dialog}
+    </div>
   )
 }

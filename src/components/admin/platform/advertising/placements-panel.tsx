@@ -21,8 +21,7 @@ function filledPerView(p: Placement, live: Campaign[]) {
 }
 
 /** Every sponsored placement, its slot rules, what it sells for and who occupies it now. */
-export function PlacementsPanel() {
-  const campaigns = useAdmin((s) => s.campaigns)
+export function PlacementsPanel({ campaigns }: { campaigns: Campaign[] }) {
   const pricing = useAdmin((s) => s.pricing)
 
   const rows = useMemo(
@@ -36,16 +35,16 @@ export function PlacementsPanel() {
   )
 
   return (
-    <ul className="divide-y divide-line-soft">
+    <ul className="admin-divide">
       {rows.map(({ p, rule, live, waiting, filled }) => {
         const full = filled >= rule.maxPerView
         const cats = perCategory.includes(p) ? [...new Set(live.flatMap((c) => c.audience.categories))].map((s) => categoryBySlug.get(s as CategorySlug)?.name ?? s) : []
         return (
-          <li key={p} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-6">
+          <li key={p} className="grid gap-4 px-4 py-4 md:px-5 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] @4xl:gap-6">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-[13px] font-medium text-ink">{rule.name}</h3>
-                <StatusBadge tone={live.length ? (full ? "info" : "neutral") : "muted"}>{live.length ? (full ? "Fully booked" : "Booked") : "Open"}</StatusBadge>
+                <h3 className="font-label text-[13px] text-ink">{rule.name}</h3>
+                <StatusBadge tone={live.length ? (full ? "info" : "neutral") : "muted"}>{live.length ? (full ? "Fully booked" : "Partly booked") : "Open"}</StatusBadge>
               </div>
               <p className="mt-0.5 text-[11px] text-ink-3">{rule.surface}</p>
               <p className="mt-3 text-[11px] text-ink-3">Sold as</p>
@@ -84,11 +83,9 @@ export function PlacementsPanel() {
             </div>
 
             <div className="min-w-0">
-              <p className="text-[11px] text-ink-3">
-                Occupied now{cats.length ? `, in ${cats.join(" and ")}` : ""}
-              </p>
+              <p className="text-[11px] text-ink-3">{cats.length ? `Held now, in ${cats.join(" and ")}` : "Held now"}</p>
               {live.length ? (
-                <ul className="mt-1 divide-y divide-line-soft">
+                <ul className="mt-1 admin-divide">
                   {live.map((c) => {
                     const w = campaignWindow(c.startDaysFromToday, c.days)
                     return (
@@ -102,7 +99,7 @@ export function PlacementsPanel() {
                   })}
                 </ul>
               ) : (
-                <p className="mt-1 py-2 text-[12px] text-ink-2">No live campaigns. Organic results fill every position.</p>
+                <p className="admin-inset mt-1.5 px-3 py-2.5 text-[12px] text-ink-2">No live campaigns. Organic results fill every position.</p>
               )}
               {waiting.length ? (
                 <p className="mt-1 text-[11px] text-ink-3">
@@ -117,9 +114,9 @@ export function PlacementsPanel() {
   )
 }
 
-export function SlotLegend() {
+export function SlotLegend({ className }: { className?: string }) {
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3" aria-label="Slot legend">
+    <ul className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3 ${className ?? ""}`} aria-label="Slot legend">
       <li className="flex items-center gap-1.5">
         <span className="size-2.5 rounded-[2px] bg-white/[0.06]" aria-hidden /> Organic
       </li>

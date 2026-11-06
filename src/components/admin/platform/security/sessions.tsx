@@ -1,50 +1,31 @@
 "use client"
 
-import { useState } from "react"
-import { toast } from "sonner"
+import { useMemo } from "react"
+import { SignOutIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { DataTable, type BulkAction, type Column } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { adminRoles } from "@/lib/data/admin"
-import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { formatDateTime, relTime } from "../format"
-import { ReasonDialog, type ReasonAction } from "../reason-dialog"
-import { Initials, PlatformTable, type Column } from "../table"
-import { memberById, REVOKE_ACTION, useSecurityState } from "./derive"
+import { memberById } from "./derive"
+import { Initials } from "./initials"
 import { adminSessions, CURRENT_SESSION_ID, type AdminSession } from "./sample"
 
-/** Active admin sessions. Revoking one signs that device out at once and is audited. */
-export function Sessions() {
-  const log = useAdmin((s) => s.log)
-  const { revoked } = useSecurityState()
-  const [target, setTarget] = useState<AdminSession | null>(null)
-  const [open, setOpen] = useState(false)
+const nameOf = (s: AdminSession) => memberById.get(s.memberId)?.name ?? "Unknown member"
 
-  const rows = [...adminSessions].sort((a, b) => Number(revoked.has(a.id)) - Number(revoked.has(b.id)) || Number(!!b.flag) - Number(!!a.flag) || b.lastActiveAt.localeCompare(a.lastActiveAt))
-  const name = (s: AdminSession) => memberById.get(s.memberId)?.name ?? "Unknown"
-
-  const action: ReasonAction | null = target
-    ? {
-        title: `Revoke ${name(target)}'s session`,
-        body: `${target.device} in ${target.location} is signed out straight away. ${name(target).split(" ")[0]}'s other sessions keep working.`,
-        confirmLabel: "Revoke session",
-        tone: "destructive",
-        presets: target.flag ? ["Unrecognised location", "Member confirmed it wasn't them"] : ["Device lost or replaced", "Member left the team", "Unrecognised location"],
-        facts: [
-          { label: "Device", value: `${target.device}, ${target.browser}` },
-          { label: "Location", value: target.location },
-          { label: "Signed in", value: formatDateTime(target.signedInAt) },
-          { label: "IP address", value: target.ip },
-        ],
-        warning: target.flag,
-      }
-    : null
-
-  async function confirm(reason: string) {
-    if (!target) return
-    log(REVOKE_ACTION, `${name(target)}, ${target.device} in ${target.location} (${target.id})`, reason)
-    toast("Session marked revoked", { description: `${name(target)} is signed out on ${target.device} once the auth service is connected. Logged in the audit trail.` })
-  }
+/** Active admin sessions. A revoke is reasoned, recorded and shown as pending until the auth service signs the device out. */
+export function Sessions({ ready, revoked, onRevoke }: { ready: boolean; revoked: Set<string>; onRevoke: (sessions: AdminSession[]) => void }) {
+  // Flagged first, then most recent; revoked ones sink to the bottom.
+  const rows = useMemo(
+    () => [...adminSessions].sort((a, b) => Number(revoked.has(a.id)) - Number(revoked.has(b.id)) || Number(!!b.flag) - Number(!!a.flag) || b.lastActiveAt.localeCompare(a.lastActiveAt)),
+    [revoked],
+  )
+  // A pending revoke is still signed in until the auth service ends it, so it still counts.
+  const signedIn = adminSessions.length
+  const pending = adminSessions.filter((s) => revoked.has(s.id)).length
+  const flagged = adminSessions.filter((s) => s.flag && !revoked.has(s.id))
+  const revocable = (s: AdminSession) => s.id !== CURRENT_SESSION_ID && !revoked.has(s.id)
 
   const status = (s: AdminSession) =>
     revoked.has(s.id) ? (
@@ -54,38 +35,30 @@ export function Sessions() {
     ) : s.flag ? (
       <StatusBadge tone="attention">Check this</StatusBadge>
     ) : (
-      <StatusBadge tone="success">Active</StatusBadge>
-    )
-
-  const act = (s: AdminSession) =>
-    revoked.has(s.id) ? null : s.id === CURRENT_SESSION_ID ? (
-      <span className="text-[11px] whitespace-nowrap text-ink-3">Sign out to end</span>
-    ) : (
-      <Button
-        size="xs"
-        variant="secondary"
-        onClick={() => {
-          setTarget(s)
-          setOpen(true)
-        }}
-        aria-label={`Revoke ${name(s)}'s session on ${s.device}`}
-      >
-        Revoke
-      </Button>
+      <StatusBadge tone="muted">Active</StatusBadge>
     )
 
   const columns: Column<AdminSession>[] = [
     {
       key: "member",
       header: "Member",
+      sortValue: (s) => nameOf(s),
       cell: (s) => {
         const m = memberById.get(s.memberId)
+        const off = revoked.has(s.id)
         return (
-          <span className="flex min-w-0 items-center gap-2.5">
-            <Initials name={name(s)} />
+          <span className={cn("flex min-w-0 max-w-[46vw] items-center gap-2.5 sm:max-w-[280px]", off && "opacity-60")}>
+            <Initials name={nameOf(s)} />
             <span className="min-w-0">
-              <span className="block truncate text-ink">{name(s)}</span>
-              <span className="block truncate text-[11px] text-ink-3">{m ? adminRoles[m.role].name : ""}</span>
+              <span className="block truncate text-ink">{nameOf(s)}</span>
+              {/* Below xl the device and place fold in here; wider, they have their own columns. */}
+              <span className="block truncate text-[11px] text-ink-3 xl:hidden">
+                {s.device}, {s.location}
+              </span>
+              <span className="hidden truncate text-[11px] text-ink-3 xl:block">{m ? adminRoles[m.role].name : ""}</span>
+              {/* The reason a session needs a check, in full: it's what the revoke decision rests on. */}
+              {s.flag && !off ? <span className="block text-[11px] leading-snug text-acid xl:hidden">{s.flag}</span> : null}
+              <span className="mt-1.5 block sm:hidden">{status(s)}</span>
             </span>
           </span>
         )
@@ -94,8 +67,10 @@ export function Sessions() {
     {
       key: "device",
       header: "Device",
+      className: "hidden xl:table-cell",
+      sortValue: (s) => s.device,
       cell: (s) => (
-        <span className="block whitespace-nowrap">
+        <span className={cn("block whitespace-nowrap", revoked.has(s.id) && "opacity-60")}>
           <span className="block text-ink-2">{s.device}</span>
           <span className="block text-[11px] text-ink-3">{s.browser}</span>
         </span>
@@ -104,45 +79,56 @@ export function Sessions() {
     {
       key: "where",
       header: "Location",
+      className: "hidden xl:table-cell",
+      sortValue: (s) => s.location,
       cell: (s) => (
-        <span className="block max-w-[240px]">
+        <span className={cn("block max-w-[240px]", revoked.has(s.id) && "opacity-60")}>
           <span className="block whitespace-nowrap text-ink-2">{s.location}</span>
           <span className={cn("block text-[11px]", s.flag && !revoked.has(s.id) ? "text-acid" : "text-ink-3")}>{s.flag && !revoked.has(s.id) ? s.flag : s.ip}</span>
         </span>
       ),
     },
-    { key: "signed", header: "Signed in", cell: (s) => <span className="whitespace-nowrap text-ink-2 tabular">{formatDateTime(s.signedInAt)}</span> },
-    { key: "last", header: "Last active", cell: (s) => <span className="whitespace-nowrap text-ink-2">{relTime(s.lastActiveAt)}</span> },
-    { key: "status", header: "Status", cell: status },
-    { key: "act", header: "", align: "right", className: "w-[1%]", cell: act },
+    { key: "signed", header: "Signed in", className: "hidden min-[1400px]:table-cell", sortValue: (s) => s.signedInAt, cell: (s) => <span className="whitespace-nowrap text-ink-2 tabular">{formatDateTime(s.signedInAt)}</span> },
+    { key: "last", header: "Last active", hideBelow: "sm", sortValue: (s) => s.lastActiveAt, cell: (s) => <span className="whitespace-nowrap text-ink-2">{relTime(s.lastActiveAt)}</span> },
+    { key: "status", header: "Status", hideBelow: "sm", cell: status },
+    {
+      // Inline rather than in a row menu: only revocable sessions get the button, and the others say why not.
+      key: "action",
+      header: "Action",
+      align: "right",
+      cell: (s) =>
+        revocable(s) ? (
+          <Button size="sm" variant="destructive" data-revoke className="h-10 sm:h-8" onClick={() => onRevoke([s])} aria-label={`Revoke ${nameOf(s)}'s session on ${s.device}`}>
+            <SignOutIcon aria-hidden />
+            Revoke
+          </Button>
+        ) : (
+          <span className="block text-[11px] leading-snug text-ink-3">{s.id === CURRENT_SESSION_ID ? "Sign out to end it" : "Recorded"}</span>
+        ),
+    },
   ]
 
+  // The dialog says which selected sessions it leaves out (yours, and ones already pending).
+  const bulk: BulkAction<AdminSession>[] = [{ label: "Revoke selected", destructive: true, onSelect: (list) => onRevoke(list) }]
+
   return (
-    <div>
-      <p className="px-4 py-3 text-[12px] text-ink-2">
-        {adminSessions.length - revoked.size} active admin sessions. Sessions expire after 12 hours idle; revoke one when a device is lost or a sign-in looks wrong.
+    <div className="grid gap-3">
+      <p className="text-[12px] text-ink-2">
+        {ready ? `${signedIn} active admin ${signedIn === 1 ? "session" : "sessions"}${pending ? `, ${pending} with a revoke pending until the auth service is connected` : ""}${flagged.length ? `, ${flagged.length} flagged for a check` : ""}. ` : ""}
+        Sessions expire after 12 hours idle. Revoke one when a device is lost or a sign-in looks wrong; your own session ends when you sign out.
       </p>
-      <PlatformTable
-        rows={rows}
+      <DataTable
+        label="Active admin sessions"
+        rows={ready ? rows : []}
+        loading={!ready}
         columns={columns}
-        rowKey={(s) => s.id}
-        caption="Active admin sessions"
-        minWidth={960}
-        rowClassName={(s) => revoked.has(s.id) && "opacity-55"}
-        mobileRow={(s) => ({
-          lead: <Initials name={name(s)} />,
-          title: name(s),
-          meta: `${s.device}, ${s.location}, ${relTime(s.lastActiveAt).toLowerCase()}`,
-          trail: status(s),
-          below: (
-            <div className="flex items-center justify-between gap-3 pl-10">
-              <span className={cn("min-w-0 text-[11px]", s.flag && !revoked.has(s.id) ? "text-acid" : "text-ink-3")}>{s.flag && !revoked.has(s.id) ? s.flag : `${s.browser}, ${s.ip}`}</span>
-              {act(s)}
-            </div>
-          ),
-        })}
+        getId={(s) => s.id}
+        bulkActions={bulk}
+        density="dense"
+        minWidth={0}
+        search={{ placeholder: "Search by member, device or place", text: (s) => `${nameOf(s)} ${s.device} ${s.browser} ${s.location} ${s.ip}` }}
+        empty={{ title: "No active sessions", body: "Every admin is signed out." }}
       />
-      <ReasonDialog action={action} open={open} onOpenChange={setOpen} onConfirm={confirm} />
     </div>
   )
 }

@@ -1,22 +1,23 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { LockIcon as Lock } from "@phosphor-icons/react"
-import { MetricTile } from "@/components/dashboard/metric-tile"
-import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
-import { adminUser, disputes, reconciliation } from "@/lib/data/admin"
+import { useId, useState } from "react"
+import { GavelIcon, HourglassIcon, LockIcon, ArrowCounterClockwiseIcon, ScalesIcon } from "@phosphor-icons/react"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
+import { Reveal, RevealItem } from "@/components/admin/ui/motion"
+import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { adminUser, reconciliation } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
+import { AdminPageHead, PanelRail, StatRow } from "../marketplace/page-head"
 import { AdjustmentsTab } from "./adjustments-tab"
 import { CommissionTab } from "./commission-tab"
-import { commissionReport, disputeStage } from "./derive"
+import { disputeStage } from "./derive"
 import { DisputesTab } from "./disputes-tab"
-import { FinanceTabs, type FinanceTab } from "./finance-tabs"
 import { dueLabel, plural, usd, usdShort } from "./format"
 import { PayoutsTab } from "./payouts-tab"
 import { ReconciliationTab, type AdjustmentPrefill } from "./reconciliation-tab"
 import { RefundsTab } from "./refunds-tab"
-import { useSearchParam, writeParams } from "./table"
+import { InPageLinks, useAdminReady, useSearchParam, writeParams } from "./table"
 import { TransactionsTab } from "./transactions-tab"
 
 type TabKey = "transactions" | "payouts" | "refunds" | "disputes" | "reconciliation" | "adjustments" | "commission"
@@ -26,23 +27,24 @@ const isTab = (v: string | null): v is TabKey => !!v && (KEYS as string[]).inclu
 const n = (v: number) => formatNumber(Math.round(v))
 
 export function FinanceView() {
+  const ready = useAdminReady()
+  const qid = useId()
   const payouts = useAdmin((s) => s.payouts)
   const refunds = useAdmin((s) => s.refunds)
   const adjustments = useAdmin((s) => s.adjustments)
+  const disputes = useAdmin((s) => s.disputes)
   const audit = useAdmin((s) => s.audit)
-  const [picked, setPicked] = useState<TabKey | null>(null)
   const [prefill, setPrefill] = useState<{ value: AdjustmentPrefill; key: number } | null>(null)
 
-  // Other screens link here as /admin/finance?tab=refunds&focus=rf_…. The link decides the
-  // first view; once the admin picks a tab, their choice wins and the focus is dropped.
+  // Other screens link here as /admin/finance?tab=refunds&focus=rf_…; the tab and the linked
+  // record live in the URL, so a reload or a shared link reopens the same view.
   const linkedTab = useSearchParam("tab")
-  const linkedFocus = useSearchParam("focus")
-  const tab: TabKey = picked ?? (isTab(linkedTab) ? linkedTab : "transactions")
-  const focus = picked ? null : linkedFocus
+  const focus = useSearchParam("focus")
+  const tab: TabKey = isTab(linkedTab) ? linkedTab : "transactions"
 
+  // Each tab keeps its filters in the URL too; they're its own, so a new tab starts clear.
   function changeTab(t: TabKey) {
-    setPicked(t)
-    writeParams({ tab: t === "transactions" ? null : t, focus: null })
+    writeParams({ tab: t === "transactions" ? null : t, focus: null, status: null, type: null, provider: null })
   }
 
   const toApprove = payouts.filter((p) => p.status === "awaiting_approval")
@@ -50,55 +52,75 @@ export function FinanceView() {
   const requested = refunds.filter((r) => r.status === "requested")
   const needEvidence = disputes.filter((d) => disputeStage(d, audit) === "needs_evidence").sort((a, b) => a.dueBy.localeCompare(b.dueBy))
   const mismatches = reconciliation.filter((r) => r.status === "mismatch")
+  const unexplained = mismatches.reduce((s, r) => s + Math.abs(r.ledgerUsd - r.providerUsd), 0)
   const pendingAdj = adjustments.filter((a) => a.status === "pending")
   const forMe = pendingAdj.filter((a) => a.requestedBy !== adminUser.name)
-  const commission30 = useMemo(() => commissionReport(30).reduce((s, r) => s + r.netUsd, 0), [])
 
-  const tabs: FinanceTab<TabKey>[] = [
+  const tabs: { value: TabKey; label: string; count?: number }[] = [
     { value: "transactions", label: "Transactions" },
-    { value: "payouts", label: "Payouts", count: toApprove.length + held.length, urgent: true },
-    { value: "refunds", label: "Refunds", count: requested.length, urgent: true },
-    { value: "disputes", label: "Disputes", count: needEvidence.length, urgent: true },
-    { value: "reconciliation", label: "Reconciliation", count: mismatches.length, urgent: true },
-    { value: "adjustments", label: "Adjustments", count: pendingAdj.length, urgent: forMe.length > 0 },
+    { value: "payouts", label: "Payouts", count: toApprove.length + held.length },
+    { value: "refunds", label: "Refunds", count: requested.length },
+    { value: "disputes", label: "Disputes", count: needEvidence.length },
+    { value: "reconciliation", label: "Reconciliation", count: mismatches.length },
+    { value: "adjustments", label: "Adjustments", count: forMe.length },
     { value: "commission", label: "Commission" },
   ]
 
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Finance" description="Money in, money out and the checks between them: provider transactions, brand payouts, refunds, disputes, reconciliation and commission.">
-        <p className="mt-2 flex items-start gap-1.5 text-[12px] text-ink">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-violet" aria-hidden />
-          The ledger is append-only: nothing here edits a recorded amount, and every correction is a new entry approved by a second admin.
-        </p>
-        <SampleDataNote className="mt-2" />
-      </PageHeader>
+    <Reveal ssrVisible className="@container grid gap-3">
+      <AdminPageHead
+        title="Finance"
+        description="Money in, money out and the checks between them: provider transactions, brand payouts, refunds, disputes, reconciliation and commission."
+        note={
+          <>
+            <span className="flex items-start gap-1.5 text-ink-2">
+              <LockIcon className="mt-0.5 size-3.5 shrink-0 text-violet" aria-hidden />
+              The ledger is append-only: nothing here edits a recorded amount, and every correction is a new entry approved by a second admin.
+            </span>
+            <span className="mt-1.5 block">No payments provider is connected in this build. Approving a payout or a refund records the decision with your reason; nothing is sent, and nothing is marked completed until a provider confirms it.</span>
+          </>
+        }
+      />
 
-      <section aria-label="Finance figures" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        <MetricTile density="dense" label="Payouts to approve" value={toApprove.reduce((s, p) => s + p.amountUsd, 0)} format={usdShort} hint={plural(toApprove.length, "payout")} highlight={toApprove.length > 0} />
-        <MetricTile density="dense" label="Held payouts" value={held.reduce((s, p) => s + p.amountUsd, 0)} format={usdShort} hint={plural(held.length, "brand")} />
-        <MetricTile density="dense" label="Refunds to decide" value={requested.length} format={n} hint={usd(requested.reduce((s, r) => s + r.amountUsd, 0))} highlight={requested.length > 0} />
-        <MetricTile density="dense" label="Evidence due" value={needEvidence.length} format={n} hint={needEvidence[0] ? `next ${dueLabel(needEvidence[0].dueBy).toLowerCase()}` : "nothing due"} highlight={needEvidence.length > 0} />
-        <MetricTile density="dense" label="Unreconciled" value={mismatches.reduce((s, r) => s + Math.abs(r.ledgerUsd - r.providerUsd), 0)} format={usd} hint={plural(mismatches.length, "mismatch", "mismatches")} highlight={mismatches.length > 0} />
-        <MetricTile density="dense" label="Commission, 30 days" value={commission30} format={usdShort} hint="net of refunds" />
-      </section>
+      <InPageLinks>
+        <StatRow label="Finance figures">
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" variant={ready && toApprove.length ? "brand" : "default"} icon={HourglassIcon} label="Payout approvals" value={toApprove.reduce((s, p) => s + p.amountUsd, 0)} format={usdShort} hint={ready ? `${plural(toApprove.length, "payout")}, ${held.length} held` : undefined} href="/admin/finance?tab=payouts#finance-sections" hrefLabel="Open payouts" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ArrowCounterClockwiseIcon} label="Refunds to decide" value={requested.length} format={n} hint={ready ? `${usd(requested.reduce((s, r) => s + r.amountUsd, 0))} requested` : undefined} href="/admin/finance?tab=refunds#finance-sections" hrefLabel="Open refunds" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={GavelIcon} label="Evidence due" value={needEvidence.length} format={n} hint={ready ? (needEvidence[0] ? `Next ${dueLabel(needEvidence[0].dueBy).toLowerCase()}` : "Nothing due") : undefined} href="/admin/finance?tab=disputes#finance-sections" hrefLabel="Open disputes" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ScalesIcon} label="Unreconciled" value={unexplained} format={usd} hint={plural(mismatches.length, "mismatch", "mismatches")} href="/admin/finance?tab=reconciliation#finance-sections" hrefLabel="Open reconciliation" ready={ready} className="h-full" />
+          </RevealItem>
+        </StatRow>
+      </InPageLinks>
 
-      <FinanceTabs tabs={tabs} value={tab} onValueChange={changeTab}>
-        {tab === "transactions" ? <TransactionsTab /> : null}
-        {tab === "payouts" ? <PayoutsTab focus={focus} /> : null}
-        {tab === "refunds" ? <RefundsTab key={focus ?? "refunds"} focus={focus} /> : null}
-        {tab === "disputes" ? <DisputesTab focus={focus} /> : null}
-        {tab === "reconciliation" ? (
-          <ReconciliationTab
-            onRaise={(value) => {
-              setPrefill((p) => ({ value, key: (p?.key ?? 0) + 1 }))
-              changeTab("adjustments")
-            }}
-          />
-        ) : null}
-        {tab === "adjustments" ? <AdjustmentsTab prefill={prefill?.value} prefillKey={prefill?.key} onPrefillUsed={() => setPrefill(null)} /> : null}
-        {tab === "commission" ? <CommissionTab /> : null}
-      </FinanceTabs>
-    </div>
+      <RevealItem as="section" id="finance-sections" aria-label="Finance sections" className="grid min-w-0 scroll-mt-24 gap-3 pt-3">
+        <PanelRail className="-mx-4 px-4 pb-0 md:px-4 @lg:-mx-1 @lg:px-1" value={tab}>
+          <Segmented label="Finance sections" value={tab} onChange={changeTab} loading={!ready} idBase={qid} panelId={`${qid}-panel`} options={tabs} />
+        </PanelRail>
+        <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="min-w-0">
+          {tab === "transactions" ? <TransactionsTab ready={ready} /> : null}
+          {tab === "payouts" ? <PayoutsTab focus={focus} ready={ready} /> : null}
+          {tab === "refunds" ? <RefundsTab focus={focus} ready={ready} /> : null}
+          {tab === "disputes" ? <DisputesTab focus={focus} ready={ready} /> : null}
+          {tab === "reconciliation" ? (
+            <ReconciliationTab
+              ready={ready}
+              onRaise={(value) => {
+                setPrefill((p) => ({ value, key: (p?.key ?? 0) + 1 }))
+                changeTab("adjustments")
+              }}
+            />
+          ) : null}
+          {tab === "adjustments" ? <AdjustmentsTab ready={ready} prefill={prefill?.value} prefillKey={prefill?.key} onPrefillUsed={() => setPrefill(null)} /> : null}
+          {tab === "commission" ? <CommissionTab /> : null}
+        </div>
+      </RevealItem>
+    </Reveal>
   )
 }

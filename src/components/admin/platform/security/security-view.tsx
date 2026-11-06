@@ -1,61 +1,111 @@
 "use client"
 
-import { useState } from "react"
-import { MetricTile } from "@/components/dashboard/metric-tile"
-import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
+import { useId, useState } from "react"
+import { DevicesIcon, FingerprintIcon, ListMagnifyingGlassIcon, UsersThreeIcon } from "@phosphor-icons/react"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
+import { Reveal, RevealItem } from "@/components/admin/ui/motion"
+import { Panel } from "@/components/admin/ui/panel"
+import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { adminTeam } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
 import { int } from "../format"
-import { SectionTabs } from "../section-tabs"
+import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplace/page-head"
+import { useAdminReady } from "../ready"
+import { inPageTab, TabParam, writeTabParam } from "../tab-param"
 import { AuditLog } from "./audit-log"
 import { useSecurityState } from "./derive"
 import { PolicyTable } from "./policy"
+import { useRevoke } from "./revoke"
 import { adminSessions, sensitivePolicy } from "./sample"
 import { Sessions } from "./sessions"
 import { TeamRoles } from "./team-roles"
 
-type Tab = "audit" | "team" | "sessions" | "policy"
+const TABS = ["audit", "team", "sessions", "policy"] as const
+type Tab = (typeof TABS)[number]
+
+const description: Record<Tab, string> = {
+  audit: "Every decision in the Control Center: who made it, why, and who approved it.",
+  team: "Who is on the admin team, whether they use MFA, and what each role may do.",
+  sessions: "Every device signed in to the Control Center right now.",
+  policy: "Which actions need a written reason or a second admin, and who can take them.",
+}
 
 export function SecurityView() {
+  const ready = useAdminReady()
   const audit = useAdmin((s) => s.audit)
   const { revoked, mfaRequired } = useSecurityState()
+  const { ask: revoke, dialog: revokeDialog } = useRevoke()
   const [tab, setTab] = useState<Tab>("audit")
+  const tid = useId()
 
-  const noMfa = adminTeam.filter((m) => !m.mfa).length
-  const unaddressed = adminTeam.filter((m) => !m.mfa && !mfaRequired.has(m.id)).length
-  const active = adminSessions.filter((s) => !revoked.has(s.id))
-  const flagged = active.filter((s) => s.flag).length
+  const noMfa = adminTeam.filter((m) => !m.mfa)
+  const unaddressed = noMfa.filter((m) => !mfaRequired.has(m.id))
+  // A pending revoke still counts as signed in: the device stays signed in until the auth service ends it.
+  const signedIn = adminSessions.length
+  const flagged = adminSessions.filter((s) => s.flag && !revoked.has(s.id))
   const approvals = audit.filter((a) => a.approvedBy).length
 
+  function choose(v: Tab) {
+    setTab(v)
+    writeTabParam(v)
+  }
+  const open = (v: Tab) => ({ onClickCapture: inPageTab(choose, v, "security-sections") })
+
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Security" description="Who did what and why, who can do what, who is signed in, and which actions need a reason or a second approver.">
-        <SampleDataNote className="mt-2" />
-      </PageHeader>
+    <Reveal ssrVisible className="@container grid gap-3">
+      <TabParam values={TABS} onChange={setTab} />
+      <AdminPageHead
+        title="Security"
+        description="Who did what and why, who can do what, who is signed in, and which actions need a reason or a second approver."
+        note="Revokes and MFA requirements are recorded now and in the audit log, and take effect once the auth service is connected. Sessions are sample data."
+      />
 
-      <section aria-label="Security figures" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <MetricTile density="dense" label="Audit entries" value={audit.length} format={int} hint={`${approvals} with a second approver`} />
-        <MetricTile density="dense" label="Admins without MFA" value={noMfa} format={int} highlight={unaddressed > 0} hint={mfaRequired.size ? `${mfaRequired.size} asked to set it up` : `of ${adminTeam.length} on the team`} />
-        <MetricTile density="dense" label="Active sessions" value={active.length} format={int} highlight={flagged > 0} hint={flagged ? `${flagged} to check` : "none flagged"} />
-        <MetricTile density="dense" label="Need a second approver" value={sensitivePolicy.filter((p) => p.approver).length} format={int} hint={`of ${sensitivePolicy.length} sensitive actions`} />
-      </section>
+      <StatRow label="Security figures">
+        <RevealItem className="min-w-0" {...open("audit")}>
+          <StatCard surface="admin" icon={ListMagnifyingGlassIcon} label="Audit entries" value={audit.length} format={int} hint={ready ? `${approvals} with a second approver` : undefined} href="?tab=audit#security-sections" hrefLabel="Open the audit log" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("team")}>
+          <StatCard surface="admin" variant={ready && unaddressed.length ? "brand" : "default"} icon={FingerprintIcon} label="Without MFA" value={noMfa.length} format={int} hint={ready ? (mfaRequired.size ? `${mfaRequired.size} required to set it up` : `Of ${adminTeam.length} on the team`) : undefined} href="?tab=team#security-sections" hrefLabel="Open team and roles" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("sessions")}>
+          <StatCard surface="admin" icon={DevicesIcon} label="Active sessions" value={signedIn} format={int} hint={ready ? [flagged.length ? `${flagged.length} to check` : revoked.size ? null : "None flagged", revoked.size ? `${revoked.size} ${revoked.size === 1 ? "revoke" : "revokes"} pending` : null].filter(Boolean).join(", ") : undefined} href="?tab=sessions#security-sections" hrefLabel="Open sessions" ready={ready} className="h-full" />
+        </RevealItem>
+        <RevealItem className="min-w-0" {...open("policy")}>
+          <StatCard surface="admin" icon={UsersThreeIcon} label="Second approver" value={sensitivePolicy.filter((p) => p.approver).length} format={int} hint={`Of ${sensitivePolicy.length} sensitive actions`} href="?tab=policy#security-sections" hrefLabel="Open the sensitive-action policy" ready={ready} className="h-full" />
+        </RevealItem>
+      </StatRow>
 
-      <section aria-labelledby="security-sections-title" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-        <h2 id="security-sections-title" className="sr-only">Audit log, team, sessions and policy</h2>
-        <SectionTabs
-          label="Security sections"
-          value={tab}
-          onValueChange={setTab}
-          tabs={[
-            { value: "audit", label: "Audit log", short: "Audit", count: audit.length },
-            { value: "team", label: "Team and roles", short: "Team", count: adminTeam.length, urgent: unaddressed > 0 },
-            { value: "sessions", label: "Sessions", count: active.length, urgent: flagged > 0 },
-            { value: "policy", label: "Sensitive actions", short: "Policy", count: sensitivePolicy.length },
-          ]}
-        >
-          {tab === "audit" ? <AuditLog /> : tab === "team" ? <TeamRoles /> : tab === "sessions" ? <Sessions /> : <PolicyTable />}
-        </SectionTabs>
-      </section>
-    </div>
+      <Panel id="security-sections" title="Audit, team, sessions and policy" description={description[tab]} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+        <PanelRail value={tab}>
+          <Segmented
+            label="Security sections"
+            size="sm"
+            value={tab}
+            onChange={choose}
+            loading={!ready}
+            idBase={tid}
+            panelId={`${tid}-panel`}
+            options={[
+              { value: "audit", label: "Audit log" },
+              { value: "team", label: "Team", ...(unaddressed.length ? { count: unaddressed.length } : {}) },
+              { value: "sessions", label: "Sessions", ...(flagged.length ? { count: flagged.length } : {}) },
+              { value: "policy", label: "Policy" },
+            ]}
+          />
+        </PanelRail>
+        <div id={`${tid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(tid, tab)} className="border-t border-[var(--admin-hairline)] px-4 pt-4 pb-4 md:px-5 md:pb-5">
+          {tab === "audit" ? (
+            <AuditLog ready={ready} />
+          ) : tab === "team" ? (
+            <TeamRoles ready={ready} revoked={revoked} mfaRequired={mfaRequired} onRevoke={(s, o) => revoke(s, o)} />
+          ) : tab === "sessions" ? (
+            <Sessions ready={ready} revoked={revoked} onRevoke={(s) => revoke(s)} />
+          ) : (
+            <PolicyTable />
+          )}
+        </div>
+      </Panel>
+      {revokeDialog}
+    </Reveal>
   )
 }

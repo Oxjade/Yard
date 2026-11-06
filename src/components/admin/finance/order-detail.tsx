@@ -2,18 +2,19 @@
 
 import Image from "next/image"
 import { motion } from "motion/react"
-import { CopyIcon as Copy, ShieldWarningIcon as ShieldAlert, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
-import { toast } from "sonner"
+import { ShieldWarningIcon as ShieldAlert, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { BrandMark } from "@/components/market/brand-mark"
 import { countries, type CountryCode } from "@/config/markets"
 import type { AuditEntry } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
-import { ActionBar, DetailSection, DetailSheet, Facts, LinkRow } from "../marketplace/detail-sheet"
-import { disputeStage, groupState, orderTimeline, paymentEvents, type OrderRow } from "./derive"
+import { CopyValue } from "../marketplace/bits"
+import { DetailSection, DetailSheet, EmptyLine, Facts, LinkRow, insetClass } from "../marketplace/detail-sheet"
+import { useLast } from "../marketplace/use-last"
+import { disputeStage, groupState, orderTimeline, paymentEvents, providerFor, type OrderRow } from "./derive"
 import { amountIn, formatDateTime, providerName, signedUsd, usd } from "./format"
-import { fulfilMeta, groupMeta, payMeta } from "./meta"
+import { fulfilMeta, groupMeta, payMeta, txStatusMeta } from "./meta"
 
 const countryName = (c: string) => countries[c as CountryCode]?.name ?? c
 const num = (v: React.ReactNode) => <span className="tabular">{v}</span>
@@ -25,7 +26,9 @@ const num = (v: React.ReactNode) => <span className="tabular">{v}</span>
  */
 export function OrderDetail({ rows, id, open, onOpenChange, onSelect }: { rows: OrderRow[]; id: string | null; open: boolean; onOpenChange: (open: boolean) => void; onSelect: (id: string) => void }) {
   const audit = useAdmin((s) => s.audit)
-  const row = id ? rows.find((r) => r.order.id === id) : undefined
+  // Keep the last order while the sheet animates out.
+  const shown = useLast(id)
+  const row = shown ? rows.find((r) => r.order.id === shown) : undefined
   if (!row) return null
   return <OrderBody row={row} rows={rows} audit={audit} open={open} onOpenChange={onOpenChange} onSelect={onSelect} />
 }
@@ -34,21 +37,15 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
   const o = row.order
   const siblings = rows.filter((r) => r.order.groupId === o.groupId)
   const groupTotal = siblings.reduce((s, r) => s + r.totalUsd, 0)
-  const gState = groupMeta[groupState(siblings.map((s) => s.order))]
+  // A checkout nobody has paid for isn't "Confirmed": its payment state comes first.
+  const gState = siblings.every((s) => s.pay === "pending") ? payMeta.pending : siblings.every((s) => s.pay === "failed") ? payMeta.failed : groupMeta[groupState(siblings.map((s) => s.order))]
   const stage = row.dispute ? disputeStage(row.dispute, audit) : undefined
   const events = paymentEvents(o, row.brand, row.refund, row.dispute, stage)
   const timeline = orderTimeline(o, audit, row)
   const net = o.total - o.commission
+  const paid = row.pay === "paid"
+  const unpaid = row.pay === "pending" || row.pay === "failed"
   const money = (v: number) => amountIn(v, o.currency)
-
-  async function copyReference() {
-    try {
-      await navigator.clipboard.writeText(o.reference)
-      toast("Reference copied", { description: `#${o.reference} is on your clipboard.` })
-    } catch {
-      toast("Couldn't copy", { description: `Select the reference by hand: #${o.reference}` })
-    }
-  }
 
   return (
     <DetailSheet
@@ -64,10 +61,13 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
         </>
       }
       actions={
-        <ActionBar
-          note="Read-only. Amounts on an order never change; a refund or correction is a new ledger entry made in Finance."
-          actions={[{ key: "copy", label: "Copy reference", icon: Copy, variant: "secondary", onSelect: copyReference }]}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="max-w-xs text-[11.5px] leading-snug text-ink-3">Read-only. Amounts on an order never change; a refund or correction is a new ledger entry made in Finance.</p>
+          <div className="flex items-center gap-3 text-[12px] text-ink-2">
+            <CopyValue value={`#${o.reference}`} label="Copy order reference" className="min-h-10 sm:min-h-0" />
+            <CopyValue value={row.groupRef} label="Copy checkout reference" className="min-h-10 sm:min-h-0" />
+          </div>
+        </div>
       }
     >
       {/* Keyed by order so moving to a sibling brand order cross-fades the body. */}
@@ -76,7 +76,7 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
           <p className="text-[12px] text-ink-2">
             Checkout <span className="text-ink tabular">{row.groupRef}</span> {siblings.length === 1 ? "was one payment for one brand order." : `was one payment, split into ${siblings.length} brand orders. Each brand fulfils and refunds its own order.`}
           </p>
-          <ul className="divide-y divide-line-soft overflow-hidden rounded-lg border border-line-soft bg-card">
+          <ul className={cn("divide-y divide-white/[0.07] overflow-hidden", insetClass)}>
             {siblings.map((s) => {
               const here = s.order.id === o.id
               return (
@@ -86,7 +86,7 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
                     onClick={() => onSelect(s.order.id)}
                     disabled={here}
                     aria-current={here ? "true" : undefined}
-                    className={cn("flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors", here ? "bg-purple/[0.08]" : "hover:bg-white/[0.03]")}
+                    className={cn("flex min-h-12 w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-inset", here ? "bg-purple/[0.08]" : "hover:bg-white/[0.03]")}
                   >
                     <BrandMark brand={s.brand} size="xs" />
                     <span className="min-w-0 flex-1">
@@ -102,29 +102,31 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
                 </li>
               )
             })}
-            <li className="flex items-center justify-between gap-3 bg-surface/60 px-3 py-2.5">
+            <li className="flex items-center justify-between gap-3 bg-white/[0.02] px-3 py-2.5">
               <span className="text-[12px] text-ink-2">Checkout total</span>
               <span className="text-[13px] font-medium text-ink tabular">{usd(groupTotal)}</span>
             </li>
           </ul>
         </DetailSection>
 
-        <DetailSection title="Amounts" aside={<span className="text-[11px] text-ink-3">{o.currency}, with USD at the demo rate</span>}>
+        <DetailSection title="Amounts" aside={<span className="text-[11px] text-ink-3">{o.currency === "USD" ? "In USD" : `${o.currency}, with USD at the demo rate`}</span>}>
           <Facts
             items={[
               { label: "Items", value: num(money(o.subtotal)) },
               { label: "Shipping", value: num(money(o.shipping)) },
-              { label: "Total charged", value: num(money(o.total)) },
-              { label: "Total in USD", value: num(usd(row.totalUsd)) },
-              { label: "Commission, 5% of items", value: num(money(o.commission)) },
-              { label: "Brand receives", value: num(money(net)) },
+              { label: "Order total", value: num(money(o.total)) },
+              { label: "Order total in USD", value: num(usd(row.totalUsd)) },
+              // Only a paid order leaves the brand a share. One that was never paid shows the
+              // commission it would carry, and nothing as received.
+              { label: unpaid ? "Commission if paid, 5%" : "Commission, 5% of items", value: num(money(o.commission)) },
+              paid ? { label: "Brand receives", value: num(money(net)) } : { label: "Payment provider", value: providerName[providerFor(row.brand)] },
             ]}
           />
         </DetailSection>
 
         <DetailSection title="Payment events" aside={<span className="text-[11px] text-ink-3">{providerName[events[0]?.provider ?? "stripe"]}</span>}>
           {events.length ? (
-            <ol className="divide-y divide-line-soft rounded-lg border border-line-soft bg-card">
+            <ol className={cn("divide-y divide-white/[0.07]", insetClass)}>
               {events.map((e) => (
                 <li key={e.id} className="px-3 py-2.5">
                   <div className="flex items-start justify-between gap-3">
@@ -144,7 +146,8 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className={cn("text-[13px] tabular", e.amountUsd < 0 ? "text-ink-2" : "text-ink")}>{e.amountUsd === 0 ? usd(0) : signedUsd(e.amountUsd)}</span>
+                      {/* A failed event moved no money, so it carries no sign. */}
+                      <span className={cn("text-[13px] tabular", e.status === txStatusMeta.failed ? "text-ink-3" : e.amountUsd < 0 ? "text-ink-2" : "text-ink")}>{e.amountUsd === 0 ? usd(0) : e.status === txStatusMeta.failed ? usd(Math.abs(e.amountUsd)) : signedUsd(e.amountUsd)}</span>
                       <StatusBadge tone={e.status.tone}>{e.status.label}</StatusBadge>
                     </div>
                   </div>
@@ -153,15 +156,15 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
               ))}
             </ol>
           ) : (
-            <p className="rounded-lg border border-dashed border-line px-3 py-3 text-[12px] text-ink-3">No payment yet. Brand orders are only created once the provider confirms the payment.</p>
+            <EmptyLine>Awaiting payment. Checkout created this order, but no payments provider is connected in this build, so nothing has been charged and the brand shouldn&apos;t ship it.</EmptyLine>
           )}
         </DetailSection>
 
         <DetailSection title="Items">
-          <ul className="divide-y divide-line-soft rounded-lg border border-line-soft bg-card">
+          <ul className={cn("divide-y divide-white/[0.07]", insetClass)}>
             {o.lines.map((l) => (
               <li key={l.variantId} className="flex items-center gap-3 px-3 py-2.5">
-                <span className="relative h-11 w-9 shrink-0 overflow-hidden rounded-md border border-white/8 bg-surface">
+                <span className="relative h-11 w-9 shrink-0 overflow-hidden rounded-md border border-white/8 bg-white/[0.03]">
                   <Image src={l.image.src} alt="" fill sizes="36px" className="object-cover" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -177,14 +180,14 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
         </DetailSection>
 
         <DetailSection title="Timeline">
-          <ol className="relative grid gap-3 rounded-lg border border-line-soft bg-card p-3">
+          <ol className={cn("relative grid gap-3 p-3", insetClass)}>
             {timeline.map((t, i) => {
               const sameTime = i > 0 && timeline[i - 1].at === t.at
               return (
                 <li key={t.id} className="relative flex gap-3">
                   <span className="relative flex w-3 shrink-0 justify-center pt-1" aria-hidden>
                     <span className={cn("size-2 rounded-full", t.who ? "bg-violet" : i === timeline.length - 1 ? "bg-ink" : "bg-ink-3")} />
-                    {i < timeline.length - 1 ? <span className="absolute top-3.5 -bottom-3 w-px bg-line" /> : null}
+                    {i < timeline.length - 1 ? <span className="absolute top-3.5 -bottom-3 w-px bg-white/10" /> : null}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] text-ink">{t.label}</p>
@@ -219,16 +222,16 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
           <ul className="grid gap-1.5">
             {row.refund ? (
               <li>
-                <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/finance?tab=refunds&focus=${row.refund.id}`} label="Refund in Finance" hint={`Idempotency key ${row.refund.idempotencyKey}`} />
+                <LinkRow href={`/admin/finance?tab=refunds&focus=${row.refund.id}`} label="Refund in Finance" hint={`Idempotency key ${row.refund.idempotencyKey}`} />
               </li>
             ) : null}
             {row.dispute ? (
               <li>
-                <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/finance?tab=disputes&focus=${row.dispute.id}`} label={row.dispute.type === "chargeback" ? "Chargeback in Finance" : "Inquiry in Finance"} hint={`${row.dispute.reason}, ${usd(row.dispute.amountUsd)}`} />
+                <LinkRow href={`/admin/finance?tab=disputes&focus=${row.dispute.id}`} label={row.dispute.type === "chargeback" ? "Chargeback in Finance" : "Inquiry in Finance"} hint={`${row.dispute.reason}, ${usd(row.dispute.amountUsd)}`} />
               </li>
             ) : null}
             <li>
-              <LinkRow onNavigate={() => onOpenChange(false)} href={`/admin/brands?review=app_${row.brand.handle}`} label="Brand" hint={`${row.brand.name}, verification and activity`} />
+              <LinkRow href={`/admin/brands?review=app_${row.brand.handle}`} label="Brand" hint={`${row.brand.name}, verification and activity`} />
             </li>
           </ul>
         </DetailSection>

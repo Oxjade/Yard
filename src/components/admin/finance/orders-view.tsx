@@ -1,34 +1,40 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { MagnifyingGlassMinusIcon as SearchX } from "@phosphor-icons/react"
+import { useId, useMemo } from "react"
+import { ArrowCounterClockwiseIcon, ChartLineUpIcon, CopyIcon, EyeIcon, GavelIcon, PackageIcon, ShoppingCartIcon } from "@phosphor-icons/react"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/dashboard/empty-state"
-import { MetricTile } from "@/components/dashboard/metric-tile"
-import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
+import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { BrandMark } from "@/components/market/brand-mark"
+import { Reveal, RevealItem } from "@/components/admin/ui/motion"
+import { Panel } from "@/components/admin/ui/panel"
+import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { brands } from "@/lib/data/brands"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useOrders } from "@/lib/stores/orders"
-import { buildOrderRows, type OrderRow } from "./derive"
+import { Filters } from "../marketplace/filters"
+import { AdminPageHead, PanelRail, StatRow } from "../marketplace/page-head"
+import { buildOrderRows, groupState, type OrderRow } from "./derive"
 import { DEMO_NOW, amountIn, formatDateTime, relDays, usd, usdCompact } from "./format"
-import { fulfilMeta, payMeta, type FulfilState } from "./meta"
+import { fulfilMeta, groupMeta, payMeta, type FulfilState } from "./meta"
 import { OrderDetail } from "./order-detail"
-import { FilterSelect, Pagination, SearchField } from "../platform/table"
-import { AdminTable, TablePanel, useSearchParam, writeParams, type Column } from "./table"
+import { downloadCsv, InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./table"
 
-const PAGE_SIZE = 25
 const DAY = 86_400_000
 
-type StatusFilter = "all" | FulfilState | "refund_requested" | "refunded" | "failed" | "disputed"
+type StatusFilter = "all" | FulfilState | "awaiting_payment" | "refund_requested" | "refunded" | "failed" | "disputed"
+type View = "orders" | "checkouts"
 
 const statusGroups = [
   { label: "Fulfilment", options: (["unfulfilled", "on_hold", "processing", "shipped", "delivered", "cancelled"] as const).map((v) => ({ value: v, label: fulfilMeta[v].label })) },
   {
     label: "Payment",
     options: [
+      { value: "awaiting_payment", label: "Awaiting payment" },
       { value: "refund_requested", label: "Refund requested" },
       { value: "disputed", label: "Disputed or charged back" },
       { value: "refunded", label: "Refunded" },
@@ -36,9 +42,11 @@ const statusGroups = [
     ],
   },
 ]
+const statusValues = new Set<string>(["all", ...statusGroups.flatMap((g) => g.options.map((o) => o.value))])
 
 function matchesStatus(r: OrderRow, f: StatusFilter) {
   if (f === "all") return true
+  if (f === "awaiting_payment") return r.pay === "pending"
   if (f === "refund_requested") return r.pay === "refund_requested" || r.pay === "refund_approved"
   if (f === "refunded") return r.pay === "refunded"
   if (f === "failed") return r.pay === "failed"
@@ -46,53 +54,89 @@ function matchesStatus(r: OrderRow, f: StatusFilter) {
   return r.fulfil === f
 }
 
+type CheckoutRow = { id: string; ref: string; customer: string; placedAt: string; orders: OrderRow[]; totalUsd: number; search: string }
+
 const n = (v: number) => formatNumber(Math.round(v))
+const copy = (text: string, what: string) =>
+  void navigator.clipboard.writeText(text).then(
+    () => toast.success(`${what} copied`, { description: text }),
+    () => toast.error("Couldn't reach the clipboard", { description: `Select ${text} and copy it by hand.` }),
+  )
+
+function exportOrders(rows: OrderRow[]) {
+  downloadCsv(
+    `nocturne-orders-${rows.length}.csv`,
+    ["Order", "Checkout", "Brand", "Customer", "Placed (UTC)", "Currency", "Total", "Total (USD)", "Payment", "Fulfilment"],
+    rows.map((r) => [`#${r.order.reference}`, r.groupRef, r.brand.name, r.customer.name, r.order.placedAt, r.order.currency, amountIn(r.order.total, r.order.currency), (r.totalUsd / 100).toFixed(2), payMeta[r.pay].label, fulfilMeta[r.fulfil].label]),
+    "NOCTURNE brand orders, sample data",
+  )
+}
 
 export function OrdersView() {
+  const router = useRouter()
+  const ready = useAdminReady()
+  const phone = usePhone()
+  const qid = useId()
   const clientOrders = useOrders((s) => s.orders)
   const groups = useOrders((s) => s.groups)
   const refunds = useAdmin((s) => s.refunds)
-  const [query, setQuery] = useState("")
-  const [brand, setBrand] = useState("all")
-  const [status, setStatus] = useState<StatusFilter>("all")
-  const [page, setPage] = useState(0)
-  // The open order: what the admin picked, else the one a link named (/admin/orders?order=mo_…).
-  const [picked, setPicked] = useState<{ id: string | null; open: boolean } | null>(null)
-  const linkedId = useSearchParam("order")
+  const disputes = useAdmin((s) => s.disputes)
+  const linkedStatus = useSearchParam("status")
+  const linkedBrand = useSearchParam("brand")
+  const view: View = useSearchParam("view") === "checkouts" ? "checkouts" : "orders"
+  const status = (linkedStatus && statusValues.has(linkedStatus) ? linkedStatus : "all") as StatusFilter
+  const brand = linkedBrand && brands.some((b) => b.id === linkedBrand) ? linkedBrand : "all"
+  // The open order lives in the URL (/admin/orders?order=mo_…), so other screens link straight to it.
+  const orderId = useSearchParam("order")
 
-  const rows = useMemo(() => buildOrderRows(clientOrders, groups, refunds), [clientOrders, groups, refunds])
-  const q = query.trim().toLowerCase()
-  const filtered = useMemo(() => rows.filter((r) => (brand === "all" || r.brand.id === brand) && matchesStatus(r, status) && (!q || r.search.includes(q))), [rows, brand, status, q])
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const current = Math.min(page, pages - 1)
-  const pageRows = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
+  const rows = useMemo(() => buildOrderRows(clientOrders, groups, refunds, disputes), [clientOrders, groups, refunds, disputes])
+  const filtered = useMemo(() => rows.filter((r) => (brand === "all" || r.brand.id === brand) && matchesStatus(r, status)), [rows, brand, status])
+  const checkouts = useMemo(() => {
+    const byGroup = new Map<string, CheckoutRow>()
+    for (const r of filtered) {
+      const g = byGroup.get(r.order.groupId) ?? { id: r.order.groupId, ref: r.groupRef, customer: r.customer.name, placedAt: r.order.placedAt, orders: [], totalUsd: 0, search: "" }
+      g.orders.push(r)
+      g.totalUsd += r.totalUsd
+      g.search += ` ${r.search}`
+      byGroup.set(r.order.groupId, g)
+    }
+    return [...byGroup.values()]
+  }, [filtered])
 
   // Orders placed in this browser arrive with the store's rehydration, so a linked one opens once its row exists.
-  const linked = !picked && linkedId && rows.some((r) => r.order.id === linkedId) ? linkedId : null
-  const selected = picked ? picked.id : linked
-  const open = picked ? picked.open : !!linked
-
-  function openOrder(id: string) {
-    setPicked({ id, open: true })
-    writeParams({ order: id })
-  }
+  const open = !!orderId && rows.some((r) => r.order.id === orderId)
+  const openOrder = (id: string) => writeParams({ order: id })
 
   const recent = rows.filter((r) => new Date(r.order.placedAt).getTime() > DEMO_NOW - 30 * DAY)
   const today = rows.filter((r) => new Date(r.order.placedAt).getTime() > DEMO_NOW - DAY).length
-  const gmv = recent.filter((r) => r.fulfil !== "cancelled").reduce((s, r) => s + r.totalUsd, 0)
+  const gmv = recent.filter((r) => r.fulfil !== "cancelled" && r.pay !== "pending" && r.pay !== "failed").reduce((s, r) => s + r.totalUsd, 0)
   const unfulfilled = rows.filter((r) => r.fulfil === "unfulfilled").length
-  const refundAsks = rows.filter((r) => r.refund?.status === "requested").length
+  const refundAsks = refunds.filter((r) => r.status === "requested").length
+  const awaiting = rows.filter((r) => r.pay === "pending").length
 
-  const reset = (fn: () => void) => {
-    fn()
-    setPage(0)
-  }
+  const setFilter = (k: "status" | "brand", v: string) => writeParams({ [k]: v === "all" ? null : v })
+  const clear = () => writeParams({ status: null, brand: null })
 
-  const columns: Column<OrderRow>[] = [
-    { key: "ref", header: "Order", primary: true, cell: (r) => <span className="font-medium whitespace-nowrap text-ink tabular">#{r.order.reference}</span> },
+  const orderColumns: Column<OrderRow>[] = [
+    {
+      key: "ref",
+      header: "Order",
+      sortValue: (r) => r.order.reference,
+      cell: (r) => (
+        <button type="button" onClick={() => openOrder(r.order.id)} className="group block max-w-full min-w-0 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
+          <span className="block font-medium whitespace-nowrap text-ink tabular group-hover:text-violet">#{r.order.reference}</span>
+          <span className="block max-w-[40vw] truncate text-[11.5px] text-ink-3 sm:max-w-[200px] md:hidden">
+            {r.brand.name}
+            <span className="sm:hidden">, {(r.pay !== "paid" ? payMeta[r.pay] : fulfilMeta[r.fulfil]).label.toLowerCase()}</span>
+          </span>
+        </button>
+      ),
+    },
     {
       key: "group",
       header: "Checkout",
+      hideBelow: "lg",
+      sortValue: (r) => r.groupRef,
       cell: (r) => (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           <span className="text-ink-2 tabular">{r.groupRef}</span>
@@ -103,6 +147,8 @@ export function OrdersView() {
     {
       key: "brand",
       header: "Brand",
+      hideBelow: "md",
+      sortValue: (r) => r.brand.name,
       cell: (r) => (
         <span className="flex min-w-0 items-center gap-2">
           <BrandMark brand={r.brand} size="xs" />
@@ -110,132 +156,135 @@ export function OrdersView() {
         </span>
       ),
     },
-    { key: "customer", header: "Customer", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.customer.name}</span> },
-    { key: "placed", header: "Placed", cell: (r) => <time dateTime={r.order.placedAt} title={formatDateTime(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt)}</time> },
+    { key: "customer", header: "Customer", hideBelow: "lg", sortValue: (r) => r.customer.name, cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.customer.name}</span> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (r) => r.order.placedAt, cell: (r) => <time dateTime={r.order.placedAt} title={formatDateTime(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt)}</time> },
     {
       key: "total",
       header: "Total",
       align: "right",
+      sortValue: (r) => r.totalUsd,
       cell: (r) => (
         <span className="block whitespace-nowrap">
           <span className="block text-ink">{usd(r.totalUsd)}</span>
-          {r.order.currency !== "USD" ? <span className="block text-[11px] text-ink-3">{amountIn(r.order.total, r.order.currency)}</span> : null}
+          {r.order.currency !== "USD" ? <span className="hidden text-[11px] text-ink-3 sm:block">{amountIn(r.order.total, r.order.currency)}</span> : null}
         </span>
       ),
     },
-    { key: "pay", header: "Payment", cell: (r) => <StatusBadge tone={payMeta[r.pay].tone}>{payMeta[r.pay].label}</StatusBadge> },
-    { key: "fulfil", header: "Fulfilment", cell: (r) => <StatusBadge tone={fulfilMeta[r.fulfil].tone}>{fulfilMeta[r.fulfil].label}</StatusBadge> },
+    { key: "pay", header: "Payment", hideBelow: "sm", sortValue: (r) => payMeta[r.pay].label, cell: (r) => <StatusBadge tone={payMeta[r.pay].tone}>{payMeta[r.pay].label}</StatusBadge> },
+    { key: "fulfil", header: "Fulfilment", hideBelow: "md", sortValue: (r) => fulfilMeta[r.fulfil].label, cell: (r) => <StatusBadge tone={fulfilMeta[r.fulfil].tone}>{fulfilMeta[r.fulfil].label}</StatusBadge> },
   ]
 
-  const filtersOn = brand !== "all" || status !== "all" || !!q
+  const orderActions: RowAction<OrderRow>[] = [
+    { label: "Open order", icon: EyeIcon, onSelect: (r) => openOrder(r.order.id) },
+    { label: "Copy order reference", icon: CopyIcon, separatorBefore: true, onSelect: (r) => copy(`#${r.order.reference}`, "Order reference") },
+    { label: "Copy checkout reference", icon: CopyIcon, onSelect: (r) => copy(r.groupRef, "Checkout reference") },
+    { label: "Refund in Finance", icon: ArrowCounterClockwiseIcon, separatorBefore: true, disabled: (r) => !r.refund, onSelect: (r) => r.refund && router.push(`/admin/finance?tab=refunds&focus=${r.refund.id}`) },
+    { label: "Dispute in Finance", icon: GavelIcon, disabled: (r) => !r.dispute, onSelect: (r) => r.dispute && router.push(`/admin/finance?tab=disputes&focus=${r.dispute.id}`) },
+  ]
+  const bulkActions: BulkAction<OrderRow>[] = [{ label: "Export as CSV", onSelect: exportOrders }]
+
+  const checkoutColumns: Column<CheckoutRow>[] = [
+    {
+      key: "ref",
+      header: "Checkout",
+      sortValue: (c) => c.ref,
+      cell: (c) => (
+        <button type="button" onClick={() => openOrder(c.orders[0].order.id)} className="group block max-w-full min-w-0 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
+          <span className="block font-medium whitespace-nowrap text-ink tabular group-hover:text-violet">{c.ref}</span>
+          <span className="block max-w-[36vw] truncate text-[11.5px] text-ink-3 sm:max-w-[220px]">{c.orders.map((o) => o.brand.name).join(", ")}</span>
+        </button>
+      ),
+    },
+    { key: "customer", header: "Customer", hideBelow: "md", sortValue: (c) => c.customer, cell: (c) => <span className="whitespace-nowrap text-ink-2">{c.customer}</span> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (c) => c.placedAt, cell: (c) => <time dateTime={c.placedAt} title={formatDateTime(c.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(c.placedAt)}</time> },
+    { key: "orders", header: "Brand orders", align: "right", hideBelow: "sm", sortValue: (c) => c.orders.length, cell: (c) => <span className="text-ink">{c.orders.length}</span> },
+    { key: "total", header: "Total", align: "right", sortValue: (c) => c.totalUsd, cell: (c) => <span className="whitespace-nowrap text-ink">{usd(c.totalUsd)}</span> },
+    {
+      key: "state",
+      header: "Status",
+      hideBelow: "lg",
+      cell: (c) => {
+        const pending = c.orders.every((o) => o.pay === "pending")
+        const failed = c.orders.every((o) => o.pay === "failed")
+        const m = pending ? payMeta.pending : failed ? payMeta.failed : groupMeta[groupState(c.orders.map((o) => o.order))]
+        return <StatusBadge tone={m.tone}>{m.label}</StatusBadge>
+      },
+    },
+  ]
+  const checkoutActions: RowAction<CheckoutRow>[] = checkoutActionsFor(openOrder)
 
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Orders" description="Every brand order on the marketplace, with the checkout it came from, how it was paid and where it is. Orders are records: refunds and corrections go through Finance.">
-        <SampleDataNote className="mt-2" />
-      </PageHeader>
-
-      <section aria-label="Order figures" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <MetricTile density="dense" label="Orders, 30 days" value={recent.length} format={n} hint={`${n(today)} today`} />
-        <MetricTile density="dense" label="GMV, 30 days" value={gmv} format={usdCompact} hint="converted to USD" />
-        <MetricTile density="dense" label="Unfulfilled" value={unfulfilled} format={n} hint="paid, not yet processing" highlight={unfulfilled > 0} />
-        <MetricTile density="dense" label="Refunds to decide" value={refundAsks} format={n} hint="in the Finance queue" highlight={refundAsks > 0} />
-      </section>
-
-      <TablePanel
-        id="orders-title"
-        title="All brand orders"
-        description={`${n(filtered.length)} of ${n(rows.length)} orders, newest first. One checkout can create orders with several brands.`}
-        toolbar={
-          <>
-            <SearchField value={query} onChange={(v) => reset(() => setQuery(v))} label="Search orders" placeholder="Order, checkout, customer" />
-            <FilterSelect
-              label="Filter by brand"
-              value={brand}
-              onChange={(v) => reset(() => setBrand(v))}
-              options={[{ value: "all", label: "All brands" }, ...brands.map((b) => ({ value: b.id, label: b.name }))]}
-              className="w-auto min-w-0 flex-1 md:w-[168px] md:flex-none"
-            />
-            <FilterSelect
-              label="Filter by status"
-              value={status}
-              onChange={(v) => reset(() => setStatus(v as StatusFilter))}
-              options={[{ value: "all", label: "All statuses" }]}
-              groups={statusGroups}
-              className="w-auto min-w-0 flex-1 md:w-[168px] md:flex-none"
-            />
-          </>
-        }
-      >
-        {pageRows.length ? (
-          <>
-            <AdminTable
-              rows={pageRows}
-              columns={columns}
-              rowKey={(r) => r.order.id}
-              onOpen={(r) => openOrder(r.order.id)}
-              openLabel={(r) => `Open order ${r.order.reference}`}
-              selectedKey={open ? selected : null}
-              caption="Brand orders"
-              minWidth={980}
-              mobileRow={(r) => {
-                const badge = r.pay !== "paid" ? payMeta[r.pay] : fulfilMeta[r.fulfil]
-                return {
-                  lead: <BrandMark brand={r.brand} size="sm" />,
-                  title: (
-                    <>
-                      <span className="tabular">#{r.order.reference}</span> <span className="text-ink-2">{r.brand.name}</span>
-                    </>
-                  ),
-                  meta: `${r.customer.name}, ${relDays(r.order.placedAt).toLowerCase()}${r.groupSize > 1 ? `, ${r.groupSize} brands in checkout` : ""}`,
-                  trail: (
-                    <>
-                      <span className="text-[13px] text-ink tabular">{usd(r.totalUsd)}</span>
-                      <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
-                    </>
-                  ),
-                }
-              }}
-            />
-            <Pagination page={current} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="orders" />
-          </>
-        ) : (
-          <EmptyState
-            icon={SearchX}
-            className="m-4"
-            title="No orders match"
-            body={q ? `Nothing matches “${query.trim()}” with these filters. Search by order reference, checkout reference, customer name or email.` : "No orders have this brand and status. Try another status."}
-            action={
-              filtersOn ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    reset(() => {
-                      setQuery("")
-                      setBrand("all")
-                      setStatus("all")
-                    })
-                  }
-                >
-                  Clear filters
-                </Button>
-              ) : null
-            }
-          />
-        )}
-      </TablePanel>
-
-      <OrderDetail
-        rows={rows}
-        id={selected}
-        open={open}
-        onSelect={openOrder}
-        onOpenChange={(o) => {
-          setPicked({ id: selected, open: o })
-          if (!o) writeParams({ order: null })
-        }}
+    <Reveal ssrVisible className="@container grid gap-3">
+      <AdminPageHead
+        title="Orders"
+        description="Every brand order on the marketplace, with the checkout it came from, how it was paid and where it is. Orders are records: refunds and corrections go through Finance."
+        note="Orders from checkout stay Awaiting payment: no payments provider is connected in this build, so nothing is charged and nothing should ship."
       />
-    </div>
+
+      <InPageLinks>
+        <StatRow label="Order figures">
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ShoppingCartIcon} label="Orders, 30 days" value={recent.length} format={n} hint={`${n(today)} today${awaiting ? `, ${n(awaiting)} awaiting payment` : ""}`} href="/admin/orders#orders" hrefLabel="Show all orders" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ChartLineUpIcon} label="GMV, 30 days" value={gmv} format={usdCompact} hint="Paid orders, converted to USD" href="/admin/finance" hrefLabel="Open transactions in Finance" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" variant={ready && unfulfilled ? "brand" : "default"} icon={PackageIcon} label="Unfulfilled" value={unfulfilled} format={n} hint="Paid, not yet processing" href="/admin/orders?status=unfulfilled#orders" hrefLabel="Show unfulfilled orders" ready={ready} className="h-full" />
+          </RevealItem>
+          <RevealItem className="min-w-0">
+            <StatCard surface="admin" icon={ArrowCounterClockwiseIcon} label="Refunds to decide" value={refundAsks} format={n} hint="In the Finance queue" href="/admin/finance?tab=refunds" hrefLabel="Open refunds in Finance" ready={ready} className="h-full" />
+          </RevealItem>
+        </StatRow>
+      </InPageLinks>
+
+      <Panel id="orders" title="All orders" description={view === "orders" ? `${n(filtered.length)} of ${n(rows.length)} brand orders, newest first. One checkout can create orders with several brands.` : `${n(checkouts.length)} checkouts. Each is one payment, split into an order per brand; totals in USD.`} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+        <PanelRail value={view}>
+          <Segmented
+            label="Show orders"
+            size="sm"
+            value={view}
+            onChange={(v) => writeParams({ view: v === "orders" ? null : v })}
+            idBase={qid}
+            panelId={`${qid}-panel`}
+            options={[
+              { value: "orders", label: "Brand orders" },
+              { value: "checkouts", label: "Checkouts" },
+            ]}
+          />
+        </PanelRail>
+        <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, view)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
+          {(() => {
+            const toolbar = (
+              <Filters
+                noun={view === "orders" ? "orders" : "checkouts"}
+                results={view === "orders" ? filtered.length : checkouts.length}
+                onClear={clear}
+                filters={[
+                  { key: "brand", label: "Brand", value: brand, onChange: (v) => setFilter("brand", v), all: { value: "all", label: "All brands" }, options: brands.map((b) => ({ value: b.id, label: b.name })), width: "w-[176px]" },
+                  { key: "status", label: "Status", value: status, onChange: (v) => setFilter("status", v), all: { value: "all", label: "All statuses" }, groups: statusGroups, width: "w-[184px]" },
+                ]}
+              />
+            )
+            const empty = { title: "No orders match these filters", body: "Try another brand or status.", action: <Button size="sm" variant="secondary" onClick={clear}>Clear filters</Button> }
+            return view === "orders" ? (
+              <DataTable key="orders" label="Brand orders" rows={filtered} columns={orderColumns} getId={(r) => r.order.id} loading={!ready} search={{ placeholder: "Order, checkout, customer or email", text: (r) => r.search }} toolbar={toolbar} rowActions={orderActions} bulkActions={phone ? undefined : bulkActions} empty={empty} initialPageSize={25} minWidth={300} />
+            ) : (
+              <DataTable key="checkouts" label="Checkouts" rows={checkouts} columns={checkoutColumns} getId={(c) => c.id} loading={!ready} search={{ placeholder: "Checkout, order, customer or email", text: (c) => `${c.ref} ${c.search}` }} toolbar={toolbar} rowActions={checkoutActions} empty={empty} initialPageSize={25} minWidth={300} />
+            )
+          })()}
+        </div>
+      </Panel>
+
+      <OrderDetail rows={rows} id={open ? orderId : null} open={open} onSelect={openOrder} onOpenChange={(o) => !o && writeParams({ order: null })} />
+    </Reveal>
   )
 }
+
+function checkoutActionsFor(openOrder: (id: string) => void): RowAction<CheckoutRow>[] {
+  return [
+    { label: "Open checkout", icon: EyeIcon, onSelect: (c) => openOrder(c.orders[0].order.id) },
+    { label: "Copy checkout reference", icon: CopyIcon, separatorBefore: true, onSelect: (c) => copy(c.ref, "Checkout reference") },
+  ]
+}
+

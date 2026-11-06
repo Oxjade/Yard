@@ -1,193 +1,65 @@
 "use client"
 
-import { useEffect, useSyncExternalStore } from "react"
+import { useRef } from "react"
+import { XIcon } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
+import { focusBack } from "../marketplace/focus"
 
 /*
- * Orders and Finance tables. Search, filters and pagination come from ../platform/table and the
- * reason dialog from ../platform/reason-dialog; what stays here is what those pieces don't
- * have yet: rows that open a detail, a selected row, a totals row and row tones (AdminTable),
- * the index panel with its toolbar (TablePanel), and URL-linked views.
+ * Orders and Finance helpers. Tables are the shared DataTable (src/components/dashboard/data-table)
+ * inside the Control Center's Panel; URL-linked state comes from ../marketplace/url-state so every
+ * index page reads and writes its view the same way.
  */
 
-export type Column<T> = {
-  key: string
-  header: string
-  cell: (row: T) => React.ReactNode
-  className?: string
-  align?: "left" | "right"
-  /** The column that names the row; it carries the keyboard-focusable button that opens the detail. */
-  primary?: boolean
-}
-
-export type MobileRow = { title: React.ReactNode; meta?: React.ReactNode; lead?: React.ReactNode; trail?: React.ReactNode; footer?: React.ReactNode }
+export { useSearchParam, writeParams, InPageLinks, useAdminReady, usePhone } from "../marketplace/url-state"
 
 /**
- * A dense Control Center table from tablet width up, and a stacked list on phones. Records
- * are never edited inline: rows open a detail, and the only controls in a row are the
- * decisions that record allows.
+ * The record another screen linked to (`?focus=rf_…`), pinned above its table with its own
+ * decisions, so it's found without hunting through pages. Dismissing it clears the link.
  */
-export function AdminTable<T>({
-  rows,
-  columns,
-  rowKey,
-  onOpen,
-  openLabel,
-  mobileRow,
-  rowClassName,
-  minWidth = 880,
-  caption,
-  selectedKey,
-  foot,
-}: {
-  rows: T[]
-  columns: Column<T>[]
-  rowKey: (row: T) => string
-  onOpen?: (row: T) => void
-  openLabel?: (row: T) => string
-  mobileRow: (row: T) => MobileRow
-  rowClassName?: (row: T) => string | false | undefined
-  minWidth?: number
-  caption: string
-  selectedKey?: string | null
-  /** A totals row: one cell per column, keyed by column key. */
-  foot?: Partial<Record<string, React.ReactNode>>
-}) {
-  return (
-    <>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-[13px]" style={{ minWidth }}>
-          <caption className="sr-only">{caption}</caption>
-          <thead className="border-b border-line-soft bg-surface/60 text-[11px] text-ink-3">
-            <tr>
-              {columns.map((c, i) => (
-                <th key={c.key} scope="col" className={cn("px-3 py-2.5 font-normal whitespace-nowrap", i === 0 && "pl-4", i === columns.length - 1 && "pr-4", c.align === "right" && "text-right", c.className)}>
-                  {c.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line-soft">
-            {rows.map((row) => {
-              const k = rowKey(row)
-              return (
-                <tr
-                  key={k}
-                  data-row={k}
-                  onClick={onOpen ? () => onOpen(row) : undefined}
-                  className={cn("transition-colors", onOpen && "cursor-pointer hover:bg-white/[0.025]", selectedKey === k && "bg-purple/[0.07]", rowClassName?.(row))}
-                >
-                  {columns.map((c, i) => (
-                    <td key={c.key} className={cn("px-3 py-2.5 align-middle", i === 0 && "pl-4", i === columns.length - 1 && "pr-4", c.align === "right" && "text-right tabular", c.className)}>
-                      {c.primary && onOpen ? (
-                        <button type="button" aria-label={openLabel?.(row)} className="max-w-full text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-violet">
-                          {c.cell(row)}
-                        </button>
-                      ) : (
-                        c.cell(row)
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              )
-            })}
-          </tbody>
-          {foot ? (
-            <tfoot className="border-t border-line bg-surface/60">
-              <tr>
-                {columns.map((c, i) => (
-                  <td key={c.key} className={cn("px-3 py-2.5 font-medium text-ink", i === 0 && "pl-4", i === columns.length - 1 && "pr-4", c.align === "right" && "text-right tabular")}>
-                    {foot[c.key] ?? null}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
-          ) : null}
-        </table>
-      </div>
-
-      <ul className="divide-y divide-line-soft md:hidden" aria-label={caption}>
-        {rows.map((row) => {
-          const k = rowKey(row)
-          const m = mobileRow(row)
-          const inner = (
-            <>
-              {m.lead}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-ink">{m.title}</span>
-                {m.meta ? <span className="mt-0.5 block truncate text-[11px] text-ink-3">{m.meta}</span> : null}
-              </span>
-              {m.trail ? <span className="flex shrink-0 flex-col items-end gap-1">{m.trail}</span> : null}
-            </>
-          )
-          return (
-            <li key={k} data-row={k} className={cn(selectedKey === k && "bg-purple/[0.07]", rowClassName?.(row))}>
-              {onOpen ? (
-                <button type="button" onClick={() => onOpen(row)} aria-label={openLabel?.(row)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors active:bg-white/[0.03]">
-                  {inner}
-                </button>
-              ) : (
-                <div className="flex items-center gap-3 px-4 py-2.5">{inner}</div>
-              )}
-              {m.footer ? <div className="-mt-0.5 px-4 pb-3">{m.footer}</div> : null}
-            </li>
-          )
-        })}
-        {foot ? <li className="bg-surface/60 px-4 py-2.5">{foot.mobile}</li> : null}
-      </ul>
-    </>
-  )
-}
-
-/** The panel every index sits in: title row, toolbar (beside the title, or under it when `stacked`), then the table flush to the edges. */
-export function TablePanel({ title, description, toolbar, children, id, stacked = false }: { title: string; description?: React.ReactNode; toolbar?: React.ReactNode; children: React.ReactNode; id: string; stacked?: boolean }) {
-  return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-lg border border-line-soft bg-card">
-      <div className={cn("flex flex-col gap-3 border-b border-line-soft px-4 py-3", !stacked && "lg:flex-row lg:items-center lg:justify-between")}>
-        <div className="min-w-0">
-          <h2 id={id} className="text-[13px] font-medium text-ink">{title}</h2>
-          {description ? <p className="mt-0.5 text-[11px] text-ink-2">{description}</p> : null}
-        </div>
-        {toolbar ? <div className="flex flex-wrap items-center gap-2">{toolbar}</div> : null}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-const subscribeToUrl = (onChange: () => void) => {
-  window.addEventListener("popstate", onChange)
-  return () => window.removeEventListener("popstate", onChange)
-}
-
-/**
- * A query parameter, read without useSearchParams so the page needs no Suspense boundary: the
- * prerendered HTML sees none, and the client picks it up straight after hydration.
- */
-export function useSearchParam(name: string) {
-  const search = useSyncExternalStore(subscribeToUrl, () => window.location.search, () => "")
-  return new URLSearchParams(search).get(name)
-}
-
-/** Updates query parameters in place, without a navigation, so a reload or a shared link reopens the same view. */
-export function writeParams(next: Record<string, string | null>) {
-  const url = new URL(window.location.href)
-  for (const [k, v] of Object.entries(next)) {
-    if (v === null) url.searchParams.delete(k)
-    else url.searchParams.set(k, v)
+export function FocusCallout({ title, meta, badge, actions, onDismiss, className }: { title: React.ReactNode; meta?: React.ReactNode; badge?: React.ReactNode; actions?: React.ReactNode; onDismiss: () => void; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // The callout leaves with its dismiss button, so focus moves to the table it sits above:
+  // its search box, else the panel's heading.
+  function dismiss() {
+    // The tab's panel outlives the callout (and a tab that remounts on dismiss).
+    const host = ref.current?.closest<HTMLElement>('[role="tabpanel"]') ?? ref.current?.parentElement
+    onDismiss()
+    requestAnimationFrame(() => focusBack(null, () => host?.querySelector<HTMLElement>('input[type="search"]') ?? host?.querySelector<HTMLElement>("h2")))
   }
-  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`)
+  return (
+    <div ref={ref} role="region" aria-label="Linked record" className={cn("admin-inset flex flex-col gap-3 border-violet/40 bg-purple/[0.07] p-3 sm:flex-row sm:items-center", className)}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-violet">Linked record</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-ink">
+          {title}
+          {badge}
+        </p>
+        {meta ? <p className="mt-0.5 text-[12px] text-ink-2">{meta}</p> : null}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {actions}
+        <button type="button" onClick={dismiss} aria-label="Dismiss the linked record" className="inline-flex size-10 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-white/[0.05] hover:text-ink sm:size-8">
+          <XIcon className="size-4" />
+        </button>
+      </div>
+    </div>
+  )
 }
 
-/** Brings a linked record's row into view once it has rendered (the visible one: table or phone list). */
-export function useScrollToRow(key: string | null | undefined) {
-  useEffect(() => {
-    if (!key) return
-    const t = window.setTimeout(() => {
-      const els = document.querySelectorAll<HTMLElement>(`[data-row="${CSS.escape(key)}"]`)
-      const el = Array.from(els).find((e) => e.offsetParent !== null)
-      el?.scrollIntoView({ block: "center", behavior: "smooth" })
-    }, 150)
-    return () => window.clearTimeout(t)
-  }, [key])
+/** A record reference link in a table's primary cell, with a 40px-tall hit area on phones that doesn't move the line below. */
+export const refLinkClass = "relative inline-block font-medium whitespace-nowrap text-ink tabular before:absolute before:-inset-x-1 before:-inset-y-[11px] before:content-[''] hover:text-violet focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-violet sm:before:-inset-y-1.5"
+
+/** A CSV download, built in the browser from rows already on screen. Nothing is sent anywhere. */
+export function downloadCsv(filename: string, head: string[], lines: (string | number)[][], comment?: string) {
+  const esc = (v: string | number) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
+  const body = [...(comment ? [`# ${comment}`] : []), head.map(esc).join(","), ...lines.map((l) => l.map(esc).join(","))].join("\n")
+  const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }))
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }

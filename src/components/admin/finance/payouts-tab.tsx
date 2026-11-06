@@ -1,140 +1,123 @@
 "use client"
 
-import { useState } from "react"
-import { MoneyIcon as Banknote, PauseCircleIcon as PauseCircle, PlayCircleIcon as PlayCircle, CheckIcon as Check } from "@phosphor-icons/react"
+import { CheckIcon, PauseCircleIcon, PlayCircleIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/dashboard/empty-state"
+import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { BrandMark } from "@/components/market/brand-mark"
-import type { Payout } from "@/lib/data/admin"
+import { Panel } from "@/components/admin/ui/panel"
+import type { AuditEntry, Payout } from "@/lib/data/admin"
 import { brandById } from "@/lib/data/brands"
 import type { CurrencyCode } from "@/config/markets"
 import { convert } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
-import { ReasonDialog, type ReasonAction } from "../platform/reason-dialog"
-import { FilterSelect } from "../platform/table"
+import { useDecision, type Decision } from "../marketplace/decision"
+import { Filters } from "../marketplace/filters"
 import { holdReason, providerFor } from "./derive"
 import { amountIn, daysUntil, formatDate, plural, providerName, usd } from "./format"
 import { payoutMeta } from "./meta"
-import { AdminTable, TablePanel, useScrollToRow, type Column } from "./table"
+import { FocusCallout, useSearchParam, writeParams } from "./table"
+import type { Meta } from "./meta"
+import { usePhone } from "../marketplace/url-state"
 
+type Kind = "approve" | "hold" | "release"
 type Filter = "all" | Payout["status"]
-type Decision = { payout: Payout; to: Payout["status"]; action: ReasonAction; done: [string, string] }
-
 const ORDER: Payout["status"][] = ["awaiting_approval", "held", "scheduled", "processing", "paid"]
+const APPROVED = "Approved payout"
+const isFilter = (v: string | null): v is Filter => v === "all" || ORDER.includes(v as Payout["status"])
+
+const allowed: Record<Payout["status"], Kind[]> = { awaiting_approval: ["approve", "hold"], scheduled: ["hold"], held: ["release"], processing: [], paid: [] }
+const kindDef: Record<Kind, { label: string; to: Payout["status"]; icon: React.ComponentType<{ className?: string }>; destructive: boolean; done: string }> = {
+  approve: { label: "Approve payout", to: "processing", icon: CheckIcon, destructive: false, done: "approved" },
+  hold: { label: "Hold payout", to: "held", icon: PauseCircleIcon, destructive: true, done: "held" },
+  release: { label: "Release payout", to: "scheduled", icon: PlayCircleIcon, destructive: false, done: "released" },
+}
 
 function when(iso: string) {
   const d = daysUntil(iso)
-  return d <= 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`
+  return d <= 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`
+}
+const local = (p: Payout) => amountIn(convert(p.amountUsd, "USD", p.currency as CurrencyCode), p.currency as CurrencyCode)
+const providerOf = (p: Payout) => {
+  const b = brandById.get(p.brandId)
+  return providerName[b ? providerFor(b) : "stripe"]
+}
+/** Approved in this browser: the decision is recorded, but nothing was sent (no provider). */
+const approvedHere = (p: Payout, audit: AuditEntry[]) => p.status === "processing" && audit.some((a) => a.subjectId === p.id && a.action === APPROVED)
+
+/**
+ * The status as Finance should read it. A payout approved here isn't with a provider (there's
+ * none in this build), so it reads "Approval recorded", not "Processing" as if money were moving.
+ */
+const RECORDED: Meta = { label: "Approval recorded", tone: "info" }
+const statusOf = (p: Payout, audit: AuditEntry[]): Meta => (approvedHere(p, audit) ? RECORDED : payoutMeta[p.status])
+
+/** Why a bulk action changed nothing: none of the selected payouts is in a status it applies to. */
+function nothingApplies(kind: Kind, count: number) {
+  const from = (Object.keys(allowed) as Payout["status"][]).filter((s) => allowed[s].includes(kind)).map((s) => payoutMeta[s].label.toLowerCase())
+  const states = from.length > 1 ? `${from.slice(0, -1).join(", ")} or ${from.at(-1)}` : from[0]
+  const done = kindDef[kind].done
+  return count === 1 ? `The selected payout isn't ${states}, so nothing was ${done}.` : `None of the ${count} selected payouts is ${states}, so nothing was ${done}.`
 }
 
-/** Brand payouts. Approve, hold and release are decisions with a reason; amounts are never edited here. */
-export function PayoutsTab({ focus }: { focus?: string | null }) {
+function payoutDecision(kind: Kind, list: Payout[], audit: AuditEntry[]): Decision | null {
+  const def = kindDef[kind]
+  const items = list.filter((p) => allowed[p.status].includes(kind))
+  if (!items.length) return null
+  const one = items.length === 1 ? items[0] : null
+  const total = items.reduce((s, p) => s + p.amountUsd, 0)
+  const skipped = list.length - items.length
+  const facts = one ? `${usd(one.amountUsd)}${one.currency !== "USD" ? ` (${local(one)})` : ""} for ${plural(one.orders, "delivered order")}, via ${one.method}.` : `${usd(total)} in total.`
+  const why = one && kind === "release" ? holdReason(one, audit) : undefined
+  const means = {
+    approve: `Approval is recorded with your name. No payments provider is connected in this build, so the transfer through ${one ? providerOf(one) : "each brand's provider"} isn't sent; the payout shows Approval recorded and is marked completed only when a provider confirms it.`,
+    hold: "The money stays in the brand's balance and isn't sent until someone releases it with a reason.",
+    release: one ? `It goes back on the schedule for ${formatDate(one.scheduledFor)}.${why ? ` It was held because: ${why}` : ""}` : "They go back on their schedules.",
+  }[kind]
+  return {
+    title: one ? `${def.label.replace(" payout", "")} the payout to ${one.brandName}?` : `${def.label.replace(" payout", "")} ${plural(items.length, "payout")}?`,
+    description: [facts, means, skipped ? `${plural(skipped, "selected payout")} ${skipped === 1 ? "isn't" : "aren't"} in a status this applies to and ${skipped === 1 ? "is" : "are"} left as ${skipped === 1 ? "it is" : "they are"}.` : null].filter(Boolean).join(" "),
+    confirmLabel: one ? def.label : `${def.label.replace(" payout", "")} ${plural(items.length, "payout")}`,
+    destructive: def.destructive,
+    run: (reason) => {
+      const set = useAdmin.getState().setPayoutStatus
+      for (const p of items) set(p.id, def.to, reason)
+      toast.success(kind === "approve" ? (one ? `Approval recorded for the payout to ${one.brandName}` : `Approval recorded for ${plural(items.length, "payout")}`) : one ? `Payout to ${one.brandName} ${def.done}` : `${plural(items.length, "payout")} ${def.done}`, { description: kind === "approve" ? "Approval recorded. Nothing is sent until a payments provider is connected." : "Recorded in the audit log with your reason." })
+    },
+  }
+}
+
+/** Brand payouts. Approve, hold and release are decisions with a reason; amounts are never edited here and nothing is marked paid. */
+export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boolean }) {
   const payouts = useAdmin((s) => s.payouts)
+  const phone = usePhone()
   const audit = useAdmin((s) => s.audit)
-  const setPayoutStatus = useAdmin((s) => s.setPayoutStatus)
-  const [filter, setFilter] = useState<Filter>("all")
-  const [decision, setDecision] = useState<Decision | null>(null)
-  const [open, setOpen] = useState(false)
-  useScrollToRow(focus)
+  // The status filter lives in the URL (?status=…), so a reload keeps it.
+  const linked = useSearchParam("status")
+  const filter: Filter = isFilter(linked) ? linked : "all"
+  const setFilter = (f: Filter) => writeParams({ status: f === "all" ? null : f })
+  // A decided row can leave the filtered table; focus then goes to the table's search.
+  const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  const decide = (kind: Kind, list: Payout[]) => {
+    const d = payoutDecision(kind, list, audit)
+    if (d) ask(d)
+    else toast.info(nothingApplies(kind, list.length))
+  }
 
   const count = (s: Payout["status"]) => payouts.filter((p) => p.status === s).length
   const rows = payouts.filter((p) => filter === "all" || p.status === filter).sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || a.scheduledFor.localeCompare(b.scheduledFor))
-
-  const local = (p: Payout) => amountIn(convert(p.amountUsd, "USD", p.currency as CurrencyCode), p.currency as CurrencyCode)
-  const facts = (p: Payout) => [
-    { label: "Amount", value: usd(p.amountUsd) },
-    { label: "In brand currency", value: local(p) },
-    { label: "Orders included", value: p.orders },
-    { label: "Method", value: p.method },
-  ]
-
-  function decide(p: Payout, kind: "approve" | "hold" | "release") {
-    if (kind === "approve") {
-      // Same transition as the overview's decision queue: approval hands the transfer to the provider.
-      const brand = brandById.get(p.brandId)
-      const provider = providerName[brand ? providerFor(brand) : "stripe"]
-      setDecision({
-        payout: p,
-        to: "processing",
-        action: {
-          title: `Approve the ${usd(p.amountUsd)} payout to ${p.brandName}?`,
-          body: `The transfer goes to ${provider} now, with a reference fixed at approval so a retry can't pay the brand twice. Once it's with the provider it can't be held.`,
-          confirmLabel: "Approve payout",
-          tone: "primary",
-          facts: facts(p),
-          presets: ["Balance and open refunds checked", "First payout; bank details confirmed with the brand", "Above the approval threshold; figures checked"],
-        },
-        done: [`Payout to ${p.brandName} approved`, `With ${provider} now, and recorded in the audit log.`],
-      })
-    } else if (kind === "hold") {
-      setDecision({
-        payout: p,
-        to: "held",
-        action: {
-          title: `Hold the payout to ${p.brandName}?`,
-          body: "The money stays in the brand's balance and isn't sent until someone releases it. The brand sees that it's on hold, with your reason.",
-          confirmLabel: "Hold payout",
-          tone: "destructive",
-          facts: facts(p),
-          presets: ["Open refund request exceeds reserve", "Chargeback under review", "Bank details changed in the last 48 hours"],
-        },
-        done: [`Payout to ${p.brandName} held`, "It won't be sent until it's released."],
-      })
-    } else {
-      const why = holdReason(p, audit)
-      setDecision({
-        payout: p,
-        to: "scheduled",
-        action: {
-          title: `Release the payout to ${p.brandName}?`,
-          body: `It goes back on the schedule for ${formatDate(p.scheduledFor)}.`,
-          confirmLabel: "Release payout",
-          tone: "primary",
-          facts: facts(p),
-          warning: why ? `Held because: ${why}` : undefined,
-          presets: ["Refund resolved; reserve covers the exposure", "Dispute closed in the brand's favour", "New bank details verified"],
-        },
-        done: [`Payout to ${p.brandName} released`, `Back on the schedule for ${formatDate(p.scheduledFor)}.`],
-      })
-    }
-    setOpen(true)
-  }
-
-  function actions(p: Payout) {
-    if (p.status === "awaiting_approval")
-      return (
-        <>
-          <Button type="button" size="xs" variant="secondary" onClick={() => decide(p, "approve")}>
-            <Check /> Approve payout
-          </Button>
-          <Button type="button" size="xs" variant="ghost" onClick={() => decide(p, "hold")}>
-            <PauseCircle /> Hold
-          </Button>
-        </>
-      )
-    if (p.status === "scheduled")
-      return (
-        <Button type="button" size="xs" variant="ghost" onClick={() => decide(p, "hold")}>
-          <PauseCircle /> Hold
-        </Button>
-      )
-    if (p.status === "held")
-      return (
-        <Button type="button" size="xs" variant="secondary" onClick={() => decide(p, "release")}>
-          <PlayCircle /> Release
-        </Button>
-      )
-    return <span className="text-[11px] whitespace-nowrap text-ink-3">{p.status === "processing" ? "With the provider" : "Settled"}</span>
-  }
+  const focused = focus ? payouts.find((p) => p.id === focus) : undefined
+  const toApprove = payouts.filter((p) => p.status === "awaiting_approval")
 
   const statusCell = (p: Payout) => {
     const why = p.status === "held" ? holdReason(p, audit) : undefined
+    const meta = statusOf(p, audit)
     return (
       <span className="grid justify-items-start gap-1">
-        <StatusBadge tone={payoutMeta[p.status].tone}>{payoutMeta[p.status].label}</StatusBadge>
-        {why ? <span className="max-w-56 text-[11px] leading-snug text-danger">{why}</span> : null}
+        <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+        {why ? <span className="max-w-56 text-[11px] leading-snug whitespace-normal text-danger">{why}</span> : null}
+        {approvedHere(p, audit) ? <span className="max-w-56 text-[11px] leading-snug whitespace-normal text-ink-3">Approval recorded. Not sent: no payments provider in this build.</span> : null}
       </span>
     )
   }
@@ -143,14 +126,18 @@ export function PayoutsTab({ focus }: { focus?: string | null }) {
     {
       key: "brand",
       header: "Brand",
+      sortValue: (p) => p.brandName,
       cell: (p) => {
         const b = brandById.get(p.brandId)
         return (
           <span className="flex min-w-0 items-center gap-2.5">
-            {b ? <BrandMark brand={b} size="sm" /> : null}
-            <span className="min-w-0">
+            {b ? <span className="hidden sm:inline-flex"><BrandMark brand={b} size="sm" /></span> : null}
+            <span className="min-w-0 max-w-[34vw] sm:max-w-none">
               <span className="block truncate font-medium text-ink">{p.brandName}</span>
-              <span className="block text-[11px] text-ink-3">{plural(p.orders, "delivered order")}</span>
+              <span className="block truncate text-[11.5px] text-ink-3">
+                <span className="sm:hidden">{statusOf(p, audit).label}, </span>
+                {plural(p.orders, "delivered order")}
+              </span>
             </span>
           </span>
         )
@@ -160,94 +147,83 @@ export function PayoutsTab({ focus }: { focus?: string | null }) {
       key: "amount",
       header: "Amount",
       align: "right",
+      sortValue: (p) => p.amountUsd,
       cell: (p) => (
         <span className="block whitespace-nowrap">
           <span className="block text-ink">{usd(p.amountUsd)}</span>
-          {p.currency !== "USD" ? <span className="block text-[11px] text-ink-3">{local(p)}</span> : null}
+          {p.currency !== "USD" ? <span className="hidden text-[11px] text-ink-3 sm:block">{local(p)}</span> : null}
         </span>
       ),
     },
-    { key: "method", header: "Method", cell: (p) => <span className="whitespace-nowrap text-ink-2">{p.method}</span> },
+    { key: "method", header: "Method", hideBelow: "lg", cell: (p) => <span className="whitespace-nowrap text-ink-2">{p.method}</span> },
     {
       key: "date",
-      header: "Scheduled for",
-      cell: (p) => (
-        <span className="block whitespace-nowrap">
-          <span className="block text-ink-2">{formatDate(p.scheduledFor)}</span>
-          {p.status !== "paid" ? <span className="block text-[11px] text-ink-3">{when(p.scheduledFor)}</span> : null}
-        </span>
-      ),
+      header: "Schedule",
+      hideBelow: "md",
+      sortValue: (p) => p.scheduledFor,
+      cell: (p) =>
+        p.status === "paid" ? (
+          // A completed payout isn't scheduled any more: it says Paid, with the date only once it has passed.
+          <span className="block whitespace-nowrap">
+            <span className="block text-ink-2">Paid</span>
+            {daysUntil(p.scheduledFor) <= 0 ? <span className="block text-[11px] text-ink-3">{formatDate(p.scheduledFor)}</span> : null}
+          </span>
+        ) : (
+          <span className="block whitespace-nowrap">
+            <span className="block text-ink-2">{formatDate(p.scheduledFor)}</span>
+            <span className="block text-[11px] text-ink-3">{when(p.scheduledFor)}</span>
+          </span>
+        ),
     },
-    { key: "status", header: "Status", cell: statusCell },
-    { key: "actions", header: "Decision", align: "right", cell: (p) => <span className="inline-flex items-center justify-end gap-1.5">{actions(p)}</span> },
+    { key: "status", header: "Status", hideBelow: "sm", sortValue: (p) => ORDER.indexOf(p.status), cell: statusCell },
   ]
 
-  const toApprove = payouts.filter((p) => p.status === "awaiting_approval")
+  const rowActions: RowAction<Payout>[] = (["approve", "hold", "release"] as Kind[]).map((k) => ({ label: kindDef[k].label, icon: kindDef[k].icon, destructive: kindDef[k].destructive, disabled: (p: Payout) => !allowed[p.status].includes(k), onSelect: (p: Payout) => decide(k, [p]) }))
+  const bulkActions: BulkAction<Payout>[] = [
+    { label: "Approve", onSelect: (list) => decide("approve", list) },
+    { label: "Hold", destructive: true, onSelect: (list) => decide("hold", list) },
+    { label: "Release", onSelect: (list) => decide("release", list) },
+  ]
 
   return (
-    <>
-      <TablePanel
-        id="payouts-title"
-        title="Payouts"
-        description={`${plural(toApprove.length, "payout")} awaiting approval, ${usd(toApprove.reduce((s, p) => s + p.amountUsd, 0))}. A payout that's already with the provider can't be held.`}
-        toolbar={
-          <FilterSelect
-            label="Filter by status"
-            value={filter}
-            onChange={(v) => setFilter(v as Filter)}
-            className="md:w-[200px]"
-            options={[{ value: "all", label: `All statuses (${payouts.length})` }, ...ORDER.filter((s) => count(s) || s === filter).map((s) => ({ value: s, label: `${payoutMeta[s].label} (${count(s)})` }))]}
-          />
-        }
-      >
-        {rows.length ? (
-          <AdminTable
-            rows={rows}
-            columns={columns}
-            rowKey={(p) => p.id}
-            caption="Brand payouts"
-            minWidth={940}
-            selectedKey={focus}
-            rowClassName={(p) => p.status === "held" && "bg-danger/[0.04]"}
-            mobileRow={(p) => {
-              const b = brandById.get(p.brandId)
-              const why = p.status === "held" ? holdReason(p, audit) : undefined
-              const acts = p.status === "awaiting_approval" || p.status === "scheduled" || p.status === "held"
-              return {
-                lead: b ? <BrandMark brand={b} size="sm" /> : undefined,
-                title: p.brandName,
-                meta: `${p.method}, ${p.status === "paid" ? formatDate(p.scheduledFor) : when(p.scheduledFor)}`,
-                trail: (
-                  <>
-                    <span className="text-[13px] text-ink tabular">{usd(p.amountUsd)}</span>
-                    <StatusBadge tone={payoutMeta[p.status].tone}>{payoutMeta[p.status].label}</StatusBadge>
-                  </>
-                ),
-                footer:
-                  why || acts ? (
-                    <div className="grid gap-2 pl-11">
-                      {why ? <p className="text-[11px] text-danger">{why}</p> : null}
-                      {acts ? <div className="flex flex-wrap gap-1.5">{actions(p)}</div> : null}
-                    </div>
-                  ) : undefined,
-              }
-            }}
-          />
-        ) : (
-          <EmptyState icon={Banknote} className="m-4" title={filter === "awaiting_approval" ? "No payouts awaiting approval" : filter === "processing" ? "No payouts with the provider" : `No ${filter === "all" ? "" : `${filter} `}payouts`} body="Payouts move here as their status changes." action={<Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all payouts</Button>} />
-        )}
-      </TablePanel>
+    <div className="grid gap-3">
+      {focused ? (
+        <FocusCallout
+          title={`Payout to ${focused.brandName}, ${usd(focused.amountUsd)}`}
+          badge={<StatusBadge tone={statusOf(focused, audit).tone}>{statusOf(focused, audit).label}</StatusBadge>}
+          meta={focused.status === "paid" ? `${focused.method}, paid` : approvedHere(focused, audit) ? `${focused.method}. Approval recorded; not sent, no payments provider in this build.` : `${focused.method}, scheduled for ${formatDate(focused.scheduledFor)}`}
+          actions={allowed[focused.status].map((k) => (
+            <Button key={k} type="button" size="sm" className="h-10 sm:h-8" variant={k === "hold" ? "destructive" : "secondary"} onClick={() => decide(k, [focused])}>
+              {kindDef[k].label}
+            </Button>
+          ))}
+          onDismiss={() => writeParams({ focus: null })}
+        />
+      ) : null}
 
-      <ReasonDialog
-        action={decision?.action ?? null}
-        open={open}
-        onOpenChange={setOpen}
-        onConfirm={async (reason) => {
-          if (!decision) return
-          setPayoutStatus(decision.payout.id, decision.to, reason)
-          toast(decision.done[0], { description: decision.done[1] })
-        }}
-      />
-    </>
+      <Panel title="Payouts" description={ready ? `${plural(toApprove.length, "payout")} awaiting approval, ${usd(toApprove.reduce((s, p) => s + p.amountUsd, 0))}. A payout that's already processing can't be held.` : "Brand payouts and the decisions on them."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">
+        <DataTable
+          label="Brand payouts"
+          rows={rows}
+          columns={columns}
+          getId={(p) => p.id}
+          loading={!ready}
+          search={{ placeholder: "Search brands or methods", text: (p) => `${p.brandName} ${p.method}` }}
+          toolbar={
+            <Filters
+              noun="payouts"
+              results={rows.length}
+              onClear={() => setFilter("all")}
+              filters={[{ key: "status", label: "Status", value: filter, onChange: (v) => setFilter(v as Filter), all: { value: "all", label: `All statuses (${payouts.length})` }, options: ORDER.map((s) => ({ value: s, label: `${s === "processing" && payouts.some((p) => approvedHere(p, audit)) ? "Processing or approval recorded" : payoutMeta[s].label} (${count(s)})` })), width: "w-[244px]" }]}
+            />
+          }
+          rowActions={rowActions}
+          bulkActions={phone ? undefined : bulkActions}
+          empty={{ title: filter === "all" ? "No payouts yet" : `No payouts ${payoutMeta[filter as Payout["status"]].label.toLowerCase()}`, body: "Payouts move between statuses as they're decided.", action: filter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all payouts</Button> : undefined }}
+          minWidth={300}
+        />
+      </Panel>
+      {dialog}
+    </div>
   )
 }

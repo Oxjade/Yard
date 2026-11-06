@@ -1,140 +1,152 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { DownloadSimpleIcon as Download } from "@phosphor-icons/react"
-import { toast } from "sonner"
+import { DownloadSimpleIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { TimeSeriesChart } from "@/components/dashboard/chart-card"
-import { PeriodSelect, periodDays, periodLabel, type Period } from "@/components/dashboard/period-select"
+import { DataTable, type BulkAction, type Column } from "@/components/dashboard/data-table"
+import { BarChart, type BarDatum } from "@/components/dashboard/insight/bar-chart"
+import { DeltaChip } from "@/components/dashboard/insight/delta-chip"
+import { buckets, change, longDate, rangeLabel, shortDate, slices, type Bucket } from "@/components/dashboard/insight/derive"
+import { Segmented as Switch } from "@/components/dashboard/insight/segmented"
+import { SignalList } from "@/components/dashboard/insight/signal-list"
 import { BrandMark } from "@/components/market/brand-mark"
+import { Panel } from "@/components/admin/ui/panel"
+import { useAsyncAction } from "@/hooks/use-async-action"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { merchantOrders } from "@/lib/data/orders"
 import { formatPercent } from "@/lib/money"
 import { commissionReport, commissionSeries, type CommissionRow } from "./derive"
-import { plural, usd, usdCompact } from "./format"
-import { AdminTable, TablePanel, type Column } from "./table"
+import { cap, plural, usd, usdCompact } from "./format"
+import { downloadCsv } from "./table"
+import { usePhone } from "../marketplace/url-state"
 
-function toCsv(rows: CommissionRow[], days: number) {
-  const head = ["Brand", "Orders", "Item subtotal (USD)", "Commission at 5% (USD)", "Reversed by refunds (USD)", "Net commission (USD)"]
-  const money = (c: number) => (c / 100).toFixed(2)
-  const lines = rows.map((r) => [r.brand.name, r.orders, money(r.baseUsd), money(r.assessedUsd), money(r.reversedUsd), money(r.netUsd)])
-  const esc = (v: string | number) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
-  return [`# Commission report, last ${days} days to 5 Nov 2026, sample data`, head.join(","), ...lines.map((l) => l.map(esc).join(","))].join("\n")
+type Period = "7d" | "30d" | "90d"
+const periodDays: Record<Period, number> = { "7d": 7, "30d": 30, "90d": 90 }
+const money = (c: number) => (c / 100).toFixed(2)
+
+function exportCsv(rows: CommissionRow[], days: number, filename: string) {
+  downloadCsv(
+    filename,
+    ["Brand", "Orders", "Item subtotal (USD)", "Commission at 5% (USD)", "Reversed by refunds (USD)", "Net commission (USD)"],
+    rows.map((r) => [r.brand.name, r.orders, money(r.baseUsd), money(r.assessedUsd), money(r.reversedUsd), money(r.netUsd)]),
+    `Commission report, last ${days} days to 5 Nov 2026, sample data`,
+  )
 }
 
 /** The platform's 5% commission per brand: assessed on the item subtotal, reversed when an order is refunded. */
 export function CommissionTab() {
+  const hydrated = useHydrated()
+  const phone = usePhone()
   const [period, setPeriod] = useState<Period>("30d")
+  const [bucket, setBucket] = useState<Bucket>("daily")
   const days = periodDays[period]
   const rows = useMemo(() => commissionReport(days), [days])
-  const series = useMemo(() => commissionSeries(days), [days])
-  const total = rows.reduce(
-    (s, r) => ({ orders: s.orders + r.orders, base: s.base + r.baseUsd, assessed: s.assessed + r.assessedUsd, reversed: s.reversed + r.reversedUsd, net: s.net + r.netUsd }),
-    { orders: 0, base: 0, assessed: 0, reversed: 0, net: 0 },
-  )
+  const series = useMemo(() => commissionSeries(180), [])
+  const historyStart = useMemo(() => merchantOrders.reduce((m, o) => (o.placedAt.slice(0, 10) < m ? o.placedAt.slice(0, 10) : m), series[series.length - 1].date), [series])
+  const total = rows.reduce((s, r) => ({ orders: s.orders + r.orders, base: s.base + r.baseUsd, assessed: s.assessed + r.assessedUsd, reversed: s.reversed + r.reversedUsd, net: s.net + r.netUsd }), { orders: 0, base: 0, assessed: 0, reversed: 0, net: 0 })
   const top = Math.max(1, ...rows.map((r) => r.netUsd))
+  const exporter = useAsyncAction(() => exportCsv(rows, days, `nocturne-commission-${days}d.csv`), { error: "The report couldn't be built. Try again." })
 
-  function exportCsv() {
-    const blob = new Blob([toCsv(rows, days)], { type: "text/csv;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `nocturne-commission-${days}d.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-    toast("Commission report exported", { description: `${plural(rows.length, "brand")}, last ${periodLabel[period].toLowerCase()}.` })
-  }
+  const spec = buckets[bucket]
+  const sum = (list: { commission: number }[]) => list.reduce((s, x) => s + x.commission, 0)
+  const bars: BarDatum[] = slices(series, spec.size, spec.count, historyStart).map((s) => ({
+    key: s.from,
+    label: bucket === "daily" ? shortDate(s.to) : bucket === "monthly" ? rangeLabel(s.from, s.to) : shortDate(s.from),
+    fullLabel: bucket === "daily" ? longDate(s.to) : rangeLabel(s.from, s.to),
+    value: sum(s.rows),
+    delta: s.previous ? change(sum(s.rows), sum(s.previous)) : null,
+  }))
+  const chartTotal = bars.reduce((t, b) => t + b.value, 0)
+  const chartDays = spec.size * spec.count
+  const chartPrev = series.slice(series.length - chartDays * 2, series.length - chartDays)
+  const chartDelta = chartPrev.length === chartDays && chartPrev[0].date >= historyStart ? change(chartTotal, sum(chartPrev)) : null
 
   const columns: Column<CommissionRow>[] = [
     {
       key: "brand",
       header: "Brand",
+      sortValue: (r) => r.brand.name,
       cell: (r) => (
-        <span className="flex min-w-0 items-center gap-2">
-          <BrandMark brand={r.brand} size="xs" />
-          <span className="truncate whitespace-nowrap text-ink">{r.brand.name}</span>
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="hidden sm:inline-flex"><BrandMark brand={r.brand} size="sm" /></span>
+          <span className="min-w-0 max-w-[44vw] sm:max-w-none">
+            <span className="block truncate whitespace-nowrap text-ink">{r.brand.name}</span>
+            <span className="block truncate text-[11.5px] text-ink-3 md:hidden">{plural(r.orders, "order")}, {usd(r.baseUsd)} items</span>
+          </span>
         </span>
       ),
     },
-    { key: "orders", header: "Orders", align: "right", cell: (r) => <span className="text-ink-2">{r.orders}</span> },
-    { key: "base", header: "Item subtotal", align: "right", cell: (r) => <span className="whitespace-nowrap text-ink-2">{usd(r.baseUsd)}</span> },
-    { key: "assessed", header: "Commission at 5%", align: "right", cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.assessedUsd)}</span> },
-    { key: "reversed", header: "Reversed", align: "right", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reversedUsd ? `−${usd(r.reversedUsd)}` : usd(0)}</span> },
-    { key: "net", header: "Net commission", align: "right", cell: (r) => <span className="font-medium whitespace-nowrap text-ink">{usd(r.netUsd)}</span> },
+    { key: "orders", header: "Orders", align: "right", hideBelow: "md", sortValue: (r) => r.orders, cell: (r) => <span className="text-ink-2">{r.orders}</span> },
+    { key: "base", header: "Item subtotal", align: "right", hideBelow: "md", sortValue: (r) => r.baseUsd, cell: (r) => <span className="whitespace-nowrap text-ink-2">{usd(r.baseUsd)}</span> },
+    { key: "assessed", header: "Commission at 5%", align: "right", hideBelow: "lg", sortValue: (r) => r.assessedUsd, cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.assessedUsd)}</span> },
+    { key: "reversed", header: "Reversed", align: "right", hideBelow: "lg", sortValue: (r) => r.reversedUsd, cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reversedUsd ? `−${usd(r.reversedUsd)}` : usd(0)}</span> },
+    { key: "net", header: "Net commission", align: "right", sortValue: (r) => r.netUsd, cell: (r) => <span className="font-medium whitespace-nowrap text-ink">{usd(r.netUsd)}</span> },
     {
       key: "share",
       header: "Share",
+      hideBelow: "sm",
       className: "w-40",
+      sortValue: (r) => r.netUsd,
       cell: (r) => (
         <span className="flex items-center gap-2">
           <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/6">
-            <span className="block h-full rounded-full bg-purple" style={{ width: `${(r.netUsd / top) * 100}%` }} />
+            <span className="block h-full origin-left rounded-full bg-purple" style={{ transform: `scaleX(${r.netUsd / top})` }} />
           </span>
           <span className="w-10 text-right text-[11px] text-ink-3 tabular">{total.net ? formatPercent(r.netUsd / total.net, 0) : "0%"}</span>
         </span>
       ),
     },
   ]
+  const bulkActions: BulkAction<CommissionRow>[] = [{ label: "Export as CSV", onSelect: (list) => exportCsv(list, days, `nocturne-commission-${days}d-${list.length}-brands.csv`) }]
 
   return (
-    <div className="grid gap-5">
-      <section aria-labelledby="commission-chart-title" className="rounded-lg border border-line-soft bg-card p-4">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 id="commission-chart-title" className="text-[13px] font-medium text-ink">Commission earned</h2>
-            <p className="text-[11px] text-ink-2">Net commission per day in USD, after refunds. Shipping and tax pass through to brands.</p>
+    <div className="grid gap-3">
+      <Panel title="Commission earned" description={`Net commission in USD after refunds, ${spec.window}. Shipping and tax pass through to brands.`} className="rounded-[20px]">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
+            {hydrated ? (
+              <>
+                <p className="font-metric text-[2rem] leading-none text-ink">{usd(chartTotal)}</p>
+                {/* Named beside the figure: the report below has its own period. */}
+                <span className="text-[12px] text-ink-2">{cap(spec.window)}</span>
+                <DeltaChip value={chartDelta} context={`the ${spec.window.replace("last ", "")} before`} />
+              </>
+            ) : (
+              <span aria-hidden className="skeleton block h-8 w-40 rounded-md" />
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <p className="text-lg font-medium text-ink tabular">{usd(total.net)}</p>
-            <PeriodSelect value={period} onChange={setPeriod} options={["7d", "30d", "90d"]} />
-          </div>
+          <Switch label="Bucket size" size="sm" value={bucket} onChange={setBucket} options={(Object.keys(buckets) as Bucket[]).map((b) => ({ value: b, label: buckets[b].label }))} />
         </div>
-        <TimeSeriesChart data={series} series={[{ key: "commission", label: "Commission" }]} format={usdCompact} kind="bar" height={200} />
-      </section>
+        <BarChart key={bucket} className="mt-4" data={bars} format={usdCompact} formatFull={usd} label={`Net commission by ${bucket === "daily" ? "day" : bucket === "weekly" ? "week" : "30 days"}`} deltaContext={bucket === "daily" ? "the day before" : bucket === "weekly" ? "the week before" : "the 30 days before"} height={220} />
+      </Panel>
 
-      <TablePanel
-        id="commission-title"
+      <Panel
         title="Commission report"
-        description={`5% of the item subtotal per brand, last ${periodLabel[period].toLowerCase()}. Refunded orders reverse their commission; cancelled orders never earn any.`}
-        toolbar={
-          <Button type="button" size="sm" variant="secondary" onClick={exportCsv}>
-            <Download /> Export CSV
+        description={`5% of the item subtotal per brand, last ${days} days. Refunded orders reverse their commission; cancelled orders never earn any.`}
+        action={
+          <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => void exporter.run()} loading={exporter.pending} success={exporter.succeeded}>
+            <DownloadSimpleIcon /> Export CSV
           </Button>
         }
+        className="rounded-[20px]"
+        bodyClassName="grid gap-4 px-3 sm:px-4 md:px-5"
       >
-        <AdminTable
-          rows={rows}
-          columns={columns}
-          rowKey={(r) => r.brand.id}
-          caption="Commission per brand"
-          minWidth={900}
-          foot={{
-            brand: "All brands",
-            orders: total.orders,
-            base: usd(total.base),
-            assessed: usd(total.assessed),
-            reversed: total.reversed ? `−${usd(total.reversed)}` : usd(0),
-            net: usd(total.net),
-            mobile: (
-              <span className="flex items-center justify-between text-[13px] text-ink">
-                <span>All brands, {plural(total.orders, "order")}</span>
-                <span className="font-medium tabular">{usd(total.net)}</span>
-              </span>
-            ),
-          }}
-          mobileRow={(r) => ({
-            lead: <BrandMark brand={r.brand} size="sm" />,
-            title: r.brand.name,
-            meta: `${plural(r.orders, "order")}, ${usd(r.baseUsd)} items${r.reversedUsd ? `, −${usd(r.reversedUsd)} reversed` : ""}`,
-            trail: (
-              <>
-                <span className="text-[13px] font-medium text-ink tabular">{usd(r.netUsd)}</span>
-                <span className="text-[11px] text-ink-3 tabular">{total.net ? formatPercent(r.netUsd / total.net, 0) : "0%"}</span>
-              </>
-            ),
-          })}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Switch label="Report period" size="sm" value={period} onChange={setPeriod} options={[{ value: "7d", label: "7 days" }, { value: "30d", label: "30 days" }, { value: "90d", label: "90 days" }]} />
+          <p className="text-[12px] text-ink-3">{plural(total.orders, "order")} across {plural(rows.filter((r) => r.orders).length, "brand")}</p>
+        </div>
+        <SignalList
+          ready={hydrated}
+          className="grid-cols-2 @3xl:grid-cols-4"
+          items={[
+            { key: "base", label: "Item subtotal", value: usd(total.base) },
+            { key: "assessed", label: "Commission at 5%", value: usd(total.assessed) },
+            { key: "reversed", label: "Reversed by refunds", value: total.reversed ? `−${usd(total.reversed)}` : usd(0) },
+            { key: "net", label: "Net commission", value: usd(total.net) },
+          ]}
         />
-      </TablePanel>
+        <DataTable key={period} label="Commission per brand" rows={rows} columns={columns} getId={(r) => r.brand.id} loading={!hydrated} bulkActions={phone ? undefined : bulkActions} search={{ placeholder: "Search brands", text: (r) => r.brand.name }} initialSort={{ key: "net", dir: "desc" }} empty={{ title: "No commission in this period", body: "Commission appears once brands make sales." }} pageSizes={[10, 25]} initialPageSize={10} minWidth={300} />
+      </Panel>
     </div>
   )
 }
