@@ -1,0 +1,59 @@
+/*
+ * The Discover hero's entrance (discover-hero.tsx): the photograph settles, then the headline
+ * pulls up out of its mask line by line, then the copy, the actions and the side panel lift in.
+ *
+ * It runs in CSS, not in script, so it starts with the first paint of the server HTML: before
+ * hydration, however slowly the scripts arrive, and without JavaScript at all. Each keyframe
+ * names only its starting point, so every step lands on the element's own styles. The fill is
+ * `backwards`: the starting point holds through each step's delay, and once a step ends nothing
+ * of it stays applied (`both` would end on the same styles but keep the finished animation
+ * attached to the element). Transform and opacity only, so the compositor runs it even while
+ * the main thread is busy hydrating.
+ *
+ * Reduced motion: no animation at all, so everything is in place from the first paint (the
+ * global rule in globals.css only shortens durations, and would still wait out the delays).
+ */
+
+.hero-settle {
+  animation: hero-settle 1600ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* One headline line; --line is its index, for the stagger. */
+.hero-line {
+  animation: hero-rise 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(250ms + var(--line, 0) * 90ms);
+}
+
+/* A block that lifts in after the headline; --delay sets when. */
+.hero-lift {
+  animation: hero-lift 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--delay, 0ms);
+}
+
+@keyframes hero-settle {
+  from {
+    opacity: 0.4;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes hero-rise {
+  from {
+    transform: translate3d(0, 105%, 0);
+  }
+}
+
+@keyframes hero-lift {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-settle,
+  .hero-line,
+  .hero-lift {
+    animation: none;
+  }
+}

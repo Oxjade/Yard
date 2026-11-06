@@ -11,11 +11,16 @@ import type { Drop } from "@/lib/data/types"
 import { DropPrimaryAction } from "./drop-actions"
 import { useUpcomingDrops } from "./use-drop-phase"
 
+const calendarLink = (
+  <Link href="/drops" className="inline-flex py-2.5 text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
+)
+
 /**
  * Discover's drops band, the page's one large purple surface: the next release as the lead
- * card, the rest in a rail. Both are picked on the demo clock, so a drop that releases while
- * the demo runs leaves "Upcoming drops" instead of heading it as "Entries closed" or "Ended";
- * before mount they are what the server rendered.
+ * card, the rest in a rail that glides right to left on its own (Rail's marquee: it pauses on
+ * hover, keyboard focus and touch, and stays still under reduced motion). Both are picked on
+ * the demo clock, so a drop that releases while the demo runs leaves "Upcoming drops" instead
+ * of heading it as "Entries closed" or "Ended"; before mount they are what the server rendered.
  */
 export function UpcomingDropsBand({ drops }: { drops: Drop[] }) {
   const [next, ...rest] = useUpcomingDrops(drops)
@@ -23,7 +28,9 @@ export function UpcomingDropsBand({ drops }: { drops: Drop[] }) {
 
   return (
     <section aria-labelledby="drops-title" className="relative mt-4 overflow-hidden bg-purple">
-      <div className="mx-auto grid max-w-page gap-10 px-4 py-14 md:px-8 md:py-20 lg:grid-cols-[minmax(0,420px)_1fr]">
+      {/* Beside the lead card (lg) the rail's 32px bleed and end fade sit in the column gap, so
+          the gap is 64px there: cards fade out 32px clear of the lead card, not tucked under it. */}
+      <div className="mx-auto grid max-w-page gap-10 px-4 py-14 md:px-8 md:py-20 lg:grid-cols-[minmax(0,420px)_1fr] lg:gap-x-16">
         <div className="flex flex-col">
           <h2 id="drops-title" className="font-display text-display-lg text-ink">Upcoming drops</h2>
           <p className="mt-3 max-w-sm text-[0.9375rem] leading-relaxed text-ink/80">
@@ -52,13 +59,17 @@ export function UpcomingDropsBand({ drops }: { drops: Drop[] }) {
         </div>
         <div className="min-w-0 lg:pt-16">
           {rest.length ? (
-            <Rail label="Upcoming drops" itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48%]">
+            // Glides right to left on its own; still under reduced motion (see Rail). Named apart
+            // from the section, whose heading already says "Upcoming drops". The cards fill their
+            // slot, so the action rows line up when a title wraps.
+            <Rail label="More upcoming drops" marquee itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48cqw]" footer={calendarLink}>
               {rest.map((d) => (
-                <DropCard key={d.id} drop={d} />
+                <DropCard key={d.id} drop={d} className="h-full" />
               ))}
             </Rail>
-          ) : null}
-          <Link href="/drops" className="mt-6 inline-flex text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
+          ) : (
+            <div className="mt-6">{calendarLink}</div>
+          )}
         </div>
       </div>
     </section>

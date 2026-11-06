@@ -19,20 +19,23 @@ export function FeaturedDrop({ drop, sponsored }: { drop: Drop; sponsored: boole
   const href = `/drops/${drop.slug}`
   return (
     <article aria-labelledby="featured-drop-title" className="grid overflow-hidden rounded-lg border border-line-soft bg-card md:grid-cols-12">
-      <Link href={href} className="group/feature relative block aspect-[4/3] overflow-hidden bg-surface md:col-span-7 md:aspect-auto md:min-h-[600px]" aria-label={drop.name}>
-        <Image
-          src={drop.image.src}
-          alt={drop.image.alt}
-          fill
-          preload
-          sizes="(min-width: 768px) 58vw, 100vw"
-          className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/feature:scale-[1.03]"
-        />
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 md:top-4 md:left-4">
+      {/* The photo is a second, mouse-only way in; the title link is the one Tab and screen readers use. */}
+      <div className="relative md:col-span-7">
+        <Link href={href} className="group/feature relative block aspect-[4/3] h-full overflow-hidden bg-surface md:aspect-auto md:min-h-[600px]" aria-hidden tabIndex={-1}>
+          <Image
+            src={drop.image.src}
+            alt=""
+            fill
+            preload
+            sizes="(min-width: 768px) 58vw, 100vw"
+            className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/feature:scale-[1.03]"
+          />
+        </Link>
+        <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap gap-1.5 md:top-4 md:left-4">
           <DropStatus drop={drop} />
           {sponsored ? <SponsoredTag /> : null}
         </div>
-      </Link>
+      </div>
 
       <div className="flex flex-col p-5 sm:p-6 md:col-span-5 md:p-8 lg:p-10">
         <div className="flex items-center gap-2.5">

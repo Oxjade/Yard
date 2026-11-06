@@ -61,18 +61,21 @@ export function BrandCard({
 
   return (
     <article className={cn("group/brand relative flex flex-col overflow-hidden rounded-lg border border-line-soft bg-card", className)}>
-      <Link href={href} className="relative block aspect-[4/3] overflow-hidden" aria-label={brand.name}>
-        <Image
-          src={brand.cover.src}
-          alt={brand.cover.alt}
-          fill
-          sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
-          className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]"
-        />
-        <span className="scrim-b absolute inset-0" aria-hidden />
-        {sponsored ? <SponsoredTag className="absolute top-3 left-3" /> : null}
-        <BrandMark brand={brand} size="lg" className="absolute bottom-3 left-3" />
-      </Link>
+      {/* The cover is a second, mouse-only way in; the name link below is the one Tab and screen readers use. */}
+      <div className="relative">
+        <Link href={href} className="relative block aspect-[4/3] overflow-hidden" aria-hidden tabIndex={-1}>
+          <Image
+            src={brand.cover.src}
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
+            className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]"
+          />
+          <span className="scrim-b absolute inset-0" />
+          <BrandMark brand={brand} size="lg" className="absolute bottom-3 left-3" />
+        </Link>
+        {sponsored ? <SponsoredTag className="pointer-events-none absolute top-3 left-3" /> : null}
+      </div>
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

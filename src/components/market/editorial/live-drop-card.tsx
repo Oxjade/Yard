@@ -22,20 +22,24 @@ export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boole
   const href = `/drops/${drop.slug}`
   const draw = drop.access === "draw"
   return (
-    <article className="group/live grid overflow-hidden rounded-lg border border-line-soft bg-card sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <Link href={href} className="relative block aspect-[16/10] overflow-hidden sm:aspect-auto sm:min-h-[320px]" aria-label={drop.name}>
+    <article className="group/live relative grid overflow-hidden rounded-lg border border-line-soft bg-card sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      {/* The picture is a second way to the drop for the pointer; the title is the link
+          assistive tech and Tab use, so this one stays out of both. */}
+      <Link href={href} tabIndex={-1} aria-hidden className="relative block aspect-[16/10] overflow-hidden sm:aspect-auto sm:min-h-[320px]">
         <Image
           src={drop.image.src}
-          alt={drop.image.alt}
+          alt=""
           fill
           sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 100vw"
           className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/live:scale-[1.04]"
         />
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-          <DropStatus drop={drop} />
-          {sponsored ? <SponsoredTag /> : null}
-        </div>
       </Link>
+      {/* Over the picture but outside its link, so status and the sponsored disclosure are read
+          and clicks pass through to the picture. */}
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap gap-1.5">
+        <DropStatus drop={drop} />
+        {sponsored ? <SponsoredTag /> : null}
+      </div>
       <div className="flex flex-col p-4 sm:p-5">
         <div className="flex items-center gap-2">
           <BrandMark brand={brand} size="xs" />

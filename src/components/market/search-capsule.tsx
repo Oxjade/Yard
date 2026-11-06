@@ -34,6 +34,7 @@ export function SearchCapsule({ className, compact = false }: { className?: stri
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
       aria-label="Search brands and products"
+      aria-keyshortcuts="Meta+K Control+K"
       className={cn(
         "group pointer-events-auto relative flex h-10 items-center gap-2.5 rounded-full border border-white/12 bg-black/45 pr-2 pl-3.5 text-left text-[13px] text-ink-2 backdrop-blur-xl transition-[border-color,background-color,width] duration-200 ease-out-quint hover:border-white/25 hover:bg-black/60",
         compact ? "w-10 justify-center px-0" : "w-60 xl:w-72",
@@ -60,7 +61,9 @@ export function SearchCapsule({ className, compact = false }: { className?: stri
               </AnimatePresence>
             </span>
           </span>
-          <kbd className="hidden shrink-0 rounded-full border border-white/12 px-2 py-0.5 font-sans text-[10px] text-ink-3 lg:inline">⌘K</kbd>
+          {/* A visual hint; the shortcut itself is announced through aria-keyshortcuts, so the
+              visible label ("Search") stays the start of the button's name. */}
+          <kbd aria-hidden className="hidden shrink-0 rounded-full border border-white/12 px-2 py-0.5 font-sans text-[10px] text-ink-3 lg:inline">⌘K</kbd>
         </>
       ) : null}
     </button>

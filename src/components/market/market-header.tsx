@@ -146,8 +146,9 @@ export function MarketHeader() {
               <BagPop />
             </div>
             {hydrated && user ? (
-              <Link href="/you" aria-label="Your World" className="ml-1 hidden size-9 items-center justify-center rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 transition-transform duration-150 hover:scale-[1.04] active:scale-95 sm:inline-flex">
-                {user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+              <Link href="/you" className="ml-1 hidden size-9 items-center justify-center rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 transition-transform duration-150 hover:scale-[1.04] active:scale-95 sm:inline-flex">
+                <span aria-hidden>{user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
+                <span className="sr-only">Your World</span>
               </Link>
             ) : (
               <button type="button" onClick={() => requireAuth("account")} aria-label="Sign in" className={cn(floatIcon, "hidden sm:inline-flex")}>

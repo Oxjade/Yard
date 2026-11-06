@@ -35,14 +35,18 @@ export function DropCard({
   const href = `/drops/${drop.slug}`
   return (
     <article className={cn("group/drop relative flex overflow-hidden rounded-lg border border-white/8 bg-obsidian", layout === "wide" ? "flex-col md:flex-row" : "flex-col", className)}>
-      <Link href={href} className={cn("relative block overflow-hidden", layout === "wide" ? "aspect-[4/3] md:aspect-auto md:w-1/2" : "aspect-[4/3]")} aria-label={drop.name}>
-        <Image src={drop.image.src} alt={drop.image.alt} fill loading={eager ? "eager" : undefined} sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
-        <span className="absolute inset-0 bg-gradient-to-t from-obsidian/80 via-transparent to-transparent" aria-hidden />
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-          <DropStatus drop={drop} />
-          {drop.sponsored ? <SponsoredTag /> : null}
-        </div>
+      {/* The picture is a second way to the drop for the pointer; the title below is the link
+          assistive tech and Tab use, so this one stays out of both. */}
+      <Link href={href} tabIndex={-1} aria-hidden className={cn("relative block overflow-hidden", layout === "wide" ? "aspect-[4/3] md:aspect-auto md:w-1/2" : "aspect-[4/3]")}>
+        <Image src={drop.image.src} alt="" fill loading={eager ? "eager" : undefined} sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
+        <span className="absolute inset-0 bg-gradient-to-t from-obsidian/80 via-transparent to-transparent" />
       </Link>
+      {/* Status and the sponsored disclosure sit over the picture but outside its link, so they
+          are read, and clicks pass through to the picture. */}
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap gap-1.5">
+        <DropStatus drop={drop} />
+        {drop.sponsored ? <SponsoredTag /> : null}
+      </div>
       <div className={cn("flex flex-1 flex-col gap-4 p-4", layout === "wide" && "md:p-6")}>
         <div className="flex items-center gap-2">
           <BrandMark brand={brand} size="xs" />
