@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import { AuthForm } from "@/components/market/auth-prompt"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"
@@ -22,6 +23,7 @@ export function SignInView({ image, caption }: { image: ImageAsset; caption?: st
   const user = useSession((s) => s.user)
   const signOut = useSession((s) => s.signOut)
   const [leaving, setLeaving] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const nextParam = params.get("next")
   const target = safeNext(nextParam)
 
@@ -35,10 +37,24 @@ export function SignInView({ image, caption }: { image: ImageAsset; caption?: st
 
   if (user && !leaving) {
     return (
-      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}.`} image={image} caption={caption} joinNote={false}>
+      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}. This is the demo shopper account.`} image={image} caption={caption} joinNote={false}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Button variant="primary" size="lg" onClick={() => router.push(target)}>Continue</Button>
-          <Button variant="secondary" size="lg" onClick={() => signOut()}>Use another account</Button>
+          {/* The marketplace has one demo shopper (Ada), so there's no other account to switch to (§2.3). */}
+          <Button
+            variant="secondary"
+            size="lg"
+            loading={signingOut}
+            onClick={async () => {
+              setSigningOut(true)
+              // "Signed out" only once the server confirmed; a failure keeps the account and says so.
+              const done = await signOut()
+              setSigningOut(false)
+              if (done) toast("Signed out", { description: "Sign in again any time to see your brands and orders." })
+            }}
+          >
+            Sign out
+          </Button>
         </div>
       </AuthPanel>
     )

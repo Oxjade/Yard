@@ -10,18 +10,17 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { spring } from "@/lib/motion"
 import { categoryLabel, useNotifications, type AppNotification, type Audience } from "@/lib/stores/notifications"
 import { cn } from "@/lib/utils"
-import { NotificationRow } from "./notification-bell"
+import { NotificationRow, useVisibleNotifications } from "./notification-bell"
 
 /** The full notifications list for one audience: filter by read state and category. */
 export function NotificationsList({ audience }: { audience: Audience }) {
   const router = useRouter()
   const hydrated = useHydrated()
-  const all = useNotifications((s) => s.items)
   const markRead = useNotifications((s) => s.markRead)
   const markAllRead = useNotifications((s) => s.markAllRead)
   const [filter, setFilter] = useState<"all" | "unread">("all")
   const [category, setCategory] = useState<string>("all")
-  const items = useMemo(() => all.filter((n) => n.audience === audience), [all, audience])
+  const items = useVisibleNotifications(audience)
   const categories = useMemo(() => [...new Set(items.map((n) => categoryLabel[n.category]))], [items])
   const shown = items.filter((n) => (filter === "unread" ? !n.read : true) && (category === "all" || categoryLabel[n.category] === category))
   const unread = items.filter((n) => !n.read).length

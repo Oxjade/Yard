@@ -1,5 +1,7 @@
 "use client"
 
+import { prepareImage } from "@/lib/media/prepare-image"
+
 const MAX_BYTES = 15 * 1024 * 1024
 
 /** A reason the file can't be used, or null. */
@@ -46,4 +48,12 @@ export function readImage(file: File, { max = 1400, type = "image/jpeg", quality
     }
     image.src = url
   })
+}
+
+/**
+ * The toBlob variant of readImage (v2 uploads, §6.1): the same scale-and-flatten pipeline, as an
+ * upload-ready File (max 2048 px, JPEG quality 0.86, metadata dropped by the canvas).
+ */
+export function readImageBlob(file: File, opts: { max?: number; type?: "image/jpeg" | "image/webp"; quality?: number } = {}) {
+  return prepareImage(file, { max: opts.max ?? 2048, type: opts.type ?? "image/jpeg", quality: opts.quality ?? 0.86 })
 }

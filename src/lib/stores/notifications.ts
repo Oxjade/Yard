@@ -2,6 +2,9 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
+import { api } from "@/lib/api/client"
+import { isSameOriginPath } from "@/lib/api/contracts/notifications"
+import { getServerSessionState, recipientFor, type SessionSurface } from "@/lib/session/use-server-session"
 import { currentReferences, withCurrentName } from "./old-name"
 
 /**
@@ -35,6 +38,23 @@ export type NotificationCategory =
   | "refund_request"
   /** The review team's decision on the brand itself: approved, verified, restricted, suspended or reinstated. */
   | "account_status"
+  // v2 server notifications (§2.7): customer
+  | "new_message"
+  | "delivery_update"
+  | "report_update"
+  // v2: merchant (new_message and delivery updates above are shared)
+  | "social_status"
+  | "content_moderation"
+  | "location_review"
+  | "chart_movement"
+  | "delivery_complaint"
+  // v2: admin
+  | "message_report"
+  | "content_report"
+  | "place_report"
+  | "chart_integrity"
+  | "shipping_issue"
+  | "abuse_alert"
   // admin
   | "merchant_application"
   | "product_report"
@@ -56,6 +76,65 @@ export type AppNotification = {
   read: boolean
   /** True when derived from the development sample data rather than an action taken in this browser. */
   sample?: boolean
+  /**
+   * Server notifications only: who they were sent to, as '<kind>:<id>' (shopper:u_ada,
+   * brand:b_lagos_static, admin:adm_3). Their event keys read srv:<kind>:<id>:<server key>.
+   */
+  recipient?: string
+}
+
+/** A server notification as the bridge hands it to the store (§2.7). */
+export type ServerItem = {
+  /** The server's own event key (e.g. "msg:cv_seed_ada_ls"). */
+  key: string
+  audience: Audience
+  /** '<kind>:<id>' */
+  recipient: string
+  category: NotificationCategory
+  title: string
+  body: string
+  href?: string | null
+  at: string
+  read: boolean
+}
+
+const SRV = "srv:"
+/** srv:<recipientKind>:<recipientId>:<key> */
+export const serverEventKey = (recipient: string, key: string) => `${SRV}${recipient}:${key}`
+export const isServerItem = (n: Pick<AppNotification, "eventKey">) => n.eventKey.startsWith(SRV)
+/** The server key and recipient back out of a srv: event key. */
+export function parseServerKey(eventKey: string) {
+  const m = /^srv:(shopper|brand|admin):([^:]+):(.+)$/.exec(eventKey)
+  return m ? { kind: m[1] as "shopper" | "brand" | "admin", id: m[2], recipient: `${m[1]}:${m[2]}`, key: m[3] } : null
+}
+
+const surfaceOf: Record<Audience, SessionSurface> = { customer: "market", merchant: "studio", admin: "admin" }
+const actorOf: Record<Audience, "shopper" | "brand" | "admin"> = { customer: "shopper", merchant: "brand", admin: "admin" }
+
+/**
+ * The notifications a surface shows (§2.7): local ones always; srv: ones only once the server
+ * session is known, and only the current recipient's, so nothing flashes before a purge runs.
+ * Pass `recipient: null` while the session is loading or signed out.
+ */
+export function visibleItems(items: AppNotification[], audience: Audience, recipient: string | null) {
+  return items.filter((n) => n.audience === audience && (!isServerItem(n) || (recipient !== null && n.recipient === recipient)))
+}
+
+/** Tells the server, for srv: items of the current recipient only. Failures leave the local state as is. */
+function syncServerRead(items: AppNotification[], read: boolean) {
+  const byRecipient = new Map<string, { kind: "shopper" | "brand" | "admin"; keys: string[] }>()
+  for (const n of items) {
+    const p = parseServerKey(n.eventKey)
+    if (!p) continue
+    const current = recipientFor(surfaceOf[n.audience], getServerSessionState())
+    if (current !== p.recipient) continue
+    const entry = byRecipient.get(p.recipient) ?? { kind: p.kind, keys: [] }
+    entry.keys.push(p.key)
+    byRecipient.set(p.recipient, entry)
+  }
+  for (const { kind, keys } of byRecipient.values()) {
+    void api("/api/notifications/read", { query: { as: kind }, body: { keys, read } }).catch(() => {})
+  }
 }
 
 type State = {
@@ -68,6 +147,12 @@ type State = {
   markAllRead: (audience: Audience) => void
   remove: (id: string) => void
   setSeeded: (audience: Audience) => void
+  /** Bridge only: inserts or replaces srv: items by event key (pushMany drops repeat keys). */
+  upsertServer: (items: ServerItem[]) => void
+  /** Applies a notification.read event locally without calling the server (no ping-pong). */
+  applyServerRead: (target: { eventKeys: string[] } | { recipient: string; audience: Audience }, read: boolean) => void
+  /** Removes srv: items of `audience` whose recipient isn't `keepRecipient` (null: all of them). */
+  purgeServerItems: (audience: Audience, keepRecipient: string | null) => void
 }
 
 const MAX = 200
@@ -142,21 +227,58 @@ export const useNotifications = create<State>()(
         if (!fresh.length) return
         set({ items: [...fresh, ...get().items].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX) })
       },
-      markRead: (id) => set({ items: get().items.map((x) => (x.id === id ? { ...x, read: true } : x)) }),
-      markUnread: (id) => set({ items: get().items.map((x) => (x.id === id ? { ...x, read: false } : x)) }),
-      markAllRead: (audience) => set({ items: get().items.map((x) => (x.audience === audience ? { ...x, read: true } : x)) }),
+      markRead: (id) => {
+        const target = get().items.find((x) => x.id === id && !x.read)
+        set({ items: get().items.map((x) => (x.id === id ? { ...x, read: true } : x)) })
+        if (target) syncServerRead([target], true)
+      },
+      markUnread: (id) => {
+        const target = get().items.find((x) => x.id === id && x.read)
+        set({ items: get().items.map((x) => (x.id === id ? { ...x, read: false } : x)) })
+        if (target) syncServerRead([target], false)
+      },
+      markAllRead: (audience) => {
+        const changed = get().items.filter((x) => x.audience === audience && !x.read)
+        set({ items: get().items.map((x) => (x.audience === audience ? { ...x, read: true } : x)) })
+        syncServerRead(changed, true)
+      },
       remove: (id) => set({ items: get().items.filter((x) => x.id !== id) }),
       setSeeded: (audience) => set({ seeded: { ...get().seeded, [audience]: true } }),
+      upsertServer: (list) => {
+        if (!list.length) return
+        const incoming = new Map(
+          list.map((n) => {
+            const eventKey = serverEventKey(n.recipient, n.key)
+            // Opened with router.push: a server href that isn't a same-origin path is dropped.
+            const href = isSameOriginPath(n.href) ? n.href : undefined
+            const item: AppNotification = { id: `n_${eventKey}`, eventKey, audience: n.audience, category: n.category, title: n.title, body: n.body, href, at: n.at, read: n.read, recipient: n.recipient }
+            return [eventKey, item] as const
+          }),
+        )
+        const kept = get().items.filter((x) => !incoming.has(x.eventKey))
+        set({ items: [...incoming.values(), ...kept].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX) })
+      },
+      applyServerRead: (target, read) => {
+        const match = "eventKeys" in target ? (x: AppNotification) => target.eventKeys.includes(x.eventKey) : (x: AppNotification) => isServerItem(x) && x.recipient === target.recipient && x.audience === target.audience
+        set({ items: get().items.map((x) => (match(x) && x.read !== read ? { ...x, read } : x)) })
+      },
+      purgeServerItems: (audience, keepRecipient) => {
+        const items = get().items
+        const next = items.filter((x) => !(x.audience === audience && isServerItem(x) && x.recipient !== keepRecipient))
+        if (next.length !== items.length) set({ items: next })
+      },
     }),
     {
       name: "nocturne-notifications",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 2,
+      version: 3,
       // v1: notifications saved before the platform was renamed read its current name ("Yard
       // approved your application"). Event keys and ids stay as they were, so nothing is pushed twice.
       // v2: order references read their current form ("Order YRD-…", "#OS-10431"), and admin
       // notifications open the record they're about instead of the screen's front page.
+      // v3: server notifications (srv:<kind>:<id>:<key>, with `recipient`) join the list; existing
+      // items are kept unchanged.
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<State>
         if (!p.items) return p as State
@@ -190,6 +312,20 @@ export const categoryLabel: Record<NotificationCategory, string> = {
   payout_status: "Payout",
   refund_request: "Refund",
   account_status: "Account",
+  new_message: "Inbox",
+  delivery_update: "Delivery",
+  report_update: "Reports",
+  social_status: "Social",
+  content_moderation: "Content",
+  location_review: "Locations",
+  chart_movement: "Charts",
+  delivery_complaint: "Delivery",
+  message_report: "Messages",
+  content_report: "Content",
+  place_report: "Places",
+  chart_integrity: "Charts",
+  shipping_issue: "Delivery",
+  abuse_alert: "Abuse",
   merchant_application: "Brands",
   product_report: "Moderation",
   payment_failure: "Payments",
@@ -197,3 +333,10 @@ export const categoryLabel: Record<NotificationCategory, string> = {
   suspicious_activity: "Risk",
   system_alert: "System",
 }
+
+/** The recipient whose srv: items a surface shows right now, or null while loading or signed out. */
+export function currentRecipient(audience: Audience) {
+  return recipientFor(surfaceOf[audience], getServerSessionState())
+}
+
+export { actorOf as notificationActorOf, surfaceOf as notificationSurfaceOf }

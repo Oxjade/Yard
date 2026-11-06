@@ -252,8 +252,9 @@ export function SettingsView() {
       <Section id="set-signout" title="Sign out" description={`Sign out of ${site.name} on this device. Your bag stays here for next time.`}>
         <Button
           variant="secondary"
-          onClick={() => {
-            signOut()
+          onClick={async () => {
+            // The server confirms first; on failure the store keeps the account and shows why.
+            if (!(await signOut())) return
             toast("Signed out", { description: "Sign in again any time to see your brands and orders." })
             router.push("/")
           }}

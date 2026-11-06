@@ -5,11 +5,13 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
 import { BellIcon } from "@phosphor-icons/react"
+import { ChatCircleDotsIcon, ChatsCircleIcon, ImagesSquareIcon, MapPinAreaIcon, MapPinIcon, ProhibitIcon, RankingIcon, ShareNetworkIcon } from "@phosphor-icons/react"
 import { WarningIcon as AlertTriangle, SealCheckIcon as BadgeCheck, BellIcon as Bell, BellSlashIcon as BellOff, CubeIcon as Box, ChecksIcon as CheckCheck, CreditCardIcon as CreditCard, EnvelopeSimpleIcon, EnvelopeSimpleOpenIcon, FlagIcon as Flag, HeartIcon as Heart, MegaphoneIcon as Megaphone, PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, ShieldWarningIcon as ShieldAlert, ShoppingBagOpenIcon as ShoppingBag, SparkleIcon as Sparkles, StorefrontIcon, TruckIcon as Truck, UserPlusIcon as UserPlus, WalletIcon as Wallet, LightningIcon as Zap } from "@phosphor-icons/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { spring } from "@/lib/motion"
-import { categoryLabel, useNotifications, type AppNotification, type Audience, type NotificationCategory } from "@/lib/stores/notifications"
+import { useRecipient } from "@/lib/session/use-server-session"
+import { categoryLabel, notificationSurfaceOf, useNotifications, visibleItems, type AppNotification, type Audience, type NotificationCategory } from "@/lib/stores/notifications"
 import { cn } from "@/lib/utils"
 
 const icons: Partial<Record<NotificationCategory, React.ComponentType<{ className?: string }>>> = {
@@ -37,9 +39,34 @@ const icons: Partial<Record<NotificationCategory, React.ComponentType<{ classNam
   chargeback: ShieldAlert,
   suspicious_activity: ShieldAlert,
   system_alert: AlertTriangle,
+  // v2 server notifications (§2.7)
+  new_message: ChatCircleDotsIcon,
+  delivery_update: Truck,
+  report_update: Flag,
+  social_status: ShareNetworkIcon,
+  content_moderation: ImagesSquareIcon,
+  location_review: MapPinIcon,
+  chart_movement: RankingIcon,
+  delivery_complaint: Truck,
+  message_report: ChatsCircleIcon,
+  content_report: ImagesSquareIcon,
+  place_report: MapPinAreaIcon,
+  chart_integrity: ShieldAlert,
+  shipping_issue: Truck,
+  abuse_alert: ProhibitIcon,
 }
 
-const urgent: NotificationCategory[] = ["out_of_stock", "payment_failure", "chargeback", "suspicious_activity", "system_alert", "refund_request"]
+const urgent: NotificationCategory[] = ["out_of_stock", "payment_failure", "chargeback", "suspicious_activity", "system_alert", "refund_request", "message_report", "chart_integrity", "abuse_alert"]
+
+/**
+ * The notifications a surface shows: local ones, plus the current server recipient's srv: items
+ * once the server session is known (§2.7), so another account's never flash.
+ */
+export function useVisibleNotifications(audience: Audience) {
+  const all = useNotifications((s) => s.items)
+  const recipient = useRecipient(notificationSurfaceOf[audience])
+  return useMemo(() => visibleItems(all, audience, recipient), [all, audience, recipient])
+}
 
 export function relativeTime(iso: string, now = Date.now()) {
   const diff = Math.max(0, now - new Date(iso).getTime())
@@ -122,10 +149,9 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
   const hydrated = useHydrated()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<"all" | "unread">("all")
-  const all = useNotifications((s) => s.items)
   const markRead = useNotifications((s) => s.markRead)
   const markAllRead = useNotifications((s) => s.markAllRead)
-  const items = useMemo(() => all.filter((n) => n.audience === audience), [all, audience])
+  const items = useVisibleNotifications(audience)
   const unread = hydrated ? items.filter((n) => !n.read).length : 0
   const shown = (tab === "unread" ? items.filter((n) => !n.read) : items).slice(0, 8)
 

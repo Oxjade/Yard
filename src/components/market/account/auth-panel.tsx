@@ -62,7 +62,7 @@ export function AuthPanel({
         </div>
         {joinNote ? (
           <p className="mt-4 max-w-md text-xs leading-relaxed text-ink-3">
-            New here? Continuing creates your account. You choose which updates reach you, and how, in Settings.
+            Every option signs in to the same demo account. You choose which updates reach you, and how, in Settings.
           </p>
         ) : null}
         <ul className="mt-10 grid max-w-md gap-3 border-t border-line-soft pt-6">

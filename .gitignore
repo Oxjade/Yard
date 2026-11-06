@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Yard v2 data: the default data directory is outside the repo (~/.yard/…); this covers a
+# YARD_DATA_DIR pointed inside it. Never ship it in an archive either.
+/.data/

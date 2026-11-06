@@ -67,6 +67,10 @@ export type StorefrontSection = {
   /** For product/collection sections: what to show. */
   productIds?: string[]
   collectionIds?: string[]
+  /** v2 Social feed section (§6.1): which posts, how laid out, how many (3–12). */
+  feed?: { source: "all" | "instagram" | "tiktok" | "uploads"; layout: "grid" | "rail"; count: number }
+  /** v2 Social feed section: posts pinned first, in this order. */
+  postIds?: string[]
 }
 
 export type StorefrontConfig = {
@@ -304,6 +308,42 @@ export type MerchantOrder = {
   refund?: { amount: number; variantIds: string[]; at: string }
   /** Why the brand cancelled, when it did. */
   cancelReason?: string
+  /** v2: the delivery estimate known in this browser (from the server, or computed here and labelled so, §6.5). */
+  delivery?: DeliverySnapshot
+  /** v2: when payment was confirmed, the order shipped and was delivered (ISO). */
+  paidAt?: string
+  shippedAt?: string
+  deliveredAt?: string
+}
+
+/**
+ * A delivery estimate as stored with an order (§6.5). Always an estimate: `guaranteed` is false
+ * unless a future carrier guarantees dates. `source` says where it was computed.
+ */
+export type DeliverySnapshot = {
+  basis: "quote" | "placed" | "shipped" | "in_transit" | "out_for_delivery" | "delivered" | "late" | "exception"
+  dispatchFrom?: string
+  shipBy?: string
+  arrivalFrom?: string
+  arrivalTo?: string
+  deliveredOn?: string
+  late?: boolean
+  guaranteed: false
+  service?: "standard" | "express" | "pickup"
+  /** "server": Yard's estimate; "browser": computed in this browser because the server never saw the order. */
+  source: "server" | "browser"
+  computedAt: string
+}
+
+/**
+ * What the receipt says about payment (§6.6). No payment provider is connected in this build,
+ * so live checkouts read "Not charged"; nothing ever implies money moved.
+ */
+export type PaymentSnapshot = {
+  status: "not_charged" | "pending" | "authorized" | "captured" | "refunded"
+  /** The method the shopper chose, as words ("Card", "Bank transfer"), never card numbers. */
+  method?: string
+  note?: string
 }
 
 /** The decision on a shopper's return request: the brand's (in Studio) or the platform's (in Finance). */
@@ -329,6 +369,8 @@ export type CheckoutGroup = {
   currency: CurrencyCode
   orderIds: string[]
   total: number
+  /** v2: what the receipt shows about payment (§6.6). */
+  payment?: PaymentSnapshot
 }
 
 export type Customer = {

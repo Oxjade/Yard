@@ -7,7 +7,7 @@ import { BellSlashIcon, CaretDownIcon, ChecksIcon, FunnelSimpleIcon } from "@pho
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/dashboard/empty-state"
-import { NotificationRow } from "@/components/feedback/notification-bell"
+import { NotificationRow, useVisibleNotifications } from "@/components/feedback/notification-bell"
 import { Bone } from "@/components/feedback/skeletons"
 import { Reveal } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
@@ -41,13 +41,13 @@ export function AdminNotificationsView() {
   const router = useRouter()
   const ready = useNotificationsReady()
   const tid = useId()
-  const all = useNotifications((s) => s.items)
+
   const markRead = useNotifications((s) => s.markRead)
   const markAllRead = useNotifications((s) => s.markAllRead)
   const [filter, setFilter] = useState<"all" | "unread">("all")
   const [category, setCategory] = useState<string>(ALL)
 
-  const items = useMemo(() => all.filter((n) => n.audience === "admin"), [all])
+  const items = useVisibleNotifications("admin")
   const unread = items.filter((n) => !n.read)
   const urgent = unread.filter((n) => URGENT[n.category])
   const urgentKinds = [...new Set(urgent.map((n) => URGENT[n.category]!))]

@@ -19,12 +19,17 @@ import {
   UserIcon,
   WalletIcon,
   HeartbeatIcon,
+  UserSwitchIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
+import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
+import { WorkspaceNote } from "@/components/session/workspace-note"
 import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/components/dashboard/shell/command-palette"
 import { buildOrderRows, type OrderRow } from "@/components/admin/finance/derive"
 import { moderationReasonMeta, moderationStatusMeta } from "@/components/admin/marketplace/meta"
-import { adminRoles, adminUser, healthServices, type BrandApplication, type Payout, type PlatformUser } from "@/lib/data/admin"
+import { healthServices, type BrandApplication, type Payout, type PlatformUser } from "@/lib/data/admin"
+import { adminRoleLabels } from "@/lib/permissions"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { categories } from "@/lib/data/catalog"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
@@ -149,6 +154,10 @@ function useAdminReady() {
   )
 }
 
+/** The demo admin the browser-data admin pages act as (Kemi Ajayi, Owner). */
+const LEGACY_ADMIN_ID = "adm_1"
+const LEGACY_ADMIN_NOTE = "Legacy pages act as Kemi Ajayi in this browser."
+
 /** The internal Admin Control Center: a control room — dense, operational, data-first. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
@@ -188,7 +197,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     },
   ]
 
-  const initials = adminUser.name
+  // The demo admin session (§2.3): the account row names who is signed in on the server.
+  const session = useServerSession()
+  const admin = session.admin
+  const demoOn = !!session.demoAuth?.admin
+  // The existing admin pages keep their browser data and act as Kemi Ajayi (the Owner, adm_1);
+  // say so whenever the server session is someone else, or nobody (§1.11, §8.3).
+  const legacyNote = session.status === "ready" && admin?.id !== LEGACY_ADMIN_ID
+  const initials = (admin?.name ?? "")
     .split(/\s+/)
     .map((w) => w[0])
     .join("")
@@ -222,6 +238,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
           { label: "Security and audit log", href: "/admin/security", icon: ShieldCheckIcon },
           { label: "System health", href: "/admin/health", icon: HeartbeatIcon },
+          ...(demoOn ? [{ label: "Switch demo admin…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
+          // Signing out never depends on the demo flag: whoever holds a session can always end it.
+          ...(admin ? [{ label: "Sign out of demo account", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
           { label: "Leave the Control Center", href: "/", icon: SignOutIcon, separated: true },
         ],
       }}
@@ -239,10 +258,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         dot: decisions > 0,
         summary: decisions > 0 ? `${decisions} ${decisions === 1 ? "decision" : "decisions"} waiting` : "Queue clear",
       }}
-      account={{ initials, name: adminUser.name, caption: `${adminRoles[adminUser.role].name}, ${adminUser.mfa ? "MFA on" : "MFA off"}` }}
-      topbar={<SystemStatus />}
+      account={
+        admin
+          ? { initials, name: admin.name, caption: `${adminRoleLabels[admin.role]}, demo account` }
+          : session.status === "loading"
+            ? { initials: "", name: "Control Center", caption: "Checking your session" }
+            : session.status === "error"
+              ? { initials: "!", name: "Session unavailable", caption: "Couldn't reach Yard" }
+              : { initials: "–", name: "Not signed in", caption: "Demo accounts" }
+      }
+      topbar={
+        <>
+          {legacyNote ? <WorkspaceNote text={LEGACY_ADMIN_NOTE} label="About whose account these pages use" /> : null}
+          <SystemStatus />
+        </>
+      }
     >
       {children}
+      <DemoAccountMenuBridge surface="admin" />
     </AppShell>
   )
 }

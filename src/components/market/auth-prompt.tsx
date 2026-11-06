@@ -1,14 +1,13 @@
 "use client"
 
 import { useId, useRef, useState } from "react"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { bagButton } from "@/components/market/bag-drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
+import { errorMessage } from "@/lib/api/errors"
+import { DEMO_SHOPPER, useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
 import { site } from "@/config/site"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
@@ -17,7 +16,12 @@ const copy: Record<AuthIntent, { title: string; body: string }> = {
   notify: { title: "Sign in to get drop alerts", body: "Reminders and draw entries are saved in this browser, and you'll see an alert in Notifications when the drop opens. Email and push aren't connected in this build." },
   checkout: { title: "Sign in to check out", body: "One account for every brand, so your orders and tracking live in one place." },
   account: { title: `Sign in to ${site.name}`, body: "Follow brands, save pieces and track every order in one place." },
+  message: { title: "Sign in to message brands", body: "Ask about sizing, stock and delivery. Replies arrive in your Inbox." },
+  report: { title: "Sign in to report", body: "Reports go to Yard's trust and safety team." },
 }
+
+/** The demo note under every sign-in form (§2.3). */
+export const DEMO_SIGN_IN_NOTE = "Demo build: there are no real accounts yet. You'll be signed in as the demo shopper Ada Nwosu."
 
 export function GoogleMark() {
   return (
@@ -35,11 +39,20 @@ export function AppleMark() {
   )
 }
 
-/** Signs in with the frontend session. Better Auth replaces this in the backend phase. */
+/**
+ * Synchronous local sign-in for callers that need the user at once (Studio onboarding's account
+ * step). It also starts the server demo session (the shopper Ada, the only one this browser can
+ * hold) but keeps the name and email the person typed: the server never silently renames them.
+ */
 export function useDemoSignIn() {
   const signIn = useSession((s) => s.signIn)
-  return (provider: SessionUser["provider"], name = "Ada Nwosu", email = "ada@example.com") =>
-    signIn({ id: "u_ada", name, email, provider })
+  return (provider: SessionUser["provider"], name = "Ada Nwosu", email = "ada@example.com") => {
+    signIn({ id: DEMO_SHOPPER, name, email, provider })
+    void useSession
+      .getState()
+      .signInDemo(provider, { keepProfile: { name, email } })
+      .catch(() => {})
+  }
 }
 
 const EMAIL = /^\S+@\S+\.\S+$/
@@ -63,7 +76,9 @@ function passwordError(password: string) {
  * /checkout render their own form while the header can open the prompt's form over it.
  */
 export function AuthForm({ onDone }: { onDone?: () => void }) {
-  const demoSignIn = useDemoSignIn()
+  const signInDemo = useSession((s) => s.signInDemo)
+  const [busy, setBusy] = useState<SessionUser["provider"] | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [errors, setErrors] = useState<AuthErrors>({})
@@ -71,6 +86,22 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
   const passwordRef = useRef<HTMLInputElement>(null)
   const uid = useId()
   const ids = { email: `${uid}-email`, emailError: `${uid}-email-error`, password: `${uid}-password`, passwordError: `${uid}-password-error` }
+
+  // Every method signs in on the server as the demo shopper; the profile comes from the server,
+  // so a typed email no longer renames the account (§2.3).
+  async function go(provider: SessionUser["provider"]) {
+    if (busy) return
+    setBusy(provider)
+    setFailure(null)
+    try {
+      await signInDemo(provider)
+      onDone?.()
+    } catch (e) {
+      setFailure(errorMessage(e, "Couldn't sign in. Check your connection and try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -80,17 +111,15 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
       window.requestAnimationFrame(() => (next.email ? emailRef : passwordRef).current?.focus())
       return
     }
-    const address = email.trim()
-    demoSignIn("email", address.split("@")[0].replace(/\W/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), address)
-    onDone?.()
+    void go("email")
   }
 
   return (
     <div className="grid gap-3">
-      <Button variant="secondary" size="lg" className="w-full" onClick={() => { demoSignIn("google"); onDone?.() }}>
+      <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy && busy !== "google"} onClick={() => void go("google")}>
         <GoogleMark /> Continue with Google
       </Button>
-      <Button variant="secondary" size="lg" className="w-full" onClick={() => { demoSignIn("apple"); onDone?.() }}>
+      <Button variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy && busy !== "apple"} onClick={() => void go("apple")}>
         <AppleMark /> Continue with Apple
       </Button>
       <div className="my-1 flex items-center gap-3 text-xs text-ink-3">
@@ -135,7 +164,13 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
           />
           {errors.password ? <p id={ids.passwordError} className="text-xs text-danger">{errors.password}</p> : null}
         </div>
-        <Button type="submit" variant="primary" size="lg" className="w-full">Continue</Button>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"} disabled={!!busy && busy !== "email"}>Continue</Button>
+        {failure ? (
+          <p role="alert" className="text-xs text-danger">
+            {failure}
+          </p>
+        ) : null}
+        <p className="text-xs leading-relaxed text-ink-3">{DEMO_SIGN_IN_NOTE}</p>
       </form>
     </div>
   )
@@ -148,7 +183,6 @@ export function AuthPrompt() {
   // Kept through the closing animation, so the title doesn't change as the dialog fades.
   const [intent, setIntent] = useState<AuthIntent>(prompt?.intent ?? "account")
   if (prompt && prompt.intent !== intent) setIntent(prompt.intent)
-  const pathname = usePathname()
 
   // DialogContent hands focus back to what opened the prompt (Checkout, Follow, Save) when it
   // closes, whether the shopper dismissed it or signed in and the action went ahead. When that
@@ -162,9 +196,7 @@ export function AuthPrompt() {
           <DialogDescription className="text-ink-2">{copy[intent].body}</DialogDescription>
         </DialogHeader>
         <AuthForm />
-        <p className="text-center text-xs text-ink-3">
-          New here? Continuing creates your account. <Link href={`/sign-in?next=${encodeURIComponent(pathname || "/")}`} onClick={dismiss} className="text-violet hover:underline">More options</Link>
-        </p>
+        <p className="text-center text-xs text-ink-3">Every option signs in to the same demo account.</p>
       </DialogContent>
     </Dialog>
   )

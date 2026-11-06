@@ -21,15 +21,21 @@ import {
   StorefrontIcon,
   TagIcon,
   UserIcon,
+  UserSwitchIcon,
   UsersIcon,
   WalletIcon,
 } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
+import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
+import { Bone } from "@/components/feedback/skeletons"
+import { WorkspaceNote } from "@/components/session/workspace-note"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/components/dashboard/shell/command-palette"
 import { orderStatusMeta, productStatusMeta } from "@/components/dashboard/status-badge"
 import { buildCustomers } from "@/components/studio/business/model"
 import { brandById } from "@/lib/data/brands"
+import { teamRoleLabels } from "@/lib/permissions"
+import { useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { payoutBalances } from "@/lib/payouts"
@@ -109,6 +115,16 @@ const search: ShellSearch = {
   Results: StudioResults,
 }
 
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+
+const MISMATCH_NOTE = "Catalogue, orders and payouts still show Lagos Static's sample data in this browser."
+
 /** Brand Studio: the merchant's operating environment. Calm, structured, functional. */
 export function StudioShell({ children }: { children: React.ReactNode }) {
   const studioReady = useStoreReady(useStudio)
@@ -117,6 +133,17 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   const orders = useStudio((s) => s.orders)
   const payouts = useAdmin((s) => s.payouts)
   const brand = brandById.get(brandId)!
+  // The demo brand session (§2.3). Pages with browser data keep the store's brand; the workspace
+  // header follows the session's brand, with a note when the two differ.
+  const session = useServerSession()
+  const member = session.brand
+  // Until /api/session answers, the header shows a neutral mark and "Brand Studio" rather than the
+  // browser's sample brand, so it never flips from one brand to another (or its storefront link).
+  const checking = session.status === "loading"
+  const sessionBrand = member ? brandById.get(member.brand.id) : undefined
+  const workspaceBrand = sessionBrand ?? brand
+  const mismatch = !!sessionBrand && sessionBrand.id !== brand.id
+  const demoOn = !!session.demoAuth?.brand
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
   const notShipped = orders.filter((o) => o.status === "paid" || o.status === "processing").length
@@ -167,15 +194,18 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       groups={groups}
       search={search}
       workspace={{
-        mark: <BrandMark brand={brand} size="sm" />,
-        name: brand.name,
-        caption: "Brand Studio",
-        label: `${brand.name}, Brand Studio`,
+        mark: checking ? <Bone className="size-8 rounded-[5px]" /> : <BrandMark brand={workspaceBrand} size="sm" />,
+        name: checking ? "Brand Studio" : workspaceBrand.name,
+        caption: checking ? "Checking your session" : "Brand Studio",
+        label: checking ? "Brand Studio" : `${workspaceBrand.name}, Brand Studio`,
         menu: [
-          { label: "View storefront", href: `/brands/${brand.handle}`, icon: StorefrontIcon, external: true },
+          ...(checking ? [] : [{ label: "View storefront", href: `/brands/${workspaceBrand.handle}`, icon: StorefrontIcon, external: true }]),
           { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
           { label: "Settings", href: "/studio/settings", icon: GearIcon },
           { label: "Notifications", href: "/studio/notifications", icon: BellIcon },
+          ...(demoOn ? [{ label: "Switch demo account…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
+          // Signing out never depends on the demo flag: whoever holds a session can always end it.
+          ...(member ? [{ label: "Sign out of demo account", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
           { label: "Back to the marketplace", href: "/", icon: SignOutIcon, separated: true },
         ],
       }}
@@ -189,21 +219,37 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         dot: available > 0,
         summary: `Available to pay out: ${amount}`,
       }}
-      account={{ initials: brand.mark.text.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || brand.name.slice(0, 2).toUpperCase(), name: brand.name, caption: "Owner" }}
+      account={
+        member
+          ? { initials: initialsOf(member.name), name: member.name, caption: `${teamRoleLabels[member.role]}, demo account` }
+          : checking
+            ? { initials: "", name: "Brand Studio", caption: "Checking your session" }
+            : session.status === "error"
+              ? { initials: "!", name: "Session unavailable", caption: "Couldn't reach Yard" }
+              : { initials: "–", name: "Not signed in", caption: "Sample pages work without signing in" }
+      }
       topbar={
-        <Link
-          href={`/brands/${brand.handle}`}
-          target="_blank"
-          rel="noopener"
-          className="hidden h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.025] pr-3.5 pl-4 text-[13px] text-ink-2 transition-colors duration-150 hover:border-white/[0.16] hover:text-ink sm:inline-flex"
-        >
-          View storefront
-          <ArrowUpRightIcon aria-hidden className="size-3.5" />
-          <span className="sr-only">(opens in a new tab)</span>
-        </Link>
+        <>
+          {mismatch ? <WorkspaceNote text={MISMATCH_NOTE.replace("Lagos Static", brand.name)} label="About this workspace's data" /> : null}
+          {checking ? (
+            <Bone className="hidden h-10 w-[9.5rem] rounded-full sm:block" />
+          ) : (
+            <Link
+              href={`/brands/${workspaceBrand.handle}`}
+              target="_blank"
+              rel="noopener"
+              className="hidden h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.025] pr-3.5 pl-4 text-[13px] text-ink-2 transition-colors duration-150 hover:border-white/[0.16] hover:text-ink sm:inline-flex"
+            >
+              View storefront
+              <ArrowUpRightIcon aria-hidden className="size-3.5" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </Link>
+          )}
+        </>
       }
     >
       {children}
+      <DemoAccountMenuBridge surface="studio" />
     </AppShell>
   )
 }

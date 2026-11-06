@@ -12,14 +12,8 @@ import type { MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
 const sampleGroupIds = new Set(customerCheckoutGroups.map((g) => g.id))
 export const isSampleCheckout = (groupId: string | undefined) => !!groupId && sampleGroupIds.has(groupId)
 
-/** The quiet "Sample" mark, as notifications use it, beside a sample checkout's reference. */
-export function SampleChip({ className }: { className?: string }) {
-  return (
-    <span className={cn("inline-flex h-5 items-center rounded-[3px] border border-white/10 px-1.5 align-middle text-[10px] font-normal text-ink-3", className)}>
-      Sample
-    </span>
-  )
-}
+/** The quiet "Sample" mark beside a sample checkout's reference: the shared SampleChip (ui/sample-chip.tsx). */
+export { SampleChip } from "@/components/ui/sample-chip"
 
 type Tone = NonNullable<React.ComponentProps<typeof StatusBadge>["tone"]>
 

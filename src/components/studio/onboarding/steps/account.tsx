@@ -85,8 +85,8 @@ export function AccountStep({ onNext }: StepProps) {
             variant="ghost"
             size="sm"
             className="mt-3 -ml-2"
-            onClick={() => {
-              signOut()
+            onClick={async () => {
+              if (!(await signOut())) return
               update("account", { name: "", email: "", provider: null })
             }}
           >
@@ -99,7 +99,7 @@ export function AccountStep({ onNext }: StepProps) {
 
   return (
     <StepForm formRef={form.formRef} onSubmit={form.onSubmit} errors={e}>
-      <Panel title="Sign up" description="Continue with Google or Apple, or use your email. Sign-in providers and account storage aren't connected in this development build, so each option creates a demo account on this device.">
+      <Panel title="Sign up" description="Continue with Google or Apple, or use your email. Demo build: there are no real accounts. The name and email you enter stay on this device, and the marketplace uses Yard's demo shopper session.">
         <div className="grid gap-2 sm:grid-cols-2">
           <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => social("google")}>
             <GoogleMark /> Continue with Google

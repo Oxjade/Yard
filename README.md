@@ -8,7 +8,11 @@ A global, discovery-driven marketplace for independent brands. It has three expe
 | Brand Studio (merchants) | `/studio` (`src/app/studio`) | Graphite, structured, analytical |
 | Admin Control Center (internal) | `/admin` (`src/app/admin`) | Dense, operational |
 
-> **Status: frontend phase.** Every screen runs on a typed local data layer
+> **Status: v2 adds an embedded server** for social connections, the Inbox, Charts, Around
+> and delivery estimates (see "The v2 embedded server" below). The pages that existed before
+> v2 still run on the browser data layer described next.
+>
+> **Frontend phase.** Every screen runs on a typed local data layer
 > (`src/lib/data/*`) and browser stores (`src/lib/stores/*`), so flows really work — bag,
 > checkout, follows, Studio product editing, Admin decisions — but nothing persists beyond
 > your browser, and no payment provider is connected: orders placed at checkout stay
@@ -66,6 +70,10 @@ src/components/dashboard/  shared Studio/Admin pieces: AppShell, PageHeader, Met
 src/components/storefront/ StorefrontRenderer — public brand pages and the Studio preview
 src/config/            site name (Yard), navigation, markets (currencies, countries, shipping)
 src/lib/data/          typed sample data + query functions (the backend seam)
+src/server/            the v2 server: env, db (PGlite, schema, seeds), auth, http (route
+                       wrapper, CSRF), security, realtime bus, audit, notify, feature modules
+src/app/api/           v2 Route Handlers (thin adapters over src/server)
+src/lib/api/           typed fetch helpers, useApi and the zod contracts shared by both sides
 src/lib/stores/        browser state: cart, saved, session, orders, studio, admin
                        (saved under "nocturne-*" keys, the old working name, kept on
                        purpose so browsers keep what they have saved)
@@ -83,11 +91,72 @@ public/media/          placeholder photography (Unsplash licence), with manifest
 - Admin decisions append audit entries; ledger adjustments are requests with a second
   approver (`src/lib/stores/admin.ts`).
 
+## The v2 embedded server
+
+v2 runs a real server layer inside the one Next.js process: an embedded Postgres (PGlite,
+nothing to install), Drizzle schema and migrations, Route Handlers under `src/app/api`, server
+sessions for demo accounts, and realtime over Server-Sent Events. `npm run dev` keeps working
+with no setup: the first start creates the database, migrates it and seeds it (about 5 s).
+
+**Where the data lives.** Outside the repository, in `~/.yard/<repo folder>-<hash>/` (mode
+`0700`), or wherever `YARD_DATA_DIR` points:
+
+```
+<dataDir>/development/pg/            the development database
+<dataDir>/development/uploads/       uploaded files (never under public/)
+<dataDir>/development/secrets.json   generated development secrets (mode 0600)
+<dataDir>/development.lock           the pid of the server using it
+<dataDir>/production/…               the same for `next start`, kept apart
+```
+
+It sits outside the repo so a zip of the project never carries the database, private uploads
+or keys. If you point `YARD_DATA_DIR` inside the repository (`/.data/` is git-ignored),
+exclude it from any archive you share. One server process per data directory: a second one
+refuses to start ("Another Yard server (pid N) …").
+
+**Scripts.**
+
+| Command | What it does |
+|---|---|
+| `npm run db:check` | Data-dir and secrets modes, anything under the data dir other users can reach, the lock's pid, migrations and every seed module's version (from the running dev server), then each cluster's checks in `scripts/checks/`. `node scripts/db-check.mjs lock` prints just the data dir and lock; `node scripts/db-check.mjs fix-modes` removes group and other access under the data dir |
+| `npm run db:reset` | Deletes the development database and uploads (refuses while a dev server holds the lock); the next `npm run dev` reseeds |
+| `npm run db:generate` | `drizzle-kit generate` after a schema change in `src/server/db/schema/*.ts`. Migrations run in-process at boot; never run `drizzle-kit push`, `migrate` or `studio` against the data directory. A schema change needs a dev restart |
+| `npm test` | Unit tests beside the pure modules (`*.test.ts`, run with tsx) |
+| `npm run start:demo` | A **local demo** of the production build on port 3001 with demo sign-in on (generated production secrets in `<dataDir>/production/demo-secrets.json`). It listens on 127.0.0.1 only; `YARD_DEMO_HOST=0.0.0.0` exposes it to your network, which lets anyone there sign in without a password. Not a deployment |
+
+**Accounts.** There are no passwords or identity providers in this build. Every surface signs
+in with demo accounts and says so: the marketplace always signs in as the demo shopper Ada
+Nwosu (this browser's bag, orders and saves aren't per-account); Brand Studio and the Control
+Center have a "Switch demo account…" picker in the workspace menu. In production demo sign-in
+is off unless `YARD_DEMO_AUTH=1` (and `YARD_DEMO_ADMIN=1` for admins); when it's on, the server
+logs a warning at start and every page shows a banner. Turning a flag off ends the sessions it
+allowed: the next start signs them out, and any request with one reads as signed out. A real
+deployment needs a real identity provider first.
+
+**Shared networks.** `npm run dev` listens on every interface, and its demo sign-in has no
+passwords. On a network you don't control, run `npx next dev -H 127.0.0.1` instead. Even on
+loopback, development only trusts requests addressed to `localhost`, `127.0.0.1`, `[::1]` or
+`YARD_PUBLIC_URL`'s host, so a page that re-points its own domain at your machine (DNS
+rebinding) can't pass the CSRF check.
+
+**Deployment notes.**
+- This layer targets one long-running Node process: not serverless, not horizontally scaled.
+- Run Yard behind exactly one reverse proxy that sets `X-Forwarded-For`, and set
+  `YARD_TRUSTED_PROXY_HOPS=1`. Without it, Yard can't see client IPs, and IP-based abuse
+  controls stay off (per-account and global limits still apply).
+- `YARD_PUBLIC_URL` must be the public `https://` origin: it is the CSRF origin and the OAuth
+  redirect base, and https makes the session cookies `Secure` and `__Host-` prefixed.
+- Rotating `YARD_SESSION_SECRET` ends every session, OAuth state, quote token and anonymous
+  visitor id, and starts a new series of IP hashes (they already rotate monthly, so at most the
+  current month's link between fraud evidence is lost). `YARD_ENCRYPTION_KEY` seals social
+  tokens only; rotate it with `YARD_ENCRYPTION_KEY_PREVIOUS` set to the old key.
+
 ## Environment variables
 
-None are needed for the frontend phase. `.env.example` lists the variables the backend
-phase will read. Never expose secrets to the browser: only variables prefixed
-`NEXT_PUBLIC_` reach client code, and none of the planned secrets use that prefix.
+`.env.example` is safe to copy to `.env.local` as it is: demo sign-in stays off in production
+and development secrets are generated for you. Never expose secrets to the browser: only
+variables prefixed `NEXT_PUBLIC_` reach client code, and none of the secrets use that prefix.
+The old backend-phase placeholders at the end of the file aren't read by the embedded server.
 
 ## Sample data and photography
 
