@@ -18,7 +18,7 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { useBrandSettings, useSettingsReady } from "./settings-store"
 import { CancelOrderDialog, DeclineRefundDialog, ApproveRefundDialog, TrackingDialog } from "./order-dialogs"
-import { DEMO_NOW, DAY_MS, countryName, formatDateTime, formatDateYear, formatTime, formatWeekday, itemCount, paymentMeta, paymentState, payoutEstimate, plural, refundRequest, shipBy, shopperName } from "./model"
+import { DEMO_NOW, DAY_MS, countryName, formatDateTime, formatDateYear, formatTime, formatWeekday, itemCount, paymentView, payoutEstimate, plural, refundRequest, shipBy, shopperName } from "./model"
 import { Panel } from "@/components/studio/catalog/fields"
 import { Thumb } from "@/components/studio/catalog/parts"
 import { BackLink, DefinitionList, useStudioReady } from "./shared"
@@ -73,7 +73,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   const [dialog, setDialog] = useState<DialogKind>(null)
   const cur = brand.currency
   const status = orderStatusMeta[o.status]
-  const pay = paymentMeta[paymentState(o)]
+  const pay = paymentView(o)
   const verified = o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded"
 
   // A status change swaps the header buttons, and the new primary lands under the cursor.
@@ -157,7 +157,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid min-w-0 gap-6 xl:col-start-1">
-          {o.status === "refund_requested" ? <RefundPanel order={o} cur={cur} /> : null}
+          {o.status === "refund_requested" ? <RefundPanel order={o} cur={cur} /> : o.returnRequest?.decision ? <ReturnOutcome order={o} cur={cur} brandName={brand.name} /> : null}
           <FulfilmentPanel order={o} onCancel={() => act(() => setDialog("cancel"))} />
           <ItemsPanel order={o} cur={cur} />
         </div>
@@ -217,15 +217,16 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
     paid: "Paid and waiting for you. Mark it as processing when you start packing, or add tracking straight away if it's ready to go.",
     processing: "You're packing this order. Add the carrier and tracking number when it leaves the studio.",
     shipped: "On its way. Mark it delivered once the carrier confirms, or the customer confirms receipt.",
-    delivered: o.paymentStatus === "partially_refunded" ? "Delivered, with part of the order refunded. Your payout for the rest follows once the returns window closes." : "Delivered. The returns window is open; your payout follows once it closes.",
+    delivered: o.paymentStatus === "partially_refunded" ? (o.refund ? "Delivered, with a partial refund approved for the returned items. Your payout for the rest follows once the returns window closes." : "Delivered, with part of the order refunded. Your payout for the rest follows once the returns window closes.") : "Delivered. The returns window is open; your payout follows once it closes.",
     refund_requested: "Delivered, and the customer has asked for a refund. Decide on the request above.",
-    refunded: "Refunded to the customer.",
+    refunded: o.refund ? "Refund approved and recorded. It's sent to the customer once a payment provider is connected." : "Refunded to the customer.",
     cancelled: o.paymentStatus === "pending" ? "Cancelled before it was paid." : "Cancelled before shipping. The customer is owed a full refund.",
     pending_payment: "Waiting for the payment provider to confirm payment. Don't ship until it's paid.",
   }
 
   return (
     <Panel
+      id="fulfilment"
       title="Fulfilment"
       description={copy[o.status]}
       className="min-w-0"
@@ -300,6 +301,8 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
 function RefundPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
   const req = refundRequest(o)
   const partial = req.lines.length < o.lines.length
+  // Pieces (quantities, not lines), as the order's item count reads.
+  const units = req.lines.reduce((n, l) => n + l.quantity, 0)
   return (
     <Panel
       title="Return requested"
@@ -319,11 +322,53 @@ function RefundPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
           </div>
         ) : null}
         <div className="grid gap-0.5">
-          <dt className="text-xs text-ink-3">{partial ? `Returning ${req.lines.length} of ${o.lines.length} items` : "Returning"}</dt>
+          <dt className="text-xs text-ink-3">{partial ? `Returning ${units} of ${plural(itemCount(o), "item")}` : "Returning"}</dt>
           <dd className="text-ink-2">{partial ? req.lines.map((l) => `${l.name}${l.variantLabel ? ` (${l.variantLabel})` : ""}`).join(", ") : "The whole order"}</dd>
         </div>
       </dl>
       {req.sample ? <p className="mt-2 text-xs text-ink-3">This request comes with the sample data. Requests customers make from their orders show their own reason and items.</p> : null}
+    </Panel>
+  )
+}
+
+/* ---------- Return outcome ---------- */
+
+/** A decided return: who decided, and what it means for the customer and the payout. */
+function ReturnOutcome({ order: o, cur, brandName }: { order: MerchantOrder; cur: Brand["currency"]; brandName: string }) {
+  const r = o.returnRequest!
+  const d = r.decision!
+  const who = d.by === "brand" ? "You" : "NOCTURNE Finance"
+  const returning = o.lines.filter((l) => r.variantIds.includes(l.variantId))
+  const units = returning.reduce((n, l) => n + l.quantity, 0)
+  const approved = d.status === "approved"
+  return (
+    <Panel
+      id="return-outcome"
+      title={approved ? (d.partial ? "Partial refund approved" : "Refund approved") : "Return declined"}
+      description={
+        approved
+          ? `${who} approved ${formatMoney(d.amount ?? 0, cur)} for the customer on ${formatDateYear(d.at)}. It's recorded, and sent through the payment provider once one is connected; nothing has moved yet.`
+          : `${who} declined the customer's return on ${formatDateYear(d.at)}. ${d.by === "brand" ? "Your" : "The"} reason is shown on the customer's order.`
+      }
+      action={<StatusBadge tone={approved ? "info" : "muted"} className="shrink-0">{approved ? "Recorded, not sent" : "Declined"}</StatusBadge>}
+      className="min-w-0"
+    >
+      <dl className="grid gap-3 rounded-md border border-line-soft bg-surface/60 p-3 text-sm">
+        <div className="grid gap-0.5">
+          <dt className="text-xs text-ink-3">Customer&apos;s reason</dt>
+          <dd className="text-ink">{r.reasonLabel}</dd>
+        </div>
+        {!approved && d.reason ? (
+          <div className="grid gap-0.5">
+            <dt className="text-xs text-ink-3">{d.by === "brand" ? `${brandName}'s reason` : "Finance's reason"}</dt>
+            <dd className="text-ink-2">&ldquo;{d.reason}&rdquo;</dd>
+          </div>
+        ) : null}
+        <div className="grid gap-0.5">
+          <dt className="text-xs text-ink-3">{!approved ? "Asked to return" : d.partial ? `Approved for refund: ${units} of ${plural(itemCount(o), "item")}` : "Approved for refund"}</dt>
+          <dd className="text-ink-2">{d.partial || !approved ? returning.map((l) => `${l.name}${l.variantLabel ? ` (${l.variantLabel})` : ""}`).join(", ") : "The whole order"}</dd>
+        </div>
+      </dl>
     </Panel>
   )
 }
@@ -406,10 +451,12 @@ function CustomerPanel({ order: o }: { order: MerchantOrder }) {
 function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
   const p = payoutEstimate(o)
   const description = p.voided
-    ? "No payout for this order: it was refunded in full."
-    : p.refunded
-      ? `Part of this order was refunded, so the returned ${p.refunded.lines.length === 1 ? "item comes" : "items come"} off. An estimate until the returns window closes.`
-      : "An estimate until the order completes and the returns window closes."
+    ? o.status === "cancelled" ? "No payout for this order: it was cancelled." : "No payout for this order: the whole order is refunded."
+    : o.status === "refund_requested"
+      ? "On hold while the return is decided: Payouts counts it in Pending until then. Approving refunds some or all of it; declining releases it."
+      : p.refunded
+        ? `A partial refund was approved, so the returned ${p.refunded.lines.reduce((n, l) => n + l.quantity, 0) === 1 ? "item comes" : "items come"} off. An estimate until the returns window closes.`
+        : "An estimate until the order completes and the returns window closes."
   return (
     <Panel title="Your payout" className="min-w-0" description={description}>
       <dl className="grid gap-2 text-sm">
@@ -423,7 +470,7 @@ function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
         </div>
         {p.refunded ? (
           <>
-            <div className="flex justify-between gap-4"><dt className="text-ink-2">Refunded items ({plural(p.refunded.lines.reduce((n, l) => n + l.quantity, 0), "item")})</dt><dd className="text-ink tabular">−{formatMoney(p.refunded.subtotal, cur)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-ink-2">Returned items ({plural(p.refunded.lines.reduce((n, l) => n + l.quantity, 0), "item")})</dt><dd className="text-ink tabular">−{formatMoney(p.refunded.subtotal, cur)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-2">Commission returned on them</dt><dd className="text-ink tabular">+{formatMoney(p.refunded.commissionBack, cur)}</dd></div>
           </>
         ) : null}

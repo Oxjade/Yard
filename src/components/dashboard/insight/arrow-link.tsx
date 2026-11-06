@@ -5,7 +5,9 @@ import type { ChipOn } from "./delta-chip"
 
 /**
  * The round arrow that opens a card's detail page. 28px to look at, 40px to hit:
- * the hit area extends past the circle so it is easy to tap on a phone.
+ * the hit area extends past the circle so it is easy to tap on a phone. (The pseudo
+ * element is placed against the padding box, inside the 1px border, so it reaches
+ * 7px out: 26 + 2 × 7 = 40.)
  */
 export function ArrowLink({ href, label, on = "dark", className }: { href: string; label: string; on?: ChipOn; className?: string }) {
   return (
@@ -14,7 +16,7 @@ export function ArrowLink({ href, label, on = "dark", className }: { href: strin
       aria-label={label}
       className={cn(
         "group/arrow relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[background-color,border-color,color] duration-150 ease-out-quint",
-        "before:absolute before:-inset-1.5 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2",
+        "before:absolute before:-inset-[7px] before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2",
         on === "acid"
           ? "border-obsidian bg-obsidian text-acid hover:bg-obsidian/85 focus-visible:outline-obsidian"
           : on === "brand"

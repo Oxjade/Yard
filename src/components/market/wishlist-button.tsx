@@ -39,7 +39,10 @@ export function WishlistButton({ productId, name, className, variant = "glass" }
       aria-label={variant === "button" ? (active ? `Saved: ${name}. Remove from wishlist` : `Save ${name} to wishlist`) : active ? `Remove ${name} from wishlist` : `Save ${name} to wishlist`}
       className={cn(
         "relative inline-flex items-center justify-center text-ink transition-[background-color,transform] duration-200",
-        variant === "button" ? "h-14 w-14 gap-2 rounded-md border border-line px-0 text-sm font-medium hover:bg-elevated active:scale-[0.97] sm:w-auto sm:px-5" : "size-9 rounded-full active:scale-90",
+        variant === "button"
+          ? "h-14 w-14 gap-2 rounded-md border border-line px-0 text-sm font-medium hover:bg-elevated active:scale-[0.97] sm:w-auto sm:px-5"
+          : // 36px to the eye, 40px to a finger (the inset counts from inside the 1px border).
+            "size-9 rounded-full after:absolute after:-inset-[3px] after:rounded-full active:scale-90",
         variant === "glass" ? "glass hover:bg-[var(--glass-bg-strong)]" : variant === "outline" ? "border border-line hover:bg-elevated" : null,
         className,
       )}

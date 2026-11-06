@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { ArrowSquareOutIcon as Open, CaretRightIcon as ChevronRight, ClockCounterClockwiseIcon as History, LockIcon as Lock, UsersIcon as Users } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
@@ -13,6 +13,7 @@ import { InfoTip } from "@/components/feedback/info-tip"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { showInPlace, useSearchParam } from "@/hooks/use-search-param"
 import { brandById } from "@/lib/data/brands"
 import type { CurrencyCode } from "@/config/markets"
 import { formatMoney, toMajor } from "@/lib/money"
@@ -41,7 +42,6 @@ const tabs: { value: Tab; label: string }[] = [
 export function CustomersIndex() {
   const ready = useStudioReady()
   const router = useRouter()
-  const params = useSearchParams()
   const pathname = usePathname()
   const brandId = useStudio((s) => s.brandId)
   const orders = useStudio((s) => s.orders)
@@ -49,7 +49,16 @@ export function CustomersIndex() {
   const cur = brand.currency
 
   const [tab, setTab] = useState<Tab>("all")
-  const [openId, setOpenId] = useState<string | null>(() => params.get("customer"))
+  // ?customer=<id> opens that customer: on arrival, and again whenever the parameter changes
+  // while the page is open (the search palette applies it in place and notifies this reader,
+  // the same URL reader the Control Center's records use).
+  const linked = useSearchParam("customer")
+  const [openId, setOpenId] = useState<string | null>(linked)
+  const [seenLinked, setSeenLinked] = useState(linked)
+  if (linked !== seenLinked) {
+    setSeenLinked(linked)
+    if (linked) setOpenId(linked)
+  }
   const [sort, setSort] = useState<Sort>("recent")
 
   // Derived from the brand's orders on every render; the React compiler memoizes it.
@@ -64,7 +73,8 @@ export function CustomersIndex() {
 
   function close() {
     setOpenId(null)
-    if (params.get("customer")) window.history.replaceState(null, "", pathname)
+    // Drops ?customer= in place (Next's router follows), so the same link opens it again later.
+    if (linked) showInPlace(pathname)
   }
 
   function exportRows(list: BrandCustomer[]) {

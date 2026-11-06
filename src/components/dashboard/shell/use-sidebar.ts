@@ -38,18 +38,24 @@ export function isTypingTarget(target: EventTarget | null) {
   return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT"
 }
 
+/**
+ * Puts the saved collapsed preference on <html> if it isn't there yet. For documents the
+ * pre-paint script didn't run in, called from layout effects so it lands before the paint.
+ */
+export function applyStoredSidebar() {
+  try {
+    if (localStorage.getItem(SIDEBAR_STORAGE_KEY) === "collapsed" && !read()) document.documentElement.dataset.sidebar = "collapsed"
+  } catch {
+    // Storage unavailable: keep the default.
+  }
+}
+
 export function useSidebarCollapsed() {
   const collapsed = useSyncExternalStore(subscribe, read, () => false)
 
   // In development, Strict Mode's remount resets <html> to its JSX attributes and drops the
   // one the pre-paint script set. Re-apply it before paint. A no-op in production.
-  useLayoutEffect(() => {
-    try {
-      if (localStorage.getItem(SIDEBAR_STORAGE_KEY) === "collapsed" && !read()) document.documentElement.dataset.sidebar = "collapsed"
-    } catch {
-      // Storage unavailable: keep the default.
-    }
-  }, [])
+  useLayoutEffect(() => applyStoredSidebar(), [])
 
   const toggle = useCallback(() => write(!read()), [])
 

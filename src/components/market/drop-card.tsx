@@ -13,7 +13,24 @@ import { Countdown, DropStatus } from "./countdown"
 import { NotifyButton } from "./notify-button"
 import { SponsoredTag } from "./sponsored-tag"
 
-export function DropCard({ drop, className, layout = "stack", eager = false }: { drop: Drop; className?: string; layout?: "stack" | "wide"; /** Above the fold (e.g. a builder preview): load the image straight away. */ eager?: boolean }) {
+/** The card's 32px buttons get a 40px hit area without growing (the inset counts from inside the 1px border). */
+const hit = "after:absolute after:-inset-y-[5px] after:inset-x-0"
+
+export function DropCard({
+  drop,
+  className,
+  layout = "stack",
+  eager = false,
+  formatRelease,
+}: {
+  drop: Drop
+  className?: string
+  layout?: "stack" | "wide"
+  /** Above the fold (e.g. a builder preview): load the image straight away. */
+  eager?: boolean
+  /** How the countdown writes the release time, zone included (see Countdown). */
+  formatRelease?: (releaseMs: number) => string
+}) {
   const brand = brandById.get(drop.brandId)!
   const href = `/drops/${drop.slug}`
   return (
@@ -29,10 +46,12 @@ export function DropCard({ drop, className, layout = "stack", eager = false }: {
       <div className={cn("flex flex-1 flex-col gap-4 p-4", layout === "wide" && "md:p-6")}>
         <div className="flex items-center gap-2">
           <BrandMark brand={brand} size="xs" />
-          <Link href={`/brands/${brand.handle}`} className="relative z-10 truncate text-xs text-ink-2 hover:text-violet">{brand.name}</Link>
+          <Link href={`/brands/${brand.handle}`} className="relative z-10 min-w-0 py-3 -my-3 text-xs text-ink-2 transition-colors hover:text-violet">
+            <span className="block truncate">{brand.name}</span>
+          </Link>
         </div>
         <Link href={href} className="font-display text-display-sm text-ink">{drop.name}</Link>
-        <Countdown drop={drop} />
+        <Countdown drop={drop} formatRelease={formatRelease} />
         <div className="mt-auto flex items-center justify-between gap-3 pt-1">
           <p className="text-xs text-ink-3">{dropAccessLabel[drop.access]}</p>
           <DropAction drop={drop} href={href} />
@@ -46,10 +65,10 @@ export function DropCard({ drop, className, layout = "stack", eager = false }: {
 function DropAction({ drop, href }: { drop: Drop; href: string }) {
   const now = useNow(5000)
   const phase = now === null ? initialDropPhase(drop) : dropPhaseAt(drop, now, getDemoAnchor())
-  if (phase === "upcoming") return <NotifyButton drop={drop} size="sm" />
+  if (phase === "upcoming") return <NotifyButton drop={drop} size="sm" className={hit} />
   if (phase === "live") {
     return (
-      <Button asChild size="sm" variant="secondary" className="relative z-10">
+      <Button asChild size="sm" variant="secondary" className={cn("relative z-10", hit)}>
         <Link href={href}>
           Shop the drop
         </Link>

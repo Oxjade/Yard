@@ -32,6 +32,8 @@ export type NotificationCategory =
   | "campaign_review"
   | "payout_status"
   | "refund_request"
+  /** The review team's decision on the brand itself: approved, verified, restricted, suspended or reinstated. */
+  | "account_status"
   // admin
   | "merchant_application"
   | "product_report"
@@ -114,6 +116,7 @@ export const categoryLabel: Record<NotificationCategory, string> = {
   campaign_review: "Advertising",
   payout_status: "Payout",
   refund_request: "Refund",
+  account_status: "Account",
   merchant_application: "Brands",
   product_report: "Moderation",
   payment_failure: "Payments",

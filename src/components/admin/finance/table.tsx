@@ -1,9 +1,10 @@
 "use client"
 
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import { XIcon } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { focusBack } from "../marketplace/focus"
+import { useSearchParam } from "../marketplace/url-state"
 
 /*
  * Orders and Finance helpers. Tables are the shared DataTable (src/components/dashboard/data-table)
@@ -16,9 +17,20 @@ export { useSearchParam, writeParams, InPageLinks, useAdminReady, usePhone } fro
 /**
  * The record another screen linked to (`?focus=rf_…`), pinned above its table with its own
  * decisions, so it's found without hunting through pages. Dismissing it clears the link.
+ *
+ * It takes focus when it appears and whenever the link names another record (a palette pick,
+ * a link from another screen, a direct load), the way a record's sheet does, so keyboard and
+ * screen-reader users land on the record they picked. `recordId` defaults to `?focus=`.
  */
-export function FocusCallout({ title, meta, badge, actions, onDismiss, className }: { title: React.ReactNode; meta?: React.ReactNode; badge?: React.ReactNode; actions?: React.ReactNode; onDismiss: () => void; className?: string }) {
+export function FocusCallout({ title, meta, badge, actions, onDismiss, className, recordId }: { title: React.ReactNode; meta?: React.ReactNode; badge?: React.ReactNode; actions?: React.ReactNode; onDismiss: () => void; className?: string; recordId?: string | null }) {
   const ref = useRef<HTMLDivElement>(null)
+  const linked = useSearchParam("focus")
+  const record = recordId === undefined ? linked : recordId
+  useEffect(() => {
+    // Not while a dialog is open (one of its own decisions, say): that dialog keeps focus.
+    if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')) return
+    ref.current?.focus()
+  }, [record])
   // The callout leaves with its dismiss button, so focus moves to the table it sits above:
   // its search box, else the panel's heading.
   function dismiss() {
@@ -28,7 +40,7 @@ export function FocusCallout({ title, meta, badge, actions, onDismiss, className
     requestAnimationFrame(() => focusBack(null, () => host?.querySelector<HTMLElement>('input[type="search"]') ?? host?.querySelector<HTMLElement>("h2")))
   }
   return (
-    <div ref={ref} role="region" aria-label="Linked record" className={cn("admin-inset flex flex-col gap-3 border-violet/40 bg-purple/[0.07] p-3 sm:flex-row sm:items-center", className)}>
+    <div ref={ref} role="region" aria-label="Linked record" tabIndex={-1} className={cn("admin-inset flex scroll-mt-24 scroll-mb-4 flex-col gap-3 border-violet/40 bg-purple/[0.07] p-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet sm:flex-row sm:items-center", className)}>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] text-violet">Linked record</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-ink">

@@ -442,7 +442,7 @@ function Editor() {
 
       {/* Phones and tablets: the preview opens over the controls, and Publish stays in reach. */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
-        <div className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-xl items-center gap-2 rounded-2xl py-2 pr-2 pl-3">
+        <div data-toast-avoid="" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-xl items-center gap-2 rounded-2xl py-2 pr-2 pl-3">
           {/* A short copy of the header's status: not a live region, so it isn't announced twice. */}
           <span className="min-w-0 flex-1 truncate">
             <StatusBadge tone={status.tone} className="max-w-full">{status.short}</StatusBadge>

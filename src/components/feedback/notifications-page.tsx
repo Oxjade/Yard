@@ -38,19 +38,19 @@ export function NotificationsList({ audience }: { audience: Audience }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filter">
           {(["all", "unread"] as const).map((f) => (
-            <button key={f} role="tab" aria-selected={filter === f} type="button" onClick={() => setFilter(f)} className={cn("relative isolate h-8 rounded-full border px-3 text-[12.5px] transition-colors", filter === f ? "border-purple text-ink" : "border-white/10 text-ink-2 hover:text-ink")}>
+            <button key={f} role="tab" aria-selected={filter === f} type="button" onClick={() => setFilter(f)} className={cn("relative isolate h-10 rounded-full border px-3.5 text-[12.5px] transition-colors sm:h-8 sm:px-3 pointer-coarse:h-10 pointer-coarse:px-3.5", filter === f ? "border-purple text-ink" : "border-white/10 text-ink-2 hover:text-ink")}>
               {filter === f ? <motion.span layoutId={`nf-${audience}`} transition={spring.indicator} className="absolute inset-0 -z-10 rounded-full bg-purple" /> : null}
               {f === "all" ? `All ${items.length}` : `Unread ${unread}`}
             </button>
           ))}
           <span className="mx-1 w-px self-stretch bg-white/10" aria-hidden />
           {["all", ...categories].map((c) => (
-            <button key={c} type="button" onClick={() => setCategory(c)} aria-pressed={category === c} className={cn("h-8 rounded-full border px-3 text-[12.5px] transition-colors", category === c ? "border-white/30 bg-white/8 text-ink" : "border-white/10 text-ink-2 hover:text-ink")}>
+            <button key={c} type="button" onClick={() => setCategory(c)} aria-pressed={category === c} className={cn("h-10 rounded-full border px-3.5 text-[12.5px] transition-colors sm:h-8 sm:px-3 pointer-coarse:h-10 pointer-coarse:px-3.5", category === c ? "border-white/30 bg-white/8 text-ink" : "border-white/10 text-ink-2 hover:text-ink")}>
               {c === "all" ? "Every type" : c}
             </button>
           ))}
         </div>
-        <Button size="sm" variant="secondary" onClick={() => markAllRead(audience)} disabled={!unread}>
+        <Button size="sm" variant="secondary" onClick={() => markAllRead(audience)} disabled={!unread} className="h-10 sm:h-8 pointer-coarse:h-10">
           <CheckCheck /> Mark all as read
         </Button>
       </div>

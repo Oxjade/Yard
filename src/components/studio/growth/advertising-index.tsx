@@ -26,6 +26,14 @@ import { addDays, brandZone, campaignMetrics, campaignPriceUsd, campaignSpends, 
 
 type Tab = "current" | "past"
 
+/** Why Edit is unavailable for a campaign that's booked or has run. */
+const lockedReason: Partial<Record<Campaign["status"], string>> = {
+  scheduled: "Booked campaigns can't change.",
+  active: "Running campaigns can't change.",
+  paused: "Paused campaigns can't change mid-run.",
+  completed: "Finished campaigns can't change.",
+}
+
 export function AdvertisingIndex() {
   const ready = useGrowthReady()
   const now = useNow(60_000)
@@ -60,7 +68,8 @@ function AdvertisingView({ now }: { now: number }) {
   const [lastWithdrawing, setLastWithdrawing] = useState<Campaign | null>(null)
   if (withdrawing && withdrawing !== lastWithdrawing) setLastWithdrawing(withdrawing)
   const asked = withdrawing ?? lastWithdrawing
-  const withdrawFocus = useFocusReturn(() => (asked ? document.querySelector<HTMLElement>(`a[href="/studio/advertising/${asked.id}"]`) : null))
+  // Opened from the row menu: closing lands on that row's menu button, as in the other tables; the campaign link if the row has gone.
+  const withdrawFocus = useFocusReturn(() => (asked ? (document.querySelector<HTMLElement>(`[data-row-actions="${CSS.escape(asked.id)}"]`) ?? document.querySelector<HTMLElement>(`a[href="/studio/advertising/${asked.id}"]`)) : null))
 
   function withdrawAndEdit(c: Campaign) {
     const now = useStudio.getState().campaigns.find((x) => x.id === c.id)
@@ -121,8 +130,8 @@ function AdvertisingView({ now }: { now: number }) {
   const rowActions: RowAction<Campaign>[] = [
     { label: "View results", icon: Chart, onSelect: (c) => router.push(`/studio/advertising/${c.id}`) },
     // In review: Edit explains that it has to be withdrawn first, and does both on confirm.
-    // Booked and running campaigns can't change; their results page says so.
-    { label: "Edit", icon: Pencil, onSelect: (c) => (c.status === "in_review" ? setWithdrawing(c) : router.push(`/studio/advertising/${c.id}/edit`)), disabled: (c) => c.status !== "draft" && c.status !== "rejected" && c.status !== "in_review" },
+    // Booked, running and finished campaigns can't change; the menu says why.
+    { label: "Edit", icon: Pencil, onSelect: (c) => (c.status === "in_review" ? setWithdrawing(c) : router.push(`/studio/advertising/${c.id}/edit`)), disabled: (c) => c.status !== "draft" && c.status !== "rejected" && c.status !== "in_review", disabledReason: (c) => lockedReason[c.status] },
   ]
 
   return (

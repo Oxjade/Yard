@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LayoutGroup, motion } from "motion/react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { followInPlace } from "@/hooks/use-search-param"
 import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { ShellNavGroup, ShellNavItem } from "./types"
@@ -100,7 +101,12 @@ function NavItem({
   const link = (
     <Link
       href={item.href}
-      onClick={onNavigate}
+      // The section you're on opens in its default view, from the top, without a remount; a
+      // Next navigation to the same page would leave its URL-linked tab and filters showing.
+      onClick={(e) => {
+        followInPlace(e, item.href)
+        onNavigate?.()
+      }}
       aria-current={active ? "page" : undefined}
       className={cn(
         "group/nav relative isolate flex w-full items-center gap-3 rounded-xl pr-2 pl-3 transition-colors duration-150",

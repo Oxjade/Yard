@@ -44,7 +44,7 @@ export function useRestrictedListings() {
 const plural = (n: number) => `${n} ${n === 1 ? "listing" : "listings"}`
 
 /** Every listing on the marketplace, so Trust and Safety can restrict one without waiting for a report. */
-export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void; loading: boolean }) {
+export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | Promise<boolean>; loading: boolean }) {
   const router = useRouter()
   const phone = usePhone()
   const moderation = useAdmin((s) => s.moderation)
@@ -57,23 +57,19 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void; lo
   const removed = useMemo(() => new Set(moderation.filter((m) => m.status === "removed" && m.productId).map((m) => m.productId!)), [moderation])
   const rows = useMemo(() => products.filter((p) => category === "all" || p.category === category).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.name.localeCompare(b.name)), [category])
   const isRestricted = (p: Product) => restricted.has(listingTarget(p))
+  /** Whether restricting (lift false) or lifting (lift true) can change this listing. */
+  const can = (lift: boolean) => (p: Product) => !removed.has(p.id) && isRestricted(p) === lift
 
+  // The row menu and the bulk bar only offer a decision for listings it can change. What `ask`
+  // returns goes back to the bulk bar, so a decision that reports a cancel keeps the selection.
   function decide(lift: boolean, list: Product[]) {
-    const items = list.filter((p) => !removed.has(p.id) && isRestricted(p) === lift)
-    if (!items.length) {
-      const n = list.length
-      toast.info(
-        lift
-          ? n === 1 ? "The selected listing isn't restricted, so no restriction was lifted." : `None of the ${n} selected listings is restricted, so no restriction was lifted.`
-          : n === 1 ? "The selected listing is already restricted or removed, so nothing was restricted." : `All ${n} selected listings are already restricted or removed, so nothing was restricted.`,
-      )
-      return
-    }
+    const items = list.filter(can(lift))
+    if (!items.length) return false
     const one = items.length === 1 ? items[0] : null
     const skipped = list.length - items.length
     // The Studio brand's merchant is the one reader outside the Control Center in this build.
     const studio = items.map((p) => brandById.get(p.brandId)).find((b) => b && isStudioBrand(b))
-    ask({
+    return ask({
       title: lift ? (one ? `Lift the restriction on ${one.name}?` : `Lift the restriction on ${plural(items.length)}?`) : one ? `Restrict ${one.name}?` : `Restrict ${plural(items.length)}?`,
       description: [
         lift ? "Lifted listings can show in discovery, search and the brand's storefront again." : "Restricted listings are held back from discovery, search and the storefront and can't be bought. The brand keeps them in Studio.",
@@ -132,12 +128,12 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void; lo
 
   const rowActions: RowAction<Product>[] = [
     { label: "View listing", icon: ArrowSquareOutIcon, onSelect: (p) => router.push(`/products/${p.slug}`) },
-    { label: "Restrict listing", icon: ShieldWarningIcon, destructive: true, separatorBefore: true, disabled: (p) => removed.has(p.id) || isRestricted(p), onSelect: (p) => decide(false, [p]) },
-    { label: "Lift restriction", icon: ShieldCheckIcon, disabled: (p) => removed.has(p.id) || !isRestricted(p), onSelect: (p) => decide(true, [p]) },
+    { label: "Restrict listing", icon: ShieldWarningIcon, destructive: true, separatorBefore: true, disabled: (p) => !can(false)(p), disabledReason: (p) => (removed.has(p.id) ? "Removed in moderation." : "Already restricted."), onSelect: (p) => decide(false, [p]) },
+    { label: "Lift restriction", icon: ShieldCheckIcon, disabled: (p) => !can(true)(p), disabledReason: (p) => (removed.has(p.id) ? "Removed in moderation." : "It isn't restricted."), onSelect: (p) => decide(true, [p]) },
   ]
   const bulkActions: BulkAction<Product>[] = [
-    { label: "Restrict", destructive: true, onSelect: (list) => decide(false, list) },
-    { label: "Lift restriction", onSelect: (list) => decide(true, list) },
+    { label: "Restrict", destructive: true, appliesTo: can(false), disabledReason: "The selected listings are already restricted or removed.", onSelect: (list) => decide(false, list) },
+    { label: "Lift restriction", appliesTo: can(true), disabledReason: "None of the selected listings is restricted.", onSelect: (list) => decide(true, list) },
   ]
 
   return (

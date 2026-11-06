@@ -285,10 +285,32 @@ export type MerchantOrder = {
   shippingMethod: string
   tracking?: { carrier: string; number: string; url?: string }
   timeline: { at: string; label: string }[]
-  /** The shopper's return request, once they've made one. */
-  returnRequest?: { at: string; reason: string; reasonLabel: string; note?: string; variantIds: string[] }
+  /** The shopper's return request, once they've made one, and the decision on it once there is one. */
+  returnRequest?: { at: string; reason: string; reasonLabel: string; note?: string; variantIds: string[]; decision?: ReturnDecision }
+  /**
+   * A refund approved on this order, in the order currency (minor units, like the order's other
+   * figures), for the returned lines. A partial refund keeps the order delivered with payment
+   * "partially_refunded". Approved and recorded: no payment provider is connected in this build,
+   * so nothing has been sent.
+   */
+  refund?: { amount: number; variantIds: string[]; at: string }
   /** Why the brand cancelled, when it did. */
   cancelReason?: string
+}
+
+/** The decision on a shopper's return request: the brand's (in Studio) or the platform's (in Finance). */
+export type ReturnDecision = {
+  status: "approved" | "declined"
+  at: string
+  by: "brand" | "platform"
+  /** A decline's reason, shown to the shopper. */
+  reason?: string
+  /** An approval's refund, in the order currency (minor units). */
+  amount?: number
+  /** True when only some of the order's items are refunded. */
+  partial?: boolean
+  /** The audit entry a platform decision wrote, so its notifications are keyed by that decision. */
+  ref?: string
 }
 
 export type CheckoutGroup = {

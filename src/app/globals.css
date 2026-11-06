@@ -20,6 +20,70 @@
 }
 
 /*
+ * The same for Archivo, the display face, which is only ever set at a fixed width and weight
+ * (font-display / font-metric / font-label / font-wide, all 600–800). Arial has no width
+ * axis, so each width band gets its own face, scaled from Arial Bold with Next's formula at
+ * that utility's instance: size-adjust from the average glyph width (capitals for the
+ * uppercase utilities, tabular figures for metrics), ascent/descent overrides divided by it,
+ * from the variable woff2's metrics (UPM 1000, ascent 878, descent 210, no line gap).
+ */
+/* .font-display: 62% width, weight 800, capitals */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("Helvetica Bold");
+  font-weight: 100 1000;
+  font-stretch: 50% 67%;
+  size-adjust: 68.79%;
+  ascent-override: 127.63%;
+  descent-override: 30.53%;
+  line-gap-override: 0.00%;
+}
+/* .font-metric: 72%, 700, tabular figures */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("Helvetica Bold");
+  font-weight: 100 1000;
+  font-stretch: 67% 86%;
+  size-adjust: 84.21%;
+  ascent-override: 104.26%;
+  descent-override: 24.94%;
+  line-gap-override: 0.00%;
+}
+/* Normal width (the font's default instance, 600) */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("Helvetica Bold");
+  font-weight: 100 1000;
+  font-stretch: 86% 109%;
+  size-adjust: 95.02%;
+  ascent-override: 92.40%;
+  descent-override: 22.10%;
+  line-gap-override: 0.00%;
+}
+/* .font-label: 118%, 600, sentence case */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("Helvetica Bold");
+  font-weight: 100 1000;
+  font-stretch: 109% 121%;
+  size-adjust: 114.44%;
+  ascent-override: 76.72%;
+  descent-override: 18.35%;
+  line-gap-override: 0.00%;
+}
+/* .font-wide and the expanded storefront type: 125%, 700, capitals */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("Helvetica Bold");
+  font-weight: 100 1000;
+  font-stretch: 121% 200%;
+  size-adjust: 129.10%;
+  ascent-override: 68.01%;
+  descent-override: 16.27%;
+  line-gap-override: 0.00%;
+}
+
+/*
  * NOCTURNE design tokens — the single place for shared values.
  * Palette (2026-11-05): Black #080808 · Purple #6D19D9 · Yellow #F5FF00 · White #F5F5F5 / Grey #858585.
  * Distribution: ~75% black, ~15% purple, ~5% yellow, ~5% white/grey.
@@ -56,7 +120,7 @@
 
   /* Typefaces */
   --font-sans: "Space Grotesk Variable", "Space Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Archivo Variable", "Arial Narrow", ui-sans-serif, sans-serif;
+  --font-display: "Archivo Variable", "Archivo Fallback", "Arial Narrow", ui-sans-serif, sans-serif;
   --font-heading: var(--font-sans);
 
   /* Display scale (condensed Archivo) */

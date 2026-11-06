@@ -6,13 +6,21 @@ import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
+import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
 import { priceCart } from "@/lib/cart"
 import { formatMoney } from "@/lib/money"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
 import { BagGroups } from "./bag-contents"
 
-/** The bag drawer: a floating Liquid Glass panel that springs in from the right. */
+/** The header's bag button: where focus lands when whatever opened the drawer (or the sign-in prompt) has gone. */
+export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Bag,"]')).find(canTakeFocus)
+
+/**
+ * The bag drawer: a floating Liquid Glass panel that springs in from the right. On close,
+ * focus goes back to what opened it (the bag button, a product's "View bag"), or to the bag
+ * button when that control has gone (the "Added to bag" bubble, a toast's action).
+ */
 export function BagDrawer() {
   const router = useRouter()
   const isOpen = useCart((s) => s.isOpen)
@@ -23,6 +31,7 @@ export function BagDrawer() {
   const requireAuth = useSession((s) => s.requireAuth)
   const bag = priceCart(lines, shipTo, currency)
   const close = () => setOpen(false)
+  const focus = useFocusReturn(bagButton)
 
   function checkout() {
     const go = () => {
@@ -46,7 +55,7 @@ export function BagDrawer() {
                 transition={{ duration: 0.25 }}
               />
             </DialogPrimitive.Overlay>
-            <DialogPrimitive.Content asChild forceMount aria-describedby={undefined}>
+            <DialogPrimitive.Content asChild forceMount aria-describedby={undefined} onCloseAutoFocus={focus.onCloseAutoFocus}>
               <motion.div
                 className="glass-strong glass-sheen fixed inset-y-2 right-2 z-50 flex w-[calc(100%-1rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl outline-none sm:inset-y-3 sm:right-3"
                 initial={{ x: "105%" }}
@@ -54,6 +63,7 @@ export function BagDrawer() {
                 exit={{ x: "105%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.9 }}
               >
+                {focus.probe}
                 <header className="flex items-center justify-between px-5 pt-5 pb-4">
                   <DialogPrimitive.Title className="flex items-baseline gap-2">
                     <span className="font-display text-display-sm">Bag</span>
@@ -71,7 +81,7 @@ export function BagDrawer() {
                     </span>
                     <div>
                       <p className="text-base text-ink">Your bag is empty</p>
-                      <p className="mt-1 text-sm text-ink-2">Add pieces from any brand — they check out together.</p>
+                      <p className="mt-1 text-sm text-ink-2">Add pieces from any brand and they check out together, one order per brand.</p>
                     </div>
                     <Button asChild variant="primary" onClick={close}>
                       <Link href="/brands">Discover brands</Link>
@@ -87,7 +97,7 @@ export function BagDrawer() {
                       ) : null}
                       <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} />
                     </div>
-                    <footer className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
+                    <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
                       <dl className="space-y-1.5 text-sm">
                         <div className="flex justify-between text-ink-2">
                           <dt>Subtotal</dt>

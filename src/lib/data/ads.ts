@@ -1,4 +1,6 @@
 import type { CurrencyCode } from "@/config/markets"
+import { brandById } from "./brands"
+import { countryTimeZone, dateIn, shiftDate } from "./zones"
 
 /**
  * Advertising. Fixed prices to start (blueprint §10.6); admins can change them.
@@ -54,6 +56,19 @@ export const campaigns: Campaign[] = [
   { id: "cmp_ls_prod", brandId: "b_lagos_static", type: "sponsored-product", name: "Moto jacket in Streetwear", status: "completed", targetIds: ["p_static_moto_jacket"], audience: { categories: ["streetwear"], countries: ["NG", "GH", "GB"] }, placements: ["category-grid", "search-results"], startDaysFromToday: -30, days: 7, budget: 3500, currency: "USD", results: { impressions: 11340, reach: 8120, clicks: 356, productViews: 356, addToCarts: 31, purchases: 8, revenue: 68_000 } },
   { id: "cmp_gl_brand", brandId: "b_gridlock_supply", type: "sponsored-brand", name: "Gridlock — restock week", status: "rejected", targetIds: ["b_gridlock_supply"], audience: { categories: ["streetwear"], countries: ["US"] }, placements: ["home-featured-brands"], startDaysFromToday: 2, days: 5, budget: 7500, currency: "USD", results: { impressions: 0, reach: 0, clicks: 0, productViews: 0, addToCarts: 0, purchases: 0, revenue: 0 }, rejectionReason: "Creative uses a third-party logo. Replace the cover image and resubmit." },
 ]
+
+/**
+ * A campaign's first and last day as calendar dates in the brand's own time zone ("2026-11-07"),
+ * counted from `now`: `startDaysFromToday` is days from the brand's today, as the brand booked it
+ * in Studio. The one rule Studio's Advertising pages, the Admin review queue and decision, and the
+ * merchant's notifications all use, so a campaign never starts on two different days.
+ */
+export function campaignDates(c: Pick<Campaign, "brandId" | "startDaysFromToday" | "days">, now: number) {
+  const country = brandById.get(c.brandId)?.country
+  const today = dateIn(country ? countryTimeZone[country] : "UTC", now)
+  const start = shiftDate(today, c.startDaysFromToday)
+  return { today, start, end: shiftDate(start, Math.max(1, c.days) - 1) }
+}
 
 /** Brands currently paying for featured-brand slots. */
 export const sponsoredBrandIds = campaigns.filter((c) => c.type === "sponsored-brand" && c.status === "active").map((c) => c.brandId)

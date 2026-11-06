@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { bagButton } from "@/components/market/bag-drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,8 +13,8 @@ import { site } from "@/config/site"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
   follow: { title: "Sign in to follow brands", body: "Following puts their new products, drops and stories in your Following feed." },
-  save: { title: "Sign in to save pieces", body: "Your wishlist is kept on your account, on every device." },
-  notify: { title: "Sign in to get drop alerts", body: "We'll let you know the moment it goes live — by email or push, your choice." },
+  save: { title: "Sign in to save pieces", body: "Save pieces from any brand and keep them in one place." },
+  notify: { title: "Sign in to get drop alerts", body: "Reminders and draw entries are saved in this browser, and you'll see an alert in Notifications when the drop opens. Email and push aren't connected in this build." },
   checkout: { title: "Sign in to check out", body: "One account for every brand, so your orders and tracking live in one place." },
   account: { title: `Sign in to ${site.name}`, body: "Follow brands, save pieces and track every order in one place." },
 }
@@ -41,18 +42,46 @@ export function useDemoSignIn() {
     signIn({ id: "u_ada", name, email, provider })
 }
 
+const EMAIL = /^\S+@\S+\.\S+$/
+
+type AuthErrors = { email?: string; password?: string }
+
+function emailError(email: string) {
+  if (!email.trim()) return "Enter your email address."
+  if (!EMAIL.test(email.trim())) return "Enter an email address like name@example.com."
+}
+
+function passwordError(password: string) {
+  if (!password) return "Enter your password."
+  if (password.length < 8) return "Use at least 8 characters for your password."
+}
+
+/**
+ * Social and email sign-in. Email and password are checked together on Continue: each error
+ * sits under its own field, the first invalid field takes focus, and typed values stay. An
+ * error clears as soon as its field is fixed. Field ids are scoped to the instance: /sign-in and
+ * /checkout render their own form while the header can open the prompt's form over it.
+ */
 export function AuthForm({ onDone }: { onDone?: () => void }) {
   const demoSignIn = useDemoSignIn()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
+  const [errors, setErrors] = useState<AuthErrors>({})
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+  const uid = useId()
+  const ids = { email: `${uid}-email`, emailError: `${uid}-email-error`, password: `${uid}-password`, passwordError: `${uid}-password-error` }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Enter a valid email address.")
-    if (password.length < 8) return setError("Use at least 8 characters for your password.")
-    setError(null)
-    demoSignIn("email", email.split("@")[0].replace(/\W/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), email)
+    const next: AuthErrors = { email: emailError(email), password: passwordError(password) }
+    setErrors(next)
+    if (next.email || next.password) {
+      window.requestAnimationFrame(() => (next.email ? emailRef : passwordRef).current?.focus())
+      return
+    }
+    const address = email.trim()
+    demoSignIn("email", address.split("@")[0].replace(/\W/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), address)
     onDone?.()
   }
 
@@ -69,14 +98,43 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
       </div>
       <form onSubmit={submit} className="grid gap-3" noValidate>
         <div className="grid gap-1.5">
-          <Label htmlFor="auth-email">Email</Label>
-          <Input id="auth-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!error && !/^\S+@\S+\.\S+$/.test(email)} className="h-11" />
+          <Label htmlFor={ids.email}>Email</Label>
+          <Input
+            ref={emailRef}
+            id={ids.email}
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              if (errors.email && !emailError(e.target.value)) setErrors((x) => ({ ...x, email: undefined }))
+            }}
+            aria-invalid={!!errors.email}
+            aria-describedby={errors.email ? ids.emailError : undefined}
+            className="h-11"
+          />
+          {errors.email ? <p id={ids.emailError} className="text-xs text-danger">{errors.email}</p> : null}
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="auth-password">Password</Label>
-          <Input id="auth-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={!!error && password.length < 8} className="h-11" />
+          <Label htmlFor={ids.password}>Password</Label>
+          <Input
+            ref={passwordRef}
+            id={ids.password}
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              if (errors.password && !passwordError(e.target.value)) setErrors((x) => ({ ...x, password: undefined }))
+            }}
+            aria-invalid={!!errors.password}
+            aria-describedby={errors.password ? ids.passwordError : undefined}
+            className="h-11"
+          />
+          {errors.password ? <p id={ids.passwordError} className="text-xs text-danger">{errors.password}</p> : null}
         </div>
-        {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
         <Button type="submit" variant="primary" size="lg" className="w-full">Continue</Button>
       </form>
     </div>
@@ -87,12 +145,18 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
 export function AuthPrompt() {
   const prompt = useSession((s) => s.authPrompt)
   const dismiss = useSession((s) => s.dismissAuthPrompt)
-  const intent = prompt?.intent ?? "account"
+  // Kept through the closing animation, so the title doesn't change as the dialog fades.
+  const [intent, setIntent] = useState<AuthIntent>(prompt?.intent ?? "account")
+  if (prompt && prompt.intent !== intent) setIntent(prompt.intent)
   const pathname = usePathname()
 
+  // DialogContent hands focus back to what opened the prompt (Checkout, Follow, Save) when it
+  // closes, whether the shopper dismissed it or signed in and the action went ahead. When that
+  // control has gone (Checkout in the "Added to bag" bubble, which closes as the prompt opens),
+  // focus goes to the header's bag button the bubble pointed at.
   return (
     <Dialog open={!!prompt} onOpenChange={(o) => !o && dismiss()}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[420px]" returnFocus={bagButton}>
         <DialogHeader>
           <DialogTitle className="font-display text-display-sm">{copy[intent].title}</DialogTitle>
           <DialogDescription className="text-ink-2">{copy[intent].body}</DialogDescription>

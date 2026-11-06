@@ -1,8 +1,8 @@
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
-import { site } from "@/config/site"
-import { shoppers, type ShopperProfile } from "@/lib/data/orders"
-import { DEMO_TODAY, hash, pick } from "@/lib/data/seed"
+import { demoCustomer, sampleReturnRequest, shoppers, type ShopperProfile } from "@/lib/data/orders"
+import { DEMO_TODAY, hash } from "@/lib/data/seed"
 import { convert } from "@/lib/money"
+import { COMMISSION_RATE, orderEarnings, partialRefund, returnRefund } from "@/lib/payouts"
 import type { MerchantOrder, MerchantOrderStatus, PaymentStatus } from "@/lib/data/types"
 
 /**
@@ -13,7 +13,7 @@ import type { MerchantOrder, MerchantOrderStatus, PaymentStatus } from "@/lib/da
 /** The demo's "now" — the sample orders are placed relative to it. */
 export const DEMO_NOW = new Date(`${DEMO_TODAY}T12:00:00Z`).getTime()
 export const DAY_MS = 86_400_000
-export const COMMISSION_RATE = site.commissionRate
+export { COMMISSION_RATE, partialRefund }
 
 /* ---------- Dates ---------- */
 
@@ -100,6 +100,17 @@ export const paymentMeta: Record<PaymentStatus, { label: string; tone: Tone }> =
   partially_refunded: { label: "Partly refunded", tone: "attention" },
 }
 
+/**
+ * The payment badge for an order. A refund approved in this browser (on a return, or by cancelling
+ * a paid order) is recorded but not sent, since no payment provider is connected, so it says so.
+ */
+export function paymentView(o: Pick<MerchantOrder, "status" | "paymentStatus" | "refund" | "cancelReason">): { label: string; tone: Tone } {
+  const state = paymentState(o)
+  if (state === "partially_refunded" && o.refund) return { label: "Partial refund recorded", tone: "info" }
+  if (state === "refunded" && (o.refund || (o.status === "cancelled" && o.cancelReason && o.paymentStatus === "refunded"))) return { label: "Refund recorded", tone: "muted" }
+  return paymentMeta[state]
+}
+
 export const itemCount = (o: MerchantOrder) => o.lines.reduce((s, l) => s + l.quantity, 0)
 
 /** The last day the order should leave the studio, from the brand's processing time. */
@@ -110,39 +121,13 @@ export function shipBy(o: MerchantOrder, processingDays: [number, number]) {
 /* ---------- Payout estimate ---------- */
 
 /**
- * What a partial refund took back: the lines on the shopper's return request, once the brand
- * approved part of an order (it stays delivered, payment "partially_refunded").
- */
-export function partialRefund(o: Pick<MerchantOrder, "lines" | "paymentStatus" | "returnRequest">) {
-  const r = o.returnRequest
-  if (o.paymentStatus !== "partially_refunded" || !r) return null
-  const lines = o.lines.filter((l) => r.variantIds.includes(l.variantId))
-  if (!lines.length || lines.length === o.lines.length) return null
-  const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
-  return { lines, subtotal, commissionBack: Math.round(subtotal * COMMISSION_RATE) }
-}
-
-/**
  * Subtotal minus the 5% commission. Shipping and tax are not part of the brand's earnings here.
  * A partial refund takes the returned items off, net of the commission that comes back on them.
+ * The same figure the Payouts page and the sidebar card add up (lib/payouts).
  */
-export function payoutEstimate(o: MerchantOrder) {
-  const voided = o.status === "cancelled" || o.status === "refunded"
-  const commission = o.commission || Math.round(o.subtotal * COMMISSION_RATE)
-  const refunded = voided ? null : partialRefund(o)
-  const payout = voided ? 0 : o.subtotal - commission - (refunded ? refunded.subtotal - refunded.commissionBack : 0)
-  return { subtotal: o.subtotal, commission, payout, voided, refunded }
-}
+export const payoutEstimate = (o: MerchantOrder) => orderEarnings(o)
 
 /* ---------- Refund requests ---------- */
-
-/** Reasons for the sample refund requests that came with the seeded orders. */
-const SAMPLE_REFUND_REASONS = [
-  { reason: "Size too small", note: "The fit runs smaller than the size chart. I'd like to send it back." },
-  { reason: "Not as described", note: "The colour is much darker than in the photos." },
-  { reason: "Damaged in transit", note: "The parcel arrived torn and the print is scuffed on the back." },
-  { reason: "Changed my mind", note: "Ordered two of the same by mistake." },
-] as const
 
 export type RefundRequestView = {
   reason: string
@@ -160,16 +145,13 @@ export type RefundRequestView = {
 export function refundRequest(o: MerchantOrder): RefundRequestView {
   const r = o.returnRequest
   if (r) {
-    const lines = o.lines.filter((l) => r.variantIds.includes(l.variantId))
-    const chosen = lines.length ? lines : o.lines
-    const items = chosen.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
     // Returning everything refunds what was paid, shipping included.
-    const amount = chosen.length === o.lines.length ? o.total : items
-    return { reason: r.reasonLabel, note: r.note, at: r.at, lines: chosen, amount, sample: false }
+    const refund = returnRefund(o, r.variantIds)
+    return { reason: r.reasonLabel, note: r.note, at: r.at, lines: refund.lines, amount: refund.amount, sample: false }
   }
-  const s = pick(`refund-${o.id}`, SAMPLE_REFUND_REASONS)
-  const at = [...o.timeline].reverse().find((t) => /refund|return/i.test(t.label))?.at ?? o.placedAt
-  return { reason: s.reason, note: s.note, at, lines: o.lines, amount: o.total, sample: true }
+  // The sample request Finance's refund queue shows too, and a decision records on the order.
+  const s = sampleReturnRequest(o)
+  return { reason: s.reasonLabel, note: s.note, at: s.at, lines: o.lines, amount: o.total, sample: true }
 }
 
 /* ---------- Fulfilment ---------- */
@@ -230,7 +212,7 @@ export type BrandCustomer = {
   segment: Segment
 }
 
-const shopperById = new Map<string, ShopperProfile>(shoppers.map((s) => [s.id, s]))
+const shopperById = new Map<string, ShopperProfile>([...shoppers.map((s) => [s.id, s] as const), [demoCustomer.id, { id: demoCustomer.id, name: demoCustomer.name, email: demoCustomer.email, city: demoCustomer.city, country: demoCustomer.country }]])
 export const shopperName = (id: string) => shopperById.get(id)?.name ?? "Customer"
 
 export function vipThreshold(currency: CurrencyCode) {

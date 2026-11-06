@@ -3,9 +3,9 @@
 import { useId } from "react"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
+import { useDropAddBlock } from "@/components/market/use-drop-add-block"
 import { cn } from "@/lib/utils"
 import type { Drop, Product } from "@/lib/data/types"
-import { useDropAddBlock } from "./use-drop-add-block"
 import { releasesIn } from "./use-drop-phase"
 
 /**
@@ -13,11 +13,15 @@ import { releasesIn } from "./use-drop-phase"
  * disabled and a tap explains when it opens. While live, adding works up to the per-customer
  * limit across the whole drop. Once sold out, adding stays closed; once ended, leftover pieces
  * are ordinary catalogue items again. The same rules hold on every other card for these pieces
- * (useDropAddBlock), so the storefront and collections never let one in early.
+ * (QuickAdd applies useDropAddBlock from the product's dropId), so the storefront and
+ * collections never let one in early. Here the page applies them once, on the 1-second clock
+ * its note uses, and passes the result down (`false` while adding is open) so the cards and the
+ * note always agree.
  */
 export function DropProducts({ drop, products, brandName }: { drop: Drop; products: Product[]; brandName: string }) {
   const noteId = useId()
-  const { phase, now, release, inBag, atLimit, addBlocked } = useDropAddBlock(drop, { describedBy: noteId, intervalMs: 1000, onDropPage: true })
+  const { phase, now, release, inBag, atLimit, addBlocked: blocked } = useDropAddBlock(drop, { describedBy: noteId, intervalMs: 1000, onDropPage: true })
+  const addBlocked = blocked ?? false
 
   // The time left changes every minute, so it stays outside the live region; only the status
   // sentence (preview, live, at the limit, sold out) is announced when it changes.

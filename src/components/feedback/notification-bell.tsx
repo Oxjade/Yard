@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
 import { BellIcon } from "@phosphor-icons/react"
-import { WarningIcon as AlertTriangle, SealCheckIcon as BadgeCheck, BellIcon as Bell, BellSlashIcon as BellOff, CubeIcon as Box, ChecksIcon as CheckCheck, CreditCardIcon as CreditCard, FlagIcon as Flag, HeartIcon as Heart, MegaphoneIcon as Megaphone, PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, ShieldWarningIcon as ShieldAlert, ShoppingBagOpenIcon as ShoppingBag, SparkleIcon as Sparkles, TruckIcon as Truck, UserPlusIcon as UserPlus, WalletIcon as Wallet, LightningIcon as Zap } from "@phosphor-icons/react"
+import { WarningIcon as AlertTriangle, SealCheckIcon as BadgeCheck, BellIcon as Bell, BellSlashIcon as BellOff, CubeIcon as Box, ChecksIcon as CheckCheck, CreditCardIcon as CreditCard, EnvelopeSimpleIcon, EnvelopeSimpleOpenIcon, FlagIcon as Flag, HeartIcon as Heart, MegaphoneIcon as Megaphone, PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, ShieldWarningIcon as ShieldAlert, ShoppingBagOpenIcon as ShoppingBag, SparkleIcon as Sparkles, StorefrontIcon, TruckIcon as Truck, UserPlusIcon as UserPlus, WalletIcon as Wallet, LightningIcon as Zap } from "@phosphor-icons/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { spring } from "@/lib/motion"
@@ -30,6 +30,7 @@ const icons: Partial<Record<NotificationCategory, React.ComponentType<{ classNam
   campaign_review: Megaphone,
   payout_status: Wallet,
   refund_request: RotateCcw,
+  account_status: StorefrontIcon,
   merchant_application: BadgeCheck,
   product_report: Flag,
   payment_failure: CreditCard,
@@ -54,17 +55,25 @@ export function relativeTime(iso: string, now = Date.now()) {
 
 export const notificationsHref: Record<Audience, string> = { customer: "/notifications", merchant: "/studio/notifications", admin: "/admin/notifications" }
 
+/**
+ * One notification: the row opens it (and marks it read); a second control flips read and
+ * unread. With a mouse that control is a small "Mark read" pill that appears over the row's
+ * corner on hover or keyboard focus, so desktop rows stay quiet. On touch, where nothing
+ * hovers, it is always there as a 40px envelope at the row's edge: closed with the unread
+ * dot while unread, open once read.
+ */
 export function NotificationRow({ n, onOpen, compact = false }: { n: AppNotification; onOpen?: (n: AppNotification) => void; compact?: boolean }) {
   const markRead = useNotifications((s) => s.markRead)
   const markUnread = useNotifications((s) => s.markUnread)
   const Icon = icons[n.category] ?? Bell
   const isUrgent = urgent.includes(n.category)
+  const State = n.read ? EnvelopeSimpleOpenIcon : EnvelopeSimpleIcon
   return (
-    <motion.li layout="position" transition={spring.layout} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="group relative min-w-0">
+    <motion.li layout="position" transition={spring.layout} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="group relative flex min-w-0">
       <button
         type="button"
         onClick={() => onOpen?.(n)}
-        className={cn("flex w-full items-start gap-3 rounded-lg text-left transition-colors duration-150 hover:bg-white/[0.04] focus-visible:bg-white/[0.05] focus-visible:outline-none", compact ? "px-2.5 py-2.5" : "px-3 py-3")}
+        className={cn("flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left transition-colors duration-150 hover:bg-white/[0.04] focus-visible:bg-white/[0.05] focus-visible:outline-none", compact ? "px-2.5 py-2.5 pointer-coarse:pr-0" : "px-3 py-3 pointer-coarse:pr-0")}
       >
         <span className={cn("mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full border", isUrgent && !n.read ? "border-acid/40 text-acid" : "border-white/10 text-ink-2")}>
           <Icon className="size-3.5" />
@@ -81,14 +90,25 @@ export function NotificationRow({ n, onOpen, compact = false }: { n: AppNotifica
             {n.sample ? <span className="rounded-[3px] border border-white/10 px-1 text-[10px]">Sample</span> : null}
           </span>
         </span>
-        {!n.read ? <span className="mt-2 size-2 shrink-0 rounded-full bg-violet" aria-label="Unread" /> : <span className="mt-2 size-2 shrink-0" />}
+        {/* On touch the envelope beside the row carries the unread dot instead. */}
+        <span aria-hidden className={cn("mt-2 size-2 shrink-0 rounded-full pointer-coarse:hidden", !n.read && "bg-violet")} />
+        {!n.read ? <span className="sr-only">Unread</span> : null}
       </button>
       <button
         type="button"
+        aria-label={n.read ? "Mark unread" : "Mark read"}
         onClick={() => (n.read ? markUnread(n.id) : markRead(n.id))}
-        className="absolute top-2 right-2 hidden h-6 items-center rounded-md bg-[#1b1b1b] px-2 text-[11px] text-ink-2 shadow-sm hover:text-ink group-hover:inline-flex group-focus-within:inline-flex"
+        className={cn(
+          "absolute top-2 right-2 hidden h-6 items-center rounded-md bg-[#1b1b1b] px-2 text-[11px] text-ink-2 shadow-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-violet group-hover:inline-flex group-focus-within:inline-flex",
+          "pointer-coarse:static pointer-coarse:inline-flex pointer-coarse:h-auto pointer-coarse:w-10 pointer-coarse:shrink-0 pointer-coarse:justify-center pointer-coarse:self-stretch pointer-coarse:rounded-lg pointer-coarse:bg-transparent pointer-coarse:px-0 pointer-coarse:shadow-none",
+          compact ? "pointer-coarse:items-start pointer-coarse:pt-2.5" : "pointer-coarse:items-start pointer-coarse:pt-3",
+        )}
       >
-        {n.read ? "Mark unread" : "Mark read"}
+        <span aria-hidden className="pointer-coarse:hidden">{n.read ? "Mark unread" : "Mark read"}</span>
+        <span aria-hidden className="relative mt-2 hidden size-5 items-center justify-center pointer-coarse:inline-flex">
+          <State className={cn("size-[18px]", n.read ? "text-ink-3" : "text-ink-2")} />
+          {!n.read ? <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-violet ring-2 ring-obsidian" /> : null}
+        </span>
       </button>
     </motion.li>
   )
@@ -146,13 +166,13 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
             <p className="text-sm font-medium text-ink">Notifications</p>
             <p className="text-[11px] text-ink-3">{unread ? `${unread} unread` : "You're all caught up"}</p>
           </div>
-          <button type="button" onClick={() => markAllRead(audience)} disabled={!unread} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] text-ink-2 transition-colors hover:bg-white/6 hover:text-ink disabled:pointer-events-none disabled:opacity-40">
+          <button type="button" onClick={() => markAllRead(audience)} disabled={!unread} className="inline-flex h-10 items-center gap-1.5 rounded-md px-2 text-[12px] text-ink-2 transition-colors hover:bg-white/6 hover:text-ink disabled:pointer-events-none disabled:opacity-40 sm:h-8 pointer-coarse:h-10">
             <CheckCheck className="size-3.5" /> Mark all as read
           </button>
         </div>
         <div role="tablist" aria-label="Filter notifications" className="flex gap-1 px-3 pt-2">
           {(["all", "unread"] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} type="button" onClick={() => setTab(t)} className={cn("relative isolate h-7 rounded-md px-2.5 text-[12px] capitalize transition-colors", tab === t ? "text-ink" : "text-ink-2 hover:text-ink")}>
+            <button key={t} role="tab" aria-selected={tab === t} type="button" onClick={() => setTab(t)} className={cn("relative isolate h-10 min-w-10 rounded-md px-3 text-[12px] capitalize transition-colors sm:h-7 sm:px-2.5 pointer-coarse:h-10 pointer-coarse:px-3", tab === t ? "text-ink" : "text-ink-2 hover:text-ink")}>
               {tab === t ? <motion.span layoutId={`notif-tab-${audience}`} transition={spring.indicator} className="absolute inset-0 -z-10 rounded-md bg-white/8" /> : null}
               {t}
             </button>
@@ -176,7 +196,7 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
           )}
         </div>
         <div className="border-t border-white/8 p-2">
-          <Link href={notificationsHref[audience]} onClick={() => setOpen(false)} className="flex h-9 items-center justify-center rounded-lg text-[12.5px] text-ink-2 transition-colors hover:bg-white/5 hover:text-ink">
+          <Link href={notificationsHref[audience]} onClick={() => setOpen(false)} className="flex h-10 items-center justify-center rounded-lg text-[12.5px] text-ink-2 transition-colors hover:bg-white/5 hover:text-ink sm:h-9 pointer-coarse:h-10">
             View all notifications
           </Link>
         </div>

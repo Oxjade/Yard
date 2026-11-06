@@ -27,6 +27,7 @@ import type { Brand, CategorySlug, Product, Variant } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
+import { useBrandSettings, useSettingsReady } from "@/components/studio/business/settings-store"
 import { ConfirmDialog, control, Field, inputClass, Panel, Segmented, selectClass } from "./fields"
 import { ImageManager, type FormImage } from "./image-manager"
 import { OptionsBuilder } from "./options-builder"
@@ -57,7 +58,11 @@ const deletedHere = new Set<string>()
 
 /** Loads the product once saved data is in, then hands it to the editor. No id = a new product. */
 export function ProductEditorRoute({ id }: { id?: string }) {
-  const ready = useCatalogReady()
+  const catalogReady = useCatalogReady()
+  // The default processing time is the one saved in Settings: wait for it before the form is
+  // seeded, so the default it names (and a new product's time) never flashes the profile's.
+  const settingsReady = useSettingsReady()
+  const ready = catalogReady && settingsReady
   const brandId = useStudio((s) => s.brandId)
   const product = useStudio((s) => (id ? s.products.find((p) => p.id === id) : undefined))
   const brand = brandById.get(brandId)!
@@ -85,6 +90,19 @@ export function ProductEditorRoute({ id }: { id?: string }) {
   return <ProductEditor key={id ?? "new"} product={product} brand={brand} />
 }
 
+/**
+ * The brand as the product form should see it: its default processing time is the one saved in
+ * Settings (seeded from the brand profile), once that has loaded. The form names that default in
+ * its hint for every product; a new product, or one without a time of its own, starts from it,
+ * and a product saved with its own time keeps that.
+ */
+function useSettingsBrand(brand: Brand) {
+  const ready = useSettingsReady()
+  const days = useBrandSettings((s) => s.shipping.processingDays)
+  const [min, max] = days
+  return useMemo(() => (ready ? { ...brand, processingDays: [min, max] as [number, number] } : brand), [brand, ready, min, max])
+}
+
 function BackLink() {
   return (
     <Link href="/studio/products" className="inline-flex w-fit items-center gap-1 text-xs text-ink-2 hover:text-ink">
@@ -106,7 +124,8 @@ function createdDescription(status: Product["status"], publishAt: string | null)
   return "Saved as a draft. Only you can see it."
 }
 
-function ProductEditor({ product, brand }: { product?: Product; brand: Brand }) {
+function ProductEditor({ product, brand: profile }: { product?: Product; brand: Brand }) {
+  const brand = useSettingsBrand(profile)
   const router = useRouter()
   const allProducts = useStudio((s) => s.products)
   const orders = useStudio((s) => s.orders)
@@ -281,7 +300,9 @@ function ProductEditor({ product, brand }: { product?: Product; brand: Brand }) 
 
     const publishAt = form.status === "scheduled" ? new Date(form.publishAt).toISOString() : null
     const days: [number, number] = [Number(form.processingMin), Number(form.processingMax)]
-    const ownDays = days[0] !== brand.processingDays[0] || days[1] !== brand.processingDays[1]
+    // Compared with the brand profile, which products without their own time fall back to; a
+    // product seeded from a different Settings default keeps that time explicitly.
+    const ownDays = days[0] !== profile.processingDays[0] || days[1] !== profile.processingDays[1]
     const saved: Product = {
       ...(product ?? {}),
       id,

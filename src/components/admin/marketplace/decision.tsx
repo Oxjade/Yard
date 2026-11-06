@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
+import { ReasonDialog, type ReasonFact } from "@/components/admin/ui/reason-dialog"
 
 export type Decision = {
   title: string
@@ -9,6 +9,18 @@ export type Decision = {
   description: string
   confirmLabel: string
   destructive?: boolean
+  /**
+   * The reason field's label. When it's left out, the dialog names whoever the description
+   * says sees the reason (audienceLine: "Reason, shown to Lagos Static"); otherwise the reason
+   * is for the audit log.
+   */
+  fieldLabel?: string
+  /** Common reasons, offered as chips that fill the field. */
+  presets?: string[]
+  /** A short line of facts to check before confirming. */
+  facts?: ReasonFact[]
+  /** Something to know before confirming. */
+  warning?: React.ReactNode
   /** Runs once the reason is valid. Recorded actions are local and finish at once. */
   run: (reason: string) => void | Promise<void>
 }
@@ -33,7 +45,8 @@ export function useDecision(fallback?: () => HTMLElement | null | undefined) {
     }
     // Asked from a row menu: open once the menu has gone and handed focus back to its trigger.
     // Opening alongside it, the menu's focus return would land after the dialog took focus,
-    // blurring the reason field (and flagging it) before anyone typed.
+    // pulling focus out of the reason field, and the control to return to on close would be
+    // the menu item that's about to unmount.
     if (!(document.activeElement as HTMLElement | null)?.closest('[role="menu"]')) return open()
     const done = () => {
       if (document.querySelector('[role="menu"]')) return false
@@ -68,6 +81,10 @@ export function useDecision(fallback?: () => HTMLElement | null | undefined) {
       description={state?.d.description ?? ""}
       confirmLabel={state?.d.confirmLabel ?? "Confirm"}
       destructive={state?.d.destructive}
+      fieldLabel={state?.d.fieldLabel}
+      presets={state?.d.presets}
+      facts={state?.d.facts}
+      warning={state?.d.warning}
       onConfirm={(reason) => state?.d.run(reason)}
       onCloseAutoFocus={restore}
     />

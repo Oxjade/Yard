@@ -1,11 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArchiveIcon as Archive, ArrowCounterClockwiseIcon as Restore, CopyIcon as Copy, PackageIcon as Package, PaperPlaneTiltIcon as Send, PencilSimpleIcon as Pencil, PlusIcon as Plus, TrashIcon as Trash } from "@phosphor-icons/react"
 import { toast } from "sonner"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
@@ -128,25 +128,32 @@ export function ProductsIndex() {
 
   /* ---------- actions ---------- */
 
+  // Row menus disable these for rows they don't apply to, and the bulk bar passes only the
+  // rows each one applies to, so there is always something to change.
   function publish(list: Product[]) {
     const targets = list.filter((p) => p.status !== "published")
-    if (!targets.length) {
-      toast(list.length === 1 ? "Already published" : "Those are already published")
-      return
-    }
+    if (!targets.length) return
     const previous = setProductStatuses(targets.map((p) => p.id), "published")
     toast.success(`Published ${plural(previous.length, "product")}`, {
       action: { label: "Undo", onClick: () => restoreProductStatuses(previous) },
     })
   }
 
+  /** Settles the bulk Archive that opened the dialog: true once confirmed, false when cancelled (the selection stays). */
+  const archiveAnswer = useRef<((confirmed: boolean) => void) | null>(null)
+  function answerArchive(confirmed: boolean) {
+    archiveAnswer.current?.(confirmed)
+    archiveAnswer.current = null
+  }
+
   function askArchive(list: Product[]) {
     const targets = list.filter((p) => p.status !== "archived")
-    if (!targets.length) {
-      toast(list.length === 1 ? "Already archived" : "Those are already archived")
-      return
-    }
+    if (!targets.length) return false
+    answerArchive(false)
     setArchiving(targets)
+    return new Promise<boolean>((resolve) => {
+      archiveAnswer.current = resolve
+    })
   }
 
   function archive(list: Product[]) {
@@ -264,26 +271,22 @@ export function ProductsIndex() {
     },
   ]
 
+  // An archived product offers Restore in place of Archive, in every tab.
   const rowActions: RowAction<Product>[] = [
     { label: "Edit", icon: Pencil, onSelect: (p) => router.push(`/studio/products/${p.id}`) },
     { label: "Duplicate", icon: Copy, onSelect: copy },
-    tab === "archived"
-      ? { label: "Restore as draft", icon: Restore, onSelect: (p) => restore([p]), separatorBefore: true }
-      : { label: "Publish", icon: Send, onSelect: (p) => publish([p]), disabled: (p) => p.status === "published", separatorBefore: true },
-    ...(tab === "archived" ? [] : [{ label: "Archive", icon: Archive, onSelect: (p: Product) => askArchive([p]), disabled: (p: Product) => p.status === "archived" }]),
+    { label: "Publish", icon: Send, onSelect: (p) => publish([p]), hidden: () => tab === "archived", disabled: (p) => p.status === "published", disabledReason: () => "Already published.", separatorBefore: true },
+    { label: "Restore as draft", icon: Restore, onSelect: (p) => restore([p]), hidden: (p) => p.status !== "archived" },
+    { label: "Archive", icon: Archive, onSelect: (p) => void askArchive([p]), hidden: (p) => p.status === "archived" },
     { label: "Delete", icon: Trash, onSelect: setDeleting, destructive: true, separatorBefore: true },
   ]
 
+  const notPublished = (p: Product) => p.status !== "published"
+  const bulkPublish: BulkAction<Product> = { label: "Publish", onSelect: publish, appliesTo: notPublished, disabledReason: "The selected products are already published." }
   const bulkActions: BulkAction<Product>[] =
     tab === "archived"
-      ? [
-          { label: "Restore as drafts", onSelect: restore },
-          { label: "Publish", onSelect: publish },
-        ]
-      : [
-          { label: "Publish", onSelect: publish },
-          { label: "Archive", onSelect: askArchive },
-        ]
+      ? [{ label: "Restore as drafts", onSelect: restore, appliesTo: (p) => p.status === "archived", disabledReason: "None of the selected products is archived." }, bulkPublish]
+      : [bulkPublish, { label: "Archive", onSelect: askArchive, appliesTo: (p) => p.status !== "archived", disabledReason: "The selected products are already archived." }]
 
   const empty =
     category !== "all"
@@ -303,6 +306,11 @@ export function ProductsIndex() {
   const archiveCount = shownArchiving?.length ?? 0
   /** When the row that opened a dialog has left the list, focus lands on the selected tab. */
   const toTab = selectedTabFor("product-list")
+  /**
+   * After a confirmed bulk Archive, focus lands where the table puts it after a bulk Publish: on
+   * the selection bar while rows the search hid stay selected, otherwise on select-all.
+   */
+  const toSelectAll = () => bulkBarControl(document.getElementById("product-list")) ?? document.querySelector<HTMLElement>("#product-list [data-select-all]:not([disabled])") ?? toTab()
 
   return (
     <div className="grid gap-6">
@@ -365,12 +373,19 @@ export function ProductsIndex() {
 
       <ConfirmDialog
         open={!!archiving}
-        onOpenChange={(o) => !o && setArchiving(null)}
+        onOpenChange={(o) => {
+          if (o) return
+          answerArchive(false)
+          setArchiving(null)
+        }}
         title={archiveCount === 1 ? `Archive ${shownArchiving![0].name}?` : `Archive ${plural(archiveCount, "product")}?`}
         body={`${archiveCount === 1 ? "It moves" : "They move"} to the Archived tab and out of your inventory list. Orders and stock history stay, and you can restore ${archiveCount === 1 ? "it" : "them"} at any time.`}
         confirmLabel={archiveCount === 1 ? "Archive product" : `Archive ${plural(archiveCount, "product")}`}
-        onConfirm={() => archiving && archive(archiving)}
-        returnFocus={toTab}
+        onConfirm={() => {
+          if (archiving) archive(archiving)
+          answerArchive(true)
+        }}
+        returnFocus={toSelectAll}
       />
       <ConfirmDialog
         open={!!deleting}

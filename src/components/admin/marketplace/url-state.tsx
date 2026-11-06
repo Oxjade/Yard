@@ -1,44 +1,16 @@
 "use client"
 
 import { useCallback, useSyncExternalStore } from "react"
+import { writeParams } from "@/hooks/use-search-param"
 import { useAdmin } from "@/lib/stores/admin"
 
 /*
  * URL-linked view state for the Control Center's index pages (status tabs, filters, the open
- * record). Read without useSearchParams, so the prerendered page needs no Suspense boundary:
- * the server HTML sees no parameters and the client picks them up straight after hydration.
- * Writes replace the history entry in place (no navigation) and notify every reader, so a
- * reload or a shared link reopens the same view.
+ * record). The primitives live in @/hooks/use-search-param (the shell's command palette uses
+ * them too); this module adds the Control Center's in-page links and readiness helpers.
  */
 
-const EVENT = "nocturne:url"
-
-function subscribe(onChange: () => void) {
-  window.addEventListener("popstate", onChange)
-  window.addEventListener(EVENT, onChange)
-  return () => {
-    window.removeEventListener("popstate", onChange)
-    window.removeEventListener(EVENT, onChange)
-  }
-}
-
-/** One query parameter, kept in step with writeParams and back/forward. */
-export function useSearchParam(name: string) {
-  const search = useSyncExternalStore(subscribe, () => window.location.search, () => "")
-  return new URLSearchParams(search).get(name)
-}
-
-/** Updates query parameters in place, without a navigation. `null` removes a parameter. */
-export function writeParams(next: Record<string, string | null>) {
-  const url = new URL(window.location.href)
-  for (const [k, v] of Object.entries(next)) {
-    if (v === null) url.searchParams.delete(k)
-    else url.searchParams.set(k, v)
-  }
-  const target = `${url.pathname}${url.search}${url.hash}`
-  if (target !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state, "", target)
-  window.dispatchEvent(new Event(EVENT))
-}
+export { showInPlace, useSearchParam, writeParams } from "@/hooks/use-search-param"
 
 /**
  * Lets links inside it that point at the current page (a headline card's arrow to

@@ -3,7 +3,7 @@
 import { useId, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
-import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
+import { ProductCard } from "@/components/market/product-card"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Product, StorefrontSection } from "@/lib/data/types"
@@ -76,7 +76,7 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
             className={grid[ctx.template]}
           >
             {shown.map((p) => (
-              <ShopProductCard key={p.id} product={p} variant={ctx.template === "street" ? "tall" : "default"} />
+              <ProductCard key={p.id} product={p} variant={ctx.template === "street" ? "tall" : "default"} />
             ))}
           </motion.div>
         </AnimatePresence>

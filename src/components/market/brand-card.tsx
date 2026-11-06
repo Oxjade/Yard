@@ -42,11 +42,15 @@ export function BrandCard({
 
   if (variant === "row") {
     return (
+      // The mark is part of the link, so the whole left of the row (44px tall) opens the brand;
+      // Follow keeps its compact look with a 40px tap area (see FollowButton).
       <div className={cn("group/brand flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-card", className)}>
-        <BrandMark brand={brand} size="md" />
-        <Link href={href} className="min-w-0 flex-1">
-          <p className="truncate text-sm text-ink">{brand.name}</p>
-          <p className="truncate text-xs text-ink-2">{place}</p>
+        <Link href={href} className="flex min-w-0 flex-1 items-center gap-3 rounded-md">
+          <BrandMark brand={brand} size="md" />
+          <span className="min-w-0">
+            <span className="block truncate text-sm text-ink">{brand.name}</span>
+            <span className="block truncate text-xs text-ink-2">{place}</span>
+          </span>
         </Link>
         <FollowButton brandId={brand.id} brandName={brand.name} size="xs" />
       </div>

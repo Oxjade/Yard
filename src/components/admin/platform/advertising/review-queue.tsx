@@ -11,7 +11,8 @@ import { useAsyncAction } from "@/hooks/use-async-action"
 import { Panel } from "@/components/admin/ui/panel"
 import { springs } from "@/components/admin/ui/motion"
 import { brandById, productById } from "@/lib/data"
-import { campaignTypes, type Campaign, type CampaignType } from "@/lib/data/ads"
+import { campaignDates, campaignTypes, type Campaign, type CampaignType } from "@/lib/data/ads"
+import { useNow } from "@/hooks/use-now"
 import { spring } from "@/lib/motion"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
@@ -67,10 +68,8 @@ function startLabel(days: number) {
  * account), and the way back out, so the campaign is never stuck.
  */
 function Waiting({ campaign, decision }: { campaign: Campaign; decision: Decision }) {
-  const withdraw = useAsyncAction(() => {
-    withdrawRequest(campaign, decision)
-    return true
-  })
+  // False when there's no waiting request to take back (already withdrawn, say in another tab).
+  const withdraw = useAsyncAction(() => withdrawRequest(campaign, decision))
   async function onWithdraw() {
     if (!(await withdraw.run())) return
     // The approve and reject buttons come back in this card; focus the first of them.
@@ -113,6 +112,10 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
   const queue = useMemo(() => campaigns.filter((c) => c.status === "in_review").sort((a, b) => a.startDaysFromToday - b.startDaysFromToday), [campaigns])
   const requested = useRequested(queue)
   const recent = useMemo(() => audit.filter((a) => DECISION_ACTIONS.includes(a.action)).slice(0, 3), [audit])
+  // Dates are the brand's calendar days from today, as Studio and the merchant's notification give
+  // them ("Starts tomorrow" counts from the same day). The queue renders once the store has loaded.
+  const now = useNow(60_000)
+  const shown = ready && now !== null
 
   return (
     <Panel
@@ -123,7 +126,7 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
       className="scroll-mt-24 rounded-[20px]"
       bodyClassName="px-0 pb-0 md:px-0 md:pb-0"
     >
-      {!ready ? (
+      {!shown ? (
         <div aria-hidden className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 border-t border-[var(--admin-hairline)] p-4 sm:grid-cols-[148px_minmax(0,1fr)] md:px-5 @5xl:grid-cols-[176px_minmax(0,1fr)_320px]">
           <Bone className="aspect-[4/5] w-full rounded-lg" />
           <div className="grid content-start gap-3">
@@ -139,7 +142,7 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
             {queue.map((c, i) => {
               const t = campaignTypes[c.type]
               const brand = brandById.get(c.brandId)
-              const win = campaignWindow(c.startDaysFromToday, c.days)
+              const win = campaignDates(c, now)
               const start = startLabel(c.startDaysFromToday)
               const checks = checksFor(c, campaigns, pricing)
               const failing = checks.filter((x) => !x.ok).length
@@ -172,7 +175,7 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
                       <Fact label="Budget">
                         {usd(c.budget)} <span className="text-ink-3">for {c.days} {c.days === 1 ? "day" : "days"}</span>
                       </Fact>
-                      <Fact label="Dates">{formatRange(win.start, win.end)}</Fact>
+                      <Fact label="Dates">{formatRange(`${win.start}T12:00:00Z`, `${win.end}T12:00:00Z`)}</Fact>
                       <Fact label="Audience" title={audienceLabel(c)}>{audienceLabel(c)}</Fact>
                     </dl>
 

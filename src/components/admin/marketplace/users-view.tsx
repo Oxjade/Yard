@@ -2,8 +2,7 @@
 
 import { useId, useMemo } from "react"
 import { EyeIcon, FlagIcon, ProhibitIcon, ShieldWarningIcon, UsersIcon } from "@phosphor-icons/react"
-import { toast } from "sonner"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
@@ -18,7 +17,7 @@ import { countryName, formatDate, relDays } from "./format"
 import { userStatusMeta } from "./meta"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
-import { userActions, userAllowed, userDecision, userNothingApplies, type UserActionKey } from "./user-actions"
+import { userActions, userAllowed, userDecision, type UserActionKey } from "./user-actions"
 import { UserDetail } from "./user-detail"
 
 type Filter = "all" | "reported" | PlatformUser["status"]
@@ -31,6 +30,18 @@ const FILTERS: { value: Filter; label: string; empty: string }[] = [
 ]
 const isFilter = (v: string | null): v is Filter => FILTERS.some((f) => f.value === v)
 const n = (v: number) => formatNumber(Math.round(v))
+
+type Status = PlatformUser["status"]
+const allows = (key: UserActionKey) => (u: PlatformUser) => userAllowed[u.status].includes(key)
+
+/** Why an account's menu greys out a decision: it's in that status already, or has to be reinstated first. */
+const unavailable = (key: UserActionKey) => (u: PlatformUser) => (userActions[key].to === u.status ? `Already ${userStatusMeta[u.status].label.toLowerCase()}.` : "Reinstate the account first.")
+
+/** Why a bulk decision applies to none of the selected accounts ("Only active accounts can be restricted."). */
+function onlyFrom(key: UserActionKey) {
+  const from = (Object.keys(userAllowed) as Status[]).filter((s) => userAllowed[s].includes(key)).map((s) => userStatusMeta[s].label.toLowerCase())
+  return `Only ${from.join(" or ")} accounts can be ${userActions[key].done}.`
+}
 
 function inFilter(u: PlatformUser, f: Filter) {
   if (f === "all") return true
@@ -48,7 +59,8 @@ export function UsersView() {
   // /admin/users?user=<id> opens that account, so other screens can link to it.
   const userId = useSearchParam("user")
   const open = !!userId && users.some((u) => u.id === userId)
-  const { ask, dialog } = useDecision(() => document.getElementById(segmentedTabId(qid, filter)))
+  // When the control that asked has gone: back to the selection bar while rows stay selected, else the status tab.
+  const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, filter)))
 
   const counts = useMemo(() => {
     const c: Record<Filter, number> = { all: users.length, reported: 0, active: 0, restricted: 0, suspended: 0 }
@@ -69,10 +81,11 @@ export function UsersView() {
   )
 
   const openUser = (u: PlatformUser) => writeParams({ user: u.id })
+  // The row menu and the bulk bar only offer a decision for accounts it applies to. What `ask`
+  // returns goes back to the bulk bar, so a decision that reports a cancel keeps the selection.
   const decide = (key: UserActionKey, list: PlatformUser[]) => {
     const d = userDecision(key, list)
-    if (d) ask(d)
-    else toast.info(userNothingApplies(key, list.length))
+    return d ? ask(d) : false
   }
 
   const columns: Column<PlatformUser>[] = [
@@ -105,11 +118,12 @@ export function UsersView() {
   const keys: UserActionKey[] = ["restrict", "suspend", "reinstate"]
   const rowActions: RowAction<PlatformUser>[] = [
     { label: "Open account", icon: EyeIcon, onSelect: openUser },
-    ...keys.map((key, i) => ({ label: userActions[key].label, icon: userActions[key].icon, destructive: userActions[key].destructive, separatorBefore: i === 0, disabled: (u: PlatformUser) => !userAllowed[u.status].includes(key), onSelect: (u: PlatformUser) => decide(key, [u]) })),
+    ...keys.map((key, i) => ({ label: userActions[key].label, icon: userActions[key].icon, destructive: userActions[key].destructive, separatorBefore: i === 0, disabled: (u: PlatformUser) => !allows(key)(u), disabledReason: unavailable(key), onSelect: (u: PlatformUser) => decide(key, [u]) })),
   ]
-  // Bulk: only the decisions some selected account allows; the dialog says which are skipped.
-  const bulkKeys = keys.filter((k) => filter === "all" || filter === "reported" || userAllowed[filter as PlatformUser["status"]].includes(k))
-  const bulkActions: BulkAction<PlatformUser>[] = bulkKeys.map((key) => ({ label: userActions[key].label, destructive: userActions[key].destructive, onSelect: (list) => decide(key, list) }))
+  // Bulk: the decisions this tab's accounts can take (Reported lists active accounts only); the
+  // bar counts the selected accounts each applies to. A tab with none has no checkboxes.
+  const bulkKeys = keys.filter((k) => filter === "all" || userAllowed[filter === "reported" ? "active" : filter].includes(k))
+  const bulkActions: BulkAction<PlatformUser>[] = bulkKeys.map((key) => ({ label: userActions[key].label, destructive: userActions[key].destructive, appliesTo: allows(key), disabledReason: onlyFrom(key), onSelect: (list) => decide(key, list) }))
   const current = FILTERS.find((f) => f.value === filter)!
 
   return (
@@ -151,7 +165,7 @@ export function UsersView() {
             loading={!ready}
             search={{ placeholder: "Search by name or email", text: (u) => `${u.name} ${u.email}` }}
             rowActions={rowActions}
-            bulkActions={phone ? undefined : bulkActions}
+            bulkActions={phone || !bulkActions.length ? undefined : bulkActions}
             empty={{ title: current.empty, body: "Accounts appear here as their status changes." }}
             initialPageSize={25}
             minWidth={300}

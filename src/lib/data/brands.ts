@@ -50,8 +50,8 @@ export const brands: Brand[] = [
     joinedAt: "2026-03-02",
     social: { instagram: "lagosstatic", tiktok: "lagosstatic", website: "lagosstatic.example" },
     storefront: storefront("street", "acid", "condensed", "Heavyweight basics and loud graphics, made in Yaba in runs under 200.", {
-      text: "Drop 07, “Third Mainland”, lands this week. Follow to get the alert.",
-      href: "/drops",
+      text: "Drop 07, “Third Mainland”, lands this week. Set a reminder on the drop page to get the alert.",
+      href: "/drops/drop-07-third-mainland",
     }),
     shipsFrom: "NG",
     processingDays: [1, 3],

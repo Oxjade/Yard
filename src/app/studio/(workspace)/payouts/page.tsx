@@ -22,13 +22,13 @@ import { currencies } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { brandById } from "@/lib/data/brands"
-import { convert, formatMoney, toMajor } from "@/lib/money"
+import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useNotifications } from "@/lib/stores/notifications"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { PAYOUT_HOLD_DAYS, payoutBalances } from "@/lib/payouts"
-import type { Payout } from "@/lib/data/admin"
+import { payoutAmountIn, type Payout } from "@/lib/data/admin"
 
 const HOLD_DAYS = PAYOUT_HOLD_DAYS
 
@@ -93,6 +93,7 @@ export default function StudioPayoutsPage() {
   const brandId = useStudio((s) => s.brandId)
   const orders = useStudio((s) => s.orders)
   const payouts = useAdmin((s) => s.payouts)
+  const audit = useAdmin((s) => s.audit)
   const brand = brandById.get(brandId)!
   const cur = brand.currency
   const mine = payouts.filter((p) => p.brandId === brandId)
@@ -106,7 +107,7 @@ export default function StudioPayoutsPage() {
   const [step, setStep] = useState<"form" | "confirm">("form")
   const [touched, setTouched] = useState(false)
   const key = useRef<string | null>(null)
-  const minor = 100
+  const minor = 10 ** currencies[cur].minor
   const amountMinor = Math.round(Number(amount.replace(/,/g, "")) * minor)
   const fee = 0
   const amountError = !amount ? "Enter an amount." : !Number.isFinite(amountMinor) || amountMinor <= 0 ? "Enter an amount above zero." : amountMinor > balances.available ? `You can request up to ${formatMoney(balances.available, cur)}.` : null
@@ -120,16 +121,13 @@ export default function StudioPayoutsPage() {
     () => {
       if (!key.current) key.current = `po_req_${brand.handle}_${Date.now().toString(36)}`
       const id = key.current
-      const state = useAdmin.getState()
-      if (state.payouts.some((p) => p.id === id)) return id // idempotent: a repeat submit returns the same request
-      // Kept unrounded, so converting back gives exactly the amount the brand confirmed. (The
-      // payout record holds USD only; storing the brand-currency amount needs a shared field.)
-      const amountUsd = (toMajor(amountMinor, cur) / currencies[cur].perUsd) * 100
+      // The exact amount the brand confirmed, in its own currency; idempotent, so a repeat submit
+      // returns the same request.
+      // The method reads as the platform's other payouts do ("Paystack transfer").
+      const label = providerLabel[onFile.provider]
+      const method = /transfer$/i.test(label) ? label : `${label} transfer`
+      if (!useAdmin.getState().requestPayout({ id, brandId, brandName: brand.name, amount: amountMinor, currency: cur, method, orders: balances.eligibleOrders })) return id
       const at = new Date().toISOString()
-      useAdmin.setState({
-        payouts: [{ id, brandName: brand.name, brandId, amountUsd, currency: cur, scheduledFor: at, status: "awaiting_approval", method: providerLabel[onFile.provider], orders: 0 }, ...state.payouts],
-      })
-      state.log("Payout requested by brand", `${brand.name}, ${formatMoney(amountMinor, cur)}`, "Requested from Brand Studio")
       // The platform team hears about it; the key is the request, so a repeat never notifies twice.
       useNotifications.getState().push({
         eventKey: `a:payout:${id}:requested`,
@@ -158,8 +156,13 @@ export default function StudioPayoutsPage() {
   // After a request the opener is replaced by its disabled twin, so focus lands on the history.
   const focus = useFocusReturn(() => document.getElementById("history-title"))
 
-  const amountOf = (p: Payout) => convert(p.amountUsd, "USD", cur)
-  const noteOf = (p: Payout) => p.holdReason ?? (p.status === "processing" ? "Completes when the provider confirms the transfer" : p.status === "awaiting_approval" ? "Waiting for platform review" : "")
+  // The exact amount in the brand's currency (what it requested), converted only for older records.
+  const amountOf = (p: Payout) => payoutAmountIn(p, cur)
+  // Approved in this browser: the decision is recorded, but nothing is sent (no provider connected).
+  const approvedHere = (p: Payout) => p.status === "processing" && audit.some((a) => a.subjectId === p.id && a.action === "Approved payout")
+  const statusOf = (p: Payout) => (approvedHere(p) ? { label: "Approved", tone: "info" as const } : payoutTone[p.status])
+  const noteOf = (p: Payout) =>
+    p.holdReason ?? (approvedHere(p) ? "Approval recorded. Sent once a payment provider is connected" : p.status === "processing" ? "Completes when the provider confirms the transfer" : p.status === "awaiting_approval" ? "Waiting for platform review" : "")
   const columns: Column<Payout>[] = [
     {
       key: "ref",
@@ -172,25 +175,25 @@ export default function StudioPayoutsPage() {
           </div>
           {/* Phones: amount, status and date fold into the first cell. */}
           <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 md:hidden">
-            <StatusBadge tone={payoutTone[p.status].tone}>{payoutTone[p.status].label}</StatusBadge>
+            <StatusBadge tone={statusOf(p).tone}>{statusOf(p).label}</StatusBadge>
             <span className="text-xs text-ink-2 tabular">{dateFmt.format(new Date(p.scheduledFor))}</span>
           </span>
           {noteOf(p) ? <span className="mt-1 block truncate text-xs text-ink-3 md:hidden">{noteOf(p)}</span> : null}
         </div>
       ),
     },
-    { key: "amount", header: "Amount", align: "right", sortValue: (p) => p.amountUsd, hideBelow: "md", cell: (p) => <span className="whitespace-nowrap text-ink">{formatMoney(amountOf(p), cur)}</span> },
-    { key: "status", header: "Status", sortValue: (p) => p.status, hideBelow: "md", cell: (p) => <StatusBadge tone={payoutTone[p.status].tone}>{payoutTone[p.status].label}</StatusBadge> },
+    { key: "amount", header: "Amount", align: "right", sortValue: (p) => amountOf(p), hideBelow: "md", cell: (p) => <span className="whitespace-nowrap text-ink">{formatMoney(amountOf(p), cur)}</span> },
+    { key: "status", header: "Status", sortValue: (p) => statusOf(p).label, hideBelow: "md", cell: (p) => <StatusBadge tone={statusOf(p).tone}>{statusOf(p).label}</StatusBadge> },
     { key: "method", header: "Destination", hideBelow: "lg", cell: (p) => <span className="text-ink-2">{p.method}</span> },
     { key: "date", header: "Date", sortValue: (p) => p.scheduledFor, hideBelow: "md", cell: (p) => <span className="whitespace-nowrap text-ink-2 tabular">{dateFmt.format(new Date(p.scheduledFor))}</span> },
     { key: "note", header: "Note", hideBelow: "lg", cell: (p) => <span className="text-ink-3">{noteOf(p)}</span> },
   ]
 
   const tiles = [
-    { label: "Available to pay out", value: balances.available, tip: `Delivered orders older than ${HOLD_DAYS} days, after the 5% commission, minus payouts already requested.`, primary: true },
-    { label: "Pending", value: balances.pending, tip: `Orders not yet delivered, or delivered less than ${HOLD_DAYS} days ago (the returns window).` },
+    { label: "Available to pay out", value: balances.available, tip: `Delivered orders older than ${HOLD_DAYS} days, after the 5% commission and any partial refunds, minus payouts already requested.`, primary: true },
+    { label: "Pending", value: balances.pending, tip: `Orders not yet delivered, delivered less than ${HOLD_DAYS} days ago (the returns window), and orders with a return being decided.` },
     { label: "Under review", value: balances.inReview, tip: "Requested payouts waiting for the platform team, or on hold with a reason." },
-    { label: "Processing", value: balances.processing, tip: "Approved by the platform team. It goes to the provider once one is connected, and is marked completed only when the provider confirms." },
+    { label: "Approved", value: balances.processing, tip: "Approved or scheduled by the platform team. Nothing is sent until a payment provider is connected, and it's marked completed only when the provider confirms." },
     { label: "Paid out", value: balances.paid, tip: "Transfers the provider has confirmed." },
   ]
 

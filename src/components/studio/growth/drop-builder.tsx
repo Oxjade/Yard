@@ -557,7 +557,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
             <span className="text-xs text-ink-3">As shoppers see it on Drops</span>
           </div>
           <div inert className="pointer-events-none select-none">
-            <DropCard drop={previewDrop} eager />
+            <DropCard drop={previewDrop} eager formatRelease={(ms) => `${formatInZone(ms, tz)} ${zoneAbbr(tz, ms)}`} />
           </div>
           <dl className="grid gap-2 rounded-lg border border-line-soft bg-card p-4 text-xs">
             <SummaryRow label="Release" value={releaseUtc ? `${formatInZone(releaseUtc, tz)} ${zoneAbbr(tz, releaseUtc)}` : "Not set"} />
@@ -570,7 +570,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
         </aside>
 
         {/* Phones: a floating action bar, so Schedule is in reach anywhere on this long form. */}
-        <div className="glass-strong sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 col-span-full flex items-center gap-2 rounded-2xl p-2 sm:hidden">
+        <div data-toast-avoid="" className="glass-strong sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 col-span-full flex items-center gap-2 rounded-2xl p-2 sm:hidden">
           {locked ? (
             <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>Save changes</Button>
           ) : (

@@ -4,11 +4,12 @@ import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
 import { brandById } from "@/lib/data/brands"
-import { convert } from "@/lib/money"
+import { convert, formatMoney } from "@/lib/money"
 import { priceCart } from "@/lib/cart"
-import { customerCheckoutGroups, customerOrders } from "@/lib/data/orders"
+import { customerCheckoutGroups, customerOrders, sampleReturnRequest } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
-import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
+import type { CheckoutGroup, MerchantOrder, ReturnDecision } from "@/lib/data/types"
+import { returnRefund } from "@/lib/payouts"
 import type { CartLine } from "./cart"
 import { useAdmin } from "./admin"
 import { useStudio } from "./studio"
@@ -116,8 +117,8 @@ export const useOrders = create<OrdersState>()(
           })
         }
 
-        const lines = o.lines.filter((l) => request.variantIds.includes(l.variantId))
-        const amount = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
+        // The same refund the brand sees: the returned items, or what was paid when it's everything.
+        const amount = returnRefund(o, request.variantIds).amount
         const admin = useAdmin.getState()
         const id = `rf_${orderId}`
         useAdmin.setState({
@@ -132,3 +133,81 @@ export const useOrders = create<OrdersState>()(
     { name: "nocturne-orders", storage: createJSONStorage(() => localStorage), skipHydration: true },
   ),
 )
+
+/* ---------- Decisions on return requests ---------- */
+
+export type ReturnDecisionInput = {
+  status: "approved" | "declined"
+  /** A decline's reason, shown to the shopper. An approval's reason stays with whoever recorded it. */
+  reason?: string
+  by: ReturnDecision["by"]
+  /** For a platform decision: the audit entry it wrote. */
+  ref?: string
+}
+
+/**
+ * Records a decision on a return request on every copy of the order: the brand's (Studio), the
+ * shopper's, and, for the brand's own decisions, the platform's refund queue (a platform decision
+ * is made there, by setRefundStatus). In the backend phase this is one server action on one row.
+ *
+ * An approval is recorded, never sent: no payment provider is connected in this build. Returning
+ * part of an order keeps it delivered with payment "partially_refunded" and the refund on the
+ * order; returning all of it marks it refunded. A decline puts it back to delivered with the
+ * reason. Returns the decided order, or null when no copy is waiting for a decision.
+ */
+export function applyReturnDecision(orderId: string, input: ReturnDecisionInput): MerchantOrder | null {
+  const studio = useStudio.getState()
+  const theirs = useOrders.getState().orders.find((x) => x.id === orderId)
+  const brands = studio.orders.find((x) => x.id === orderId)
+  const waiting = (o?: MerchantOrder) => (o?.status === "refund_requested" ? o : undefined)
+  const base = waiting(theirs) ?? waiting(brands)
+  if (!base) return null
+
+  const at = new Date().toISOString()
+  const brandName = brandById.get(base.brandId)?.name ?? "The brand"
+  const who = input.by === "brand" ? brandName : "NOCTURNE"
+  // A sample order that came with a return requested has no request record: it gets the one
+  // Studio and Finance show for it (the whole order), so the decision is recorded like any other.
+  const request = base.returnRequest ?? sampleReturnRequest(base)
+  const refund = returnRefund(base, request.variantIds)
+  const approved = input.status === "approved"
+  const reason = input.reason?.trim().replace(/\.$/, "")
+  const decision: ReturnDecision = approved
+    ? { status: "approved", at, by: input.by, amount: refund.amount, partial: refund.partial, ref: input.ref }
+    : { status: "declined", at, by: input.by, reason: reason || undefined, ref: input.ref }
+  const items = refund.units === 1 ? "1 item" : `${refund.units} items`
+  const label = approved
+    ? `${refund.partial ? "Partial refund" : "Refund"} of ${formatMoney(refund.amount, base.currency)} approved by ${who}${refund.partial ? ` for ${items}` : ""}. Recorded; not sent, as no payment provider is connected`
+    : `Return declined by ${who}${reason ? `: ${reason}` : ""}`
+
+  const decide = (o: MerchantOrder): MerchantOrder => {
+    const taken = o.paymentStatus === "captured" || o.paymentStatus === "authorized" || o.paymentStatus === "partially_refunded"
+    const returnRequest = { ...(o.returnRequest ?? request), decision }
+    const timeline = [...o.timeline, { at, label }]
+    if (!approved) return { ...o, status: "delivered", returnRequest, timeline }
+    const recorded = { amount: refund.amount, variantIds: refund.variantIds, at }
+    if (refund.partial) return { ...o, status: "delivered", paymentStatus: taken ? "partially_refunded" : o.paymentStatus, returnRequest, refund: recorded, timeline }
+    return { ...o, status: "refunded", paymentStatus: taken ? "refunded" : o.paymentStatus, returnRequest, refund: recorded, timeline }
+  }
+
+  // The shopper's copy first, then the brand's: the brand's store events copy its order onto the
+  // shopper's, which is then already in step.
+  let decided: MerchantOrder | null = null
+  if (waiting(theirs)) {
+    decided = decide(theirs!)
+    useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === orderId ? decided! : x)) })
+  }
+  if (waiting(brands)) {
+    const next = decide(brands!)
+    decided ??= next
+    useStudio.setState({ orders: useStudio.getState().orders.map((x) => (x.id === orderId ? next : x)) })
+  }
+
+  // The brand's decision reaches the platform's refund queue (no admin audit entry in the brand's name).
+  if (input.by === "brand") {
+    const id = `rf_${orderId}`
+    const admin = useAdmin.getState()
+    if (admin.refunds.some((r) => r.id === id && r.status === "requested")) useAdmin.setState({ refunds: admin.refunds.map((r) => (r.id === id ? { ...r, status: input.status } : r)) })
+  }
+  return decided
+}

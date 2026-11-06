@@ -30,12 +30,81 @@ function DropdownMenuTrigger({
   )
 }
 
+/* ---------- Focus hand-off between menus and the dialogs they open ---------- */
+
+/** Open modal overlays built on the Radix Dialog primitive (Dialog, Sheet, the bag drawer). Popovers are role="dialog" too, but never modal. */
+function openDialogs(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"]')).filter((d) => !d.closest("[data-radix-popper-content-wrapper]"))
+}
+
+/** The trigger a dropdown's content is labelled by (Radix points aria-labelledby at it). */
+function triggerOf(content: Element | null): HTMLElement | null {
+  const id = content?.getAttribute("aria-labelledby")
+  return id ? document.getElementById(id) : null
+}
+
+/**
+ * The menu that is open, or that closed a moment ago, and its trigger. A dialog opened from
+ * a menu item outlives the item, so it falls back to this trigger when it closes. "A moment"
+ * covers dialogs that wait for the menu to leave before opening (one second at most).
+ */
+let lastMenu: { trigger: HTMLElement | null; closedAt: number | null } | null = null
+const RECENT_MS = 1000
+
+/**
+ * The trigger of the dropdown menu `el` sits in (an item, or the menu itself on touch), else
+ * of the menu that is open or has just closed. Used by DialogContent and SheetContent when
+ * they open, so they can return focus there once the item is gone.
+ */
+export function menuTriggerFor(el: Element | null): HTMLElement | null {
+  const own = triggerOf(el instanceof Element ? el.closest('[role="menu"]') : null)
+  if (own) return own
+  if (!lastMenu?.trigger) return null
+  const recent = lastMenu.closedAt === null || performance.now() - lastMenu.closedAt < RECENT_MS
+  return recent && lastMenu.trigger.isConnected ? lastMenu.trigger : null
+}
+
+/** Sets a ref of any kind (callback or object) passed in by a caller. */
+function setRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") ref(value)
+  else if (ref) (ref as React.RefObject<T | null>).current = value
+}
+
+/**
+ * Closing a menu sends focus back to its trigger. When the item that closed it opened a
+ * dialog or sheet, that dialog already holds focus, and pulling it back to the trigger would
+ * blur the dialog's first field (flagging a reason as missing before anyone typed). So the
+ * hand-back is skipped whenever a dialog opened while the menu was open; the dialog returns
+ * focus to the trigger itself when it closes. A caller's onCloseAutoFocus runs first, and
+ * calling preventDefault() there opts out of all of this.
+ */
 function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
+  ref,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  // Dialogs that were already open when the menu opened (a menu inside a sheet): they don't count.
+  const before = React.useRef<HTMLElement[]>([])
+  // The caller's ref, kept in a ref so `track` stays stable: a new callback would re-run it
+  // on every render and take a fresh snapshot after an item had opened a dialog.
+  const outer = React.useRef(ref)
+  React.useLayoutEffect(() => {
+    outer.current = ref
+  })
+  const track = React.useCallback((node: HTMLDivElement | null) => {
+    setRef(outer.current, node)
+    if (!node) return
+    before.current = openDialogs()
+    const entry = { trigger: triggerOf(node), closedAt: null as number | null }
+    lastMenu = entry
+    return () => {
+      entry.closedAt = performance.now()
+      setRef(outer.current, null)
+    }
+  }, [])
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
@@ -45,9 +114,28 @@ function DropdownMenuContent({
         align={align}
         className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg glass-strong p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 data-open:duration-200 data-closed:duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[0.98]", className )}
         {...props}
+        ref={track}
+        onCloseAutoFocus={(e) => {
+          onCloseAutoFocus?.(e)
+          if (e.defaultPrevented) return
+          const opened = openDialogs().some((d) => !before.current.includes(d))
+          if (opened) e.preventDefault()
+        }}
       />
     </DropdownMenuPrimitive.Portal>
   )
+}
+
+/**
+ * Leaving an item hands focus to the menu itself. When the item has just opened a dialog, the
+ * dialog's overlay slides under a resting mouse and the item gets a pointerleave, which would
+ * pull focus out of the dialog for a moment (and blur its first field). A closing menu skips it.
+ */
+function stayOutOfClosingMenu<E extends HTMLElement>(handler?: React.PointerEventHandler<E>): React.PointerEventHandler<E> {
+  return (event) => {
+    handler?.(event)
+    if (event.currentTarget.closest('[role="menu"]')?.getAttribute("data-state") === "closed") event.preventDefault()
+  }
 }
 
 function DropdownMenuGroup({
@@ -62,6 +150,7 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  onPointerLeave,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean
@@ -72,6 +161,7 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
+      onPointerLeave={stayOutOfClosingMenu(onPointerLeave)}
       className={cn(
         "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-2 py-2 text-sm outline-hidden select-none transition-colors duration-150 focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
         className
@@ -86,6 +176,7 @@ function DropdownMenuCheckboxItem({
   children,
   checked,
   inset,
+  onPointerLeave,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem> & {
   inset?: boolean
@@ -94,6 +185,7 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
+      onPointerLeave={stayOutOfClosingMenu(onPointerLeave)}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-2 text-sm transition-colors duration-150 outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
@@ -130,6 +222,7 @@ function DropdownMenuRadioItem({
   className,
   children,
   inset,
+  onPointerLeave,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem> & {
   inset?: boolean
@@ -138,6 +231,7 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
+      onPointerLeave={stayOutOfClosingMenu(onPointerLeave)}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-2 text-sm transition-colors duration-150 outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

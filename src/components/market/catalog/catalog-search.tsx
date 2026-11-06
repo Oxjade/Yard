@@ -12,19 +12,21 @@ import { searchSuggestions, type CatalogState } from "./catalog-state"
 const RECENT_KEY = "nocturne.catalog.recent-searches"
 const RECENT_MAX = 5
 
-function readRecent(): string[] {
+function readRecent(key: string | null): string[] {
+  if (!key) return []
   try {
-    const value = JSON.parse(window.localStorage.getItem(RECENT_KEY) ?? "[]")
+    const value = JSON.parse(window.localStorage.getItem(key) ?? "[]")
     return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").slice(0, RECENT_MAX) : []
   } catch {
     return []
   }
 }
 
-function writeRecent(list: string[]) {
+function writeRecent(key: string | null, list: string[]) {
+  if (!key) return
   try {
-    if (list.length) window.localStorage.setItem(RECENT_KEY, JSON.stringify(list))
-    else window.localStorage.removeItem(RECENT_KEY)
+    if (list.length) window.localStorage.setItem(key, JSON.stringify(list))
+    else window.localStorage.removeItem(key)
   } catch {
     // Storage can be blocked (private mode); recent searches are a convenience only.
   }
@@ -42,23 +44,32 @@ const coarsePointer = () => typeof window !== "undefined" && window.matchMedia("
  * empty, this browser's recent searches. Arrow keys move through them, Enter picks, Escape closes
  * the list and then clears the field. If the URL changes from elsewhere (Clear all, the search
  * overlay), the field follows it without overwriting what the shopper is typing.
+ *
+ * Without `state` there are no completions (they count pieces, which only fits a listing of
+ * pieces) and, unless a `recentKey` is given, no recent searches either: a plain search field
+ * with the same look and the same settle, Enter, Escape and clear behaviour (the brand
+ * directory, say). The shop's recent searches are only offered where the shop's completions are.
  */
 export function CatalogSearch({
   value,
   onCommit,
   state,
+  recentKey: recentKeyProp,
   placeholder,
   label,
   className,
 }: {
   value: string
   onCommit: (q: string) => void
-  /** The listing's current state, so each suggestion's count matches what it would show. */
-  state: CatalogState
+  /** The listing's current state, so each suggestion's count matches what it would show. Omit for no completions. */
+  state?: CatalogState
+  /** Where this browser keeps recent searches; null for none. Defaults to the shop's list with `state`, none without. */
+  recentKey?: string | null
   placeholder: string
   label: string
   className?: string
 }) {
+  const recentKey = recentKeyProp === undefined ? (state ? RECENT_KEY : null) : recentKeyProp
   const id = useId()
   const listId = `${id}-list`
   const rootRef = useRef<HTMLFormElement>(null)
@@ -88,7 +99,9 @@ export function CatalogSearch({
   }, [draft, committed, onCommit])
 
   const typed = draft.trim()
-  const suggestions = useMemo(() => (typed.length >= 2 ? searchSuggestions(typed, state) : []), [typed, state])
+  const suggestions = useMemo(() => (state && typed.length >= 2 ? searchSuggestions(typed, state) : []), [typed, state])
+  /** Nothing to offer at all: a plain search field, not a combobox. */
+  const plain = !state && !recentKey
   const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null
   const options: Option[] = mode === "suggest" ? suggestions : mode === "recent" ? recent.map((term) => ({ term })) : []
   const expanded = open && options.length > 0
@@ -96,8 +109,9 @@ export function CatalogSearch({
 
   function remember(term: string) {
     if (term.length < 2) return
-    const next = [term, ...readRecent().filter((t) => t.toLowerCase() !== term.toLowerCase())].slice(0, RECENT_MAX)
-    writeRecent(next)
+    if (!recentKey) return
+    const next = [term, ...readRecent(recentKey).filter((t) => t.toLowerCase() !== term.toLowerCase())].slice(0, RECENT_MAX)
+    writeRecent(recentKey, next)
     setRecent(next)
   }
 
@@ -122,7 +136,7 @@ export function CatalogSearch({
   }
 
   function clearRecent() {
-    writeRecent([])
+    writeRecent(recentKey, [])
     setRecent([])
     inputRef.current?.focus()
   }
@@ -172,7 +186,7 @@ export function CatalogSearch({
         setActive(-1)
         if (committed.length >= 2 && committed === typed) remember(committed)
       }}
-      className={cn("relative z-20", className)}
+      className={cn("relative", !plain && "z-20", className)}
     >
       <label htmlFor={id} className="sr-only">
         {label}
@@ -182,11 +196,15 @@ export function CatalogSearch({
         ref={inputRef}
         id={id}
         type="text"
-        role="combobox"
-        aria-expanded={expanded}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={activeIndex >= 0 ? `${id}-opt-${activeIndex}` : undefined}
+        {...(plain
+          ? {}
+          : {
+              role: "combobox",
+              "aria-expanded": expanded,
+              "aria-controls": listId,
+              "aria-autocomplete": "list" as const,
+              "aria-activedescendant": activeIndex >= 0 ? `${id}-opt-${activeIndex}` : undefined,
+            })}
         value={draft}
         onChange={(e) => {
           setDraft(e.target.value)
@@ -194,7 +212,7 @@ export function CatalogSearch({
           setActive(-1)
         }}
         onFocus={() => {
-          setRecent(readRecent())
+          setRecent(readRecent(recentKey))
           setOpen(true)
         }}
         onClick={() => setOpen(true)}

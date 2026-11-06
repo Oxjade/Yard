@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { ArrowSquareOutIcon, CheckIcon, XIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Panel } from "@/components/admin/ui/panel"
 import type { Refund } from "@/lib/data/admin"
@@ -46,11 +46,10 @@ function audience(items: Refund[], kind: Kind) {
   return kind === "decline" ? `${who} and ${both ? "see" : "sees"} your reason.` : `${who} that it's approved; your reason stays in the audit log.`
 }
 
-/** Why a bulk action changed nothing: every selected refund has been decided already. */
-function nothingApplies(kind: Kind, count: number) {
-  const done = kind === "approve" ? "approved" : "declined"
-  return count === 1 ? `The selected refund has already been decided, so nothing was ${done}.` : `None of the ${count} selected refunds is waiting for a decision, so nothing was ${done}.`
-}
+const undecided = (r: Refund) => r.status === "requested"
+/** Why a decided refund's menu greys out Approve and Decline. */
+const decidedAlready = (r: Refund) => `Already ${refundMeta[r.status].label.toLowerCase()}.`
+const NONE_UNDECIDED = "None of the selected refunds is waiting for a decision."
 
 function refundDecision(kind: Kind, list: Refund[]): Decision | null {
   const items = list.filter((r) => r.status === "requested")
@@ -116,12 +115,14 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
     applied.current = focus
     if (!new URLSearchParams(window.location.search).get("status")) writeParams({ status: focusedStatus === "requested" ? null : focusedStatus })
   }, [focus, focusedStatus])
-  // A decided row can leave the filtered table; focus then goes to the table's search.
-  const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  // A decided row can leave the filtered table; focus then goes back to the selection bar while
+  // rows stay selected, else to the table's search.
+  const { ask, dialog } = useDecision(() => bulkBarControl(document.querySelector('main [role="tabpanel"]')) ?? document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  // The row menu and the bulk bar only offer a decision for refunds still waiting for one. What
+  // `ask` returns goes back to the bulk bar, so a decision that reports a cancel keeps the selection.
   const decide = (kind: Kind, list: Refund[]) => {
     const d = refundDecision(kind, list)
-    if (d) ask(d)
-    else toast.info(nothingApplies(kind, list.length))
+    return d ? ask(d) : false
   }
 
   const count = (s: Refund["status"]) => refunds.filter((r) => r.status === s).length
@@ -172,14 +173,18 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
   ]
 
   const rowActions: RowAction<Refund>[] = [
-    { label: "Approve refund", icon: CheckIcon, disabled: (r) => r.status !== "requested", onSelect: (r) => decide("approve", [r]) },
-    { label: "Decline refund", icon: XIcon, destructive: true, disabled: (r) => r.status !== "requested", onSelect: (r) => decide("decline", [r]) },
+    { label: "Approve refund", icon: CheckIcon, disabled: (r) => !undecided(r), disabledReason: decidedAlready, onSelect: (r) => decide("approve", [r]) },
+    { label: "Decline refund", icon: XIcon, destructive: true, disabled: (r) => !undecided(r), disabledReason: decidedAlready, onSelect: (r) => decide("decline", [r]) },
     { label: "Open the order", icon: ArrowSquareOutIcon, separatorBefore: true, onSelect: (r) => router.push(`/admin/orders?order=${orderIdOf(r.id)}`) },
   ]
-  const bulkActions: BulkAction<Refund>[] = [
-    { label: "Approve", onSelect: (list) => decide("approve", list) },
-    { label: "Decline", destructive: true, onSelect: (list) => decide("decline", list) },
-  ]
+  // Only requests can be decided, so a filter of decided refunds has no checkboxes.
+  const bulkActions: BulkAction<Refund>[] | undefined =
+    filter === "all" || filter === "requested"
+      ? [
+          { label: "Approve", appliesTo: undecided, disabledReason: NONE_UNDECIDED, onSelect: (list) => decide("approve", list) },
+          { label: "Decline", destructive: true, appliesTo: undecided, disabledReason: NONE_UNDECIDED, onSelect: (list) => decide("decline", list) },
+        ]
+      : undefined
 
   return (
     <div className="grid gap-3">
@@ -222,6 +227,7 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
           }
           rowActions={rowActions}
           bulkActions={phone ? undefined : bulkActions}
+          highlightedRowId={focused?.id}
           empty={{ title: filter === "requested" ? "No refunds to decide" : `No ${filter === "all" ? "" : `${refundMeta[filter as Refund["status"]].label.toLowerCase()} `}refunds`, body: filter === "requested" ? "Return requests from shoppers and support land here." : "Refunds move here as they're decided.", action: filter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all refunds</Button> : undefined }}
           minWidth={300}
         />

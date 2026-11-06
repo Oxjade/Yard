@@ -17,11 +17,28 @@ export const customerOrderStatus: Record<MerchantOrderStatus, { label: string; t
   refunded: { label: "Refunded", tone: "muted", note: "Your refund was issued to your original payment method." },
 }
 
+type StatusInput = Pick<MerchantOrder, "status" | "paymentStatus"> & Partial<Pick<MerchantOrder, "returnRequest" | "refund">>
+
+/**
+ * How an order reads to the shopper once a return on it has been decided: approved (recorded,
+ * not sent: no payment provider is connected in this build) or declined. Null otherwise.
+ */
+export function returnOutcome(order: StatusInput): { label: string; tone: Tone; note: string } | null {
+  const d = order.returnRequest?.decision
+  if (!d) return null
+  if (d.status === "declined") return { label: "Return declined", tone: "muted", note: d.reason ? `Your return was declined: ${d.reason}.` : "Your return was declined." }
+  const recorded = "It's approved and recorded, and goes back to how you paid once a payment provider is connected. Nothing has reached your card yet."
+  return d.partial ? { label: "Partial refund approved", tone: "info", note: `A partial refund is approved for the items you returned. ${recorded}` } : { label: "Refund approved", tone: "info", note: `A refund for the whole order is approved. ${recorded}` }
+}
+
 /**
  * The status note for one order. A cancellation reads differently depending on whether the
  * order was ever paid: Studio can cancel unpaid orders, and nothing is refunded for those.
+ * A decided return says what was decided.
  */
-export function orderStatusNote(order: Pick<MerchantOrder, "status" | "paymentStatus">) {
+export function orderStatusNote(order: StatusInput) {
+  const outcome = returnOutcome(order)
+  if (outcome) return outcome.note
   if (order.status !== "cancelled") return customerOrderStatus[order.status].note
   if (order.paymentStatus === "pending" || order.paymentStatus === "failed") return "Cancelled before it was paid, so nothing was charged."
   if (order.paymentStatus === "refunded") return "Cancelled before it shipped, and marked refunded to your original payment method."
@@ -32,12 +49,14 @@ export function orderStatusNote(order: Pick<MerchantOrder, "status" | "paymentSt
  * How a checkout's total reads, from its orders' payment states. "Total charged" only when
  * every order was captured; refunds, pending payments and unpaid cancellations say so instead.
  */
-export function checkoutPayment(orders: Pick<MerchantOrder, "status" | "paymentStatus">[]): { label: string; status: string; note?: string; tone?: "violet" | "muted" } {
-  // An order cancelled before it was paid will never be charged.
-  const states = orders.map((o) => (o.status === "cancelled" && (o.paymentStatus === "pending" || o.paymentStatus === "failed") ? "void" : o.paymentStatus))
+export function checkoutPayment(orders: StatusInput[]): { label: string; status: string; note?: string; tone?: "violet" | "muted" } {
+  // An order cancelled before it was paid will never be charged. A refund approved in this
+  // browser is recorded, not sent (no payment provider is connected).
+  const states = orders.map((o) => (o.status === "cancelled" && (o.paymentStatus === "pending" || o.paymentStatus === "failed") ? "void" : o.refund ? "refund_recorded" : o.paymentStatus))
   const all = (...s: (typeof states)[number][]) => states.length > 0 && states.every((x) => s.includes(x))
   const some = (...s: (typeof states)[number][]) => states.some((x) => s.includes(x))
   if (all("void")) return { label: "Total", status: "Cancelled", note: "Cancelled before payment, nothing was charged", tone: "muted" }
+  if (some("refund_recorded")) return { label: "Total charged", status: "Refund approved", note: "A refund is approved and recorded, not sent yet, see each order", tone: "muted" }
   if (all("pending")) return { label: "Total", status: "Awaiting confirmation", note: "Not charged, awaiting payment confirmation", tone: "violet" }
   if (some("pending")) return { label: "Total", status: "Partly awaiting confirmation", note: "Partly awaiting payment confirmation, see each order", tone: "violet" }
   if (all("captured")) return { label: "Total charged", status: "Confirmed" }
@@ -49,8 +68,13 @@ export function checkoutPayment(orders: Pick<MerchantOrder, "status" | "paymentS
   return { label: "Total", status: "See each order", note: "See each order for its payment", tone: "muted" }
 }
 
-export function OrderStatusBadge({ status, className }: { status: MerchantOrderStatus; className?: string }) {
-  const meta = customerOrderStatus[status]
+/**
+ * The order's status badge. Pass the `order` (its status is read from it) so a decided return
+ * reads as approved or declined, not just "Delivered". `status` alone is for callers with no
+ * order record to hand.
+ */
+export function OrderStatusBadge({ status, order, className }: { className?: string } & ({ order: StatusInput; status?: MerchantOrderStatus } | { status: MerchantOrderStatus; order?: undefined })) {
+  const meta = (order && returnOutcome(order)) ?? customerOrderStatus[status ?? order!.status]
   return <StatusBadge tone={meta.tone} className={className}>{meta.label}</StatusBadge>
 }
 

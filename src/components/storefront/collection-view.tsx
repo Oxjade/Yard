@@ -6,7 +6,7 @@ import Link from "next/link"
 import { PackageIcon as PackageOpen } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
-import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
+import { ProductCard } from "@/components/market/product-card"
 import { EmptyCard } from "@/components/market/editorial/empty-card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -132,7 +132,7 @@ export function CollectionView({ brand: seedBrand, collection, products, others 
                 className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3 lg:grid-cols-4"
               >
                 {sorted.map((p, i) => (
-                  <ShopProductCard key={p.id} product={p} priority={i < 2} />
+                  <ProductCard key={p.id} product={p} priority={i < 2} />
                 ))}
               </motion.div>
             </AnimatePresence>

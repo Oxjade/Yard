@@ -16,7 +16,7 @@ import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney, toMajor } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { conditionalOrderTabs, ordersDescription, countryName, emptyOrderTab, formatDateTime, itemCount, orderMatchesTab, orderTabs, paymentMeta, paymentState, plural, relativeDay, shopperName, type OrderTab } from "./model"
+import { conditionalOrderTabs, ordersDescription, countryName, emptyOrderTab, formatDateTime, itemCount, orderMatchesTab, orderTabs, paymentView, plural, relativeDay, shopperName, type OrderTab } from "./model"
 import { TrackingDialog } from "./order-dialogs"
 import { PhoneSort, phoneCell, useStudioReady } from "./shared"
 
@@ -36,7 +36,7 @@ function toCsv(rows: MerchantOrder[], currency: string) {
       shopperName(o.customerId),
       itemCount(o),
       toMajor(o.total, o.currency),
-      paymentMeta[paymentState(o)].label,
+      paymentView(o).label,
       orderStatusMeta[o.status].label,
       `${o.shippingAddress.city}, ${countryName(o.shippingAddress.country)}`,
       o.shippingMethod.replace(" — ", ", "),
@@ -183,7 +183,7 @@ export function OrdersIndex() {
       ),
     },
     { key: "total", header: "Total", align: "right", sortValue: (o) => o.total, hideBelow: "md", cell: (o) => <span className="whitespace-nowrap text-ink">{formatMoney(o.total, cur)}</span> },
-    { key: "payment", header: "Payment", sortValue: (o) => paymentMeta[paymentState(o)].label, hideBelow: "md", cell: (o) => { const pay = paymentMeta[paymentState(o)]; return <StatusBadge tone={pay.tone}>{pay.label}</StatusBadge> } },
+    { key: "payment", header: "Payment", sortValue: (o) => paymentView(o).label, hideBelow: "md", cell: (o) => { const pay = paymentView(o); return <StatusBadge tone={pay.tone}>{pay.label}</StatusBadge> } },
     { key: "fulfilment", header: "Fulfilment", sortValue: (o) => orderStatusMeta[o.status].label, hideBelow: "md", cell: (o) => { const st = orderStatusMeta[o.status]; return <StatusBadge tone={st.tone}>{st.label}</StatusBadge> } },
   ]
 

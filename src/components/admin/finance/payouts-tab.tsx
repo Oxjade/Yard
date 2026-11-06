@@ -3,7 +3,7 @@
 import { CheckIcon, PauseCircleIcon, PlayCircleIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
+import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Panel } from "@/components/admin/ui/panel"
@@ -53,12 +53,20 @@ const approvedHere = (p: Payout, audit: AuditEntry[]) => p.status === "processin
 const RECORDED: Meta = { label: "Approval recorded", tone: "info" }
 const statusOf = (p: Payout, audit: AuditEntry[]): Meta => (approvedHere(p, audit) ? RECORDED : payoutMeta[p.status])
 
-/** Why a bulk action changed nothing: none of the selected payouts is in a status it applies to. */
-function nothingApplies(kind: Kind, count: number) {
+/** Why a bulk action is unavailable: none of the selected payouts is in a status it applies to. */
+function noneApplies(kind: Kind) {
   const from = (Object.keys(allowed) as Payout["status"][]).filter((s) => allowed[s].includes(kind)).map((s) => payoutMeta[s].label.toLowerCase())
   const states = from.length > 1 ? `${from.slice(0, -1).join(", ")} or ${from.at(-1)}` : from[0]
-  const done = kindDef[kind].done
-  return count === 1 ? `The selected payout isn't ${states}, so nothing was ${done}.` : `None of the ${count} selected payouts is ${states}, so nothing was ${done}.`
+  return `None of the selected payouts is ${states}.`
+}
+
+/** Why a payout's menu greys out a decision, in its own terms. */
+function unavailable(kind: Kind, p: Payout, audit: AuditEntry[]) {
+  if (p.status === "paid") return "Already completed."
+  const recorded = approvedHere(p, audit)
+  if (kind === "approve") return p.status === "scheduled" ? "It's on the payout schedule, so it needs no approval." : p.status === "held" ? "Held. Release it first." : recorded ? "Approval already recorded." : "Already processing."
+  if (kind === "hold") return p.status === "held" ? "Already held." : recorded ? "Approval is recorded, so it can't be held." : "Processing payouts can't be held."
+  return "Only held payouts can be released."
 }
 
 function payoutDecision(kind: Kind, list: Payout[], audit: AuditEntry[]): Decision | null {
@@ -97,12 +105,14 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
   const linked = useSearchParam("status")
   const filter: Filter = isFilter(linked) ? linked : "all"
   const setFilter = (f: Filter) => writeParams({ status: f === "all" ? null : f })
-  // A decided row can leave the filtered table; focus then goes to the table's search.
-  const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  // A decided row can leave the filtered table; focus then goes back to the selection bar while
+  // rows stay selected, else to the table's search.
+  const { ask, dialog } = useDecision(() => bulkBarControl(document.querySelector('main [role="tabpanel"]')) ?? document.querySelector<HTMLElement>('main [role="tabpanel"] input[type="search"]'))
+  // The row menu and the bulk bar only offer a decision for payouts it applies to. What `ask`
+  // returns goes back to the bulk bar, so a decision that reports a cancel keeps the selection.
   const decide = (kind: Kind, list: Payout[]) => {
     const d = payoutDecision(kind, list, audit)
-    if (d) ask(d)
-    else toast.info(nothingApplies(kind, list.length))
+    return d ? ask(d) : false
   }
 
   const count = (s: Payout["status"]) => payouts.filter((p) => p.status === s).length
@@ -178,12 +188,13 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
     { key: "status", header: "Status", hideBelow: "sm", sortValue: (p) => ORDER.indexOf(p.status), cell: statusCell },
   ]
 
-  const rowActions: RowAction<Payout>[] = (["approve", "hold", "release"] as Kind[]).map((k) => ({ label: kindDef[k].label, icon: kindDef[k].icon, destructive: kindDef[k].destructive, disabled: (p: Payout) => !allowed[p.status].includes(k), onSelect: (p: Payout) => decide(k, [p]) }))
-  const bulkActions: BulkAction<Payout>[] = [
-    { label: "Approve", onSelect: (list) => decide("approve", list) },
-    { label: "Hold", destructive: true, onSelect: (list) => decide("hold", list) },
-    { label: "Release", onSelect: (list) => decide("release", list) },
-  ]
+  const allows = (k: Kind) => (p: Payout) => allowed[p.status].includes(k)
+  const rowActions: RowAction<Payout>[] = (["approve", "hold", "release"] as Kind[]).map((k) => ({ label: kindDef[k].label, icon: kindDef[k].icon, destructive: kindDef[k].destructive, disabled: (p: Payout) => !allows(k)(p), disabledReason: (p: Payout) => unavailable(k, p, audit), onSelect: (p: Payout) => decide(k, [p]) }))
+  // The bar offers the decisions a status in this filter can take; processing and paid can take
+  // none, so those filters have no checkboxes.
+  const bulkKinds = (["approve", "hold", "release"] as Kind[]).filter((k) => (filter === "all" ? ORDER : [filter]).some((s) => allowed[s].includes(k)))
+  const bulkLabel: Record<Kind, string> = { approve: "Approve", hold: "Hold", release: "Release" }
+  const bulkActions: BulkAction<Payout>[] = bulkKinds.map((k) => ({ label: bulkLabel[k], destructive: kindDef[k].destructive, appliesTo: allows(k), disabledReason: noneApplies(k), onSelect: (list) => decide(k, list) }))
 
   return (
     <div className="grid gap-3">
@@ -218,7 +229,8 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
             />
           }
           rowActions={rowActions}
-          bulkActions={phone ? undefined : bulkActions}
+          bulkActions={phone || !bulkActions.length ? undefined : bulkActions}
+          highlightedRowId={focused?.id}
           empty={{ title: filter === "all" ? "No payouts yet" : `No payouts ${payoutMeta[filter as Payout["status"]].label.toLowerCase()}`, body: "Payouts move between statuses as they're decided.", action: filter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all payouts</Button> : undefined }}
           minWidth={300}
         />

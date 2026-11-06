@@ -43,26 +43,6 @@ export function PageTitleSkeleton() {
   )
 }
 
-export function ProductDetailSkeleton() {
-  return (
-    <div role="status" aria-label="Loading product" className="grid gap-8 md:grid-cols-[1.2fr_1fr] md:gap-12">
-      <Bone className="aspect-[4/5] w-full rounded-lg" />
-      <div className="space-y-4">
-        <Bone className="h-4 w-32" />
-        <Bone className="h-12 w-3/4" />
-        <Bone className="h-6 w-24" />
-        <div className="grid grid-cols-5 gap-2 pt-4">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Bone key={i} className="h-11" />
-          ))}
-        </div>
-        <Bone className="h-12 w-full" />
-        <Bone className="h-24 w-full" />
-      </div>
-    </div>
-  )
-}
-
 export function StorefrontSkeleton() {
   return (
     <div role="status" aria-label="Loading storefront">

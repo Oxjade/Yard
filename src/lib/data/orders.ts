@@ -150,3 +150,24 @@ export const customerCheckoutGroups: CheckoutGroup[] = ["cg_ada_1", "cg_ada_2", 
     total: orders.reduce((s, o) => s + convert(o.total, o.currency, "NGN"), 0),
   }
 })
+
+/* ---------- Sample return requests ---------- */
+
+/** The shopper's words on the sample orders that come in with a return requested. */
+const SAMPLE_RETURN_REASONS = [
+  { reason: "too-small", reasonLabel: "Too small", note: "The fit runs smaller than the size chart. I'd like to send it back." },
+  { reason: "not-as-described", reasonLabel: "Not as described", note: "The colour is much darker than in the photos." },
+  { reason: "damaged", reasonLabel: "Arrived damaged or faulty", note: "The parcel arrived torn and the print is scuffed on the back." },
+  { reason: "unwanted", reasonLabel: "Changed my mind", note: "Ordered two of the same by mistake." },
+] as const
+
+/**
+ * The return request on a sample order that came with one (status refund_requested or refunded,
+ * but no request record): the whole order, with one reason that Studio, the Finance refund queue
+ * and a decision on it all read, so the three never disagree.
+ */
+export function sampleReturnRequest(o: Pick<MerchantOrder, "id" | "lines" | "timeline" | "placedAt">): NonNullable<MerchantOrder["returnRequest"]> {
+  const s = pick(`refund-${o.id}`, SAMPLE_RETURN_REASONS)
+  const at = [...o.timeline].reverse().find((t) => /refund|return/i.test(t.label))?.at ?? o.placedAt
+  return { at, reason: s.reason, reasonLabel: s.reasonLabel, note: s.note, variantIds: o.lines.map((l) => l.variantId) }
+}

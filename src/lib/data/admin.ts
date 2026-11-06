@@ -1,9 +1,10 @@
+import type { CurrencyCode } from "@/config/markets"
 import { convert } from "@/lib/money"
 import { brands } from "./brands"
 import { campaigns } from "./ads"
-import { merchantOrders, shoppers } from "./orders"
+import { merchantOrders, sampleReturnRequest, shoppers } from "./orders"
 import { products } from "./products"
-import { daysAgo, hash, pick, randInt, rand } from "./seed"
+import { daysAgo, hash, randInt, rand } from "./seed"
 
 /**
  * Internal Admin Control Center data for development. Financial records are append-only:
@@ -117,14 +118,25 @@ export const transactions: Transaction[] = merchantOrders.slice(0, 80).flatMap((
   return [charge, ...extra]
 })
 
-export type Payout = { id: string; brandName: string; brandId: string; amountUsd: number; currency: string; scheduledFor: string; status: "scheduled" | "awaiting_approval" | "processing" | "paid" | "held"; method: string; holdReason?: string; orders: number }
+/**
+ * A brand payout. `amount` is what the brand is paid, in its own currency (minor units, the same
+ * units as its orders); `amountUsd` is the same payout in USD cents for platform-wide totals.
+ * A payout a brand requests keeps the exact amount it confirmed in `amount`.
+ */
+export type Payout = { id: string; brandName: string; brandId: string; amount: number; currency: CurrencyCode; amountUsd: number; scheduledFor: string; status: "scheduled" | "awaiting_approval" | "processing" | "paid" | "held"; method: string; holdReason?: string; orders: number }
 
 export const payouts: Payout[] = brands.map((b, i) => {
   const orders = merchantOrders.filter((o) => o.brandId === b.id && o.status === "delivered")
   const gross = orders.reduce((s, o) => s + convert(o.subtotal - o.commission, o.currency, "USD"), 0)
   const status: Payout["status"] = i === 2 ? "awaiting_approval" : i === 5 ? "held" : i % 4 === 0 ? "paid" : i % 3 === 0 ? "processing" : "scheduled"
-  return { id: `po_${b.handle}`, brandName: b.name, brandId: b.id, amountUsd: Math.round(gross / 3), currency: b.currency, scheduledFor: daysAgo(-((i % 5) + 1)), status, method: b.country === "NG" ? "Paystack transfer" : b.country === "KE" ? "Flutterwave transfer" : "Bank transfer", holdReason: status === "held" ? "Open refund request exceeds reserve." : undefined, orders: orders.length }
+  const amountUsd = Math.round(gross / 3)
+  return { id: `po_${b.handle}`, brandName: b.name, brandId: b.id, amount: convert(amountUsd, "USD", b.currency), currency: b.currency, amountUsd, scheduledFor: daysAgo(status === "paid" ? (i % 5) + 2 : -((i % 5) + 1)), status, method: b.country === "NG" ? "Paystack transfer" : b.country === "KE" ? "Flutterwave transfer" : "Bank transfer", holdReason: status === "held" ? "Open refund request exceeds reserve." : undefined, orders: orders.length }
 })
+
+/** A payout's amount in a given currency: the exact stored amount in the brand's own currency, else converted from USD. */
+export function payoutAmountIn(p: Pick<Payout, "amount" | "currency" | "amountUsd">, currency: CurrencyCode) {
+  return p.currency === currency && typeof p.amount === "number" ? p.amount : convert(p.amountUsd, "USD", currency)
+}
 
 export type Refund = { id: string; reference: string; brandName: string; customer: string; amountUsd: number; reason: string; requestedAt: string; status: "requested" | "approved" | "issued" | "declined"; idempotencyKey: string }
 
@@ -137,8 +149,9 @@ export const refunds: Refund[] = merchantOrders
     brandName: brands.find((b) => b.id === o.brandId)!.name,
     customer: shoppers.find((s) => s.id === o.customerId)?.name ?? "Customer",
     amountUsd: convert(o.total, o.currency, "USD"),
-    reason: pick(`${o.id}-reason`, ["Wrong size", "Arrived damaged", "Not as described", "Changed my mind", "Late delivery"]),
-    requestedAt: o.placedAt,
+    // The same request Studio shows on the order.
+    reason: sampleReturnRequest(o).reasonLabel,
+    requestedAt: sampleReturnRequest(o).at,
     status: o.status === "refunded" ? "issued" : "requested",
     idempotencyKey: `rfnd_${hash(o.id).toString(36)}`,
   }))

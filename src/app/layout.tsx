@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import { SidebarPrePaint } from "@/components/dashboard/shell/sidebar-pre-paint"
 import { Providers } from "@/components/providers"
 import { site } from "@/config/site"
 import "./globals.css"
@@ -18,7 +19,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {/* Sidebar: apply the saved collapsed preference before first paint (no layout shift). */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{if(localStorage.getItem("nocturne-sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed"}catch(e){}})()` }} />
+        <SidebarPrePaint />
       </head>
       <body>
         <Providers>{children}</Providers>

@@ -150,7 +150,8 @@ export function searchProducts(query: ProductQuery) {
   if (q) {
     list = list.filter((p) => {
       const brand = brandById.get(p.brandId)!
-      return [p.name, p.description, p.subcategory, p.category, brand.name, ...p.tags].join(" ").toLowerCase().includes(q)
+      // The brand's city too, so "Seoul" finds what Seoul's brands make.
+      return [p.name, p.description, p.subcategory, p.category, brand.name, brand.city, ...p.tags].join(" ").toLowerCase().includes(q)
     })
   }
   if (query.category) list = list.filter((p) => p.category === query.category)

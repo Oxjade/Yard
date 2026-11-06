@@ -26,7 +26,8 @@ export function SectionHeader({
       {href ? (
         <Link
           href={href}
-          className="group inline-flex shrink-0 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink"
+          // Phones get a 40px target; the negative margin keeps the label where it sat before.
+          className="group -mb-1.5 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md py-1 text-sm text-ink-2 transition-colors hover:text-ink lg:mb-0 lg:min-h-0"
         >
           {action}
           <ArrowUpRight className="size-4 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

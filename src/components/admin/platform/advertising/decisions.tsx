@@ -5,89 +5,59 @@ import { toast } from "sonner"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { brandById } from "@/lib/data"
 import { STUDIO_BRAND_ID } from "@/lib/data/brands"
-import type { Campaign } from "@/lib/data/ads"
-import { useAdmin } from "@/lib/stores/admin"
-import { useNotifications } from "@/lib/stores/notifications"
-import { useStudio } from "@/lib/stores/studio"
-import { campaignWindow, formatDay, formatRange, usd } from "../format"
+import { campaignDates, type Campaign } from "@/lib/data/ads"
+import { useNow } from "@/hooks/use-now"
+import { campaignRequestActions, pendingCampaignRequest, useAdmin } from "@/lib/stores/admin"
+import { formatDay, formatRange, usd } from "../format"
 import { useDialogReturn } from "../ready"
 import { placementRules, SECOND_APPROVER_OVER_CENTS } from "./placements"
 
 export type Decision = "active" | "rejected"
 
 /** Over the limit, the reviewing admin can only send the decision to a second admin. */
-export const REQUEST_APPROVE = "Requested campaign approval"
-export const REQUEST_REJECT = "Requested campaign rejection"
+export const REQUEST_APPROVE = campaignRequestActions.approve
+export const REQUEST_REJECT = campaignRequestActions.reject
 /** The requesting admin can take a request back while it waits; the campaign is then decided afresh. */
-export const WITHDRAW_REQUEST = "Withdrew campaign decision request"
+export const WITHDRAW_REQUEST = campaignRequestActions.withdraw
 export const DECISION_ACTIONS = ["Approved campaign", "Approved campaign (scheduled)", "Rejected campaign"]
-const requestTarget = (c: Campaign) => `${c.name} (${c.id})`
 export const needsSecond = (c: Campaign) => c.budget > SECOND_APPROVER_OVER_CENTS
 
 /**
- * Every campaign the platform knows about: the review store's, plus any the Studio brand has
- * submitted in this browser that the review store hasn't seen yet. Without the second half, a
- * "Campaign submitted for review" notification would open a queue that doesn't list it.
+ * Every campaign the platform knows about. The Studio store puts a brand's submission in the
+ * review store as it's sent, so this is the review store's list.
  */
 export function useAllCampaigns() {
-  const admin = useAdmin((s) => s.campaigns)
-  const studio = useStudio((s) => s.campaigns)
-  return useMemo(() => {
-    const known = new Set(admin.map((c) => c.id))
-    return [...admin, ...studio.filter((c) => !known.has(c.id) && c.status !== "draft")]
-  }, [admin, studio])
+  return useAdmin((s) => s.campaigns)
 }
 
 /** Campaigns whose decision has been sent to a second admin, and which way. */
 export function useRequested(campaigns: Campaign[]) {
   const audit = useAdmin((s) => s.audit)
+  const requests = useAdmin((s) => s.campaignRequests)
   return useMemo(() => {
     const m = new Map<string, Decision>()
     for (const c of campaigns) {
       if (c.status !== "in_review") continue
-      // The newest request or withdrawal for this campaign decides (the audit log is newest first).
-      const a = audit.find((x) => (x.action === REQUEST_APPROVE || x.action === REQUEST_REJECT || x.action === WITHDRAW_REQUEST) && (x.subjectId === c.id || x.target === requestTarget(c)))
-      if (a && a.action !== WITHDRAW_REQUEST) m.set(c.id, a.action === REQUEST_APPROVE ? "active" : "rejected")
+      const d = pendingCampaignRequest({ audit, campaignRequests: requests }, c)
+      if (d) m.set(c.id, d)
     }
     return m
-  }, [audit, campaigns])
+  }, [audit, requests, campaigns])
 }
 
-/** Takes back a request for a second approval: logged, and the campaign can be decided again. */
+/** Takes back a request for a second approval: recorded, and the campaign can be decided again. */
 export function withdrawRequest(c: Campaign, decision: Decision) {
-  useAdmin.getState().log(WITHDRAW_REQUEST, requestTarget(c), `Withdrew the request to ${decision === "active" ? "approve" : "reject"} it`)
+  return useAdmin.getState().withdrawCampaignDecision(c.id, `Withdrew the request to ${decision === "active" ? "approve" : "reject"} it`)
 }
 
 /**
- * Records the decision in the review store (status, reason, audit entry) and, for the Studio
- * brand, mirrors the outcome onto its own copy of the campaign so Studio's Advertising page
- * and the notification it receives agree.
+ * Records the decision: the review store's status, reason and audit entry. The store brings a
+ * Studio brand's own copy of the campaign in step, and the merchant's notification comes from the
+ * store events (approved, scheduled or rejected).
  */
 function applyDecision(c: Campaign, decision: Decision, reason: string) {
-  const admin = useAdmin.getState()
-  if (!admin.campaigns.some((x) => x.id === c.id)) useAdmin.setState({ campaigns: [c, ...admin.campaigns] })
   useAdmin.getState().reviewCampaign(c.id, decision, reason)
-  const after = useAdmin.getState().campaigns.find((x) => x.id === c.id) ?? c
-  if (c.brandId === STUDIO_BRAND_ID) {
-    const studio = useStudio.getState()
-    const mine = studio.campaigns.find((x) => x.id === c.id)
-    if (mine) studio.upsertCampaign({ ...mine, status: after.status, rejectionReason: after.rejectionReason })
-    // Approved and active or rejected, the merchant notification comes from the store events;
-    // approved with a future start ("scheduled") has to be announced here.
-    if (after.status === "scheduled") {
-      const start = campaignWindow(c.startDaysFromToday, c.days).start
-      useNotifications.getState().push({
-        eventKey: `m:campaign:${c.id}:scheduled`,
-        audience: "merchant",
-        category: "campaign_review",
-        title: `Campaign approved: ${c.name}`,
-        body: `It's scheduled to start on ${formatDay(start)}, always labelled Sponsored.`,
-        href: "/studio/advertising",
-        at: new Date().toISOString(),
-      })
-    }
-  }
-  return after
+  return useAdmin.getState().campaigns.find((x) => x.id === c.id) ?? c
 }
 
 type Pending = { campaign: Campaign; decision: Decision; second: boolean }
@@ -98,7 +68,6 @@ type Pending = { campaign: Campaign; decision: Decision; second: boolean }
  * second admin instead, as the Sensitive actions policy requires.
  */
 export function useCampaignDecision() {
-  const log = useAdmin((s) => s.log)
   const [pending, setPending] = useState<Pending | null>(null)
   const [open, setOpen] = useState(false)
   // When the decided row leaves the queue, focus lands on the next decision, or the queue itself.
@@ -124,7 +93,9 @@ export function useCampaignDecision() {
   const c = pending?.campaign
   const brand = c ? (brandById.get(c.brandId)?.name ?? "The brand") : ""
   const studio = c?.brandId === STUDIO_BRAND_ID
-  const win = c ? campaignWindow(c.startDaysFromToday, c.days) : null
+  // The brand's calendar days, as Studio and the merchant's notification give them.
+  const now = useNow(60_000)
+  const win = c && now !== null ? campaignDates(c, now) : null
   const where = c ? c.placements.map((p) => placementRules[p].name).join(", ") : ""
 
   const copy = !pending || !c || !win
@@ -139,7 +110,7 @@ export function useCampaignDecision() {
       : pending.decision === "active"
         ? {
             title: `Approve ${c.name}`,
-            description: `${brand}, ${usd(c.budget)}, ${formatRange(win.start, win.end)}. Placements: ${where}, with the Sponsored label in every slot.${studio ? ` ${brand} sees the decision in Studio.` : ""}`,
+            description: `${brand}, ${usd(c.budget)}, ${formatRange(`${win.start}T12:00:00Z`, `${win.end}T12:00:00Z`)}. Placements: ${where}, with the Sponsored label in every slot.${studio ? ` ${brand} sees the decision in Studio.` : ""}`,
             confirmLabel: "Approve campaign",
             destructive: false,
           }
@@ -154,8 +125,8 @@ export function useCampaignDecision() {
     if (!pending) return
     const { campaign, decision, second } = pending
     if (second) {
-      log(decision === "active" ? REQUEST_APPROVE : REQUEST_REJECT, requestTarget(campaign), reason)
-      toast("Sent for a second approval", { description: `${campaign.name} stays in review until another admin confirms. Recorded in the audit log.` })
+      if (useAdmin.getState().requestCampaignDecision(campaign.id, decision, reason)) toast("Sent for a second approval", { description: `${campaign.name} stays in review until another admin confirms. Recorded in the audit log.` })
+      else toast.info(`${campaign.name} already has a request waiting, or has been decided`, { description: "Nothing new was recorded." })
       return
     }
     const after = applyDecision(campaign, decision, reason)
@@ -164,9 +135,9 @@ export function useCampaignDecision() {
       toast("Campaign rejected", { description: "Recorded in the audit log with your reason." })
       return
     }
-    const start = campaignWindow(campaign.startDaysFromToday, campaign.days).start
+    const { start } = campaignDates(campaign, Date.now())
     // What was recorded, not that shoppers see it: the page note says when that happens.
-    toast.success("Campaign approved", { description: `${after.status === "scheduled" ? `Scheduled to start on ${formatDay(start)}.` : "Marked active from today."} Recorded in the audit log.` })
+    toast.success("Campaign approved", { description: `${after.status === "scheduled" ? `Scheduled to start on ${formatDay(`${start}T12:00:00Z`)}.` : "Marked active from today."} Recorded in the audit log.` })
   }
 
   const dialog = copy ? (

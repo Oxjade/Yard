@@ -48,12 +48,22 @@ function FilterSelect({ f, id, className }: { f: Filter; id?: string; className?
   )
 }
 
+/** The singular for a plural noun when none is given: "entries" to "entry", "payouts" to "payout". */
+function singularOf(noun: string) {
+  if (/[^aeiou]ies$/.test(noun)) return `${noun.slice(0, -3)}y`
+  if (/(ches|shes|sses|xes)$/.test(noun)) return noun.slice(0, -2)
+  return noun.replace(/s$/, "")
+}
+
 /**
  * Table filters: menus beside the search from tablet up; on phones one "Filters" button
  * (with how many are set) that opens them as a bottom sheet, so the toolbar stays one row
  * and every choice gets a full-width, thumb-sized control.
+ *
+ * `noun` is the plural the sheet uses ("Filter entries", "Show 12 entries"); pass `singular`
+ * for "Show 1 entry" when the plural isn't a regular one.
  */
-export function Filters({ filters, results, noun, onClear }: { filters: Filter[]; results: number; noun: string; onClear: () => void }) {
+export function Filters({ filters, results, noun, singular, onClear }: { filters: Filter[]; results: number; noun: string; singular?: string; onClear: () => void }) {
   const [open, setOpen] = useState(false)
   const active = filters.filter((f) => f.value !== f.all.value).length
   return (
@@ -95,7 +105,7 @@ export function Filters({ filters, results, noun, onClear }: { filters: Filter[]
               Clear
             </Button>
             <Button type="button" variant="secondary" className="h-11 flex-[2]" onClick={() => setOpen(false)}>
-              Show {results} {results === 1 ? noun.replace(/s$/, "") : noun}
+              Show {results} {results === 1 ? (singular ?? singularOf(noun)) : noun}
             </Button>
           </SheetFooter>
         </SheetContent>

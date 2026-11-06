@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CaretLeftIcon as CaretLeft, LockSimpleIcon as Lock } from "@phosphor-icons/react"
+import { CaretLeftIcon as CaretLeft } from "@phosphor-icons/react"
 import { Wordmark } from "./market-header"
 
 /** Routes that drop the marketplace navigation so nothing pulls the shopper away mid-task. */
@@ -19,8 +19,9 @@ export function MarketChrome({ children, focused = null }: { children: React.Rea
 }
 
 /**
- * Checkout's header: the wordmark, a way back to the bag and a quiet note that payment is
- * handled securely. Same height as the marketplace header, so page spacing doesn't change.
+ * Checkout's header: the wordmark, a way back to the bag and the step the shopper is on.
+ * No security or payment claim: no payment provider is connected in this build. Same
+ * height as the marketplace header, so page spacing doesn't change.
  */
 export function CheckoutHeader() {
   return (
@@ -30,11 +31,7 @@ export function CheckoutHeader() {
           <CaretLeft className="size-4" aria-hidden /> Bag
         </Link>
         <Wordmark className="mx-auto" />
-        <p className="inline-flex items-center gap-1.5 text-xs text-ink-3">
-          <Lock className="size-3.5" aria-hidden />
-          <span className="hidden sm:inline">Secure checkout</span>
-          <span className="sm:hidden">Secure</span>
-        </p>
+        <p className="inline-flex items-center gap-1.5 text-xs text-ink-3">Checkout</p>
       </div>
     </header>
   )

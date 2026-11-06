@@ -11,10 +11,10 @@ import { Textarea } from "@/components/ui/textarea"
 import type { Brand, MerchantOrder } from "@/lib/data/types"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { formatMoney } from "@/lib/money"
-import { useAdmin } from "@/lib/stores/admin"
+import { returnRefund } from "@/lib/payouts"
 import { useOrders } from "@/lib/stores/orders"
 import { useStudio } from "@/lib/stores/studio"
-import { COMMISSION_RATE, cancellable, carriersFor, itemCount, payoutEstimate, plural, refundRequest, trackingError } from "./model"
+import { cancellable, carriersFor, itemCount, payoutEstimate, plural, trackingError } from "./model"
 import { useFocusReturn } from "./shared"
 import { Field, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
 
@@ -32,20 +32,20 @@ function useResetOnOpen(open: boolean, reset: () => void) {
 /** The order as it is now. A dialog's `order` prop is the one it opened with; a second click reads this. */
 const current = (id: string) => useStudio.getState().orders.find((x) => x.id === id)
 
-/** Orders placed at checkout in this browser have a shopper's copy that follows the brand's changes. */
-const shopperSees = (id: string) => useOrders.getState().orders.some((x) => x.id === id)
-
 /**
- * The platform's refund queue holds the same request (in the backend phase: one row). The brand's
- * decision is mirrored onto it so Admin sees it, without writing an admin audit entry in the
- * brand's name.
+ * Where focus lands when the control that opened a dialog is gone: deciding a return or cancelling
+ * replaces the header's buttons, so focus moves to the heading of the panel that shows the result.
  */
-function mirrorRefundDecision(orderId: string, status: "approved" | "declined") {
-  const id = `rf_${orderId}`
-  const admin = useAdmin.getState()
-  if (!admin.refunds.some((r) => r.id === id)) return
-  useAdmin.setState({ refunds: admin.refunds.map((r) => (r.id === id ? { ...r, status } : r)) })
+function resultHeading(panelId: string) {
+  const h = document.getElementById(`${panelId}-title`)
+  if (!h) return null
+  h.tabIndex = -1
+  h.classList.add("outline-none")
+  return h
 }
+
+/** Orders the shopper has in this browser have a shopper's copy that follows the brand's changes. */
+const shopperSees = (id: string) => useOrders.getState().orders.some((x) => x.id === id)
 
 /* ---------- Add / edit tracking ---------- */
 
@@ -87,8 +87,8 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
     { success: (r) => r.title, successDescription: (r) => r.description, onSuccess: () => onOpenChange(false) },
   )
   // Opened from a row menu on Orders, focus goes back to the order's link in that row, or to the list
-  // once the order has moved to another tab.
-  const focus = useFocusReturn(() => document.querySelector<HTMLElement>(`a[href="/studio/orders/${o.id}"]`) ?? document.getElementById("order-list"))
+  // once the order has moved to another tab; on the order's own page, to the fulfilment panel.
+  const focus = useFocusReturn(() => document.querySelector<HTMLElement>(`a[href="/studio/orders/${o.id}"]`) ?? document.getElementById("order-list") ?? resultHeading("fulfilment"))
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -194,8 +194,7 @@ export function CancelOrderDialog({ open, onOpenChange, order: o }: DialogProps)
       const detail = clean ? `. ${clean}` : ""
       // The reason travels with the order, so the customer's copy can say why.
       const cancelReason = reason === "Other" ? clean : `${reason}${detail}`
-      useStudio.setState({ orders: useStudio.getState().orders.map((x) => (x.id === o.id ? { ...x, cancelReason } : x)) })
-      setOrderStatus(o.id, "cancelled", `Cancelled by brand: ${reason === "Other" ? clean.charAt(0).toLowerCase() + clean.slice(1) : `${reason.toLowerCase()}${detail}`}${wasPaid ? ". Full refund to the customer" : ""}`)
+      setOrderStatus(o.id, "cancelled", `Cancelled by brand: ${reason === "Other" ? clean.charAt(0).toLowerCase() + clean.slice(1) : `${reason.toLowerCase()}${detail}`}${wasPaid ? ". Full refund to the customer recorded; not sent, as no payment provider is connected" : ""}`, { cancelReason })
       // Stock goes back only when this call is the one that cancelled the order.
       const restocked = restock && current(o.id)?.status === "cancelled" ? restockUnits : 0
       if (restocked) for (const l of restockable) adjustStock(l.productId, l.variantId, l.quantity, "return", `Order #${o.reference} cancelled`)
@@ -207,7 +206,7 @@ export function CancelOrderDialog({ open, onOpenChange, order: o }: DialogProps)
       onSuccess: () => onOpenChange(false),
     },
   )
-  const focus = useFocusReturn()
+  const focus = useFocusReturn(() => resultHeading("fulfilment"))
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -277,38 +276,27 @@ export function CancelOrderDialog({ open, onOpenChange, order: o }: DialogProps)
 /* ---------- Refund: approve ---------- */
 
 export function ApproveRefundDialog({ open, onOpenChange, order: o }: DialogProps) {
-  const setOrderStatus = useStudio((s) => s.setOrderStatus)
+  const decideReturn = useStudio((s) => s.decideReturn)
   const p = payoutEstimate(o)
-  const req = refundRequest(o)
-  const partial = req.amount < o.total
-  // Commission comes back on the returned items' subtotal.
-  const returnedSubtotal = req.lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
-  const commissionBack = partial ? Math.round(returnedSubtotal * COMMISSION_RATE) : p.commission
-  const payoutChange = partial ? returnedSubtotal - commissionBack : p.payout
+  // The same refund the store records: the returned items, or what was paid for the whole order.
+  const refund = returnRefund(o, o.returnRequest?.variantIds)
+  const partial = refund.partial
+  const commissionBack = refund.commissionBack
+  const payoutChange = partial ? refund.itemsSubtotal - commissionBack : p.payout
 
   const approve = useAsyncAction(
     () => {
+      // A partial refund keeps the order delivered: the rest of it still counts towards the payout.
       if (current(o.id)?.status !== "refund_requested") return
-      const label = `${partial ? "Partial refund" : "Refund"} of ${formatMoney(req.amount, o.currency)} approved by brand${partial ? ` for ${plural(req.lines.length, "item")}` : ""}`
-      if (partial) {
-        // A partial refund keeps the order delivered: the rest of it still counts towards the payout.
-        // The returned lines are the ones on the shopper's request, so the estimate can take them off.
-        const at = new Date().toISOString()
-        useStudio.setState({
-          orders: useStudio.getState().orders.map((x) => (x.id === o.id ? { ...x, status: "delivered", paymentStatus: "partially_refunded", timeline: [...x.timeline, { at, label }] } : x)),
-        })
-      } else {
-        setOrderStatus(o.id, "refunded", label)
-      }
-      mirrorRefundDecision(o.id, "approved")
+      decideReturn(o.id, "approved")
     },
     {
       success: partial ? "Partial refund approved" : "Refund approved",
-      successDescription: `${formatMoney(req.amount, o.currency)} is recorded for the customer. No payment provider is connected in this build, so no money moves yet.`,
+      successDescription: `${formatMoney(refund.amount, o.currency)} is recorded for the customer. No payment provider is connected in this build, so nothing is sent yet.`,
       onSuccess: () => onOpenChange(false),
     },
   )
-  const focus = useFocusReturn()
+  const focus = useFocusReturn(() => resultHeading("return-outcome"))
 
   function confirm() {
     // A second click while the dialog animates closed, or on a request already decided, does nothing.
@@ -326,11 +314,11 @@ export function ApproveRefundDialog({ open, onOpenChange, order: o }: DialogProp
         <DialogHeader>
           <DialogTitle>{partial ? "Approve a partial refund?" : "Approve the refund?"}</DialogTitle>
           <DialogDescription>
-            {partial ? `The customer is returning ${plural(req.lines.length, "item")} of ${o.lines.length}. The rest of the order stays delivered and still counts towards your payout.` : "The customer is returning the whole order."} The refund goes back through the payment provider once one is connected. This can&apos;t be undone.
+            {partial ? `The customer is returning ${plural(refund.units, "item")} of ${itemCount(o)}. The rest of the order stays delivered and still counts towards your payout.` : "The customer is returning the whole order."} The approval is recorded now; the refund goes back through the payment provider once one is connected. This can&apos;t be undone.
           </DialogDescription>
         </DialogHeader>
         <dl className="grid gap-2 rounded-lg border border-white/10 p-3 text-sm">
-          <div className="flex justify-between gap-4"><dt className="text-ink-2">Customer receives</dt><dd className="text-ink tabular">{formatMoney(req.amount, o.currency)}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-ink-2">Customer receives</dt><dd className="text-ink tabular">{formatMoney(refund.amount, o.currency)}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-ink-2">Your payout changes by</dt><dd className="text-ink tabular">−{formatMoney(payoutChange, o.currency)}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-ink-2">Commission returned to you</dt><dd className="text-ink tabular">{formatMoney(commissionBack, o.currency)}</dd></div>
         </dl>
@@ -346,7 +334,7 @@ export function ApproveRefundDialog({ open, onOpenChange, order: o }: DialogProp
 /* ---------- Refund: decline ---------- */
 
 export function DeclineRefundDialog({ open, onOpenChange, order: o }: DialogProps) {
-  const setOrderStatus = useStudio((s) => s.setOrderStatus)
+  const decideReturn = useStudio((s) => s.decideReturn)
   const [reason, setReason] = useState("")
   const [submitted, setSubmitted] = useState(false)
 
@@ -362,16 +350,15 @@ export function DeclineRefundDialog({ open, onOpenChange, order: o }: DialogProp
   const decline = useAsyncAction(
     () => {
       if (current(o.id)?.status !== "refund_requested") return
-      setOrderStatus(o.id, "delivered", `Refund declined by brand: ${reason.trim().replace(/\.$/, "")}`)
-      mirrorRefundDecision(o.id, "declined")
+      decideReturn(o.id, "declined", reason)
     },
     {
-      success: "Refund declined",
-      successDescription: () => (shopperSees(o.id) ? "The customer's order shows your reason. They can ask the platform to review it." : "Saved on the order. The customer sees it once orders are connected."),
+      success: "Return declined",
+      successDescription: () => (shopperSees(o.id) ? "The customer's order shows your reason." : "Saved on the order. The customer sees it once orders are connected."),
       onSuccess: () => onOpenChange(false),
     },
   )
-  const focus = useFocusReturn()
+  const focus = useFocusReturn(() => resultHeading("return-outcome"))
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -394,15 +381,15 @@ export function DeclineRefundDialog({ open, onOpenChange, order: o }: DialogProp
       <DialogContent className="sm:max-w-[460px]" {...focus}>
         <form noValidate onSubmit={submit} className="grid gap-4">
           <DialogHeader>
-            <DialogTitle>Decline the refund?</DialogTitle>
-            <DialogDescription>The order goes back to Delivered. Your reason is shared with the customer, who can ask the platform to review the decision.</DialogDescription>
+            <DialogTitle>Decline the return?</DialogTitle>
+            <DialogDescription>The order goes back to Delivered. Your reason is shown to the customer on their order.</DialogDescription>
           </DialogHeader>
           <Field id="decline-reason" label="Reason" error={shown} hint={`${len}/500`}>
             <Textarea {...control("decline-reason", shown, true)} value={reason} onChange={(e) => setReason(e.target.value)} rows={4} maxLength={520} placeholder="e.g. The returns window for this order closed on 2 November." />
           </Field>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Back</Button>
-            <Button type="submit" variant="destructive" loading={decline.pending} disabled={decline.succeeded}>Decline refund</Button>
+            <Button type="submit" variant="destructive" loading={decline.pending} disabled={decline.succeeded}>Decline return</Button>
           </DialogFooter>
         </form>
       </DialogContent>

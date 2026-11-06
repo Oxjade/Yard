@@ -31,6 +31,13 @@ export function audienceLine(who: string, where: string, sharesReason = true) {
   return sharesReason ? `${who} is notified ${where} and sees your reason.` : `${who} is notified ${where}; your reason stays in the audit log.`
 }
 
+/**
+ * Who reads the reason outside the Control Center, from a decision's description. It lives with
+ * the ReasonDialog now, which labels its field with it for every caller; re-exported here for
+ * code that already imports it from this module.
+ */
+export { reasonReader } from "@/components/admin/ui/reason-dialog"
+
 type BrandNoticeKey = "approve" | "verify" | "restrict" | "suspend" | "reinstate"
 
 /** Merchant copy per decision, so reinstating doesn't read as a fresh verification. */
@@ -42,11 +49,15 @@ const brandCopy: Record<BrandNoticeKey, { title: string; body: (reason: string) 
   reinstate: { title: "Your brand is reinstated", body: (r) => `NOCTURNE lifted the suspension, so your storefront and listings are back. Held payouts are released after the standard reserve period. Note from the review team: ${r}` },
 }
 
-/** A decision on a brand's status. Tells the merchant when it is the Studio brand. */
+/**
+ * A decision on a brand's status. Tells the merchant when it is the Studio brand, as an
+ * account status notification (a new application reaching the review team is
+ * merchant_application; this is the answer to it, and every later status change).
+ */
 export function notifyBrandDecision(app: BrandApplication, action: BrandNoticeKey, reason: string) {
   if (app.brandId !== STUDIO_BRAND_ID) return
   const c = brandCopy[action]
-  useNotifications.getState().push({ eventKey: `m:brand:${app.id}:${lastAuditId()}`, audience: "merchant", category: "merchant_application", title: c.title, body: c.body(reason), href: "/studio/notifications", at: new Date().toISOString() })
+  useNotifications.getState().push({ eventKey: `m:brand:${app.id}:${lastAuditId()}`, audience: "merchant", category: "account_status", title: c.title, body: c.body(reason), href: "/studio/notifications", at: new Date().toISOString() })
 }
 
 export type ListingOutcome = "restricted" | "lifted" | "removed" | "dismissed" | "reopened" | "escalated"

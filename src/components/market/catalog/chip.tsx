@@ -1,5 +1,6 @@
 "use client"
 
+import { useLayoutEffect, useRef } from "react"
 import { motion } from "motion/react"
 import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -48,8 +49,11 @@ export function Chip({
       onClick={onClick}
       className={cn(
         "relative isolate inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border whitespace-nowrap transition-[color,border-color,background-color,transform,scale] duration-150 ease-out-quint active:scale-[0.97] active:duration-100 disabled:pointer-events-none disabled:opacity-40",
-        // Phones get 40px targets; the desktop panel keeps the denser rhythm.
-        size === "sm" ? "h-10 min-w-10 px-3 text-[0.8125rem] lg:h-8" : "h-10 px-3.5 text-sm lg:h-9",
+        // Phones get 40px targets; the desktop panel keeps the denser rhythm, and a touch screen
+        // that wide still gets a 40px tap from an invisible extension (inside the 1px border).
+        size === "sm"
+          ? "h-10 min-w-10 px-3 text-[0.8125rem] lg:h-8 lg:pointer-coarse:after:absolute lg:pointer-coarse:after:inset-x-0 lg:pointer-coarse:after:-inset-y-[5px]"
+          : "h-10 px-3.5 text-sm lg:h-9 lg:pointer-coarse:after:absolute lg:pointer-coarse:after:inset-x-0 lg:pointer-coarse:after:-inset-y-[3px]",
         selected
           ? cn("border-purple text-ink", !layoutId && "bg-purple")
           : "border-line text-ink-2 hover:border-violet/50 hover:text-ink",
@@ -70,10 +74,26 @@ const PREV = new Set(["ArrowLeft", "ArrowUp"])
 
 /**
  * A single-select row of <Chip radio> options, following the ARIA radio group pattern:
- * Tab reaches the checked chip only; Arrow keys move to the next or previous chip and choose
+ * Tab reaches the checked chip only (the first, when none is checked); Arrow keys move to the next or previous chip and choose
  * it (wrapping around); Home and End choose the first and last. Disabled chips are skipped.
  */
 export function ChipRadioGroup({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+  // Chips set their own roving tabIndex. With nothing checked (a choice the URL no longer
+  // matches, say) every chip would be -1 and Tab would skip the group, so after each render the
+  // first enabled chip takes the tab stop, and any it held before goes back to -1.
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const radios = [...(ref.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [])]
+    const checked = radios.some((r) => r.getAttribute("aria-checked") === "true" && !r.disabled)
+    radios.forEach((r) => {
+      if (r.getAttribute("aria-checked") !== "true") r.tabIndex = -1
+    })
+    if (!checked) {
+      const first = radios.find((r) => !r.disabled)
+      if (first) first.tabIndex = 0
+    }
+  })
+
   function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (!NEXT.has(e.key) && !PREV.has(e.key) && e.key !== "Home" && e.key !== "End") return
     const radios = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)')]
@@ -89,7 +109,7 @@ export function ChipRadioGroup({ label, className, children }: { label: string; 
   }
 
   return (
-    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className={className}>
+    <div ref={ref} role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className={className}>
       {children}
     </div>
   )

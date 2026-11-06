@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import Link from "next/link"
 import {
   PulseIcon,
@@ -23,7 +23,7 @@ import {
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/components/dashboard/shell/command-palette"
 import { buildOrderRows, type OrderRow } from "@/components/admin/finance/derive"
-import { UserDetail } from "@/components/admin/marketplace/user-detail"
+import { moderationReasonMeta, moderationStatusMeta } from "@/components/admin/marketplace/meta"
 import { adminRoles, adminUser, healthServices, type BrandApplication, type Payout, type PlatformUser } from "@/lib/data/admin"
 import { categories } from "@/lib/data/catalog"
 import { formatMoney } from "@/lib/money"
@@ -56,13 +56,10 @@ const payoutStatus: Record<Payout["status"], string> = { awaiting_approval: "Awa
 const categoryName = new Map(categories.map((c) => [c.slug as string, c.name]))
 
 /**
- * Opens a shopper's record from the palette. The Users screen keeps its open record in local
- * state and reads nothing from the URL, so a ?user= link would land on the bare list; the shell
- * opens the same UserDetail sheet over it instead.
+ * Command palette records: brands, users, moderation cases, orders (by reference or customer)
+ * and payouts. Each opens on its own screen through the URL (?review=, ?case=, ?user=,
+ * ?order=, ?focus=), on the page you're on too.
  */
-const OpenUserRecord = createContext<(id: string) => void>(() => {})
-
-/** Command palette records: brands, users, orders (by reference or customer) and payouts. */
 function AdminResults({ query, go }: { query: string; go: (href: string) => void }) {
   const applications = useAdmin((s) => s.applications)
   const users = useAdmin((s) => s.users)
@@ -70,7 +67,7 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
   const clientOrders = useOrders((s) => s.orders)
   const groups = useOrders((s) => s.groups)
   const refunds = useAdmin((s) => s.refunds)
-  const openUser = useContext(OpenUserRecord)
+  const moderation = useAdmin((s) => s.moderation)
   // The Orders page's own rows, so the palette finds what its search finds (checkout reference and email too).
   const orders = useMemo(() => buildOrderRows(clientOrders, groups, refunds), [clientOrders, groups, refunds])
   if (!query) return null
@@ -85,6 +82,7 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
   }
 
   const b = topMatches(applications, query, (x) => x.brandName, (x) => [x.handle, x.country, categoryName.get(x.category), applicationStatus[x.status]])
+  const m = topMatches(moderation, query, (x) => x.title, (x) => [x.brandName, moderationReasonMeta[x.reason].label, moderationStatusMeta[x.status].label])
   const u = topMatches(users, query, (x) => x.name, (x) => [x.email, x.country, userStatus[x.status]])
   const o = topMatches(orders, query, (x) => x.order.reference, (x) => [x.search])
   const p = topMatches(payouts, query, (x) => x.brandName, (x) => [x.id, payoutStatus[x.status], x.method])
@@ -107,11 +105,15 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
               title={x.name}
               detail={`${x.email}, ${x.country}, ${x.orders} ${x.orders === 1 ? "order" : "orders"}`}
               meta={userStatus[x.status]}
-              onSelect={() => {
-                go("/admin/users")
-                openUser(x.id)
-              }}
+              onSelect={() => go(`/admin/users?user=${encodeURIComponent(x.id)}`)}
             />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {m.length ? (
+        <PaletteGroup heading="Moderation">
+          {m.map((x) => (
+            <PaletteItem key={x.id} value={`case ${x.id}`} icon={FlagIcon} title={x.title} detail={`${moderationReasonMeta[x.reason].label}, ${x.brandName}`} meta={moderationStatusMeta[x.status].label} onSelect={() => go(`/admin/products?case=${encodeURIComponent(x.id)}`)} />
           ))}
         </PaletteGroup>
       ) : null}
@@ -134,7 +136,7 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
 }
 
 const search: ShellSearch = {
-  placeholder: "Search brands, users, orders, payouts",
+  placeholder: "Search brands, users, cases, orders, payouts",
   destinations: [{ label: "Notifications", href: "/admin/notifications", icon: BellIcon }],
   Results: AdminResults,
 }
@@ -150,9 +152,6 @@ function useAdminReady() {
 /** The internal Admin Control Center: a control room — dense, operational, data-first. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
-  // The shopper record opened from the palette (kept after closing so the sheet can animate out).
-  const [userRecord, setUserRecord] = useState<{ id: string | null; open: boolean }>({ id: null, open: false })
-  const openUser = useCallback((id: string) => setUserRecord({ id, open: true }), [])
   const pendingBrands = useAdmin((s) => s.applications.filter((a) => a.status === "pending_review").length)
   const openModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
   const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
@@ -197,54 +196,51 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     .toUpperCase()
 
   return (
-    <OpenUserRecord.Provider value={openUser}>
-      <AppShell
-        surface="admin"
-        root="/admin"
-        density="dense"
-        groups={groups}
-        search={search}
-        workspace={{
-          mark: (
-            <span className="inline-flex size-8 items-center justify-center rounded-[9px] border border-white/12 bg-obsidian">
-              <span className="font-wide text-[13px] leading-none text-ink">{site.name.charAt(0)}</span>
-            </span>
-          ),
-          name: <span className="font-wide text-[12px] tracking-[0.16em] text-ink">{site.name}</span>,
-          caption: (
-            <>
-              Control Center
-              <span className="rounded-[4px] border border-white/15 px-1 py-px text-[10px] leading-none font-medium text-ink-2">Internal</span>
-            </>
-          ),
-          label: `${site.name} Control Center`,
-          menu: [
-            { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
-            { label: "Security and audit log", href: "/admin/security", icon: ShieldCheckIcon },
-            { label: "System health", href: "/admin/health", icon: HeartbeatIcon },
-            { label: "Leave the Control Center", href: "/", icon: SignOutIcon, separated: true },
-          ],
-        }}
-        status={{
-          icon: ListChecksIcon,
-          // Until the store loads, the card shows a skeleton under the usual label; only a cleared
-          // queue (known once loaded) relabels it.
-          label: ready && decisions === 0 ? "Decision queue" : "Decisions waiting",
-          value: ready ? (decisions > 0 ? decisions : "Queue clear") : null,
-          quiet: decisions === 0,
-          action: decisions > 0 ? "Open the decision queue" : "Nothing needs a decision",
-          // The Overview's Decision queue panel carries this anchor; Next scrolls to it, also from /admin itself.
-          href: "/admin#decision-queue",
-          attention: decisions > 0,
-          dot: decisions > 0,
-          summary: decisions > 0 ? `${decisions} ${decisions === 1 ? "decision" : "decisions"} waiting` : "Queue clear",
-        }}
-        account={{ initials, name: adminUser.name, caption: `${adminRoles[adminUser.role].name}, ${adminUser.mfa ? "MFA on" : "MFA off"}` }}
-        topbar={<SystemStatus />}
-      >
-        {children}
-      </AppShell>
-      <UserDetail id={userRecord.id} open={userRecord.open} onOpenChange={(open) => setUserRecord((r) => ({ ...r, open }))} />
-    </OpenUserRecord.Provider>
+    <AppShell
+      surface="admin"
+      root="/admin"
+      density="dense"
+      groups={groups}
+      search={search}
+      workspace={{
+        mark: (
+          <span className="inline-flex size-8 items-center justify-center rounded-[9px] border border-white/12 bg-obsidian">
+            <span className="font-wide text-[13px] leading-none text-ink">{site.name.charAt(0)}</span>
+          </span>
+        ),
+        name: <span className="font-wide text-[12px] tracking-[0.16em] text-ink">{site.name}</span>,
+        caption: (
+          <>
+            Control Center
+            <span className="rounded-[4px] border border-white/15 px-1 py-px text-[10px] leading-none font-medium text-ink-2">Internal</span>
+          </>
+        ),
+        label: `${site.name} Control Center`,
+        menu: [
+          { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
+          { label: "Security and audit log", href: "/admin/security", icon: ShieldCheckIcon },
+          { label: "System health", href: "/admin/health", icon: HeartbeatIcon },
+          { label: "Leave the Control Center", href: "/", icon: SignOutIcon, separated: true },
+        ],
+      }}
+      status={{
+        icon: ListChecksIcon,
+        // Until the store loads, the card shows a skeleton under the usual label; only a cleared
+        // queue (known once loaded) relabels it.
+        label: ready && decisions === 0 ? "Decision queue" : "Decisions waiting",
+        value: ready ? (decisions > 0 ? decisions : "Queue clear") : null,
+        quiet: decisions === 0,
+        action: decisions > 0 ? "Open the decision queue" : "Nothing needs a decision",
+        // The Overview's Decision queue panel carries this anchor; Next scrolls to it, also from /admin itself.
+        href: "/admin#decision-queue",
+        attention: decisions > 0,
+        dot: decisions > 0,
+        summary: decisions > 0 ? `${decisions} ${decisions === 1 ? "decision" : "decisions"} waiting` : "Queue clear",
+      }}
+      account={{ initials, name: adminUser.name, caption: `${adminRoles[adminUser.role].name}, ${adminUser.mfa ? "MFA on" : "MFA off"}` }}
+      topbar={<SystemStatus />}
+    >
+      {children}
+    </AppShell>
   )
 }

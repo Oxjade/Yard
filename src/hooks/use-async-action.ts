@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 type Options<R> = {
@@ -27,8 +27,11 @@ export function useAsyncAction<A extends unknown[], R>(fn: (...args: A) => R | P
   const [error, setError] = useState<string | null>(null)
   const inFlight = useRef(false)
   const timer = useRef<number | undefined>(undefined)
+  // The latest options, read when an action settles (it may outlive the render that started it).
   const optsRef = useRef(opts)
-  optsRef.current = opts
+  useLayoutEffect(() => {
+    optsRef.current = opts
+  })
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 

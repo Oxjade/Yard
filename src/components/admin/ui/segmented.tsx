@@ -12,7 +12,13 @@ export const segmentedTabId = (idBase: string, value: string) => `${idBase}-tab-
  * A tab switch whose selection pill slides between options on a spring. It follows the ARIA
  * tabs pattern: one tab stop, the arrow keys move the selection, Home and End jump to the
  * ends. Pass `idBase` and `panelId` to link each tab to the panel it controls.
+ *
+ * Counts: an "attention" count above zero is acid, for work waiting on a person (a queue,
+ * flagged items). A "neutral" count is grey, for plain totals that need nothing (unread,
+ * all records). Set the tone for the whole switch with `countTone`, or per option.
  */
+export type CountTone = "attention" | "neutral"
+
 export function Segmented<T extends string>({
   value,
   onChange,
@@ -20,16 +26,19 @@ export function Segmented<T extends string>({
   label,
   className,
   size = "md",
+  countTone = "attention",
   loading = false,
   idBase,
   panelId,
 }: {
   value: T
   onChange: (v: T) => void
-  options: { value: T; label: string; count?: number }[]
+  options: { value: T; label: string; count?: number; countTone?: CountTone }[]
   label: string
   className?: string
   size?: "sm" | "md"
+  /** How counts read when an option doesn't set its own tone. Defaults to "attention". */
+  countTone?: CountTone
   /** Counts are not known yet (before hydration): a same-size placeholder stands in, never a 0. */
   loading?: boolean
   /** Prefix for the tab ids (see segmentedTabId). */
@@ -81,7 +90,7 @@ export function Segmented<T extends string>({
               <span
                 className={cn(
                   "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] leading-none tabular",
-                  on ? "bg-black/25 text-ink" : o.count > 0 ? "border border-acid/40 text-acid" : "border border-white/10 text-ink-3",
+                  on ? "bg-black/25 text-ink" : o.count > 0 && (o.countTone ?? countTone) === "attention" ? "border border-acid/40 text-acid" : o.count > 0 ? "border border-white/10 text-ink-2" : "border border-white/10 text-ink-3",
                 )}
               >
                 {o.count}

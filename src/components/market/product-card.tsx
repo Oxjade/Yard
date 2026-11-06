@@ -40,8 +40,12 @@ export function ProductCard({
   priority?: boolean
   sizes?: string
   className?: string
-  /** Adding is closed for now (e.g. a drop before release); quick add stays focusable and explains why. */
-  addBlocked?: AddBlocked
+  /**
+   * Adding is closed for now; quick add stays focusable and explains why. Unset, a piece released
+   * in a drop follows the drop's rules by itself (see QuickAdd); `false` means the caller has
+   * applied them and adding is open.
+   */
+  addBlocked?: AddBlocked | false
 }) {
   const brand = brandById.get(product.brandId) ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
@@ -107,20 +111,29 @@ export function ProductCard({
       </div>
 
       {!isFeature ? (
-        <div className={cn("flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3", variant === "compact" ? "mt-2" : "mt-3")}>
+        <div className={cn("flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3", variant === "compact" ? "mt-[21px] lg:mt-2" : "mt-[21px] lg:mt-3")}>
+          {/* Below lg (touch), the brand and name lines each get a 40px tap area from an invisible
+              extension that never covers the photograph or the other line: the brand's reaches 20px
+              up into the gap under the photograph (21px there; the spare pixel keeps sub-pixel
+              rounding from handing the photo's last row to the brand) and the 4px down to the
+              name; the name's runs down over the price, which isn't a link. The extra room exists
+              below lg only; from lg the card keeps its tight desktop rhythm. */}
           <div className="min-w-0">
             {brand.handle ? (
-              <Link href={`/brands/${brand.handle}`} className="relative z-10 block truncate text-xs text-ink-2 transition-colors hover:text-violet">
-                {brand.name}
+              <Link
+                href={`/brands/${brand.handle}`}
+                className="relative z-10 block text-xs text-ink-2 transition-colors after:absolute after:inset-x-0 after:-top-5 after:-bottom-1 hover:text-violet lg:after:hidden"
+              >
+                <span className="block truncate">{brand.name}</span>
               </Link>
             ) : (
               <span className="block truncate text-xs text-ink-2">{brand.name}</span>
             )}
-            <Link href={href} className="mt-0.5 block truncate text-sm text-ink">
-              {product.name}
+            <Link href={href} className="relative mt-1 block text-sm text-ink after:absolute after:inset-x-0 after:top-0 after:-bottom-5 lg:mt-0.5 lg:after:hidden">
+              <span className="block truncate">{product.name}</span>
             </Link>
           </div>
-          <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} className="sm:pt-[1.125rem]" />
+          <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} className="sm:pt-5 lg:pt-[1.125rem]" />
         </div>
       ) : null}
     </article>

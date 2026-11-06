@@ -94,7 +94,8 @@ export const useSession = create<SessionState>()(
     {
       name: "nocturne-session",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ authPrompt: _authPrompt, ...rest }) => rest,
+      // Everything but the sign-in prompt, which holds a callback and only lives for this visit.
+      partialize: ({ user, currency, shipTo, interests, aesthetics, onboarded, notifications }) => ({ user, currency, shipTo, interests, aesthetics, onboarded, notifications }),
       skipHydration: true,
     },
   ),

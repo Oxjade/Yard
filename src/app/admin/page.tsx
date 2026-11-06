@@ -32,9 +32,10 @@ import { RingGauge } from "@/components/admin/ui/gauge"
 import { Reveal, RevealItem, springs } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
+import { notifyRefundDecision, refundAudience } from "@/components/admin/marketplace/notify"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { adminUser, failedJobs, healthServices, platformOverview, transactions, webhookFailures } from "@/lib/data/admin"
+import { adminUser, failedJobs, healthServices, platformOverview, transactions, webhookFailures, type Refund } from "@/lib/data/admin"
 import { campaignTypes, type CampaignType } from "@/lib/data/ads"
 import { merchantOrders } from "@/lib/data/orders"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
@@ -159,6 +160,16 @@ function CommandStrip() {
 
 /* ── Decision queue: the work, with the actions inline ──────────────── */
 
+/** Who hears that a refund is approved, in Finance's words (the shopper when the order is theirs, the Studio brand). */
+function approvalAudience(r: Refund) {
+  const { shopper, merchant } = refundAudience(r)
+  if (!shopper && !merchant) return ""
+  const who = shopper && merchant ? `${r.customer} and ${r.brandName} are notified` : shopper ? `${r.customer} is notified in their account` : `${r.brandName} is notified in Studio`
+  return ` ${who} that it's approved; your reason stays in the audit log.`
+}
+
+const ordersText = (n: number) => `${formatNumber(n)} ${n === 1 ? "order" : "orders"}`
+
 type QueueTab = "brands" | "payouts" | "refunds" | "campaigns" | "moderation"
 
 function DecisionQueue({ className }: { className?: string }) {
@@ -170,7 +181,7 @@ function DecisionQueue({ className }: { className?: string }) {
   // The button that opened the dialog, so focus can go back to it (see restoreFocus).
   const opener = useRef<HTMLElement | null>(null)
   const [tab, setTab] = useState<QueueTab>("payouts")
-  const [confirm, setConfirm] = useState<null | { kind: "payout-approve" | "payout-release" | "refund-issue"; id: string; title: string; description: string; label: string }>(null)
+  const [confirm, setConfirm] = useState<null | { kind: "payout-approve" | "payout-release" | "refund-approve"; id: string; title: string; description: string; label: string }>(null)
   const applications = useAdmin((s) => s.applications)
   const payouts = useAdmin((s) => s.payouts)
   const refunds = useAdmin((s) => s.refunds)
@@ -223,14 +234,14 @@ function DecisionQueue({ className }: { className?: string }) {
         ? lists.payouts.map((p) => ({
             id: p.id,
             title: p.brandName,
-            meta: p.status === "held" ? `Held: ${p.holdReason}` : `${p.method}, ${p.orders} orders`,
+            meta: p.status === "held" ? `Held: ${p.holdReason}` : p.orders ? `${p.method}, ${ordersText(p.orders)}` : p.method,
             amount: usdFull(p.amountUsd),
             badge: { text: p.status.replace("_", " "), tone: p.status === "held" ? "danger" : p.status === "awaiting_approval" ? "acid" : "purple" },
             action:
               p.status === "awaiting_approval" ? (
-                <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="primary" onClick={(e) => ask(e, { kind: "payout-approve", id: p.id, title: `Approve payout to ${p.brandName}`, description: `${usdFull(p.amountUsd)} via ${p.method}. The transfer is sent by the provider; the ledger records it when the provider confirms.`, label: "Approve payout" })}>Approve</Button>
+                <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="primary" onClick={(e) => ask(e, { kind: "payout-approve", id: p.id, title: `Approve the payout to ${p.brandName}?`, description: `${usdFull(p.amountUsd)}${p.currency !== "USD" ? ` (${formatMoney(p.amount, p.currency)})` : ""} via ${p.method}. Approval is recorded with your name. No payments provider is connected in this build, so the transfer isn't sent; the payout shows Approval recorded and is marked completed only when a provider confirms it.`, label: "Approve payout" })}>Approve</Button>
               ) : (
-                <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={(e) => ask(e, { kind: "payout-release", id: p.id, title: `Release held payout to ${p.brandName}`, description: `This payout is held: ${p.holdReason} Release it only once the reason is resolved.`, label: "Release payout" })}>Release</Button>
+                <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={(e) => ask(e, { kind: "payout-release", id: p.id, title: `Release the payout to ${p.brandName}?`, description: `It goes back on the schedule.${p.holdReason ? ` It was held because: ${p.holdReason}` : ""} Release it only once the reason is resolved.`, label: "Release payout" })}>Release</Button>
               ),
           }))
         : tab === "refunds"
@@ -239,7 +250,7 @@ function DecisionQueue({ className }: { className?: string }) {
               title: `#${r.reference}, ${r.brandName}`,
               meta: `${r.customer}: ${r.reason}`,
               amount: usdFull(r.amountUsd),
-              action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={(e) => ask(e, { kind: "refund-issue", id: r.id, title: `Issue refund for #${r.reference}`, description: `${usdFull(r.amountUsd)} back to ${r.customer}. Sent once with idempotency key ${r.idempotencyKey}, so a retry can never refund twice. Commission is reversed pro rata.`, label: "Issue refund" })}>Issue</Button>,
+              action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={(e) => ask(e, { kind: "refund-approve", id: r.id, title: `Approve the ${usdFull(r.amountUsd)} refund for #${r.reference}?`, description: `${r.customer} asked for it: ${r.reason.toLowerCase()}. Approval is recorded with idempotency key ${r.idempotencyKey}, so a retry can never refund twice. No payments provider is connected in this build, so nothing is sent and no money moves yet; the brand's share and the 5% commission reverse when the provider confirms.${approvalAudience(r)} To decline with a reason, use Finance.`, label: "Approve refund" })}>Approve</Button>,
             }))
           : tab === "campaigns"
             ? lists.campaigns.map((c) => ({ id: c.id, title: c.name, meta: `${campaignTypes[c.type].name}, ${c.days} days`, amount: usdFull(c.budget), badge: { text: "in review", tone: "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/advertising")}>Review</Button> }))
@@ -247,12 +258,28 @@ function DecisionQueue({ className }: { className?: string }) {
 
   const badgeTone = { acid: "border-acid/45 text-acid", danger: "border-danger/45 text-danger", muted: "border-white/10 text-ink-3", purple: "border-purple bg-purple/20 text-ink" }
 
+  // The same store actions and words as Finance: an approval is recorded, never sent or paid here.
   function run(reason: string) {
     if (!confirm) return
-    if (confirm.kind === "payout-approve") setPayoutStatus(confirm.id, "processing", reason)
-    if (confirm.kind === "payout-release") setPayoutStatus(confirm.id, "scheduled", reason)
-    if (confirm.kind === "refund-issue") setRefundStatus(confirm.id, "issued", reason)
-    toast(confirm.kind === "refund-issue" ? "Refund issued" : confirm.kind === "payout-approve" ? "Payout approved" : "Payout released", { description: "Recorded in the audit log." })
+    const state = useAdmin.getState()
+    if (confirm.kind === "refund-approve") {
+      const r = state.refunds.find((x) => x.id === confirm.id)
+      if (!r || r.status !== "requested") return void toast.info("This refund has already been decided, so nothing was approved.")
+      setRefundStatus(r.id, "approved", reason)
+      notifyRefundDecision(r, "approved", reason)
+      toast.success(`Refund for #${r.reference} approved`, { description: "Approval recorded. Not sent: no payments provider in this build." })
+      return
+    }
+    const p = state.payouts.find((x) => x.id === confirm.id)
+    const from = confirm.kind === "payout-approve" ? "awaiting_approval" : "held"
+    if (!p || p.status !== from) return void toast.info(`This payout isn't ${from === "held" ? "held" : "awaiting approval"} any more, so nothing changed.`)
+    if (confirm.kind === "payout-approve") {
+      setPayoutStatus(p.id, "processing", reason)
+      toast.success(`Approval recorded for the payout to ${p.brandName}`, { description: "Approval recorded. Nothing is sent until a payments provider is connected." })
+    } else {
+      setPayoutStatus(p.id, "scheduled", reason)
+      toast.success(`Payout to ${p.brandName} released`, { description: "Recorded in the audit log with your reason." })
+    }
   }
 
   return (
@@ -443,7 +470,7 @@ function AdminInsight({ className }: { className?: string }) {
             <InsightEmphasis>{usdFull(total)}</InsightEmphasis> in payouts is waiting on a decision.
           </>
         }
-        body="Brands are paid only once a person approves or releases each payout."
+        body="A payout goes out only after a person approves or releases it, and only once a payments provider is connected."
         facts={[
           { label: "Awaiting approval", value: int(waiting.filter((p) => p.status === "awaiting_approval").length) },
           { label: "Held", value: int(waiting.filter((p) => p.status === "held").length) },
@@ -454,7 +481,7 @@ function AdminInsight({ className }: { className?: string }) {
   }
   // Then whichever other queue has work in it, in the order money and trust are at stake.
   const queues = [
-    { count: refunds.filter((r) => r.status === "requested").length, one: "refund request is", many: "refund requests are", body: "Each refund is sent once with an idempotency key and reverses the commission pro rata.", href: "/admin/finance?tab=refunds", label: "Open refunds" },
+    { count: refunds.filter((r) => r.status === "requested").length, one: "refund request is", many: "refund requests are", body: "Approvals are recorded with an idempotency key; nothing is sent until a payments provider is connected.", href: "/admin/finance?tab=refunds", label: "Open refunds" },
     { count: moderation.filter((m) => m.status === "open" || m.status === "escalated").length, one: "flagged listing is", many: "flagged listings are", body: "Reported listings stay live until someone reviews them.", href: "/admin/products", label: "Open moderation" },
     { count: applications.filter((a) => a.status === "pending_review").length, one: "brand application is", many: "brand applications are", body: "Brands can only start selling once their application is approved.", href: "/admin/brands", label: "Open brands" },
     { count: campaigns.filter((c) => c.status === "in_review").length, one: "campaign is", many: "campaigns are", body: "Campaigns go live only after a review.", href: "/admin/advertising", label: "Open advertising" },

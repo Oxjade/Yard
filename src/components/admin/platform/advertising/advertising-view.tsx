@@ -8,7 +8,7 @@ import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { int, usdCompact } from "../format"
 import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplace/page-head"
-import { useAdminReady, useStudioReady } from "../ready"
+import { useAdminReady } from "../ready"
 import { inPageTab, TabParam, writeTabParam } from "../tab-param"
 import { CampaignsTable } from "./campaigns-table"
 import { useAllCampaigns, useCampaignDecision } from "./decisions"
@@ -21,9 +21,8 @@ const TABS = ["campaigns", "placements", "pricing"] as const
 type Tab = (typeof TABS)[number]
 
 export function AdvertisingView() {
-  const adminReady = useAdminReady()
-  const studioReady = useStudioReady()
-  const ready = adminReady && studioReady
+  // The review store holds every campaign, Studio submissions included (the Studio store puts them there).
+  const ready = useAdminReady()
   const campaigns = useAllCampaigns()
   const { ask, dialog } = useCampaignDecision()
   const [tab, setTab] = useState<Tab>("campaigns")

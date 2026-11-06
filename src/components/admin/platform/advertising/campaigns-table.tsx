@@ -75,8 +75,8 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
     {
       key: "type",
       header: "Type and placements",
-      // The table sits beside the sidebar, so wide-only columns follow the page width, not the DataTable's lg.
-      className: "hidden min-[1400px]:table-cell",
+      // The table sits beside the sidebar, so wide-only columns fold by the table's own width.
+      hideBelowContainer: "5xl",
       sortValue: (c) => campaignTypes[c.type].name,
       cell: (c) => {
         const where = c.placements.map((p) => placementRules[p].name).join(", ")
@@ -110,7 +110,7 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
       key: "delivery",
       header: "Delivery",
       align: "right",
-      className: "hidden xl:table-cell",
+      hideBelowContainer: "4xl",
       sortValue: (c) => c.results.impressions,
       cell: (c) =>
         c.results.impressions ? (
@@ -126,7 +126,7 @@ export function CampaignsTable({ campaigns, ready }: { campaigns: Campaign[]; re
 
   // Every campaign resolves to a marketplace page (its product, drop, collection or brand).
   const rowActions: RowAction<Campaign>[] = [
-    { label: "Open what it promotes", icon: ArrowSquareOutIcon, onSelect: (c) => { const href = resolveCreative(c).href; if (href) router.push(href) }, disabled: (c) => !resolveCreative(c).href },
+    { label: "Open what it promotes", icon: ArrowSquareOutIcon, onSelect: (c) => { const href = resolveCreative(c).href; if (href) router.push(href) }, disabled: (c) => !resolveCreative(c).href, disabledReason: () => "Its brand's page isn't in the marketplace." },
   ]
 
   return (

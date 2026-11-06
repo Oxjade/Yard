@@ -1,28 +1,53 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { CheckIcon as Check, PlusIcon as Plus } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { availableStock, variantLabel } from "@/lib/data/products"
+import { availableStock } from "@/lib/data/products"
 import { useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
+import { dropOf, useDropAddBlock, type AddBlocked } from "./use-drop-add-block"
+
+export type { AddBlocked }
 
 /**
  * Kept for callers: confirmation of an add is now the comic bubble that pops out of the
  * header's bag icon (BagPop), driven by the cart's own `pulse`, so no toast is shown.
  */
-export function addedToast(_p: Product, _label: string) {}
+export function addedToast(...args: [product: Product, label: string]): void {
+  void args
+}
 
-/** When adding is closed (a drop before release, a per-customer limit): why, and what a tap does instead. */
-export type AddBlocked = { describedBy?: string; onAttempt: () => void }
+type Props = {
+  product: Product
+  className?: string
+  /**
+   * Adding is closed for now; the button stays focusable and a tap explains why. Leave it unset
+   * and a piece released in a drop follows the drop's rules (useDropAddBlock). Pass `false` when
+   * the caller has already applied those rules and adding is open (the drop page's grid).
+   */
+  addBlocked?: AddBlocked | false
+}
 
 /** Quick add: one tap when there is one variant; otherwise a small size/colour picker. */
-export function QuickAdd({ product, className, addBlocked }: { product: Product; className?: string; addBlocked?: AddBlocked }) {
+export function QuickAdd({ product, className, addBlocked }: Props) {
+  const drop = addBlocked === undefined ? dropOf(product) : undefined
+  if (drop) return <DropQuickAdd product={product} className={className} drop={drop} />
+  return <QuickAddButton product={product} className={className} addBlocked={addBlocked || undefined} />
+}
+
+/** A piece released in a drop: the drop's rules decide whether this tap adds or explains. */
+function DropQuickAdd({ drop, ...props }: Omit<Props, "addBlocked"> & { drop: NonNullable<ReturnType<typeof dropOf>> }) {
+  const { addBlocked } = useDropAddBlock(drop)
+  return <QuickAddButton {...props} addBlocked={addBlocked} />
+}
+
+function QuickAddButton({ product, className, addBlocked }: { product: Product; className?: string; addBlocked?: AddBlocked }) {
   const add = useCart((s) => s.add)
   const [open, setOpen] = useState(false)
-  const [justAdded, setJustAdded] = useState(false)
+  const [justAdded, setJustAdded] = useState(0)
   const colourOpt = product.options.find((o) => o.name === "Colour")
   const sizeOpt = product.options.find((o) => o.name === "Size")
   const colours = colourOpt && colourOpt.name === "Colour" ? colourOpt.values : []
@@ -35,14 +60,21 @@ export function QuickAdd({ product, className, addBlocked }: { product: Product;
     [product.variants, colour],
   )
 
+  // The check shows briefly after an add, then the plus returns.
+  useEffect(() => {
+    if (!justAdded) return
+    const t = window.setTimeout(() => setJustAdded(0), 1400)
+    return () => window.clearTimeout(t)
+  }, [justAdded])
+
   function commit(variantId: string) {
-    const v = product.variants.find((x) => x.id === variantId)!
     add(product.id, variantId, 1)
-    addedToast(product, variantLabel(v.options))
     setOpen(false)
-    setJustAdded(true)
-    window.setTimeout(() => setJustAdded(false), 1400)
+    setJustAdded(Date.now())
   }
+
+  const added = justAdded > 0
+  const label = !inStock ? `${product.name} is sold out` : addBlocked?.reason ? `Quick add ${product.name}, ${addBlocked.reason}` : `Quick add ${product.name}`
 
   const button = (
     <button
@@ -55,18 +87,18 @@ export function QuickAdd({ product, className, addBlocked }: { product: Product;
         if (single) commit(product.variants[0].id)
         else setOpen((o) => !o)
       }}
-      aria-label={inStock ? `Quick add ${product.name}` : `${product.name} is sold out`}
+      aria-label={label}
       aria-disabled={addBlocked ? true : undefined}
       aria-describedby={addBlocked?.describedBy}
       className={cn(
         "glass inline-flex size-10 items-center justify-center rounded-full text-ink transition-[background-color,transform] duration-200 hover:bg-acid hover:text-obsidian active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent",
-        justAdded && "bg-acid text-obsidian",
+        added && "bg-acid text-obsidian",
         addBlocked && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-ink",
         className,
       )}
     >
-      <motion.span key={justAdded ? "ok" : "plus"} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }}>
-        {justAdded ? <Check className="size-[18px]" /> : <Plus className="size-[18px]" />}
+      <motion.span key={added ? "ok" : "plus"} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }}>
+        {added ? <Check className="size-[18px]" /> : <Plus className="size-[18px]" />}
       </motion.span>
     </button>
   )

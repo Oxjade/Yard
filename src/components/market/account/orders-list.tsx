@@ -53,7 +53,7 @@ export function OrderRow({ order, showCurrency = false }: { order: MerchantOrder
             {showCurrency ? ` ${order.currency}` : ""}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <OrderStatusBadge status={order.status} />
+            <OrderStatusBadge status={order.status} order={order} />
             {order.tracking ? <TrackingLink tracking={order.tracking} /> : null}
             {!order.tracking && openStatuses.has(order.status) ? <span className="text-xs text-ink-3">Tracking appears when it ships</span> : null}
           </div>

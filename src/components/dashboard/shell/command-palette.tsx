@@ -6,6 +6,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { ArrowElbowDownLeftIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react"
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { showInPlace, showPageInPlace } from "@/hooks/use-search-param"
 import { cn } from "@/lib/utils"
 import { useModKey } from "./platform"
 import { isTypingTarget } from "./use-sidebar"
@@ -96,11 +97,27 @@ export function CommandPalette({ open, onOpenChange, groups, search }: { open: b
   )
   const shownDestinations = q ? destinations.filter((d) => matches(q, d.label, d.hint)) : destinations
 
+  /** A record result. */
   function go(href: string) {
-    returnTo.current = null // the route changes; nothing to return to
     onOpenChange(false)
     setQuery("")
+    // A record of the page you're on (a brand while on Brands) opens in place: its parameters
+    // join the page's own, so the tab, filters, search and scroll stay and are still there when
+    // the record closes. Focus then goes to the record's panel, or back where the palette was
+    // opened if nothing opens.
+    if (showInPlace(href, { merge: true })) return
+    returnTo.current = null // the route changes; nothing to return to
     router.push(href)
+  }
+
+  /** A "Go to" destination: the page as its sidebar link opens it, the one you're on included. */
+  function goTo(href: string) {
+    onOpenChange(false)
+    setQuery("")
+    returnTo.current = null // a fresh view of the page, from the top; nothing to return to
+    // The page you're on shows its default view from the top, without a remount (see
+    // showPageInPlace); any other page is a navigation.
+    if (!showPageInPlace(href)) router.push(href)
   }
 
   const { Results } = search
@@ -116,7 +133,9 @@ export function CommandPalette({ open, onOpenChange, groups, search }: { open: b
         showCloseButton={false}
         onCloseAutoFocus={(e) => {
           e.preventDefault()
-          returnTo.current?.focus()
+          // A panel the choice opened (a record on this page) keeps focus.
+          const active = document.activeElement
+          if (!active || active === document.body) returnTo.current?.focus()
           returnTo.current = null
         }}
         className="top-[10vh] max-w-[calc(100%-1.5rem)] translate-y-0 overflow-hidden rounded-2xl! border-white/10 p-0 sm:top-[14vh] sm:max-w-[600px]"
@@ -151,7 +170,7 @@ export function CommandPalette({ open, onOpenChange, groups, search }: { open: b
           {shownDestinations.length ? (
             <PaletteGroup heading="Go to">
               {shownDestinations.map((d) => (
-                <PaletteItem key={d.href} value={`go ${d.href}`} icon={d.icon} title={d.label} meta={d.hint} onSelect={() => go(d.href)} />
+                <PaletteItem key={d.href} value={`go ${d.href}`} icon={d.icon} title={d.label} meta={d.hint} onSelect={() => goTo(d.href)} />
               ))}
             </PaletteGroup>
           ) : null}

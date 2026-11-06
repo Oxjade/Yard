@@ -5,7 +5,73 @@ import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { menuTriggerFor } from "@/components/ui/dropdown-menu"
 import { XIcon } from "@phosphor-icons/react"
+
+/* ---------- Focus return ---------- */
+
+/** Where focus goes when the control that opened an overlay is gone: an element, or a function that finds one at close time. */
+export type ReturnFocus = HTMLElement | null | undefined | (() => HTMLElement | null | undefined)
+
+/** Menus, listboxes, popovers and overlays on their way out: never a place to hand focus back to. */
+const TRANSIENT = '[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],[role="dialog"][data-state="closed"],[role="alertdialog"][data-state="closed"]'
+
+/** On the page, rendered, enabled, and not hidden from assistive tech or inside something closing. */
+export function canTakeFocus(el: unknown): el is HTMLElement {
+  return (
+    el instanceof HTMLElement &&
+    el !== document.body &&
+    el.isConnected &&
+    el.getClientRects().length > 0 &&
+    !el.matches(":disabled") &&
+    el.getAttribute("aria-disabled") !== "true" &&
+    !el.closest('[inert],[aria-hidden="true"]') &&
+    !el.closest(TRANSIENT)
+  )
+}
+
+/** Records what had focus as the content mounts. First child of the content, so its layout effect runs before any autoFocus field inside takes focus. */
+function OpenerProbe({ capture }: { capture: () => void }) {
+  React.useLayoutEffect(() => capture(), [capture])
+  return null
+}
+
+/**
+ * Radix returns focus only to a DialogTrigger, and most dialogs and sheets here open from
+ * state, so on close focus would fall to <body>. This remembers what had focus when the
+ * content opened and, on close, returns there; when that control has gone (a menu item, a
+ * row that was removed) it tries `returnFocus`, then the trigger of the menu that opened the
+ * overlay. The caller's own onCloseAutoFocus runs first: calling event.preventDefault()
+ * there means the caller has placed focus itself, and nothing more happens.
+ *
+ * DialogContent and SheetContent use it already. An overlay built on the Radix Dialog
+ * primitive directly renders `probe` as the content's first child and passes
+ * `onCloseAutoFocus` to the content.
+ */
+export function useFocusReturn(returnFocus?: ReturnFocus, onCloseAutoFocus?: (event: Event) => void) {
+  const opener = React.useRef<HTMLElement | null>(null)
+  const menuTrigger = React.useRef<HTMLElement | null>(null)
+  const capture = React.useCallback(() => {
+    const active = document.activeElement
+    opener.current = active instanceof HTMLElement && active !== document.body ? active : null
+    menuTrigger.current = menuTriggerFor(active)
+  }, [])
+  const handleClose = (event: Event) => {
+    onCloseAutoFocus?.(event)
+    const from = opener.current
+    const menu = menuTrigger.current
+    opener.current = null
+    menuTrigger.current = null
+    if (event.defaultPrevented) return
+    const fallback = typeof returnFocus === "function" ? returnFocus() : returnFocus
+    const target = [from, fallback, menu].find(canTakeFocus)
+    // Nothing usable: leave it to Radix, which focuses a DialogTrigger when there is one.
+    if (!target) return
+    event.preventDefault()
+    target.focus({ preventScroll: true })
+  }
+  return { probe: <OpenerProbe capture={capture} />, onCloseAutoFocus: handleClose }
+}
 
 function Dialog({
   ...props
@@ -51,10 +117,15 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  returnFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** Where focus goes on close when the control that opened the dialog is gone or disabled. */
+  returnFocus?: ReturnFocus
 }) {
+  const focus = useFocusReturn(returnFocus, onCloseAutoFocus)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -65,7 +136,9 @@ function DialogContent({
           className
         )}
         {...props}
+        onCloseAutoFocus={focus.onCloseAutoFocus}
       >
+        {focus.probe}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>

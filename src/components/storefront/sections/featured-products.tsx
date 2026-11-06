@@ -1,6 +1,6 @@
 "use client"
 
-import { ShopProductCard } from "@/components/market/editorial/use-drop-add-block"
+import { ProductCard } from "@/components/market/product-card"
 import { cn } from "@/lib/utils"
 import type { Product, StorefrontSection } from "@/lib/data/types"
 import { AccentLink, Container, SectionHeading, SectionShell, type StorefrontContext } from "../parts"
@@ -21,10 +21,10 @@ export function FeaturedProductsSection({ ctx, section, index, first, products, 
           {heading}
           <div className="grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-4">
             <div className="col-span-2 @3xl:row-span-2">
-              <ShopProductCard product={lead} variant="feature" />
+              <ProductCard product={lead} variant="feature" />
             </div>
             {rest.slice(0, 4).map((p) => (
-              <ShopProductCard key={p.id} product={p} sizes="(min-width: 768px) 22vw, 50vw" />
+              <ProductCard key={p.id} product={p} sizes="(min-width: 768px) 22vw, 50vw" />
             ))}
           </div>
         </Container>
@@ -39,7 +39,7 @@ export function FeaturedProductsSection({ ctx, section, index, first, products, 
           {heading}
           <div className="grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4 @3xl:grid-cols-4">
             {products.slice(0, 8).map((p) => (
-              <ShopProductCard key={p.id} product={p} variant="tall" sizes="(min-width: 768px) 24vw, 50vw" />
+              <ProductCard key={p.id} product={p} variant="tall" sizes="(min-width: 768px) 24vw, 50vw" />
             ))}
           </div>
         </Container>
@@ -59,7 +59,7 @@ export function FeaturedProductsSection({ ctx, section, index, first, products, 
                   <span>No. {String(i + 1).padStart(2, "0")}</span>
                   <span className="h-px flex-1 bg-line-soft" />
                 </p>
-                <ShopProductCard product={p} sizes="(min-width: 768px) 30vw, 50vw" />
+                <ProductCard product={p} sizes="(min-width: 768px) 30vw, 50vw" />
               </li>
             ))}
           </ol>
@@ -75,7 +75,7 @@ export function FeaturedProductsSection({ ctx, section, index, first, products, 
         {heading}
         <div className={cn("grid grid-cols-2 gap-x-3 gap-y-8 @2xl:gap-x-4", products.length === 3 ? "@3xl:grid-cols-3" : "@3xl:grid-cols-4")}>
           {products.slice(0, 8).map((p) => (
-            <ShopProductCard key={p.id} product={p} variant={ctx.template === "editorial" ? "tall" : "default"} />
+            <ProductCard key={p.id} product={p} variant={ctx.template === "editorial" ? "tall" : "default"} />
           ))}
         </div>
       </Container>

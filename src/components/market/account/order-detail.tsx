@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, InfoIcon as Info, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -14,7 +14,7 @@ import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 import { daysSince, formatDay } from "./format"
-import { OrderStatusBadge, OrderStepper, TrackingLink, orderStatusNote, trackingUrl } from "./order-status"
+import { OrderStatusBadge, OrderStepper, TrackingLink, orderStatusNote, returnOutcome, trackingUrl } from "./order-status"
 import { ReturnDialog } from "./return-dialog"
 import { YouNav } from "./you-nav"
 
@@ -62,9 +62,17 @@ export function OrderDetail({ id }: { id: string }) {
 
   const brand = brandById.get(order.brandId)!
   const returnRequest = order.returnRequest ?? null
+  const decision = returnRequest?.decision ?? null
+  const outcome = returnOutcome(order)
+  // Pieces on the request (quantities, not lines), as the items count reads.
+  const returnedUnits = order.lines.filter((l) => returnRequest?.variantIds.includes(l.variantId)).reduce((n, l) => n + l.quantity, 0)
   const status = order.status
   const note = orderStatusNote(order)
-  const delivered = order.timeline.find((t) => t.label.toLowerCase().startsWith("delivered"))
+  // Who decided a return: the brand, or NOCTURNE when the platform's team did.
+  const decidedBy = decision?.by === "platform" ? "NOCTURNE" : brand.name
+  const refundAmount = decision?.status === "approved" ? formatMoney(decision.amount ?? order.refund?.amount ?? 0, order.currency) : null
+  // "Delivered" in the sample history, "Marked delivered by brand" when the brand marks it in Studio; the latest counts.
+  const delivered = [...order.timeline].reverse().find((t) => /^(marked )?delivered\b/i.test(t.label))
   const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
   const returnDaysLeft = daysSinceDelivery === null ? null : brand.returnsDays - daysSinceDelivery
   const canReturn = order.status === "delivered" && !returnRequest && returnDaysLeft !== null && returnDaysLeft >= 0
@@ -78,16 +86,26 @@ export function OrderDetail({ id }: { id: string }) {
       {returnRequest ? (
         // Focused after the dialog closes, so the result of sending is announced in place.
         <div data-return-status tabIndex={-1} role="status" className="flex gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <CheckCircle className="mt-0.5 size-5 shrink-0 text-violet" weight="fill" aria-hidden />
+          {decision?.status === "declined" ? <Info className="mt-0.5 size-5 shrink-0 text-ink-3" aria-hidden /> : <CheckCircle className="mt-0.5 size-5 shrink-0 text-violet" weight="fill" aria-hidden />}
           <div className="min-w-0 text-sm text-ink-2">
-            <p className="text-ink">Return requested {formatDay(returnRequest.at)}</p>
+            <p className="text-ink">
+              {decision
+                ? decision.status === "declined"
+                  ? `Return declined ${formatDay(decision.at)}`
+                  : `${decision.partial ? "Partial refund" : "Refund"} approved ${formatDay(decision.at)}`
+                : `Return requested ${formatDay(returnRequest.at)}`}
+            </p>
             <p className="mt-1">
-              {returnRequest.reasonLabel}, {returnRequest.variantIds.length} {returnRequest.variantIds.length === 1 ? "item" : "items"}.{" "}
-              {status === "refund_requested"
-                ? `${brand.name} reviews it and replies with return instructions, and you'll get a notification when they do. Keep the items unworn with their tags until then.`
-                : status === "refunded"
-                  ? `${brand.name} accepted the return and marked it refunded.`
-                  : `${brand.name} has updated this return. The timeline shows what changed.`}
+              {returnRequest.reasonLabel}, {returnedUnits} {returnedUnits === 1 ? "item" : "items"}.{" "}
+              {decision?.status === "declined"
+                ? decision.reason
+                  ? `${decidedBy} declined it: ${decision.reason}.`
+                  : `${decidedBy} declined it.`
+                : decision
+                  ? `${decidedBy} approved a refund of ${refundAmount}${decision.partial ? " for the items you returned" : ""}. It's recorded, and goes back to how you paid once a payment provider is connected; nothing has reached your card yet.`
+                  : status === "refund_requested"
+                    ? `${brand.name} reviews it and replies with return instructions, and you'll get a notification when they do. Keep the items unworn with their tags until then.`
+                    : `${brand.name} has updated this return. The timeline shows what changed.`}
             </p>
           </div>
         </div>
@@ -114,7 +132,9 @@ export function OrderDetail({ id }: { id: string }) {
           {order.status === "delivered"
             ? `The ${brand.returnsDays}-day return window for this order closed ${Math.abs(returnDaysLeft ?? 0)} days ago.`
             : order.status === "refunded"
-              ? "This order has been refunded, so there's nothing to return."
+              ? order.refund
+                ? "A refund for this order is approved, so there's nothing to return."
+                : "This order has been refunded, so there's nothing to return."
               : order.status === "cancelled"
                 ? order.paymentStatus === "pending" || order.paymentStatus === "failed"
                   ? "This order was cancelled before it was paid, so there's nothing to return or refund."
@@ -164,7 +184,7 @@ export function OrderDetail({ id }: { id: string }) {
             ) : null}
           </p>
         </div>
-        <OrderStatusBadge status={status} />
+        <OrderStatusBadge status={status} order={order} />
       </header>
       <YouNav className="mt-8" />
 
@@ -219,7 +239,11 @@ export function OrderDetail({ id }: { id: string }) {
                         </div>
                         <p className="shrink-0 text-sm text-ink tabular">{formatMoney(l.unitPrice * l.quantity, order.currency)}</p>
                       </div>
-                      {returning ? <StatusBadge tone="attention" className="mt-auto self-start">Return requested</StatusBadge> : null}
+                      {returning ? (
+                        <StatusBadge tone={outcome ? outcome.tone : "attention"} className="mt-auto self-start">
+                          {decision?.status === "approved" ? "Refund approved" : decision?.status === "declined" ? "Return declined" : "Return requested"}
+                        </StatusBadge>
+                      ) : null}
                     </div>
                   </li>
                 )
@@ -262,11 +286,13 @@ export function OrderDetail({ id }: { id: string }) {
                   ? "The payment didn't go through, so nothing was charged."
                   : order.paymentStatus === "authorized"
                     ? `Authorised in ${order.currency}. The charge completes when ${brand.name} ships it.`
-                : order.paymentStatus === "refunded"
-                  ? `Charged in ${order.currency} by ${brand.name}, then refunded in full.`
-                  : order.paymentStatus === "partially_refunded"
-                    ? `Charged in ${order.currency} by ${brand.name}, then partly refunded.`
-                    : `Charged in ${order.currency} by ${brand.name}.`}
+                : order.refund
+                  ? `Charged in ${order.currency} by ${brand.name}. A refund of ${formatMoney(order.refund.amount, order.currency)} is approved and recorded; it's sent once a payment provider is connected.`
+                  : order.paymentStatus === "refunded"
+                    ? `Charged in ${order.currency} by ${brand.name}, then refunded in full.`
+                    : order.paymentStatus === "partially_refunded"
+                      ? `Charged in ${order.currency} by ${brand.name}, then partly refunded.`
+                      : `Charged in ${order.currency} by ${brand.name}.`}
             </p>
           </Panel>
 

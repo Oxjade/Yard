@@ -50,7 +50,7 @@ function SaveBarPanel({ label, onSave, onDiscard, saving, blocked, saveLabel }: 
       transition={spring.drawer}
       className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:left-[260px] sidebar-collapsed:left-[84px]"
     >
-      <div role="region" aria-label="Unsaved changes" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-2 rounded-2xl py-2 pr-2 pl-4 sm:gap-3">
+      <div role="region" aria-label="Unsaved changes" data-toast-avoid="" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-2 rounded-2xl py-2 pr-2 pl-4 sm:gap-3">
         <span className="size-2 shrink-0 rounded-full bg-acid" aria-hidden />
         <p className="min-w-0 flex-1 truncate text-sm text-ink" aria-live="polite">{label}</p>
         <Button type="button" variant="secondary" size="sm" className="h-10 sm:h-8" onClick={onDiscard} disabled={saving}>Discard</Button>

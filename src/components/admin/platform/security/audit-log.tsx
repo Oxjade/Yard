@@ -145,7 +145,8 @@ export function AuditLog({ ready }: { ready: boolean }) {
         toolbar={
           <>
             <Filters
-              noun="records"
+              noun="entries"
+              singular="entry"
               results={rows.length}
               onClear={clear}
               filters={[
