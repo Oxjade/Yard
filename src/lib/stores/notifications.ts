@@ -2,7 +2,7 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
-import { withCurrentName } from "./old-name"
+import { currentReferences, withCurrentName } from "./old-name"
 
 /**
  * Notifications, persisted and shared across tabs. Every notification comes from an event
@@ -72,6 +72,60 @@ type State = {
 
 const MAX = 200
 
+/** Where an admin notification opens: the record it is about, on the screen that decides it. */
+export const adminLinks = {
+  application: (id: string) => `/admin/brands?review=${encodeURIComponent(id)}`,
+  report: (id: string) => `/admin/products?case=${encodeURIComponent(id)}`,
+  dispute: (id: string) => `/admin/finance?tab=disputes&focus=${encodeURIComponent(id)}#finance-sections`,
+  refund: (id: string) => `/admin/finance?tab=refunds&focus=${encodeURIComponent(id)}#finance-sections`,
+  payout: (id: string) => `/admin/finance?tab=payouts&focus=${encodeURIComponent(id)}#finance-sections`,
+  webhooks: "/admin/health#webhooks",
+  failedJobs: "/admin/health#failed-jobs",
+}
+
+/**
+ * The record an admin notification opens, from its event key ("a:<kind>:<record id>[:<step>]").
+ * Every admin notification goes through it as it is pushed, so an event raised anywhere opens its
+ * record, and so do notifications saved when they all opened a screen's front page. Null for an
+ * event that has no record screen (it keeps the link it was given).
+ */
+export function adminLinkFor(eventKey: string) {
+  const [, kind, rest] = /^a:([a-z]+):(.+)$/.exec(eventKey) ?? []
+  // Record ids never contain ":"; what follows one is the step ("requested").
+  const id = rest?.split(":")[0]
+  if (!id) return null
+  switch (kind) {
+    case "app":
+    case "risk":
+      return adminLinks.application(id)
+    case "report":
+      return adminLinks.report(id)
+    case "cb":
+      return adminLinks.dispute(id)
+    case "refund":
+      return adminLinks.refund(id)
+    // A shopper's return request: the refund it opened is keyed by the order.
+    case "return":
+      return adminLinks.refund(`rf_${id}`)
+    case "payout":
+      return adminLinks.payout(id)
+    case "webhook":
+      return adminLinks.webhooks
+    case "job":
+      return adminLinks.failedJobs
+    default:
+      return null
+  }
+}
+
+type Pushed = Omit<AppNotification, "id" | "read"> & { read?: boolean }
+
+/** A pushed notification as it's stored: unread unless said otherwise, and an admin one linked to its record. */
+function stored(n: Pushed): AppNotification {
+  const href = n.audience === "admin" ? (adminLinkFor(n.eventKey) ?? n.href) : n.href
+  return { ...n, href, read: n.read ?? false, id: `n_${n.eventKey}` }
+}
+
 export const useNotifications = create<State>()(
   persist(
     (set, get) => ({
@@ -79,13 +133,12 @@ export const useNotifications = create<State>()(
       seeded: { customer: false, merchant: false, admin: false },
       push: (n) => {
         if (get().items.some((x) => x.eventKey === n.eventKey)) return false
-        const item: AppNotification = { ...n, read: n.read ?? false, id: `n_${n.eventKey}` }
-        set({ items: [item, ...get().items].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX) })
+        set({ items: [stored(n), ...get().items].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX) })
         return true
       },
       pushMany: (list) => {
         const keys = new Set(get().items.map((x) => x.eventKey))
-        const fresh = list.filter((n) => !keys.has(n.eventKey)).map((n) => ({ ...n, read: n.read ?? false, id: `n_${n.eventKey}` }))
+        const fresh = list.filter((n) => !keys.has(n.eventKey)).map(stored)
         if (!fresh.length) return
         set({ items: [...fresh, ...get().items].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX) })
       },
@@ -99,12 +152,20 @@ export const useNotifications = create<State>()(
       name: "nocturne-notifications",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 1,
+      version: 2,
       // v1: notifications saved before the platform was renamed read its current name ("Yard
       // approved your application"). Event keys and ids stay as they were, so nothing is pushed twice.
-      migrate: (persisted) => {
+      // v2: order references read their current form ("Order YRD-…", "#OS-10431"), and admin
+      // notifications open the record they're about instead of the screen's front page.
+      migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<State>
-        return (p.items ? { ...p, items: p.items.map((n) => ({ ...n, title: withCurrentName(n.title), body: withCurrentName(n.body) })) } : p) as State
+        if (!p.items) return p as State
+        const items = p.items.map((n) => {
+          const text = { title: currentReferences(withCurrentName(n.title)), body: currentReferences(withCurrentName(n.body)) }
+          const href = version < 2 && n.audience === "admin" ? (adminLinkFor(n.eventKey) ?? n.href) : n.href
+          return { ...n, ...text, href }
+        })
+        return { ...p, items } as State
       },
     },
   ),

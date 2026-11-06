@@ -1,20 +1,21 @@
 "use client"
 
 import { useEffect } from "react"
+import { countries, type CountryCode } from "@/config/markets"
 import { site } from "@/config/site"
 import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
-import { drops } from "@/lib/data/catalog"
-import { brandApplications, disputes, failedJobs, moderationQueue, payoutAmountIn, webhookFailures, type Payout } from "@/lib/data/admin"
+import { categoryBySlug, drops } from "@/lib/data/catalog"
+import { brandApplications, disputes, failedJobs, moderationQueue, payoutAmountIn, webhookFailures, type BrandApplication, type Payout } from "@/lib/data/admin"
 import { campaignDates, type Campaign } from "@/lib/data/ads"
 import { customerOrders } from "@/lib/data/orders"
 import { availableStock, productById } from "@/lib/data/products"
 import { daysAgo } from "@/lib/data/seed"
-import type { Drop, MerchantOrder } from "@/lib/data/types"
+import type { CategorySlug, Drop, MerchantOrder } from "@/lib/data/types"
 import { dropPhaseAt } from "@/lib/drops"
 import { getDemoAnchor } from "@/hooks/use-now"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
-import { useNotifications, type AppNotification } from "@/lib/stores/notifications"
+import { adminLinks, useNotifications, type AppNotification } from "@/lib/stores/notifications"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { useStudio, type InventoryEvent } from "@/lib/stores/studio"
@@ -148,29 +149,61 @@ function merchantSeed(): New[] {
   return out
 }
 
+/** "the United Kingdom", "Kenya": a country's name as it reads after "from". */
+function fromCountry(code: string) {
+  const name = countries[code as CountryCode]?.name ?? code
+  return /^United /.test(name) ? `the ${name}` : name
+}
+
+/** "Home & lifestyle brand from the United Kingdom, 3 products drafted.": a new application, wherever it is announced. */
+export function applicationBody(a: Pick<BrandApplication, "category" | "country" | "products">) {
+  const category = categoryBySlug.get(a.category as CategorySlug)?.name ?? a.category.replace(/-/g, " ")
+  const kind = category.charAt(0).toUpperCase() + category.slice(1)
+  const drafted = a.products ? `${a.products} ${a.products === 1 ? "product" : "products"} drafted` : "no products drafted yet"
+  return `${kind} brand from ${fromCountry(a.country)}, ${drafted}.`
+}
+
 function adminSeed(): New[] {
   const out: New[] = []
   for (const a of brandApplications.filter((a) => a.status === "pending_review" && !a.brandId)) {
-    out.push({ eventKey: `a:app:${a.id}`, audience: "admin", category: "merchant_application", title: `New brand application: ${a.brandName}`, body: `${a.category.replace("-", " ")} brand from ${a.country}, ${a.products} products drafted.`, href: "/admin/brands", at: a.submittedAt, sample: true })
+    out.push({ eventKey: `a:app:${a.id}`, audience: "admin", category: "merchant_application", title: `New brand application: ${a.brandName}`, body: applicationBody(a), href: adminLinks.application(a.id), at: a.submittedAt, sample: true })
   }
   for (const m of moderationQueue.filter((m) => m.status === "open" || m.status === "escalated")) {
-    out.push({ eventKey: `a:report:${m.id}`, audience: "admin", category: "product_report", title: `Listing reported: ${m.title}`, body: `${m.brandName}. ${m.detail}`, href: "/admin/products", at: m.reportedAt, sample: true })
+    out.push({ eventKey: `a:report:${m.id}`, audience: "admin", category: "product_report", title: `Listing reported: ${m.title}`, body: `${m.brandName}. ${m.detail}`, href: adminLinks.report(m.id), at: m.reportedAt, sample: true })
   }
   for (const w of webhookFailures) {
-    out.push({ eventKey: `a:webhook:${w.id}`, audience: "admin", category: "payment_failure", title: `${w.provider.charAt(0).toUpperCase()}${w.provider.slice(1)} webhook failed`, body: `${w.event}: ${w.reason}`, href: "/admin/health", at: w.receivedAt, sample: true })
+    out.push({ eventKey: `a:webhook:${w.id}`, audience: "admin", category: "payment_failure", title: `${w.provider.charAt(0).toUpperCase()}${w.provider.slice(1)} webhook failed`, body: `${w.event}: ${w.reason}`, href: adminLinks.webhooks, at: w.receivedAt, sample: true })
   }
   for (const d of disputes.filter((d) => d.type === "chargeback" && d.stage === "needs_evidence")) {
-    out.push({ eventKey: `a:cb:${d.id}`, audience: "admin", category: "chargeback", title: `Chargeback opened on #${d.reference}`, body: `${d.brandName}, ${formatMoney(d.amountUsd, "USD")}: ${d.reason}. Evidence due soon.`, href: "/admin/finance", at: d.openedAt, sample: true })
+    out.push({ eventKey: `a:cb:${d.id}`, audience: "admin", category: "chargeback", title: `Chargeback opened on #${d.reference}`, body: `${d.brandName}, ${formatMoney(d.amountUsd, "USD")}: ${d.reason}. Evidence due soon.`, href: adminLinks.dispute(d.id), at: d.openedAt, sample: true })
   }
   const risky = brandApplications.find((a) => a.risk === "high" && a.status === "restricted")
-  if (risky) out.push({ eventKey: `a:risk:${risky.id}`, audience: "admin", category: "suspicious_activity", title: `High-risk brand: ${risky.brandName}`, body: risky.notes, href: "/admin/brands", at: risky.submittedAt, sample: true, read: true })
+  if (risky) out.push({ eventKey: `a:risk:${risky.id}`, audience: "admin", category: "suspicious_activity", title: `High-risk brand: ${risky.brandName}`, body: risky.notes, href: adminLinks.application(risky.id), at: risky.submittedAt, sample: true, read: true })
   for (const j of failedJobs.slice(0, 1)) {
-    out.push({ eventKey: `a:job:${j.id}`, audience: "admin", category: "system_alert", title: `Background job failing: ${j.queue}`, body: `${j.name}: ${j.error}`, href: "/admin/health", at: j.failedAt, sample: true })
+    out.push({ eventKey: `a:job:${j.id}`, audience: "admin", category: "system_alert", title: `Background job failing: ${j.queue}`, body: `${j.name}: ${j.error}`, href: adminLinks.failedJobs, at: j.failedAt, sample: true })
   }
   for (const r of useAdmin.getState().refunds.filter((r) => r.status === "requested").slice(0, 3)) {
-    out.push({ eventKey: `a:refund:${r.id}`, audience: "admin", category: "refund_request" as AppNotification["category"], title: `Refund requested on #${r.reference}`, body: `${r.brandName}, ${formatMoney(r.amountUsd, "USD")}: ${r.reason}.`, href: "/admin/finance", at: r.requestedAt, sample: true })
+    out.push({ eventKey: `a:refund:${r.id}`, audience: "admin", category: "refund_request" as AppNotification["category"], title: `Refund requested on #${r.reference}`, body: `${r.brandName}, ${formatMoney(r.amountUsd, "USD")}: ${r.reason}.`, href: adminLinks.refund(r.id), at: r.requestedAt, sample: true })
   }
   return out
+}
+
+/**
+ * Sample notifications saved before the sample data was corrected (a carrier, an amount, a
+ * reference, a link) read what the same event says now. Matched by event key; read state,
+ * time and anything raised in this browser stay as they are.
+ */
+function refreshSamples(fresh: New[]) {
+  const byKey = new Map(fresh.map((n) => [n.eventKey, n]))
+  const { items } = useNotifications.getState()
+  let changed = false
+  const next = items.map((n) => {
+    const f = n.sample ? byKey.get(n.eventKey) : undefined
+    if (!f || (f.title === n.title && f.body === n.body && f.href === n.href)) return n
+    changed = true
+    return { ...n, title: f.title, body: f.body, href: f.href }
+  })
+  if (changed) useNotifications.setState({ items: next })
 }
 
 /* ── Live events: subscribe to the stores and turn changes into notifications ─ */
@@ -190,9 +223,12 @@ export function useNotificationEvents() {
 
     const start = () => {
       const state = useNotifications.getState()
-      if (!state.seeded.customer) { state.pushMany(customerSeed()); state.setSeeded("customer") }
-      if (!state.seeded.merchant) { state.pushMany(merchantSeed()); state.setSeeded("merchant") }
-      if (!state.seeded.admin) { state.pushMany(adminSeed()); state.setSeeded("admin") }
+      const seeds = { customer: customerSeed(), merchant: merchantSeed(), admin: adminSeed() }
+      if (!state.seeded.customer) { state.pushMany(seeds.customer); state.setSeeded("customer") }
+      if (!state.seeded.merchant) { state.pushMany(seeds.merchant); state.setSeeded("merchant") }
+      if (!state.seeded.admin) { state.pushMany(seeds.admin); state.setSeeded("admin") }
+      // Stock alerts say what the stock was when they were raised, so they keep their wording.
+      refreshSamples([...seeds.customer, ...seeds.merchant.filter((n) => !n.eventKey.startsWith("m:oos:")), ...seeds.admin])
 
       // Customer + merchant: checkout created orders.
       unsubs.push(
@@ -213,7 +249,7 @@ export function useNotificationEvents() {
             const r = o.returnRequest
             push({ eventKey: `c:return:${o.id}`, audience: "customer", category: "refund", title: `Return requested for #${o.reference}`, body: `${brand?.name ?? "The brand"} will reply with return instructions.`, href: `/you/orders/${o.id}`, at: r.at })
             if (o.brandId === STUDIO_BRAND_ID) push({ eventKey: `m:return:${o.id}`, audience: "merchant", category: "refund_request", title: `Return requested on #${o.reference}`, body: `${o.shippingAddress.name}: ${r.reasonLabel.toLowerCase()}.`, href: `/studio/orders/${o.id}`, at: r.at })
-            push({ eventKey: `a:return:${o.id}`, audience: "admin", category: "refund_request", title: `Refund requested on #${o.reference}`, body: `${brand?.name ?? "Brand"}: ${r.reasonLabel.toLowerCase()}.`, href: "/admin/finance?tab=refunds", at: r.at })
+            push({ eventKey: `a:return:${o.id}`, audience: "admin", category: "refund_request", title: `Refund requested on #${o.reference}`, body: `${brand?.name ?? "Brand"}: ${r.reasonLabel.toLowerCase()}.`, href: adminLinks.refund(`rf_${o.id}`), at: r.at })
           }
           // Customer: the brand or the platform decided their return request.
           for (const o of s.orders) {

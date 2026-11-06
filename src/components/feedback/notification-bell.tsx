@@ -50,7 +50,8 @@ export function relativeTime(iso: string, now = Date.now()) {
   if (h < 24) return `${h}h`
   const d = Math.round(h / 24)
   if (d < 7) return `${d}d`
-  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+  // en-GB like every other date in the app ("25 Oct"), whatever the browser's language.
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
 }
 
 export const notificationsHref: Record<Audience, string> = { customer: "/notifications", merchant: "/studio/notifications", admin: "/admin/notifications" }
@@ -79,13 +80,10 @@ export function NotificationRow({ n, onOpen, compact = false }: { n: AppNotifica
           <Icon className="size-3.5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className={cn("min-w-0 truncate text-[13px]", n.read ? "text-ink-2" : "font-medium text-ink")}>{n.title}</span>
-          </span>
+          <span className={cn("line-clamp-2 text-[13px] leading-snug", n.read ? "text-ink-2" : "font-medium text-ink")}>{n.title}</span>
           <span className={cn("mt-0.5 block text-[12px] leading-snug text-ink-3", compact ? "line-clamp-2" : "")}>{n.body}</span>
-          <span className="mt-1 flex items-center gap-2 text-[11px] text-ink-3">
+          <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
             <span>{categoryLabel[n.category]}</span>
-            <span aria-hidden className="size-0.5 rounded-full bg-ink-3" />
             <time dateTime={n.at}>{relativeTime(n.at)}</time>
             {n.sample ? <span className="rounded-[3px] border border-white/10 px-1 text-[10px]">Sample</span> : null}
           </span>

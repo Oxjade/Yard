@@ -85,9 +85,11 @@ export type HeatCell = { date: string; value: number; state: "data" | "future" |
 
 /**
  * Counts per day laid out as weekday rows (Mon–Sun) × week columns, ending with the
- * current week. Days after today are "future"; days before the history are "before".
+ * current week. Days after `today` are "future"; days before the history are "before".
+ * `today` defaults to the demo's; a page that counts up to another day (the Control
+ * Center's anchorDay) passes it, so its own today is a data day, not a future one.
  */
-export function weekdayByWeek(dates: string[], weeks: number, historyStart: string) {
+export function weekdayByWeek(dates: string[], weeks: number, historyStart: string, today: string = DEMO_TODAY) {
   const counts = new Map<string, number>()
   for (const d of dates) counts.set(d, (counts.get(d) ?? 0) + 1)
   const dow = (utc(today).getUTCDay() + 6) % 7 // Monday = 0

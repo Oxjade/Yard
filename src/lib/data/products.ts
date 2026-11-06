@@ -1,8 +1,8 @@
 import { currencies, type CurrencyCode } from "@/config/markets"
-import { brandByHandle } from "./brands"
+import { brandByHandle, brandCode } from "./brands"
 import { img } from "./media"
 import { daysAgo, randInt, rand } from "./seed"
-import type { CategorySlug, ColourValue, Product, ProductBadge, ProductOption, Variant } from "./types"
+import type { Brand, CategorySlug, ColourValue, Product, ProductBadge, ProductOption, Variant } from "./types"
 
 type SizeSet = "apparel" | "shoes" | "one" | "rings"
 
@@ -15,7 +15,11 @@ type Spec = {
   /** Major units, in the brand's currency. */
   price: number
   compareAt?: number
-  images: string[]
+  /**
+   * Photos, first the product shot. A photo that isn't a close-up of the piece (an editorial, the
+   * piece worn) gives its own alt text: `[ref, alt]`.
+   */
+  images: (string | [ref: string, alt: string])[]
   sizes?: SizeSet
   colours?: [string, string][]
   badges?: ProductBadge[]
@@ -36,8 +40,8 @@ const SIZES: Record<SizeSet, string[]> = {
 
 const specs: Spec[] = [
   // ── Lagos Static ─────────────────────────────────────────
-  { brand: "lagos-static", slug: "static-moto-jacket", name: "Static Moto Jacket", cat: "streetwear", sub: "Outerwear", price: 185000, images: ["fashion/outerwear/0", "fashion/streetwear-editorial/1"], sizes: "apparel", colours: [["Black", "#111111"]], badges: ["limited"], tags: ["leather", "outerwear"], desc: "A cropped moto jacket in vegetable-tanned goat leather with an asymmetric zip, snap lapels and quilted shoulders.", details: ["Vegetable-tanned goat leather", "Cotton twill lining", "Boxy fit — size down for a closer cut", "Cut and finished in Yaba, Lagos"], collections: ["c_ls_core"], createdDaysAgo: 34 },
-  { brand: "lagos-static", slug: "danfo-heavyweight-hoodie", name: "Danfo Heavyweight Hoodie", cat: "streetwear", sub: "Hoodies", price: 78000, images: ["fashion/tops/1", "fashion/streetwear-editorial/0"], sizes: "apparel", colours: [["Washed black", "#1a1a1a"], ["Signal orange", "#e0672a"]], badges: ["new"], tags: ["hoodie", "graphic"], desc: "480gsm loopback fleece with a puff-printed danfo route map across the back. Dropped shoulders, double-layer hood.", details: ["480gsm cotton loopback fleece", "Puff print, hand-pulled", "Oversized fit", "Made in Lagos in a run of 180"], collections: ["c_ls_drop06"], createdDaysAgo: 6, dropId: "d_ls_third_mainland" },
+  { brand: "lagos-static", slug: "static-moto-jacket", name: "Static Moto Jacket", cat: "streetwear", sub: "Outerwear", price: 185000, images: ["fashion/outerwear/0"], sizes: "apparel", colours: [["Black", "#111111"]], badges: ["limited"], tags: ["leather", "outerwear"], desc: "A cropped moto jacket in vegetable-tanned goat leather with an asymmetric zip, snap lapels and quilted shoulders.", details: ["Vegetable-tanned goat leather", "Cotton twill lining", "Boxy fit — size down for a closer cut", "Cut and finished in Yaba, Lagos"], collections: ["c_ls_core"], createdDaysAgo: 34 },
+  { brand: "lagos-static", slug: "danfo-heavyweight-hoodie", name: "Danfo Heavyweight Hoodie", cat: "streetwear", sub: "Hoodies", price: 78000, images: ["fashion/tops/1", ["fashion/streetwear-editorial/0", "Danfo Heavyweight Hoodie in signal orange, worn with a respirator mask and a teal smoke flare"], ["fashion/streetwear-editorial/1", "Danfo Heavyweight Hoodie in washed black under a blue-lined jacket, next to the Third Mainland Tee in black"]], sizes: "apparel", colours: [["Washed black", "#1a1a1a"], ["Signal orange", "#e0672a"]], badges: ["new"], tags: ["hoodie", "graphic"], desc: "480gsm loopback fleece with a puff-printed danfo route map across the back. Dropped shoulders, double-layer hood.", details: ["480gsm cotton loopback fleece", "Puff print, hand-pulled", "Oversized fit", "Made in Lagos in a run of 180"], collections: ["c_ls_drop06"], createdDaysAgo: 6, dropId: "d_ls_third_mainland" },
   { brand: "lagos-static", slug: "third-mainland-tee", name: "Third Mainland Tee", cat: "streetwear", sub: "T-shirts", price: 32000, images: ["fashion/tops/6"], sizes: "apparel", colours: [["White", "#f1efe9"], ["Black", "#111111"]], badges: ["new"], tags: ["tee", "graphic"], desc: "Heavyweight jersey tee with a long-exposure photograph of the Third Mainland Bridge at 4am printed on the back.", details: ["260gsm combed cotton", "Water-based back print", "Boxy fit"], collections: ["c_ls_drop06"], createdDaysAgo: 4, dropId: "d_ls_third_mainland" },
   { brand: "lagos-static", slug: "yaba-cargo-trouser", name: "Yaba Cargo Trouser", cat: "streetwear", sub: "Trousers", price: 68000, images: ["fashion/bottoms/1"], sizes: "apparel", colours: [["Bone", "#d9d2c3"]], tags: ["cargo"], desc: "Relaxed cargo trouser in washed ripstop with articulated knees, a drawcord hem and six pockets.", details: ["Cotton-nylon ripstop", "Articulated knee", "Drawcord hem"], collections: ["c_ls_core"], createdDaysAgo: 58 },
   { brand: "lagos-static", slug: "signal-beanie", name: "Signal Beanie", cat: "accessories", sub: "Headwear", price: 22000, images: ["objects/headwear/0"], sizes: "one", colours: [["Rust", "#a2502a"], ["Black", "#111111"]], tags: ["beanie", "knit"], desc: "Ribbed merino-blend beanie with a woven Static tab.", details: ["70% merino, 30% recycled nylon", "Woven tab"], collections: ["c_ls_drop06"], createdDaysAgo: 21 },
@@ -64,7 +68,7 @@ const specs: Spec[] = [
   { brand: "halfmoon-archive", slug: "darned-shawl-collar-knit", name: "Darned Shawl-Collar Knit", cat: "fashion", sub: "Knitwear", price: 140, images: ["fashion/tops/2"], sizes: "apparel", colours: [["Charcoal", "#3a3a3d"]], tags: ["knit", "vintage"], desc: "A heavy wool shawl-collar cardigan with contrast darning at the elbows.", details: ["100% wool", "Contrast darning", "Horn buttons"], collections: ["c_hm_restored"], createdDaysAgo: 52 },
   { brand: "halfmoon-archive", slug: "patched-archive-denim", name: "Patched Archive Denim", cat: "fashion", sub: "Trousers", price: 120, images: ["fashion/bottoms/3"], sizes: "apparel", colours: [["Indigo", "#2f3d5c"]], tags: ["denim", "vintage"], desc: "Vintage tapered jeans, patched from the inside with offcuts from other pairs.", details: ["Vintage cotton denim", "Hand-patched", "Each pair unique"], collections: ["c_hm_restored"], createdDaysAgo: 15 },
   { brand: "halfmoon-archive", slug: "merino-roll-neck", name: "Merino Roll Neck", cat: "fashion", sub: "Knitwear", price: 95, compareAt: 120, images: ["fashion/tops/5"], sizes: "apparel", colours: [["Navy", "#1f2a44"]], tags: ["knit"], desc: "A fine-gauge merino roll neck cut from a 1960s pattern.", details: ["Extra-fine merino", "Archive pattern"], collections: ["c_hm_new"], createdDaysAgo: 88 },
-  { brand: "halfmoon-archive", slug: "resoled-work-boots", name: "Resoled Work Boots", cat: "fashion", sub: "Footwear", price: 210, images: ["objects/sneakers/0", "objects/sneakers/6"], sizes: "shoes", colours: [["Tan", "#9b6b43"]], badges: ["last-pieces"], tags: ["boots", "vintage"], desc: "Vintage nubuck work boots, cleaned, re-welted and resoled by a cobbler in Hackney.", details: ["Vintage nubuck", "New Goodyear welt and sole", "Limited sizes"], collections: ["c_hm_restored"], createdDaysAgo: 44 },
+  { brand: "halfmoon-archive", slug: "resoled-work-boots", name: "Resoled Work Boots", cat: "fashion", sub: "Footwear", price: 210, images: ["objects/sneakers/0", ["objects/sneakers/6", "Resoled Work Boots, worn and being laced"]], sizes: "shoes", colours: [["Tan", "#9b6b43"]], badges: ["last-pieces"], tags: ["boots", "vintage"], desc: "Vintage nubuck work boots, cleaned, re-welted and resoled by a cobbler in Hackney.", details: ["Vintage nubuck", "New Goodyear welt and sole", "Limited sizes"], collections: ["c_hm_restored"], createdDaysAgo: 44 },
   { brand: "halfmoon-archive", slug: "archive-brogue-boot", name: "Archive Brogue Boot", cat: "fashion", sub: "Footwear", price: 245, images: ["objects/sneakers/8"], sizes: "shoes", colours: [["Tan", "#9b6b43"]], tags: ["boots"], desc: "A wingtip brogue boot made to a 1950s last in Northampton.", details: ["Calf leather", "Leather sole", "Goodyear welted"], collections: ["c_hm_new"], createdDaysAgo: 61 },
   { brand: "halfmoon-archive", slug: "wool-beret", name: "Wool Beret", cat: "accessories", sub: "Headwear", price: 45, images: ["objects/headwear/1"], sizes: "one", colours: [["Navy", "#1f2a44"]], tags: ["beret"], desc: "A felted wool beret with a leather sweatband.", details: ["Felted merino", "Leather sweatband"], collections: ["c_hm_new"], createdDaysAgo: 19 },
   { brand: "halfmoon-archive", slug: "wide-brim-fedora", name: "Wide-Brim Fedora", cat: "accessories", sub: "Headwear", price: 110, images: ["objects/headwear/2"], sizes: "one", colours: [["Dusty blue", "#7a8ca3"]], tags: ["hat"], desc: "A restored wool-felt fedora, re-blocked and fitted with a new grosgrain band.", details: ["Vintage wool felt", "New grosgrain band"], createdDaysAgo: 70 },
@@ -120,7 +124,7 @@ const specs: Spec[] = [
 
   // ── Gridlock Supply ──────────────────────────────────────
   { brand: "gridlock-supply", slug: "laundromat-trucker", name: "Laundromat Trucker", cat: "accessories", sub: "Headwear", price: 45, images: ["objects/headwear/3"], sizes: "one", colours: [["White", "#f2f1ec"]], badges: ["restock"], tags: ["cap"], desc: "A foam-front trucker cap with a mesh back and snap strap.", details: ["Foam front panel", "Mesh back", "Snapback"], collections: ["c_gl_core"], createdDaysAgo: 140, dropId: "d_gl_restock" },
-  { brand: "gridlock-supply", slug: "gls-court", name: "GLS Court", cat: "sneakers", sub: "Low-tops", price: 160, images: ["objects/sneakers/7"], sizes: "shoes", colours: [["White", "#f2f1ec"]], tags: ["sneaker"], desc: "A clean leather court shoe with a cream midsole.", details: ["Full-grain leather", "Rubber cupsole"], collections: ["c_gl_core"], createdDaysAgo: 36, dropId: "d_gl_restock" },
+  { brand: "gridlock-supply", slug: "gls-court", name: "GLS Court", cat: "sneakers", sub: "Low-tops", price: 160, images: ["objects/sneakers/7"], sizes: "shoes", colours: [["White", "#f2f1ec"]], badges: ["restock"], tags: ["sneaker"], desc: "A clean leather court shoe with a cream midsole.", details: ["Full-grain leather", "Rubber cupsole"], collections: ["c_gl_core"], createdDaysAgo: 36, dropId: "d_gl_restock" },
   { brand: "gridlock-supply", slug: "bodega-sherpa-fleece", name: "Bodega Sherpa Fleece", cat: "streetwear", sub: "Outerwear", price: 180, images: ["fashion/outerwear/3"], sizes: "apparel", colours: [["Ecru", "#ece7dc"]], tags: ["fleece", "outerwear"], desc: "A boxy sherpa fleece with nylon pocket trims and a full zip.", details: ["Recycled polyester sherpa", "Nylon trims"], collections: ["c_gl_core"], createdDaysAgo: 20 },
   { brand: "gridlock-supply", slug: "leopard-camp-shirt", name: "Leopard Camp Shirt", cat: "streetwear", sub: "Shirts", price: 72, compareAt: 90, images: ["fashion/tops/3"], sizes: "apparel", colours: [["Leopard", "#a87b45"]], tags: ["shirt"], desc: "A short-sleeve camp-collar shirt in leopard-print viscose.", details: ["Viscose", "Camp collar"], createdDaysAgo: 77 },
   { brand: "gridlock-supply", slug: "gls-low", name: "GLS Low", cat: "sneakers", sub: "Low-tops", price: 140, images: ["objects/sneakers/2"], sizes: "shoes", colours: [["White/tan", "#e9e1d3"]], badges: ["new"], tags: ["sneaker"], desc: "A minimal leather low-top with a suede heel tab.", details: ["Full-grain leather", "Suede heel tab", "Stitched cupsole"], createdDaysAgo: 11 },
@@ -129,7 +133,7 @@ const specs: Spec[] = [
   { brand: "gridlock-supply", slug: "commuter-backpack", name: "Commuter Backpack", cat: "accessories", sub: "Bags", price: 150, images: ["objects/bags/0"], sizes: "one", colours: [["Black", "#111111"]], tags: ["backpack"], desc: "A weatherproof technical backpack with a hidden laptop compartment.", details: ["Coated ripstop", "Waterproof zips", "20L"], createdDaysAgo: 52 },
 
   // ── Kumasi Thread Co. ────────────────────────────────────
-  { brand: "kumasi-thread", slug: "bonwire-oversized-coat", name: "Bonwire Oversized Coat", cat: "fashion", sub: "Outerwear", price: 4800, images: ["fashion/outerwear/5", "fashion/streetwear-editorial/5"], sizes: "apparel", colours: [["Black", "#121212"]], badges: ["exclusive"], tags: ["coat", "kente"], desc: "An oversized black wool coat lined with hand-loomed kente strips from Bonwire.", details: ["Wool melton shell", "Hand-loomed kente lining", "Each lining unique"], collections: ["c_kt_bonwire"], createdDaysAgo: 16, dropId: "d_kt_bonwire" },
+  { brand: "kumasi-thread", slug: "bonwire-oversized-coat", name: "Bonwire Oversized Coat", cat: "fashion", sub: "Outerwear", price: 4800, images: ["fashion/outerwear/5"], sizes: "apparel", colours: [["Black", "#121212"]], badges: ["exclusive"], tags: ["coat", "kente"], desc: "An oversized black wool coat lined with hand-loomed kente strips from Bonwire.", details: ["Wool melton shell", "Hand-loomed kente lining", "Each lining unique"], collections: ["c_kt_bonwire"], createdDaysAgo: 16, dropId: "d_kt_bonwire" },
   { brand: "kumasi-thread", slug: "loom-knit-sweater", name: "Loom Knit Sweater", cat: "fashion", sub: "Knitwear", price: 1900, images: ["fashion/tops/0"], sizes: "apparel", colours: [["Burgundy", "#6b2232"]], tags: ["knit"], desc: "A chunky cotton sweater knitted on the same pattern as a kente strip.", details: ["Organic cotton", "Kente-pattern knit"], collections: ["c_kt_bonwire"], createdDaysAgo: 16, dropId: "d_kt_bonwire" },
   { brand: "kumasi-thread", slug: "kente-print-midi-skirt", name: "Kente-Print Midi Skirt", cat: "fashion", sub: "Skirts", price: 2200, images: ["fashion/bottoms/0"], sizes: "apparel", colours: [["Red/yellow", "#c2402a"]], tags: ["skirt", "print"], desc: "A full midi skirt in a print drawn from a kente pattern.", details: ["Cotton sateen", "Side pockets"], createdDaysAgo: 29 },
   { brand: "kumasi-thread", slug: "ivory-dance-blazer", name: "Ivory Dance Blazer", cat: "fashion", sub: "Tailoring", price: 3600, images: ["fashion/streetwear-editorial/3"], sizes: "apparel", colours: [["Ivory", "#efe9de"]], tags: ["tailoring"], desc: "A soft ivory blazer cut for movement, with kente-trimmed inner pockets.", details: ["Linen-cotton", "Unstructured shoulder"], createdDaysAgo: 50 },
@@ -147,6 +151,27 @@ const specs: Spec[] = [
   { brand: "signal-bloom", slug: "smoke-break-duo", name: "Smoke Break Duo", cat: "beauty", sub: "Body", price: 56000, images: ["lifestyle/beauty/3"], sizes: "one", tags: ["body"], desc: "Hand wash and lotion scented with cedar, tobacco leaf and pink pepper.", details: ["2 × 300ml"], createdDaysAgo: 58 },
   { brand: "signal-bloom", slug: "neon-eye-palette", name: "Neon Eye Palette", cat: "beauty", sub: "Make-up", price: 38000, images: ["lifestyle/beauty/6"], sizes: "one", badges: ["new"], tags: ["make-up"], desc: "Twelve high-pigment shades from smoke to neon.", details: ["12 pressed pigments", "Vegan"], createdDaysAgo: 11 },
 ]
+
+const skuPart = (s: string, n: number) => s.normalize("NFD").replace(/[^A-Za-z0-9]/g, "").slice(0, n).toUpperCase()
+
+/**
+ * A sample variant's SKU: the brand's code, the first six letters of the product's handle and
+ * three of each option ("LS-DANFOH-M-WAS"), the way Studio writes one for a new product.
+ */
+export function sampleSku(brand: Brand, slug: string, options: Record<string, string>) {
+  const code = Object.values(options).map((v) => skuPart(v, 3)).filter(Boolean).join("-")
+  return `${brandCode(brand)}-${skuPart(slug, 6)}${code ? `-${code}` : ""}`
+}
+
+/**
+ * The SKU a sample variant had before the handle part dropped its hyphens and the code replaced
+ * marks without letters ("LS-DANFO--M-WAS"): Studio's migration swaps it for sampleSku when it
+ * was never edited.
+ */
+export function legacySampleSku(brand: Brand, slug: string, options: Record<string, string>) {
+  const code = Object.values(options).map((v) => v.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase()).join("-")
+  return `${brand.mark.text.replace(/[^A-Za-z]/g, "").toUpperCase() || "SKU"}-${slug.slice(0, 6).toUpperCase()}${code ? `-${code}` : ""}`
+}
 
 function build(spec: Spec): Product {
   const brand = brandByHandle.get(spec.brand)
@@ -177,10 +202,9 @@ function build(spec: Spec): Product {
     const key = `${id}-${i}`
     const r = rand(`${key}-stock`)
     const stock = r < (lowStock ? 0.45 : 0.12) ? 0 : lowStock ? randInt(`${key}-q`, 1, 3) : randInt(`${key}-q`, 2, 34)
-    const code = Object.values(combo).map((v) => v.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase()).join("-")
     return {
       id: `${id}_v${i}`,
-      sku: `${brand.mark.text.replace(/[^A-Za-z]/g, "").toUpperCase() || "SKU"}-${spec.slug.slice(0, 6).toUpperCase()}${code ? `-${code}` : ""}`,
+      sku: sampleSku(brand, spec.slug, combo),
       options: combo,
       stock,
       reserved: stock > 4 ? randInt(`${key}-r`, 0, 2) : 0,
@@ -204,7 +228,10 @@ function build(spec: Spec): Product {
     price: Math.round(spec.price * minor),
     compareAt: spec.compareAt ? Math.round(spec.compareAt * minor) : undefined,
     currency,
-    images: spec.images.map((ref, i) => img(ref, i === 0 ? `${spec.name} by ${brand.name}` : `${spec.name}, detail`)),
+    images: spec.images.map((entry, i) => {
+      const [ref, alt] = typeof entry === "string" ? [entry, i === 0 ? `${spec.name} by ${brand.name}` : `${spec.name}, detail`] : entry
+      return img(ref, alt)
+    }),
     options,
     variants,
     badges: [...badges],

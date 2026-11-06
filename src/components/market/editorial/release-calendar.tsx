@@ -136,7 +136,7 @@ function ReleaseCalendarView({ drops, now, anchor, filter }: CalendarProps & { f
           ) : (
             <div className="grid gap-10 md:gap-12">
               {groups.map((g) => (
-                <section key={g.key} aria-label={g.dayStart === null ? "Upcoming releases" : new Date(g.dayStart).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} className="border-t border-line pt-5 md:grid md:grid-cols-[200px_minmax(0,1fr)] md:gap-8 lg:grid-cols-[240px_minmax(0,1fr)]">
+                <section key={g.key} aria-label={g.dayStart === null ? "Upcoming releases" : new Date(g.dayStart).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} className="border-t border-line pt-5 md:grid md:grid-cols-[200px_minmax(0,1fr)] md:gap-8 lg:grid-cols-[240px_minmax(0,1fr)]">
                   <header className="md:sticky md:top-28 md:self-start">
                     {g.dayStart === null || today === null ? (
                       <div aria-hidden>
@@ -146,7 +146,7 @@ function ReleaseCalendarView({ drops, now, anchor, filter }: CalendarProps & { f
                     ) : (
                       <>
                         <p className="font-display text-display-sm text-ink">
-                          {new Date(g.dayStart).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
+                          {new Date(g.dayStart).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
                         </p>
                         <p className="mt-1.5 text-sm text-ink-2">
                           {relativeDay(g.dayStart, today)}, {g.drops.length} {g.drops.length === 1 ? "release" : "releases"}
@@ -172,7 +172,7 @@ function ReleaseCalendarView({ drops, now, anchor, filter }: CalendarProps & { f
 function CalendarRow({ drop, release, now }: { drop: Drop; release: number | null; now: number | null }) {
   const brand = brandById.get(drop.brandId)!
   const href = `/drops/${drop.slug}`
-  const time = release === null ? null : new Date(release).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+  const time = release === null ? null : new Date(release).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
   const soon = release !== null && now !== null && release - now < DAY
   const until = release !== null && now !== null ? `in ${releasesInShort(release - now)}` : null
 

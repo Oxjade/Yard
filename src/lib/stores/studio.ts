@@ -5,12 +5,16 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
 import { drops as allDrops } from "@/lib/data/catalog"
 import { campaigns as allCampaigns, type Campaign } from "@/lib/data/ads"
+import { img } from "@/lib/data/media"
 import { customerOrders, merchantOrders } from "@/lib/data/orders"
-import { products as allProducts } from "@/lib/data/products"
+import { legacySampleSku, products as allProducts } from "@/lib/data/products"
 import type { Drop, MerchantOrder, MerchantOrderStatus, Product, StorefrontConfig } from "@/lib/data/types"
+import { pinDropRelease } from "@/lib/drops"
+import { getDemoAnchor } from "@/hooks/use-now"
 import { readSaved, useAdmin } from "./admin"
 import { renameTimeline } from "./old-name"
 import { applyReturnDecision } from "./orders"
+import { refreshSampleOrder } from "./sample-refresh"
 
 /**
  * Brand Studio state for the frontend phase. Seeded from the sample data for the signed-in
@@ -82,6 +86,43 @@ const now = () => new Date().toISOString()
 /** The sample announcement before v2, which promised an alert for following. */
 const OLD_ANNOUNCEMENT = "Drop 07, “Third Mainland”, lands this week. Follow to get the alert."
 
+/** Sample photos before v5: the moto jacket showed the Drop 07 hoodie shot as its own detail. */
+const OLD_PHOTOS: Record<string, string[]> = {
+  p_static_moto_jacket: ["fashion/outerwear/0", "fashion/streetwear-editorial/1"],
+  p_danfo_heavyweight_hoodie: ["fashion/tops/1", "fashion/streetwear-editorial/0"],
+}
+
+const sampleOrderById = new Map(studioSeedOrders.map((o) => [o.id, o]))
+const sampleProductById = new Map(allProducts.map((p) => [p.id, p]))
+const sampleDropById = new Map(allDrops.map((d) => [d.id, d]))
+
+/**
+ * v5: a sample product saved before the sample data was corrected takes the corrected SKUs
+ * (where they were never edited) and photos (where they're still the old set).
+ */
+function refreshSampleProduct(saved: Product): Product {
+  const sample = sampleProductById.get(saved.id)
+  const brand = brandById.get(saved.brandId)
+  if (!sample || !brand) return saved
+  const variants = saved.variants.map((v) => {
+    const fresh = sample.variants.find((x) => x.id === v.id)
+    return fresh && v.sku === legacySampleSku(brand, sample.slug, v.options) ? { ...v, sku: fresh.sku } : v
+  })
+  const old = OLD_PHOTOS[saved.id]
+  const samePhotos = !!old && saved.images.length === old.length && saved.images.every((im, i) => im.src === img(old[i]).src)
+  return { ...saved, variants, images: samePhotos ? sample.images : saved.images }
+}
+
+/**
+ * v5: a sample drop saved before drops had a local release time, and never rescheduled since,
+ * takes its release time (and length) from the sample data.
+ */
+function refreshSampleDrop(saved: Drop): Drop {
+  const sample = sampleDropById.get(saved.id)
+  if (!sample?.releaseLocal || saved.releaseLocal || saved.releaseOffsetHours !== sample.releaseOffsetHours) return saved
+  return { ...saved, releaseOffsetHours: sample.releaseOffsetHours, releaseLocal: sample.releaseLocal, durationHours: sample.durationHours }
+}
+
 export const useStudio = create<StudioState>()(
   persist(
     (set, get) => ({
@@ -143,20 +184,27 @@ export const useStudio = create<StudioState>()(
       saveStorefrontDraft: (draft) => set({ storefront: { ...get().storefront, draft, savedAt: now() } }),
       publishStorefront: () => set({ storefront: { ...get().storefront, published: get().storefront.draft, publishedAt: now() } }),
       discardStorefrontDraft: () => set({ storefront: { ...get().storefront, draft: get().storefront.published, savedAt: null } }),
-      reset: () => set(seed()),
+      reset: () => {
+        const fresh = seed()
+        const anchor = getDemoAnchor()
+        set({ ...fresh, drops: fresh.drops.map((d) => pinDropRelease(d, anchor)) })
+      },
     }),
     {
       name: "nocturne-studio",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 4,
+      version: 5,
       // v2: the brand's orders include the demo shopper's orders with it, and the sample
       // announcement no longer promises an alert for following (it points at the drop's reminder).
       // v3: a platform decision saved before the stores kept each other in step reaches the
       // brand's copy of the campaign.
       // v4: decisions saved on an order's timeline before the platform was renamed read its
       // current name ("approved by Yard").
-      migrate: (persisted) => {
+      // v5: the sample data was corrected: sample orders (references, addresses, lines), SKUs
+      // without a doubled hyphen, product photos that show the piece, and drops that release at a
+      // local time. Orders placed at checkout read the current reference prefix ("YRD-").
+      migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<StudioState>
         const next = { ...p }
         const decided = readSaved<{ campaigns: Campaign[] }>("nocturne-admin")?.campaigns
@@ -169,14 +217,25 @@ export const useStudio = create<StudioState>()(
         if (p.orders) {
           const known = new Set(p.orders.map((o) => o.id))
           const missing = customerOrders.filter((o) => o.brandId === (p.brandId ?? STUDIO_BRAND_ID) && !known.has(o.id))
-          next.orders = [...p.orders, ...missing].sort((a, b) => b.placedAt.localeCompare(a.placedAt)).map(renameTimeline)
+          const orders = [...p.orders, ...missing].sort((a, b) => b.placedAt.localeCompare(a.placedAt)).map(renameTimeline)
+          next.orders = version < 5 ? orders.map((o) => refreshSampleOrder(o, sampleOrderById.get(o.id))) : orders
         }
+        if (p.products && version < 5) next.products = p.products.map(refreshSampleProduct)
+        if (p.drops && version < 5) next.drops = p.drops.map(refreshSampleDrop)
         if (p.storefront) {
           const fresh = brandById.get(p.brandId ?? STUDIO_BRAND_ID)?.storefront.announcement
           const fix = (c: StorefrontConfig): StorefrontConfig => (c.announcement?.text === OLD_ANNOUNCEMENT && fresh ? { ...c, announcement: fresh } : c)
           next.storefront = { ...p.storefront, draft: fix(p.storefront.draft), published: fix(p.storefront.published) }
         }
         return next as StudioState
+      },
+      // A sample drop's local release time ("18:00 in Lagos, in two days") is set against the day
+      // this tab's demo clock started, so Studio's own reading of the offset (the drop builder,
+      // the campaign wizard) shows the same time as the marketplace.
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<StudioState>) }
+        const anchor = getDemoAnchor()
+        return { ...merged, drops: merged.drops.map((d) => pinDropRelease(d, anchor)) }
       },
     },
   ),

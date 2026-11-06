@@ -443,3 +443,31 @@ export const brandByHandle = new Map(brands.map((b) => [b.handle, b]))
 
 /** The merchant signed in to Brand Studio in the frontend prototype. */
 export const STUDIO_BRAND_ID = "b_lagos_static"
+
+/** Letters only, accents and dots taken off first ("Ọ" → "O", "H/A" → "HA"). */
+const plainLetters = (s: string) => s.normalize("NFD").replace(/[^A-Za-z]/g, "").toUpperCase()
+
+/**
+ * Each brand's short code for order references and SKUs ("LS-10427", "LS-DANFOH-M-WAS"): the
+ * letters of its mark, else the initials of its name ("Orun Studio" → "OS"). A code another brand
+ * already uses falls back the same way, then takes more letters of the name, so no two brands share one.
+ */
+export const brandCodes: ReadonlyMap<string, string> = (() => {
+  const taken = new Set<string>()
+  const out = new Map<string, string>()
+  for (const b of brands) {
+    const words = b.name.split(/\s+/).map(plainLetters).filter(Boolean)
+    const initials = words.map((w) => w[0]).join("")
+    const name = words.join("")
+    const candidates = [plainLetters(b.mark.text), initials, ...[3, 4, 5, 6].map((n) => name.slice(0, n))]
+    const code = candidates.find((c) => c.length > 0 && !taken.has(c)) ?? b.id.toUpperCase()
+    taken.add(code)
+    out.set(b.id, code)
+  }
+  return out
+})()
+
+/** A brand's code (see brandCodes); a brand added in this browser gets one from its mark or name the same way. */
+export function brandCode(brand: Pick<Brand, "id" | "name" | "mark">) {
+  return brandCodes.get(brand.id) ?? (plainLetters(brand.mark.text) || brand.name.split(/\s+/).map((w) => plainLetters(w)[0] ?? "").join("") || "BR")
+}

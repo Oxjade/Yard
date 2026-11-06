@@ -182,8 +182,19 @@ export const reconciliation: ReconciliationRow[] = (["paystack", "flutterwave", 
 
 /* ---------- Health ---------- */
 
+/**
+ * One day of the public API's p95 latency (ms) and failed requests. Keyed by the date, so a day
+ * reads the same in every period, and the API's current p95 is the latest day's.
+ */
+function apiDay(back: number) {
+  const date = daysAgo(back).slice(0, 10)
+  // Two days ago: the background-jobs incident that slowed the API too.
+  const incident = back === 2
+  return { date, latency: Math.round(150 + rand(`lat-${date}`) * 80 + (incident ? 120 : 0)), errors: Math.round(rand(`err-${date}`) * 30 + (incident ? 60 : 4)) }
+}
+
 export const healthServices = [
-  { name: "API", status: "operational" as const, latencyP95: 182, errorRate: 0.0012, uptime: 0.9996 },
+  { name: "API", status: "operational" as const, latencyP95: apiDay(0).latency, errorRate: 0.0012, uptime: 0.9996 },
   { name: "Database (primary)", status: "operational" as const, latencyP95: 9, errorRate: 0, uptime: 0.9999 },
   { name: "Search", status: "operational" as const, latencyP95: 41, errorRate: 0.0004, uptime: 0.9998 },
   { name: "Media storage", status: "operational" as const, latencyP95: 64, errorRate: 0.0001, uptime: 0.9999 },
@@ -202,28 +213,40 @@ export const webhookFailures = [
   { id: "wh_298", provider: "paystack", event: "transfer.success", receivedAt: daysAgo(1), reason: "Handler timeout; event stored, safe to replay (idempotent)", replayable: true },
 ]
 
+/** The API's daily p95 latency and failed requests over the last `days` days, oldest first; the last day is the API's current p95. */
 export function healthSeries(days = 14) {
-  return Array.from({ length: days }, (_, i) => ({
-    date: daysAgo(days - 1 - i).slice(0, 10),
-    latency: Math.round(150 + rand(`lat-${i}`) * 80 + (i === days - 3 ? 120 : 0)),
-    errors: Math.round(rand(`err-${i}`) * 30 + (i === days - 3 ? 60 : 4)),
-  }))
+  return Array.from({ length: days }, (_, i) => apiDay(days - 1 - i))
 }
 
 /* ---------- Security ---------- */
 
 export type AuditEntry = { id: string; at: string; actor: string; role: AdminRole; action: string; target: string; reason?: string; ip: string; approvedBy?: string; /** The record the action was taken on (user, brand, payout…), so lookalike names never share history. */ subjectId?: string }
 
-export const auditLog: AuditEntry[] = [
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * Sample audit entries that name a sample record take it from the seed, so the log never vouches
+ * for a payout or refund that isn't there. The payout approval is the one Finance shows as
+ * processing (approved, transfer pending); the refund request is a shopper's request on a
+ * Gridlock Supply order that support logged for them.
+ */
+const approvedPayout = payouts.find((p) => p.status === "processing") ?? payouts[0]
+const supportRefund = refunds.find((r) => r.brandName === "Gridlock Supply" && r.status === "requested") ?? refunds[0]
+
+const auditSeed: AuditEntry[] = [
   { id: "au_1", at: daysAgo(0), actor: "Aisha Bello", role: "trust_safety", action: "Removed listing", target: "Box-logo hoodie (Luxe Replica Hub)", reason: "Counterfeit — logo match and rights-holder notice", ip: "102.89.x.x" },
-  { id: "au_2", at: daysAgo(0), actor: "Daniel Okoro", role: "finance", action: "Approved payout", target: "Lagos Static, $1,842.10", ip: "102.89.x.x" },
-  { id: "au_3", at: daysAgo(1), actor: "Daniel Okoro", role: "finance", action: "Ledger adjustment requested", target: "Mute Objects, +$12.40", reason: "Shipping label refund from carrier", ip: "102.89.x.x", approvedBy: "Kemi Ajayi" },
+  { id: "au_2", at: daysAgo(0), actor: "Daniel Okoro", role: "finance", action: "Approved payout", target: `${approvedPayout.brandName}, ${dollars(approvedPayout.amountUsd)}`, reason: "Delivered orders match the provider's settlement report; no open disputes", ip: "102.89.x.x", subjectId: approvedPayout.id },
+  // Still waiting for a second approver (adjustment adj_1 is pending), so nobody has approved it.
+  { id: "au_3", at: "2026-11-04T10:12:00.000Z", actor: "Daniel Okoro", role: "finance", action: "Ledger adjustment requested", target: "Mute Objects, +$12.40", reason: "Shipping label refund from carrier", ip: "102.89.x.x", subjectId: "adj_1" },
   { id: "au_4", at: daysAgo(1), actor: "Sam Lee", role: "ads_ops", action: "Rejected campaign", target: "Gridlock — restock week", reason: "Creative uses a third-party logo", ip: "84.12.x.x" },
-  { id: "au_5", at: daysAgo(2), actor: "Kemi Ajayi", role: "owner", action: "Changed ad pricing", target: "Sponsored brand: $14/day → $15/day", ip: "102.89.x.x" },
+  { id: "au_5", at: daysAgo(2), actor: "Kemi Ajayi", role: "owner", action: "Changed ad pricing", target: "Sponsored brand: $14/day to $15/day", reason: "Quarterly rate review: the slot was fully booked for six weeks", ip: "102.89.x.x" },
   { id: "au_6", at: daysAgo(3), actor: "Aisha Bello", role: "trust_safety", action: "Suspended brand", target: "Flash Kicks Resale", reason: "Chargebacks and counterfeit reports", ip: "102.89.x.x", approvedBy: "Kemi Ajayi" },
   { id: "au_7", at: daysAgo(4), actor: "Lukas Brandt", role: "engineering", action: "Replayed webhook", target: "paystack transfer.success wh_270", reason: "Handler timeout; idempotent replay", ip: "91.64.x.x" },
-  { id: "au_8", at: daysAgo(5), actor: "Ngozi Eze", role: "support", action: "Requested refund", target: "Order GLS-10433", reason: "Arrived damaged", ip: "102.89.x.x" },
+  { id: "au_8", at: supportRefund.requestedAt, actor: "Ngozi Eze", role: "support", action: "Requested refund", target: `#${supportRefund.reference}, ${dollars(supportRefund.amountUsd)}`, reason: `Shopper contacted support: ${supportRefund.reason.toLowerCase()}`, ip: "102.89.x.x", subjectId: supportRefund.id },
 ]
+
+/** Newest first, as the log reads and as new entries are added. */
+export const auditLog: AuditEntry[] = auditSeed.sort((a, b) => b.at.localeCompare(a.at))
 
 /* ---------- Overview figures ---------- */
 

@@ -119,7 +119,7 @@ export function AdminNotificationsView() {
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="secondary" className="h-10 sm:h-8" disabled={!ready}>
                 <FunnelSimpleIcon aria-hidden />
-                {category === ALL ? "Every type" : category}
+                {category === ALL ? "All types" : category}
                 <CaretDownIcon aria-hidden className="size-3.5 text-ink-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -127,7 +127,7 @@ export function AdminNotificationsView() {
               <DropdownMenuLabel className="text-[11px] text-ink-3">Type</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={category} onValueChange={setCategory}>
                 <DropdownMenuRadioItem value={ALL}>
-                  Every type <span className="ml-auto pl-4 text-[11px] text-ink-3 tabular">{items.length}</span>
+                  All types <span className="ml-auto pl-4 text-[11px] text-ink-3 tabular">{items.length}</span>
                 </DropdownMenuRadioItem>
                 <DropdownMenuSeparator />
                 {categories.map(([label, n]) => (

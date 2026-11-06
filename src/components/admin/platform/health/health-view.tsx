@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "motion/react"
 import { ArrowCounterClockwiseIcon as RotateCcw, ClockCounterClockwiseIcon, HeartbeatIcon, LightningIcon, ShieldSlashIcon as ShieldOff, TimerIcon, WebhooksLogoIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,39 @@ const ms = (n: number) => `${int(n)} ms`
 const NEXT_OPEN_FAILURE = "#failed-jobs li button:not([disabled]), #webhooks li button:not([disabled])"
 const TREND_TAB = "#api-trend [role=radio][aria-checked=true]"
 
+/** The panels a link can open (`/admin/health#webhooks`). */
+const PANELS = new Set(["services", "api-trend", "failed-jobs", "webhooks"])
+
+/**
+ * Brings the panel a link names into view once the page has its real rows, and moves focus to
+ * its heading. Following a link from another screen, the browser tries the hash while the route
+ * is still loading, finds no panel and stays at the top; this runs again once the rows are in, so
+ * the jump lands where the rows end up.
+ */
+function useLinkedPanel(ready: boolean) {
+  useEffect(() => {
+    if (!ready) return
+    const id = decodeURIComponent(window.location.hash.slice(1))
+    if (!PANELS.has(id)) return
+    const panel = document.getElementById(id)
+    const heading = panel?.querySelector<HTMLElement>("h2")
+    if (!panel || !heading) return
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    // Where the panel sits once its entrance settles: its box less any slide it's still part-way through.
+    let slide = 0
+    for (let el: HTMLElement | null = panel; el; el = el.parentElement) {
+      const t = getComputedStyle(el).transform
+      if (t && t !== "none") slide += new DOMMatrixReadOnly(t).m42
+    }
+    const top = panel.getBoundingClientRect().top + window.scrollY - slide - (parseFloat(getComputedStyle(panel).scrollMarginTop) || 0)
+    window.scrollTo({ top: Math.max(0, top), behavior: reduce ? "auto" : "smooth" })
+    // Focus without a second jump; the heading is a target, not a control, so it leaves the tab order again on blur.
+    heading.setAttribute("tabindex", "-1")
+    heading.addEventListener("blur", () => heading.removeAttribute("tabindex"), { once: true })
+    heading.focus({ preventScroll: true })
+  }, [ready])
+}
+
 type Job = (typeof failedJobs)[number]
 type Hook = (typeof webhookFailures)[number]
 
@@ -55,6 +88,7 @@ function useRecorded() {
 export function HealthView() {
   const ready = useAdminReady()
   const { retried, replayed } = useRecorded()
+  useLinkedPanel(ready)
 
   const degraded = healthServices.filter((s) => s.status !== "operational")
   const operational = healthServices.length - degraded.length
@@ -75,7 +109,7 @@ export function HealthView() {
           <StatCard surface="admin" icon={HeartbeatIcon} label="Services up" value={operational} format={(n) => `${int(n)} of ${healthServices.length}`} hint={degraded.length ? `${degraded.length} degraded: ${degraded.map((s) => s.name).join(", ")}` : "All operational"} href="#services" hrefLabel="Open services" ready={ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0">
-          <StatCard surface="admin" icon={TimerIcon} label="API p95 latency" value={api.latencyP95} format={ms} hint={`Target under ${ms(latencyTarget.API)}`} href="#api-trend" hrefLabel="Open the latency trend" ready={ready} className="h-full" />
+          <StatCard surface="admin" icon={TimerIcon} label="API p95 latency" value={api.latencyP95} format={ms} hint={`Latest day, target under ${ms(latencyTarget.API)}`} href="#api-trend" hrefLabel="Open the latency trend" ready={ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0">
           <StatCard surface="admin" variant={ready && openJobs ? "brand" : "default"} icon={LightningIcon} label="Failed jobs" value={openJobs} format={int} hint={ready && retried.size ? `${retried.size} ${retried.size === 1 ? "retry" : "retries"} recorded` : "Out of automatic attempts"} href="#failed-jobs" hrefLabel="Open failed jobs" ready={ready} className="h-full" />

@@ -108,7 +108,8 @@ function CommandStrip() {
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
   const chips = [
     { href: "/admin/brands", label: "Brands to review", count: pendingBrands, icon: BadgeCheck },
-    { href: "/admin/finance?tab=payouts", label: "Payouts to approve", count: payouts, icon: Banknote },
+    // Awaiting approval and held (a held one needs a release): the Finance Payouts tab's count.
+    { href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote },
     { href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw },
     { href: "/admin/advertising", label: "Campaigns in review", count: campaigns, icon: Megaphone },
     { href: "/admin/products", label: "Listings flagged", count: moderation, icon: Flag },
@@ -640,7 +641,8 @@ export default function AdminOverviewPage() {
     return [{ key: "commission", label: "Sales commission", value: commission, href: "/admin/finance" }, ...top, ...(rest ? [{ key: "other-ads", label: `Other placements (${ads.length - 3})`, value: rest, href: "/admin/advertising" }] : [])]
   })()
 
-  const heat = useMemo(() => weekdayByWeek(paid.map((r) => r.order.placedAt.slice(0, 10)), 13, historyStart), [paid, historyStart])
+  // Ends on the same today as every other figure here, so today's square is a data day.
+  const heat = useMemo(() => weekdayByWeek(paid.map((r) => r.order.placedAt.slice(0, 10)), 13, historyStart, anchor), [paid, historyStart, anchor])
   const ordersUnit = (n: number) => `${n} ${n === 1 ? "order" : "orders"}`
 
   const charges = transactions.filter((t) => t.type === "charge")

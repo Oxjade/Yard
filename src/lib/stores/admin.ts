@@ -6,6 +6,7 @@ import type { CurrencyCode } from "@/config/markets"
 import { adminUser, auditLog as seedAudit, brandApplications, disputes as seedDisputes, moderationQueue, payouts as seedPayouts, platformUsers, refunds as seedRefunds, type AuditEntry, type BrandApplication, type Dispute, type ModerationItem, type Payout, type PlatformUser, type Refund } from "@/lib/data/admin"
 import { campaignTypes, campaigns as seedCampaigns, type Campaign, type CampaignType } from "@/lib/data/ads"
 import { convert } from "@/lib/money"
+import { currentReferences } from "./old-name"
 import { applyReturnDecision } from "./orders"
 import { useStudio } from "./studio"
 
@@ -116,6 +117,45 @@ export function readSaved<T>(name: string): Partial<T> | null {
   }
 }
 
+const byId = <T extends { id: string }>(list: T[]) => new Map(list.map((x) => [x.id, x]))
+const sampleUsers = byId(platformUsers)
+const sampleRefunds = byId(seedRefunds)
+const sampleDisputes = byId(seedDisputes)
+const samplePayouts = byId(seedPayouts)
+const sampleAudit = byId(seedAudit)
+
+/**
+ * v5: records saved before the sample data was corrected (one name per shopper, order lines and
+ * references, the seeded audit entries' reasons) read the corrected sample. A record someone acted
+ * on here keeps the amounts its decision and audit entry name; references in saved text read
+ * their current form ("YRD-…", "OS-10431").
+ */
+function refreshSamples(p: Partial<AdminState>): Partial<AdminState> {
+  const next: Partial<AdminState> = {}
+  // Acted on in this browser: an audit entry names the record (by id, or "#REF, $…" / "Brand, $…" from before ids were kept).
+  const actedOn = (id: string, target: string) => (p.audit ?? []).some((a) => !sampleAudit.has(a.id) && (a.subjectId === id || a.target.startsWith(target)))
+  if (p.users) next.users = p.users.map((u) => {
+    const s = sampleUsers.get(u.id)
+    return s ? { ...u, name: s.name, email: s.email } : u
+  })
+  if (p.refunds) next.refunds = p.refunds.map((r) => {
+    const s = sampleRefunds.get(r.id)
+    if (!s) return { ...r, reference: currentReferences(r.reference) }
+    return { ...r, reference: s.reference, customer: s.customer, ...(r.status === s.status && !actedOn(r.id, `#${r.reference},`) ? { amountUsd: s.amountUsd } : {}) }
+  })
+  if (p.disputes) next.disputes = p.disputes.map((d) => {
+    const s = sampleDisputes.get(d.id)
+    if (!s) return { ...d, reference: currentReferences(d.reference) }
+    return { ...d, reference: s.reference, ...(d.stage === s.stage && !actedOn(d.id, `#${d.reference},`) ? { amountUsd: s.amountUsd } : {}) }
+  })
+  if (p.payouts) next.payouts = p.payouts.map((x) => {
+    const s = samplePayouts.get(x.id)
+    return s && x.status === s.status && !actedOn(x.id, `${x.brandName}, $`) ? { ...x, amount: s.amount, amountUsd: s.amountUsd, orders: s.orders } : x
+  })
+  if (p.audit) next.audit = p.audit.map((a) => sampleAudit.get(a.id) ?? { ...a, target: currentReferences(a.target) })
+  return next
+}
+
 /** Campaigns Studio sent for review that the review queue saved without (before the stores kept in step). */
 function joinStudioSubmissions(campaigns: Campaign[]) {
   const studio = readSaved<{ campaigns: Campaign[] }>("nocturne-studio")?.campaigns ?? []
@@ -207,7 +247,7 @@ export const useAdmin = create<AdminState>()(
       setPrice: (type, priceUsd, reason) => {
         const before = get().pricing[type]
         const unit = campaignTypes[type].unit
-        set({ pricing: { ...get().pricing, [type]: priceUsd }, audit: [entry("Changed ad pricing", `${campaignTypes[type].name}: ${dollars(before)}/${unit} → ${dollars(priceUsd)}/${unit}`, reason, type), ...get().audit] })
+        set({ pricing: { ...get().pricing, [type]: priceUsd }, audit: [entry("Changed ad pricing", `${campaignTypes[type].name}: ${dollars(before)}/${unit} to ${dollars(priceUsd)}/${unit}`, reason, type), ...get().audit] })
       },
       requestAdjustment: (brandName, amountUsd, reason) =>
         set({ adjustments: [{ id: `adj_${Date.now().toString(36)}`, at: new Date().toISOString(), brandName, amountUsd, reason, requestedBy: adminUser.name, status: "pending" }, ...get().adjustments], audit: [entry("Ledger adjustment requested", `${brandName}, ${amountUsd >= 0 ? "+" : "−"}$${(Math.abs(amountUsd) / 100).toFixed(2)}`, reason), ...get().audit] }),
@@ -232,9 +272,10 @@ export const useAdmin = create<AdminState>()(
       name: "nocturne-admin",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 4,
-      migrate: (persisted) => {
-        const p = (persisted ?? {}) as Partial<AdminState>
+      version: 5,
+      migrate: (persisted, version) => {
+        const p0 = (persisted ?? {}) as Partial<AdminState>
+        const p = version < 5 ? { ...p0, ...refreshSamples(p0) } : p0
         // v3: payouts carry the amount in the brand's currency; second-approval requests are stored.
         const payouts = p.payouts?.map((x) => (typeof x.amount === "number" ? x : { ...x, amount: convert(x.amountUsd, "USD", x.currency as CurrencyCode) }))
         // v4: a Studio submission saved before the stores kept each other in step joins the review

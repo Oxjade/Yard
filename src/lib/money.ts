@@ -23,10 +23,10 @@ export function formatMoney(
   opts: { compact?: boolean; showCents?: boolean } = {},
 ) {
   const c = currencies[currency]
+  const major = toMajor(amount, currency)
   const key = `${currency}-${opts.compact ? "c" : ""}-${opts.showCents ? "s" : ""}`
   let f = formatters.get(key)
   if (!f) {
-    const major = toMajor(amount, currency)
     const wantsCents = opts.showCents ?? !Number.isInteger(major)
     f = new Intl.NumberFormat(c.locale, {
       style: "currency",
@@ -38,7 +38,18 @@ export function formatMoney(
     })
     if (opts.showCents !== undefined || opts.compact) formatters.set(key, f)
   }
-  return f.format(toMajor(amount, currency))
+  if (currency === "USD") return f.format(major)
+  // Every currency shows the symbol the markets config gives it, the one the rest of the app
+  // (Admin's operator amounts included) uses. Above all, a dollar currency other than the US
+  // dollar (the Mexican peso's narrow sign is a bare "$") never reads as USD: "MX$6,400". It also
+  // settles "Ksh" as "KSh" and the full-width "￥" as "¥". A symbol written before the number sits
+  // against it, as every prefix symbol does here ("KSh8,296", "R8 296,00", not "KSh 8,296"); a
+  // symbol after the number keeps its locale's space ("8.296,00 €"). The number keeps its
+  // locale's grouping and symbol position.
+  const parts = f.formatToParts(major)
+  return parts
+    .map((p, i) => (p.type === "currency" ? c.symbol : p.type === "literal" && parts[i - 1]?.type === "currency" && /^\s+$/.test(p.value) ? "" : p.value))
+    .join("")
 }
 
 export function formatNumber(n: number, opts: { compact?: boolean } = {}) {

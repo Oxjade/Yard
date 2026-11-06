@@ -1,7 +1,8 @@
 "use client"
 
-import { ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { CountUp } from "@/components/dashboard/insight/count-up"
+import { DeltaChip } from "@/components/dashboard/insight/delta-chip"
+import { surfaceClass } from "@/components/dashboard/insight/insight-panel"
 import { cn } from "@/lib/utils"
 
 /**
@@ -12,6 +13,11 @@ export function AnimatedNumber({ value, format, updates }: { value: number; form
   return <CountUp value={value} format={format} updates={updates} />
 }
 
+/**
+ * A compact figure for Studio index pages (Promotions, Drops, Advertising), drawn like the
+ * Overview's StatCard: the same surface, tracked label, condensed numeral and change chip,
+ * without the icon and the link. The hint wraps rather than cutting off on narrow tiles.
+ */
 export function MetricTile({
   label,
   value,
@@ -32,22 +38,20 @@ export function MetricTile({
   density?: "comfortable" | "dense"
   highlight?: boolean
 }) {
-  const up = (delta ?? 0) >= 0
+  const dense = density === "dense"
   return (
-    <div className={cn("relative rounded-lg border border-line-soft bg-card", density === "dense" ? "p-3" : "p-4", highlight && "border-acid/30", className)}>
-      <p className={cn("text-ink-2", density === "dense" ? "text-[11px]" : "text-xs")}>{label}</p>
-      <p className={cn("mt-2 font-medium tracking-tight text-ink tabular", density === "dense" ? "text-lg" : "text-2xl")}>
-        <AnimatedNumber value={value} format={format} />
+    <div className={cn(surfaceClass, "relative flex min-w-0 flex-col", dense ? "p-3 md:p-4" : "p-4 md:p-5", highlight && "border-acid/30", className)}>
+      {/* Two 14px lines fit the 28px row, so a tile whose label wraps keeps its numeral level with its neighbours'. */}
+      <p className="font-label flex min-h-7 items-center text-[11px] tracking-[0.1em] text-ink-3 uppercase">
+        <span className="line-clamp-2 leading-[14px] text-balance">{label}</span>
       </p>
-      <div className="mt-1.5 flex items-center gap-2 text-[11px]">
-        {delta !== undefined && delta !== null ? (
-          <span className={cn("inline-flex items-center gap-0.5 tabular", up ? "text-violet" : "text-danger")}>
-            {up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-            {Math.abs(delta * 100).toFixed(1)}%
-          </span>
-        ) : null}
-        {hint ? <span className="text-ink-3">{hint}</span> : null}
+      <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", dense ? "mt-2" : "mt-4")}>
+        <p className={cn("font-metric leading-none text-ink", dense ? "text-[1.5rem]" : "text-[1.875rem] md:text-[2.125rem]")}>
+          <AnimatedNumber value={value} format={format} />
+        </p>
+        <DeltaChip value={delta} size={dense ? "sm" : "md"} />
       </div>
+      {hint ? <p className={cn("text-[12px] leading-snug text-pretty text-ink-3", dense ? "mt-1.5" : "mt-2")}>{hint}</p> : null}
     </div>
   )
 }

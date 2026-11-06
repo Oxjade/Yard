@@ -46,7 +46,7 @@ export function NotificationsList({ audience }: { audience: Audience }) {
           <span className="mx-1 w-px self-stretch bg-white/10" aria-hidden />
           {["all", ...categories].map((c) => (
             <button key={c} type="button" onClick={() => setCategory(c)} aria-pressed={category === c} className={cn("h-10 rounded-full border px-3.5 text-[12.5px] transition-colors sm:h-8 sm:px-3 pointer-coarse:h-10 pointer-coarse:px-3.5", category === c ? "border-white/30 bg-white/8 text-ink" : "border-white/10 text-ink-2 hover:text-ink")}>
-              {c === "all" ? "Every type" : c}
+              {c === "all" ? "All types" : c}
             </button>
           ))}
         </div>

@@ -13,7 +13,8 @@ import type { CheckoutGroup, MerchantOrder, ReturnDecision } from "@/lib/data/ty
 import { returnRefund } from "@/lib/payouts"
 import type { CartLine } from "./cart"
 import { useAdmin } from "./admin"
-import { renameTimeline } from "./old-name"
+import { currentReferences, renameTimeline } from "./old-name"
+import { refreshSampleOrder } from "./sample-refresh"
 import { useStudio } from "./studio"
 
 /**
@@ -52,6 +53,8 @@ type OrdersState = {
 
 let seq = 0
 
+const sampleOrderById = new Map(customerOrders.map((o) => [o.id, o]))
+
 export const useOrders = create<OrdersState>()(
   persist(
     (set, get) => ({
@@ -65,7 +68,7 @@ export const useOrders = create<OrdersState>()(
         const at = new Date().toISOString()
         seq += 1
         const groupId = `cg_${Date.now().toString(36)}${seq}`
-        const reference = `NCT-${Date.now().toString(36).slice(-4).toUpperCase()}-${String(seq).padStart(2, "0")}`
+        const reference = `YRD-${Date.now().toString(36).slice(-4).toUpperCase()}-${String(seq).padStart(2, "0")}`
         const orders: MerchantOrder[] = bag.groups.map((g, i) => {
           const express = input.shipping[g.brand.id] === "express"
           const shipping = express ? Math.round(g.shipping * 1.9) || Math.round(g.subtotal * 0.04) : g.shipping
@@ -136,12 +139,27 @@ export const useOrders = create<OrdersState>()(
       name: "nocturne-orders",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 1,
+      version: 2,
       // v1: decisions saved on an order's timeline before the platform was renamed read its
       // current name ("approved by Yard").
-      migrate: (persisted) => {
+      // v2: checkout references read the current prefix ("YRD-…", was "NCT-…"), and the sample
+      // orders take the corrected sample data (see refreshSampleOrder), their checkouts its totals.
+      migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<OrdersState>
-        return (p.orders ? { ...p, orders: p.orders.map(renameTimeline) } : p) as OrdersState
+        const next = { ...p }
+        if (p.orders) {
+          const named = p.orders.map(renameTimeline)
+          next.orders = version < 2 ? named.map((o) => refreshSampleOrder(o, sampleOrderById.get(o.id))) : named
+        }
+        if (p.groups && version < 2) {
+          next.groups = p.groups.map((g) => {
+            const sample = customerCheckoutGroups.find((x) => x.id === g.id)
+            if (!sample) return { ...g, reference: currentReferences(g.reference) }
+            const orders = (next.orders ?? []).filter((o) => g.orderIds.includes(o.id))
+            return { ...g, reference: sample.reference, total: orders.length ? orders.reduce((s, o) => s + convert(o.total, o.currency, g.currency), 0) : sample.total }
+          })
+        }
+        return next as OrdersState
       },
     },
   ),

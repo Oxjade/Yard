@@ -200,6 +200,14 @@ export type Drop = {
   productIds: string[]
   /** Hours from the moment the demo loads. Negative = already released. Backend stores absolute UTC. */
   releaseOffsetHours: number
+  /**
+   * Sample drops: the release as a time a brand would pick, in its own time zone, counted from the
+   * day the demo loads ("18:00, two days from today"), or the first whole hour `hoursOut` hours
+   * after it loads. dropWindow resolves it; `releaseOffsetHours` stays the approximate offset the
+   * server groups and sorts by. It holds only while `releaseOffsetHours` is still `fromOffset`, so
+   * a drop whose release was set afresh (rescheduled, copied) goes by its offset.
+   */
+  releaseLocal?: ({ daysOut: number; time: string } | { hoursOut: number }) & { fromOffset: number }
   /** How long the drop stays live, in hours. */
   durationHours: number
   access: DropAccess

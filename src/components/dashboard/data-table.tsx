@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useEffect, useId, useRef, useState } from "react"
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, ArrowsDownUpIcon as ArrowUpDown, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, DotsThreeIcon as MoreHorizontal, ArrowCounterClockwiseIcon as RotateCcw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -74,6 +74,18 @@ export type BulkAction<T> = {
 export function bulkBarControl(scope: ParentNode | null = document) {
   const bar = scope?.querySelector<HTMLElement>("[data-bulk-bar]:not([data-leaving])")
   return bar?.querySelector<HTMLElement>('button:not(:disabled):not([aria-disabled="true"])') ?? bar?.querySelector<HTMLElement>('[tabindex="0"]') ?? null
+}
+
+/**
+ * Whether something between `from` and the page is a scroll container (overflow other than
+ * visible or clip), which would hold a sticky header to itself instead of the page.
+ */
+function holdsSticky(from: HTMLElement | null) {
+  for (let el = from; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    const { overflowX, overflowY } = getComputedStyle(el)
+    if (!/^(visible|clip)$/.test(overflowX) || !/^(visible|clip)$/.test(overflowY)) return true
+  }
+  return false
 }
 
 const hide = { sm: "hidden sm:table-cell", md: "hidden md:table-cell", lg: "hidden lg:table-cell", xl: "hidden xl:table-cell" }
@@ -153,8 +165,35 @@ export function DataTable<T>({
   const barRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const selectAllRef = useRef<HTMLButtonElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
   const busy = useRef(false)
   const reasonId = useId()
+  /**
+   * How the header stays in view from md up. "page": the table fits its width and nothing
+   * around it holds sticky, so the header sticks under the 76px top bar as the page scrolls and
+   * the table never scrolls on its own. "box": the table is wider than its room, or something
+   * around it (a panel with overflow hidden) holds sticky, so the header can't stick to the page.
+   * The box then scrolls sideways only and the page scrolls the rows, as on phones; only a page
+   * of 50 rows or more is capped at 70vh with the header sticking inside it (see `capped`), so a
+   * page of 10 or 25 never hides rows in a nested scroll. Starts as "box", which never clips,
+   * until the table is measured.
+   */
+  const [stick, setStick] = useState<"page" | "box">("box")
+  useLayoutEffect(() => {
+    const box = scrollRef.current
+    const table = tableRef.current
+    if (!box || !table) return
+    const measure = () => {
+      const fits = table.getBoundingClientRect().width <= box.clientWidth + 1
+      setStick(fits && !holdsSticky(box.parentElement) ? "page" : "box")
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(box)
+    ro.observe(table)
+    return () => ro.disconnect()
+  }, [])
 
   const q = query.trim().toLowerCase()
   const matches = (r: T) => !q || !search || search.text(r).toLowerCase().includes(q)
@@ -173,6 +212,8 @@ export function DataTable<T>({
     }
   }
 
+  /** A long page in box mode scrolls inside its own 70vh box (from md up) so its header stays in view there. */
+  const capped = stick === "box" && size >= 50
   const pages = Math.max(1, Math.ceil(filtered.length / size))
   // Rows went away (a filter, a bulk action): stay on the last page that exists.
   if (page > pages - 1) setPage(pages - 1)
@@ -335,10 +376,15 @@ export function DataTable<T>({
         ) : null}
       </AnimatePresence>
 
-      <div className="overflow-hidden rounded-lg border border-line-soft bg-card">
-        <div className="max-h-[70vh] overflow-auto">
-          <table className="w-full text-left text-sm" style={{ minWidth }} aria-label={label}>
-            <thead className="sticky top-0 z-10 bg-[#111111] text-xs text-ink-3 shadow-[0_1px_0_var(--color-line-soft)]">
+      {/*
+        Clip, not hidden: the rounded box isn't a scroll container, so the header can stick to the
+        page. The inner box takes its width from the page, never from the table ([contain:inline-size]),
+        so a wide table scrolls inside it instead of widening the page.
+      */}
+      <div className="overflow-clip rounded-lg border border-line-soft bg-card">
+        <div ref={scrollRef} data-stick={stick} data-capped={capped ? "" : undefined} className={cn("overflow-x-auto [contain:inline-size]", stick === "page" ? "md:overflow-x-clip" : capped && "md:max-h-[70vh] md:overflow-y-auto")}>
+          <table ref={tableRef} className="w-full text-left text-sm" style={{ minWidth }} aria-label={label}>
+            <thead className={cn("sticky top-0 z-10 bg-[#111111] text-xs text-ink-3 shadow-[0_1px_0_var(--color-line-soft)]", stick === "page" && "md:top-[76px]")}>
               <tr>
                 {hasSelect ? (
                   <th scope="col" className="w-10 px-4 py-2.5">
