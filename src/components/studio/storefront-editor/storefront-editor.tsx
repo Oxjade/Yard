@@ -252,7 +252,7 @@ function Editor() {
     // storefront), and a toast there would sit over that bar. From lg, say what changed.
     if (!window.matchMedia(WIDE).matches) return
     toast.success("Storefront published", {
-      description: changed.length ? `Your storefront now shows the new ${listJoin(changed)}.` : "Your storefront is up to date.",
+      description: changed.length ? `Your storefront in this browser shows the new ${listJoin(changed)}. Other shoppers see it once publishing is connected.` : "Your storefront is up to date.",
       action: { label: "View", onClick: () => window.open(`/brands/${brand.handle}`, "_blank", "noopener,noreferrer") },
     })
   })

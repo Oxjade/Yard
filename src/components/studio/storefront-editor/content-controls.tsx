@@ -134,7 +134,7 @@ export function ContentControls({
       <ControlGroup
         id="sf-media"
         title="Logo and cover"
-        description="Choose from your photos or upload from this computer. Your choice shows in the preview now and on your storefront once you publish. Image logos are saved, but storefronts show your text mark for now."
+        description="Choose from your photos or upload from this computer. Your choice shows in the preview now and on your storefront once you publish. Image logos are saved, but storefronts show your text mark for now. Uploads are kept in this browser until media storage is connected."
       >
         <div className="grid gap-6">
           <div className="grid gap-2">

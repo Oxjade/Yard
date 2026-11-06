@@ -68,7 +68,7 @@ export function PolicyTable() {
   return (
     <div className="grid gap-3">
       <p className="text-[12px] text-ink-2">
-        {reasons} of {sensitivePolicy.length} actions need a written reason and {approvals} need a second admin. Reasons and approvers are saved with each audit entry.
+        {reasons} of {sensitivePolicy.length} actions need a written reason and {approvals} need a second admin. Reasons and approvers are saved with each audit entry. In this build only ledger adjustments and campaigns over $1,000 already ask for a second admin; the payout and refund limits apply once the backend enforces them.
       </p>
       <DataTable
         label="Sensitive-action policy"

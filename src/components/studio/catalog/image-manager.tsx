@@ -257,7 +257,7 @@ export function ImageManager({
           >
             <Upload className="size-5" />
             <span className="text-xs text-ink">Add photos</span>
-            <span className="text-[11px] text-ink-3">{images.length === 0 ? "Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each." : "or drop them here"}</span>
+            <span className="text-[11px] text-ink-3">{images.length === 0 ? "Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. Kept in this browser until media storage is connected." : "or drop them here"}</span>
           </button>
         ) : null}
       </div>

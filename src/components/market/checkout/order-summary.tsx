@@ -94,7 +94,7 @@ function SummaryTotals({ groups, totals, currency, shipTo }: Pick<SummaryProps, 
         </div>
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-ink-2">Taxes</dt>
-          <dd className="text-sm">Included in prices</dd>
+          <dd className="text-sm">Not calculated in this build</dd>
         </div>
       </dl>
       <div className="mt-4 flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
