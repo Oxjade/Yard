@@ -39,7 +39,7 @@ export function DesignControls({
         <ChoiceGroup id="sf-template" label="Template" value={config.template} onValueChange={(v) => onChange({ template: v as StorefrontTemplate })} className="grid-cols-2 gap-3">
           {(Object.keys(storefrontTemplates) as StorefrontTemplate[]).map((t) => (
             <ChoiceCard key={t} value={t} className="gap-2 p-1.5">
-              <TemplateThumb template={t} cover={cover} accent={accent.value} />
+              <TemplateThumb template={t} cover={cover} accent={accent.rule} />
               <span className="block px-1 pb-1">
                 <span className="block text-[13px] text-ink">{storefrontTemplates[t].label}</span>
                 <span className="sr-only">. {storefrontTemplates[t].description}</span>
@@ -52,7 +52,7 @@ export function DesignControls({
         </p>
       </ControlGroup>
 
-      <ControlGroup id="sf-accent" title="Brand colour" description="Used for links, rules and your announcement bar.">
+      <ControlGroup id="sf-accent" title="Brand colour" description={accent.reserved ?? "Used for links, rules and your announcement bar."}>
         <ChoiceGroup id="sf-accent" label="Brand colour" value={config.accent} onValueChange={(v) => onChange({ accent: v as StorefrontAccent })} className="grid-cols-6 gap-1.5">
           {(Object.keys(storefrontAccents) as StorefrontAccent[]).map((key) => {
             const a = storefrontAccents[key]

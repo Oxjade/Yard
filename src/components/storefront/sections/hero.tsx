@@ -171,7 +171,8 @@ type Look = {
 /*
  * The accent appears at most once in the header, on one quiet element (Street's rules and, in a
  * colour that isn't the marketplace's own, its tagline). Acid is the Shop button's colour and
- * violet marks what is selected, so neither is spent on decoration next to them; stat icons are
+ * violet marks what is selected, so neither is spent on decoration next to them: with acid,
+ * Street's rules are drawn in --sf-rule's quiet grey (see storefrontAccents), and stat icons are
  * always grey. Templates differ in type size, rules and plates instead.
  */
 const looks: Record<StorefrontTemplate, Look> = {
@@ -276,11 +277,12 @@ const statIcons: Record<BrandFact, Icon> = { followers: UsersThree, pieces: Squa
  *
  * Where orders ship from is a stat too. On a phone its figure is the country's two-letter code
  * (a country name is too wide for a figure there; screen readers still hear the name), and from
- * a tablet up it is the name. The four sit in one row from a 390px phone up; narrower (or on
- * Studio's plate, which is inset) they make two rows of two rather than leave one alone. Every
- * stat carries its divider on its left, and the stats are pulled left by one gap inside a
- * clipping box, so the stat that starts a row lines up with the text above and its divider is
- * cut away, however the row wraps.
+ * a tablet up it is the name. The four sit in one row from a 384px container up (a 390px phone,
+ * and Studio's preview sheet on one, a little narrower: phone padding is kept tight enough for
+ * both); narrower (or on Studio's plate, which is inset) they make two rows of two rather than
+ * leave one alone. Every stat carries its divider on its left, and the stats are pulled left by
+ * one gap inside a clipping box, so the stat that starts a row lines up with the text above and
+ * its divider is cut away, however the row wraps.
  */
 function ProfileStats({ ctx, pieces, onPlate }: { ctx: StorefrontContext; pieces: number; onPlate: boolean }) {
   const facts = brandFacts(ctx.brand, statFacts, { pieces })
@@ -288,14 +290,14 @@ function ProfileStats({ ctx, pieces, onPlate }: { ctx: StorefrontContext; pieces
     <div className={cn("w-full overflow-hidden", onPlate ? "@xl:w-auto @xl:max-w-full" : "@min-[24rem]:w-auto @min-[24rem]:max-w-full")}>
       <dl
         className={cn(
-          "-ml-[calc(1rem+1px)] grid grid-cols-2 gap-y-5 @xl:-ml-[calc(1.25rem+1px)] @3xl:-ml-[calc(1.75rem+1px)]",
+          "-ml-[calc(0.875rem+1px)] grid grid-cols-2 gap-y-5 @xl:-ml-[calc(1.25rem+1px)] @3xl:-ml-[calc(1.75rem+1px)]",
           onPlate ? "@xl:flex @xl:flex-wrap" : "@min-[24rem]:flex @min-[24rem]:flex-wrap",
         )}
       >
         {facts.map((f) => {
           const Glyph = statIcons[f.key]
           return (
-            <div key={f.key} className="flex flex-col-reverse justify-end border-l border-line px-4 @xl:px-5 @3xl:px-7">
+            <div key={f.key} className="flex flex-col-reverse justify-end border-l border-line px-3.5 @xl:px-5 @3xl:px-7">
               <dt className="mt-1.5 text-xs whitespace-nowrap text-ink-2">{f.label}</dt>
               <dd className="flex items-center gap-2 text-lg leading-none font-semibold whitespace-nowrap text-ink tabular @3xl:text-2xl">
                 <Glyph aria-hidden className="size-4 shrink-0 text-ink-2 @3xl:size-5" />
@@ -398,7 +400,7 @@ export function HeroSection({ ctx, intro, products, first, opening, shopHref }: 
       </Container>
 
       {look.stats === "bar" ? (
-        <div className="mt-8 border-y-2 border-(color:--sf-accent) @3xl:mt-10">
+        <div className="mt-8 border-y-2 border-(color:--sf-rule) @3xl:mt-10">
           <Container className={cn(statsRow, "py-5")}>{stats}</Container>
         </div>
       ) : null}

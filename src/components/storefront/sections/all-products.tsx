@@ -51,8 +51,8 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
                     onClick={() => setActive(o.name)}
                     layoutId={`${layoutId}-pill`}
                     radio
-                    // The marketplace chip, filled in the brand accent instead of purple.
-                    className={cn(on && "border-(color:--sf-accent) text-(color:--sf-on-accent) [&>span:first-child]:bg-(color:--sf-accent)")}
+                    // The marketplace chip, filled in the brand accent instead of purple (purple when the accent is reserved, see theme).
+                    className={cn(on && "border-(color:--sf-selected) text-(color:--sf-on-selected) [&>span:first-child]:bg-(color:--sf-selected)")}
                   >
                     {o.label}
                     <span className={cn("text-xs tabular", on ? "opacity-70" : "text-ink-3")}>{o.count}</span>

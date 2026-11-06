@@ -22,21 +22,43 @@ import type {
 
 export type AccentTokens = {
   label: string
-  /** Accent used for text, rules and fills. A theme token where the palette has one. */
+  /** Accent used for text, links and small signals. A theme token where the palette has one. */
   value: string
-  /** A quiet tint of the accent for hover and selected backgrounds. */
+  /** A quiet tint behind the announcement bar: the accent's, or neutral where the accent is reserved. */
   soft: string
   /** Text colour on an accent fill. */
   on: string
   /** WCAG contrast of `value` as text on obsidian (#080808). */
   contrast: number
+  /**
+   * Structural rules: Street's stats-bar borders, its heading underlines, the drop and founder
+   * side rules, the announcement bar's border. The accent itself, except where it is reserved.
+   */
+  rule: string
+  /**
+   * Small accent text that labels rather than acts: Editorial's section numbers, a collection
+   * page's eyebrow, a collection tile's piece count. The accent itself, except where it is
+   * reserved, where it is the quiet grey of other meta text.
+   */
+  detail: string
+  /** Fill of a selected filter, and the text on it. */
+  selected: string
+  onSelected: string
+  /**
+   * Set when the accent is one of the marketplace's own signals and is spent sparingly: acid is
+   * the colour of the primary action, sale prices and releases, so a storefront in acid keeps it
+   * for its Shop button, sale prices and release state, and draws its rules, small labels and
+   * selected filters in the marketplace's neutral and purple. Said in the editor beside the choice.
+   */
+  reserved?: string
 }
 
 /**
  * Brands pick from this curated set instead of a free colour picker, so contrast always
  * holds on obsidian. Violet, acid and ink are the marketplace's own tokens, so a storefront
- * in acid is the same acid as the Shop button and the Sale badge beside it. Ember, aqua and
- * rose exist only for storefronts (StorefrontAccent in the data layer), so they are literal.
+ * in acid is the same acid as the Shop button and the Sale badge beside it, which is why acid
+ * is `reserved`: it stays on those and is not spent on rules. Ember, aqua and rose exist only
+ * for storefronts (StorefrontAccent in the data layer), so they are literal.
  *
  * Contrast against the current surfaces (obsidian #080808, surface #0f0f0f, card #131313,
  * elevated #1b1b1b), and obsidian text on each accent fill matches the first figure:
@@ -50,19 +72,47 @@ export type AccentTokens = {
  */
 const tint = (token: string, percent: number) => `color-mix(in oklab, var(${token}) ${percent}%, transparent)`
 
-export const storefrontAccents: Record<StorefrontAccent, AccentTokens> = {
-  violet: { label: "Violet", value: "var(--color-violet)", soft: tint("--color-violet", 14), on: "var(--color-obsidian)", contrast: 4.68 },
-  acid: { label: "Acid", value: "var(--color-acid)", soft: tint("--color-acid", 12), on: "var(--color-obsidian)", contrast: 18.3 },
-  ink: { label: "Ink", value: "var(--color-ink)", soft: tint("--color-ink", 10), on: "var(--color-obsidian)", contrast: 18.37 },
-  ember: { label: "Ember", value: "#ff8a4c", soft: "rgba(255, 138, 76, 0.14)", on: "var(--color-obsidian)", contrast: 8.58 },
-  aqua: { label: "Aqua", value: "#4fe3c9", soft: "rgba(79, 227, 201, 0.13)", on: "var(--color-obsidian)", contrast: 12.55 },
-  rose: { label: "Rose", value: "#ff8dbe", soft: "rgba(255, 141, 190, 0.14)", on: "var(--color-obsidian)", contrast: 9.35 },
+/** An accent that is free to draw rules and fill selections in its own colour. */
+function own(label: string, value: string, soft: string, contrast: number): AccentTokens {
+  return { label, value, soft, on: "var(--color-obsidian)", contrast, rule: value, detail: value, selected: value, onSelected: "var(--color-obsidian)" }
 }
 
-/** CSS variables consumed by the storefront's classes (text-(color:--sf-accent) and friends). */
+export const storefrontAccents: Record<StorefrontAccent, AccentTokens> = {
+  violet: own("Violet", "var(--color-violet)", tint("--color-violet", 14), 4.68),
+  acid: {
+    label: "Acid",
+    value: "var(--color-acid)",
+    // Rules in ink at low opacity (about #3c3c3c on obsidian: a quiet rule, still heavier than a
+    // hairline) and the announcement on a neutral wash, so the acid Shop button stays the loudest
+    // thing on the page; a selected filter is purple, as everywhere else in the marketplace.
+    soft: tint("--color-ink", 4),
+    on: "var(--color-obsidian)",
+    contrast: 18.3,
+    rule: tint("--color-ink", 22),
+    // Ink at 60%: the grey of meta text on obsidian (about #969696), still AA over a scrimmed photograph.
+    detail: tint("--color-ink", 60),
+    selected: "var(--color-purple)",
+    onSelected: "var(--color-ink)",
+    reserved: "Acid is kept for your Shop button, sale prices and releases. Rules, labels and selected filters use quiet greys and purple.",
+  },
+  ink: own("Ink", "var(--color-ink)", tint("--color-ink", 10), 18.37),
+  ember: own("Ember", "#ff8a4c", "rgba(255, 138, 76, 0.14)", 8.58),
+  aqua: own("Aqua", "#4fe3c9", "rgba(79, 227, 201, 0.13)", 12.55),
+  rose: own("Rose", "#ff8dbe", "rgba(255, 141, 190, 0.14)", 9.35),
+}
+
+/** CSS variables consumed by the storefront's classes (text-(color:--sf-accent), text-(color:--sf-detail) and friends). */
 export function accentStyle(accent: StorefrontAccent): CSSProperties {
   const a = storefrontAccents[accent] ?? storefrontAccents.violet
-  return { "--sf-accent": a.value, "--sf-accent-soft": a.soft, "--sf-on-accent": a.on } as CSSProperties
+  return {
+    "--sf-accent": a.value,
+    "--sf-accent-soft": a.soft,
+    "--sf-on-accent": a.on,
+    "--sf-rule": a.rule,
+    "--sf-detail": a.detail,
+    "--sf-selected": a.selected,
+    "--sf-on-selected": a.onSelected,
+  } as CSSProperties
 }
 
 /* ---------- Headline type ---------- */
@@ -120,7 +170,7 @@ export const storefrontType: Record<StorefrontTypePreset, TypeTokens> = {
 export const storefrontTemplates: Record<StorefrontTemplate, { label: string; description: string }> = {
   editorial: { label: "Editorial", description: "Your tagline as a standfirst, numbered sections and magazine spreads." },
   minimal: { label: "Minimal", description: "Whitespace and a quiet grid. The product does the talking." },
-  street: { label: "Street", description: "Heavy type, an accent-ruled stats bar and drops up front." },
+  street: { label: "Street", description: "Heavy type, a ruled stats bar and drops up front." },
   studio: { label: "Studio", description: "A gallery for objects and editions, with plated images and numbered pieces." },
 }
 

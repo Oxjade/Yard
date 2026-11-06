@@ -15,7 +15,7 @@ import { useNow } from "@/hooks/use-now"
 import { site } from "@/config/site"
 import { categories } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
-import { ATTRIBUTION, campaignTypes, type Campaign } from "@/lib/data/ads"
+import { ATTRIBUTION, campaignDates as campaignWindow, campaignTypes, type Campaign } from "@/lib/data/ads"
 import { rand } from "@/lib/data/seed"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
@@ -44,6 +44,37 @@ export function CampaignResults({ id }: { id: string }) {
 
 const TIMELINE = ["Submitted", "In review", "Approved", "Running", "Finished"] as const
 
+/**
+ * The headline figures a running campaign shows, with exactly its labels and hints, so nothing
+ * is renamed when results arrive (MetricTile reserves two label lines, so a longer label still
+ * keeps the numerals level in a row of six).
+ */
+const pendingTiles = [
+  { label: "Impressions" },
+  { label: "Clicks" },
+  { label: "CTR", hint: "clicks ÷ impressions" },
+  { label: "Purchases", hint: "attributed" },
+  { label: "Attributed revenue" },
+  { label: "ROAS", hint: "revenue ÷ spend" },
+]
+
+/** When a campaign with no results yet starts producing them, in one line. */
+function resultsStart(c: Campaign, start: string) {
+  const day = formatDate(start, { year: false })
+  switch (c.status) {
+    case "scheduled":
+      return `Results start on ${day}, the first day of the run.`
+    case "in_review":
+      return `Results start on ${day}, the first day of the run, if it's approved.`
+    case "draft":
+      return "Results start on the first day of the run, once it's paid for and approved."
+    case "rejected":
+      return "No results: it was rejected, so it didn't run."
+    default:
+      return "No results recorded yet. Numbers update daily."
+  }
+}
+
 function timelineIndex(status: Campaign["status"]) {
   return { draft: -1, in_review: 1, scheduled: 2, active: 3, paused: 3, completed: 4, rejected: 1 }[status]
 }
@@ -71,7 +102,8 @@ function Results({ c, now }: { c: Campaign; now: number }) {
   const hasResults = c.results.impressions > 0
   const series = hasResults ? dailySeries(c, today) : []
   const target = resolveTarget(c.targetIds[0], brand, products, drops)
-  const start = addDays(today, c.startDaysFromToday)
+  // The campaign's first and last day in the brand's time zone: the rule Admin's review uses too.
+  const { start, end } = campaignWindow(c, now)
   const [withdraw, setWithdraw] = useState(false)
   // After withdrawing, the Withdraw button is replaced by Edit: focus goes there.
   const withdrawFocus = useFocusReturn(() => document.querySelector<HTMLElement>(`a[href="/studio/advertising/${c.id}/edit"]`))
@@ -158,7 +190,7 @@ function Results({ c, now }: { c: Campaign; now: number }) {
                 : c.status === "scheduled"
                   ? `Approved. It starts ${formatDate(start, { weekday: true })} and runs for ${c.days} days.`
                   : c.status === "active"
-                    ? `Running until ${formatDate(addDays(start, c.days - 1), { weekday: true })}. Numbers update daily.`
+                    ? `Running until ${formatDate(end, { weekday: true })}. Numbers update daily.`
                     : c.status === "paused"
                       ? `Paused by ${site.name}. If it stays paused for more than a fifth of its run you get a credit for the missed days.`
                       : "Finished. These are the final results."}
@@ -216,9 +248,18 @@ function Results({ c, now }: { c: Campaign; now: number }) {
           </div>
         </>
       ) : (
-        <Panel title="Results" description="What you'll see here once the campaign runs.">
-          <p className="text-sm text-ink-2">Impressions, reach, clicks and click-through rate, product views, add-to-carts, attributed purchases and revenue, and return on ad spend, updated daily from the first day of the run.</p>
-        </Panel>
+        // Before it runs: the row the running campaign shows, empty, and when it fills.
+        <section aria-labelledby="results-title" className="grid gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 id="results-title" className="text-sm font-medium text-ink">Results</h2>
+            <p className="text-xs text-ink-2">{resultsStart(c, start)}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {pendingTiles.map((t) => (
+              <MetricTile key={t.label} label={t.label} value={0} format={() => "–"} hint={t.hint} />
+            ))}
+          </div>
+        </section>
       )}
 
       <section aria-labelledby="attr-title" className="flex gap-3 rounded-lg border border-line-soft bg-card p-4 md:p-5">

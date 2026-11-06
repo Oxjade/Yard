@@ -24,7 +24,7 @@ import { site } from "@/config/site"
 import { formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, StorefrontAccent, StorefrontSection, StorefrontTemplate } from "@/lib/data/types"
-import { collectionIndexId, sectionTitle, type TypeTokens } from "./theme"
+import { collectionIndexId, sectionTitle, storefrontAccents, type TypeTokens } from "./theme"
 
 /** Everything a section needs to know about the storefront it sits in. */
 export type StorefrontContext = {
@@ -119,7 +119,7 @@ export function SectionHeading({
       <div className={cn("mb-6 flex items-end justify-between gap-6 @3xl:mb-8", className)}>
         <div className="max-w-3xl">
           <h2 id={id} className={cn(type.family, type.heading, "text-ink")}>{title}</h2>
-          <span aria-hidden className="mt-3 block h-1 w-16 bg-(color:--sf-accent)" />
+          <span aria-hidden className="mt-3 block h-1 w-16 bg-(color:--sf-rule)" />
           {description ? <p className="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ink-2">{description}</p> : null}
         </div>
         {action}
@@ -147,7 +147,7 @@ export function SectionHeading({
   return (
     <div className={cn("mb-8 flex items-end justify-between gap-6 @3xl:mb-10", className)}>
       <div className="max-w-3xl">
-        <p className="text-sm text-(color:--sf-accent) tabular">{number}</p>
+        <p className="text-sm text-(color:--sf-detail) tabular">{number}</p>
         <h2 id={id} className={cn("mt-2", type.family, type.heading, "text-ink")}>{title}</h2>
         {description ? <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{description}</p> : null}
       </div>
@@ -316,25 +316,32 @@ export function SocialLinks({ brand, className }: { brand: Brand; className?: st
 }
 
 /**
- * The brand's own announcement bar: a soft tint of its accent with an accent border, never a
- * solid fill, so the hero's Shop button stays the only filled action in the first view (with
- * an acid accent, two acid fills would compete).
+ * The brand's own announcement bar: a soft tint of its accent with a ruled border, never a
+ * solid fill, so the hero's Shop button stays the only filled action in the first view. With
+ * an acid accent (reserved for that button) the bar is a neutral wash under a quiet rule, and
+ * only its small dot is acid.
  */
 export function AnnouncementBar({ ctx, text, href }: { ctx: StorefrontContext; text: string; href?: string }) {
+  const reserved = !!storefrontAccents[ctx.accent]?.reserved
   const body = (
     <>
       <span className="inline-flex size-1.5 shrink-0 rounded-full bg-(color:--sf-accent)" aria-hidden />
       <span className="text-pretty">{text}</span>
-      {href ? <ArrowUpRight className="size-4 shrink-0 text-(color:--sf-accent) transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5" aria-hidden /> : null}
+      {href ? (
+        <ArrowUpRight
+          className={cn("size-4 shrink-0 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5 group-hover:-translate-y-0.5", reserved ? "text-ink-2" : "text-(color:--sf-accent)")}
+          aria-hidden
+        />
+      ) : null}
     </>
   )
-  const bar = "flex items-center justify-center gap-2.5 rounded-md border border-(color:--sf-accent) bg-(color:--sf-accent-soft) px-4 py-2.5 text-center text-sm text-ink"
+  const bar = "flex items-center justify-center gap-2.5 rounded-md border border-(color:--sf-rule) bg-(color:--sf-accent-soft) px-4 py-2.5 text-center text-sm text-ink"
   return (
     <div className={cn(ctx.preview ? "pt-4" : announcementClearance)}>
       <Container>
         <div role="note" aria-label={`Announcement from ${ctx.brand.name}`}>
           {href ? (
-            <Link href={href} className={cn("group transition-colors hover:bg-(color:--sf-accent)/20", bar)}>
+            <Link href={href} className={cn("group transition-colors", reserved ? "hover:bg-white/[0.06]" : "hover:bg-(color:--sf-accent)/20", bar)}>
               {body}
             </Link>
           ) : (

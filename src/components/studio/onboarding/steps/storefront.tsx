@@ -41,7 +41,8 @@ export function StorefrontStep({ onNext }: StepProps) {
   const covers: ImageRef[] = chosen && !library.slice(0, 8).some((c) => c.src === chosen.src) ? [chosen, ...library.filter((c) => c.src !== chosen.src).slice(0, 7)] : library.slice(0, 8)
   // Template thumbnails use the chosen cover, or the first library photo until one is chosen.
   const thumbCover = asAsset(chosen ?? library[0])
-  const accentValue = (storefrontAccents[storefront.accent] ?? storefrontAccents.violet).value
+  const chosenAccent = storefrontAccents[storefront.accent] ?? storefrontAccents.violet
+  const accentValue = chosenAccent.rule
   const specimen = brand.name.trim() ? brand.name.trim().split(" ")[0] : "Aa"
 
   // Start from the template that suits the category, so a first storefront takes one look, not four decisions.
@@ -104,7 +105,7 @@ export function StorefrontStep({ onNext }: StepProps) {
         </div>
       </Panel>
 
-      <Panel title="Brand colour" description="Used for links, rules and section marks on your storefront. Every colour here stays readable on dark.">
+      <Panel title="Brand colour" description={chosenAccent.reserved ?? "Used for links, rules and section marks on your storefront. Every colour here stays readable on dark."}>
         <ChoiceGroup id="ob-accent" label="Brand colour" value={storefront.accent} onValueChange={(v) => set({ accent: v as StorefrontAccent })} className="grid-cols-6 gap-2">
           {accentKeys.map((key) => {
             const a = storefrontAccents[key]

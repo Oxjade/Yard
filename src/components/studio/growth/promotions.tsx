@@ -63,6 +63,35 @@ function datesLabel(p: Promotion) {
   return `${formatDate(p.startsOn, { year: !sameYear })} to ${formatDate(p.endsOn)}`
 }
 
+/** A date in the hint lines: "31 Dec", with the year only when it isn't this one. */
+function shortDate(date: string, today: string) {
+  return formatDate(date, { year: date.slice(0, 4) !== today.slice(0, 4) })
+}
+
+/**
+ * One specific line under each summary count, from the promotions themselves: the active one
+ * that ends first, the scheduled one that starts next, what is on hold.
+ */
+function summaryHints(rows: Row[], today: string) {
+  const name = (p: Promotion) => p.code ?? p.title
+  const of = (status: PromotionStatus) => rows.filter((r) => r.status === status).map((r) => r.p)
+  const active = of("active")
+  const scheduled = of("scheduled").sort((a, b) => a.startsOn.localeCompare(b.startsOn))
+  const paused = of("paused")
+  // Ending first; a promotion with no end date only when none of them has one.
+  const ending = [...active].sort((a, b) => (a.endsOn ?? "9999").localeCompare(b.endsOn ?? "9999"))[0]
+  const more = (list: Promotion[]) => (list.length > 1 ? `, ${list.length - 1} more` : "")
+  return {
+    active: ending
+      ? ending.endsOn
+        ? `${name(ending)} ends ${active.length > 1 ? "first, " : ""}${shortDate(ending.endsOn, today)}`
+        : `${name(ending)} has no end date`
+      : "None running",
+    scheduled: scheduled[0] ? `${name(scheduled[0])} starts ${shortDate(scheduled[0].startsOn, today)}${more(scheduled)}` : "None scheduled",
+    paused: paused[0] ? `${name(paused[0])} on hold${more(paused)}` : "None paused",
+  }
+}
+
 function PromotionsView({ now }: { now: number }) {
   const brandId = useStudio((s) => s.brandId)
   const products = useStudio((s) => s.products)
@@ -98,6 +127,7 @@ function PromotionsView({ now }: { now: number }) {
   const tabStatuses: Record<Tab, PromotionStatus[]> = { all: ["active", "scheduled", "paused", "expired", "used-up"], active: ["active"], scheduled: ["scheduled"], paused: ["paused"], ended: ["expired", "used-up"] }
   const visible = rows.filter((r) => tabStatuses[tab].includes(r.status))
   const redemptions = rows.reduce((s, r) => s + r.p.used, 0)
+  const hints = summaryHints(rows, today)
 
   // Status badges change in place, so pausing needs no toast.
   function setPausedFor(list: Row[], pause: boolean) {
@@ -198,9 +228,9 @@ function PromotionsView({ now }: { now: number }) {
       ) : (
         <>
           <section aria-label="Promotion summary" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <MetricTile label="Active now" value={count(["active"])} format={(n) => formatNumber(Math.round(n))} />
-            <MetricTile label="Scheduled" value={count(["scheduled"])} format={(n) => formatNumber(Math.round(n))} />
-            <MetricTile label="Paused" value={count(["paused"])} format={(n) => formatNumber(Math.round(n))} />
+            <MetricTile label="Active now" value={count(["active"])} format={(n) => formatNumber(Math.round(n))} hint={hints.active} />
+            <MetricTile label="Scheduled" value={count(["scheduled"])} format={(n) => formatNumber(Math.round(n))} hint={hints.scheduled} />
+            <MetricTile label="Paused" value={count(["paused"])} format={(n) => formatNumber(Math.round(n))} hint={hints.paused} />
             <MetricTile label="Redemptions" value={redemptions} format={(n) => formatNumber(Math.round(n))} hint="All promotions, sample data" />
           </section>
 

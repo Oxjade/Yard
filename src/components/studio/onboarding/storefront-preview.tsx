@@ -112,7 +112,7 @@ function Featured({ data, template, large }: { data: OnboardingData; template: S
     <div className={large ? "px-6 pt-8 pb-6" : "px-4 pt-6 pb-4"}>
       {template === "editorial" ? (
         <div className="mb-3">
-          <p className="text-[11px] text-(color:--sf-accent) tabular">01</p>
+          <p className="text-[11px] text-(color:--sf-detail) tabular">01</p>
           <div className="mt-1">{heading}</div>
         </div>
       ) : template === "minimal" ? (
@@ -120,7 +120,7 @@ function Featured({ data, template, large }: { data: OnboardingData; template: S
       ) : template === "street" ? (
         <div className="mb-3">
           {heading}
-          <span aria-hidden className="mt-1.5 block h-0.5 w-8 bg-(color:--sf-accent)" />
+          <span aria-hidden className="mt-1.5 block h-0.5 w-8 bg-(color:--sf-rule)" />
         </div>
       ) : (
         <div className="mb-3 grid gap-1.5">
@@ -215,11 +215,11 @@ export function StorefrontPreview({ data, size = "panel", eager, className }: { 
             <span aria-hidden className="absolute inset-0 -z-10 bg-obsidian/45" />
             <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-2/3 bg-gradient-to-t from-obsidian via-obsidian/60 to-transparent" />
             <div className={cn("flex flex-col justify-end", large ? "min-h-[360px]" : "min-h-[240px]", pad)}>
-              {desc("line-clamp-2 max-w-md font-medium text-(color:--sf-accent)")}
+              {desc(cn("line-clamp-2 max-w-md font-medium", storefront.accent === "acid" || storefront.accent === "violet" ? "text-ink" : "text-(color:--sf-accent)"))}
               {title(cn("mt-2 -ml-[0.04em]", mini.hero))}
             </div>
           </div>
-          <div className="border-y-2 border-(color:--sf-accent) bg-obsidian">
+          <div className="border-y-2 border-(color:--sf-rule) bg-obsidian">
             <div className={cn("flex items-center gap-2.5", large ? "px-6 py-3" : "px-4 py-2.5")}>
               <BrandLogo brand={brand} size="sm" />
               <span className={cn("min-w-0 flex-1 truncate text-ink-2", large ? "text-xs" : "text-[10px]")}>{place}</span>

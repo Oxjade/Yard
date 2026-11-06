@@ -85,7 +85,7 @@ export function StorySection({ ctx, section, index, first, stories }: Props) {
                 <p key={para} className="mt-6 max-w-2xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{para}</p>
               ))}
             </div>
-            <aside className="self-start border-l-2 border-(color:--sf-accent) pl-5">
+            <aside className="self-start border-l-2 border-(color:--sf-rule) pl-5">
               <Founder brand={brand} />
               <p className="mt-5 text-sm text-ink-2">Started in {brand.founded}, still based in {brand.city}.</p>
             </aside>

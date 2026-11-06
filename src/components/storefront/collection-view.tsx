@@ -91,7 +91,7 @@ export function CollectionView({ brand: seedBrand, collection, products, others 
           </nav>
 
           <div className="mt-auto pt-16">
-            <p className="text-sm text-(color:--sf-accent)">A collection by {brand.name}</p>
+            <p className="text-sm text-(color:--sf-detail)">A collection by {brand.name}</p>
             <h1 className={cn("mt-3 max-w-4xl text-balance text-ink", type.family, type.heroSplit)}>{collection.name}</h1>
             <p className="mt-4 max-w-md text-pretty text-[0.9375rem] leading-relaxed text-ink/80 md:text-base">{collection.description}</p>
           </div>

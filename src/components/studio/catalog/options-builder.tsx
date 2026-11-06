@@ -41,6 +41,8 @@ export function OptionsBuilder({
   const [fillAll, setFillAll] = useState("")
   const hex = new Map(activeColours(form).map((c) => [c.name, c.hex]))
   const total = form.variants.reduce((n, v) => n + (isWhole(v.stock) ? Number(v.stock) : 0), 0)
+  // Reserved units belong to open checkouts; available matches the products list and Inventory.
+  const reserved = form.variants.reduce((n, v) => n + (v.reserved ?? 0), 0)
 
   function setColour(key: string, patch: Partial<FormColour>) {
     onOptions({ colours: form.colours.map((c) => (c.key === key ? { ...c, ...patch } : c)) })
@@ -151,7 +153,7 @@ export function OptionsBuilder({
         <div className="overflow-hidden rounded-lg border border-line-soft">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft bg-surface/60 px-3 py-2.5 md:px-4">
             <p className="text-xs text-ink-3">
-              {form.variants.length === 1 && !form.variants[0].key ? "One variant" : plural(form.variants.length, "variant")}, <span className="tabular">{total.toLocaleString("en-US")}</span> in stock
+              {form.variants.length === 1 && !form.variants[0].key ? "One variant" : plural(form.variants.length, "variant")}, <span className="tabular">{total.toLocaleString("en-US")}</span> on hand{reserved ? <>, <span className="tabular">{Math.max(0, total - reserved).toLocaleString("en-US")}</span> available</> : null}
             </p>
             {form.variants.length > 1 ? (
               <div className="flex items-center gap-1.5">

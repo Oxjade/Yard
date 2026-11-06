@@ -4,11 +4,12 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarXIcon as CalendarX, CheckIcon as Check, DiceFiveIcon as Dices, ImageSquareIcon as ImagePlus, LockIcon as Lock, RocketIcon as Rocket, UsersIcon as Users, LightningIcon as Zap } from "@phosphor-icons/react"
+import { CalendarXIcon as CalendarX, CaretUpIcon as CaretUp, CheckIcon as Check, DiceFiveIcon as Dices, FloppyDiskIcon as FloppyDisk, ImageSquareIcon as ImagePlus, LockIcon as Lock, RocketIcon as Rocket, UsersIcon as Users, LightningIcon as Zap } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -68,6 +69,17 @@ const ACCESS: { value: DropAccess; icon: React.ComponentType<{ className?: strin
 ]
 
 const MIN_LEAD_MINUTES = 30
+
+/**
+ * The form's action labels, shared by the desktop header and the phone action bar so both say
+ * the same thing. `draft` moves a scheduled drop back to drafts; `publish` skips the countdown.
+ */
+const ACTION_LABELS = {
+  draft: (scheduled: boolean) => (scheduled ? "Move to drafts" : "Save draft"),
+  publish: "Publish now",
+  schedule: (scheduled: boolean) => (scheduled ? "Save schedule" : "Schedule"),
+  save: "Save changes",
+} as const
 
 /** Zones a release can be entered in: each market's main zone, the brand's first, then the browser's. */
 function zoneOptions(brandTz: string, userTz: string | null, at: number) {
@@ -360,8 +372,12 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
   ]
 
   const publishFocus = useFocusReturn()
+  // The phone bar's More menu: the action an item picked, run once the menu has closed (see below).
+  const moreRef = useRef<HTMLButtonElement>(null)
+  const moreAction = useRef<Mode | null>(null)
   const title = existing ? (status === "draft" ? "Edit draft drop" : locked ? existing.name : "Edit drop") : "Schedule a drop"
   const statusMeta = status ? dropStatusMeta[status] : null
+  const scheduled = status === "scheduled"
 
   return (
     <div ref={rootRef} className="grid gap-6">
@@ -373,17 +389,17 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           actions={
             // Phones get the same actions in the floating bar at the bottom of the form.
             locked ? (
-              <Button type="submit" form="drop-form" variant="primary" size="sm" className="hidden sm:inline-flex" disabled={leaving}>Save changes</Button>
+              <Button type="submit" form="drop-form" variant="primary" size="sm" className="hidden sm:inline-flex" disabled={leaving}>{ACTION_LABELS.save}</Button>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
                 <Button type="button" variant="secondary" size="sm" onClick={() => submit("draft")} disabled={leaving}>
-                  {status === "scheduled" ? "Move to drafts" : "Save draft"}
+                  {ACTION_LABELS.draft(scheduled)}
                 </Button>
                 <Button type="button" variant="secondary" size="sm" onClick={() => submit("publish")} disabled={leaving}>
-                  <Rocket /> Publish now
+                  <Rocket /> {ACTION_LABELS.publish}
                 </Button>
                 <Button type="submit" form="drop-form" variant="primary" size="sm" disabled={leaving}>
-                  {status === "scheduled" ? "Save schedule" : "Schedule"}
+                  {ACTION_LABELS.schedule(scheduled)}
                 </Button>
               </div>
             )
@@ -569,20 +585,46 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           {releaseUtc ? <p className="text-xs text-ink-3">Shoppers see the countdown in their own time zone. Once the catalogue backend is connected, followers get an alert a day before, an hour before and at release.</p> : null}
         </aside>
 
-        {/* Phones: a floating action bar, so Schedule is in reach anywhere on this long form. */}
+        {/* Phones: a floating action bar, so Schedule is in reach anywhere on this long form. One
+            row at any width: the primary action fills it, and the header's two other actions, with
+            the same labels, sit behind More. A picked item runs once the menu has closed, after
+            focus is back on More, so a validation error can move focus to its field and the
+            publish confirmation returns focus to More when it closes. */}
         <div data-toast-avoid="" className="glass-strong sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 col-span-full flex items-center gap-2 rounded-2xl p-2 sm:hidden">
           {locked ? (
-            <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>Save changes</Button>
+            <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>{ACTION_LABELS.save}</Button>
           ) : (
             <>
-              <Button type="button" variant="ghost" size="sm" className="h-10" onClick={() => submit("draft")} disabled={leaving}>
-                {status === "scheduled" ? "Unschedule" : "Save draft"}
-              </Button>
-              <Button type="button" variant="secondary" size="sm" className="h-10" onClick={() => submit("publish")} disabled={leaving}>
-                <Rocket /> Go live
-              </Button>
-              <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>
-                {status === "scheduled" ? "Save schedule" : "Schedule"}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button ref={moreRef} type="button" variant="secondary" size="sm" className="h-10 shrink-0" disabled={leaving}>
+                    More <CaretUp className="text-ink-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  className="w-auto min-w-48"
+                  onCloseAutoFocus={(e) => {
+                    const mode = moreAction.current
+                    moreAction.current = null
+                    if (!mode) return
+                    e.preventDefault()
+                    moreRef.current?.focus({ preventScroll: true })
+                    submit(mode)
+                  }}
+                >
+                  <DropdownMenuItem className="min-h-10" onSelect={() => (moreAction.current = "draft")}>
+                    {scheduled ? <CalendarX /> : <FloppyDisk />} {ACTION_LABELS.draft(scheduled)}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-10" onSelect={() => (moreAction.current = "publish")}>
+                    <Rocket /> {ACTION_LABELS.publish}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button type="submit" variant="primary" size="sm" className="h-10 min-w-0 flex-1" disabled={leaving}>
+                {ACTION_LABELS.schedule(scheduled)}
               </Button>
             </>
           )}
@@ -600,7 +642,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmPublish(false)}>Not yet</Button>
-            <Button variant="primary" onClick={() => save("publish")} disabled={leaving}><Rocket /> Publish now</Button>
+            <Button variant="primary" onClick={() => save("publish")} disabled={leaving}><Rocket /> {ACTION_LABELS.publish}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -66,7 +66,7 @@ export function CollectionsSection({ ctx, section, index, first, collections }: 
                 <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-1 origin-left scale-x-0 bg-(color:--sf-accent) transition-transform duration-500 ease-out-quint group-hover:scale-x-100" />
                 <h3 className={cn(type.family, type.heading, "text-ink")}>{c.name}</h3>
                 <p className="mt-2 text-sm text-ink/80">{c.description}</p>
-                <p className="mt-3 text-xs text-(color:--sf-accent) tabular">{pieces(c)}</p>
+                <p className="mt-3 text-xs text-(color:--sf-detail) tabular">{pieces(c)}</p>
               </Link>
             ))}
           </div>

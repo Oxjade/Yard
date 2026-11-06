@@ -57,7 +57,7 @@ function DropNotes({ drop, accent, products }: { drop: Drop; accent: boolean; pr
     ...(inDrop.length ? [] : [{ label: "In the drop", value: pieces(drop.productIds.length) }]),
   ]
   return (
-    <div className={cn("flex flex-col rounded-lg border border-line-soft p-5 @3xl:p-8", accent && "border-l-2 border-l-(color:--sf-accent)")}>
+    <div className={cn("flex flex-col rounded-lg border border-line-soft p-5 @3xl:p-8", accent && "border-l-2 border-l-(color:--sf-rule)")}>
       <h4 className="text-sm text-ink-2">About this drop</h4>
       <p className="mt-3 max-w-md text-pretty text-lg leading-snug text-ink @3xl:text-xl">{drop.description}</p>
       {inDrop.length ? (
