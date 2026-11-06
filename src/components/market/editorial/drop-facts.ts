@@ -26,7 +26,7 @@ export const accessName: Record<Drop["access"], string> = {
 export const accessRule: Record<Drop["access"], string> = {
   "first-come": "Opens to everyone at release. Pieces go to whoever checks out first.",
   draw: "Enter before release. Winners are picked at random and only winners pay.",
-  "early-access": "Followers of the brand get the first window, then it opens to everyone.",
+  "early-access": "Followers of the brand get the first window, then it opens to everyone. In this build that window isn't enforced yet, so it opens to everyone at release.",
 }
 
 /** A draw after release: entries are closed and the winners' window is not open to anyone else. */
