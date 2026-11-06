@@ -1,6 +1,6 @@
 "use client"
 
-import { useId } from "react"
+import { useCallback, useId, useLayoutEffect, useRef } from "react"
 import { motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
@@ -98,6 +98,7 @@ export function Segmented<T extends string>({
   options,
   className,
   error,
+  labelledBy,
 }: {
   id: string
   label: string
@@ -106,13 +107,16 @@ export function Segmented<T extends string>({
   options: { value: T; label: React.ReactNode }[]
   className?: string
   error?: string
+  /** id of a visible label: a radio group can't be the target of <label htmlFor>. */
+  labelledBy?: string
 }) {
   return (
     <RadioGroupPrimitive.Root
       id={id}
       value={value ?? ""}
       onValueChange={(v) => onChange(v as T)}
-      aria-label={label}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
       aria-invalid={error ? true : undefined}
       aria-describedby={error ? `${id}-error` : undefined}
       orientation="horizontal"
@@ -135,6 +139,51 @@ export function Segmented<T extends string>({
   )
 }
 
+/* ---------- Returning focus ---------- */
+
+/** What can take focus back: still on the page, enabled, visible, and not inside something closing. */
+function canTakeFocus(el: HTMLElement | null | undefined): el is HTMLElement {
+  if (!el || !el.isConnected || (el as HTMLButtonElement).disabled) return false
+  if (el.closest('[data-leaving], [role="menu"], [role="dialog"][data-state="closed"]')) return false
+  return el.getClientRects().length > 0
+}
+
+/** The control that opened an overlay. An item in a closing menu stands for that menu's trigger. */
+function openerOf(el: Element | null): HTMLElement | null {
+  if (!(el instanceof HTMLElement) || el === document.body) return null
+  const menu = el.closest('[role="menu"]')
+  const trigger = menu?.getAttribute("aria-labelledby")
+  return (trigger ? document.getElementById(trigger) : null) ?? el
+}
+
+/**
+ * Radix returns focus only to a DialogTrigger, so a dialog or sheet opened from code would
+ * drop focus on <body> when it closes. This remembers what had focus as `open` turns true
+ * (a layout effect, before the dialog moves focus inside) and hands back an
+ * `onCloseAutoFocus` that returns there, or to `fallback` when that control has gone, is
+ * disabled, or sits inside something that is closing (a confirmed row that left the list).
+ */
+export function useReturnFocus(open: boolean, fallback?: () => HTMLElement | null | undefined) {
+  const opener = useRef<HTMLElement | null>(null)
+  const fallbackRef = useRef(fallback)
+  useLayoutEffect(() => {
+    fallbackRef.current = fallback
+  })
+  useLayoutEffect(() => {
+    if (open) opener.current = openerOf(document.activeElement)
+  }, [open])
+  return useCallback((e: Event) => {
+    e.preventDefault()
+    const from = opener.current
+    opener.current = null
+    const target = canTakeFocus(from) ? from : fallbackRef.current?.()
+    if (canTakeFocus(target)) target.focus()
+  }, [])
+}
+
+/** The selected tab of a StatusTabs list, by the region it controls: a steady place to land. */
+export const selectedTabFor = (controls: string) => () => document.querySelector<HTMLElement>(`[role="tab"][aria-selected="true"][aria-controls="${controls}"]`)
+
 /* ---------- Confirm dialog ---------- */
 
 /** Every destructive or bulk action asks first, naming exactly what will happen. */
@@ -146,6 +195,7 @@ export function ConfirmDialog({
   confirmLabel,
   onConfirm,
   tone = "destructive",
+  returnFocus,
   children,
 }: {
   open: boolean
@@ -155,11 +205,14 @@ export function ConfirmDialog({
   confirmLabel: string
   onConfirm: () => void
   tone?: "destructive" | "primary" | "secondary"
+  /** Where focus goes on close when the control that opened the dialog is gone or disabled. */
+  returnFocus?: () => HTMLElement | null | undefined
   children?: React.ReactNode
 }) {
+  const onCloseAutoFocus = useReturnFocus(open, returnFocus)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[420px]" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="text-ink-2">{body}</DialogDescription>

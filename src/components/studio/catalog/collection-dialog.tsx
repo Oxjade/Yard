@@ -12,10 +12,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Textarea } from "@/components/ui/textarea"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import type { Collection, ImageAsset, Product } from "@/lib/data/types"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { ConfirmDialog, control, Field, FieldMessage, inputClass } from "./fields"
+import { ConfirmDialog, control, Field, FieldMessage, inputClass, useReturnFocus } from "./fields"
 import { Thumb } from "./parts"
 import { useCatalog } from "./store"
 import { plural, slugify } from "./utils"
@@ -23,18 +24,36 @@ import { plural, slugify } from "./utils"
 const NAME_MAX = 60
 const DESCRIPTION_MAX = 280
 
-/** Create (collection = null) or edit a collection. `open` is driven by the parent. */
-export function CollectionDialog({ open, onOpenChange, collection, collections, brandId }: { open: boolean; onOpenChange: (o: boolean) => void; collection: Collection | null; collections: Collection[]; brandId: string }) {
+/**
+ * Create (collection = null) or edit a collection. `open` is driven by the parent, so focus
+ * goes back to the button or card that opened it, or to `returnFocus` once that card is gone.
+ */
+export function CollectionDialog({
+  open,
+  onOpenChange,
+  collection,
+  collections,
+  brandId,
+  returnFocus,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  collection: Collection | null
+  collections: Collection[]
+  brandId: string
+  returnFocus?: () => HTMLElement | null
+}) {
+  const onCloseAutoFocus = useReturnFocus(open, returnFocus)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl">
-        {open ? <CollectionForm key={collection?.id ?? "new"} collection={collection} collections={collections} brandId={brandId} onDone={() => onOpenChange(false)} /> : null}
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl" onCloseAutoFocus={onCloseAutoFocus}>
+        {open ? <CollectionForm key={collection?.id ?? "new"} collection={collection} collections={collections} brandId={brandId} onDone={() => onOpenChange(false)} returnFocus={returnFocus} /> : null}
       </DialogContent>
     </Dialog>
   )
 }
 
-function CollectionForm({ collection, collections, brandId, onDone }: { collection: Collection | null; collections: Collection[]; brandId: string; onDone: () => void }) {
+function CollectionForm({ collection, collections, brandId, onDone, returnFocus }: { collection: Collection | null; collections: Collection[]; brandId: string; onDone: () => void; returnFocus?: () => HTMLElement | null }) {
   const products = useStudio((s) => s.products)
   const isNew = !collection
 
@@ -96,7 +115,7 @@ function CollectionForm({ collection, collections, brandId, onDone }: { collecti
 
   function save(e: React.FormEvent) {
     e.preventDefault()
-    const n = name.trim()
+    if (commit.pending) return
     const errs = check()
     setSubmitted(true)
     if (Object.values(errs).some(Boolean) || !cover) {
@@ -104,6 +123,11 @@ function CollectionForm({ collection, collections, brandId, onDone }: { collecti
       document.getElementById(first)?.focus()
       return
     }
+    void commit.run(cover)
+  }
+
+  function write(cover: ImageAsset) {
+    const n = name.trim()
 
     const base = slugify(n) || "collection"
     const takenHandles = new Set(collections.filter((c) => c.id !== collection?.id).map((c) => c.handle))
@@ -114,27 +138,30 @@ function CollectionForm({ collection, collections, brandId, onDone }: { collecti
     useCatalog.getState().upsertCollection({ id, brandId, handle, name: n, description: description.trim(), image: cover, productIds: selected })
 
     // Membership lives on the product, so the catalogue and storefront agree.
-    const studio = useStudio.getState()
     const want = new Set(selected)
-    const changed: string[] = []
-    for (const p of studio.products) {
-      const has = p.collectionIds.includes(id)
-      if (want.has(p.id) === has) continue
-      studio.upsertProduct({ ...p, collectionIds: has ? p.collectionIds.filter((x) => x !== id) : [...p.collectionIds, id] })
-      changed.push(p.id)
-    }
-    if (changed.length) useCatalog.getState().touchProducts(changed)
-
-    toast.success(isNew ? "Collection created" : "Collection saved", { description: `${n}, ${plural(selected.length, "product")}.` })
-    onDone()
+    const at = new Date().toISOString()
+    useStudio.setState((s) => ({
+      products: s.products.map((p) => {
+        const has = p.collectionIds.includes(id)
+        if (want.has(p.id) === has) return p
+        return { ...p, collectionIds: has ? p.collectionIds.filter((x) => x !== id) : [...p.collectionIds, id], updatedAt: at }
+      }),
+    }))
+    return n
   }
+
+  // One save per submit; the dialog closes once it's stored, so the toast says what happened.
+  const commit = useAsyncAction((image: ImageAsset) => write(image), {
+    error: "The collection couldn't be saved. This browser's storage may be full: try again, or use a different cover.",
+    onSuccess: (n) => {
+      toast.success(isNew ? "Collection created" : "Collection saved", { description: `${n}, ${plural(selected.length, "product")}.` })
+      onDone()
+    },
+  })
 
   function remove() {
     if (!collection) return
-    const studio = useStudio.getState()
-    for (const p of studio.products) {
-      if (p.collectionIds.includes(collection.id)) studio.upsertProduct({ ...p, collectionIds: p.collectionIds.filter((x) => x !== collection.id) })
-    }
+    useStudio.setState((s) => ({ products: s.products.map((p) => (p.collectionIds.includes(collection.id) ? { ...p, collectionIds: p.collectionIds.filter((x) => x !== collection.id) } : p)) }))
     useCatalog.getState().removeCollection(collection.id)
     toast.success("Collection deleted", { description: "Its products are still in your catalogue." })
     onDone()
@@ -225,8 +252,8 @@ function CollectionForm({ collection, collections, brandId, onDone }: { collecti
           <Button type="button" variant="destructive" onClick={() => setConfirmDelete(true)}><Trash2 /> Delete</Button>
         ) : <span className="hidden sm:block" />}
         <div className="flex flex-col-reverse gap-2 sm:flex-row">
-          <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
-          <Button type="submit" variant="primary">{isNew ? "Create collection" : "Save collection"}</Button>
+          <Button type="button" variant="secondary" onClick={onDone} disabled={commit.pending}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={commit.pending}>{isNew ? "Create collection" : "Save collection"}</Button>
         </div>
       </DialogFooter>
 
@@ -235,9 +262,10 @@ function CollectionForm({ collection, collections, brandId, onDone }: { collecti
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           title={`Delete ${collection.name}?`}
-          body="The collection is removed from your storefront. Its products stay in your catalogue."
+          body="It's removed from Studio and your storefront design. Its products stay in your catalogue."
           confirmLabel="Delete collection"
           onConfirm={remove}
+          returnFocus={returnFocus}
         />
       ) : null}
     </form>

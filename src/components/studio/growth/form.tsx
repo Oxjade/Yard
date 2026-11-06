@@ -5,7 +5,9 @@ import { motion } from "motion/react"
 import { CheckIcon as Check, MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { Label } from "@/components/ui/label"
-import { Skeleton } from "@/components/ui/skeleton"
+import { PageHeader } from "@/components/dashboard/page-header"
+import { Bone } from "@/components/feedback/skeletons"
+import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 /* ---------- Panel ---------- */
@@ -146,7 +148,7 @@ export function Segmented<T extends string>({
               on ? "text-ink" : "text-ink-2 hover:text-ink",
             )}
           >
-            {on ? <motion.span layoutId={`${id}-pill`} aria-hidden className="absolute inset-0 rounded-[5px] bg-purple" transition={{ type: "spring", stiffness: 500, damping: 40 }} /> : null}
+            {on ? <motion.span layoutId={`${id}-pill`} aria-hidden className="absolute inset-0 rounded-[5px] bg-purple" transition={spring.indicator} /> : null}
             <span className="relative inline-flex items-center gap-1.5">{o.label}</span>
           </RadioGroupPrimitive.Item>
         )
@@ -192,7 +194,7 @@ export function ChoiceCard({ value, className, children, disabled, "aria-label":
       )}
     >
       {children}
-      {on ? <motion.span layoutId={ctx.layoutId} aria-hidden className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-purple" transition={{ type: "spring", stiffness: 500, damping: 40 }} /> : null}
+      {on ? <motion.span layoutId={ctx.layoutId} aria-hidden className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-purple" transition={spring.indicator} /> : null}
     </RadioGroupPrimitive.Item>
   )
 }
@@ -283,44 +285,134 @@ export function NumberStepper({
 
 /* ---------- Loading ---------- */
 
-/** Mirrors a Studio list page (header, tiles, table) while saved data loads. */
-export function ListSkeleton({ tiles = 4, rows = 4 }: { tiles?: number; rows?: number }) {
+/**
+ * Mirrors a Studio list page (header, tiles, a DataTable) while saved data loads. With a
+ * title the real header renders, so the route's loading state and the page line up exactly.
+ */
+export function ListSkeleton({ tiles = 4, rows = 4, title, description, tabs = 3 }: { tiles?: number; rows?: number; title?: string; description?: string; tabs?: number }) {
   return (
-    <div className="grid gap-6" aria-busy="true" aria-label="Loading">
-      <div className="border-b border-line-soft pb-5">
-        <Skeleton className="h-7 w-40 bg-card" />
-        <Skeleton className="mt-2 h-4 w-72 max-w-full bg-card" />
-      </div>
+    <div className="grid gap-6" role="status" aria-label="Loading">
+      {title ? (
+        <PageHeader title={title} description={description} actions={<Bone className="h-8 w-36" />}>
+          <Bone className="mt-3 h-6 w-64 max-w-full" />
+        </PageHeader>
+      ) : (
+        <div className="border-b border-line-soft pb-5">
+          <Bone className="h-7 w-40" />
+          <Bone className="mt-2 h-4 w-72 max-w-full" />
+        </div>
+      )}
       {tiles ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className={cn("grid grid-cols-2 gap-3", tiles === 5 ? "md:grid-cols-3 xl:grid-cols-5" : "md:grid-cols-4")}>
           {Array.from({ length: tiles }, (_, i) => (
-            <Skeleton key={i} className="h-[108px] rounded-lg bg-card" />
+            <div key={i} className="h-[106px] rounded-lg border border-line-soft bg-card p-4">
+              <Bone className="h-3 w-20" />
+              <Bone className="mt-3 h-7 w-16" />
+              <Bone className="mt-2 h-3 w-24" />
+            </div>
           ))}
         </div>
       ) : null}
-      <div className="grid gap-2 rounded-lg border border-line-soft bg-card p-4">
-        {Array.from({ length: rows }, (_, i) => (
-          <Skeleton key={i} className="h-12 bg-surface" />
-        ))}
+      <div className="grid gap-4">
+        {tabs ? (
+          <div className="flex gap-1 border-b border-line-soft">
+            {Array.from({ length: tabs }, (_, i) => (
+              <div key={i} className="flex h-10 items-center px-3">
+                <Bone className="h-3.5 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="overflow-hidden rounded-lg border border-line-soft bg-card">
+          <div className="flex gap-4 border-b border-line-soft bg-[#111111] px-4 py-3">
+            {[0, 1, 2, 3].map((i) => (
+              <Bone key={i} className={cn("h-3 flex-1", i > 1 && "hidden md:block")} />
+            ))}
+          </div>
+          {Array.from({ length: rows }, (_, i) => (
+            <div key={i} className="flex h-[68px] items-center gap-3 border-b border-line-soft px-4 last:border-0">
+              <Bone className="size-11 shrink-0" />
+              <Bone className="h-3.5 max-w-48 flex-1" />
+              <Bone className="ml-auto hidden h-5 w-20 md:block" />
+            </div>
+          ))}
+          <div className="flex items-center justify-between border-t border-line-soft px-4 py-3">
+            <Bone className="h-3 w-20" />
+            <Bone className="h-6 w-28" />
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-/** Mirrors an editor page (header, form column, preview column). */
-export function EditorSkeleton() {
+/** Mirrors an editor page (back link, header, form column, preview column). */
+export function EditorSkeleton({ aside = true }: { aside?: boolean }) {
   return (
-    <div className="grid gap-6" aria-busy="true" aria-label="Loading">
-      <div className="border-b border-line-soft pb-5">
-        <Skeleton className="h-7 w-48 bg-card" />
-        <Skeleton className="mt-2 h-4 w-80 max-w-full bg-card" />
-      </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="grid gap-6">
-          <Skeleton className="h-48 rounded-lg bg-card" />
-          <Skeleton className="h-64 rounded-lg bg-card" />
+    <div className="grid gap-6" role="status" aria-label="Loading">
+      <div className="grid gap-2">
+        <Bone className="h-3 w-16" />
+        <div className="flex flex-col gap-4 border-b border-line-soft pb-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <Bone className="h-7 w-48" />
+            <Bone className="mt-2 h-4 w-80 max-w-full" />
+          </div>
+          <Bone className="h-8 w-56" />
         </div>
-        <Skeleton className="hidden h-[460px] rounded-lg bg-card xl:block" />
+      </div>
+      <div className={cn("grid gap-6", aside && "xl:grid-cols-[minmax(0,1fr)_380px]")}>
+        <div className="grid gap-6">
+          <div className="h-48 rounded-lg border border-line-soft bg-card p-4 md:p-5">
+            <Bone className="h-4 w-24" />
+            <Bone className="mt-2 h-3 w-64 max-w-full" />
+            <Bone className="mt-5 h-10 w-full" />
+            <Bone className="mt-4 h-16 w-full" />
+          </div>
+          <div className="h-64 rounded-lg border border-line-soft bg-card p-4 md:p-5">
+            <Bone className="h-4 w-28" />
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              {[0, 1, 2, 3].map((i) => (
+                <Bone key={i} className="h-14" />
+              ))}
+            </div>
+          </div>
+        </div>
+        {aside ? <Bone className="hidden h-[460px] rounded-lg xl:block" /> : null}
+      </div>
+    </div>
+  )
+}
+
+/** Mirrors the campaign wizard: step list on the left, the step panel on the right. */
+export function WizardSkeleton() {
+  return (
+    <div className="grid gap-6" role="status" aria-label="Loading">
+      <div className="grid gap-2">
+        <Bone className="h-3 w-20" />
+        <div className="border-b border-line-soft pb-5">
+          <Bone className="h-7 w-52" />
+          <Bone className="mt-2 h-4 w-96 max-w-full" />
+        </div>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="hidden gap-1 lg:grid lg:content-start">
+          {Array.from({ length: 10 }, (_, i) => (
+            <Bone key={i} className="h-10" />
+          ))}
+        </div>
+        <div className="grid content-start gap-6">
+          <Bone className="h-10 lg:hidden" />
+          <div className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
+            <Bone className="h-4 w-36" />
+            <Bone className="mt-2 h-3 w-72 max-w-full" />
+            <div className="mt-5 grid gap-2 md:grid-cols-2">
+              {Array.from({ length: 6 }, (_, i) => (
+                <Bone key={i} className="h-28" />
+              ))}
+            </div>
+          </div>
+          <Bone className="h-12" />
+        </div>
       </div>
     </div>
   )

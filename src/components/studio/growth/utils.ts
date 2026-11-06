@@ -156,9 +156,15 @@ export function studioDropStatus(drop: Drop, meta: DropMeta | undefined, now: nu
   return phase === "upcoming" ? "scheduled" : phase
 }
 
-/** Notify-me sign-ups. Sample numbers in the frontend phase, stable per drop. */
+/** Drops created in this browser. The marketplace reads the sample catalogue, so no shopper has seen them. */
+export const isLocalDrop = (drop: Pick<Drop, "id">) => /^d_local_/.test(drop.id)
+
+/**
+ * Notify-me sign-ups. Sample numbers for the seeded drops, stable per drop. A drop made in this
+ * browser has none: it isn't in the marketplace until the catalogue backend is connected.
+ */
 export function notifyCount(drop: Drop, status: StudioDropStatus, followers: number) {
-  if (status === "draft") return 0
+  if (status === "draft" || isLocalDrop(drop)) return 0
   const base = Math.round(followers * (0.004 + randInt(`notify-${drop.id}`, 0, 100) / 10_000))
   return Math.max(12, base + randInt(`notify-extra-${drop.id}`, 0, 140))
 }
@@ -182,7 +188,7 @@ export const promotionStatusMeta: Record<PromotionStatus, { label: string; tone:
   active: { label: "Active", tone: "info" },
   scheduled: { label: "Scheduled", tone: "info" },
   paused: { label: "Paused", tone: "muted" },
-  expired: { label: "Expired", tone: "muted" },
+  expired: { label: "Ended", tone: "muted" },
   "used-up": { label: "Limit reached", tone: "muted" },
 }
 

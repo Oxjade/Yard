@@ -56,7 +56,7 @@ export function StatusTabs<T extends string>({
               tabIndex={on ? 0 : -1}
               onClick={() => onChange(t.value)}
               onKeyDown={(e) => onKeyDown(e, i)}
-              className={cn("relative inline-flex h-10 items-center gap-2 rounded-t-md px-3 text-sm outline-none transition-colors focus-visible:bg-white/[0.04]", on ? "text-ink" : "text-ink-2 hover:text-ink")}
+              className={cn("relative inline-flex h-10 items-center gap-2 rounded-t-md px-3 text-sm outline-none transition-colors focus-visible:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-inset", on ? "text-ink" : "text-ink-2 hover:text-ink")}
             >
               {t.label}
               {t.count !== undefined ? <span className={cn("rounded-[4px] px-1.5 text-[11px] leading-4 tabular", on ? "bg-white/10 text-ink" : "bg-white/[0.05] text-ink-3")}>{t.count}</span> : null}

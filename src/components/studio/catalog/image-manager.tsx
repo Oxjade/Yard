@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { motion } from "motion/react"
 import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { ImageAsset } from "@/lib/data/types"
 import { cn } from "@/lib/utils"
-import { FieldMessage, Panel } from "./fields"
+import { FieldMessage, Panel, useReturnFocus } from "./fields"
 import { MAX_IMAGES } from "./utils"
 
 export type FormImage = ImageAsset & { key: string; processing?: boolean }
@@ -100,9 +99,9 @@ export function ImageManager({
       setUploadError(bad)
       return
     }
-    setUploadError(null)
     const take = files.slice(0, Math.max(0, left))
-    if (files.length > take.length) toast(`Only ${MAX_IMAGES} photos fit`, { description: take.length ? `Added the first ${take.length}.` : "Remove a photo to add another." })
+    // Said next to the photos, where the change shows: no toast.
+    setUploadError(files.length > take.length ? (take.length ? `Only ${MAX_IMAGES} photos fit, so the first ${take.length} were added.` : `You have ${MAX_IMAGES} photos. Remove one to add another.`) : null)
     if (!take.length) return
 
     // Instant preview from an object URL, then swap in the compressed copy when it's ready.
@@ -126,7 +125,6 @@ export function ImageManager({
           objectUrls.current.delete(item.src)
         })
     }
-    toast.success(take.length === 1 ? "Photo added" : `${take.length} photos added`)
   }
 
   function move(from: number, to: number) {
@@ -161,7 +159,7 @@ export function ImageManager({
     <Panel
       id="photos-panel"
       title="Photos"
-      description="The first photo is the cover in your storefront, the marketplace and search. Drag to reorder."
+      description="The first photo is the cover. Drag to reorder."
       action={<span className="text-xs whitespace-nowrap text-ink-3 tabular">{images.length}/{MAX_IMAGES}</span>}
     >
       <div
@@ -179,14 +177,15 @@ export function ImageManager({
           setFileOver(false)
           addFiles(e.dataTransfer.files)
         }}
-        className={cn("grid grid-cols-3 gap-2 rounded-lg transition-[box-shadow] sm:grid-cols-4", fileOver && "ring-2 ring-violet ring-offset-4 ring-offset-card")}
+        // Two across on phones, so each photo's three 40px controls fit inside it.
+        className={cn("grid grid-cols-2 gap-2 rounded-lg transition-[box-shadow] sm:grid-cols-4", fileOver && "ring-2 ring-violet ring-offset-4 ring-offset-card")}
       >
         {images.map((im, i) => (
           <motion.div
             layout
             key={im.key}
             transition={{ type: "spring", stiffness: 500, damping: 42 }}
-            className={cn("relative aspect-[4/5]", i === 0 && "col-span-2 row-span-2")}
+            className={cn("relative aspect-[4/5]", i === 0 && "sm:col-span-2 sm:row-span-2")}
           >
             <div
               draggable={!im.processing}
@@ -218,7 +217,7 @@ export function ImageManager({
                 overKey === im.key && dragKey !== im.key && "ring-2 ring-violet",
               )}
             >
-              <Image src={im.src} alt={im.alt || `${name}, photo ${i + 1}`} fill sizes={i === 0 ? "(min-width: 1024px) 360px, 66vw" : "(min-width: 1024px) 170px, 33vw"} loading={i === 0 ? "eager" : undefined} className="pointer-events-none object-cover" />
+              <Image src={im.src} alt={im.alt || `${name}, photo ${i + 1}`} fill sizes={i === 0 ? "(min-width: 1024px) 360px, 50vw" : "(min-width: 1024px) 170px, (min-width: 640px) 25vw, 50vw"} loading={i === 0 ? "eager" : undefined} className="pointer-events-none object-cover" />
               {im.processing ? (
                 <span className="absolute inset-0 flex items-center justify-center bg-obsidian/50">
                   <Loader2 className="size-5 animate-spin text-ink" aria-label="Preparing photo" />
@@ -227,16 +226,16 @@ export function ImageManager({
               {i === 0 ? <span className="glass absolute top-2 left-2 rounded-[4px] px-1.5 py-0.5 text-[10px] text-ink">Cover</span> : null}
               <div className="absolute right-1.5 bottom-1.5 flex gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100">
                 {i > 0 ? (
-                  <Button type="button" variant="glass" size="icon-xs" aria-label={i === 1 ? `Make photo ${i + 1} the cover` : `Move photo ${i + 1} earlier`} onClick={() => move(i, i - 1)}>
+                  <Button type="button" variant="glass" size="icon-xs" className="size-10 md:size-7" aria-label={i === 1 ? `Make photo ${i + 1} the cover` : `Move photo ${i + 1} earlier`} onClick={() => move(i, i - 1)}>
                     <ArrowLeft />
                   </Button>
                 ) : null}
                 {i < images.length - 1 ? (
-                  <Button type="button" variant="glass" size="icon-xs" aria-label={`Move photo ${i + 1} later`} onClick={() => move(i, i + 1)}>
+                  <Button type="button" variant="glass" size="icon-xs" className="size-10 md:size-7" aria-label={`Move photo ${i + 1} later`} onClick={() => move(i, i + 1)}>
                     <ArrowRight />
                   </Button>
                 ) : null}
-                <Button type="button" variant="glass" size="icon-xs" aria-label={`Remove photo ${i + 1}`} onClick={() => remove(im.key)}>
+                <Button type="button" variant="glass" size="icon-xs" className="size-10 md:size-7" aria-label={`Remove photo ${i + 1}`} onClick={() => remove(im.key)}>
                   <X />
                 </Button>
               </div>
@@ -252,7 +251,7 @@ export function ImageManager({
             onClick={() => input.current?.click()}
             className={cn(
               "flex aspect-[4/5] flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-line bg-surface/40 px-2 text-center text-ink-2 outline-none transition-colors hover:border-violet/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-violet",
-              images.length === 0 && "col-span-3 aspect-auto py-10 sm:col-span-4",
+              images.length === 0 && "col-span-2 aspect-auto py-10 sm:col-span-4",
               error && "border-danger/70",
             )}
           >
@@ -277,7 +276,7 @@ export function ImageManager({
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <FieldMessage id="photos" error={uploadError ?? error} hint="Portrait 4:5 works best. Use the arrows or drag to reorder." />
-        <Button type="button" variant="ghost" size="sm" className="-mr-2" disabled={left === 0} onClick={() => setLibraryOpen(true)}>
+        <Button type="button" variant="ghost" size="sm" className="-mr-2 h-10 md:h-8" disabled={left === 0} onClick={() => setLibraryOpen(true)}>
           <ImagePlus /> Choose from your photos
         </Button>
       </div>
@@ -289,7 +288,7 @@ export function ImageManager({
         slots={left}
         onAdd={(list) => {
           onChange((prev) => [...prev, ...toFormImages(list.map((im) => ({ ...im, alt: "" })))].slice(0, MAX_IMAGES))
-          toast.success(list.length === 1 ? "Photo added" : `${list.length} photos added`)
+          setUploadError(null)
         }}
       />
     </Panel>
@@ -312,20 +311,22 @@ function PhotoLibrary({
   onAdd: (list: ImageAsset[]) => void
 }) {
   const [picked, setPicked] = useState<string[]>([])
+  // Back to "Choose from your photos", or to the photos when every slot is now full.
+  const onCloseAutoFocus = useReturnFocus(open, () => document.getElementById("photos") ?? document.querySelector<HTMLElement>("#photos-panel button"))
 
   function toggle(src: string) {
     setPicked((p) => (p.includes(src) ? p.filter((s) => s !== src) : p.length >= slots ? p : [...p, src]))
   }
 
+  /** Every way out (Escape, the close button, Cancel) clears the picks. */
+  function setOpen(o: boolean) {
+    onOpenChange(o)
+    if (!o) setPicked([])
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        onOpenChange(o)
-        if (!o) setPicked([])
-      }}
-    >
-      <DialogContent className="flex max-h-[min(720px,calc(100dvh-2rem))] flex-col sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="flex max-h-[min(720px,calc(100dvh-2rem))] flex-col sm:max-w-2xl" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Your photos</DialogTitle>
           <DialogDescription className="text-ink-2">Photos from your products, collections and drops. Pick up to {slots}.</DialogDescription>
@@ -358,14 +359,13 @@ function PhotoLibrary({
         </div>
         <DialogFooter className="sm:items-center">
           <p className="mr-auto hidden text-xs text-ink-3 sm:block tabular">{picked.length} selected</p>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
           <Button
             variant="primary"
             disabled={!picked.length}
             onClick={() => {
               onAdd(picked.map((src) => photos.find((p) => p.src === src)!).filter(Boolean))
-              setPicked([])
-              onOpenChange(false)
+              setOpen(false)
             }}
           >
             {picked.length > 1 ? `Add ${picked.length} photos` : "Add photo"}

@@ -1,9 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { PercentIcon as Percent, TrashIcon as Trash2, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
-import { toast } from "sonner"
+import { CheckIcon as Check, PercentIcon as Percent, TrashIcon as Trash2, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { InfoTip } from "@/components/feedback/info-tip"
 import { Button } from "@/components/ui/button"
@@ -17,14 +16,15 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { countries, currencies, shippingRatesUsd, type ShippingZone } from "@/config/markets"
 import { site } from "@/config/site"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { convert, formatMoney } from "@/lib/money"
-import { spring } from "@/lib/motion"
+import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { EMAIL_RE, invitableRoles, parseAmount, roleMeta, toInput } from "./settings-model"
 import { SaveRow } from "./settings-parts"
 import { useBrandSettings, type ReturnsSettings, type TeamMember, type TeamRole } from "./settings-store"
 import { Field, Panel, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
-import { Initials } from "./shared"
+import { Initials, useFocusReturn } from "./shared"
 
 /* ---------- Shipping ---------- */
 
@@ -87,8 +87,14 @@ export function ShippingSection() {
     setForm((f) => ({ ...f, zones: f.zones.map((z, j) => (j === i ? { ...z, ...patch } : z)) }))
   }
 
+  const save = useAsyncAction((next: Parameters<typeof saveShipping>[0]) => {
+    saveShipping(next)
+    setSubmitted(false)
+  })
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!dirty) return
     setSubmitted(true)
     if (invalid) {
       const badZone = zoneErrors.findIndex((z) => z.standard || z.express)
@@ -104,14 +110,11 @@ export function ShippingSection() {
       if (target) document.getElementById(target)?.focus()
       return
     }
-    saveShipping({
+    void save.run({
       processingDays: [min, max],
       zones: form.zones.map((z) => ({ zone: z.zone, enabled: z.enabled, standard: parseAmount(z.standard, cur) ?? 0, express: z.express.trim() ? parseAmount(z.express, cur) : null })),
       freeShipping: { enabled: form.freeEnabled, threshold: parseAmount(form.threshold, cur) ?? 0 },
     })
-    setSubmitted(false)
-    // Settings keeps its own copy until the backend exists; say exactly where the change shows.
-    toast.success("Shipping saved in Settings", { description: `Ship-by dates on your orders now use ${min}–${max} business days. Checkout and product pages switch to these rates and times once the backend is connected.` })
   }
 
   return (
@@ -192,6 +195,9 @@ export function ShippingSection() {
             setSubmitted(false)
           }}
           saveLabel="Save shipping"
+          pending={save.pending}
+          succeeded={save.succeeded}
+          note={save.succeeded ? "Ship-by dates on your orders use it now." : undefined}
         />
       </form>
     </Panel>
@@ -212,23 +218,21 @@ export function ReturnsSection() {
   const error = form.accepts && len < 20 ? "Describe the condition items must be in (20 characters or more)." : len > 600 ? "Keep it to 600 characters." : undefined
   const shown = submitted ? error : undefined
 
+  const save = useAsyncAction((next: ReturnsSettings) => {
+    saveReturns(next)
+    setForm(next)
+    setSubmitted(false)
+  })
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!dirty) return
     setSubmitted(true)
     if (error) {
       document.getElementById("returns-conditions")?.focus()
       return
     }
-    const next = { ...form, conditions: form.conditions.trim() }
-    saveReturns(next)
-    setForm(next)
-    setSubmitted(false)
-    // Product pages and checkout read the brand profile until the backend exists.
-    toast.success("Returns policy saved in Settings", {
-      description: next.accepts
-        ? `${next.windowDays}-day returns. Product pages and checkout show it once the backend is connected.`
-        : "Final sale, except faulty or wrong items. Product pages and checkout show it once the backend is connected.",
-    })
+    void save.run({ ...form, conditions: form.conditions.trim() })
   }
 
   return (
@@ -244,7 +248,7 @@ export function ReturnsSection() {
 
         <AnimatePresence initial={false}>
           {form.accepts ? (
-            <motion.div key="policy" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
+            <motion.div key="policy" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4, transition: { duration: 0.12 } }} transition={{ duration: duration.dropdown, ease: ease.out }}>
               <div className="grid gap-5 md:grid-cols-2">
                 <Field id="returns-window" label="Return window" hint="Counted from delivery. Payouts are released after it closes.">
                   <Select value={String(form.windowDays)} onValueChange={(v) => set("windowDays", Number(v))}>
@@ -297,6 +301,8 @@ export function ReturnsSection() {
             setSubmitted(false)
           }}
           saveLabel="Save returns"
+          pending={save.pending}
+          succeeded={save.succeeded}
         />
       </form>
     </Panel>
@@ -314,6 +320,26 @@ export function TeamSection() {
   const [role, setInviteRole] = useState<TeamRole | "">("")
   const [submitted, setSubmitted] = useState(false)
   const [removing, setRemoving] = useState<TeamMember | null>(null)
+  // The dialog keeps the member while it animates closed.
+  const [lastRemoving, setLastRemoving] = useState<TeamMember | null>(null)
+  if (removing && removing !== lastRemoving) setLastRemoving(removing)
+  const asked = removing ?? lastRemoving
+  // Escape returns to the row's remove button; once the row is gone, to the invite field.
+  const removeFocus = useFocusReturn(() => document.getElementById("invite-email"))
+  // A role change saves at once; the row says so, with a way back.
+  const [roleSaved, setRoleSaved] = useState<{ id: string; from: TeamRole } | null>(null)
+  useEffect(() => {
+    if (!roleSaved) return
+    const t = window.setTimeout(() => setRoleSaved(null), 6000)
+    return () => window.clearTimeout(t)
+  }, [roleSaved])
+
+  const sendInvite = useAsyncAction((to: string, as: TeamRole) => {
+    invite(to, as)
+    setEmail("")
+    setInviteRole("")
+    setSubmitted(false)
+  })
 
   const clean = email.trim().toLowerCase()
   const errors = {
@@ -329,15 +355,11 @@ export function TeamSection() {
       document.getElementById(errors.email ? "invite-email" : "invite-role")?.focus()
       return
     }
-    invite(clean, role as TeamRole)
-    setEmail("")
-    setInviteRole("")
-    setSubmitted(false)
-    toast.success(`Invite created for ${clean}`, { description: `They join as ${roleMeta[role as TeamRole].label.toLowerCase()}. The email goes out once the backend is connected.` })
+    void sendInvite.run(clean, role as TeamRole)
   }
 
   return (
-    <Panel id="team" title="Team" description="Invite people to work in Studio. Each role only sees what it needs.">
+    <Panel id="team" title="Team" description="Invite people to work in Studio. Each role only sees what it needs. Invites are saved here; the invite email isn't sent in this development build.">
       <ul className="divide-y divide-line-soft rounded-md border border-line-soft">
         <AnimatePresence initial={false}>
           {team.map((m) => (
@@ -345,7 +367,7 @@ export function TeamSection() {
               <Initials name={m.name ?? m.email} />
               <span className="grid min-w-[10rem] flex-1 gap-0.5">
                 <span className="truncate text-sm text-ink">{m.name ?? m.email}</span>
-                <span className="truncate text-xs text-ink-3">{m.name ? m.email : "Invite pending"}</span>
+                <span className="truncate text-xs text-ink-3">{m.name ? m.email : "Invite saved. The email isn't sent in this development build."}</span>
               </span>
               <span className="ml-11 flex items-center gap-2 sm:ml-0">
                 {m.status === "invited" ? <StatusBadge tone="muted">Invited</StatusBadge> : null}
@@ -355,8 +377,9 @@ export function TeamSection() {
                   <Select
                     value={m.role}
                     onValueChange={(v) => {
+                      if (v === m.role) return
+                      setRoleSaved({ id: m.id, from: m.role })
                       setRole(m.id, v as TeamRole)
-                      toast.success(`${m.name ?? m.email} is now ${roleMeta[v as TeamRole].label.toLowerCase()}`, { description: roleMeta[v as TeamRole].can })
                     }}
                   >
                     <SelectTrigger aria-label={`Role for ${m.name ?? m.email}`} className={cn(selectClass, "w-36")}>
@@ -376,6 +399,18 @@ export function TeamSection() {
                     <Trash2 />
                   </Button>
                 )}
+              </span>
+              {/* Its own line under the row, so the role control never moves under the cursor. Polite, so
+                  screen readers hear the save without losing their place. */}
+              <span aria-live="polite" className="basis-full pl-11 text-xs empty:hidden">
+                {roleSaved?.id === m.id ? (
+                  <span className="inline-flex items-center gap-2 text-ink-2">
+                    <Check className="size-3.5 text-violet" aria-hidden /> Role saved
+                    <button type="button" className="rounded-sm text-violet underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-violet" onClick={() => { setRole(m.id, roleSaved.from); setRoleSaved(null) }}>
+                      Undo
+                    </button>
+                  </span>
+                ) : null}
               </span>
             </motion.li>
           ))}
@@ -414,32 +449,31 @@ export function TeamSection() {
         {/* An empty label row lines the button up with the inputs beside it. */}
         <div className="grid gap-1.5">
           <span aria-hidden className="hidden min-h-4 md:block" />
-          <Button type="submit" size="sm" variant="secondary" className="h-11 md:h-9">
-            <UserPlus /> Send invite
+          <Button type="submit" size="sm" variant="secondary" className="h-11 md:h-9" loading={sendInvite.pending} success={sendInvite.succeeded}>
+            <UserPlus /> Add invite
           </Button>
         </div>
       </form>
       {role ? <p className="mt-2 text-xs text-ink-3">{roleMeta[role].label}: {roleMeta[role].can.toLowerCase()}.</p> : null}
 
       <Dialog open={!!removing} onOpenChange={(v) => (!v ? setRemoving(null) : undefined)}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[420px]" {...removeFocus}>
           <DialogHeader>
-            <DialogTitle>{removing?.status === "invited" ? "Cancel this invite?" : `Remove ${removing?.name ?? removing?.email}?`}</DialogTitle>
-            <DialogDescription>{removing?.status === "invited" ? `The invite link for ${removing?.email} stops working.` : "They lose access to Studio straight away. Their past actions stay in the order timelines."}</DialogDescription>
+            <DialogTitle>{asked?.status === "invited" ? "Cancel this invite?" : `Remove ${asked?.name ?? asked?.email}?`}</DialogTitle>
+            <DialogDescription>{asked?.status === "invited" ? `The invite for ${asked?.email} is removed. No email was sent in this development build.` : "They're taken off your team. Their past actions stay in the order timelines."}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setRemoving(null)}>Keep</Button>
             <Button
               type="button"
-              variant="destructive"
+              variant="destructive-solid"
               onClick={() => {
                 if (!removing) return
                 removeMember(removing.id)
-                toast.success(removing.status === "invited" ? "Invite cancelled" : `${removing.name ?? removing.email} removed`)
                 setRemoving(null)
               }}
             >
-              {removing?.status === "invited" ? "Cancel invite" : "Remove"}
+              {asked?.status === "invited" ? "Cancel invite" : "Remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

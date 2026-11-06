@@ -2,31 +2,49 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { WarningIcon as AlertTriangle, ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, StackIcon as PackageSearch, MagnifyingGlassIcon as Search, MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
+import { AnimatePresence, motion } from "motion/react"
+import { WarningIcon as AlertTriangle, ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, PencilSimpleIcon as Pencil, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
+import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
-import { ListSkeleton, TableSkeleton } from "@/components/feedback/skeletons"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
+import { InfoTip } from "@/components/feedback/info-tip"
+import { ListSkeleton } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
 import { availableStock, variantLabel } from "@/lib/data/products"
 import type { Product, Variant } from "@/lib/data/types"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { AdjustStockDialog, reasonLabel } from "./adjust-dialog"
-import { Swatch, Thumb, VariantStatus } from "./parts"
+import { selectedTabFor } from "./fields"
+import { inventoryCopy } from "./page-copy"
+import { CatalogueNote, Swatch, Thumb, VariantStatus } from "./parts"
 import { StatusTabs } from "./status-tabs"
 import { useCatalogReady } from "./store"
 import { formatDateTime, LOW_VARIANT_STOCK, plural, soldByVariant, variantLevel, type StockLevel } from "./utils"
 
 type Filter = "all" | "low" | "out"
-type Row = { product: Product; variant: Variant; label: string; hex?: string; available: number; sold: number; level: StockLevel }
+type Row = { id: string; product: Product; variant: Variant; label: string; hex?: string; available: number; sold: number; level: StockLevel }
+
+const levelRank: Record<StockLevel, number> = { out: 0, low: 1, in: 2 }
+
+/** A number that fades in when it changes (after an adjustment), and not on first paint. */
+function Changing({ value, className }: { value: number; className?: string }) {
+  return (
+    <AnimatePresence initial={false} mode="popLayout">
+      <motion.span key={value} initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className={cn("inline-block tabular", className)}>
+        {value.toLocaleString("en-US")}
+      </motion.span>
+    </AnimatePresence>
+  )
+}
 
 export function InventoryView() {
   const ready = useCatalogReady()
+  const router = useRouter()
   const products = useStudio((s) => s.products)
   const log = useStudio((s) => s.inventoryLog)
   const [filter, setFilter] = useState<Filter>("all")
-  const [q, setQ] = useState("")
   const [target, setTarget] = useState<{ productId: string; variantId: string } | null>(null)
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   const [shown, setShown] = useState(10)
@@ -40,31 +58,14 @@ export function InventoryView() {
           const colours = new Map(p.options.flatMap((o) => (o.name === "Colour" ? o.values.map((c) => [c.name, c.hex] as const) : [])))
           return p.variants.map((v) => {
             const available = availableStock(v)
-            return { product: p, variant: v, label: variantLabel(v.options) || "Default variant", hex: v.options.Colour ? colours.get(v.options.Colour) : undefined, available, sold: sold.get(v.id) ?? 0, level: variantLevel(available) }
+            return { id: v.id, product: p, variant: v, label: variantLabel(v.options) || "Default variant", hex: v.options.Colour ? colours.get(v.options.Colour) : undefined, available, sold: sold.get(v.id) ?? 0, level: variantLevel(available) }
           })
         }),
     [products],
   )
 
   const counts = useMemo(() => ({ all: rows.length, low: rows.filter((r) => r.level === "low").length, out: rows.filter((r) => r.level === "out").length }), [rows])
-  const alerts = rows.filter((r) => r.available <= LOW_VARIANT_STOCK)
-
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase()
-    return rows
-      .filter((r) => filter === "all" || r.level === filter)
-      .filter((r) => !term || [r.product.name, r.label, r.variant.sku].join(" ").toLowerCase().includes(term))
-  }, [rows, filter, q])
-
-  const groups = useMemo(() => {
-    const map = new Map<string, { product: Product; rows: Row[]; total: number }>()
-    for (const r of filtered) {
-      const g = map.get(r.product.id) ?? { product: r.product, rows: [], total: rows.filter((x) => x.product.id === r.product.id).reduce((n, x) => n + x.available, 0) }
-      g.rows.push(r)
-      map.set(r.product.id, g)
-    }
-    return [...map.values()]
-  }, [filtered, rows])
+  const filtered = useMemo(() => rows.filter((r) => filter === "all" || r.level === filter), [rows, filter])
 
   const live = target ? products.find((p) => p.id === target.productId) : undefined
   const liveVariant = live?.variants.find((v) => v.id === target?.variantId)
@@ -73,166 +74,123 @@ export function InventoryView() {
   const history = historyFor ? log.filter((e) => e.variantId === historyFor) : log
   const historyRow = historyFor ? rows.find((r) => r.variant.id === historyFor) : undefined
 
-  function showHistory(variantId: string) {
+  function showHistory(variantId: string | null) {
     setHistoryFor(variantId)
     setShown(10)
-    requestAnimationFrame(() => document.getElementById("stock-history")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+    requestAnimationFrame(() => {
+      const el = document.getElementById("stock-history")
+      el?.scrollIntoView({ behavior: "smooth", block: "start" })
+      el?.focus({ preventScroll: true })
+    })
   }
 
-  const adjustButton = (r: Row, className?: string) => (
-    <Button type="button" size="xs" variant="secondary" className={className} onClick={() => setTarget({ productId: r.product.id, variantId: r.variant.id })} aria-label={`Adjust stock for ${r.product.name}, ${r.label}`}>
-      <SlidersHorizontal /> Adjust
-    </Button>
-  )
+  const adjust = (r: Row) => setTarget({ productId: r.product.id, variantId: r.variant.id })
 
-  let body: React.ReactNode
-  if (!ready)
-    body = (
-      // The shared skeleton brings its own card; -m-px lays its border over this one's.
-      <div className="-m-px">
-        <TableSkeleton rows={8} cols={6} />
-      </div>
-    )
-  else if (rows.length === 0)
-    body = (
-      <div className="p-4 md:p-5">
-        <EmptyState icon={PackageSearch} title="No stock to track yet" body="Add a product with its sizes and colours, and each variant shows up here." action={<Button asChild size="sm" variant="secondary"><Link href="/studio/products/new">Add product</Link></Button>} />
-      </div>
-    )
-  else if (filtered.length === 0)
-    body = (
-      <div className="p-4 md:p-5">
-        {q.trim() ? (
-          <EmptyState icon={SearchX} title="No variants match" body="Try a product name, a size or a SKU." action={<Button size="sm" variant="secondary" onClick={() => setQ("")}>Clear search</Button>} />
-        ) : (
-          <EmptyState
-            icon={PackageSearch}
-            title={filter === "out" ? "Nothing is out of stock" : "Nothing is running low"}
-            body={
-              filter === "out"
-                ? "Every variant has at least one unit available."
-                : counts.out
-                  ? `No variant is down to its last ${LOW_VARIANT_STOCK} units. Sold-out variants are under Out of stock.`
-                  : `Every variant has more than ${LOW_VARIANT_STOCK} units available.`
-            }
-            action={<Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all variants</Button>}
-          />
-        )}
-      </div>
-    )
-  else
-    body = (
-      <>
-        {/* Phones: one card per product, a compact line per variant */}
-        <ul className="divide-y divide-line-soft md:hidden">
-          {groups.map((g) => (
-            <li key={g.product.id} className="px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Thumb image={g.product.images[0]} size={40} />
-                <Link href={`/studio/products/${g.product.id}`} className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{g.product.name}</Link>
-                <span className="text-xs text-ink-3 tabular">{g.total} available</span>
-              </div>
-              <ul className="mt-2 grid gap-1">
-                {g.rows.map((r) => (
-                  <li key={r.variant.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md bg-surface/60 py-2.5 pr-2 pl-3">
-                    <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-ink"><Swatch hex={r.hex} /><span className="truncate">{r.label}</span></span>
-                    <span className="text-right text-[11px] whitespace-nowrap text-ink-3">
-                      <span className={cn("text-sm font-medium tabular", r.level === "in" ? "text-ink" : "text-acid")}>{r.available}</span> available
-                    </span>
-                    <span className="truncate text-[11px] text-ink-3 tabular">{r.variant.sku}</span>
-                    <span className="justify-self-end"><VariantStatus available={r.available} /></span>
-                    <span className="text-[11px] text-ink-3 tabular">{r.variant.reserved} reserved, {r.sold} sold in 30 days</span>
-                    <span className="flex justify-end gap-1">
-                      <Button type="button" size="icon-sm" variant="ghost" aria-label={`Stock history for ${r.product.name}, ${r.label}`} onClick={() => showHistory(r.variant.id)}><History /></Button>
-                      {adjustButton(r, "h-8")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
+  const columns: Column<Row>[] = [
+    {
+      key: "variant",
+      header: "Variant",
+      sortValue: (r) => `${r.product.name} ${r.label}`.toLowerCase(),
+      cell: (r) => (
+        <span className="flex min-w-0 items-center gap-3">
+          <Thumb image={r.product.images[0]} size={36} />
+          <span className="grid min-w-0 gap-0.5">
+            {/* Phones show whole names over two lines instead of cutting them off. */}
+            <Link href={`/studio/products/${r.product.id}`} className="line-clamp-2 rounded-sm text-[13px] font-medium break-words text-ink outline-none hover:text-violet focus-visible:ring-2 focus-visible:ring-violet sm:line-clamp-1">
+              {r.product.name}
+            </Link>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
+              <Swatch hex={r.hex} />
+              <span className="line-clamp-2 break-words sm:line-clamp-1">{r.label}</span>
+            </span>
+            <span className="truncate text-[11px] text-ink-3 tabular md:hidden">{r.variant.sku}</span>
+            {/* The Status column is hidden on phones: say low and out in words, not just acid. */}
+            {r.level !== "in" ? (
+              <span className="mt-0.5 sm:hidden">
+                <VariantStatus available={r.available} />
+              </span>
+            ) : null}
+          </span>
+        </span>
+      ),
+    },
+    { key: "sku", header: "SKU", hideBelow: "md", sortValue: (r) => r.variant.sku, cell: (r) => <span className="text-xs whitespace-nowrap text-ink-2 tabular">{r.variant.sku}</span> },
+    {
+      key: "available",
+      header: "Available",
+      align: "right",
+      sortValue: (r) => r.available,
+      cell: (r) => <Changing value={r.available} className={cn("font-medium", r.level === "in" ? "text-ink" : "text-acid")} />,
+    },
+    { key: "reserved", header: "Reserved", align: "right", hideBelow: "lg", sortValue: (r) => r.variant.reserved, cell: (r) => <Changing value={r.variant.reserved} className="text-ink-2" /> },
+    { key: "sold", header: "Sold, 30 days", align: "right", hideBelow: "lg", sortValue: (r) => r.sold, cell: (r) => <span className="text-ink-2">{r.sold}</span> },
+    { key: "status", header: "Status", hideBelow: "sm", sortValue: (r) => levelRank[r.level], cell: (r) => <VariantStatus available={r.available} /> },
+    {
+      key: "adjust",
+      header: "Adjust",
+      align: "right",
+      hideBelow: "sm",
+      cell: (r) => (
+        <Button type="button" size="xs" variant="secondary" onClick={() => adjust(r)} aria-label={`Adjust stock for ${r.product.name}, ${r.label}`}>
+          <SlidersHorizontal /> Adjust
+        </Button>
+      ),
+    },
+  ]
 
-        {/* Tablet and desktop: grouped by product */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="border-b border-line-soft bg-surface/60 text-xs text-ink-3">
-              <tr>
-                <th scope="col" className="px-4 py-2.5 font-normal md:px-5">Variant</th>
-                <th scope="col" className="px-3 py-2.5 font-normal">SKU</th>
-                <th scope="col" className="px-3 py-2.5 text-right font-normal">Available</th>
-                <th scope="col" className="px-3 py-2.5 text-right font-normal">Reserved</th>
-                <th scope="col" className="px-3 py-2.5 text-right font-normal">Sold, 30 days</th>
-                <th scope="col" className="px-3 py-2.5 font-normal">Status</th>
-                <th scope="col" className="px-4 py-2.5 text-right font-normal md:px-5"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            {groups.map((g) => (
-              <tbody key={g.product.id} className="divide-y divide-line-soft border-b border-line-soft last:border-b-0">
-                <tr className="bg-white/[0.015]">
-                  <th scope="rowgroup" colSpan={7} className="px-4 py-2.5 text-left font-normal md:px-5">
-                    <span className="flex items-center gap-3">
-                      <Thumb image={g.product.images[0]} size={32} />
-                      <Link href={`/studio/products/${g.product.id}`} className="truncate font-medium text-ink hover:text-violet">{g.product.name}</Link>
-                      <span className="text-xs text-ink-3 tabular">{plural(g.product.variants.length, "variant")}, {g.total} available</span>
-                    </span>
-                  </th>
-                </tr>
-                {g.rows.map((r) => (
-                  <tr key={r.variant.id} className="transition-colors hover:bg-white/[0.02]">
-                    <td className="py-3 pr-3 pl-4 text-ink-2 md:pl-16"><span className="flex items-center gap-1.5 whitespace-nowrap"><Swatch hex={r.hex} />{r.label}</span></td>
-                    <td className="px-3 py-3 text-xs whitespace-nowrap text-ink-2 tabular">{r.variant.sku}</td>
-                    <td className={cn("px-3 py-3 text-right font-medium tabular", r.level === "in" ? "text-ink" : "text-acid")}>{r.available}</td>
-                    <td className="px-3 py-3 text-right text-ink-2 tabular">{r.variant.reserved}</td>
-                    <td className="px-3 py-3 text-right text-ink-2 tabular">{r.sold}</td>
-                    <td className="px-3 py-3"><VariantStatus available={r.available} /></td>
-                    <td className="px-4 py-3 md:px-5">
-                      <span className="flex justify-end gap-1">
-                        <Button type="button" size="icon-xs" variant="ghost" aria-label={`Stock history for ${r.product.name}, ${r.label}`} onClick={() => showHistory(r.variant.id)}><History /></Button>
-                        {adjustButton(r)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            ))}
-          </table>
-        </div>
-      </>
-    )
+  const rowActions: RowAction<Row>[] = [
+    { label: "Adjust stock", icon: SlidersHorizontal, onSelect: adjust },
+    { label: "Stock history", icon: History, onSelect: (r) => showHistory(r.variant.id) },
+    { label: "Edit product", icon: Pencil, onSelect: (r) => router.push(`/studio/products/${r.product.id}`), separatorBefore: true },
+  ]
 
-  const outN = alerts.filter((r) => r.level === "out").length
-  const lowN = alerts.length - outN
+  const alerts = rows.filter((r) => r.level !== "in")
+  const outN = counts.out
+  const lowN = counts.low
+
+  const empty =
+    filter === "all"
+      ? { title: "No stock to track yet", body: "Add a product with its sizes and colours, and each variant shows up here.", action: <Button asChild size="sm" variant="secondary"><Link href="/studio/products/new">Add product</Link></Button> }
+      : {
+          title: filter === "out" ? "Nothing is out of stock" : "Nothing is running low",
+          body: filter === "out" ? "Every variant has at least one unit available." : `No variant is down to its last ${LOW_VARIANT_STOCK} units.`,
+          action: <Button size="sm" variant="secondary" onClick={() => setFilter("all")}>Show all variants</Button>,
+        }
 
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Inventory"
-        description="Stock for every size and colour you sell. Adjust a count when stock arrives, gets damaged or comes back."
+        title={inventoryCopy.title}
+        description={inventoryCopy.description}
         actions={
-          <Button size="sm" variant="secondary" onClick={() => document.getElementById("stock-history")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          <Button size="sm" variant="secondary" className="h-10 md:h-8" onClick={() => showHistory(null)}>
             <History /> Stock history
           </Button>
         }
       >
-        <SampleDataNote className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SampleDataNote />
+          <CatalogueNote>{inventoryCopy.note}</CatalogueNote>
+        </div>
       </PageHeader>
 
-      {ready && alerts.length ? (
-        <div role="status" className="flex flex-col gap-3 rounded-lg border border-acid/30 bg-acid/5 p-4 sm:flex-row sm:items-center">
-          <AlertTriangle className="size-4 shrink-0 text-acid" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-ink">{plural(alerts.length, "variant")} {alerts.length === 1 ? "needs" : "need"} restocking</p>
-            <p className="mt-0.5 text-xs text-ink-2">
-              {[outN ? `${outN} out of stock` : null, lowN ? `${lowN} with ${LOW_VARIANT_STOCK} or fewer left` : null].filter(Boolean).join(" and ")}. Shoppers can&apos;t buy what&apos;s out.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {outN ? <Button size="sm" variant="secondary" onClick={() => setFilter("out")}>Show out of stock</Button> : null}
-            {lowN ? <Button size="sm" variant="secondary" onClick={() => setFilter("low")}>Show low stock</Button> : null}
-          </div>
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {ready && alerts.length ? (
+          <motion.div key="alerts" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} role="status" className="flex flex-col gap-3 rounded-lg border border-acid/30 bg-acid/5 p-4 sm:flex-row sm:items-center">
+            <AlertTriangle className="size-4 shrink-0 text-acid" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-ink">{plural(alerts.length, "variant")} {alerts.length === 1 ? "needs" : "need"} restocking</p>
+              <p className="mt-0.5 text-xs text-ink-2">
+                {[outN ? `${outN} out of stock` : null, lowN ? `${lowN} with ${LOW_VARIANT_STOCK} or fewer left` : null].filter(Boolean).join(" and ")}. You get a notification when a variant crosses either line.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {outN ? <Button size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => setFilter("out")} disabled={filter === "out"}>Show out of stock</Button> : null}
+              {lowN ? <Button size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => setFilter("low")} disabled={filter === "low"}>Show low stock</Button> : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <div className="grid gap-4">
         <StatusTabs
@@ -247,32 +205,38 @@ export function InventoryView() {
             { value: "out", label: "Out of stock", count: ready ? counts.out : undefined },
           ]}
         />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <InputGroup className="h-11 sm:max-w-sm md:h-9">
-            <InputGroupAddon><Search className="text-ink-3" /></InputGroupAddon>
-            <InputGroupInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search product, size or SKU" aria-label="Search inventory" />
-            {q ? (
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setQ("")}><X /></InputGroupButton>
-              </InputGroupAddon>
-            ) : null}
-          </InputGroup>
-        </div>
-
-        <section id="stock-list" aria-label="Stock by variant" aria-busy={!ready} className="overflow-hidden rounded-lg border border-line-soft bg-card">
-          {body}
+        <section id="stock-list" aria-label="Stock by variant" aria-busy={!ready}>
+          <DataTable
+            label="Stock by variant"
+            rows={ready ? filtered : []}
+            columns={columns}
+            getId={(r) => r.id}
+            loading={!ready}
+            search={{ placeholder: "Search product, size or SKU", text: (r) => [r.product.name, r.label, r.variant.sku].join(" ") }}
+            toolbar={
+              <p className="flex items-center gap-1 text-xs text-ink-3 sm:ml-auto">
+                Available is on hand minus reserved
+                <InfoTip label="How available is counted">Units on hand minus units reserved for open orders. Archived products aren&apos;t listed. Sold in 30 days is sample data.</InfoTip>
+              </p>
+            }
+            rowActions={rowActions}
+            empty={empty}
+            density="dense"
+            minWidth={340}
+          />
         </section>
-        <p className="text-xs text-ink-3">Available is on hand minus units reserved for open orders. Archived products aren&apos;t listed.</p>
       </div>
 
-      <section id="stock-history" aria-labelledby="history-title" className="scroll-mt-20 rounded-lg border border-line-soft bg-card p-4 md:p-5">
+      <section id="stock-history" tabIndex={-1} aria-labelledby="history-title" className="scroll-mt-24 rounded-lg border border-line-soft bg-card p-4 outline-none md:p-5">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="history-title" className="text-sm font-medium text-ink">Stock history</h2>
-            <p className="mt-0.5 text-xs text-ink-2">Every adjustment, newest first.</p>
+            <p className="mt-0.5 text-xs text-ink-2">Every adjustment made in Studio, newest first.</p>
           </div>
+          {/* Announced, since picking "Stock history" from a row menu returns focus to that menu. */}
+          <p className="sr-only" aria-live="polite">{historyRow ? `Stock history filtered to ${historyRow.product.name}, ${historyRow.label}.` : ""}</p>
           {historyRow ? (
-            <button type="button" onClick={() => setHistoryFor(null)} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-purple/60 bg-purple/15 pr-1.5 pl-2.5 text-xs text-ink">
+            <button type="button" onClick={() => setHistoryFor(null)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-purple/60 bg-purple/15 pr-2 pl-3 text-xs text-ink transition-colors hover:bg-purple/25">
               {historyRow.product.name}, {historyRow.label}
               <X className="size-3.5" aria-hidden />
               <span className="sr-only">Show all history</span>
@@ -286,26 +250,28 @@ export function InventoryView() {
         ) : (
           <>
             <ul className="divide-y divide-line-soft">
-              {history.slice(0, shown).map((e) => {
-                const p = productById.get(e.productId)
-                const v = p?.variants.find((x) => x.id === e.variantId)
-                const up = e.delta > 0
-                return (
-                  <li key={e.id} className="flex items-start gap-3 py-3">
-                    <span className={cn("mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border", up ? "border-white/12 text-ink" : "border-white/10 text-ink-2")}>
-                      {up ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-                    </span>
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="text-sm text-ink">
-                        {reasonLabel[e.reason]} <span className="tabular">{up ? `+${e.delta}` : e.delta}</span>
+              <AnimatePresence initial={false}>
+                {history.slice(0, shown).map((e) => {
+                  const p = productById.get(e.productId)
+                  const v = p?.variants.find((x) => x.id === e.variantId)
+                  const up = e.delta > 0
+                  return (
+                    <motion.li key={e.id} layout="position" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-start gap-3 py-3">
+                      <span className={cn("mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border", up ? "border-white/12 text-ink" : "border-white/10 text-ink-2")}>
+                        {up ? <ArrowUpRight className="size-3.5" aria-hidden /> : <ArrowDownRight className="size-3.5" aria-hidden />}
                       </span>
-                      <span className="truncate text-xs text-ink-2">{p ? `${p.name}, ${v ? variantLabel(v.options) || "Default variant" : "removed variant"}` : "Deleted product"}</span>
-                      {e.note ? <span className="text-xs text-ink-3">{e.note}</span> : null}
-                    </span>
-                    <span className="shrink-0 text-xs whitespace-nowrap text-ink-3 tabular">{formatDateTime(e.at)}</span>
-                  </li>
-                )
-              })}
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className="text-sm text-ink">
+                          {reasonLabel[e.reason]} <span className="tabular">{up ? `+${e.delta}` : e.delta}</span>
+                        </span>
+                        <span className="truncate text-xs text-ink-2">{p ? `${p.name}, ${v ? variantLabel(v.options) || "Default variant" : "removed variant"}` : "Deleted product"}</span>
+                        {e.note ? <span className="text-xs text-ink-3">{e.note}</span> : null}
+                      </span>
+                      <span className="shrink-0 text-xs whitespace-nowrap text-ink-3 tabular">{formatDateTime(e.at)}</span>
+                    </motion.li>
+                  )
+                })}
+              </AnimatePresence>
             </ul>
             {history.length > shown ? (
               <Button type="button" variant="ghost" size="sm" className="mt-2 -ml-2" onClick={() => setShown((n) => n + 20)}>
@@ -316,7 +282,7 @@ export function InventoryView() {
         )}
       </section>
 
-      <AdjustStockDialog target={live && liveVariant ? { product: live, variant: liveVariant } : null} onOpenChange={(o) => !o && setTarget(null)} />
+      <AdjustStockDialog target={live && liveVariant ? { product: live, variant: liveVariant } : null} onOpenChange={(o) => !o && setTarget(null)} returnFocus={selectedTabFor("stock-list")} />
     </div>
   )
 }

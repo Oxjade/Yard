@@ -2,7 +2,6 @@ import { currencies } from "@/config/markets"
 import type { Brand, CategorySlug, ColourValue, ImageAsset, Product, ProductOption, ProductStatus, Variant } from "@/lib/data/types"
 import { variantLabel } from "@/lib/data/products"
 import { toFormImages, type FormImage } from "./image-manager"
-import type { ProductMeta } from "./store"
 import { autoSku, buildCombos, isWhole, MAX_VARIANTS, optionsKey, parseMoney, productIdFor, slugify, toLocalInput, toMajorInput } from "./utils"
 
 export type FormColour = { key: string; name: string; hex: string }
@@ -46,10 +45,10 @@ export type Errors = Record<string, string | undefined>
 let colourSeq = 0
 export const colourKey = () => `col-${++colourSeq}`
 
-export function fromProduct(p: Product, meta: ProductMeta | undefined, brand: Brand): ProductForm {
+export function fromProduct(p: Product, brand: Brand): ProductForm {
   const sizeOpt = p.options.find((o): o is Extract<ProductOption, { name: "Size" }> => o.name === "Size")
   const colourOpt = p.options.find((o): o is Extract<ProductOption, { name: "Colour" }> => o.name === "Colour")
-  const days = meta?.processingDays ?? brand.processingDays
+  const days = p.processingDays ?? brand.processingDays
   return {
     name: p.name,
     description: p.description,
@@ -68,7 +67,7 @@ export function fromProduct(p: Product, meta: ProductMeta | undefined, brand: Br
     processingMin: String(days[0]),
     processingMax: String(days[1]),
     status: p.status,
-    publishAt: meta?.publishAt ? toLocalInput(meta.publishAt) : "",
+    publishAt: p.publishAt ? toLocalInput(p.publishAt) : "",
   }
 }
 
@@ -99,6 +98,8 @@ export function emptyForm(brand: Brand): ProductForm {
 export function snapshot(f: ProductForm) {
   return JSON.stringify({
     ...f,
+    // A go-live time only counts while Scheduled: trying Scheduled and switching back isn't a change.
+    publishAt: f.status === "scheduled" ? f.publishAt : "",
     images: f.images.map((im) => im.src),
     colours: f.colours.map((c) => [c.name, c.hex]),
     variants: f.variants.map((v) => [v.key, v.sku, v.stock]),

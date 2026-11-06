@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { CheckIcon as Check, InfoIcon as Info, BankIcon as Landmark, CircleNotchIcon as Loader2, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
-import { toast } from "sonner"
+import { CheckIcon as Check, InfoIcon as Info, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
-import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -16,15 +14,18 @@ import { Textarea } from "@/components/ui/textarea"
 import { countries, type CountryCode } from "@/config/markets"
 import { categories } from "@/lib/data/catalog"
 import type { CategorySlug } from "@/lib/data/types"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { useStudio } from "@/lib/stores/studio"
-import { spring } from "@/lib/motion"
+import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "./model"
 import { FeesPanel, ReturnsSection, ShippingSection, TeamSection } from "./settings-more"
-import { accountNumberError, accountNumberLabel, banksFor, checkHandle, countryOptions, currencyOptions, providerLabel, providersFor, scheduleLabel } from "./settings-model"
+import { settingsDescription, accountNumberError, accountNumberLabel, banksFor, checkHandle, countryOptions, currencyOptions, providerLabel, providersFor, scheduleLabel } from "./settings-model"
 import { SaveRow } from "./settings-parts"
-import { accountOnFile, liveProfile, useBrandSettings, useSettingsReady, type PayoutAccount, type PayoutProvider, type PayoutSchedule, type ProfileSettings } from "./settings-store"
-import { Field, Panel, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
+import { useFocusReturn } from "./shared"
+import { SettingsSectionsSkeleton } from "./skeletons"
+import { accountOnFile, liveProfile, useBrandSettings, useSettingsReady, type PayoutProvider, type PayoutSchedule, type ProfileSettings } from "./settings-store"
+import { Field, Panel, Segmented, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
 
 const sections = [
   { id: "profile", label: "Brand profile" },
@@ -62,7 +63,7 @@ export function SettingsView() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader title="Settings" description="Your brand's profile, how you get paid, shipping and returns, and who can work in Studio. Each section saves on its own. Until the backend is connected, changes are kept here in Settings, and each save says where it already shows." />
+      <PageHeader title="Settings" description={settingsDescription} />
 
       <nav aria-label="Settings sections" className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] xl:hidden">
         <ul className="flex min-w-max gap-1.5">
@@ -85,7 +86,7 @@ export function SettingsView() {
       </nav>
 
       <div className="grid items-start gap-6 xl:grid-cols-[200px_minmax(0,1fr)]">
-        <nav aria-label="Settings sections" className="sticky top-20 hidden xl:block">
+        <nav aria-label="Settings sections" className="sticky top-24 hidden xl:block">
           <ul className="grid gap-0.5">
             {sections.map((s) => (
               <li key={s.id}>
@@ -116,19 +117,8 @@ export function SettingsView() {
             <FeesPanel />
           </div>
         ) : (
-          <div role="status" aria-label="Loading settings" className="grid gap-6">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
-                <Bone className="h-4 w-32" />
-                <Bone className="mt-2 h-3 w-64 max-w-full" />
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <Bone className="h-10" />
-                  <Bone className="h-10" />
-                  <Bone className="h-10" />
-                  <Bone className="h-10" />
-                </div>
-              </div>
-            ))}
+          <div role="status" aria-label="Loading settings">
+            <SettingsSectionsSkeleton />
           </div>
         )}
       </div>
@@ -152,20 +142,13 @@ function ProfileSection() {
   const saveProfile = useBrandSettings((s) => s.saveProfile)
   const [form, setForm] = useState<ProfileSettings>(saved)
   const [submitted, setSubmitted] = useState(false)
-  const [checked, setChecked] = useState(saved.handle)
   const live = liveProfile()
   const pendingFields = (Object.keys(fieldName) as (keyof ProfileSettings)[]).filter((k) => saved[k] !== live[k])
 
-  // Availability is checked a moment after typing stops, as it will be against the server.
-  useEffect(() => {
-    const t = window.setTimeout(() => setChecked(form.handle), 450)
-    return () => window.clearTimeout(t)
-  }, [form.handle])
-
   const set = <K extends keyof ProfileSettings>(k: K, v: ProfileSettings[K]) => setForm((f) => ({ ...f, [k]: v }))
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+  // Checked against the brands this build knows about; the backend checks the database.
   const handle = checkHandle(form.handle, brandId)
-  const checking = checked !== form.handle
   const desc = form.description.trim().length
 
   const errors = {
@@ -175,30 +158,25 @@ function ProfileSection() {
     city: form.city.trim().length < 2 ? "Enter the city you work from." : undefined,
   }
   const shown: Partial<typeof errors> = submitted ? errors : {}
-  const liveHandleError = !checking && form.handle !== saved.handle && !handle.ok && form.handle.length >= 3 ? handle.message : undefined
+  const liveHandleError = form.handle !== saved.handle && !handle.ok && form.handle.length >= 3 ? handle.message : undefined
   const handleError = shown.handle ?? liveHandleError
+
+  const save = useAsyncAction((next: ProfileSettings) => {
+    saveProfile(next)
+    setForm(next)
+    setSubmitted(false)
+  })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!dirty) return
     setSubmitted(true)
     const first = (Object.keys(errors) as (keyof typeof errors)[]).find((k) => errors[k])
     if (first) {
       document.getElementById(`profile-${first}`)?.focus()
       return
     }
-    const next = { ...form, name: form.name.trim(), handle: form.handle.trim(), description: form.description.trim(), city: form.city.trim() }
-    const currencyChanged = next.currency !== saved.currency
-    saveProfile(next)
-    setForm(next)
-    setSubmitted(false)
-    // Settings keeps its own copy until the backend exists; say exactly where the change shows.
-    toast.success("Brand profile saved in Settings", {
-      description: currencyChanged
-        ? `Prices, payouts and reports switch to ${next.currency} once the backend is connected. Shipping rates on this page were converted.`
-        : next.handle !== saved.handle
-          ? `Your storefront address becomes /brands/${next.handle} once the backend is connected.`
-          : "The Studio header and your storefront pick it up once the backend is connected.",
-    })
+    void save.run({ ...form, name: form.name.trim(), handle: form.handle.trim(), description: form.description.trim(), city: form.city.trim() })
   }
 
   return (
@@ -214,9 +192,7 @@ function ProfileSection() {
             label="Handle"
             error={handleError}
             hint={
-              checking ? (
-                <span className="inline-flex items-center gap-1.5"><Loader2 className="size-3 animate-spin" aria-hidden /> Checking availability</span>
-              ) : form.handle === saved.handle ? (
+              form.handle === saved.handle ? (
                 "Your current storefront address."
               ) : handle.ok ? (
                 <span className="inline-flex items-center gap-1.5 text-violet"><Check className="size-3" aria-hidden /> Available</span>
@@ -313,6 +289,8 @@ function ProfileSection() {
             setSubmitted(false)
           }}
           saveLabel="Save profile"
+          pending={save.pending}
+          succeeded={save.succeeded}
         />
       </form>
     </Panel>
@@ -332,6 +310,7 @@ function PayoutsSection() {
   // What the Payouts page pays into today. A change saved here stays pending until the backend verifies it.
   const onFile = accountOnFile()
   const mismatch = a.country !== profile.country
+  const save = useAsyncAction((next: PayoutSchedule) => saveSchedule(next))
 
   return (
     <Panel id="payouts" title="Payouts" description="Where your earnings go and how often. We never see or store the full account number in Studio.">
@@ -359,11 +338,11 @@ function PayoutsSection() {
 
       <AnimatePresence initial={false} mode="wait">
         {changing ? (
-          <motion.div key="form" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
+          <motion.div key="form" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
             <AccountForm country={profile.country} onDone={() => setChanging(false)} />
           </motion.div>
         ) : (
-          <motion.div key="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-3">
+          <motion.div key="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: duration.hover }} className="mt-3">
             <Button type="button" size="sm" variant="secondary" onClick={() => setChanging(true)}>
               {mismatch ? "Add an account" : "Change payout account"}
             </Button>
@@ -375,12 +354,11 @@ function PayoutsSection() {
         noValidate
         onSubmit={(e) => {
           e.preventDefault()
-          saveSchedule(schedule)
-          toast.success("Payout schedule saved in Settings", { description: `${scheduleLabel[schedule]}, once the backend is connected. Until then, request a payout any time from Payouts.` })
+          if (schedule !== payout.schedule) void save.run(schedule)
         }}
         className="mt-5 border-t border-line-soft pt-5"
       >
-        <Field id="payout-schedule" label="Payout schedule" hint="Automatic payouts send your available balance. You can still request one any time from Payouts." className="max-w-sm">
+        <Field id="payout-schedule" label="Payout schedule" hint="Automatic payouts send your available balance once the backend is connected. Until then, request a payout any time from Payouts." className="max-w-sm">
           <Select value={schedule} onValueChange={(v) => setSchedule(v as PayoutSchedule)}>
             <SelectTrigger id="payout-schedule" aria-describedby="payout-schedule-hint" className={selectClass}>
               <SelectValue />
@@ -392,7 +370,7 @@ function PayoutsSection() {
             </SelectContent>
           </Select>
         </Field>
-        <SaveRow dirty={schedule !== payout.schedule} savedAt={savedAt} onDiscard={() => setSchedule(payout.schedule)} saveLabel="Save schedule" />
+        <SaveRow dirty={schedule !== payout.schedule} savedAt={savedAt} onDiscard={() => setSchedule(payout.schedule)} saveLabel="Save schedule" pending={save.pending} succeeded={save.succeeded} />
       </form>
     </Panel>
   )
@@ -409,6 +387,8 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
   const [holder, setHolder] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // Escape returns to Review change; after saving, the form closes and the payouts section takes focus.
+  const confirmFocus = useFocusReturn(() => document.querySelector<HTMLElement>("#payouts button"))
 
   const errors = {
     bank: bank.trim().length < 2 ? (banks ? "Choose your bank." : "Enter your bank's name.") : undefined,
@@ -429,12 +409,16 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
     setConfirming(true)
   }
 
-  function confirm() {
-    saveAccount({ provider, country, bankName: bank.trim(), accountName: holder.trim().toUpperCase(), last4: clean.slice(-4).toUpperCase() })
-    setConfirming(false)
-    onDone()
-    toast.success("Payout account saved in Settings", { description: `It stays pending until the backend is connected and ${providerLabel[provider]} confirms the name. Payouts keep going to ${onFile.bankName} •••• ${onFile.last4} until then.` })
-  }
+  // The panel above shows the new account as pending once it's saved: that is the confirmation.
+  const change = useAsyncAction(
+    () => saveAccount({ provider, country, bankName: bank.trim(), accountName: holder.trim().toUpperCase(), last4: clean.slice(-4).toUpperCase() }),
+    {
+      onSuccess: () => {
+        setConfirming(false)
+        onDone()
+      },
+    },
+  )
 
   return (
     <form noValidate onSubmit={submit} className="mt-4 grid gap-4 rounded-md border border-line-soft p-4">
@@ -446,14 +430,7 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
       {providers.length > 1 ? (
         <fieldset className="grid gap-1.5">
           <legend className="mb-1.5 text-[13px] font-medium text-ink">Provider</legend>
-          <div role="radiogroup" aria-label="Provider" className="flex w-full gap-1 rounded-lg border border-line bg-surface/50 p-1 sm:w-fit">
-            {providers.map((p) => (
-              <button key={p} type="button" role="radio" aria-checked={provider === p} onClick={() => setProvider(p)} className={cn("relative h-9 flex-1 rounded-md px-4 text-[13px] transition-colors md:h-8", provider === p ? "text-ink" : "text-ink-2 hover:text-ink")}>
-                {provider === p ? <motion.span layoutId="provider-pill" aria-hidden className="absolute inset-0 rounded-md bg-purple" transition={spring.indicator} /> : null}
-                <span className="relative">{providerLabel[p]}</span>
-              </button>
-            ))}
-          </div>
+          <Segmented<PayoutProvider> id="account-provider" label="Provider" value={provider} onChange={setProvider} options={providers.map((p) => ({ value: p, label: providerLabel[p] }))} className="sm:w-fit" />
         </fieldset>
       ) : null}
 
@@ -488,7 +465,7 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
       </div>
 
       <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...confirmFocus}>
           <DialogHeader>
             <DialogTitle>Change your payout account?</DialogTitle>
             <DialogDescription>
@@ -502,8 +479,8 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
             <div className="flex justify-between gap-4"><dt className="text-ink-2">Name</dt><dd className="text-right text-ink">{holder.trim().toUpperCase()}</dd></div>
           </dl>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>Back</Button>
-            <Button type="button" variant="primary" onClick={confirm}>Change account</Button>
+            <Button type="button" variant="secondary" onClick={() => setConfirming(false)} disabled={change.pending}>Back</Button>
+            <Button type="button" variant="primary" onClick={() => void change.run()} loading={change.pending}>Save as pending</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

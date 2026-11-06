@@ -15,6 +15,7 @@ import { formatMoney, formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { control, Field, FieldMessage, inputClass, Panel, Segmented } from "@/components/studio/growth/form"
 import { ImagePicker } from "../image-picker"
+import { useFocusReturn } from "@/components/studio/business/shared"
 import { readImage } from "../image-utils"
 import { sampleProductPhotos, sizeSystems, suggestedSizeSystem } from "../options"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
@@ -66,7 +67,6 @@ export function ProductStep({ onNext }: StepProps) {
       const current = useOnboarding.getState().data.product
       const name = current.name.trim() || "Product"
       update("product", { images: [...current.images, ...read.map((src, i) => ({ src, alt: `${name}, photo ${current.images.length + i + 1}`, source: "upload" as const }))].slice(0, MAX_PHOTOS) })
-      toast.success(read.length === 1 ? "Photo added" : `${read.length} photos added`)
     } catch {
       setUploadError("We couldn't read one of those images. Try JPG or PNG files.")
     } finally {
@@ -103,7 +103,6 @@ export function ProductStep({ onNext }: StepProps) {
   function applyAll() {
     if (!isWhole(fillAll)) return
     set({ sizes: product.sizes.map((s) => ({ ...s, stock: String(Number(fillAll)) })) })
-    toast.success(`Stock set to ${Number(fillAll)} for every size`)
     setFillAll("")
   }
 
@@ -276,6 +275,7 @@ export function ProductStep({ onNext }: StepProps) {
 function SampleLibrary({ open, onOpenChange, photos, slots, name, onAdd }: { open: boolean; onOpenChange: (o: boolean) => void; photos: ImageRef[]; slots: number; name: string; onAdd: (list: ImageRef[]) => void }) {
   const [picked, setPicked] = useState<string[]>([])
   const byId = useMemo(() => new Map(photos.map((p) => [p.src, p])), [photos])
+  const focus = useFocusReturn()
 
   function toggle(src: string) {
     setPicked((list) => (list.includes(src) ? list.filter((s) => s !== src) : list.length >= slots ? list : [...list, src]))
@@ -289,7 +289,7 @@ function SampleLibrary({ open, onOpenChange, photos, slots, name, onAdd }: { ope
         if (!o) setPicked([])
       }}
     >
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px]" {...focus}>
         <DialogHeader>
           <DialogTitle>Sample photos</DialogTitle>
           <DialogDescription>Placeholders to get your storefront open. Swap in your own photos before you promote it.</DialogDescription>
@@ -328,7 +328,6 @@ function SampleLibrary({ open, onOpenChange, photos, slots, name, onAdd }: { ope
             onClick={() => {
               const base = name.trim() || "Product"
               onAdd(picked.map((src, i) => ({ ...byId.get(src)!, alt: `${base}, photo ${i + 1}` })))
-              toast.success(picked.length === 1 ? "Sample photo added" : `${picked.length} sample photos added`)
               setPicked([])
               onOpenChange(false)
             }}

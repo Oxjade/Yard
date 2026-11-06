@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Image from "next/image"
 import { CheckIcon as Check, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
@@ -27,14 +26,12 @@ const markStyles: { id: BrandMarkType["style"]; label: string }[] = [
   { id: "grotesk", label: "Grotesk" },
 ]
 
-/** Debounced availability check, as the backend will run it on each keystroke pause. */
-function useHandleCheck(handle: string) {
-  const [result, setResult] = useState<{ handle: string; status: HandleStatus }>(() => ({ handle, status: handleStatus(handle) }))
-  useEffect(() => {
-    const t = window.setTimeout(() => setResult({ handle, status: handleStatus(handle) }), 380)
-    return () => window.clearTimeout(t)
-  }, [handle])
-  return result.handle === handle ? result.status : "checking"
+/**
+ * Availability, checked as the merchant types. In this build the check runs against the brands
+ * the app knows about and answers at once; the backend check will be a request per keystroke pause.
+ */
+function handleCheck(handle: string): HandleStatus | "checking" {
+  return handleStatus(handle)
 }
 
 export function BrandStep({ onNext }: StepProps) {
@@ -47,7 +44,7 @@ export function BrandStep({ onNext }: StepProps) {
 
   const form = useStepForm(() => validateBrand(useOnboarding.getState().data.brand), onNext)
   const e = form.errors
-  const check = useHandleCheck(brand.handle)
+  const check = handleCheck(brand.handle)
   const suggestions = check === "taken" || check === "reserved" ? handleSuggestions(brand.handle, city) : []
 
   function onName(name: string) {
@@ -64,7 +61,6 @@ export function BrandStep({ onNext }: StepProps) {
     try {
       const src = await readImage(files[0], { max: 512, type: "image/webp", quality: 0.9 })
       set({ logo: { src, alt: `${brand.name.trim() || "Brand"} logo`, source: "upload" }, logoMode: "upload" })
-      toast.success("Logo added")
     } catch {
       setUploadError("We couldn't read that image. Try a PNG or JPG.")
     } finally {

@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { motion } from "motion/react"
-import { CalendarDotsIcon as CalendarClock, CaretRightIcon as ChevronRight, EyeIcon as Eye, MapPinIcon as MapPin, MegaphoneIcon as Megaphone, StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { ArrowsClockwiseIcon as Returning, CalendarDotsIcon as CalendarClock, CaretRightIcon as ChevronRight, CoinsIcon as Coins, EyeIcon as Eye, FunnelSimpleIcon as Funnel, HeartIcon as Heart, MapPinIcon as MapPin, MegaphoneIcon as Megaphone, StackIcon as PackageSearch, ReceiptIcon as Receipt, ShoppingCartIcon as Cart } from "@phosphor-icons/react"
 import { TimeSeriesChart } from "@/components/dashboard/chart-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
-import { MetricTile } from "@/components/dashboard/metric-tile"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
-import { PeriodSelect, periodDays, periodLabel, type Period } from "@/components/dashboard/period-select"
+import { periodDays, periodLabel, type Period } from "@/components/dashboard/period-select"
 import { StatusBadge, campaignStatusMeta } from "@/components/dashboard/status-badge"
+import { change } from "@/components/dashboard/insight/derive"
+import { InsightPanel as Panel } from "@/components/dashboard/insight/insight-panel"
+import { Segmented } from "@/components/dashboard/insight/segmented"
+import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { InfoTip } from "@/components/feedback/info-tip"
-import { ChartSkeleton, MetricRowSkeleton } from "@/components/feedback/skeletons"
 import { useGrowth, useGrowthReady } from "@/components/studio/growth/store"
 import { campaignMetrics, dropRevenue, dropStatusMeta, dropUnitsSold, notifyCount, studioDropStatus } from "@/components/studio/growth/utils"
 import { Button } from "@/components/ui/button"
@@ -22,14 +23,12 @@ import { brandDailySeries, sumSeries } from "@/lib/data/analytics"
 import { brandById } from "@/lib/data/brands"
 import { dropWindow } from "@/lib/drops"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
-import { spring } from "@/lib/motion"
 import { useStudio } from "@/lib/stores/studio"
-import { cn } from "@/lib/utils"
 import type { MerchantOrder } from "@/lib/data/types"
 import { DAY_MS, countryName, formatDate, noise, plural, returningRate } from "./model"
-import { Panel } from "@/components/studio/catalog/fields"
 import { Thumb } from "@/components/studio/catalog/parts"
 import { ShareBar } from "./shared"
+import { AnalyticsBodySkeleton, analyticsDescription } from "./skeletons"
 
 type TrendMetric = "revenue" | "orders"
 
@@ -45,18 +44,20 @@ export function AnalyticsView() {
     <div className="grid gap-6">
       <PageHeader
         title="Analytics"
-        description={`How shoppers find, consider and buy from ${brand.name} over the last ${periodLabel[period].toLowerCase()}, compared with the period before.`}
-        actions={<PeriodSelect value={period} onChange={setPeriod} options={periods} />}
+        description={analyticsDescription(brand.name)}
+        actions={<Segmented label="Period" value={period} onChange={setPeriod} options={periods.map((p) => ({ value: p, label: periodLabel[p] }))} className="w-full sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none" />}
       >
-        <SampleDataNote className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SampleDataNote />
+          <p className="text-xs text-ink-3">Orders and revenue come from your orders in Studio. Visits, views and saves are generated sample traffic.</p>
+        </div>
       </PageHeader>
 
       {ready ? (
         <AnalyticsBody period={period} brandId={brandId} currency={brand.currency} followers={brand.followers} />
       ) : (
-        <div role="status" aria-label="Loading analytics" className="grid gap-6">
-          <MetricRowSkeleton count={6} />
-          <div className="rounded-lg border border-line-soft bg-card p-4 md:p-5"><ChartSkeleton height={280} /></div>
+        <div role="status" aria-label="Loading analytics">
+          <AnalyticsBodySkeleton />
         </div>
       )}
     </div>
@@ -98,7 +99,8 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   const days = periodDays[period]
   const now = sumSeries(series, series.length - days)
   const prev = sumSeries(series, series.length - days * 2, series.length - days)
-  const delta = (a: number, b: number) => (b ? (a - b) / b : null)
+  const delta = (a: number, b: number) => change(a, b)
+  const versus = `the ${periodLabel[period].toLowerCase()} before`
 
   // The period is the last `days` calendar days of the series, so lists and tiles cover the same orders.
   const firstDay = series[series.length - days].date
@@ -110,7 +112,8 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   const retPrev = returningRate(orders, from - days * DAY_MS, from)
 
   const money = (n: number) => formatMoney(Math.round(n), cur, { compact: true })
-  const chartDays = Math.max(days, 14)
+  // The chart covers exactly the selected period, so its total matches the figure above it.
+  const chartDays = days
   const chart = series.slice(-chartDays).map((p, i) => {
     const before = series[series.length - chartDays * 2 + i]
     return { date: p.date, revenue: p.revenue, orders: p.orders, previous: (trend === "revenue" ? before?.revenue : before?.orders) ?? 0, wishlists: p.wishlists }
@@ -190,24 +193,25 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   const usd = (n: number) => formatMoney(convert(n, "USD", cur), cur, { compact: true })
 
   return (
-    <>
-      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <MetricTile label="Revenue" value={now.revenue} format={money} delta={delta(now.revenue, prev.revenue)} hint="item subtotal, before refunds" />
-        <MetricTile label="Orders" value={now.orders} format={(n) => formatNumber(Math.round(n))} delta={delta(now.orders, prev.orders)} />
-        <MetricTile label="Conversion rate" value={now.conversion} format={(n) => formatPercent(n, 2)} delta={delta(now.conversion, prev.conversion)} hint="orders ÷ visits" />
-        <MetricTile label="Average order value" value={now.aov} format={money} delta={delta(now.aov, prev.aov)} />
-        <MetricTile label="Returning customers" value={ret.rate} format={(n) => formatPercent(n, 0)} delta={delta(ret.rate, retPrev.rate)} hint="ordered before" />
-        <MetricTile label="Wishlist adds" value={now.wishlists} format={(n) => formatNumber(Math.round(n))} delta={delta(now.wishlists, prev.wishlists)} />
+    <div className="grid gap-3">
+      <section aria-labelledby="analytics-key-metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <h2 id="analytics-key-metrics" className="sr-only">Key metrics</h2>
+        <StatCard icon={Coins} label="Revenue" value={now.revenue} format={money} delta={delta(now.revenue, prev.revenue)} deltaContext={versus} hint={<MetricHint tip="Item subtotal of paid orders placed in the period, before refunds. Shipping and tax aren't included.">Item subtotal, before refunds</MetricHint>} href="/studio/orders" hrefLabel="Open orders" />
+        <StatCard icon={Cart} label="Orders" value={now.orders} format={(n) => formatNumber(Math.round(n))} delta={delta(now.orders, prev.orders)} deltaContext={versus} hint={<MetricHint tip="Paid orders placed in the period. Cancelled and unpaid orders don't count.">Paid orders</MetricHint>} href="/studio/orders" hrefLabel="Open orders" />
+        <StatCard icon={Funnel} label="Conversion rate" value={now.conversion} format={(n) => formatPercent(n, 2)} delta={delta(now.conversion, prev.conversion)} deltaContext={versus} hint={<MetricHint tip="Orders divided by store visits in the same period. Visits are sample traffic in this build.">Orders ÷ visits</MetricHint>} href="/studio/products" hrefLabel="Open products" />
+        <StatCard icon={Receipt} label="Average order value" value={now.aov} format={money} delta={delta(now.aov, prev.aov)} deltaContext={versus} hint={<MetricHint tip="Revenue divided by orders in the period.">Revenue ÷ orders</MetricHint>} href="/studio/orders" hrefLabel="Open orders" />
+        <StatCard icon={Returning} label="Returning customers" value={ret.rate} format={(n) => formatPercent(n, 0)} delta={delta(ret.rate, retPrev.rate)} deltaContext={versus} hint={<MetricHint tip="Customers who ordered in the period and had ordered from you before, as a share of everyone who ordered in the period.">{`${ret.returning} of ${plural(ret.customers, "customer")}`}</MetricHint>} href="/studio/customers" hrefLabel="Open customers" />
+        <StatCard icon={Heart} label="Wishlist adds" value={now.wishlists} format={(n) => formatNumber(Math.round(n))} delta={delta(now.wishlists, prev.wishlists)} deltaContext={versus} hint={<MetricHint tip="Times shoppers saved one of your products. Sample traffic in this build.">Saves of your products</MetricHint>} href="/studio/products" hrefLabel="Open products" />
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Panel
           className="min-w-0"
           title="Sales trend"
-          description={trend === "revenue" ? `Daily revenue in ${cur}. The dashed line is the previous period.` : "Paid orders per day. Grey bars are the previous period."}
-          action={<TrendToggle value={trend} onChange={setTrend} />}
+          description={trend === "revenue" ? `Daily revenue in ${cur}, last ${periodLabel[period].toLowerCase()}. The dashed line is the period before.` : `Paid orders per day, last ${periodLabel[period].toLowerCase()}. Grey bars are the period before.`}
+          action={<Segmented label="Chart metric" size="sm" value={trend} onChange={setTrend} options={[{ value: "revenue", label: "Revenue" }, { value: "orders", label: "Orders" }]} />}
         >
-          <p className="-mt-1 mb-3 text-xl font-medium text-ink tabular">{trend === "revenue" ? formatMoney(now.revenue, cur) : plural(now.orders, "order")}</p>
+          <p className="mb-3 font-metric text-[2rem] leading-none text-ink">{trend === "revenue" ? formatMoney(now.revenue, cur) : plural(now.orders, "order")}</p>
           <TimeSeriesChart
             key={trend}
             data={chart}
@@ -216,6 +220,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
             format={trend === "revenue" ? money : (n) => formatNumber(n)}
             height={280}
           />
+          {(trend === "revenue" ? now.revenue : now.orders) === 0 ? <p className="mt-2 text-xs text-ink-3">No paid orders in this period yet.</p> : null}
         </Panel>
 
         <Panel className="min-w-0" title="Conversion funnel" description={`From visit to order, last ${periodLabel[period].toLowerCase()}.`}>
@@ -243,8 +248,8 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
         </Panel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Panel className="min-w-0" title="Best sellers" description={`Units ordered in the last ${periodLabel[period].toLowerCase()}, before refunds.`}>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Panel className="min-w-0" title="Best sellers" href="/studio/products" hrefLabel="Open products" description={`Units ordered in the last ${periodLabel[period].toLowerCase()}, before refunds.`}>
           {best.length ? (
             <ol className="grid gap-3">
               {best.map((p, i) => (
@@ -297,7 +302,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
         </Panel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <Panel title="Wishlist activity" description={`${formatNumber(now.wishlists)} saves in the last ${periodLabel[period].toLowerCase()}.`} className="min-w-0 lg:col-span-1">
           <TimeSeriesChart data={chart} kind="bar" series={[{ key: "wishlists", label: "Saves" }]} format={(n) => formatNumber(n)} height={140} />
           {mostSaved.length ? (
@@ -334,8 +339,8 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
           )}
         </Panel>
 
-        <Panel className="min-w-0" title="Returning customers" description="Customers this period who had ordered from you before.">
-          <p className="text-3xl font-medium tracking-tight text-ink tabular">{formatPercent(ret.rate, 0)}</p>
+        <Panel className="min-w-0" title="Returning customers" description="Customers this period who had ordered from you before." href="/studio/customers" hrefLabel="Open customers">
+          <p className="font-metric text-[2.25rem] leading-none text-ink">{formatPercent(ret.rate, 0)}</p>
           <p className="mt-1 text-xs text-ink-2 tabular">{ret.returning} of {plural(ret.customers, "customer")} came back</p>
           <ShareBar share={ret.rate} className="mt-4 h-2.5" />
           <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
@@ -346,21 +351,14 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
         </Panel>
       </div>
 
-      <section aria-labelledby="drops-title" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-        <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 md:px-5">
-          <div>
-            <h2 id="drops-title" className="text-sm font-medium text-ink">Drop performance</h2>
-            <p className="mt-0.5 text-xs text-ink-2">Sell-through is units sold against units allocated to the drop.</p>
-          </div>
-          <Link href="/studio/drops" className="text-xs text-ink-2 hover:text-ink">All drops</Link>
-        </div>
+      <Panel title="Drop performance" description="Sell-through is units sold against units allocated to the drop." href="/studio/drops" hrefLabel="All drops" bodyClassName="px-0 md:px-0 pb-0 md:pb-0">
         {dropRows.length === 0 ? (
-          <div className="border-t border-line-soft p-4 md:p-5">
-            <EmptyState icon={CalendarClock} title="No drops yet" body="Schedule a limited release with a countdown your followers are told about." action={<Button asChild size="sm" variant="secondary"><Link href="/studio/drops/new">Plan a drop</Link></Button>} className="py-10" />
+          <div className="border-t border-white/[0.06] p-4 md:p-5">
+            <EmptyState icon={CalendarClock} title="No drops yet" body="Schedule a limited release with a countdown. Follower alerts start once the catalogue backend is connected." action={<Button asChild size="sm" variant="secondary"><Link href="/studio/drops/new">Plan a drop</Link></Button>} className="py-10" />
           </div>
         ) : (
           <>
-            <ul className="divide-y divide-line-soft border-t border-line-soft md:hidden">
+            <ul className="divide-y divide-white/[0.05] border-t border-white/[0.06] md:hidden">
               {dropRows.map((r) => (
                 <li key={r.drop.id}>
                   <Link href={`/studio/drops/${r.drop.id}`} className="flex items-start gap-3 px-4 py-3">
@@ -370,7 +368,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
                         <span className="min-w-0 truncate text-sm font-medium text-ink">{r.drop.name}</span>
                         <StatusBadge tone={dropStatusMeta[r.status].tone} className="shrink-0">{dropStatusMeta[r.status].label}</StatusBadge>
                       </span>
-                      <span className="text-xs text-ink-2 tabular">{r.sold} of {r.drop.totalUnits} sold, {formatNumber(r.notify)} waiting for alerts</span>
+                      <span className="text-xs text-ink-2 tabular">{r.sold} of {r.drop.totalUnits} sold, {r.notify ? `${formatNumber(r.notify)} waiting for alerts` : "no alert sign-ups yet"}</span>
                       <ShareBar share={r.drop.totalUnits ? r.sold / r.drop.totalUnits : 0} tone="acid" />
                     </span>
                     <ChevronRight className="mt-1 size-4 shrink-0 text-ink-3" aria-hidden />
@@ -380,7 +378,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
             </ul>
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="border-y border-line-soft bg-surface/60 text-xs text-ink-3">
+                <thead className="border-y border-white/[0.06] text-xs text-ink-3">
                   <tr>
                     <th scope="col" className="px-4 py-2.5 font-normal md:px-5">Drop</th>
                     <th scope="col" className="px-3 py-2.5 font-normal">Status</th>
@@ -390,7 +388,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
                     <th scope="col" className="px-4 py-2.5 text-right font-normal md:px-5">Revenue</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-line-soft">
+                <tbody className="divide-y divide-white/[0.05]">
                   {dropRows.map((r) => {
                     const st = r.drop.totalUnits ? r.sold / r.drop.totalUnits : 0
                     return (
@@ -409,7 +407,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
                             <ShareBar share={st} tone="acid" />
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right text-ink tabular">{formatNumber(r.notify)}</td>
+                        <td className="px-3 py-3 text-right text-ink tabular">{r.notify ? formatNumber(r.notify) : <span className="text-ink-3">None yet</span>}</td>
                         <td className="px-4 py-3 text-right whitespace-nowrap text-ink tabular md:px-5">{r.revenue ? formatMoney(r.revenue, cur) : <span className="text-ink-3">Not released</span>}</td>
                       </tr>
                     )
@@ -419,17 +417,18 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
             </div>
           </>
         )}
-      </section>
+      </Panel>
 
       <Panel
         className="min-w-0"
         title="Campaign performance"
         description={`Paid placements, all time. Orders count when a shopper clicked within ${ATTRIBUTION.clickDays} days or saw the placement within ${ATTRIBUTION.viewDays} day.`}
-        action={<Link href="/studio/advertising" className="shrink-0 text-xs text-ink-2 hover:text-ink">Advertising</Link>}
+        href="/studio/advertising"
+        hrefLabel="Open advertising"
       >
         {campaigns.length ? (
           <>
-            <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-3 xl:grid-cols-6">
+            <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.06] sm:grid-cols-3 xl:grid-cols-6">
               {[
                 { label: "Spend", value: usd(cm.spend) },
                 { label: "Impressions", value: formatNumber(cm.impressions, { compact: true }) },
@@ -438,9 +437,9 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
                 { label: "Attributed orders", value: formatNumber(cm.purchases) },
                 { label: "Return on spend", value: cm.roas === null ? "None yet" : `${cm.roas.toFixed(1)}×` },
               ].map((s) => (
-                <div key={s.label} className="bg-card px-3 py-2.5">
+                <div key={s.label} className="bg-surface px-3 py-2.5">
                   <dt className="text-[11px] text-ink-3">{s.label}</dt>
-                  <dd className="mt-1 text-base font-medium text-ink tabular">{s.value}</dd>
+                  <dd className="mt-1 font-metric text-xl leading-none text-ink">{s.value}</dd>
                 </div>
               ))}
             </dl>
@@ -467,26 +466,16 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
           <EmptyState icon={Megaphone} title="No campaigns yet" body="Sponsored placements put your brand or products in labelled slots across the marketplace." action={<Button asChild size="sm" variant="secondary"><Link href="/studio/advertising/new">Plan a campaign</Link></Button>} className="py-10" />
         )}
       </Panel>
-    </>
+    </div>
   )
 }
 
-function TrendToggle({ value, onChange }: { value: TrendMetric; onChange: (v: TrendMetric) => void }) {
-  const options: { value: TrendMetric; label: string }[] = [
-    { value: "revenue", label: "Revenue" },
-    { value: "orders", label: "Orders" },
-  ]
+/** A KPI card's footnote with the metric's definition behind an info icon. */
+function MetricHint({ children, tip }: { children: React.ReactNode; tip: string }) {
   return (
-    <div role="radiogroup" aria-label="Chart metric" className="inline-flex h-8 shrink-0 items-center rounded-md border border-line bg-surface p-0.5">
-      {options.map((o) => {
-        const on = o.value === value
-        return (
-          <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)} className={cn("relative h-7 rounded-[5px] px-2.5 text-xs transition-colors", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
-            {on ? <motion.span layoutId="trend-pill" aria-hidden className="absolute inset-0 rounded-[5px] bg-purple" transition={spring.indicator} /> : null}
-            <span className="relative">{o.label}</span>
-          </button>
-        )
-      })}
-    </div>
+    <span className="inline-flex max-w-full items-center gap-1">
+      <span className="truncate">{children}</span>
+      <InfoTip label="What this counts" className="-my-1 shrink-0">{tip}</InfoTip>
+    </span>
   )
 }

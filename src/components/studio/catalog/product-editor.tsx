@@ -8,7 +8,6 @@ import { WarningIcon as AlertTriangle, ArchiveIcon as Archive, ArrowCounterClock
 import { toast } from "sonner"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Bone } from "@/components/feedback/skeletons"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,7 +15,9 @@ import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
+import { duration, ease } from "@/lib/motion"
 import { currencies } from "@/config/markets"
 import { site } from "@/config/site"
 import { products as seedProducts } from "@/lib/data"
@@ -29,7 +30,7 @@ import { cn } from "@/lib/utils"
 import { ConfirmDialog, control, Field, inputClass, Panel, Segmented, selectClass } from "./fields"
 import { ImageManager, type FormImage } from "./image-manager"
 import { OptionsBuilder } from "./options-builder"
-import { Thumb } from "./parts"
+import { CatalogueNote, Thumb } from "./parts"
 import {
   buildImages,
   buildOptions,
@@ -46,7 +47,8 @@ import {
   type ProductForm,
 } from "./product-form-model"
 import { SaveBar, useLeaveGuard } from "./save-bar"
-import { useBrandCollections, useCatalog, useCatalogReady, type ProductMeta } from "./store"
+import { ProductEditorSkeleton } from "./skeletons"
+import { restoreProductStatuses, setProductStatuses, useBrandCollections, useCatalogReady } from "./store"
 import { ChipInput } from "./tag-input"
 import { autoSku, brandPhotos, formatDate, formatDateTime, MAX_TAGS, parseMoney, plural, productIdFor, slugify, toLocalInput } from "./utils"
 
@@ -58,10 +60,9 @@ export function ProductEditorRoute({ id }: { id?: string }) {
   const ready = useCatalogReady()
   const brandId = useStudio((s) => s.brandId)
   const product = useStudio((s) => (id ? s.products.find((p) => p.id === id) : undefined))
-  const meta = useCatalog((s) => (id ? s.productMeta[id] : undefined))
   const brand = brandById.get(brandId)!
 
-  if (!ready) return <EditorSkeleton />
+  if (!ready) return <ProductEditorSkeleton />
   if (id && !product) {
     // Just deleted from this page: render nothing while we navigate away.
     if (deletedHere.has(id)) return null
@@ -81,7 +82,7 @@ export function ProductEditorRoute({ id }: { id?: string }) {
       </div>
     )
   }
-  return <ProductEditor key={id ?? "new"} product={product} meta={meta} brand={brand} />
+  return <ProductEditor key={id ?? "new"} product={product} brand={brand} />
 }
 
 function BackLink() {
@@ -94,30 +95,33 @@ function BackLink() {
 
 const statusCopy: Record<"draft" | "published" | "scheduled", string> = {
   draft: "Only you can see it. Publish when it's ready.",
-  published: "Visible on your storefront and in the marketplace.",
-  scheduled: "Set to go live at the time you pick. Until then only you can see it.",
+  published: "Marked ready to sell in your catalogue.",
+  scheduled: "Pick a go-live time. Until then it stays unpublished.",
 }
 
-function savedDescription(status: Product["status"], publishAt: string | null) {
-  if (status === "published") return "Live on your storefront and in the marketplace."
-  if (status === "scheduled" && publishAt) return `Set to go live ${formatDateTime(publishAt)}.`
-  if (status === "archived") return "Archived, so it stays hidden from shoppers."
+/** What creating the product did, in Studio terms. Where it reaches shoppers is the page's one note. */
+function createdDescription(status: Product["status"], publishAt: string | null) {
+  if (status === "published") return "Published in your catalogue."
+  if (status === "scheduled" && publishAt) return `Scheduled for ${formatDateTime(publishAt)}.`
   return "Saved as a draft. Only you can see it."
 }
 
-function ProductEditor({ product, meta, brand }: { product?: Product; meta?: ProductMeta; brand: Brand }) {
+function ProductEditor({ product, brand }: { product?: Product; brand: Brand }) {
   const router = useRouter()
   const allProducts = useStudio((s) => s.products)
   const orders = useStudio((s) => s.orders)
   const studioDrops = useStudio((s) => s.drops)
   const collections = useBrandCollections(brand.id)
 
-  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, meta, brand) : emptyForm(brand)))
+  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, brand) : emptyForm(brand)))
   const [form, setForm] = useState<ProductForm>(baseline)
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const [focusTick, setFocusTick] = useState(0)
+  /** True from a valid save until the page has moved on (a create navigates away). */
   const [saving, setSaving] = useState(false)
   const [dialog, setDialog] = useState<null | "archive" | "delete" | "discard">(null)
+  /** Archived on this page: the banner's restore puts back the status it had before. */
+  const [archivedFrom, setArchivedFrom] = useState<ReturnType<typeof setProductStatuses> | null>(null)
   const now = useNow(60_000)
 
   const currency = brand.currency
@@ -163,10 +167,10 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
     if (!product || product === synced.current) return
     synced.current = product
     if (live.current.dirty || live.current.saving) return
-    const fresh = fromProduct(product, meta, brand)
+    const fresh = fromProduct(product, brand)
     setBaseline(fresh)
     setForm(fresh)
-  }, [product, meta, brand])
+  }, [product, brand])
   useEffect(
     () => () => {
       if (!created.current && !leaving.current) return
@@ -250,19 +254,7 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
 
   /* ---------- actions ---------- */
 
-  function save() {
-    const now = Date.now()
-    const errs = validate(form, { brand, otherSkus, original, now })
-    setCheckedAt(now)
-    if (Object.values(errs).some(Boolean)) {
-      setFocusTick((t) => t + 1)
-      toast.error("Check the highlighted fields", { description: "Nothing was saved yet." })
-      return
-    }
-    if (processing) {
-      toast("Photos are still being prepared", { description: "Try again in a moment." })
-      return
-    }
+  function commit(now: number) {
     setSaving(true)
 
     const store = useStudio.getState()
@@ -288,6 +280,8 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
     })
 
     const publishAt = form.status === "scheduled" ? new Date(form.publishAt).toISOString() : null
+    const days: [number, number] = [Number(form.processingMin), Number(form.processingMax)]
+    const ownDays = days[0] !== brand.processingDays[0] || days[1] !== brand.processingDays[1]
     const saved: Product = {
       ...(product ?? {}),
       id,
@@ -308,6 +302,10 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
       badges: product?.badges ?? ["new"],
       status: form.status,
       createdAt: product?.createdAt ?? new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      publishAt: publishAt ?? undefined,
+      // Only a product that differs from the brand's default keeps its own processing time.
+      processingDays: ownDays ? days : undefined,
       collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
       dropId: product?.dropId,
       stats: product?.stats ?? { views7d: 0, wishlists: 0, sales30d: 0, trend: 0 },
@@ -315,19 +313,20 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
 
     store.upsertProduct(saved)
     for (const a of adjustments) store.adjustStock(id, a.variantId, a.delta, "adjustment", "Edited on the product page")
-    const newMeta: ProductMeta = { processingDays: [Number(form.processingMin), Number(form.processingMax)], publishAt, updatedAt: new Date(now).toISOString() }
-    useCatalog.getState().setProductMeta(id, newMeta)
-
-    toast.success(isNew ? "Product created" : "Changes saved", { description: savedDescription(saved.status, publishAt) })
 
     if (isNew) {
+      // The page moves to the new product, so say what happened. An edit says it in place:
+      // the header button checks and rests as "Saved", and the save bar leaves.
+      toast.success("Product created", { description: createdDescription(saved.status, publishAt) })
+      // Stop checking while the page moves: the new product's own SKUs would now read as taken.
+      setCheckedAt(null)
       created.current = true
       router.replace(`/studio/products/${id}`)
       return
     }
     const fresh = useStudio.getState().products.find((p) => p.id === id) ?? saved
     synced.current = fresh
-    const reset = fromProduct(fresh, useCatalog.getState().productMeta[id], brand)
+    const reset = fromProduct(fresh, brand)
     stash.current.clear()
     setBaseline(reset)
     setForm(reset)
@@ -335,34 +334,62 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
     setSaving(false)
   }
 
+  const saveAction = useAsyncAction((now: number) => commit(now), {
+    error: "Your product couldn't be saved. This browser's storage may be full: remove a large photo, then save again.",
+    onError: () => setSaving(false),
+  })
+
+  /** Validates first: a failed check keeps every value, lists what to fix and focuses the first field. */
+  function save() {
+    if (saveAction.pending || saving) return
+    const now = Date.now()
+    const errs = validate(form, { brand, otherSkus, original, now })
+    setCheckedAt(now)
+    if (Object.values(errs).some(Boolean)) {
+      setFocusTick((t) => t + 1)
+      return
+    }
+    // The save buttons already read "Preparing photos" and are disabled; this is a safety net.
+    if (processing) return
+    void saveAction.run(now)
+  }
+
+  /** The form goes back to the last save in place: the change is visible, so no toast. */
   function discard() {
     stash.current.clear()
     setForm(baseline)
     setCheckedAt(null)
-    toast("Changes discarded")
   }
 
+  /*
+   * Archive and restore change only the stored status. The form follows, keeping any edits in
+   * progress; the store sync above leaves a dirty form alone, so set both here.
+   */
   function setStoredStatus(status: Product["status"]) {
-    if (!product) return
-    useStudio.getState().setProductStatus(product.id, status)
-    useCatalog.getState().touchProducts([product.id])
+    if (!product) return []
+    const previous = setProductStatuses([product.id], status)
     setForm((f) => ({ ...f, status }))
     setBaseline((b) => ({ ...b, status }))
+    return previous
   }
 
+  /** Shown in place: the badge turns Archived and the banner appears, with focus on its restore button. */
   function archive() {
-    if (!product) return
-    const previous = baseline.status
-    setStoredStatus("archived")
-    toast.success("Product archived", {
-      description: "Hidden from your storefront and the marketplace.",
-      action: { label: "Undo", onClick: () => setStoredStatus(previous) },
-    })
+    const previous = setStoredStatus("archived")
+    if (previous.length) setArchivedFrom(previous)
   }
 
+  /** Back to the status it had, if it was archived on this page; otherwise to a draft. */
   function restore() {
-    setStoredStatus("draft")
-    toast.success("Product restored as a draft", { description: "Publish it when you're ready to sell it again." })
+    if (archivedFrom?.length) {
+      const was = archivedFrom[0].status
+      restoreProductStatuses(archivedFrom)
+      setForm((f) => ({ ...f, status: was }))
+      setBaseline((b) => ({ ...b, status: was }))
+    } else {
+      setStoredStatus("draft")
+    }
+    setArchivedFrom(null)
   }
 
   function remove() {
@@ -376,7 +403,6 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
     window.setTimeout(() => deletedHere.delete(product.id), 3000)
     guard.go("/studio/products")
     useStudio.getState().removeProduct(product.id)
-    useCatalog.getState().removeProductMeta(product.id)
     toast.success("Product deleted", { description: `${product.name} was removed from your catalogue.` })
   }
 
@@ -386,7 +412,11 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
   const off = price && compare && compare > price ? Math.round((1 - price / compare) * 100) : null
   const archived = form.status === "archived"
   /** Nothing publishes on a timer until the backend exists, so say plainly when a set time has passed. */
-  const pastDue = !!now && product?.status === "scheduled" && !!meta?.publishAt && form.publishAt === baseline.publishAt && Date.parse(meta.publishAt) <= now
+  const pastDue = !!now && product?.status === "scheduled" && !!product.publishAt && form.publishAt === baseline.publishAt && Date.parse(product.publishAt) <= now
+  const busy = saving || saveAction.pending
+  const restoreTo = archivedFrom?.[0]?.status
+  const restoreLabel = restoreTo && restoreTo !== "draft" && restoreTo !== "archived" ? `Restore as ${productStatusMeta[restoreTo].label.toLowerCase()}` : "Restore as draft"
+  const toRestore = () => document.getElementById("pf-restore")
 
   return (
     <div className={cn("grid gap-6", dirty && "pb-24")}>
@@ -397,20 +427,36 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
           description={isNew ? "Add photos, a price and the sizes you stock. Save it as a draft until it's ready." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
           actions={
             <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => guard.leave("/studio/products")}>Cancel</Button>
+              <Button id="pf-back" type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => guard.leave("/studio/products")}>{isNew || dirty ? "Cancel" : "Back"}</Button>
               {/* One acid Save on screen: while the save bar shows, it carries the acid button. */}
-              <Button type="submit" form="product-form" variant={dirty ? "secondary" : "primary"} size="sm" disabled={saving}>
-                {isNew ? "Save product" : "Save"}
+              {/* With nothing to save, an existing product's button rests as "Saved" (after a save it shows the check first). */}
+              <Button
+                type="submit"
+                form="product-form"
+                variant={dirty || !isNew ? "secondary" : "primary"}
+                size="sm"
+                className="h-10 md:h-8"
+                loading={busy}
+                success={saveAction.succeeded && !dirty}
+                disabled={processing || (!dirty && !isNew && !saveAction.succeeded)}
+              >
+                {isNew ? "Save product" : dirty ? "Save" : "Saved"}
               </Button>
             </>
           }
         >
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-            {!isNew && product.status === "published" ? (
-              <Link href={`/brands/${brand.handle}`} target="_blank" className="text-xs text-violet hover:underline">View storefront</Link>
-            ) : null}
-            {dirty ? <span className="text-xs text-ink-3">Unsaved changes</span> : null}
+            {/* The header button's check says it visually; this says it to screen readers. */}
+            <span role="status" className="sr-only">{!isNew && saveAction.succeeded && !dirty ? "Changes saved" : ""}</span>
+            <AnimatePresence initial={false}>
+              {dirty ? (
+                <motion.span key="dirty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="inline-flex items-center gap-1.5 text-xs text-ink-2">
+                  <span className="size-1.5 rounded-full bg-acid" aria-hidden />
+                  Unsaved changes
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
           </div>
         </PageHeader>
       </div>
@@ -445,9 +491,9 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
 
       {archived ? (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-4">
-          <Archive className="size-4 text-ink-2" />
-          <p className="min-w-0 flex-1 text-sm text-ink-2">This product is archived. Shoppers can&apos;t see it, and its orders and stock history stay.</p>
-          <Button type="button" size="sm" variant="secondary" onClick={restore}><ArchiveRestore /> Restore as draft</Button>
+          <Archive className="size-4 text-ink-2" aria-hidden />
+          <p id="pf-archived-note" className="min-w-0 flex-1 text-sm text-ink-2">This product is archived in Studio. Its orders and stock history stay.</p>
+          <Button id="pf-restore" type="button" size="sm" variant="secondary" className="h-10 md:h-8" aria-describedby="pf-archived-note" onClick={restore}><ArchiveRestore /> {restoreLabel}</Button>
         </div>
       ) : null}
 
@@ -516,7 +562,7 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
 
         <div className="grid min-w-0 gap-6">
           <Panel title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>
-            {archived ? null : (
+            {archived ? <CatalogueNote /> : (
               <div className="grid gap-3">
                 <Segmented
                   id="pf-status"
@@ -529,15 +575,21 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
                     { value: "scheduled", label: "Scheduled" },
                   ]}
                 />
-                <AnimatePresence initial={false}>
-                  {form.status === "scheduled" ? (
-                    <motion.div key="when" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                      <Field id="pf-publish-at" label="Go-live time" error={errors.publishAt} hint={pastDue ? "This time has passed and the product isn't live. Publish it now or pick a new time." : "In your local time."} className="pt-1">
-                        <Input {...control("pf-publish-at", errors.publishAt, true)} type="datetime-local" value={form.publishAt} onChange={(e) => patch({ publishAt: e.target.value })} className={cn(inputClass, "[color-scheme:dark]")} />
-                      </Field>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
+                {/* Appears in place with a fade (opacity only): nothing below re-lays out frame by frame. */}
+                {form.status === "scheduled" ? (
+                  <motion.div key="when" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
+                    <Field
+                      id="pf-publish-at"
+                      label="Go-live time"
+                      error={errors.publishAt}
+                      hint={pastDue ? "This time has passed and the product isn't live. Publish it now or pick a new time." : "In your local time. Nothing publishes automatically in this build yet: publish it yourself at that time."}
+                      className="pt-1"
+                    >
+                      <Input {...control("pf-publish-at", errors.publishAt, true)} type="datetime-local" value={form.publishAt} onChange={(e) => patch({ publishAt: e.target.value })} className={cn(inputClass, "[color-scheme:dark]")} />
+                    </Field>
+                  </motion.div>
+                ) : null}
+                <CatalogueNote className="pt-1" />
               </div>
             )}
           </Panel>
@@ -603,19 +655,27 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
           </Panel>
 
           {!isNew ? (
-            <Panel title="Remove product" description={archived ? "Delete removes it for good." : "Archive to hide it and keep its history. Delete removes it for good."}>
+            <Panel title="Remove product" description={archived ? "Delete removes it for good." : "Archive to set it aside and keep its history. Delete removes it for good."}>
               <div className="flex flex-wrap gap-2">
                 {archived ? null : (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => setDialog("archive")}><Archive /> Archive</Button>
+                  <Button type="button" size="sm" variant="secondary" className="h-10 md:h-8" onClick={() => setDialog("archive")}><Archive /> Archive</Button>
                 )}
-                <Button type="button" size="sm" variant="destructive" onClick={() => setDialog("delete")}><Trash2 /> Delete</Button>
+                <Button type="button" size="sm" variant="destructive" className="h-10 md:h-8" onClick={() => setDialog("delete")}><Trash2 /> Delete</Button>
               </div>
             </Panel>
           ) : null}
         </div>
       </form>
 
-      <SaveBar visible={dirty} label={isNew ? "Unsaved product" : "Unsaved changes"} onSave={save} onDiscard={() => setDialog("discard")} saving={saving || processing} busyLabel={processing ? "Preparing photos" : "Saving"} />
+      <SaveBar
+        visible={dirty}
+        label={processing ? "Preparing photos" : isNew ? "Unsaved product" : "Unsaved changes"}
+        saveLabel={isNew ? "Save product" : "Save"}
+        onSave={save}
+        onDiscard={() => setDialog("discard")}
+        saving={busy}
+        blocked={processing}
+      />
 
       {guard.dialog}
       <ConfirmDialog
@@ -625,6 +685,7 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
         body={isNew ? "Everything you've entered for this product will be cleared." : "The product goes back to how it was when you last saved."}
         confirmLabel="Discard changes"
         onConfirm={discard}
+        returnFocus={() => document.getElementById("pf-back")}
       />
       {product ? (
         <>
@@ -632,17 +693,19 @@ function ProductEditor({ product, meta, brand }: { product?: Product; meta?: Pro
             open={dialog === "archive"}
             onOpenChange={(o) => !o && setDialog(null)}
             title={`Archive ${product.name}?`}
-            body="It's hidden from your storefront and the marketplace. Orders and stock history stay, and you can restore it at any time."
+            body="It moves to the Archived tab and out of your inventory list. Orders and stock history stay, and you can restore it at any time."
             confirmLabel="Archive product"
             onConfirm={archive}
+            returnFocus={toRestore}
           />
           <ConfirmDialog
             open={dialog === "delete"}
             onOpenChange={(o) => !o && setDialog(null)}
             title={hasOrders ? "This product has orders" : `Delete ${product.name}?`}
-            body={hasOrders ? "Products that have been ordered can't be deleted, so order records stay complete. Archive it instead to hide it from shoppers." : "It's removed from your catalogue, collections and inventory for good. This can't be undone."}
+            body={hasOrders ? "Products that have been ordered can't be deleted, so order records stay complete. Archive it instead: it moves to the Archived tab and its history stays." : "It's removed from your Studio catalogue, collections and inventory for good. This can't be undone."}
             confirmLabel={hasOrders ? "Archive instead" : "Delete product"}
             onConfirm={remove}
+            returnFocus={toRestore}
           />
         </>
       ) : null}
@@ -673,27 +736,5 @@ function TagsField({ tags, onChange, suggestions }: { tags: string[]; onChange: 
         onMessage={setMessage}
       />
     </Field>
-  )
-}
-
-function EditorSkeleton() {
-  return (
-    <div role="status" aria-label="Loading product" className="grid gap-6">
-      <div className="grid gap-3 border-b border-line-soft pb-5">
-        <Bone className="h-3 w-20" />
-        <Bone className="h-7 w-64" />
-        <Bone className="h-4 w-96 max-w-full" />
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid gap-6">
-          <Bone className="h-56 rounded-lg" />
-          <Bone className="h-80 rounded-lg" />
-        </div>
-        <div className="grid content-start gap-6">
-          <Bone className="h-36 rounded-lg" />
-          <Bone className="h-56 rounded-lg" />
-        </div>
-      </div>
-    </div>
   )
 }

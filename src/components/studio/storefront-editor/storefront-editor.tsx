@@ -8,7 +8,7 @@ import { Tabs as TabsPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
-import { ConfirmDialog } from "@/components/studio/catalog/fields"
+import { ConfirmDialog, useReturnFocus } from "@/components/studio/catalog/fields"
 import { useBrandCollections, useCatalogReady } from "@/components/studio/catalog/store"
 import { formatDateTime } from "@/components/studio/catalog/utils"
 import { Button } from "@/components/ui/button"
@@ -33,13 +33,13 @@ import {
   type EditorConfig,
   type FieldKey,
 } from "./model"
-import { DeviceToggle, EditorSkeleton, storefrontStatusMeta, type SaveState } from "./parts"
+import { DeviceToggle, EDITOR_DESCRIPTION, EDITOR_TITLE, EditorSkeleton, editorFrame, storefrontStatusMeta, type SaveState } from "./parts"
 import { PreviewFrame, scrollPreviewTo, sectionDomId, type Device } from "./preview-frame"
 import { SectionsControls } from "./sections-controls"
 
 const AUTOSAVE_MS = 900
-const TITLE = "Storefront"
-const DESCRIPTION = "Edit a private draft and watch it update. Shoppers see it when you publish."
+const TITLE = EDITOR_TITLE
+const DESCRIPTION = EDITOR_DESCRIPTION
 
 type Tab = "design" | "content" | "sections"
 const tabs: { value: Tab; label: string }[] = [
@@ -94,10 +94,8 @@ function useWide() {
 export function StorefrontEditor() {
   const ready = useCatalogReady()
   return (
-    // From lg the editor fills the window under the Studio shell. 8.5rem is the shell's chrome:
-    // TopBar (pt-3 + h-16 = 4.75rem, dashboard/shell/top-bar.tsx) plus main's padding (pt-5 +
-    // md:pb-10 = 3.75rem, dashboard/app-shell.tsx). Change it with those.
-    <div className="grid gap-6 pb-24 lg:h-[calc(100dvh-8.5rem)] lg:grid-rows-[auto_minmax(0,1fr)] lg:pb-0">
+    // From lg the editor fills the window under the Studio shell (see editorFrame).
+    <div className={editorFrame}>
       {ready ? (
         <Editor />
       ) : (
@@ -130,15 +128,19 @@ function Editor() {
   const [config, setConfig] = useState<EditorConfig>(() => withoutStaleUploads(normalize(storefront.draft as EditorConfig, brand)))
   const latest = useRef(config)
   const timer = useRef<number | null>(null)
+  /** The last autosave failed: the edit exists only on this page until a save succeeds. */
+  const [saveFailed, setSaveFailed] = useState(false)
 
   const flush = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = null
     try {
       saveDraft(latest.current)
+      setSaveFailed(false)
       return true
     } catch {
-      toast.error("Your draft couldn't be saved", { description: "This browser's storage is full. Use a smaller image, or remove an upload." })
+      setSaveFailed(true)
+      toast.error("Your draft couldn't be saved", { id: "sf-save-failed", description: "This browser's storage is full. Use a smaller image, or remove an upload, then save again." })
       return false
     }
   }, [saveDraft])
@@ -178,7 +180,7 @@ function Editor() {
   const live = useMemo(() => normalize(storefront.published as EditorConfig, brand), [storefront.published, brand])
   const liveFp = useMemo(() => fingerprint(live), [live])
   const configFp = useMemo(() => fingerprint(config), [config])
-  const state: SaveState = configFp !== storedFp ? "unsaved" : configFp !== liveFp ? "unpublished" : "published"
+  const state: SaveState = configFp !== storedFp ? (saveFailed ? "unsaved" : "saving") : configFp !== liveFp ? "unpublished" : "published"
   const hasDraftChanges = configFp !== liveFp
 
   /* ---------- Validation: on publish, then live while fixing ---------- */
@@ -223,8 +225,22 @@ function Editor() {
 
   /* ---------- Actions ---------- */
 
+  // Autosave keeps the draft current; this saves now. The badge and the button's check say it worked.
+  const saveNow = useAsyncAction(
+    () => {
+      if (timer.current) window.clearTimeout(timer.current)
+      timer.current = null
+      saveDraft(latest.current)
+      setSaveFailed(false)
+    },
+    {
+      error: "Your draft couldn't be saved. This browser's storage is full: use a smaller image, or remove an upload, then try again.",
+      onError: () => setSaveFailed(true),
+    },
+  )
+
   function onSaveDraft() {
-    if (flush()) toast.success("Draft saved", { description: "Only you can see it. Publish when it's ready." })
+    if (state === "saving" || state === "unsaved") void saveNow.run()
   }
 
   // Publishing goes through the shared action pattern: one run at a time, then a brief check.
@@ -232,9 +248,11 @@ function Editor() {
     const changed = changeSummary(config, live)
     publishStorefront()
     setSubmitted(false)
-    const lines = [changed.length ? `Your storefront is live with the new ${listJoin(changed)}.` : "Your storefront is live."]
-    toast.success("Published", {
-      description: lines.join(" "),
+    // Below lg the bottom bar says it in place (its badge, Publish's check, then View
+    // storefront), and a toast there would sit over that bar. From lg, say what changed.
+    if (!window.matchMedia(WIDE).matches) return
+    toast.success("Storefront published", {
+      description: changed.length ? `Your storefront now shows the new ${listJoin(changed)}.` : "Your storefront is up to date.",
       action: { label: "View", onClick: () => window.open(`/brands/${brand.handle}`, "_blank", "noopener,noreferrer") },
     })
   })
@@ -246,7 +264,9 @@ function Editor() {
     if (keys.length) {
       setSubmitted(true)
       goToField(keys[0])
-      toast.error(keys.length === 1 ? "Fix 1 field before publishing" : `Fix ${keys.length} fields before publishing`, { description: found[keys[0]] })
+      // The field opens with its message beside it and each tab counts what's left to fix.
+      // Below lg that's the whole story: a toast would cover the bottom bar.
+      if (wide) toast.error(keys.length === 1 ? "Fix 1 field before publishing" : `Fix ${keys.length} fields before publishing`, { description: found[keys[0]] })
       return
     }
     if (!flush()) return
@@ -260,8 +280,9 @@ function Editor() {
     latest.current = live
     setConfig(live)
     setSubmitted(false)
+    setSaveFailed(false)
     setResetKey((k) => k + 1)
-    toast("Draft discarded", { description: "Your draft matches your live storefront again." })
+    // No toast: the controls and preview go back to the live storefront and the badge reads "All changes published".
   }
 
   // ⌘S / Ctrl+S saves the draft.
@@ -281,6 +302,11 @@ function Editor() {
   }, [])
 
   const status = storefrontStatusMeta[state]
+  /** Phones: once everything is live (and Publish has shown its check), the bar offers the storefront instead. */
+  const nothingToPublish = !hasDraftChanges && !publish.pending && !publish.succeeded
+  /** Where focus lands when the control that opened an overlay is gone or disabled: the open settings tab. */
+  const toSelectedTab = () => document.querySelector<HTMLElement>('[aria-label="Settings"] [role="tab"][aria-selected="true"]')
+  const onSheetCloseFocus = useReturnFocus(sheetOpen, toSelectedTab)
   const stamps = [
     state === "unpublished" && storefront.savedAt ? `Draft saved ${formatDateTime(storefront.savedAt)}` : null,
     storefront.publishedAt ? `Last published ${formatDateTime(storefront.publishedAt)}` : null,
@@ -303,20 +329,23 @@ function Editor() {
         actions={
           <div className="flex items-center gap-2">
             {wide ? <DeviceToggle value={device} onChange={setDevice} /> : null}
-            <Button type="button" variant="secondary" size="sm" disabled={!hasDraftChanges} onClick={() => setDiscardOpen(true)}>
+            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={!hasDraftChanges || publish.pending} onClick={() => setDiscardOpen(true)}>
               Discard
             </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={onSaveDraft}>
+            {/* Enabled while an edit waits for autosave (or a save failed); afterwards it rests disabled. */}
+            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={state !== "saving" && state !== "unsaved" && !saveNow.succeeded} loading={saveNow.pending} success={saveNow.succeeded} onClick={onSaveDraft}>
               Save draft
             </Button>
-            <Button type="button" variant="primary" size="sm" disabled={!hasDraftChanges && !publish.succeeded} loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
+            {/* Phones carry Publish in the bar at the bottom: one acid button on screen. */}
+            <Button type="button" variant="primary" size="sm" className="max-lg:hidden" disabled={!hasDraftChanges && !publish.succeeded} loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
               Publish changes
             </Button>
           </div>
         }
       >
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span role="status" aria-live="polite">
+          {/* Announced when it settles, not on every keystroke's "Saving draft". */}
+          <span role="status" aria-live="polite" aria-atomic>
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
           </span>
           {stamps.map((t) => (
@@ -365,13 +394,14 @@ function Editor() {
             </TabsPrimitive.List>
 
             <motion.div layoutScroll className="min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-contain">
-              <TabsPrimitive.Content value="design" forceMount className="outline-none data-[state=inactive]:hidden">
+              {/* Not tab stops themselves: every panel opens with its own controls. */}
+              <TabsPrimitive.Content value="design" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <DesignControls config={config} brandName={brand.name} cover={config.cover ?? brand.cover} onChange={update} />
               </TabsPrimitive.Content>
-              <TabsPrimitive.Content value="content" forceMount className="outline-none data-[state=inactive]:hidden">
+              <TabsPrimitive.Content value="content" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <ContentControls key={resetKey} config={config} brand={brand} photos={photos} errors={errors} onChange={update} />
               </TabsPrimitive.Content>
-              <TabsPrimitive.Content value="sections" forceMount className="outline-none data-[state=inactive]:hidden">
+              <TabsPrimitive.Content value="sections" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <SectionsControls
                   config={config}
                   products={products}
@@ -410,22 +440,36 @@ function Editor() {
         ) : null}
       </div>
 
-      {/* Phones and tablets: the preview opens over the controls. */}
+      {/* Phones and tablets: the preview opens over the controls, and Publish stays in reach. */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
-        <div className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-xl items-center gap-3 rounded-2xl py-2 pr-2 pl-3">
-          {/* A copy of the header's status: not a live region, so it isn't announced twice. */}
-          <span className="min-w-0 flex-1">
-            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+        <div className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-xl items-center gap-2 rounded-2xl py-2 pr-2 pl-3">
+          {/* A short copy of the header's status: not a live region, so it isn't announced twice. */}
+          <span className="min-w-0 flex-1 truncate">
+            <StatusBadge tone={status.tone} className="max-w-full">{status.short}</StatusBadge>
           </span>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setSheetOpen(true)}>
+          <Button type="button" variant="secondary" size="sm" className="h-10" onClick={() => setSheetOpen(true)}>
             <Eye />
-            Preview
+            {/* The narrowest phones keep the eye and say the word to screen readers. */}
+            <span className="max-[379px]:sr-only">Preview</span>
           </Button>
+          {nothingToPublish ? (
+            <Button asChild variant="secondary" size="sm" className="h-10">
+              <Link href={`/brands/${brand.handle}`} target="_blank">
+                View storefront
+                <ArrowUpRight aria-hidden />
+                <span className="sr-only">(opens in a new tab)</span>
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="primary" size="sm" className="h-10" loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
+              Publish
+            </Button>
+          )}
         </div>
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side="bottom" className="gap-0 overflow-hidden rounded-t-2xl p-0 data-[side=bottom]:h-[calc(100dvh-0.5rem)] lg:hidden">
+        <SheetContent side="bottom" className="gap-0 overflow-hidden rounded-t-2xl p-0 data-[side=bottom]:h-[calc(100dvh-0.5rem)] lg:hidden" onCloseAutoFocus={onSheetCloseFocus}>
           <SheetHeader className="shrink-0 border-b border-line-soft py-3 pr-12">
             <SheetTitle>Preview</SheetTitle>
             <SheetDescription className="text-xs text-ink-2">Your draft. Publishing makes its template, colour, type, words and sections live.</SheetDescription>
@@ -443,6 +487,7 @@ function Editor() {
         body="Your draft goes back to what's live on your storefront now. Everything you've changed since you last published is lost."
         confirmLabel="Discard draft"
         onConfirm={onDiscard}
+        returnFocus={toSelectedTab}
       />
     </>
   )

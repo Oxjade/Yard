@@ -5,6 +5,9 @@ import type { PayoutProvider, TeamRole } from "./settings-store"
 
 /** Validation and option lists for Studio settings. Pure, so server actions can reuse them. */
 
+/** The Settings header copy, shared with the route's loading state. */
+export const settingsDescription = "Your brand's profile, how you get paid, shipping and returns, and who can work in Studio. Each section saves on its own and is kept in Settings in this browser; the storefront, checkout and payouts pick changes up once the backend is connected."
+
 export const HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 
 /** Route names and platform words a brand can't take. */

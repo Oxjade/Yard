@@ -44,15 +44,20 @@ export const countryName = (code: string) => countries[code as CountryCode]?.nam
 
 /* ---------- Order tabs and statuses ---------- */
 
-export type OrderTab = "paid" | "processing" | "shipped" | "delivered" | "cancelled" | "refund_requested" | "all"
+export type OrderTab = "paid" | "processing" | "shipped" | "delivered" | "refund_requested" | "refunded" | "cancelled" | "pending_payment" | "all"
+
+/** Tabs that only show while they hold orders, so the bar stays short for most brands. */
+export const conditionalOrderTabs = new Set<OrderTab>(["refunded", "pending_payment"])
 
 export const orderTabs: { value: OrderTab; label: string }[] = [
   { value: "paid", label: "To fulfil" },
   { value: "processing", label: "Processing" },
   { value: "shipped", label: "Shipped" },
   { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
   { value: "refund_requested", label: "Refund requested" },
+  { value: "refunded", label: "Refunded" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "pending_payment", label: "Awaiting payment" },
   { value: "all", label: "All" },
 ]
 
@@ -61,8 +66,10 @@ export const emptyOrderTab: Record<OrderTab, { title: string; body: string }> = 
   processing: { title: "Nothing in processing", body: "Orders you're packing wait here until you add tracking." },
   shipped: { title: "Nothing in transit", body: "Orders with tracking show here until they're delivered." },
   delivered: { title: "No deliveries yet", body: "Delivered orders show here. Payouts follow once the returns window closes." },
+  refund_requested: { title: "No refund requests", body: "When a customer asks to return an order, it waits here for your decision." },
+  refunded: { title: "No refunds", body: "Orders you refund show here." },
   cancelled: { title: "No cancelled orders", body: "Orders cancelled before shipping show here, with the reason." },
-  refund_requested: { title: "No refund requests", body: "When a customer asks for a refund, it waits here for your decision." },
+  pending_payment: { title: "Nothing awaiting payment", body: "Orders placed at checkout wait here until the payment provider confirms them." },
   all: { title: "No orders yet", body: "When a customer pays for one of your products, the order appears here." },
 }
 
@@ -102,24 +109,67 @@ export function shipBy(o: MerchantOrder, processingDays: [number, number]) {
 
 /* ---------- Payout estimate ---------- */
 
-/** Subtotal minus the 5% commission. Shipping and tax are not part of the brand's earnings here. */
+/**
+ * What a partial refund took back: the lines on the shopper's return request, once the brand
+ * approved part of an order (it stays delivered, payment "partially_refunded").
+ */
+export function partialRefund(o: Pick<MerchantOrder, "lines" | "paymentStatus" | "returnRequest">) {
+  const r = o.returnRequest
+  if (o.paymentStatus !== "partially_refunded" || !r) return null
+  const lines = o.lines.filter((l) => r.variantIds.includes(l.variantId))
+  if (!lines.length || lines.length === o.lines.length) return null
+  const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
+  return { lines, subtotal, commissionBack: Math.round(subtotal * COMMISSION_RATE) }
+}
+
+/**
+ * Subtotal minus the 5% commission. Shipping and tax are not part of the brand's earnings here.
+ * A partial refund takes the returned items off, net of the commission that comes back on them.
+ */
 export function payoutEstimate(o: MerchantOrder) {
   const voided = o.status === "cancelled" || o.status === "refunded"
   const commission = o.commission || Math.round(o.subtotal * COMMISSION_RATE)
-  return { subtotal: o.subtotal, commission, payout: voided ? 0 : o.subtotal - commission, voided }
+  const refunded = voided ? null : partialRefund(o)
+  const payout = voided ? 0 : o.subtotal - commission - (refunded ? refunded.subtotal - refunded.commissionBack : 0)
+  return { subtotal: o.subtotal, commission, payout, voided, refunded }
 }
 
-/* ---------- Refund requests (sample reasons in the frontend phase) ---------- */
+/* ---------- Refund requests ---------- */
 
-const REFUND_REASONS = [
+/** Reasons for the sample refund requests that came with the seeded orders. */
+const SAMPLE_REFUND_REASONS = [
   { reason: "Size too small", note: "The fit runs smaller than the size chart. I'd like to send it back." },
   { reason: "Not as described", note: "The colour is much darker than in the photos." },
   { reason: "Damaged in transit", note: "The parcel arrived torn and the print is scuffed on the back." },
   { reason: "Changed my mind", note: "Ordered two of the same by mistake." },
 ] as const
 
-export function refundRequest(o: MerchantOrder) {
-  return pick(`refund-${o.id}`, REFUND_REASONS)
+export type RefundRequestView = {
+  reason: string
+  note?: string
+  at: string
+  /** The order lines the customer wants to return. */
+  lines: MerchantOrder["lines"]
+  /** What the returned lines cost the customer. */
+  amount: number
+  /** True when it came from the sample data rather than a request made in this browser. */
+  sample: boolean
+}
+
+/** The shopper's return request on an order: the real one when they made it here, else the sample one. */
+export function refundRequest(o: MerchantOrder): RefundRequestView {
+  const r = o.returnRequest
+  if (r) {
+    const lines = o.lines.filter((l) => r.variantIds.includes(l.variantId))
+    const chosen = lines.length ? lines : o.lines
+    const items = chosen.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
+    // Returning everything refunds what was paid, shipping included.
+    const amount = chosen.length === o.lines.length ? o.total : items
+    return { reason: r.reasonLabel, note: r.note, at: r.at, lines: chosen, amount, sample: false }
+  }
+  const s = pick(`refund-${o.id}`, SAMPLE_REFUND_REASONS)
+  const at = [...o.timeline].reverse().find((t) => /refund|return/i.test(t.label))?.at ?? o.placedAt
+  return { reason: s.reason, note: s.note, at, lines: o.lines, amount: o.total, sample: true }
 }
 
 /* ---------- Fulfilment ---------- */
@@ -186,6 +236,9 @@ export const shopperName = (id: string) => shopperById.get(id)?.name ?? "Custome
 export function vipThreshold(currency: CurrencyCode) {
   return convert(VIP_SPEND_USD, "USD", currency)
 }
+
+/** The Orders header copy, shared by the page and its loading state so nothing shifts. */
+export const ordersDescription = (brandName: string) => `Every order for ${brandName}, newest first. Ship an order once it shows Paid: that means the payment provider confirmed it.`
 
 /** The Customers page header copy, shared by the page and its loading state so nothing shifts. */
 export const customersDescription = (brandName: string) =>

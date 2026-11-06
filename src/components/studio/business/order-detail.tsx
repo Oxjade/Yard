@@ -1,14 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
 import { AnimatePresence, motion } from "motion/react"
-import { ProhibitIcon as Ban, CheckIcon as Check, CopyIcon as Copy, SealCheckIcon as PackageCheck, XCircleIcon as PackageX, ShieldCheckIcon as ShieldCheck, TruckIcon as Truck, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react"
+import { ProhibitIcon as Ban, CheckIcon as Check, CopyIcon as Copy, HourglassIcon as Hourglass, SealCheckIcon as PackageCheck, XCircleIcon as PackageX, ShieldCheckIcon as ShieldCheck, TruckIcon as Truck, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
-import { Bone } from "@/components/feedback/skeletons"
 import { InfoTip } from "@/components/feedback/info-tip"
 import { Button } from "@/components/ui/button"
 import { brandById } from "@/lib/data/brands"
@@ -23,6 +22,7 @@ import { DEMO_NOW, DAY_MS, countryName, formatDateTime, formatDateYear, formatTi
 import { Panel } from "@/components/studio/catalog/fields"
 import { Thumb } from "@/components/studio/catalog/parts"
 import { BackLink, DefinitionList, useStudioReady } from "./shared"
+import { OrderDetailSkeleton } from "./skeletons"
 
 export function OrderDetail({ id }: { id: string }) {
   const studioReady = useStudioReady()
@@ -32,21 +32,7 @@ export function OrderDetail({ id }: { id: string }) {
   const brandId = useStudio((s) => s.brandId)
   const brand = brandById.get(brandId)!
 
-  if (!ready) {
-    return (
-      <div role="status" aria-label="Loading order" className="grid gap-6">
-        <div className="grid gap-2 border-b border-line-soft pb-5">
-          <Bone className="h-3 w-16" />
-          <Bone className="h-7 w-56" />
-          <Bone className="h-4 w-72 max-w-full" />
-        </div>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <Bone className="h-64 rounded-lg" />
-          <Bone className="h-64 rounded-lg" />
-        </div>
-      </div>
-    )
-  }
+  if (!ready) return <OrderDetailSkeleton />
 
   if (!order) {
     return (
@@ -90,7 +76,20 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   const pay = paymentMeta[paymentState(o)]
   const verified = o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded"
 
+  // A status change swaps the header buttons, and the new primary lands under the cursor.
+  // Clicks in the first moments after a change are ignored, so a double-click never takes the next step.
+  const settleUntil = useRef(0)
+  function act(fn: () => void) {
+    if (performance.now() < settleUntil.current) return
+    fn()
+  }
+  const moved = () => {
+    settleUntil.current = performance.now() + 450
+  }
+
   function markProcessing() {
+    if (useStudio.getState().orders.find((x) => x.id === o.id)?.status !== "paid") return
+    moved()
     setOrderStatus(o.id, "processing", "Brand started processing")
     toast.success(`#${o.reference} is processing`, {
       description: "Add tracking when it ships.",
@@ -99,6 +98,8 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   }
 
   function markDelivered() {
+    if (useStudio.getState().orders.find((x) => x.id === o.id)?.status !== "shipped") return
+    moved()
     setOrderStatus(o.id, "delivered", "Marked delivered by brand")
     toast.success(`#${o.reference} marked delivered`, {
       description: "The returns window starts today. Your payout follows once it closes.",
@@ -110,24 +111,24 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   if (o.status === "paid") {
     actions = (
       <>
-        <Button size="sm" variant="secondary" onClick={() => setDialog("tracking")}><Truck /> Add tracking</Button>
-        <Button size="sm" variant="primary" onClick={markProcessing}><PackageCheck /> Mark as processing</Button>
+        <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
+        <Button size="sm" variant="primary" onClick={() => act(markProcessing)}><PackageCheck /> Mark as processing</Button>
       </>
     )
   } else if (o.status === "processing") {
-    actions = <Button size="sm" variant="primary" onClick={() => setDialog("tracking")}><Truck /> Add tracking</Button>
+    actions = <Button size="sm" variant="primary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
   } else if (o.status === "shipped") {
     actions = (
       <>
-        <Button size="sm" variant="secondary" onClick={() => setDialog("tracking")}>Edit tracking</Button>
-        <Button size="sm" variant="primary" onClick={markDelivered}><Check /> Mark delivered</Button>
+        <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}>Edit tracking</Button>
+        <Button size="sm" variant="primary" onClick={() => act(markDelivered)}><Check /> Mark delivered</Button>
       </>
     )
   } else if (o.status === "refund_requested") {
     actions = (
       <>
-        <Button size="sm" variant="secondary" onClick={() => setDialog("decline")}>Decline</Button>
-        <Button size="sm" variant="primary" onClick={() => setDialog("approve")}><Undo2 /> Approve refund</Button>
+        <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("decline"))}>Decline</Button>
+        <Button size="sm" variant="primary" onClick={() => act(() => setDialog("approve"))}><Undo2 /> Approve refund</Button>
       </>
     )
   }
@@ -147,7 +148,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
             {verified ? (
               <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
                 <ShieldCheck className="size-3.5 text-violet" aria-hidden />
-                {o.status === "refunded" || o.status === "cancelled" ? "Payment and refund verified by the payment provider" : "Verified by the payment provider"}
+                {o.paymentStatus === "captured" && o.status !== "refunded" && o.status !== "cancelled" ? "Verified by the payment provider" : "Payment verified by the payment provider"}
               </span>
             ) : null}
           </div>
@@ -157,7 +158,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid min-w-0 gap-6 xl:col-start-1">
           {o.status === "refund_requested" ? <RefundPanel order={o} cur={cur} /> : null}
-          <FulfilmentPanel order={o} onCancel={() => setDialog("cancel")} />
+          <FulfilmentPanel order={o} onCancel={() => act(() => setDialog("cancel"))} />
           <ItemsPanel order={o} cur={cur} />
         </div>
 
@@ -210,16 +211,16 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
   const due = shipBy(o, processingDays)
   const daysLeft = Math.ceil((due - DEMO_NOW) / DAY_MS)
   const open = o.status === "paid" || o.status === "processing"
-  const cancelReason = o.status === "cancelled" ? [...o.timeline].reverse().find((t) => /cancel/i.test(t.label))?.label : null
+  const cancelReason = o.status === "cancelled" ? (o.cancelReason ? `You cancelled it: ${o.cancelReason.replace(/\.$/, "")}.` : [...o.timeline].reverse().find((t) => /cancel/i.test(t.label))?.label) : null
 
   const copy: Record<string, string> = {
     paid: "Paid and waiting for you. Mark it as processing when you start packing, or add tracking straight away if it's ready to go.",
     processing: "You're packing this order. Add the carrier and tracking number when it leaves the studio.",
     shipped: "On its way. Mark it delivered once the carrier confirms, or the customer confirms receipt.",
-    delivered: "Delivered. The returns window is open; your payout follows once it closes.",
+    delivered: o.paymentStatus === "partially_refunded" ? "Delivered, with part of the order refunded. Your payout for the rest follows once the returns window closes." : "Delivered. The returns window is open; your payout follows once it closes.",
     refund_requested: "Delivered, and the customer has asked for a refund. Decide on the request above.",
-    refunded: "Refunded in full to the customer.",
-    cancelled: "Cancelled before shipping. The customer was refunded in full.",
+    refunded: "Refunded to the customer.",
+    cancelled: o.paymentStatus === "pending" ? "Cancelled before it was paid." : "Cancelled before shipping. The customer is owed a full refund.",
     pending_payment: "Waiting for the payment provider to confirm payment. Don't ship until it's paid.",
   }
 
@@ -234,7 +235,12 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
         </StatusBadge>
       ) : undefined}
     >
-      {idx >= 0 ? (
+      {o.status === "pending_payment" ? (
+        <p className="flex items-start gap-2 rounded-md border border-line-soft bg-surface/60 px-3 py-2.5 text-sm text-ink-2">
+          <Hourglass className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
+          No payment provider is connected in this development build, so this order stays unpaid. Don&apos;t pack or ship it.
+        </p>
+      ) : idx >= 0 ? (
         <ol className="grid grid-cols-4 gap-1.5" aria-label="Fulfilment progress">
           {steps.map((s, i) => {
             const done = i < idx
@@ -275,7 +281,7 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
         <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line-soft pt-4">
           {open ? (
             <>
-              <p className="text-xs text-ink-3">You can cancel until it ships. The customer is refunded in full.</p>
+              <p className="text-xs text-ink-3">{o.paymentStatus === "pending" ? "You can cancel until it ships. It isn't paid, so nothing is refunded." : "You can cancel until it ships; the customer is owed a full refund."}</p>
               <Button size="sm" variant="ghost" className="-mx-2 text-danger hover:bg-danger/10 hover:text-danger sm:mx-0" onClick={onCancel}>
                 <Ban /> Cancel order
               </Button>
@@ -293,11 +299,11 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
 
 function RefundPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
   const req = refundRequest(o)
-  const at = [...o.timeline].reverse().find((t) => /refund/i.test(t.label))?.at ?? o.placedAt
+  const partial = req.lines.length < o.lines.length
   return (
     <Panel
-      title="Refund requested"
-      description={`Requested ${formatDateYear(at)}. Approve to refund ${formatMoney(o.total, cur)} in full, or decline with a reason the customer will see.`}
+      title="Return requested"
+      description={`Requested ${formatDateYear(req.at)}. Approve to refund ${formatMoney(req.amount, cur)}, or decline with a reason the customer will see.`}
       action={<StatusBadge tone="attention" className="shrink-0">Needs a decision</StatusBadge>}
       className="min-w-0 border-acid/30"
     >
@@ -306,11 +312,18 @@ function RefundPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
           <dt className="text-xs text-ink-3">Reason</dt>
           <dd className="text-ink">{req.reason}</dd>
         </div>
+        {req.note ? (
+          <div className="grid gap-0.5">
+            <dt className="text-xs text-ink-3">Customer&apos;s note</dt>
+            <dd className="text-ink-2">&ldquo;{req.note}&rdquo;</dd>
+          </div>
+        ) : null}
         <div className="grid gap-0.5">
-          <dt className="text-xs text-ink-3">Customer&apos;s note</dt>
-          <dd className="text-ink-2">&ldquo;{req.note}&rdquo;</dd>
+          <dt className="text-xs text-ink-3">{partial ? `Returning ${req.lines.length} of ${o.lines.length} items` : "Returning"}</dt>
+          <dd className="text-ink-2">{partial ? req.lines.map((l) => `${l.name}${l.variantLabel ? ` (${l.variantLabel})` : ""}`).join(", ") : "The whole order"}</dd>
         </div>
       </dl>
+      {req.sample ? <p className="mt-2 text-xs text-ink-3">This request comes with the sample data. Requests customers make from their orders show their own reason and items.</p> : null}
     </Panel>
   )
 }
@@ -392,8 +405,13 @@ function CustomerPanel({ order: o }: { order: MerchantOrder }) {
 
 function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
   const p = payoutEstimate(o)
+  const description = p.voided
+    ? "No payout for this order: it was refunded in full."
+    : p.refunded
+      ? `Part of this order was refunded, so the returned ${p.refunded.lines.length === 1 ? "item comes" : "items come"} off. An estimate until the returns window closes.`
+      : "An estimate until the order completes and the returns window closes."
   return (
-    <Panel title="Your payout" className="min-w-0" description={p.voided ? "No payout for this order: it was refunded in full." : "An estimate until the order completes and the returns window closes."}>
+    <Panel title="Your payout" className="min-w-0" description={description}>
       <dl className="grid gap-2 text-sm">
         <div className="flex justify-between gap-4"><dt className="text-ink-2">Item subtotal</dt><dd className="text-ink tabular">{formatMoney(p.subtotal, cur)}</dd></div>
         <div className="flex justify-between gap-4">
@@ -403,6 +421,12 @@ function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
           </dt>
           <dd className={cn("tabular", p.voided ? "text-ink-3 line-through" : "text-ink")}>−{formatMoney(p.commission, cur)}</dd>
         </div>
+        {p.refunded ? (
+          <>
+            <div className="flex justify-between gap-4"><dt className="text-ink-2">Refunded items ({plural(p.refunded.lines.reduce((n, l) => n + l.quantity, 0), "item")})</dt><dd className="text-ink tabular">−{formatMoney(p.refunded.subtotal, cur)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-ink-2">Commission returned on them</dt><dd className="text-ink tabular">+{formatMoney(p.refunded.commissionBack, cur)}</dd></div>
+          </>
+        ) : null}
         <div className="flex justify-between gap-4 border-t border-line-soft pt-2">
           <dt className="text-ink">Estimated payout</dt>
           <dd className="text-lg font-medium text-ink tabular">{formatMoney(p.payout, cur)}</dd>

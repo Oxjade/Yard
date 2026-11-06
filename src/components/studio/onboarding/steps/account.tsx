@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
@@ -41,7 +40,6 @@ export function AccountStep({ onNext }: StepProps) {
     const u = useSession.getState().user
     if (!u) return
     adopt(u)
-    toast.success(`Signed in with ${providerLabel[provider]}`)
     onNext()
   }
 
@@ -61,7 +59,6 @@ export function AccountStep({ onNext }: StepProps) {
         demoSignIn("email", name.trim(), email.trim())
         const u = useSession.getState().user
         if (u) adopt(u)
-        toast.success("Account created", { description: `Signed in as ${email.trim()}` })
       }
       onNext()
     },
@@ -78,7 +75,7 @@ export function AccountStep({ onNext }: StepProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink">{signedIn.name}</p>
-              <p className="truncate text-xs text-ink-2">{signedIn.email}, signed in with {providerLabel[signedIn.provider]}</p>
+              <p className="truncate text-xs text-ink-2">{signedIn.email}, signed in with {signedIn.provider === "email" ? "email" : `a demo ${providerLabel[signedIn.provider]} account`}</p>
             </div>
           </div>
           <Button
@@ -89,7 +86,6 @@ export function AccountStep({ onNext }: StepProps) {
             onClick={() => {
               signOut()
               update("account", { name: "", email: "", provider: null })
-              toast("Signed out", { description: "Create an account or sign in with another one." })
             }}
           >
             Use a different account
@@ -101,7 +97,7 @@ export function AccountStep({ onNext }: StepProps) {
 
   return (
     <StepForm formRef={form.formRef} onSubmit={form.onSubmit} errors={e}>
-      <Panel title="Sign up" description="Continue with Google or Apple, or use your email. Continuing with an existing account links your brand to it.">
+      <Panel title="Sign up" description="Continue with Google or Apple, or use your email. Sign-in providers and account storage aren't connected in this development build, so each option creates a demo account on this device.">
         <div className="grid gap-2 sm:grid-cols-2">
           <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => social("google")}>
             <GoogleMark /> Continue with Google

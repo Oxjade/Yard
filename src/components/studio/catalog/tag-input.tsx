@@ -86,7 +86,7 @@ export function ChipInput({
               className="inline-flex h-7 items-center gap-1 rounded-full border border-white/12 bg-elevated pr-1 pl-2.5 text-xs text-ink"
             >
               {v}
-              <button type="button" onClick={() => onChange(values.filter((x) => x !== v))} aria-label={`Remove ${v}`} className="inline-flex size-5 items-center justify-center rounded-full text-ink-3 hover:bg-white/10 hover:text-ink">
+              <button type="button" onClick={() => onChange(values.filter((x) => x !== v))} aria-label={`Remove ${v}`} className="relative inline-flex size-5 items-center justify-center rounded-full text-ink-3 transition-colors after:absolute after:-inset-2 hover:bg-white/10 hover:text-ink">
                 <X className="size-3" />
               </button>
             </motion.span>
@@ -120,7 +120,7 @@ export function ChipInput({
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-ink-3">Suggested</span>
           {open.map((s) => (
-            <button key={s} type="button" onClick={() => add(s)} className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-line px-2 text-[11px] text-ink-2 hover:border-violet/60 hover:text-ink">
+            <button key={s} type="button" onClick={() => add(s)} className="inline-flex h-8 items-center gap-1 rounded-full border border-dashed border-line px-2.5 text-[11px] text-ink-2 transition-colors hover:border-violet/60 hover:text-ink md:h-6 md:px-2">
               <Plus className="size-3" /> {s}
             </button>
           ))}

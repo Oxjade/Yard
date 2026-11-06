@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { DropCard } from "@/components/market/drop-card"
-import { BackLink } from "@/components/studio/business/shared"
+import { BackLink, useFocusReturn } from "@/components/studio/business/shared"
 import { useLeaveGuard } from "@/components/studio/catalog/save-bar"
 import { imageFileError, readImage } from "@/components/studio/onboarding/image-utils"
 import { getDemoAnchor, useNow } from "@/hooks/use-now"
@@ -28,6 +28,7 @@ import { formatMoney, formatNumber } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import type { Drop, DropAccess, ImageAsset } from "@/lib/data/types"
+import { CATALOGUE_NOTE } from "./copy"
 import { ChoiceCard, ChoiceGroup, control, EditorSkeleton, Field, inputClass, NumberStepper, Panel, selectClass } from "./form"
 import { useGrowth, useGrowthReady } from "./store"
 import { addDays, brandZone, countryZone, dropStatusMeta, formatInZone, HOUR, localId, notifyCount, relativeTime, studioDropStatus, todayIn, utcToZoned, zoneAbbr, zoneLongName, zonedToUtc } from "./utils"
@@ -41,6 +42,8 @@ type Values = {
   imageSrc: string | null
   date: string
   time: string
+  /** IANA zone the date and time are entered in. */
+  timeZone: string
   durationHours: string
   access: DropAccess
   limit: string
@@ -65,6 +68,22 @@ const ACCESS: { value: DropAccess; icon: React.ComponentType<{ className?: strin
 ]
 
 const MIN_LEAD_MINUTES = 30
+
+/** Zones a release can be entered in: each market's main zone, the brand's first, then the browser's. */
+function zoneOptions(brandTz: string, userTz: string | null, at: number) {
+  const seen = new Set<string>()
+  const list: { tz: string; label: string }[] = []
+  const add = (tz: string, label: string) => {
+    if (seen.has(tz)) return
+    seen.add(tz)
+    list.push({ tz, label })
+  }
+  const brandCity = Object.values(countryZone).find((z) => z.tz === brandTz)?.city ?? brandTz
+  add(brandTz, `${brandCity} (${zoneAbbr(brandTz, at)}), your brand`)
+  if (userTz) add(userTz, `${userTz.split("/").pop()?.replace(/_/g, " ")} (${zoneAbbr(userTz, at)}), this device`)
+  for (const z of Object.values(countryZone)) add(z.tz, `${z.city} (${zoneAbbr(z.tz, at)})`)
+  return list
+}
 
 function slugify(s: string) {
   return s
@@ -133,14 +152,15 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
   const setDropMeta = useGrowth((s) => s.setDropMeta)
   const brand = brandById.get(brandId)!
   const anchor = getDemoAnchor()
-  const tz = meta?.timeZone ?? brandZone(brand).tz
+  const brandTz = brandZone(brand).tz
+  const savedTz = meta?.timeZone ?? brandTz
   const status = existing ? studioDropStatus(existing, meta, now, anchor) : null
   const locked = status === "live" || status === "sold-out" || status === "ended"
   const sold = existing ? Math.max(0, existing.totalUnits - existing.unitsLeft) : 0
 
   const [values, setValues] = useState<Values>(() => {
     if (existing) {
-      const release = utcToZoned(anchor + existing.releaseOffsetHours * HOUR, tz)
+      const release = utcToZoned(anchor + existing.releaseOffsetHours * HOUR, savedTz)
       return {
         name: existing.name,
         description: existing.description,
@@ -148,24 +168,30 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
         imageSrc: existing.image.src,
         date: release.date,
         time: release.time,
+        timeZone: savedTz,
         durationHours: String(existing.durationHours),
         access: existing.access,
         limit: String(existing.limitPerCustomer),
         quantity: String(existing.totalUnits),
       }
     }
-    return { name: "", description: "", productIds: [], imageSrc: null, date: suggestedDate(todayIn(tz, now)), time: "11:00", durationHours: "48", access: "first-come", limit: "2", quantity: "100" }
+    return { name: "", description: "", productIds: [], imageSrc: null, date: suggestedDate(todayIn(savedTz, now)), time: "11:00", timeZone: savedTz, durationHours: "48", access: "first-come", limit: "2", quantity: "100" }
   })
+  const tz = values.timeZone
   const [errors, setErrors] = useState<Errors>({})
   const [uploads, setUploads] = useState<ImageAsset[]>([])
   const [dirty, setDirty] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
+  // One id for this form, so a repeated click updates the same drop instead of making a second.
+  const idRef = useRef(existing?.id ?? localId("d_local_"))
+  // Set once a save is leaving the page: blocks repeat submits while the route changes.
+  const [leaving, setLeaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Asks before the page is left with unsaved changes: reload or close, and in-app links.
   const guard = useLeaveGuard(dirty, { body: "Your changes to this drop will be lost." })
 
-  const errorFor: Partial<Record<keyof Values, keyof Errors>> = { name: "name", description: "description", productIds: "products", imageSrc: "image", date: "release", time: "release", quantity: "quantity", limit: "limit" }
+  const errorFor: Partial<Record<keyof Values, keyof Errors>> = { name: "name", description: "description", productIds: "products", imageSrc: "image", date: "release", time: "release", timeZone: "release", quantity: "quantity", limit: "limit" }
   const set = <K extends keyof Values>(key: K, value: Values[K]) => {
     setValues((v) => ({ ...v, [key]: value }))
     setDirty(true)
@@ -249,13 +275,16 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
   const fieldIds: Record<keyof Errors, string> = { name: "drop-name", description: "drop-description", products: "drop-products", image: "drop-image", release: "drop-date", quantity: "drop-quantity", limit: "drop-limit" }
 
   function submit(mode: Mode) {
+    if (leaving) return
     const e = validate(mode)
     setErrors(e)
     const first = (Object.keys(fieldIds) as (keyof Errors)[]).find((k) => e[k])
     if (first) {
       const el = rootRef.current?.querySelector<HTMLElement>(`#${fieldIds[first]}`)
       el?.scrollIntoView({ behavior: "smooth", block: "center" })
-      el?.focus({ preventScroll: true })
+      // The image picker is a radiogroup, which can't take focus: focus its chosen tile, or the first.
+      const target = el?.getAttribute("role") === "radiogroup" ? (el.querySelector<HTMLElement>("[role=radio][data-state=checked]") ?? el.querySelector<HTMLElement>("[role=radio]")) : el
+      target?.focus({ preventScroll: true })
       return
     }
     if (mode === "publish" && !confirmPublish) {
@@ -266,8 +295,9 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
   }
 
   function save(mode: Mode) {
+    if (leaving) return
     setConfirmPublish(false)
-    const id = existing?.id ?? localId("d_local_")
+    const id = idRef.current
     const release = mode === "publish" ? now : (releaseUtc ?? (existing ? anchor + existing.releaseOffsetHours * HOUR : now + 7 * 24 * HOUR))
     const drop: Drop = {
       ...previewDrop,
@@ -286,13 +316,17 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
     savedRef.current = true
 
     if (mode === "draft") {
-      toast("Draft saved", { description: "Only you can see it. Schedule it when it's ready." })
-      if (!existing) router.replace(`/studio/drops/${id}`)
+      toast.success("Draft saved", { description: "It stays in Studio until you schedule it." })
+      if (!existing) {
+        setLeaving(true)
+        router.replace(`/studio/drops/${id}`)
+      }
       return
     }
-    if (mode === "publish") toast("Drop is live", { description: `${drop.name} is on sale now. Followers who asked are being notified.` })
-    else if (mode === "schedule") toast(status === "scheduled" ? "Schedule updated" : "Drop scheduled", { description: `${drop.name} releases ${formatInZone(release, tz)} ${zoneAbbr(tz, release)}.` })
-    else toast("Changes saved", { description: drop.name })
+    setLeaving(true)
+    if (mode === "publish") toast.success("Drop is live in Studio", { description: `${drop.name} is open for ${DURATIONS.find((d) => d.value === values.durationHours)?.label ?? `${duration} hours`}.` })
+    else if (mode === "schedule") toast.success(status === "scheduled" ? "Schedule updated" : "Drop scheduled", { description: `${drop.name} releases ${formatInZone(release, tz)} ${zoneAbbr(tz, release)}.` })
+    else toast.success("Changes saved", { description: drop.name })
     guard.go("/studio/drops")
   }
 
@@ -307,9 +341,9 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
       const src = await readImage(file, { max: 1400 })
       const asset: ImageAsset = { src, alt: `${values.name.trim() || "Drop"} by ${brand.name}`, width: 1400, height: 1050 }
       setUploads((u) => [asset, ...u])
+      // The new tile appears selected in the grid, which is the confirmation.
       set("imageSrc", src)
       setErrors((e) => ({ ...e, image: undefined }))
-      toast("Image added", { description: "It's selected as the drop's promotional image." })
     } catch {
       setErrors((e) => ({ ...e, image: "That image couldn't be read. Try a JPG, PNG or WebP." }))
     } finally {
@@ -317,12 +351,15 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
     }
   }
 
-  const userTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : tz
+  const userTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
+  const zones = zoneOptions(brandTz, userTz, releaseUtc ?? now)
   const otherZones = [
-    ...(userTz && userTz !== tz ? [{ label: "Your time", tz: userTz }] : []),
-    ...[countryZone.GB, countryZone.US].filter((z) => z.tz !== tz && z.tz !== userTz).map((z) => ({ label: z.city, tz: z.tz })),
+    ...(tz !== brandTz ? [{ label: "Your brand's time", tz: brandTz }] : []),
+    ...(userTz && userTz !== tz && userTz !== brandTz ? [{ label: "This device", tz: userTz }] : []),
+    ...[countryZone.GB, countryZone.US].filter((z) => z.tz !== tz && z.tz !== userTz && z.tz !== brandTz).map((z) => ({ label: z.city, tz: z.tz })),
   ]
 
+  const publishFocus = useFocusReturn()
   const title = existing ? (status === "draft" ? "Edit draft drop" : locked ? existing.name : "Edit drop") : "Schedule a drop"
   const statusMeta = status ? dropStatusMeta[status] : null
 
@@ -334,34 +371,19 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           title={title}
           description={locked ? "This drop has been released. Its products, timing, access and quantity are locked; you can still edit how it's presented." : "Pick the products, set a release time and choose who gets access. The preview shows how shoppers will see it."}
           actions={
+            // Phones get the same actions in the floating bar at the bottom of the form.
             locked ? (
-              <Button type="submit" form="drop-form" variant="primary" size="sm">Save changes</Button>
+              <Button type="submit" form="drop-form" variant="primary" size="sm" className="hidden sm:inline-flex" disabled={leaving}>Save changes</Button>
             ) : (
-              <div className="flex w-full items-center gap-2 sm:w-auto">
-                <Button type="button" variant="secondary" size="sm" className="min-w-0 flex-1 sm:flex-none" onClick={() => submit("draft")}>
-                  {status === "scheduled" ? (
-                    <>
-                      <span className="sm:hidden">Unschedule</span>
-                      <span className="hidden sm:inline">Move to drafts</span>
-                    </>
-                  ) : (
-                    "Save draft"
-                  )}
+              <div className="hidden items-center gap-2 sm:flex">
+                <Button type="button" variant="secondary" size="sm" onClick={() => submit("draft")} disabled={leaving}>
+                  {status === "scheduled" ? "Move to drafts" : "Save draft"}
                 </Button>
-                <Button type="button" variant="secondary" size="sm" className="min-w-0 flex-1 sm:flex-none" onClick={() => submit("publish")}>
-                  <Rocket className="hidden sm:block" />
-                  <span className="sm:hidden">Go live</span>
-                  <span className="hidden sm:inline">Publish now</span>
+                <Button type="button" variant="secondary" size="sm" onClick={() => submit("publish")} disabled={leaving}>
+                  <Rocket /> Publish now
                 </Button>
-                <Button type="submit" form="drop-form" variant="primary" size="sm" className="min-w-0 flex-1 sm:flex-none">
-                  {status === "scheduled" ? (
-                    <>
-                      <span className="sm:hidden">Save</span>
-                      <span className="hidden sm:inline">Save schedule</span>
-                    </>
-                  ) : (
-                    "Schedule"
-                  )}
+                <Button type="submit" form="drop-form" variant="primary" size="sm" disabled={leaving}>
+                  {status === "scheduled" ? "Save schedule" : "Schedule"}
                 </Button>
               </div>
             )
@@ -373,6 +395,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
               {dirty ? "Unsaved changes" : meta?.updatedAt ? `Saved ${relativeTime(new Date(meta.updatedAt).getTime(), now)}` : existing ? "Saved" : "New drop, not saved yet"}
             </span>
           </div>
+          <p className="mt-2 text-xs text-ink-3">{CATALOGUE_NOTE}</p>
         </PageHeader>
       </div>
 
@@ -447,15 +470,29 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
             {errors.image ? <p id="drop-image-error" className="mt-2 text-xs text-danger">{errors.image}</p> : <p className="mt-2 text-xs text-ink-3">Photos from your products, cover and collections. Uploads stay in this browser until the store is connected.</p>}
           </Panel>
 
-          <Panel title="Release" description={`Times are in ${zoneLongName(tz, now)} (${zoneAbbr(tz, now)}), your brand's time zone.`} action={locked ? <LockedNote /> : undefined}>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <Panel title="Release" description={`Enter the date and time in any zone. It's saved as one moment, and shoppers see the countdown in their own time.`} action={locked ? <LockedNote /> : undefined}>
+            {/* One row where the form is wide (lg, and from 1400px beside the preview), a 2×2 grid where the preview
+                narrows it. The zone's names are the longest values, so it gets the widest column. */}
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)] xl:grid-cols-2 min-[87.5rem]:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]">
+              <Field id="drop-tz" label="Time zone" className="col-span-2 lg:col-span-1" hint={tz === brandTz ? undefined : zoneLongName(tz, releaseUtc ?? now)}>
+                <Select value={tz} onValueChange={(v) => set("timeZone", v)} disabled={locked}>
+                  <SelectTrigger id="drop-tz" aria-describedby={tz === brandTz ? undefined : "drop-tz-hint"} title={zones.find((z) => z.tz === tz)?.label} className={cn(selectClass, "min-w-0 *:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="max-h-72">
+                    {zones.map((z) => (
+                      <SelectItem key={z.tz} value={z.tz}>{z.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
               <Field id="drop-date" label="Release date" error={errors.release}>
                 <Input {...control("drop-date", errors.release)} type="date" disabled={locked} value={values.date} min={todayIn(tz, now)} onChange={(e) => { set("date", e.target.value); setErrors((x) => ({ ...x, release: undefined })) }} className={cn(inputClass, "[color-scheme:dark]")} />
               </Field>
               <Field id="drop-time" label={`Time (${zoneAbbr(tz, releaseUtc ?? now)})`}>
                 <Input id="drop-time" type="time" disabled={locked} aria-invalid={errors.release ? true : undefined} aria-describedby={errors.release ? "drop-date-error" : undefined} value={values.time} step={300} onChange={(e) => { set("time", e.target.value); setErrors((x) => ({ ...x, release: undefined })) }} className={cn(inputClass, "[color-scheme:dark]")} />
               </Field>
-              <Field id="drop-duration" label="Stays open for" className="col-span-2 sm:col-span-1">
+              <Field id="drop-duration" label="Stays open for" className="col-span-2 lg:col-span-1">
                 <Select value={values.durationHours} onValueChange={(v) => set("durationHours", v)} disabled={locked}>
                   <SelectTrigger id="drop-duration" className={selectClass}>
                     <SelectValue />
@@ -514,7 +551,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           </Panel>
         </div>
 
-        <aside aria-label="Preview" className="grid min-w-0 content-start gap-3 xl:sticky xl:top-20 xl:self-start">
+        <aside aria-label="Preview" className="grid min-w-0 content-start gap-3 xl:sticky xl:top-24 xl:self-start">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-sm font-medium text-ink">Preview</h2>
             <span className="text-xs text-ink-3">As shoppers see it on Drops</span>
@@ -529,22 +566,41 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
             <SummaryRow label="Units" value={Number.isFinite(quantity) && quantity > 0 ? `${formatNumber(quantity)}, up to ${Number.isFinite(limit) && limit > 0 ? limit : 1} each` : "Not set"} />
             <SummaryRow label="Products" value={values.productIds.length ? String(values.productIds.length) : "None yet"} />
           </dl>
-          {releaseUtc ? <p className="text-xs text-ink-3">Shoppers see the countdown in their own time zone. Followers get an alert a day before, an hour before and at release.</p> : null}
+          {releaseUtc ? <p className="text-xs text-ink-3">Shoppers see the countdown in their own time zone. Once the catalogue backend is connected, followers get an alert a day before, an hour before and at release.</p> : null}
         </aside>
+
+        {/* Phones: a floating action bar, so Schedule is in reach anywhere on this long form. */}
+        <div className="glass-strong sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 col-span-full flex items-center gap-2 rounded-2xl p-2 sm:hidden">
+          {locked ? (
+            <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>Save changes</Button>
+          ) : (
+            <>
+              <Button type="button" variant="ghost" size="sm" className="h-10" onClick={() => submit("draft")} disabled={leaving}>
+                {status === "scheduled" ? "Unschedule" : "Save draft"}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" className="h-10" onClick={() => submit("publish")} disabled={leaving}>
+                <Rocket /> Go live
+              </Button>
+              <Button type="submit" variant="primary" size="sm" className="h-10 flex-1" disabled={leaving}>
+                {status === "scheduled" ? "Save schedule" : "Schedule"}
+              </Button>
+            </>
+          )}
+        </div>
 
       </form>
 
       <Dialog open={confirmPublish} onOpenChange={setConfirmPublish}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...publishFocus}>
           <DialogHeader>
             <DialogTitle>Publish {values.name.trim() || "this drop"} now?</DialogTitle>
             <DialogDescription className="text-ink-2">
-              It goes live straight away instead of at the scheduled time, and stays open for {DURATIONS.find((d) => d.value === values.durationHours)?.label ?? `${duration} hours`}. Followers are notified now, so there&apos;s no countdown.
+              It goes live in Studio straight away instead of at the scheduled time, with no countdown, and stays open for {DURATIONS.find((d) => d.value === values.durationHours)?.label ?? `${duration} hours`}. Follower alerts go out once the catalogue backend is connected.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmPublish(false)}>Not yet</Button>
-            <Button variant="primary" onClick={() => save("publish")}><Rocket /> Publish now</Button>
+            <Button variant="primary" onClick={() => save("publish")} disabled={leaving}><Rocket /> Publish now</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

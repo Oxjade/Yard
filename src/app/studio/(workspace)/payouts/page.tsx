@@ -1,7 +1,8 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { ArrowLineDownIcon as ArrowDownToLine, CheckIcon as Check, CopyIcon as Copy, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
+import Link from "next/link"
+import { ArrowLineDownIcon as ArrowDownToLine, CheckIcon as Check, ClockIcon as Clock, CopyIcon as Copy, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,18 +11,46 @@ import { Label } from "@/components/ui/label"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
-import { InfoTip } from "@/components/feedback/info-tip"
-import { MetricRowSkeleton } from "@/components/feedback/skeletons"
+import { surfaceClass } from "@/components/dashboard/insight/insight-panel"
+import { DisabledReason, InfoTip } from "@/components/feedback/info-tip"
+import { Bone } from "@/components/feedback/skeletons"
+import { providerLabel } from "@/components/studio/business/settings-model"
+import { accountOnFile, useBrandSettings, useSettingsReady, type PayoutAccount } from "@/components/studio/business/settings-store"
+import { useFocusReturn, useStudioReady } from "@/components/studio/business/shared"
+import { PayoutTilesSkeleton, payoutTileGrid, payoutTilePrimary } from "@/components/studio/business/skeletons"
+import { currencies } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { brandById } from "@/lib/data/brands"
-import { convert, formatMoney } from "@/lib/money"
+import { convert, formatMoney, toMajor } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
+import { useNotifications } from "@/lib/stores/notifications"
 import { useStudio } from "@/lib/stores/studio"
+import { cn } from "@/lib/utils"
 import { PAYOUT_HOLD_DAYS, payoutBalances } from "@/lib/payouts"
 import type { Payout } from "@/lib/data/admin"
 
 const HOLD_DAYS = PAYOUT_HOLD_DAYS
+
+/** "Paystack to GTBank •••• 4821" */
+const accountText = (a: PayoutAccount) => `${providerLabel[a.provider]} to ${a.bankName} •••• ${a.last4}`
+
+const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
+
+/**
+ * Phones: the history's only column (no checkbox or row menu), so it takes the table's whole
+ * width: the viewport minus the page gutters, the table border and the cell padding.
+ */
+const historyCell = "block w-[calc(100vw-5rem)] max-w-[24rem] md:w-auto md:max-w-none"
+
+/**
+ * A short reference that stays unique: a request's id ends in its own time code
+ * (po_req_<brand>_<time>), so that tail is the reference; seeded payouts keep their name.
+ */
+function payoutRef(id: string) {
+  const req = /^po_req_.+_([a-z0-9]+)$/.exec(id)
+  return req ? `PO-${req[1].toUpperCase()}` : id.replace(/^po_/, "PO-").toUpperCase()
+}
 
 const payoutTone: Record<Payout["status"], { label: string; tone: "muted" | "info" | "attention" | "success" | "danger" }> = {
   awaiting_approval: { label: "Under review", tone: "attention" },
@@ -55,7 +84,12 @@ function CopyRef({ value }: { value: string }) {
 }
 
 export default function StudioPayoutsPage() {
-  const hydrated = useHydrated()
+  // Balances come from saved orders and the destination from saved settings: wait for both.
+  const mounted = useHydrated()
+  const studioReady = useStudioReady()
+  const settingsReady = useSettingsReady()
+  const hydrated = mounted && studioReady && settingsReady
+  const saved = useBrandSettings((s) => s.payout.account)
   const brandId = useStudio((s) => s.brandId)
   const orders = useStudio((s) => s.orders)
   const payouts = useAdmin((s) => s.payouts)
@@ -76,7 +110,11 @@ export default function StudioPayoutsPage() {
   const amountMinor = Math.round(Number(amount.replace(/,/g, "")) * minor)
   const fee = 0
   const amountError = !amount ? "Enter an amount." : !Number.isFinite(amountMinor) || amountMinor <= 0 ? "Enter an amount above zero." : amountMinor > balances.available ? `You can request up to ${formatMoney(balances.available, cur)}.` : null
-  const destination = brand.country === "NG" ? "Paystack transfer to GTBank •••• 4821" : "Bank transfer •••• 4821"
+  // Payouts go to the verified account. A change saved in Settings stays pending until the
+  // provider verifies it (backend phase), and until then payouts keep going to the account on file.
+  const onFile = saved.status === "verified" ? saved : accountOnFile()
+  const pendingChange = saved.status === "pending" ? saved : null
+  const destination = accountText(onFile)
 
   const request = useAsyncAction(
     () => {
@@ -84,10 +122,24 @@ export default function StudioPayoutsPage() {
       const id = key.current
       const state = useAdmin.getState()
       if (state.payouts.some((p) => p.id === id)) return id // idempotent: a repeat submit returns the same request
+      // Kept unrounded, so converting back gives exactly the amount the brand confirmed. (The
+      // payout record holds USD only; storing the brand-currency amount needs a shared field.)
+      const amountUsd = (toMajor(amountMinor, cur) / currencies[cur].perUsd) * 100
+      const at = new Date().toISOString()
       useAdmin.setState({
-        payouts: [{ id, brandName: brand.name, brandId, amountUsd: convert(amountMinor, cur, "USD"), currency: cur, scheduledFor: new Date().toISOString(), status: "awaiting_approval", method: destination.split(" to ")[0], orders: 0 }, ...state.payouts],
+        payouts: [{ id, brandName: brand.name, brandId, amountUsd, currency: cur, scheduledFor: at, status: "awaiting_approval", method: providerLabel[onFile.provider], orders: 0 }, ...state.payouts],
       })
       state.log("Payout requested by brand", `${brand.name}, ${formatMoney(amountMinor, cur)}`, "Requested from Brand Studio")
+      // The platform team hears about it; the key is the request, so a repeat never notifies twice.
+      useNotifications.getState().push({
+        eventKey: `a:payout:${id}:requested`,
+        audience: "admin",
+        category: "payout_status",
+        title: `Payout requested: ${brand.name}`,
+        body: `${formatMoney(amountMinor, cur)} to ${destination}, ${payoutRef(id)}. Waiting for platform review.`,
+        href: "/admin/finance?tab=payouts",
+        at,
+      })
       return id
     },
     {
@@ -103,22 +155,50 @@ export default function StudioPayoutsPage() {
     },
   )
 
+  // After a request the opener is replaced by its disabled twin, so focus lands on the history.
+  const focus = useFocusReturn(() => document.getElementById("history-title"))
+
+  const amountOf = (p: Payout) => convert(p.amountUsd, "USD", cur)
+  const noteOf = (p: Payout) => p.holdReason ?? (p.status === "processing" ? "Completes when the provider confirms the transfer" : p.status === "awaiting_approval" ? "Waiting for platform review" : "")
   const columns: Column<Payout>[] = [
-    { key: "ref", header: "Reference", cell: (p) => <CopyRef value={p.id.replace(/^po_/, "PO-").toUpperCase().slice(0, 22)} /> },
-    { key: "amount", header: "Amount", align: "right", sortValue: (p) => p.amountUsd, cell: (p) => formatMoney(convert(p.amountUsd, "USD", cur), cur) },
-    { key: "status", header: "Status", sortValue: (p) => p.status, cell: (p) => <StatusBadge tone={payoutTone[p.status].tone}>{payoutTone[p.status].label}</StatusBadge> },
-    { key: "method", header: "Destination", hideBelow: "md", cell: (p) => <span className="text-ink-2">{p.method}</span> },
-    { key: "date", header: "Date", sortValue: (p) => p.scheduledFor, hideBelow: "sm", cell: (p) => <span className="whitespace-nowrap text-ink-2 tabular">{new Date(p.scheduledFor).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span> },
-    { key: "note", header: "Note", hideBelow: "lg", cell: (p) => <span className="text-ink-3">{p.holdReason ?? (p.status === "processing" ? "Completes when the provider confirms the transfer" : p.status === "awaiting_approval" ? "Waiting for platform review" : "")}</span> },
+    {
+      key: "ref",
+      header: "Reference",
+      cell: (p) => (
+        <div className={historyCell}>
+          <div className="flex items-baseline justify-between gap-3">
+            <CopyRef value={payoutRef(p.id)} />
+            <span className="text-sm whitespace-nowrap text-ink tabular md:hidden">{formatMoney(amountOf(p), cur)}</span>
+          </div>
+          {/* Phones: amount, status and date fold into the first cell. */}
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 md:hidden">
+            <StatusBadge tone={payoutTone[p.status].tone}>{payoutTone[p.status].label}</StatusBadge>
+            <span className="text-xs text-ink-2 tabular">{dateFmt.format(new Date(p.scheduledFor))}</span>
+          </span>
+          {noteOf(p) ? <span className="mt-1 block truncate text-xs text-ink-3 md:hidden">{noteOf(p)}</span> : null}
+        </div>
+      ),
+    },
+    { key: "amount", header: "Amount", align: "right", sortValue: (p) => p.amountUsd, hideBelow: "md", cell: (p) => <span className="whitespace-nowrap text-ink">{formatMoney(amountOf(p), cur)}</span> },
+    { key: "status", header: "Status", sortValue: (p) => p.status, hideBelow: "md", cell: (p) => <StatusBadge tone={payoutTone[p.status].tone}>{payoutTone[p.status].label}</StatusBadge> },
+    { key: "method", header: "Destination", hideBelow: "lg", cell: (p) => <span className="text-ink-2">{p.method}</span> },
+    { key: "date", header: "Date", sortValue: (p) => p.scheduledFor, hideBelow: "md", cell: (p) => <span className="whitespace-nowrap text-ink-2 tabular">{dateFmt.format(new Date(p.scheduledFor))}</span> },
+    { key: "note", header: "Note", hideBelow: "lg", cell: (p) => <span className="text-ink-3">{noteOf(p)}</span> },
   ]
 
   const tiles = [
     { label: "Available to pay out", value: balances.available, tip: `Delivered orders older than ${HOLD_DAYS} days, after the 5% commission, minus payouts already requested.`, primary: true },
     { label: "Pending", value: balances.pending, tip: `Orders not yet delivered, or delivered less than ${HOLD_DAYS} days ago (the returns window).` },
     { label: "Under review", value: balances.inReview, tip: "Requested payouts waiting for the platform team, or on hold with a reason." },
-    { label: "Processing", value: balances.processing, tip: "Approved and sent to the payment provider. Marked completed only when the provider confirms." },
+    { label: "Processing", value: balances.processing, tip: "Approved by the platform team. It goes to the provider once one is connected, and is marked completed only when the provider confirms." },
     { label: "Paid out", value: balances.paid, tip: "Transfers the provider has confirmed." },
   ]
+
+  // Why Request payout is off: everything may already be requested, or nothing has cleared yet.
+  const disabledReason =
+    balances.inReview + balances.processing > 0
+      ? `Your available balance is already requested. New earnings become available ${HOLD_DAYS} days after delivery.`
+      : `Nothing is available yet. Delivered orders become available ${HOLD_DAYS} days after delivery, once the returns window closes.`
 
   return (
     <div className="grid gap-6">
@@ -126,44 +206,78 @@ export default function StudioPayoutsPage() {
         title="Payouts"
         description={`Your earnings in ${cur}, after the 5% commission. Payouts go to your verified account.`}
         actions={
-          <Button variant="primary" size="sm" onClick={() => setOpen(true)} disabled={!hydrated || balances.available <= 0}>
-            <ArrowDownToLine /> Request payout
-          </Button>
+          hydrated && balances.available <= 0 ? (
+            <DisabledReason reason={disabledReason}>
+              <Button variant="primary" size="sm" disabled>
+                <ArrowDownToLine /> Request payout
+              </Button>
+            </DisabledReason>
+          ) : (
+            <Button variant="primary" size="sm" onClick={() => setOpen(true)} disabled={!hydrated}>
+              <ArrowDownToLine /> Request payout
+            </Button>
+          )
         }
       >
         <SampleDataNote className="mt-3" />
       </PageHeader>
 
       {!hydrated ? (
-        <MetricRowSkeleton count={5} />
+        <PayoutTilesSkeleton />
       ) : (
-        <section aria-label="Balances" className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <section aria-label="Balances" className={payoutTileGrid}>
+          {/* Money is shown as it stands: no count-up, so nothing looks like it's moving. */}
           {tiles.map((t) => (
-            <div key={t.label} className={`rounded-lg border bg-card p-4 ${t.primary ? "border-acid/30 md:col-span-1" : "border-line-soft"}`}>
-              <p className="flex items-center gap-1 text-xs text-ink-2">
-                {t.label}
-                <InfoTip>{t.tip}</InfoTip>
-              </p>
-              <p className={`mt-2 font-medium tracking-tight tabular ${t.primary ? "text-2xl text-ink" : "text-xl text-ink"}`}>{formatMoney(t.value, cur)}</p>
+            <div key={t.label} className={cn(surfaceClass, "flex min-w-0 flex-col p-4 md:p-5", t.primary && payoutTilePrimary)}>
+              <h3 className="font-label flex min-w-0 items-center gap-1 text-[11px] tracking-[0.07em] text-ink-3 uppercase sm:tracking-[0.1em]">
+                <span className="truncate">{t.label}</span>
+                <InfoTip label={`About ${t.label.toLowerCase()}`} className="relative shrink-0 normal-case after:absolute after:-inset-2.5">{t.tip}</InfoTip>
+              </h3>
+              <p className={cn("mt-4 truncate font-metric leading-none text-ink tabular", t.primary ? "text-[2.25rem] md:text-[2.5rem] xl:text-[3rem]" : "text-[1.75rem] md:text-[2rem]")}>{formatMoney(t.value, cur)}</p>
+              {t.primary ? <p className="mt-auto hidden pt-4 text-xs text-ink-3 xl:block">{t.tip}</p> : null}
             </div>
           ))}
         </section>
       )}
 
-      <section className="grid gap-3 rounded-lg border border-line-soft bg-card p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
+      <section aria-labelledby="destination-title" className="grid gap-3 rounded-lg border border-line-soft bg-card p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
         <div className="flex items-start gap-3">
           <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-line"><Landmark className="size-4 text-ink-2" /></span>
-          <div>
-            <h2 className="text-sm font-medium text-ink">Payout destination</h2>
-            <p className="mt-0.5 text-sm text-ink-2">{destination}</p>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-3"><ShieldCheck className="size-3.5 text-violet" /> Verified. Changing it requires re-authentication and a 48-hour cooldown.</p>
+          <div className="min-w-0">
+            <h2 id="destination-title" className="text-sm font-medium text-ink">Payout destination</h2>
+            {hydrated ? (
+              <>
+                <p className="mt-0.5 text-sm text-ink-2">{destination}</p>
+                <p className="mt-1 text-xs text-ink-3">{onFile.accountName}</p>
+                {pendingChange ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-2">
+                    <Clock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
+                    <span>
+                      A change to {accountText(pendingChange)} is saved in Settings and waits for the provider to verify it, which needs the backend. Until then payouts keep going here.
+                    </span>
+                  </p>
+                ) : (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3"><ShieldCheck className="size-3.5 text-violet" /> Verified</p>
+                )}
+              </>
+            ) : (
+              <span aria-hidden className="mt-1.5 grid gap-1.5">
+                <Bone className="h-3.5 w-56" />
+                <Bone className="h-3 w-40" />
+              </span>
+            )}
           </div>
         </div>
-        <p className="max-w-sm text-xs text-ink-3 md:text-right">Backend phase: requests are sent through the payment provider&apos;s transfer API and confirmed by its webhook. In this build they stop at review.</p>
+        <div className="grid gap-2 md:justify-items-end">
+          <Button asChild variant="secondary" size="sm" className="w-fit">
+            <Link href="/studio/settings#payouts">Change in Settings</Link>
+          </Button>
+          <p className="max-w-sm text-xs text-ink-3 md:text-right">Requests stop at platform review in this build. With the backend connected they go through the provider&apos;s transfer API and complete when its webhook confirms.</p>
+        </div>
       </section>
 
       <section aria-labelledby="history-title" className="grid gap-3">
-        <h2 id="history-title" className="text-sm font-medium text-ink">Payout history</h2>
+        <h2 id="history-title" tabIndex={-1} className="text-sm font-medium text-ink outline-none">Payout history</h2>
         <DataTable
           label="Payout history"
           rows={hydrated ? mine : []}
@@ -171,7 +285,7 @@ export default function StudioPayoutsPage() {
           columns={columns}
           getId={(p) => p.id}
           initialSort={{ key: "date", dir: "desc" }}
-          minWidth={640}
+          minWidth={300}
           empty={{ title: "No payouts yet", body: "When delivered orders clear the returns window, you can request your first payout." }}
         />
       </section>
@@ -187,7 +301,7 @@ export default function StudioPayoutsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...focus}>
           {step === "form" ? (
             <form
               noValidate
@@ -205,7 +319,7 @@ export default function StudioPayoutsPage() {
               <div className="grid gap-1.5">
                 <Label htmlFor="payout-amount">Amount ({cur})</Label>
                 <div className="flex gap-2">
-                  <Input id="payout-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} onBlur={() => setTouched(true)} aria-invalid={touched && !!amountError} aria-describedby="payout-amount-msg" autoFocus />
+                  <Input id="payout-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} onBlur={() => setTouched(true)} aria-invalid={touched && !!amountError} aria-describedby="payout-amount-msg" />
                   <Button type="button" variant="secondary" onClick={() => setAmount(String(balances.available / minor))}>Max</Button>
                 </div>
                 <p id="payout-amount-msg" className={touched && amountError ? "text-xs text-danger" : "text-xs text-ink-3"}>{touched && amountError ? amountError : "Payouts have no fee from us. Your bank may charge to receive."}</p>

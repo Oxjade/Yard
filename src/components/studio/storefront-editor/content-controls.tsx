@@ -49,18 +49,15 @@ function useUpload(kind: "cover" | "logo", apply: (image: ImageAsset, previewSrc
     apply({ src: preview, alt: "", width: 1600, height: 1000 })
     try {
       const encoded = await encodeImage(file, kind === "cover" ? { max: 1600, type: "image/jpeg", quality: 0.8 } : { max: 400, type: "image/webp", quality: 0.9 })
+      // No toast: the photo shows in the picker and the preview, and the logo's note says it isn't shown yet.
       apply({ src: encoded.src, alt: "", width: encoded.width, height: encoded.height }, preview)
-      toast.success(kind === "cover" ? "Cover photo added" : "Logo added", {
-        description:
-          kind === "cover"
-            ? "It's in your draft and the preview. Publish to show it on your storefront."
-            : "It's saved with your draft. Storefronts show your text mark for now: image logos aren't supported yet.",
-      })
     } catch {
       apply({ src: "", alt: "", width: 0, height: 0 }, preview)
       toast.error("We couldn't read that image", { description: "Try another file, or save it again as a JPG or PNG." })
     } finally {
-      URL.revokeObjectURL(preview)
+      // The preview renders a deferred copy of the draft, so it can still ask for the instant
+      // preview's URL a moment after the swap. Let it settle before the URL goes away.
+      window.setTimeout(() => URL.revokeObjectURL(preview), 5000)
       setBusy(false)
     }
   }

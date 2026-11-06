@@ -2,39 +2,63 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AnimatePresence, motion } from "motion/react"
-import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react"
+import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { Button } from "@/components/ui/button"
+import { spring } from "@/lib/motion"
 import { ConfirmDialog } from "./fields"
 
 /**
  * Shopify-style save bar: floats at the bottom of the work area whenever the form has
- * unsaved changes. Glass, because it floats over content.
+ * unsaved changes. Glass, because it floats over content. It sits beside the Studio sidebar
+ * from lg (260px, or 84px collapsed: dashboard/app-shell.tsx) and spans the screen below.
  */
-export function SaveBar({ visible, label, onSave, onDiscard, saving, busyLabel }: { visible: boolean; label: string; onSave: () => void; onDiscard: () => void; saving?: boolean; busyLabel?: string }) {
+export function SaveBar({
+  visible,
+  label,
+  onSave,
+  onDiscard,
+  saving,
+  blocked,
+  saveLabel = "Save",
+}: {
+  visible: boolean
+  label: string
+  onSave: () => void
+  onDiscard: () => void
+  /** The save is running: Save shows its spinner and both buttons wait. */
+  saving?: boolean
+  /** Save can't run yet (photos still being prepared); the label says why. */
+  blocked?: boolean
+  saveLabel?: string
+}) {
   return (
     <AnimatePresence>
-      {visible ? (
-        <motion.div
-          key="save-bar"
-          initial={{ y: 96, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 96, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 420, damping: 38 }}
-          className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:left-60"
-        >
-          <div role="region" aria-label="Unsaved changes" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-3 rounded-2xl py-2.5 pr-2.5 pl-4">
-            <span className="size-2 shrink-0 rounded-full bg-acid" aria-hidden />
-            <p className="min-w-0 flex-1 truncate text-sm text-ink">{label}</p>
-            <Button type="button" variant="secondary" size="sm" onClick={onDiscard} disabled={saving}>Discard</Button>
-            <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={saving}>
-              {saving ? <Loader2 className="animate-spin" /> : null}
-              {saving && busyLabel ? busyLabel : "Save"}
-            </Button>
-          </div>
-        </motion.div>
-      ) : null}
+      {visible ? <SaveBarPanel key="save-bar" label={label} onSave={onSave} onDiscard={onDiscard} saving={saving} blocked={blocked} saveLabel={saveLabel} /> : null}
     </AnimatePresence>
+  )
+}
+
+function SaveBarPanel({ label, onSave, onDiscard, saving, blocked, saveLabel }: { label: string; onSave: () => void; onDiscard: () => void; saving?: boolean; blocked?: boolean; saveLabel: string }) {
+  // Marked while it slides away, so a dialog opened from it (Discard) returns focus elsewhere.
+  const present = useIsPresent()
+  return (
+    <motion.div
+      data-leaving={present ? undefined : ""}
+      initial={{ y: 96, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 96, opacity: 0 }}
+      transition={spring.drawer}
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:left-[260px] sidebar-collapsed:left-[84px]"
+    >
+      <div role="region" aria-label="Unsaved changes" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-2 rounded-2xl py-2 pr-2 pl-4 sm:gap-3">
+        <span className="size-2 shrink-0 rounded-full bg-acid" aria-hidden />
+        <p className="min-w-0 flex-1 truncate text-sm text-ink" aria-live="polite">{label}</p>
+        <Button type="button" variant="secondary" size="sm" className="h-10 sm:h-8" onClick={onDiscard} disabled={saving}>Discard</Button>
+        <Button type="button" variant="primary" size="sm" className="h-10 sm:h-8" onClick={onSave} loading={saving} disabled={blocked}>
+          {saveLabel}
+        </Button>
+      </div>
+    </motion.div>
   )
 }
 
@@ -42,6 +66,11 @@ export function SaveBar({ visible, label, onSave, onDiscard, saving, busyLabel }
  * While `dirty`, asks before the page is left: the browser's own prompt on reload or close,
  * and a dialog for in-app links (sidebar, breadcrumbs). Returns the dialog to render and a
  * `leave(href)` for buttons that navigate.
+ *
+ * Browser Back and Forward are not intercepted. Guarding them means pushing a history entry
+ * of our own, which fights the App Router's history state. Nothing is lost when they're
+ * used: Next keeps the page alive while hidden, so Forward, or opening the product again in
+ * this session, brings the unsaved edits and the save bar back.
  */
 export function useLeaveGuard(dirty: boolean, { title = "Leave without saving?", body = "Your unsaved changes will be lost.", onLeave }: { title?: string; body?: string; onLeave?: () => void } = {}) {
   const router = useRouter()

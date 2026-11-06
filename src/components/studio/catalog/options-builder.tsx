@@ -79,7 +79,7 @@ export function OptionsBuilder({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-xs text-ink-3">Presets</span>
                     {sizePresets.map((p) => (
-                      <button key={p.label} type="button" onClick={() => onOptions({ sizes: p.values })} className="inline-flex h-7 items-center rounded-full border border-line px-2.5 text-[11px] text-ink-2 hover:border-violet/60 hover:text-ink">
+                      <button key={p.label} type="button" onClick={() => onOptions({ sizes: p.values })} className="inline-flex h-9 items-center rounded-full border border-line px-3 text-[11px] text-ink-2 transition-colors hover:border-violet/60 hover:text-ink md:h-7 md:px-2.5">
                         {p.label}
                       </button>
                     ))}
@@ -155,11 +155,12 @@ export function OptionsBuilder({
             </p>
             {form.variants.length > 1 ? (
               <div className="flex items-center gap-1.5">
-                <Input value={fillAll} onChange={(e) => setFillAll(e.target.value.replace(/\D/g, "").slice(0, 5))} inputMode="numeric" placeholder="Qty" aria-label="Stock for every variant" className="h-8 w-16 text-xs tabular md:text-xs" />
+                <Input value={fillAll} onChange={(e) => setFillAll(e.target.value.replace(/\D/g, "").slice(0, 5))} inputMode="numeric" placeholder="Qty" aria-label="Stock for every variant" className="h-10 w-16 text-xs tabular md:h-8 md:text-xs" />
                 <Button
                   type="button"
                   size="xs"
                   variant="secondary"
+                  className="h-10 md:h-8"
                   disabled={!isWhole(fillAll)}
                   onClick={() => {
                     onAllStock(String(Number(fillAll)))

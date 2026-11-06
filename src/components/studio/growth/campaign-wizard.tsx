@@ -26,9 +26,9 @@ import { formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { ChipToggle, ChoiceCard, ChoiceGroup, ChoiceTick, control, EditorSkeleton, Field, inputClass, NumberStepper, Panel, Segmented } from "./form"
+import { ChipToggle, ChoiceCard, ChoiceGroup, ChoiceTick, control, Field, inputClass, NumberStepper, Panel, Segmented, WizardSkeleton } from "./form"
 import { PlacementPreview, resolveTarget } from "./placement-preview"
-import { useGrowth, useGrowthReady } from "./store"
+import { sendCampaignToReview, useGrowth, useGrowthReady } from "./store"
 import { addDays, adVatRate, brandZone, campaignCost, daysBetween, formatDate, impressionEstimate, needsCategory, placementMeta, studioDropStatus, targetKindLabel, localId, todayIn, typeTargets, usdAndLocal, usdAndLocalText, utcToZoned, type TargetKind } from "./utils"
 
 const STEPS = [
@@ -82,7 +82,7 @@ export function CampaignWizard({ campaignId }: { campaignId: string | null }) {
   const ready = useGrowthReady()
   const now = useNow(60_000)
   const campaigns = useStudio((s) => s.campaigns)
-  if (!ready || now === null) return <EditorSkeleton />
+  if (!ready || now === null) return <WizardSkeleton />
   const existing = campaignId ? campaigns.find((c) => c.id === campaignId) : undefined
   if (campaignId && !existing) {
     return (
@@ -166,6 +166,10 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
   const [maxStep, setMaxStep] = useState(existing ? 6 : 0)
   const [dir, setDir] = useState(1)
   const [errors, setErrors] = useState<StepErrors>({})
+  // One id per wizard, so a repeated click saves the same campaign instead of a second one.
+  const idRef = useRef(existing?.id ?? localId("cmp_local_"))
+  // Set once a save is leaving the page: blocks repeat submits while the route changes.
+  const [leaving, setLeaving] = useState(false)
 
   /** Editing a field clears only that field's message; others stay until they're fixed. */
   const errorFor: Partial<Record<keyof W, keyof StepErrors>> = { type: "type", name: "name", targetId: "target", categories: "categories", placements: "placements", days: "days", startDate: "startDate", paidAmount: "pay", agreed: "agreed" }
@@ -292,7 +296,10 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
     setErrors(e)
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0]
-      rootRef.current?.querySelector<HTMLElement>(`#cw-${first}`)?.focus()
+      const el = rootRef.current?.querySelector<HTMLElement>(`#cw-${first}`)
+      // Card groups (type, target) are radiogroups, which can't take focus: focus the chosen card, or the first.
+      const target = el?.getAttribute("role") === "radiogroup" ? (el.querySelector<HTMLElement>("[role=radio][data-state=checked]") ?? el.querySelector<HTMLElement>("[role=radio]:not([disabled])")) : el
+      target?.focus()
       return
     }
     if (step === LAST_INTERACTIVE) return submit()
@@ -301,7 +308,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
 
   function build(status: Campaign["status"]): Campaign {
     return {
-      id: existing?.id ?? localId("cmp_local_"),
+      id: idRef.current,
       brandId,
       type: w.type!,
       name: w.name.trim() || autoName(w.targetKind, w.targetId, w.type),
@@ -318,6 +325,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
   }
 
   function saveDraft() {
+    if (leaving) return
     if (!w.type) {
       setErrors({ type: "Choose a campaign type before saving a draft." })
       return
@@ -325,7 +333,8 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
     const c = build("draft")
     upsertCampaign(c)
     savedRef.current = true
-    toast("Draft saved", { description: `${c.name}. Nothing is booked until you pay and submit it.` })
+    setLeaving(true)
+    toast.success("Draft saved", { description: `${c.name}. Nothing is booked until you pay and submit it.` })
     guard.go("/studio/advertising")
   }
 
@@ -333,14 +342,17 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
     const ref = `SIM-${localId("cmp_local_").slice(-6).toUpperCase()}`
     setW((x) => ({ ...x, paidAmount: cost + vat, payRef: ref }))
     clearError("pay")
-    toast("Payment simulated", { description: `${usdAndLocalText(cost + vat, brand.currency)} marked as paid, reference ${ref}. No money moved.` })
+    // The paid line appears in place; the reference is shown there.
   }
 
   function submit() {
+    if (leaving) return
     const c = build("in_review")
     upsertCampaign(c)
+    sendCampaignToReview(c)
     savedRef.current = true
-    toast("Submitted for review", { description: "We review campaigns within 1 business day. You'll get a notification when it's approved." })
+    setLeaving(true)
+    toast.success("Submitted for review", { description: "It's in the platform's review queue. Its status here changes when the team decides." })
     guard.go(`/studio/advertising/${c.id}`)
   }
 
@@ -377,7 +389,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* Stepper: vertical on desktop, compact on phones */}
-        <nav aria-label="Campaign steps" className="lg:sticky lg:top-20 lg:self-start">
+        <nav aria-label="Campaign steps" className="lg:sticky lg:top-24 lg:self-start">
           <div className="lg:hidden">
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-sm font-medium text-ink">{STEPS[step].title}</p>
@@ -643,10 +655,10 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
               ) : null}
 
               {step === 7 && w.type ? (
-                <Panel title="8. Payment" description="Pay for the booking. You're only charged once; the review happens after payment.">
-                  <div className="mb-5 flex items-start gap-3 rounded-md border border-line-soft bg-surface/60 p-3 text-xs text-ink-2">
-                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ink-2" />
-                    <p><span className="font-medium text-ink">Simulated payment.</span> This is a prototype: nothing is charged and no card details are collected.</p>
+                <Panel title="8. Payment" description="Pay for the booking, then submit it for review.">
+                  <div role="note" className="mb-5 flex items-start gap-3 rounded-md border border-acid/30 bg-acid/[0.04] p-3 text-xs text-ink-2">
+                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-acid" />
+                    <p><span className="font-medium text-ink">Simulated payment.</span> No payment provider is connected in this development build: nothing is charged, no card details are collected and nothing is deducted from payouts.</p>
                   </div>
                   <div className="grid gap-5 md:grid-cols-2">
                     <dl className="grid content-start gap-2 rounded-lg border border-line-soft bg-surface/40 p-4 text-sm">
@@ -660,27 +672,27 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
                       <ChoiceGroup id="cw-method" label="Payment method" value={w.payMethod} onValueChange={(v) => set("payMethod", v as W["payMethod"])}>
                         <ChoiceCard value="card" disabled={paid} className="flex-row items-center gap-3 p-3">
                           <CreditCard className="size-4 text-ink-2" />
-                          <span className="min-w-0 flex-1 text-sm text-ink">Card ending 4242</span>
+                          <span className="min-w-0 flex-1 text-sm text-ink">Sample card ending 4242</span>
                           <ChoiceTick on={w.payMethod === "card"} />
                         </ChoiceCard>
                         <ChoiceCard value="balance" disabled={paid} className="flex-row items-center gap-3 p-3">
                           <Landmark className="size-4 text-ink-2" />
-                          <span className="min-w-0 flex-1 text-sm text-ink">Deduct from your next payout</span>
+                          <span className="min-w-0 flex-1 text-sm text-ink">Deduct from your next payout <span className="text-ink-3">(simulated)</span></span>
                           <ChoiceTick on={w.payMethod === "balance"} />
                         </ChoiceCard>
                       </ChoiceGroup>
                       {paid ? (
                         <p role="status" className="flex items-center gap-2 rounded-md border border-line bg-elevated p-3 text-sm text-ink">
-                          <Check className="size-4 text-violet" /> Paid (simulated), reference <span className="tabular">{w.payRef}</span>
+                          <Check className="size-4 shrink-0 text-violet" /> <span>Marked as paid (simulated), reference <span className="whitespace-nowrap tabular">{w.payRef}</span></span>
                         </p>
                       ) : (
                         <Button id="cw-pay" type="button" variant="primary" onClick={pay} aria-describedby={errors.pay ? "cw-pay-error" : undefined}>
-                          <Lock /> Pay {formatMoney(cost + vat, "USD")} (simulated)
+                          <Lock /> Simulate paying {formatMoney(cost + vat, "USD")}
                         </Button>
                       )}
-                      {!paid && w.paidAmount !== null ? <p className="text-xs text-ink-2">The total changed after you paid {formatMoney(w.paidAmount, "USD")}. That simulated payment is refunded; pay the new total to continue.</p> : null}
+                      {!paid && w.paidAmount !== null ? <p className="text-xs text-ink-2">The total changed after the simulated payment of {formatMoney(w.paidAmount, "USD")}. Simulate paying the new total to continue.</p> : null}
                       {errors.pay ? <p id="cw-pay-error" className="text-xs text-danger">{errors.pay}</p> : null}
-                      <p className="text-xs text-ink-3">Full refund if the campaign is rejected, or if you cancel at least 72 hours before it starts.</p>
+                      <p className="text-xs text-ink-3">Once payments are connected: a full refund if the campaign is rejected, or if you cancel at least 72 hours before it starts.</p>
                     </div>
                   </div>
                 </Panel>
@@ -691,7 +703,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
                   <Panel title="9. Submit for review" description="Every campaign is checked by a person before it runs.">
                     <div className="grid gap-5 md:grid-cols-2">
                       <div className="grid content-start gap-3 text-sm">
-                        <p className="text-ink">Review takes up to 1 business day. Campaigns that start within 48 hours are reviewed first. You&apos;ll get a notification when it&apos;s approved, or a reason if it isn&apos;t.</p>
+                        <p className="text-ink">The platform team reviews it in the Admin Control Center, usually within 1 business day; campaigns that start within 48 hours go first. If it&apos;s rejected, you&apos;ll see the reason.</p>
                         <ul className="grid gap-2 text-ink-2">
                           {["No third-party logos or trademarks in your images or copy.", "Clear pricing: the price shown matches the product page, with no hidden costs.", "The Sponsored label is always shown and can't be hidden or restyled.", "Links stay on NOCTURNE, and promoted products are published and in stock."].map((r) => (
                             <li key={r} className="flex gap-2">
@@ -723,7 +735,8 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
               ) : null}
             </motion.div>
           </AnimatePresence>
-          <div className="mt-6 flex items-center gap-2 border-t border-line-soft pt-4">
+          {/* Phones: a floating action bar, so Continue is always in reach. */}
+          <div className="glass-strong sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 mt-6 flex items-center gap-2 rounded-2xl p-2 lg:static lg:rounded-none lg:border-x-0 lg:border-b-0 lg:border-line-soft lg:bg-transparent lg:p-0 lg:pt-4 lg:shadow-none lg:backdrop-filter-none">
             <Button type="button" variant="secondary" size="sm" onClick={() => go(step - 1)} disabled={step === 0} aria-label="Previous step">
               <ArrowLeft /> <span className="hidden sm:inline">Back</span>
             </Button>
@@ -731,10 +744,10 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
               Step {step + 1} of {STEPS.length}
               {typeMeta ? <span className="tabular">, {money(cost).usd} so far</span> : null}
             </p>
-            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={saveDraft}>
+            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={saveDraft} disabled={leaving}>
               Save draft
             </Button>
-            <Button type="button" variant={step === 7 && !paid ? "secondary" : "primary"} size="sm" className="flex-1 sm:flex-none" onClick={next}>
+            <Button type="button" variant={step === 7 && !paid ? "secondary" : "primary"} size="sm" className="flex-1 sm:flex-none" onClick={next} disabled={leaving}>
               {step === LAST_INTERACTIVE ? "Submit for review" : "Continue"}
               {step === LAST_INTERACTIVE ? null : <ArrowRight />}
             </Button>

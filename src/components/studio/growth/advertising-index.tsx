@@ -1,9 +1,12 @@
 "use client"
 
-import { Fragment, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
-import { WarningIcon as AlertTriangle, InfoIcon as Info, MegaphoneIcon as Megaphone, PlusIcon as Plus } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
+import { WarningIcon as AlertTriangle, ChartLineUpIcon as Chart, InfoIcon as Info, MegaphoneIcon as Megaphone, PencilSimpleIcon as Pencil, PlusIcon as Plus, XIcon as X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
@@ -15,8 +18,10 @@ import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { useStudio } from "@/lib/stores/studio"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
+import { phoneCellWide, useFocusReturn } from "@/components/studio/business/shared"
+import { advertisingDescription } from "./copy"
 import { ListSkeleton } from "./form"
-import { useGrowthReady } from "./store"
+import { useCampaignReviewSync, useGrowthReady, withdrawCampaignFromReview } from "./store"
 import { addDays, brandZone, campaignMetrics, campaignPriceUsd, campaignSpends, formatDate, todayIn, usdAndLocal, usdAndLocalText } from "./utils"
 
 type Tab = "current" | "past"
@@ -24,7 +29,8 @@ type Tab = "current" | "past"
 export function AdvertisingIndex() {
   const ready = useGrowthReady()
   const now = useNow(60_000)
-  if (!ready || now === null) return <ListSkeleton tiles={4} />
+  useCampaignReviewSync()
+  if (!ready || now === null) return <ListSkeleton title="Advertising" description={advertisingDescription} tiles={5} tabs={2} />
   return <AdvertisingView now={now} />
 }
 
@@ -41,12 +47,30 @@ export function campaignDates(c: Campaign, today: string) {
 }
 
 function AdvertisingView({ now }: { now: number }) {
+  const router = useRouter()
   const brandId = useStudio((s) => s.brandId)
   const campaigns = useStudio((s) => s.campaigns)
   const brand = brandById.get(brandId)!
   const cur = brand.currency
   const today = todayIn(brandZone(brand).tz, now)
   const [tab, setTab] = useState<Tab>("current")
+  const upsertCampaign = useStudio((s) => s.upsertCampaign)
+  // "Edit" on a campaign in review asks to withdraw it first. The dialog keeps the campaign while it animates closed.
+  const [withdrawing, setWithdrawing] = useState<Campaign | null>(null)
+  const [lastWithdrawing, setLastWithdrawing] = useState<Campaign | null>(null)
+  if (withdrawing && withdrawing !== lastWithdrawing) setLastWithdrawing(withdrawing)
+  const asked = withdrawing ?? lastWithdrawing
+  const withdrawFocus = useFocusReturn(() => (asked ? document.querySelector<HTMLElement>(`a[href="/studio/advertising/${asked.id}"]`) : null))
+
+  function withdrawAndEdit(c: Campaign) {
+    const now = useStudio.getState().campaigns.find((x) => x.id === c.id)
+    if (now?.status === "in_review") {
+      upsertCampaign({ ...now, status: "draft" })
+      withdrawCampaignFromReview(c.id)
+    }
+    setWithdrawing(null)
+    router.push(`/studio/advertising/${c.id}/edit`)
+  }
 
   const mine = campaigns.filter((c) => c.brandId === brandId)
   const current = mine.filter((c) => c.status !== "completed")
@@ -55,19 +79,67 @@ function AdvertisingView({ now }: { now: number }) {
   const ran = mine.filter(campaignSpends)
   const m = campaignMetrics(ran)
   const local = (usd: number) => formatMoney(convert(usd, "USD", cur), cur, { compact: true })
+  const rejected = visible.filter((c) => c.status === "rejected")
+  const roasOf = (c: Campaign) => (campaignSpends(c) && c.budget && c.results.impressions ? c.results.revenue / c.budget : null)
+  const dash = <span className="text-ink-3">–</span>
+
+  const columns: Column<Campaign>[] = [
+    {
+      key: "name",
+      header: "Campaign",
+      sortValue: (c) => c.name,
+      cell: (c) => {
+        const meta = campaignStatusMeta[c.status]
+        return (
+          <div className={phoneCellWide}>
+            <div className="flex items-start justify-between gap-3">
+              <Link href={`/studio/advertising/${c.id}`} className="group block min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-violet md:max-w-[260px]">
+                <span className="block truncate font-medium text-ink group-hover:text-violet">{c.name}</span>
+                <span className="block truncate text-xs text-ink-3">{campaignTypes[c.type].name}</span>
+              </Link>
+              <span className="text-right text-sm whitespace-nowrap md:hidden"><Spend c={c} cur={cur} /></span>
+            </div>
+            {/* Phones: status and dates fold into the first cell. */}
+            <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 md:hidden">
+              <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+              <span className="text-xs text-ink-2 tabular">{campaignDates(c, today)}</span>
+            </span>
+          </div>
+        )
+      },
+    },
+    { key: "status", header: "Status", sortValue: (c) => campaignStatusMeta[c.status].label, hideBelow: "md", cell: (c) => <StatusBadge tone={campaignStatusMeta[c.status].tone}>{campaignStatusMeta[c.status].label}</StatusBadge> },
+    { key: "dates", header: "Dates", sortValue: (c) => c.startDaysFromToday, hideBelow: "md", cell: (c) => <span className="whitespace-nowrap text-ink-2 tabular">{campaignDates(c, today)}</span> },
+    { key: "spend", header: "Spend", align: "right", sortValue: (c) => (campaignSpends(c) ? campaignPriceUsd(c) : 0), hideBelow: "md", cell: (c) => <span className="whitespace-nowrap"><Spend c={c} cur={cur} /></span> },
+    { key: "impressions", header: "Impressions", align: "right", sortValue: (c) => c.results.impressions, hideBelow: "lg", cell: (c) => (c.results.impressions ? formatNumber(c.results.impressions) : dash) },
+    { key: "clicks", header: "Clicks", align: "right", sortValue: (c) => c.results.clicks, hideBelow: "lg", cell: (c) => (c.results.clicks ? formatNumber(c.results.clicks) : dash) },
+    { key: "ctr", header: "CTR", align: "right", sortValue: (c) => (c.results.impressions ? c.results.clicks / c.results.impressions : 0), hideBelow: "lg", cell: (c) => (c.results.impressions ? <span className="text-ink-2">{formatPercent(c.results.clicks / c.results.impressions, 2)}</span> : dash) },
+    { key: "purchases", header: "Purchases", align: "right", sortValue: (c) => c.results.purchases, hideBelow: "lg", cell: (c) => (c.results.purchases ? formatNumber(c.results.purchases) : dash) },
+    { key: "revenue", header: "Revenue", align: "right", sortValue: (c) => convert(c.results.revenue, c.currency, "USD"), hideBelow: "md", cell: (c) => (c.results.revenue ? <span className="whitespace-nowrap">{formatMoney(convert(c.results.revenue, c.currency, cur), cur, { compact: true })}</span> : dash) },
+    { key: "roas", header: "ROAS", align: "right", sortValue: (c) => roasOf(c) ?? -1, hideBelow: "lg", cell: (c) => { const r = roasOf(c); return r === null ? dash : `${r.toFixed(1)}×` } },
+  ]
+  const rowActions: RowAction<Campaign>[] = [
+    { label: "View results", icon: Chart, onSelect: (c) => router.push(`/studio/advertising/${c.id}`) },
+    // In review: Edit explains that it has to be withdrawn first, and does both on confirm.
+    // Booked and running campaigns can't change; their results page says so.
+    { label: "Edit", icon: Pencil, onSelect: (c) => (c.status === "in_review" ? setWithdrawing(c) : router.push(`/studio/advertising/${c.id}/edit`)), disabled: (c) => c.status !== "draft" && c.status !== "rejected" && c.status !== "in_review" },
+  ]
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Advertising"
-        description="Fixed-price sponsored placements on Discover, Brands, categories, search and Drops. Paid placements are always labelled Sponsored and never replace organic results."
+        description={advertisingDescription}
         actions={
           <Button asChild variant="primary" size="sm">
             <Link href="/studio/advertising/new"><Plus /> Create campaign</Link>
           </Button>
         }
       >
-        <SampleDataNote className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SampleDataNote />
+          <p className="text-xs text-ink-3">Payment is simulated in this build: no card is charged and nothing is deducted from payouts.</p>
+        </div>
       </PageHeader>
 
       {mine.length === 0 ? (
@@ -105,93 +177,60 @@ function AdvertisingView({ now }: { now: number }) {
               ]}
             />
 
-            <section id="campaign-list" aria-label="Campaigns" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-              {visible.length === 0 ? (
-                <div className="p-4 md:p-5">
-                  <EmptyState
-                    icon={Megaphone}
-                    title={tab === "current" ? "Nothing running or booked" : "No past campaigns yet"}
-                    body={tab === "current" ? "Book a placement and it shows here from review to the last day." : "Campaigns move here when they finish, with their final results."}
-                    action={tab === "current" ? <Button asChild variant="secondary" size="sm"><Link href="/studio/advertising/new">Create campaign</Link></Button> : <Button variant="secondary" size="sm" onClick={() => setTab("current")}>Show active and upcoming</Button>}
-                  />
-                </div>
-              ) : (
-                <>
-                  <ul className="divide-y divide-line-soft md:hidden">
-                    {visible.map((c) => (
-                      <CampaignCard key={c.id} c={c} today={today} cur={cur} />
-                    ))}
-                  </ul>
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full min-w-[1040px] text-left text-sm">
-                      <thead className="border-b border-line-soft bg-surface/60 text-xs text-ink-3">
-                        <tr>
-                          <th scope="col" className="px-4 py-2.5 font-normal md:px-5">Campaign</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Status</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Dates</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Spend</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Impressions</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Clicks</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">CTR</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Purchases</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Revenue</th>
-                          <th scope="col" className="px-4 py-2.5 text-right font-normal md:px-5">ROAS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line-soft">
-                        {visible.map((c) => {
-                          const meta = campaignStatusMeta[c.status]
-                          const r = c.results
-                          const spends = campaignSpends(c)
-                          const roas = spends && c.budget ? r.revenue / c.budget : null
-                          return (
-                            <Fragment key={c.id}>
-                              <tr className="transition-colors hover:bg-white/[0.02]">
-                                <td className="px-4 py-3 md:px-5">
-                                  <Link href={`/studio/advertising/${c.id}`} className="group block max-w-[260px]">
-                                    <span className="block truncate font-medium text-ink group-hover:text-violet">{c.name}</span>
-                                    <span className="block truncate text-xs text-ink-3">{campaignTypes[c.type].name}</span>
-                                  </Link>
-                                </td>
-                                <td className="px-3 py-3"><StatusBadge tone={meta.tone}>{meta.label}</StatusBadge></td>
-                                <td className="px-3 py-3 whitespace-nowrap text-ink-2 tabular">{campaignDates(c, today)}</td>
-                                <td className="px-3 py-3 text-right whitespace-nowrap tabular">
-                                  <Spend c={c} cur={cur} />
-                                </td>
-                                <Num v={r.impressions} />
-                                <Num v={r.clicks} />
-                                <td className="px-3 py-3 text-right text-ink-2 tabular">{r.impressions ? formatPercent(r.clicks / r.impressions, 2) : "–"}</td>
-                                <Num v={r.purchases} />
-                                <td className="px-3 py-3 text-right whitespace-nowrap text-ink tabular">{r.revenue ? formatMoney(convert(r.revenue, c.currency, cur), cur, { compact: true }) : <span className="text-ink-3">–</span>}</td>
-                                <td className="px-4 py-3 text-right text-ink tabular md:px-5">{roas !== null && r.impressions ? `${roas.toFixed(1)}×` : <span className="text-ink-3">–</span>}</td>
-                              </tr>
-                              {c.status === "rejected" ? (
-                                <tr className="bg-danger/[0.03]">
-                                  <td colSpan={10} className="px-4 pt-0 pb-3 md:px-5">
-                                    <RejectedNote c={c} cur={cur} />
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </Fragment>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
+            {rejected.length ? (
+              <ul className="grid gap-2" aria-label="Rejected campaigns">
+                {rejected.map((c) => (
+                  <li key={c.id}>
+                    <RejectedNote c={c} cur={cur} named />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <section id="campaign-list" aria-label="Campaigns">
+              <DataTable
+                label="Campaigns"
+                rows={visible}
+                columns={columns}
+                getId={(c) => c.id}
+                rowActions={rowActions}
+                search={{ placeholder: "Search campaigns", text: (c) => `${c.name} ${campaignTypes[c.type].name}` }}
+                initialSort={{ key: "dates", dir: "desc" }}
+                minWidth={300}
+                empty={{
+                  title: tab === "current" ? "Nothing running or booked" : "No past campaigns yet",
+                  body: tab === "current" ? "Book a placement and it shows here from review to the last day." : "Campaigns move here when they finish, with their final results.",
+                  action: tab === "current" ? <Button asChild variant="secondary" size="sm"><Link href="/studio/advertising/new">Create campaign</Link></Button> : <Button variant="secondary" size="sm" onClick={() => setTab("current")}>Show active and upcoming</Button>,
+                }}
+              />
             </section>
-            <p className="text-xs text-ink-3">Spend is the fixed booking price in USD, excluding VAT{cur !== "USD" ? `, with the ${cur} amount at today's rate under it` : ""}. Revenue is shown in {cur}. Results are sample data until the store is connected.</p>
+            <p className="text-xs text-ink-3">Drafts and rejected campaigns can be edited. One in review is withdrawn first; booked and running campaigns can&apos;t change.</p>
+            <p className="-mt-3 text-xs text-ink-3">Spend is the fixed booking price in USD, excluding VAT{cur !== "USD" ? `, with the ${cur} amount at today's rate under it` : ""}. Revenue is shown in {cur}. Results are sample data.</p>
           </div>
         </>
       )}
+
+      <Dialog open={!!withdrawing} onOpenChange={(o) => !o && setWithdrawing(null)}>
+        <DialogContent className="sm:max-w-[440px]" {...withdrawFocus}>
+          <DialogHeader>
+            <DialogTitle>Withdraw {asked?.name ?? "this campaign"} to edit it?</DialogTitle>
+            <DialogDescription className="text-ink-2">
+              It&apos;s in review, so it can&apos;t change. Withdrawing takes it out of the review queue and back to drafts, and the simulated payment{asked ? ` of ${usdAndLocalText(campaignPriceUsd(asked), cur)}` : ""} is voided. Submit it again when you&apos;re done.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setWithdrawing(null)}>Keep in review</Button>
+            <Button variant="destructive-solid" onClick={() => asked && withdrawAndEdit(asked)}><X /> Withdraw and edit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 /** The booking price in USD with the brand-currency amount under it; refunded or unbooked campaigns say so instead. */
 function Spend({ c, cur }: { c: Campaign; cur: Parameters<typeof formatMoney>[1] }) {
-  if (c.status === "rejected" || c.status === "draft") return <span className="text-ink-3">{c.status === "rejected" ? "Refunded" : "Not booked"}</span>
+  if (c.status === "rejected" || c.status === "draft") return <span className="text-ink-3">{c.status === "rejected" ? "Voided" : "Not booked"}</span>
   const { usd, local } = usdAndLocal(campaignPriceUsd(c), cur)
   return (
     <>
@@ -201,55 +240,17 @@ function Spend({ c, cur }: { c: Campaign; cur: Parameters<typeof formatMoney>[1]
   )
 }
 
-function Num({ v }: { v: number }) {
-  return <td className="px-3 py-3 text-right text-ink tabular">{v ? formatNumber(v) : <span className="text-ink-3">–</span>}</td>
-}
-
-export function RejectedNote({ c, cur }: { c: Campaign; cur: Parameters<typeof formatMoney>[1] }) {
+export function RejectedNote({ c, cur, named }: { c: Campaign; cur: Parameters<typeof formatMoney>[1]; named?: boolean }) {
   return (
     <div className="flex flex-col gap-3 rounded-md border border-danger/30 bg-danger/5 p-3 sm:flex-row sm:items-center">
       <AlertTriangle className="hidden size-4 shrink-0 text-danger sm:block" />
       <p className="min-w-0 flex-1 text-xs text-ink-2">
-        <span className="font-medium text-danger">Rejected: </span>
-        {c.rejectionReason ?? "It didn't meet the advertising rules."} Your payment of {usdAndLocalText(campaignPriceUsd(c), cur)} was refunded.
+        <span className="font-medium text-danger">{named ? `${c.name} was rejected: ` : "Rejected: "}</span>
+        {c.rejectionReason ?? "It didn't meet the advertising rules."} The simulated payment of {usdAndLocalText(campaignPriceUsd(c), cur)} is voided.
       </p>
       <Button asChild variant="secondary" size="xs" className="w-fit">
         <Link href={`/studio/advertising/${c.id}/edit`}>Edit and resubmit</Link>
       </Button>
     </div>
-  )
-}
-
-function CampaignCard({ c, today, cur }: { c: Campaign; today: string; cur: Parameters<typeof formatMoney>[1] }) {
-  const meta = campaignStatusMeta[c.status]
-  const r = c.results
-  return (
-    <li className="p-4">
-      <Link href={`/studio/advertising/${c.id}`} className="block">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-ink">{c.name}</p>
-            <p className="truncate text-xs text-ink-3">{campaignTypes[c.type].name}</p>
-          </div>
-          <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
-        </div>
-        <p className="mt-2 text-xs text-ink-2 tabular">{campaignDates(c, today)}</p>
-        <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-          <div>
-            <dt className="text-ink-3">Spend</dt>
-            <dd className="mt-0.5 tabular"><Spend c={c} cur={cur} /></dd>
-          </div>
-          <div>
-            <dt className="text-ink-3">Clicks</dt>
-            <dd className="mt-0.5 text-ink tabular">{r.clicks ? `${formatNumber(r.clicks)} (${formatPercent(r.clicks / Math.max(1, r.impressions), 1)})` : "–"}</dd>
-          </div>
-          <div>
-            <dt className="text-ink-3">Revenue</dt>
-            <dd className="mt-0.5 text-ink tabular">{r.revenue ? formatMoney(convert(r.revenue, c.currency, cur), cur, { compact: true }) : "–"}</dd>
-          </div>
-        </dl>
-      </Link>
-      {c.status === "rejected" ? <div className="mt-3"><RejectedNote c={c} cur={cur} /></div> : null}
-    </li>
   )
 }

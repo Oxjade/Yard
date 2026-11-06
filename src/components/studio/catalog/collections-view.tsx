@@ -2,15 +2,18 @@
 
 import { useMemo, useState } from "react"
 import Image from "next/image"
+import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { StackIcon as Boxes, PencilSimpleIcon as Pencil, PlusIcon as Plus } from "@phosphor-icons/react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
+import { spring } from "@/lib/motion"
 import type { Collection } from "@/lib/data/types"
 import { useStudio } from "@/lib/stores/studio"
 import { CollectionDialog } from "./collection-dialog"
-import { Thumb } from "./parts"
+import { collectionsCopy } from "./page-copy"
+import { CatalogueNote, Thumb } from "./parts"
+import { CollectionCardsSkeleton } from "./skeletons"
 import { useBrandCollections, useCatalogReady } from "./store"
 import { plural } from "./utils"
 
@@ -45,26 +48,20 @@ export function CollectionsView() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Collections"
-        description="Group products into drops, seasons or edits. Collections show on your storefront and help shoppers browse."
+        title={collectionsCopy.title}
+        description={collectionsCopy.description}
         actions={
-          <Button variant="primary" size="sm" onClick={create}>
+          <Button id="create-collection" variant="primary" size="sm" className="h-10 md:h-8" onClick={create}>
             <Plus /> Create collection
           </Button>
         }
-      />
+      >
+        <CatalogueNote className="mt-3">{collectionsCopy.note}</CatalogueNote>
+      </PageHeader>
 
       {!ready ? (
-        <div role="status" aria-label="Loading collections" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="overflow-hidden rounded-lg border border-line-soft bg-card">
-              <Bone className="aspect-[16/10] rounded-none" />
-              <div className="grid gap-2 p-4">
-                <Bone className="h-4 w-1/2" />
-                <Bone className="h-3 w-3/4" />
-              </div>
-            </div>
-          ))}
+        <div role="status" aria-label="Loading collections">
+          <CollectionCardsSkeleton />
         </div>
       ) : collections.length === 0 ? (
         <EmptyState
@@ -75,44 +72,56 @@ export function CollectionsView() {
         />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {collections.map((c, i) => {
-            const list = members.get(c.id) ?? []
-            return (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => edit(c)}
-                  className="group block w-full overflow-hidden rounded-lg border border-line-soft bg-card text-left outline-none transition-colors hover:border-line focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian"
-                  aria-label={`Edit ${c.name}`}
-                >
-                  <span className="relative block aspect-[16/10] overflow-hidden bg-surface">
-                    <Image src={c.image.src} alt="" fill sizes="(min-width: 1280px) 360px, (min-width: 640px) 45vw, 100vw" loading={i < 3 ? "eager" : undefined} className="object-cover transition-transform duration-500 ease-out-quint group-hover:scale-[1.02]" />
-                    <span className="glass absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 pointer-coarse:opacity-100">
-                      <Pencil className="size-3.5 text-ink" aria-hidden />
+          <AnimatePresence initial={false}>
+            {collections.map((c, i) => {
+              const list = members.get(c.id) ?? []
+              return (
+                <CardItem key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => edit(c)}
+                    className="group block w-full overflow-hidden rounded-lg border border-line-soft bg-card text-left outline-none transition-colors hover:border-line focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian"
+                    aria-label={`Edit ${c.name}`}
+                  >
+                    <span className="relative block aspect-[16/10] overflow-hidden bg-surface">
+                      <Image src={c.image.src} alt="" fill sizes="(min-width: 1280px) 360px, (min-width: 640px) 45vw, 100vw" loading={i < 3 ? "eager" : undefined} className="object-cover transition-transform duration-200 ease-out-quint group-hover:scale-[1.02]" />
+                      <span className="glass absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 pointer-coarse:opacity-100">
+                        <Pencil className="size-3.5 text-ink" aria-hidden />
+                      </span>
                     </span>
-                  </span>
-                  <span className="grid gap-1 p-4">
-                    <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-sm font-medium text-ink">{c.name}</span>
-                      <span className="shrink-0 text-xs text-ink-2 tabular">{plural(list.length, "product")}</span>
+                    <span className="grid gap-1 p-4">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="truncate text-sm font-medium text-ink">{c.name}</span>
+                        <span className="shrink-0 text-xs text-ink-2 tabular">{plural(list.length, "product")}</span>
+                      </span>
+                      <span className="line-clamp-2 min-h-8 text-xs text-ink-2">{c.description || "No description yet."}</span>
+                      <span className="mt-2 flex items-center gap-1.5">
+                        {list.slice(0, 5).map((p) => (
+                          <Thumb key={p.id} image={p.images[0]} size={32} loading={i < 3 ? "eager" : undefined} />
+                        ))}
+                        {list.length > 5 ? <span className="text-xs text-ink-3 tabular">+{list.length - 5}</span> : null}
+                        {list.length === 0 ? <span className="flex h-8 items-center text-xs text-ink-3">No products yet. Open it to add some.</span> : null}
+                      </span>
                     </span>
-                    <span className="line-clamp-2 min-h-8 text-xs text-ink-2">{c.description || "No description yet."}</span>
-                    <span className="mt-2 flex items-center gap-1.5">
-                      {list.slice(0, 5).map((p) => (
-                        <Thumb key={p.id} image={p.images[0]} size={32} loading={i < 3 ? "eager" : undefined} />
-                      ))}
-                      {list.length > 5 ? <span className="text-xs text-ink-3 tabular">+{list.length - 5}</span> : null}
-                      {list.length === 0 ? <span className="text-xs text-ink-3">Add products to show it on your storefront.</span> : null}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            )
-          })}
+                  </button>
+                </CardItem>
+              )
+            })}
+          </AnimatePresence>
         </ul>
       )}
 
-      <CollectionDialog open={open} onOpenChange={setOpen} collection={editing} collections={collections} brandId={brandId} />
+      <CollectionDialog open={open} onOpenChange={setOpen} collection={editing} collections={collections} brandId={brandId} returnFocus={() => document.getElementById("create-collection")} />
     </div>
+  )
+}
+
+/** A card in the grid. Marked while it fades out, so focus never returns to a card that's leaving. */
+function CardItem({ children }: { children: React.ReactNode }) {
+  const present = useIsPresent()
+  return (
+    <motion.li data-leaving={present ? undefined : ""} layout initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={spring.layout}>
+      {children}
+    </motion.li>
   )
 }

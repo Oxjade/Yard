@@ -1,38 +1,43 @@
 "use client"
 
-import { useState } from "react"
-import { CopyIcon as Copy, DotsThreeIcon as MoreHorizontal, PauseIcon as Pause, PencilSimpleIcon as Pencil, PlayIcon as Play, PlusIcon as Plus, ShuffleIcon as Shuffle, TagIcon as Tags, TrashIcon as Trash2 } from "@phosphor-icons/react"
+import { useRef, useState } from "react"
+import { CopyIcon as Copy, PauseIcon as Pause, PencilSimpleIcon as Pencil, PlayIcon as Play, PlusIcon as Plus, ShuffleIcon as Shuffle, TagIcon as Tags, TrashIcon as Trash2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { currencies, type CurrencyCode } from "@/config/markets"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
 import { collectionsOf } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
-import { formatNumber, toMajor } from "@/lib/money"
+import { convert, formatMoney, formatNumber, toMajor } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import type { Collection, Product } from "@/lib/data/types"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
+import { phoneCell, useFocusReturn } from "@/components/studio/business/shared"
+import { PROMOTIONS_NOTE, promotionsDescription } from "./copy"
 import { control, Field, inputClass, ListSkeleton, Segmented, selectClass } from "./form"
 import { useGrowth, useGrowthReady, type DiscountType, type Promotion, type PromotionKind, type PromotionScope } from "./store"
 import { brandZone, discountLabel, localId, formatDate, promotionStatus, promotionStatusMeta, todayIn, type PromotionStatus } from "./utils"
 
 type Tab = "all" | "active" | "scheduled" | "paused" | "ended"
 
+type Row = { p: Promotion; status: PromotionStatus }
+
 export function PromotionsPage() {
   const ready = useGrowthReady()
   const now = useNow(60_000)
-  if (!ready || now === null) return <ListSkeleton />
+  if (!ready || now === null) return <ListSkeleton title="Promotions" description={promotionsDescription} tabs={5} />
   return <PromotionsView now={now} />
 }
 
@@ -60,9 +65,15 @@ function PromotionsView({ now }: { now: number }) {
   const collections = collectionsOf(brandId)
   const [tab, setTab] = useState<Tab>("all")
   const [editing, setEditing] = useState<Promotion | "new" | null>(null)
-  const [confirm, setConfirm] = useState<Promotion | null>(null)
+  const [confirm, setConfirm] = useState<Promotion[] | null>(null)
+  // The dialog keeps what it asked about while it animates closed.
+  const [lastConfirm, setLastConfirm] = useState<Promotion[] | null>(null)
+  if (confirm && confirm !== lastConfirm) setLastConfirm(confirm)
+  const asked = confirm ?? lastConfirm
+  // Opened from a row menu or the bulk bar: focus returns to the promotion, or to the list once it's gone.
+  const deleteFocus = useFocusReturn(() => (asked?.length === 1 ? document.querySelector<HTMLElement>(`[data-promo="${CSS.escape(asked[0].id)}"]`) : null) ?? document.getElementById("promotion-list"))
 
-  const rows = (() => {
+  const rows: Row[] = (() => {
     const rank: Record<PromotionStatus, number> = { active: 0, scheduled: 1, paused: 2, "used-up": 3, expired: 3 }
     return all
       .filter((p) => p.brandId === brandId)
@@ -75,40 +86,98 @@ function PromotionsView({ now }: { now: number }) {
   const visible = rows.filter((r) => tabStatuses[tab].includes(r.status))
   const redemptions = rows.reduce((s, r) => s + r.p.used, 0)
 
-  function togglePause(p: Promotion, status: PromotionStatus) {
-    const pause = status !== "paused"
-    setPaused(p.id, pause)
-    const name = p.code ?? p.title
-    toast(pause ? `${name} paused` : `${name} resumed`, { description: pause ? "Shoppers can't use it until you resume it." : p.startsOn > today ? `It starts ${formatDate(p.startsOn)}.` : "Shoppers can use it again now." })
+  // Status badges change in place, so pausing needs no toast.
+  function setPausedFor(list: Row[], pause: boolean) {
+    const eligible = list.filter((r) => (pause ? r.status === "active" || r.status === "scheduled" : r.status === "paused"))
+    for (const r of eligible) setPaused(r.p.id, pause)
+    if (eligible.length < list.length) {
+      toast.info(`${eligible.length} of ${list.length} ${pause ? "paused" : "resumed"}`, { description: pause ? "Only active and scheduled promotions can be paused." : "Only paused promotions can be resumed." })
+    }
   }
 
   async function copyCode(code: string) {
     try {
       await navigator.clipboard.writeText(code)
-      toast("Code copied", { description: code })
+      toast.success("Code copied", { description: code })
     } catch {
-      toast("Couldn't copy the code", { description: `Select it and copy it by hand: ${code}` })
+      toast.error("Couldn't copy the code", { description: `Select it and copy it by hand: ${code}` })
     }
   }
 
-  function remove(p: Promotion) {
-    removePromotion(p.id)
+  function remove(list: Promotion[]) {
+    for (const p of list) removePromotion(p.id)
     setConfirm(null)
-    toast(`${p.code ?? p.title} deleted`, { description: "Orders that already used it keep their discount." })
   }
+
+  const name = (p: Promotion) => p.code ?? p.title
+  const columns: Column<Row>[] = [
+    {
+      key: "promotion",
+      header: "Promotion",
+      sortValue: (r) => name(r.p),
+      cell: ({ p, status }) => (
+        <div className={cn(phoneCell, "relative")}>
+          <div className="flex items-start justify-between gap-3">
+            {/* Phones: the button's hit area covers the whole first cell, never the checkbox or the row menu. */}
+            <button type="button" data-promo={p.id} onClick={() => setEditing(p)} className="block min-w-0 rounded-sm text-left outline-none after:absolute after:-inset-y-2 after:inset-x-0 focus-visible:ring-2 focus-visible:ring-violet md:after:hidden">
+              <PromoName p={p} />
+            </button>
+            <span className="text-sm whitespace-nowrap text-ink tabular md:hidden">{discountLabel(p, brand.currency)}</span>
+          </div>
+          {/* Phones: status, dates and use fold into the first cell. */}
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 md:hidden">
+            <StatusBadge tone={promotionStatusMeta[status].tone}>{promotionStatusMeta[status].label}</StatusBadge>
+            <span className="text-xs text-ink-2 tabular">{datesLabel(p)}</span>
+          </span>
+        </div>
+      ),
+    },
+    { key: "discount", header: "Discount", sortValue: (r) => (r.p.discountType === "percentage" ? r.p.value : r.p.value / 1e6), hideBelow: "md", cell: ({ p }) => <span className="whitespace-nowrap text-ink tabular">{discountLabel(p, brand.currency)}</span> },
+    { key: "scope", header: "Applies to", hideBelow: "lg", className: "max-w-[200px]", cell: ({ p }) => <span className="line-clamp-1 text-ink-2">{scopeLabel(p, collections, products)}</span> },
+    { key: "dates", header: "Dates", sortValue: (r) => r.p.startsOn, hideBelow: "md", cell: ({ p }) => <span className="whitespace-nowrap text-ink-2 tabular">{datesLabel(p)}</span> },
+    {
+      key: "used",
+      header: "Used",
+      align: "right",
+      sortValue: (r) => r.p.used,
+      hideBelow: "md",
+      cell: ({ p }) => (
+        <span className="whitespace-nowrap text-ink">
+          {formatNumber(p.used)}
+          {p.usageLimit !== null ? <span className="text-ink-3"> / {formatNumber(p.usageLimit)}</span> : null}
+        </span>
+      ),
+    },
+    { key: "status", header: "Status", sortValue: (r) => promotionStatusMeta[r.status].label, hideBelow: "md", cell: ({ status }) => <StatusBadge tone={promotionStatusMeta[status].tone}>{promotionStatusMeta[status].label}</StatusBadge> },
+  ]
+  const rowActions: RowAction<Row>[] = [
+    { label: "Edit", icon: Pencil, onSelect: (r) => setEditing(r.p) },
+    { label: "Copy code", icon: Copy, onSelect: (r) => r.p.code && copyCode(r.p.code), disabled: (r) => !r.p.code },
+    { label: "Pause", icon: Pause, onSelect: (r) => setPausedFor([r], true), disabled: (r) => r.status !== "active" && r.status !== "scheduled", separatorBefore: true },
+    { label: "Resume", icon: Play, onSelect: (r) => setPausedFor([r], false), disabled: (r) => r.status !== "paused" },
+    { label: "Delete", icon: Trash2, onSelect: (r) => setConfirm([r.p]), destructive: true, separatorBefore: true },
+  ]
+  const bulkActions: BulkAction<Row>[] = [
+    { label: "Pause", onSelect: (list) => setPausedFor(list, true) },
+    { label: "Resume", onSelect: (list) => setPausedFor(list, false) },
+    { label: "Delete", onSelect: (list) => setConfirm(list.map((r) => r.p)), destructive: true },
+  ]
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Promotions"
-        description="Promotions for your shop: discount codes shoppers type at checkout, and sales that apply on their own. You fund the discount; it comes off the price the customer pays."
+        description={promotionsDescription}
         actions={
           <Button variant="primary" size="sm" onClick={() => setEditing("new")}>
             <Plus /> Create promotion
           </Button>
         }
       >
-        <SampleDataNote className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SampleDataNote />
+          <p className="text-xs text-ink-3">{PROMOTIONS_NOTE}</p>
+        </div>
       </PageHeader>
 
       {rows.length === 0 ? (
@@ -119,7 +188,7 @@ function PromotionsView({ now }: { now: number }) {
             <MetricTile label="Active now" value={count(["active"])} format={(n) => formatNumber(Math.round(n))} />
             <MetricTile label="Scheduled" value={count(["scheduled"])} format={(n) => formatNumber(Math.round(n))} />
             <MetricTile label="Paused" value={count(["paused"])} format={(n) => formatNumber(Math.round(n))} />
-            <MetricTile label="Redemptions" value={redemptions} format={(n) => formatNumber(Math.round(n))} hint="all promotions" />
+            <MetricTile label="Redemptions" value={redemptions} format={(n) => formatNumber(Math.round(n))} hint="All promotions, sample data" />
           </section>
 
           <div className="grid gap-4">
@@ -138,77 +207,20 @@ function PromotionsView({ now }: { now: number }) {
               ]}
             />
 
-            <section id="promotion-list" aria-label="Promotions" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-              {visible.length === 0 ? (
-                <div className="p-4 md:p-5">
-                  <EmptyState icon={Tags} title="No promotions here" body="Promotions move between these tabs as they start, pause and end." action={<Button variant="secondary" size="sm" onClick={() => setTab("all")}>Show all promotions</Button>} />
-                </div>
-              ) : (
-                <>
-                  <ul className="divide-y divide-line-soft md:hidden">
-                    {visible.map(({ p, status }) => (
-                      <li key={p.id} className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <PromoName p={p} />
-                          <RowActions p={p} status={status} onEdit={setEditing} onToggle={togglePause} onCopy={copyCode} onDelete={setConfirm} />
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <StatusBadge tone={promotionStatusMeta[status].tone}>{promotionStatusMeta[status].label}</StatusBadge>
-                          <span className="text-sm text-ink tabular">{discountLabel(p, brand.currency)}</span>
-                        </div>
-                        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                          <div className="min-w-0">
-                            <dt className="text-ink-3">Applies to</dt>
-                            <dd className="mt-0.5 truncate text-ink-2">{scopeLabel(p, collections, products)}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-ink-3">Used</dt>
-                            <dd className="mt-0.5 text-ink-2 tabular">{formatNumber(p.used)}{p.usageLimit !== null ? ` of ${formatNumber(p.usageLimit)}` : ""}</dd>
-                          </div>
-                          <div className="col-span-2">
-                            <dt className="text-ink-3">Dates</dt>
-                            <dd className="mt-0.5 text-ink-2 tabular">{datesLabel(p)}</dd>
-                          </div>
-                        </dl>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full min-w-[900px] text-left text-sm">
-                      <thead className="border-b border-line-soft bg-surface/60 text-xs text-ink-3">
-                        <tr>
-                          <th scope="col" className="px-4 py-2.5 font-normal md:px-5">Promotion</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Discount</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Applies to</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Dates</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Used</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Status</th>
-                          <th scope="col" className="px-4 py-2.5 font-normal md:px-5"><span className="sr-only">Actions</span></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line-soft">
-                        {visible.map(({ p, status }) => (
-                          <tr key={p.id} className="transition-colors hover:bg-white/[0.02]">
-                            <td className="max-w-[280px] px-4 py-3 md:px-5"><PromoName p={p} /></td>
-                            <td className="px-3 py-3 whitespace-nowrap text-ink tabular">{discountLabel(p, brand.currency)}</td>
-                            <td className="max-w-[200px] px-3 py-3 text-ink-2"><span className="line-clamp-1">{scopeLabel(p, collections, products)}</span></td>
-                            <td className="px-3 py-3 whitespace-nowrap text-ink-2 tabular">{datesLabel(p)}</td>
-                            <td className="px-3 py-3 text-right whitespace-nowrap text-ink tabular">
-                              {formatNumber(p.used)}
-                              {p.usageLimit !== null ? <span className="text-ink-3"> / {formatNumber(p.usageLimit)}</span> : null}
-                            </td>
-                            <td className="px-3 py-3"><StatusBadge tone={promotionStatusMeta[status].tone}>{promotionStatusMeta[status].label}</StatusBadge></td>
-                            <td className="px-4 py-3 text-right md:px-5"><RowActions p={p} status={status} onEdit={setEditing} onToggle={togglePause} onCopy={copyCode} onDelete={setConfirm} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
+            <section id="promotion-list" aria-label="Promotions" tabIndex={-1} className="outline-none">
+              <DataTable
+                label="Promotions"
+                rows={visible}
+                columns={columns}
+                getId={(r) => r.p.id}
+                search={{ placeholder: "Search codes and sale names", text: (r) => `${r.p.code ?? ""} ${r.p.title}` }}
+                rowActions={rowActions}
+                bulkActions={bulkActions}
+                minWidth={300}
+                empty={{ title: "No promotions here", body: "Promotions move between these tabs as they start, pause and end.", action: <Button variant="secondary" size="sm" onClick={() => setTab("all")}>Show all promotions</Button> }}
+              />
             </section>
-            <p className="text-xs text-ink-3">Dates follow your brand&apos;s time zone: a promotion starts at midnight on its first day and ends at 23:59 on its last. Redemption counts are sample data until the store is connected.</p>
+            <p className="text-xs text-ink-3">Dates follow your brand&apos;s time zone: a promotion starts at midnight on its first day and ends at 23:59 on its last.</p>
           </div>
         </>
       )}
@@ -227,16 +239,16 @@ function PromotionsView({ now }: { now: number }) {
       />
 
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...deleteFocus}>
           <DialogHeader>
-            <DialogTitle>Delete {confirm?.code ?? confirm?.title}?</DialogTitle>
+            <DialogTitle>{asked && asked.length > 1 ? `Delete ${asked.length} promotions?` : `Delete ${asked?.[0] ? name(asked[0]) : "this promotion"}?`}</DialogTitle>
             <DialogDescription className="text-ink-2">
-              Shoppers won&apos;t be able to use it any more. Orders that already used it keep their discount. This can&apos;t be undone; pause it instead if you might bring it back.
+              {asked && asked.length > 1 ? "They're removed from Studio." : "It's removed from Studio."} Orders that already used a code keep their discount. This can&apos;t be undone; pause instead if you might bring it back.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
-            <Button variant="destructive" onClick={() => confirm && remove(confirm)}><Trash2 /> Delete promotion</Button>
+            <Button variant="secondary" onClick={() => setConfirm(null)}>Keep</Button>
+            <Button variant="destructive-solid" onClick={() => confirm && remove(confirm)}><Trash2 /> {asked && asked.length > 1 ? `Delete ${asked.length}` : "Delete promotion"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -253,33 +265,6 @@ function PromoName({ p }: { p: Promotion }) {
         <p className="truncate font-medium text-ink">{p.title}</p>
       )}
       <p className="mt-1 truncate text-xs text-ink-3">{p.kind === "code" ? (p.title ? `Discount code, ${p.title}` : "Discount code") : "Automatic sale, no code needed"}</p>
-    </div>
-  )
-}
-
-function RowActions({ p, status, onEdit, onToggle, onCopy, onDelete }: { p: Promotion; status: PromotionStatus; onEdit: (p: Promotion) => void; onToggle: (p: Promotion, s: PromotionStatus) => void; onCopy: (code: string) => void; onDelete: (p: Promotion) => void }) {
-  const canToggle = status === "active" || status === "scheduled" || status === "paused"
-  return (
-    <div className="flex shrink-0 items-center justify-end gap-1">
-      {canToggle ? (
-        <Button variant="secondary" size="xs" onClick={() => onToggle(p, status)} aria-label={`${status === "paused" ? "Resume" : "Pause"} ${p.code ?? p.title}`}>
-          {status === "paused" ? <Play /> : <Pause />}
-          {status === "paused" ? "Resume" : "Pause"}
-        </Button>
-      ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${p.code ?? p.title}`}>
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onSelect={() => onEdit(p)}><Pencil /> Edit</DropdownMenuItem>
-          {p.code ? <DropdownMenuItem onSelect={() => onCopy(p.code!)}><Copy /> Copy code</DropdownMenuItem> : null}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => onDelete(p)}><Trash2 /> Delete</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   )
 }
@@ -332,7 +317,11 @@ function PromotionDialog({
   existing: Promotion[]
 }) {
   const upsert = useGrowth((s) => s.upsertPromotion)
+  // Opened from a row menu, focus returns to that promotion's name.
+  const focus = useFocusReturn(() => (promotion ? document.querySelector<HTMLElement>(`[data-promo="${CSS.escape(promotion.id)}"]`) : null))
   const minor = 10 ** currencies[currency].minor
+  // One id per dialog, so a repeated submit saves the same promotion instead of a copy.
+  const idRef = useRef(promotion?.id ?? localId("promo_"))
   const [form, setForm] = useState<Form>(() =>
     promotion
       ? {
@@ -362,6 +351,10 @@ function PromotionDialog({
   }
   const symbol = currencies[currency].symbol
 
+  // The cheapest product the promotion would apply to, in the brand currency: a fixed amount must stay under it.
+  const inScope = form.scope === "all" ? products.filter((p) => p.status !== "archived") : form.scope === "collection" ? products.filter((p) => collections.find((c) => c.id === form.collectionId)?.productIds.includes(p.id)) : products.filter((p) => form.productIds.includes(p.id))
+  const cheapest = inScope.map((p) => ({ name: p.name, price: convert(p.price, p.currency, currency) })).sort((a, b) => a.price - b.price)[0]
+
   function validate(): FormErrors {
     const e: FormErrors = {}
     if (form.kind === "code") {
@@ -378,6 +371,8 @@ function PromotionDialog({
     if (form.discountType === "percentage") {
       if (!/^\d+$/.test(form.value) || v < 1 || v > 90) e.value = "Enter a whole percentage from 1 to 90."
     } else if (!/^\d+(\.\d{1,2})?$/.test(form.value) || v <= 0) e.value = `Enter an amount in ${currency}, more than 0.`
+    // A fixed amount has to leave something to pay on every product it applies to.
+    else if (cheapest && Math.round(v * minor) >= cheapest.price) e.value = `Keep it under ${formatMoney(cheapest.price, currency)}, the price of ${cheapest.name}, the cheapest product it applies to.`
     if (form.scope === "collection" && !form.collectionId) e.collection = "Choose a collection."
     if (form.scope === "products" && form.productIds.length === 0) e.products = "Choose at least one product."
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.startsOn)) e.startsOn = "Choose a start date."
@@ -394,6 +389,12 @@ function PromotionDialog({
     return e
   }
 
+  const save = useAsyncAction((p: Promotion) => upsert(p), {
+    success: () => (promotion ? "Promotion saved" : "Promotion created"),
+    successDescription: () => (form.startsOn > today ? `Scheduled in Studio from ${formatDate(form.startsOn)}.` : "Active in Studio."),
+    onSuccess: onClose,
+  })
+
   function submit(ev: React.FormEvent) {
     ev.preventDefault()
     const e = validate()
@@ -404,7 +405,7 @@ function PromotionDialog({
       return
     }
     const p: Promotion = {
-      id: promotion?.id ?? localId("promo_"),
+      id: idRef.current,
       brandId,
       kind: form.kind,
       code: form.kind === "code" ? form.code.trim().toUpperCase() : null,
@@ -422,17 +423,12 @@ function PromotionDialog({
       paused: promotion?.paused ?? false,
       createdAt: promotion?.createdAt ?? new Date().toISOString(),
     }
-    upsert(p)
-    const name = p.code ?? p.title
-    toast(promotion ? `${name} saved` : `${name} created`, {
-      description: p.startsOn > today ? `It starts ${formatDate(p.startsOn)}.` : p.paused ? "It's paused. Resume it when you're ready." : `${discountLabel(p, currency)} is live now.`,
-    })
-    onClose()
+    void save.run(p)
   }
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-[560px]">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-[560px]" {...focus}>
         <DialogHeader className="border-b border-white/8 p-5 pr-12">
           <DialogTitle>{promotion ? "Edit promotion" : "Create promotion"}</DialogTitle>
           <DialogDescription className="text-ink-2">A code shoppers type at checkout, or a sale that applies on its own.</DialogDescription>
@@ -571,7 +567,7 @@ function PromotionDialog({
           </div>
           <DialogFooter className="mx-0 mb-0 shrink-0">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary">{promotion ? "Save promotion" : "Create promotion"}</Button>
+            <Button type="submit" variant="primary" loading={save.pending}>{promotion ? "Save promotion" : "Create promotion"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1,19 +1,20 @@
 "use client"
 
 import { useState } from "react"
-import { MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
+import { ArrowRightIcon as ArrowRight, MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { useAsyncAction } from "@/hooks/use-async-action"
 import { availableStock, variantLabel } from "@/lib/data/products"
 import type { Product, Variant } from "@/lib/data/types"
 import { useStudio, type InventoryEvent } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { control, FieldMessage, Segmented } from "./fields"
-import { useCatalog } from "./store"
+import { control, FieldMessage, Segmented, useReturnFocus } from "./fields"
+import { touchProducts } from "./store"
 import { formatDateTime } from "./utils"
 
 export type AdjustReason = Extract<InventoryEvent["reason"], "received" | "adjustment" | "damaged" | "return">
@@ -39,10 +40,15 @@ const NOTE_MAX = 200
 /** Which way each reason moves stock. Adjustments can go either way. */
 const direction: Record<AdjustReason, 1 | -1 | 0> = { received: 1, return: 1, damaged: -1, adjustment: 0 }
 
-export function AdjustStockDialog({ target, onOpenChange }: { target: { product: Product; variant: Variant } | null; onOpenChange: (open: boolean) => void }) {
+/**
+ * Opened from a row's Adjust button or its menu, so focus goes back there on close, or to
+ * `returnFocus` when the row has left the filtered list.
+ */
+export function AdjustStockDialog({ target, onOpenChange, returnFocus }: { target: { product: Product; variant: Variant } | null; onOpenChange: (open: boolean) => void; returnFocus?: () => HTMLElement | null }) {
+  const onCloseAutoFocus = useReturnFocus(!!target, returnFocus)
   return (
     <Dialog open={!!target} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[460px]">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[460px]" onCloseAutoFocus={onCloseAutoFocus}>
         {target ? <AdjustForm key={target.variant.id} product={target.product} variant={target.variant} onDone={() => onOpenChange(false)} /> : null}
       </DialogContent>
     </Dialog>
@@ -95,19 +101,33 @@ function AdjustForm({ product, variant, onDone }: { product: Product; variant: V
   // Validate on submit, then keep messages in step with the fields.
   const errors = submitted ? check() : {}
 
+  // One adjustment per submit: a second press while it runs is ignored, so stock never moves twice.
+  const apply = useAsyncAction(
+    (change: number) => {
+      adjustStock(product.id, variant.id, change, reason, note.trim() || undefined)
+      touchProducts([product.id])
+      return Math.max(0, variant.stock + change - variant.reserved)
+    },
+    {
+      error: "The stock count couldn't be saved. Check your connection, then try again.",
+      onSuccess: (left) => {
+        // The dialog closes, so say what changed: the row behind it shows the new count.
+        toast.success("Stock updated", { description: `${product.name}, ${label}: ${left} available now.` })
+        onDone()
+      },
+    },
+  )
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (apply.pending) return
     const errs = check()
     setSubmitted(true)
     if (Object.values(errs).some(Boolean) || n === null) {
       document.getElementById(errs.delta ? "adj-delta" : "adj-note")?.focus()
       return
     }
-
-    adjustStock(product.id, variant.id, n, reason, note.trim() || undefined)
-    useCatalog.getState().touchProducts([product.id])
-    toast.success("Stock updated", { description: `${product.name}, ${label}: ${Math.max(0, variant.stock + n - variant.reserved)} available now.` })
-    onDone()
+    void apply.run(n)
   }
 
   return (
@@ -133,10 +153,12 @@ function AdjustForm({ product, variant, onDone }: { product: Product; variant: V
       </dl>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="adj-reason" className="text-[13px] text-ink">Reason</Label>
+        {/* A radio group can't be a <label>'s target: it's named by this text instead. */}
+        <p id="adj-reason-label" className="text-[13px] leading-none font-medium text-ink">Reason</p>
         <Segmented
           id="adj-reason"
           label="Reason"
+          labelledBy="adj-reason-label"
           value={reason}
           onChange={changeReason}
           className="grid grid-cols-2 sm:flex"
@@ -166,8 +188,8 @@ function AdjustForm({ product, variant, onDone }: { product: Product; variant: V
               <span className="whitespace-nowrap">On hand stays the same</span>
             ) : (
               <>
-                <span className="whitespace-nowrap">On hand {variant.stock} → {Math.max(0, nextStock)}</span>
-                <span className="whitespace-nowrap">Available {available} → {nextAvailable}</span>
+                <span className="inline-flex items-center gap-1 whitespace-nowrap">On hand {variant.stock} <Becomes /> {Math.max(0, nextStock)}</span>
+                <span className="inline-flex items-center gap-1 whitespace-nowrap">Available {available} <Becomes /> {nextAvailable}</span>
               </>
             )}
           </p>
@@ -205,9 +227,19 @@ function AdjustForm({ product, variant, onDone }: { product: Product; variant: V
       ) : null}
 
       <DialogFooter>
-        <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
-        <Button type="submit" variant="primary">Update stock</Button>
+        <Button type="button" variant="secondary" onClick={onDone} disabled={apply.pending}>Cancel</Button>
+        <Button type="submit" variant="primary" loading={apply.pending} success={apply.succeeded}>Update stock</Button>
       </DialogFooter>
     </form>
+  )
+}
+
+/** The before-and-after arrow in the preview line, read as words by screen readers. */
+function Becomes() {
+  return (
+    <>
+      <ArrowRight className="size-3 text-ink-3" aria-hidden />
+      <span className="sr-only">becomes</span>
+    </>
   )
 }

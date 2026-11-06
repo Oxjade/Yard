@@ -50,7 +50,7 @@ export function PlacementPreview({ type, brand, target, categories }: { type: Ca
       <div inert className="pointer-events-none overflow-hidden rounded-lg border border-line-soft bg-obsidian p-3 select-none md:p-5">
         {type === "sponsored-brand" ? <BrandSlot brand={brand} /> : null}
         {type === "sponsored-product" ? <ProductSlot product={target?.product} brand={brand} category={category?.slug} /> : null}
-        {type === "sponsored-drop" ? target?.drop ? <DropCard drop={{ ...target.drop, sponsored: true }} layout="wide" /> : <Missing what="drop" /> : null}
+        {type === "sponsored-drop" ? target?.drop ? <DropCard drop={{ ...target.drop, sponsored: true }} layout="wide" eager /> : <Missing what="drop" /> : null}
         {type === "homepage-spotlight" ? <SpotlightSlot brand={brand} target={target} /> : null}
         {type === "category-promotion" ? <CategoryBanner brand={brand} target={target} categoryName={category?.name ?? "Category"} category={category?.slug} /> : null}
         {type === "editorial-sponsorship" ? <EditorialSlot brand={brand} curatedId={target?.kind === "curated" ? target.id : undefined} /> : null}
@@ -92,7 +92,7 @@ function ProductSlot({ product, brand, category }: { product?: Product; brand: B
         {list.slice(0, 4).map((p) => (
           <ProductCard key={p.id} product={p} variant="compact" sizes="160px" className="opacity-35" />
         ))}
-        <ProductCard product={product} variant="compact" sponsored sizes="200px" />
+        <ProductCard product={product} variant="compact" sponsored sizes="200px" priority />
         {list[4] ? <ProductCard product={list[4]} variant="compact" sizes="160px" className="opacity-35" /> : null}
       </div>
     </div>
@@ -104,7 +104,7 @@ function SpotlightSlot({ brand, target }: { brand: Brand; target: ResolvedTarget
   const title = target && target.kind !== "brand" ? target.name : brand.tagline
   return (
     <div className="relative isolate flex min-h-[300px] items-end overflow-hidden rounded-lg p-3 md:min-h-[340px] md:p-5">
-      <Image src={brand.cover.src} alt="" fill sizes="(min-width: 1024px) 50vw, 90vw" className="-z-10 object-cover opacity-30 blur-[2px]" />
+      <Image src={brand.cover.src} alt="" fill loading="eager" sizes="(min-width: 1024px) 50vw, 90vw" className="-z-10 object-cover opacity-30 blur-[2px]" />
       <span className="scrim-b absolute inset-0 -z-10" />
       <p className="absolute top-3 left-3 text-xs text-ink-2 md:top-5 md:left-5">Discover hero, spotlight tile</p>
       <div className="glass glass-sheen ml-auto flex w-full max-w-sm items-center gap-3 rounded-2xl p-3">
@@ -129,7 +129,7 @@ function CategoryBanner({ brand, target, categoryName, category }: { brand: Bran
     <div>
       <p className="mb-3 text-xs text-ink-2">Top of {categoryName}</p>
       <div className="relative isolate flex min-h-[200px] flex-col justify-end overflow-hidden rounded-lg p-4 md:min-h-[220px] md:p-6">
-        <Image src={image.src} alt="" fill sizes="(min-width: 1024px) 60vw, 90vw" className="-z-10 object-cover" />
+        <Image src={image.src} alt="" fill loading="eager" sizes="(min-width: 1024px) 60vw, 90vw" className="-z-10 object-cover" />
         <span className="scrim-l absolute inset-0 -z-10" />
         <SponsoredTag className="absolute top-3 left-3 md:top-4 md:left-4" />
         <p className="text-xs text-ink-2">{brand.name}</p>

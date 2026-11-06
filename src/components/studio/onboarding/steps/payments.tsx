@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { BankIcon as Landmark, ShieldCheckIcon as ShieldCheck, DeviceMobileIcon as Smartphone } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -59,7 +58,7 @@ export function PaymentsStep({ onNext }: StepProps) {
     if (needsDetails && method) {
       const digits = (method.format === "mobile" ? input.phone : input.account).replace(/[^\dA-Za-z]/g, "")
       set({ accountSaved: true, accountLast4: digits.slice(-4), holder: input.holder.trim(), bankName: method.format === "iban" ? "" : input.bankName.trim() })
-      toast.success("Payout details saved", { description: `Payouts in ${currency} to the account ending ${digits.slice(-4)}.` })
+      // The review step lists the saved account; a toast here would sit over the phone action bar.
     }
     onNext()
   })

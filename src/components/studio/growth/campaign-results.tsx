@@ -3,7 +3,6 @@
 import { useState } from "react"
 import Link from "next/link"
 import { WarningIcon as AlertTriangle, CheckIcon as Check, ClockIcon as Clock, InfoIcon as Info, PencilSimpleIcon as Pencil, PlusIcon as Plus, MagnifyingGlassMinusIcon as SearchX, ArrowUUpLeftIcon as Undo2, XIcon as X } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TimeSeriesChart } from "@/components/dashboard/chart-card"
@@ -11,7 +10,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
 import { StatusBadge, campaignStatusMeta } from "@/components/dashboard/status-badge"
-import { BackLink } from "@/components/studio/business/shared"
+import { BackLink, useFocusReturn } from "@/components/studio/business/shared"
 import { useNow } from "@/hooks/use-now"
 import { categories } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
@@ -23,13 +22,14 @@ import { cn } from "@/lib/utils"
 import { campaignDates, roasText } from "./advertising-index"
 import { EditorSkeleton, Panel } from "./form"
 import { PlacementPreview, resolveTarget } from "./placement-preview"
-import { useGrowthReady } from "./store"
+import { useCampaignReviewSync, useGrowthReady, withdrawCampaignFromReview } from "./store"
 import { addDays, brandZone, campaignMetrics, campaignPriceUsd, campaignSpends, countryName, formatDate, placementMeta, todayIn, usdAndLocalText } from "./utils"
 
 export function CampaignResults({ id }: { id: string }) {
   const ready = useGrowthReady()
   const now = useNow(60_000)
   const campaign = useStudio((s) => s.campaigns.find((c) => c.id === id))
+  useCampaignReviewSync()
   if (!ready || now === null) return <EditorSkeleton />
   if (!campaign) {
     return (
@@ -42,7 +42,7 @@ export function CampaignResults({ id }: { id: string }) {
   return <Results c={campaign} now={now} />
 }
 
-const TIMELINE = ["Paid and submitted", "In review", "Approved", "Running", "Finished"] as const
+const TIMELINE = ["Submitted", "In review", "Approved", "Running", "Finished"] as const
 
 function timelineIndex(status: Campaign["status"]) {
   return { draft: -1, in_review: 1, scheduled: 2, active: 3, paused: 3, completed: 4, rejected: 1 }[status]
@@ -73,13 +73,16 @@ function Results({ c, now }: { c: Campaign; now: number }) {
   const target = resolveTarget(c.targetIds[0], brand, products, drops)
   const start = addDays(today, c.startDaysFromToday)
   const [withdraw, setWithdraw] = useState(false)
+  // After withdrawing, the Withdraw button is replaced by Edit: focus goes there.
+  const withdrawFocus = useFocusReturn(() => document.querySelector<HTMLElement>(`a[href="/studio/advertising/${c.id}/edit"]`))
   const price = usdAndLocalText(campaignPriceUsd(c), cur)
   const perDay = usdAndLocalText(Math.round(campaignPriceUsd(c) / Math.max(1, c.days)), cur)
 
+  // The status badge and timeline change in place; that is the confirmation.
   function confirmWithdraw() {
     upsertCampaign({ ...c, status: "draft" })
+    withdrawCampaignFromReview(c.id)
     setWithdraw(false)
-    toast("Withdrawn from review", { description: `${price} will be refunded in full. The campaign is a draft again.` })
   }
 
   const funnel = [
@@ -126,7 +129,7 @@ function Results({ c, now }: { c: Campaign; now: number }) {
             <div className="min-w-0 text-sm">
               <p className="font-medium text-ink">Rejected in review</p>
               <p className="mt-1 text-ink-2">{c.rejectionReason ?? "It didn't meet the advertising rules."}</p>
-              <p className="mt-1 text-xs text-ink-3">Your payment of {price} was refunded in full. Fix the issue, then pay and submit again.</p>
+              <p className="mt-1 text-xs text-ink-3">The simulated payment of {price} is voided. Fix the issue, then pay and submit again.</p>
             </div>
           </div>
         ) : c.status === "draft" ? (
@@ -151,7 +154,7 @@ function Results({ c, now }: { c: Campaign; now: number }) {
             </ol>
             <p className="mt-4 text-xs text-ink-2">
               {c.status === "in_review"
-                ? "We review campaigns within 1 business day; ones that start within 48 hours go first. You'll get a notification when it's approved, or the reason if it isn't. Nothing runs until then."
+                ? "The platform team reviews it in the Admin Control Center, usually within 1 business day; ones that start within 48 hours go first. This page shows their decision, with the reason if it's rejected. Nothing runs until then."
                 : c.status === "scheduled"
                   ? `Approved. It starts ${formatDate(start, { weekday: true })} and runs for ${c.days} days.`
                   : c.status === "active"
@@ -242,23 +245,23 @@ function Results({ c, now }: { c: Campaign; now: number }) {
             <Row label="Dates" value={campaignDates(c, today)} />
             <Row label="Price" value={price} />
             <Row label="Rate" value={type.unit === "day" ? `${perDay} a day for ${c.days} days` : "Flat price"} />
-            <Row label="Paid" value={campaignSpends(c) || c.status === "in_review" || c.status === "scheduled" ? "Yes" : c.status === "rejected" ? "Refunded" : "Not yet"} />
+            <Row label="Paid" value={campaignSpends(c) || c.status === "in_review" || c.status === "scheduled" ? "Yes, simulated" : c.status === "rejected" ? "Voided, simulated" : "Not yet"} />
             <Row label="ROAS" value={hasResults ? roasText(m.roas) : "–"} />
           </dl>
         </Panel>
       </div>
 
       <Dialog open={withdraw} onOpenChange={setWithdraw}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...withdrawFocus}>
           <DialogHeader>
             <DialogTitle>Withdraw from review?</DialogTitle>
             <DialogDescription className="text-ink-2">
-              The booking is released and {price} is refunded in full. The campaign goes back to drafts so you can change it and submit again.
+              It leaves the review queue and goes back to drafts, so you can change it and submit again. The simulated payment of {price} is voided.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setWithdraw(false)}>Keep in review</Button>
-            <Button variant="destructive" onClick={confirmWithdraw}><X /> Withdraw</Button>
+            <Button variant="destructive-solid" onClick={confirmWithdraw}><X /> Withdraw</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

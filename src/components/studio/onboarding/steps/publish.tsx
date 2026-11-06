@@ -47,7 +47,7 @@ export function PublishStep({ onNext }: StepProps) {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (remaining.length) {
-      toast.error("A step still needs details", { description: `Finish ${remaining[0].label.toLowerCase()} and come back to publish.` })
+      toast.error("A step still needs details", { description: `Finish ${remaining[0].label.toLowerCase()} and come back to submit.` })
       goTo(remaining[0].step)
       return
     }
@@ -65,7 +65,7 @@ export function PublishStep({ onNext }: StepProps) {
       </section>
 
       <div className="grid min-w-0 grid-cols-1 gap-6">
-        <Panel title="Checklist" description={remaining.length ? `${remaining.length} ${remaining.length === 1 ? "step needs" : "steps need"} details before you can publish.` : "Everything a basic storefront needs is in place."}>
+        <Panel title="Checklist" description={remaining.length ? `${remaining.length} ${remaining.length === 1 ? "step needs" : "steps need"} details before you can submit.` : "Everything a basic storefront needs is in place."}>
           <ul className="grid grid-cols-1 gap-1">
             {items.map((i) => (
               <li key={i.label} className="flex items-start gap-3 rounded-md py-2">
@@ -87,7 +87,7 @@ export function PublishStep({ onNext }: StepProps) {
           </ul>
         </Panel>
 
-        <Panel title="After you publish" description="None of these hold up publishing. They can wait.">
+        <Panel title="After you submit" description="None of these hold up the review. They can wait.">
           <ul className="grid gap-3 text-sm">
             <li>
               <p className="text-ink">Add more products</p>

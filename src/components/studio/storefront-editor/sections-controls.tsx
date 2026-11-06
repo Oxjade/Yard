@@ -6,6 +6,7 @@ import { AnimatePresence, Reorder, motion, useDragControls } from "motion/react"
 import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, BookOpenIcon as BookOpen, CalendarDotsIcon as CalendarClock, DotsSixVerticalIcon as GripVertical, ImagesIcon as Images, SquaresFourIcon as LayoutGrid, LockIcon as Lock, BrowserIcon as PanelTop, ShoppingBagOpenIcon as ShoppingBag, StarIcon as Star, type Icon } from "@phosphor-icons/react"
 import { storefrontSections, storefrontTemplates } from "@/components/storefront/theme"
 import { Field, FieldMessage, control, inputClass } from "@/components/studio/catalog/fields"
+import { CatalogueNote } from "@/components/studio/catalog/parts"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -161,6 +162,9 @@ export function SectionsControls({
           ))}
         </Reorder.Group>
         <FieldMessage id="sf-sections" error={errors.sections} />
+        <CatalogueNote className="pt-2">
+          Product and collection sections preview your Studio catalogue. On your live storefront they list the marketplace catalogue until the catalogue backend is connected.
+        </CatalogueNote>
       </div>
     </ControlGroup>
   )
@@ -249,10 +253,10 @@ function SectionCard({
 
         {!locked && onMove ? (
           <span className="flex shrink-0">
-            <Button id={`sf-move-up-${section.id}`} type="button" variant="ghost" size="icon-xs" aria-label={`Move ${meta.label} up`} disabled={index === 0} onClick={() => onMove(-1)}>
+            <Button id={`sf-move-up-${section.id}`} type="button" variant="ghost" size="icon-xs" className="size-9 md:size-7" aria-label={`Move ${meta.label} up`} disabled={index === 0} onClick={() => onMove(-1)}>
               <ArrowUp />
             </Button>
-            <Button id={`sf-move-down-${section.id}`} type="button" variant="ghost" size="icon-xs" aria-label={`Move ${meta.label} down`} disabled={index === count - 1} onClick={() => onMove(1)}>
+            <Button id={`sf-move-down-${section.id}`} type="button" variant="ghost" size="icon-xs" className="size-9 md:size-7" aria-label={`Move ${meta.label} down`} disabled={index === count - 1} onClick={() => onMove(1)}>
               <ArrowDown />
             </Button>
           </span>

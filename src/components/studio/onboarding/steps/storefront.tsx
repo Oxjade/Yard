@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import { CheckIcon as Check, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload } from "@phosphor-icons/react"
-import { toast } from "sonner"
 import { ChoiceCard, ChoiceGroup, FieldMessage, Panel } from "@/components/studio/growth/form"
 import { TemplateThumb } from "@/components/studio/storefront-editor/template-thumb"
 import { storefrontAccents, storefrontTemplates, storefrontType } from "@/components/storefront/theme"
@@ -57,7 +56,6 @@ export function StorefrontStep({ onNext }: StepProps) {
     try {
       const src = await readImage(files[0], { max: 1600, quality: 0.8 })
       set({ cover: { src, alt: `${brand.name.trim() || "Brand"} storefront cover`, source: "upload" } })
-      toast.success("Cover added")
     } catch {
       setUploadError("We couldn't read that image. Try a JPG or PNG.")
     } finally {

@@ -4,11 +4,11 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarDotsIcon as CalendarClock, CalendarPlusIcon as CalendarPlus, CopyIcon as Copy, DotsThreeIcon as MoreHorizontal, PencilSimpleIcon as Pencil, TrashIcon as Trash2 } from "@phosphor-icons/react"
+import { CalendarDotsIcon as CalendarClock, CalendarPlusIcon as CalendarPlus, CopyIcon as Copy, PencilSimpleIcon as Pencil, TrashIcon as Trash2 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { MetricTile } from "@/components/dashboard/metric-tile"
 import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
@@ -22,6 +22,8 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import type { Drop } from "@/lib/data/types"
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
+import { phoneCellWide, useFocusReturn } from "@/components/studio/business/shared"
+import { CATALOGUE_NOTE, dropsDescription } from "./copy"
 import { ListSkeleton } from "./form"
 import { useGrowth, useGrowthReady } from "./store"
 import { brandZone, dropRevenue, localId, dropStatusMeta, dropUnitsSold, formatInZone, notifyCount, relativeTime, studioDropStatus, zoneAbbr, type StudioDropStatus } from "./utils"
@@ -41,7 +43,7 @@ type Row = {
 export function DropsIndex() {
   const ready = useGrowthReady()
   const now = useNow(30_000)
-  if (!ready || now === null) return <ListSkeleton />
+  if (!ready || now === null) return <ListSkeleton title="Drops" description={dropsDescription} />
   return <DropsIndexView now={now} />
 }
 
@@ -59,6 +61,12 @@ function DropsIndexView({ now }: { now: number }) {
   const anchor = getDemoAnchor()
   const [tab, setTab] = useState<Tab>("all")
   const [confirm, setConfirm] = useState<Row | null>(null)
+  // The dialog keeps the last drop while it animates closed.
+  const [lastConfirm, setLastConfirm] = useState<Row | null>(null)
+  if (confirm && confirm !== lastConfirm) setLastConfirm(confirm)
+  const asked = confirm ?? lastConfirm
+  // Opened from a row menu: focus returns to the drop's link, or to the list once it's removed.
+  const focus = useFocusReturn(() => (asked ? document.querySelector<HTMLElement>(`a[href="/studio/drops/${asked.drop.id}"]`) : null) ?? document.getElementById("drop-list"))
 
   const rows: Row[] = (() => {
     const order: Record<StudioDropStatus, number> = { live: 0, scheduled: 1, draft: 2, "sold-out": 3, ended: 3 }
@@ -93,47 +101,94 @@ function DropsIndexView({ now }: { now: number }) {
     const copy: Drop = { ...row.drop, id, slug: `${row.drop.slug}-copy-${id.slice(-4)}`, name: `${row.drop.name} (copy)`, unitsLeft: row.drop.totalUnits, releaseOffsetHours: (now - anchor) / 3_600_000 + 7 * 24, sponsored: false }
     upsertDrop(copy)
     setDropMeta(id, { draft: true, timeZone: zone.tz, updatedAt: new Date(now).toISOString() })
-    toast("Draft created", { description: `${copy.name} is ready to edit.` })
+    toast.success("Draft created", { description: `${copy.name} is ready to edit.` })
     router.push(`/studio/drops/${id}`)
   }
 
+  // The row leaving the list is the confirmation.
   function remove(row: Row) {
     removeDrop(row.drop.id)
     removeDropMeta(row.drop.id)
     setConfirm(null)
-    toast(row.status === "draft" ? "Draft deleted" : "Drop cancelled", {
-      description: row.status === "draft" ? `${row.drop.name} was removed.` : `${row.drop.name} won't release. Followers who asked for a reminder are told it's cancelled.`,
-    })
   }
+
+  const editable = (r: Row) => r.status === "draft" || r.status === "scheduled"
+  const columns: Column<Row>[] = [
+    {
+      key: "drop",
+      header: "Drop",
+      sortValue: (r) => r.drop.name,
+      cell: (r) => (
+        <Link href={`/studio/drops/${r.drop.id}`} className={cn(phoneCellWide, "group flex min-w-0 items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-violet")}>
+          <span className="relative size-11 shrink-0 overflow-hidden rounded-md bg-surface">
+            <Image src={r.drop.image.src} alt="" fill sizes="44px" className="object-cover" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-ink group-hover:text-violet md:max-w-[16rem]">{r.drop.name}</span>
+            <span className="block truncate text-xs text-ink-3">{dropAccessLabel[r.drop.access]}, limit {r.drop.limitPerCustomer}</span>
+            {/* Phones: status, timing and sales fold into the first cell. */}
+            <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 md:hidden">
+              <StatusBadge tone={dropStatusMeta[r.status].tone}>{dropStatusMeta[r.status].label}</StatusBadge>
+              <span className="text-xs text-ink-2 tabular">{r.status === "draft" ? "Not scheduled" : r.status === "live" ? `Closes ${relativeTime(r.end, now)}` : r.status === "scheduled" ? `Opens ${relativeTime(r.release, now)}` : `${formatPercent(r.drop.totalUnits ? r.sold / r.drop.totalUnits : 0, 0)} sold`}</span>
+            </span>
+          </span>
+        </Link>
+      ),
+    },
+    { key: "status", header: "Status", sortValue: (r) => dropStatusMeta[r.status].label, hideBelow: "md", cell: (r) => <StatusBadge tone={dropStatusMeta[r.status].tone}>{dropStatusMeta[r.status].label}</StatusBadge> },
+    {
+      key: "release",
+      header: `Release (${zoneAbbr(zone.tz, now)})`,
+      sortValue: (r) => r.release,
+      hideBelow: "md",
+      cell: (r) => (
+        <>
+          <span className="block whitespace-nowrap text-ink tabular">{formatInZone(r.release, zone.tz)}</span>
+          <span className="block text-xs text-ink-3">{r.status === "draft" ? "Draft, not scheduled" : r.status === "live" ? `Closes ${relativeTime(r.end, now)}` : relativeTime(r.release, now)}</span>
+        </>
+      ),
+    },
+    { key: "units", header: "Units left", sortValue: (r) => r.drop.unitsLeft, hideBelow: "lg", cell: (r) => <UnitsLeft drop={r.drop} /> },
+    { key: "notify", header: "Notify me", align: "right", sortValue: (r) => r.notify, hideBelow: "lg", cell: (r) => (r.notify === 0 ? <span className="text-ink-3">None yet</span> : <span className="text-ink">{formatNumber(r.notify)}</span>) },
+    { key: "performance", header: "Performance", sortValue: (r) => r.sold, hideBelow: "md", cell: (r) => <Performance row={r} now={now} currency={brand.currency} /> },
+  ]
+  const rowActions: RowAction<Row>[] = [
+    { label: "Edit drop", icon: Pencil, onSelect: (r) => router.push(`/studio/drops/${r.drop.id}`) },
+    { label: "Duplicate as draft", icon: Copy, onSelect: duplicate },
+    { label: "Delete or cancel", icon: Trash2, onSelect: setConfirm, destructive: true, disabled: (r) => !editable(r), separatorBefore: true },
+  ]
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Drops"
-        description="Limited releases with a countdown. Followers who tap Notify me hear the moment a drop goes live."
+        description={dropsDescription}
         actions={
           <Button asChild variant="primary" size="sm">
             <Link href="/studio/drops/new"><CalendarPlus /> Schedule a drop</Link>
           </Button>
         }
       >
-        <SampleDataNote className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SampleDataNote />
+          <p className="text-xs text-ink-3">{CATALOGUE_NOTE}</p>
+        </div>
       </PageHeader>
 
       {rows.length === 0 ? (
         <EmptyState
           icon={CalendarClock}
           title="Plan your first drop"
-          body="Schedule a limited release with a countdown your followers get notified about."
+          body="Schedule a limited release with a countdown and a Notify me button."
           action={<Button asChild size="sm" variant="secondary"><Link href="/studio/drops/new"><CalendarPlus /> Schedule a drop</Link></Button>}
         />
       ) : (
         <>
           <section aria-label="Drop summary" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <MetricTile label="Scheduled" value={counts.scheduled} format={(n) => formatNumber(Math.round(n))} hint={nextUp ? `next ${relativeTime(nextUp.release, now)}` : "none coming up"} />
-            <MetricTile label="Live now" value={counts.live} format={(n) => formatNumber(Math.round(n))} hint={counts.live ? "selling right now" : undefined} />
-            <MetricTile label="Notify-me sign-ups" value={upcomingNotify} format={(n) => formatNumber(Math.round(n))} hint="upcoming and live drops" />
-            <MetricTile label="Units sold" value={unitsSold} format={(n) => formatNumber(Math.round(n))} hint={unitsReleased ? `${formatPercent(unitsSold / unitsReleased, 0)} sell-through` : "no releases yet"} />
+            <MetricTile label="Scheduled" value={counts.scheduled} format={(n) => formatNumber(Math.round(n))} hint={nextUp ? `Next ${relativeTime(nextUp.release, now)}` : "None coming up"} />
+            <MetricTile label="Live now" value={counts.live} format={(n) => formatNumber(Math.round(n))} hint={counts.live ? "Selling now" : "None live"} />
+            <MetricTile label="Notify-me sign-ups" value={upcomingNotify} format={(n) => formatNumber(Math.round(n))} hint="Upcoming and live sample drops" />
+            <MetricTile label="Units sold" value={unitsSold} format={(n) => formatNumber(Math.round(n))} hint={unitsReleased ? `${formatPercent(unitsSold / unitsReleased, 0)} sell-through` : "No releases yet"} />
           </section>
 
           <div className="grid gap-4">
@@ -152,123 +207,42 @@ function DropsIndexView({ now }: { now: number }) {
               ]}
             />
 
-            <section id="drop-list" aria-label="Drops" className="overflow-hidden rounded-lg border border-line-soft bg-card">
-              {visible.length === 0 ? (
-                <div className="p-4 md:p-5">
-                  <EmptyState
-                    icon={CalendarClock}
-                    title={tab === "drafts" ? "No drafts" : tab === "live" ? "Nothing is live right now" : tab === "past" ? "No past drops yet" : "Nothing scheduled"}
-                    body={tab === "past" ? "Drops show here once they sell out or close." : "Drops you save or schedule show here."}
-                    action={<Button variant="secondary" size="sm" onClick={() => setTab("all")}>Show all drops</Button>}
-                  />
-                </div>
-              ) : (
-                <>
-                  {/* Phone: one card per drop */}
-                  <ul className="divide-y divide-line-soft md:hidden">
-                    {visible.map((row) => (
-                      <li key={row.drop.id} className="flex gap-3 p-4">
-                        <Link href={`/studio/drops/${row.drop.id}`} className="relative size-16 shrink-0 overflow-hidden rounded-md bg-surface">
-                          <Image src={row.drop.image.src} alt="" fill sizes="64px" className="object-cover" />
-                        </Link>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <Link href={`/studio/drops/${row.drop.id}`} className="min-w-0 text-sm font-medium text-ink">
-                              <span className="line-clamp-2">{row.drop.name}</span>
-                            </Link>
-                            <RowMenu row={row} onDuplicate={duplicate} onDelete={setConfirm} />
-                          </div>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <StatusBadge tone={dropStatusMeta[row.status].tone}>{dropStatusMeta[row.status].label}</StatusBadge>
-                            <span className="text-xs text-ink-2 tabular">{formatInZone(row.release, zone.tz)} {zoneAbbr(zone.tz, row.release)}</span>
-                          </div>
-                          <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                              <dt className="text-ink-3">Units left</dt>
-                              <dd className="mt-0.5 text-ink tabular">{formatNumber(row.drop.unitsLeft)}/{formatNumber(row.drop.totalUnits)}</dd>
-                            </div>
-                            <div>
-                              <dt className="text-ink-3">Notify me</dt>
-                              <dd className="mt-0.5 text-ink tabular">{row.status === "draft" ? "None yet" : formatNumber(row.notify)}</dd>
-                            </div>
-                            <div>
-                              <dt className="text-ink-3">Performance</dt>
-                              <dd className="mt-0.5"><Performance row={row} now={now} currency={brand.currency} compact /></dd>
-                            </div>
-                          </dl>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-
-                  {/* Tablet and up: the table */}
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full min-w-[920px] text-left text-sm">
-                      <thead className="border-b border-line-soft bg-surface/60 text-xs text-ink-3">
-                        <tr>
-                          <th scope="col" className="px-4 py-2.5 font-normal md:px-5">Drop</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Status</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Release ({zoneAbbr(zone.tz, now)})</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Units left</th>
-                          <th scope="col" className="px-3 py-2.5 text-right font-normal">Notify me</th>
-                          <th scope="col" className="px-3 py-2.5 font-normal">Performance</th>
-                          <th scope="col" className="px-4 py-2.5 font-normal md:px-5"><span className="sr-only">Actions</span></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line-soft">
-                        {visible.map((row) => (
-                          <tr key={row.drop.id} className="transition-colors hover:bg-white/[0.02]">
-                            <td className="px-4 py-3 md:px-5">
-                              <Link href={`/studio/drops/${row.drop.id}`} className="group flex items-center gap-3">
-                                <span className="relative size-11 shrink-0 overflow-hidden rounded-md bg-surface">
-                                  <Image src={row.drop.image.src} alt="" fill sizes="44px" className="object-cover" />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className="block truncate font-medium text-ink group-hover:text-violet">{row.drop.name}</span>
-                                  <span className="block truncate text-xs text-ink-3">{dropAccessLabel[row.drop.access]}, limit {row.drop.limitPerCustomer}</span>
-                                </span>
-                              </Link>
-                            </td>
-                            <td className="px-3 py-3"><StatusBadge tone={dropStatusMeta[row.status].tone}>{dropStatusMeta[row.status].label}</StatusBadge></td>
-                            <td className="px-3 py-3">
-                              <span className="block whitespace-nowrap text-ink tabular">{formatInZone(row.release, zone.tz)}</span>
-                              <span className="block text-xs text-ink-3">{row.status === "live" ? `closes ${relativeTime(row.end, now)}` : relativeTime(row.release, now)}</span>
-                            </td>
-                            <td className="px-3 py-3">
-                              <UnitsLeft drop={row.drop} />
-                            </td>
-                            <td className="px-3 py-3 text-right text-ink tabular">{row.status === "draft" ? <span className="text-ink-3">None yet</span> : formatNumber(row.notify)}</td>
-                            <td className="px-3 py-3"><Performance row={row} now={now} currency={brand.currency} /></td>
-                            <td className="px-4 py-3 text-right md:px-5"><RowMenu row={row} onDuplicate={duplicate} onDelete={setConfirm} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
+            <section id="drop-list" aria-label="Drops" tabIndex={-1} className="outline-none">
+              <DataTable
+                label="Drops"
+                rows={visible}
+                columns={columns}
+                getId={(r) => r.drop.id}
+                rowActions={rowActions}
+                minWidth={300}
+                empty={{
+                  title: tab === "drafts" ? "No drafts" : tab === "live" ? "Nothing is live right now" : tab === "past" ? "No past drops yet" : "Nothing scheduled",
+                  body: tab === "past" ? "Drops show here once they sell out or close." : "Drops you save or schedule show here.",
+                  action: <Button variant="secondary" size="sm" onClick={() => setTab("all")}>Show all drops</Button>,
+                }}
+              />
             </section>
             <p className="text-xs text-ink-3">
-              Times are in {zone.city} time ({zoneAbbr(zone.tz, now)}), your brand&apos;s time zone. Notify-me counts and revenue are sample data until the store is connected.
+              Times are in {zone.city} time ({zoneAbbr(zone.tz, now)}), your brand&apos;s time zone. Notify-me counts and revenue for the sample drops are sample data. Drops you create here have none until the catalogue backend is connected.
             </p>
           </div>
         </>
       )}
 
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" {...focus}>
           <DialogHeader>
-            <DialogTitle>{confirm?.status === "draft" ? "Delete this draft?" : "Cancel this drop?"}</DialogTitle>
+            <DialogTitle>{asked?.status === "draft" ? "Delete this draft?" : "Cancel this drop?"}</DialogTitle>
             <DialogDescription className="text-ink-2">
-              {confirm?.status === "draft"
-                ? `${confirm?.drop.name} will be removed. This can't be undone.`
-                : `${confirm?.drop.name} won't release. ${confirm ? formatNumber(confirm.notify) : 0} people asked to be notified; they'll be told it's cancelled. This can't be undone.`}
+              {asked?.status === "draft"
+                ? `${asked?.drop.name} will be removed. This can't be undone.`
+                : `${asked?.drop.name} won't release and comes off your schedule. This can't be undone.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
-            <Button variant="destructive" onClick={() => confirm && remove(confirm)}>
-              <Trash2 /> {confirm?.status === "draft" ? "Delete draft" : "Cancel drop"}
+            <Button variant="destructive-solid" onClick={() => confirm && remove(confirm)}>
+              <Trash2 /> {asked?.status === "draft" ? "Delete draft" : "Cancel drop"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -291,51 +265,15 @@ function UnitsLeft({ drop }: { drop: Drop }) {
   )
 }
 
-function Performance({ row, now, currency, compact }: { row: Row; now: number; currency: CurrencyCode; compact?: boolean }) {
-  if (row.status === "draft") return <span className="text-xs text-ink-3">Not scheduled</span>
-  if (row.status === "scheduled") {
-    return (
-      <span className={cn("block text-ink-2", compact ? "text-xs" : "text-sm")}>
-        Opens {relativeTime(row.release, now)}
-      </span>
-    )
-  }
+function Performance({ row, now, currency }: { row: Row; now: number; currency: CurrencyCode }) {
+  if (row.status === "draft") return <span className="text-xs whitespace-nowrap text-ink-3">Not scheduled</span>
+  if (row.status === "scheduled") return <span className="block text-sm whitespace-nowrap text-ink-2">Opens {relativeTime(row.release, now)}</span>
   const pct = row.drop.totalUnits ? row.sold / row.drop.totalUnits : 0
   return (
-    <span className="block">
-      <span className={cn("block text-ink tabular", compact ? "text-xs" : "text-sm")}>{formatPercent(pct, 0)} sold</span>
-      {!compact ? <span className="block text-xs text-ink-3 tabular">{formatMoney(row.revenue, currency, { compact: true })} revenue</span> : null}
+    <span className="block whitespace-nowrap">
+      <span className="block text-sm text-ink tabular">{formatPercent(pct, 0)} sold</span>
+      <span className="block text-xs text-ink-3 tabular">{formatMoney(row.revenue, currency, { compact: true })} revenue</span>
     </span>
   )
 }
 
-function RowMenu({ row, onDuplicate, onDelete }: { row: Row; onDuplicate: (r: Row) => void; onDelete: (r: Row) => void }) {
-  const editable = row.status === "draft" || row.status === "scheduled"
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${row.drop.name}`} className="-my-1 shrink-0">
-          <MoreHorizontal />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem asChild>
-          <Link href={`/studio/drops/${row.drop.id}`}>
-            <Pencil /> {editable ? "Edit drop" : "View drop"}
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onDuplicate(row)}>
-          <Copy /> Duplicate as draft
-        </DropdownMenuItem>
-        {editable ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(row)}>
-              <Trash2 /> {row.status === "draft" ? "Delete draft" : "Cancel drop"}
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}

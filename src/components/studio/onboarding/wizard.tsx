@@ -2,18 +2,22 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, EyeIcon as Eye, ArrowCounterClockwiseIcon as RotateCcw, StorefrontIcon as Store, XIcon as X } from "@phosphor-icons/react"
-import { toast } from "sonner"
+import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, EyeIcon as Eye, ArrowCounterClockwiseIcon as RotateCcw, XIcon as X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { EmptyState } from "@/components/dashboard/empty-state"
+import { countries } from "@/config/markets"
 import { site } from "@/config/site"
+import { useAsyncAction } from "@/hooks/use-async-action"
+import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
+import { categories } from "@/lib/data/catalog"
+import { useAdmin } from "@/lib/stores/admin"
+import { useNotifications } from "@/lib/stores/notifications"
 import { cn } from "@/lib/utils"
+import { useFocusReturn } from "@/components/studio/business/shared"
 import { STEP_FORM_ID } from "./step-form"
 import { StorefrontPreview } from "./storefront-preview"
 import { STEPS, useOnboarding, useOnboardingHydrated } from "./store"
@@ -33,6 +37,37 @@ const variants = {
   enter: (dir: number) => ({ opacity: 0, x: dir * 28 }),
   center: { opacity: 1, x: 0 },
   exit: (dir: number) => ({ opacity: 0, x: dir * -28 }),
+}
+
+/**
+ * Publishing sends the brand to the platform's review queue: an application in the Admin
+ * Control Center and a notification for the admin team (in the backend phase: one server
+ * action). The eventKey is stable, so publishing twice never notifies twice.
+ */
+function submitApplication() {
+  const { brand, business, product } = useOnboarding.getState().data
+  const at = new Date().toISOString()
+  const id = `app_onb_${brand.handle}`
+  const country = business.country ?? "NG"
+  const category = brand.category ?? "streetwear"
+  const categoryName = categories.find((c) => c.slug === category)?.name ?? category
+  const products = product.name.trim() ? 1 : 0
+  const admin = useAdmin.getState()
+  useAdmin.setState({
+    applications: [
+      { id, brandName: brand.name.trim(), handle: brand.handle, country, category, submittedAt: at, status: "pending_review", kyc: "not_started", risk: "low", notes: `Submitted from Brand Studio onboarding. ${products} product drafted. Identity checks start before the first payout.`, products },
+      ...admin.applications.filter((a) => a.id !== id),
+    ],
+  })
+  useNotifications.getState().push({
+    eventKey: `a:app:${id}`,
+    audience: "admin",
+    category: "merchant_application",
+    title: `New brand application: ${brand.name.trim()}`,
+    body: `${categoryName} brand from ${countries[country].name}, ${products} product drafted.`,
+    href: "/admin/brands",
+    at,
+  })
 }
 
 function minutesLeft(step: number) {
@@ -69,7 +104,6 @@ export function OnboardingWizard() {
 }
 
 function Wizard() {
-  const router = useRouter()
   const step = useOnboarding((s) => s.step)
   const maxReached = useOnboarding((s) => s.maxReached)
   const data = useOnboarding((s) => s.data)
@@ -79,8 +113,14 @@ function Wizard() {
   const anything = maxReached > 0 || !!data.account.email
   const wide = useWide()
 
-  const [publishing, setPublishing] = useState(false)
+  // Publishing is local today and completes at once; the Published screen is the confirmation.
+  const publish = useAsyncAction(() => {
+    submitApplication()
+    markPublished()
+  })
+  const publishing = publish.pending
   const [previewOpen, setPreviewOpen] = useState(false)
+  const previewFocus = useFocusReturn()
   const [resumed, setResumed] = useState(() => step > 0)
   // Direction of travel, adjusted while rendering when the step changes (so the exit animation knows it).
   const [nav, setNav] = useState({ step, dir: 1, moved: false })
@@ -102,14 +142,7 @@ function Wizard() {
 
   function onNext() {
     if (!isPublish) return next()
-    setPublishing(true)
-    window.setTimeout(() => {
-      const { brand } = useOnboarding.getState().data
-      markPublished()
-      // Frontend phase: nothing is written to the marketplace yet, so don't claim a live URL.
-      toast.success("Your storefront is ready", { description: `${brand.name} goes live at /brands/${brand.handle} once your store is connected. Your setup is saved on this device.` })
-      router.push("/studio")
-    }, 900)
+    void publish.run()
   }
 
   return (
@@ -181,7 +214,7 @@ function Wizard() {
       </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
-        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 overflow-y-auto rounded-t-2xl border-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 overflow-y-auto rounded-t-2xl border-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]" {...previewFocus}>
           <SheetHeader className="pr-12">
             <SheetTitle>Storefront preview</SheetTitle>
             <SheetDescription>How shoppers will see your storefront so far.</SheetDescription>
@@ -197,7 +230,8 @@ function Wizard() {
 
 function WizardFooter({ step, publishing, onBack }: { step: number; publishing: boolean; onBack: () => void }) {
   const isPublish = step === LAST
-  const label = isPublish ? "Publish storefront" : step === LAST - 1 ? "Review" : "Continue"
+  // The last step sends the application to the platform team; nothing goes live from here.
+  const label = isPublish ? "Submit for review" : step === LAST - 1 ? "Review" : "Continue"
   return (
     // Phones: the family's floating glass action bar. Desktop: a plain row under the step.
     <div className="glass-strong fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-30 flex items-center gap-2 rounded-2xl p-2 lg:static lg:z-auto lg:mt-6 lg:rounded-none lg:border-x-0 lg:border-b-0 lg:border-line-soft lg:bg-transparent lg:p-0 lg:pt-4 lg:shadow-none lg:backdrop-filter-none">
@@ -225,7 +259,6 @@ function StepNav({ step, maxReached, className }: { step: number; maxReached: nu
   const data = useOnboarding((s) => s.data)
   const done = stepComplete(data)
   const anything = maxReached > 0 || !!data.account.email
-  const wide = useWide()
   return (
     <div className={className}>
       <nav aria-label="Setup steps" className="sticky top-24">
@@ -272,13 +305,15 @@ function StepNav({ step, maxReached, className }: { step: number; maxReached: nu
 function StartOver({ className, variant = "ghost", size = "xs", label = "Start over" }: { className?: string; variant?: "ghost" | "secondary"; size?: "xs" | "sm" | "default"; label?: string }) {
   const reset = useOnboarding((s) => s.reset)
   const [open, setOpen] = useState(false)
+  // After clearing, step 1's first field takes focus (the button that opened this is gone).
+  const focus = useFocusReturn(() => document.querySelector<HTMLElement>(`#${STEP_FORM_ID} input, #${STEP_FORM_ID} button`))
   return (
     <>
       <Button type="button" variant={variant} size={size} className={className} onClick={() => setOpen(true)}>
         <RotateCcw /> {label}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[420px]" {...focus}>
           <DialogHeader>
             <DialogTitle>Start over?</DialogTitle>
             <DialogDescription>This clears everything you’ve entered on this device, including uploaded photos. You stay signed in.</DialogDescription>
@@ -291,9 +326,9 @@ function StartOver({ className, variant = "ghost", size = "xs", label = "Start o
               type="button"
               variant="destructive"
               onClick={() => {
+                // Step 1 reappears empty, which is the confirmation.
                 reset()
                 setOpen(false)
-                toast("Setup cleared", { description: "You're back at step 1." })
               }}
             >
               Clear and start over
@@ -319,26 +354,32 @@ function ResumeNote({ step, onDismiss }: { step: number; onDismiss: () => void }
 
 function Published() {
   const brand = useOnboarding((s) => s.data.brand)
+  const name = brand.name || "Your brand"
+  const sample = brandById.get(STUDIO_BRAND_ID)!.name
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-16 md:py-24">
-      <EmptyState
-        icon={Store}
-        title="Your storefront is ready"
-        body={`${brand.name || "Your brand"} goes live at /brands/${brand.handle} once your store is connected. Everything you set up is saved on this device. Keep building from Brand Studio: products, drops and your storefront layout.`}
-        action={
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Button asChild variant="primary">
-              <Link href="/studio">Go to Brand Studio</Link>
-            </Button>
-            <StartOver variant="secondary" size="default" label="Set up another brand" />
-          </div>
-        }
-      />
+      <section aria-labelledby="ob-submitted-title" className="rounded-lg border border-line-soft bg-card p-6 text-center md:p-8">
+        <span className="mx-auto inline-flex size-14 items-center justify-center rounded-full border border-violet/40 bg-purple/15">
+          <Check weight="bold" className="size-6 text-violet" aria-hidden />
+        </span>
+        <h1 id="ob-submitted-title" className="mt-5 text-lg font-medium text-ink">Your storefront is submitted for review</h1>
+        <p className="mx-auto mt-2 max-w-md text-sm text-ink-2">
+          {name} is with the platform team. Once it&apos;s approved and your store is connected, it goes live at <span className="text-ink">/brands/{brand.handle}</span>. Everything you set up is saved on this device.
+        </p>
+        <p className="mx-auto mt-3 max-w-md text-xs text-ink-3">Brand Studio shows the sample brand {sample} in this build, so {name} doesn&apos;t appear there yet.</p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <Button asChild variant="primary">
+            <Link href="/studio">Go to Brand Studio</Link>
+          </Button>
+          <StartOver variant="secondary" size="default" label="Set up another brand" />
+        </div>
+      </section>
     </div>
   )
 }
 
-function WizardSkeleton() {
+/** Also the route's loading state, so the first paint and the saved-progress wait look the same. */
+export function WizardSkeleton() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 pt-6 pb-28 md:px-8 md:pt-10" aria-busy="true" aria-label="Loading your setup">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[200px_minmax(0,1fr)_380px]">

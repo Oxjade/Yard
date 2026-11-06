@@ -24,7 +24,7 @@ export const STEPS: { id: StepId; label: string; title: string; description: str
   { id: "business", label: "Business info", title: "Business info", description: "Where you sell from and how we can reach you. Shoppers never see your contact details.", minutes: 0.5 },
   { id: "product", label: "First product", title: "Add your first product", description: "One product is enough to open. Add the rest from Brand Studio.", minutes: 1 },
   { id: "payments", label: "Payments and shipping", title: "Payments and shipping", description: "How you get paid and how orders reach shoppers.", minutes: 0.5 },
-  { id: "publish", label: "Publish", title: "Review and publish", description: "Check your storefront, then put it live.", minutes: 0.5 },
+  { id: "publish", label: "Submit", title: "Review and submit", description: "Check your storefront, then submit it for review. The platform team reviews new brands before they appear in the marketplace.", minutes: 0.5 },
 ]
 
 export type ImageRef = { src: string; alt: string; source: "library" | "upload" }
