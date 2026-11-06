@@ -28,6 +28,9 @@ export const HEADING_MAX = 40
 export const FEATURED_MAX = 8
 export const COLLECTIONS_MAX = 12
 export const MARK_MAX = 3
+/** Most posts a Social feed section shows, and most it can pin (§6.1). */
+export const SOCIAL_MAX = 12
+export const SOCIAL_MIN = 3
 
 /** Every section type, in the order a fresh storefront lists them. */
 export const SECTION_TYPES = Object.keys(storefrontSections) as StorefrontSectionType[]
@@ -57,6 +60,9 @@ export function normalize(config: EditorConfig, brand: Brand): EditorConfig {
     if (s.title?.trim()) next.title = s.title
     if (s.productIds?.length) next.productIds = s.productIds
     if (s.collectionIds?.length) next.collectionIds = s.collectionIds
+    // The Social feed's settings and pinned posts (§6.1): kept, or every edit would strip them.
+    if (s.feed) next.feed = { source: s.feed.source, layout: s.feed.layout, count: s.feed.count }
+    if (s.postIds?.length) next.postIds = s.postIds.slice(0, SOCIAL_MAX)
     sections.push(next)
   }
   for (const type of SECTION_TYPES) if (!seen.has(type)) sections.push({ id: type, type, enabled: false })
@@ -203,6 +209,8 @@ export function validate(config: EditorConfig, brand: Brand): FieldErrors {
   }
   if (social.website && !websitePattern.test(social.website)) errors.website = "Enter a web address, like yourbrand.com."
   if (!config.sections.some((s) => s.enabled)) errors.sections = "Turn on at least one section so your storefront has something to show."
+  const feed = config.sections.find((s) => s.type === "social-feed")?.feed
+  if (!errors.sections && feed && (!Number.isInteger(feed.count) || feed.count < SOCIAL_MIN || feed.count > SOCIAL_MAX)) errors.sections = `The Social feed shows ${SOCIAL_MIN} to ${SOCIAL_MAX} posts.`
   return errors
 }
 

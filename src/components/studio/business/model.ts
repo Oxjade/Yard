@@ -1,4 +1,8 @@
+import { holidays } from "@/config/holidays"
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
+import { brandById } from "@/lib/data/brands"
+import { countryTimeZone } from "@/lib/data/zones"
+import { addBusinessDays, makeCalendar, noonUtc, orderDay, WEEKDAYS } from "@/lib/shipping/calendar"
 import { demoCustomer, sampleReturnRequest, shoppers, type ShopperProfile } from "@/lib/data/orders"
 import { DEMO_TODAY, hash } from "@/lib/data/seed"
 import { convert } from "@/lib/money"
@@ -113,9 +117,18 @@ export function paymentView(o: Pick<MerchantOrder, "status" | "paymentStatus" | 
 
 export const itemCount = (o: MerchantOrder) => o.lines.reduce((s, l) => s + l.quantity, 0)
 
-/** The last day the order should leave the studio, from the brand's processing time. */
+/**
+ * The last day the order should leave the studio (noon UTC on that date), in business days from
+ * the order day: weekends and the origin's public holidays don't count, and an order after the
+ * 14:00 cutoff counts from the next business day (§6.5). Yard's server estimate, when Studio has
+ * one, takes precedence (it also knows the brand's closures).
+ */
 export function shipBy(o: MerchantOrder, processingDays: [number, number]) {
-  return new Date(o.placedAt).getTime() + processingDays[1] * DAY_MS
+  const origin = brandById.get(o.brandId)?.shipsFrom ?? "NG"
+  const list = holidays[origin as keyof typeof holidays] ?? []
+  const cal = makeCalendar(WEEKDAYS, list.map((h) => h.date))
+  const d0 = orderDay(Date.parse(o.placedAt), { timeZone: countryTimeZone[origin], cutoffLocal: "14:00" }, cal)
+  return noonUtc(addBusinessDays(d0, processingDays[1], cal))
 }
 
 /* ---------- Payout estimate ---------- */

@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { AnimatePresence, motion } from "motion/react"
-import { CreditCardIcon as CreditCard, HashIcon as Hash, BankIcon as Landmark, ShieldCheckIcon as ShieldCheck, DeviceMobileIcon as Smartphone, TruckIcon as Truck } from "@phosphor-icons/react"
+import { CreditCardIcon as CreditCard, HashIcon as Hash, BankIcon as Landmark, PackageIcon as Package, ShieldCheckIcon as ShieldCheck, DeviceMobileIcon as Smartphone, TruckIcon as Truck } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Price } from "@/components/market/price"
 import { Button } from "@/components/ui/button"
@@ -30,7 +30,10 @@ import {
   type PaymentDraft,
   type PaymentMethod,
 } from "./rules"
-import { arrivalRange, deliveryDays, shippingMethodLabel, shippingPrice, type ShippingMethod } from "./shipping"
+import { Bone } from "@/components/feedback/skeletons"
+import { RetryButton } from "@/components/market/delivery/delivery-bits"
+import { businessDays, formatDay } from "@/lib/shipping/format"
+import { arrivalRange, chosenOption, shippingMethodLabel, type ShippingMethod } from "./shipping"
 
 const selectClass = "w-full data-[size=default]:h-11"
 const dialPad: Record<number, string> = { 2: "pl-9", 3: "pl-11", 4: "pl-13" }
@@ -144,25 +147,57 @@ export function AddressStep({
 
 /* ---------- 3. Shipping per brand ---------- */
 
+export type QuoteStatus = { isLoading: boolean; error: unknown; retry: () => void; retrying?: boolean }
+
+/** Option cards while the quote loads: the shape of the real ones. */
+function OptionBones() {
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-hidden>
+      <Bone className="h-[76px] w-full rounded-lg" />
+      <Bone className="h-[76px] w-full rounded-lg" />
+    </div>
+  )
+}
+
+/**
+ * Shipping per brand (§6.5): every option the brand offers to this address, priced and with its
+ * estimated arrival, from the server's quote. A brand that can't deliver here blocks the step with
+ * the reason; while the quote loads the options are skeletons, and when it can't load the step
+ * says so with Retry. Nothing here is a fallback price or date.
+ */
 export function ShippingStep({
   groups,
   currency,
   country,
-  methodFor,
   onChange,
-  today,
+  quote,
+  onRemoveBrand,
 }: {
   groups: BrandGroup[]
   currency: CurrencyCode
   country: CountryCode
-  methodFor: (brandId: string) => ShippingMethod
   onChange: (brandId: string, method: ShippingMethod) => void
-  today: Date
+  quote: QuoteStatus
+  onRemoveBrand: (brandId: string) => void
 }) {
+  const failed = !quote.isLoading && !!quote.error && groups.every((g) => !g.quote)
   return (
     <div className="grid grid-cols-1 gap-4">
+      {groups.length > 1 ? (
+        <Notice icon={Package}>
+          Your order comes from {groups.length} brands. Each ships separately from its own studio, so parcels can arrive on different days.
+        </Notice>
+      ) : null}
+      {failed ? (
+        <div role="alert" className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-ink">
+          Couldn&apos;t calculate shipping.
+          <RetryButton onRetry={quote.retry} retrying={quote.retrying} />
+        </div>
+      ) : null}
       {groups.map((g) => {
-        const method = methodFor(g.brand.id)
+        const option = g.option
+        const handling = g.quote?.handling
+        const origin = g.quote?.brand ? `${g.quote.brand.originCity}, ${countries[g.quote.brand.originCountry as CountryCode]?.name ?? g.quote.brand.originCountry}` : `${g.brand.city}, ${countries[g.brand.shipsFrom].name}`
         return (
           <section key={g.brand.id} aria-labelledby={`ship-${g.brand.id}`} className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
             <header className="flex flex-wrap items-center justify-between gap-3">
@@ -170,10 +205,10 @@ export function ShippingStep({
                 <BrandMark brand={g.brand} size="sm" />
                 <div className="min-w-0">
                   <h3 id={`ship-${g.brand.id}`} className="truncate text-sm text-ink">
-                    Shipping from {g.brand.name}
+                    {g.brand.name}
                   </h3>
-                  <p className="truncate text-xs text-ink-2">
-                    {g.brand.city}, {countries[g.brand.shipsFrom].name}. Packed in {g.brand.processingDays[0]}–{g.brand.processingDays[1]} business days.
+                  <p className="text-xs text-ink-2">
+                    Ships from {origin}.{handling ? ` Usually dispatches in ${businessDays(handling)}.` : ""}
                   </p>
                 </div>
               </div>
@@ -185,31 +220,47 @@ export function ShippingStep({
                 ))}
               </div>
             </header>
-            <OptionGroup value={method} onValueChange={(v) => onChange(g.brand.id, v as ShippingMethod)} label={`Shipping speed for ${g.brand.name}`} className="mt-4 sm:grid-cols-2">
-              {(["standard", "express"] as const).map((m) => {
-                const price = shippingPrice(g, m)
-                const days = deliveryDays(g.brand, country, m)
-                return (
-                  <OptionCard
-                    key={m}
-                    value={m}
-                    checked={method === m}
-                    ringId={`ship-ring-${g.brand.id}`}
-                    title={shippingMethodLabel[m]}
-                    description={
-                      <>
-                        Arrives {arrivalRange(today, days)}
-                        <span className="block text-ink-3">
-                          {days[0]}–{days[1]} business days
-                        </span>
-                      </>
-                    }
-                    aside={price === 0 ? "Free" : <Price amount={price} currency={currency} />}
-                  />
-                )
-              })}
-            </OptionGroup>
-            {!g.freeShipping && g.toFreeShipping > 0 ? (
+            {!g.quote ? (
+              quote.isLoading ? (
+                <div role="status" aria-label={`Loading shipping options for ${g.brand.name}`}>
+                  <OptionBones />
+                </div>
+              ) : failed ? null : (
+                <p className="mt-4 text-sm text-ink-2">Shipping for {g.brand.name} couldn&apos;t be calculated.</p>
+              )
+            ) : g.unavailable || !option ? (
+              <div role="alert" className="mt-4 grid gap-3 rounded-md border border-acid/30 bg-acid/5 px-3 py-3 text-sm text-ink">
+                <p>
+                  {g.brand.name} doesn&apos;t ship to {countries[country].name}. Remove its pieces or change the delivery country.
+                </p>
+                <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => onRemoveBrand(g.brand.id)}>
+                  Remove {g.brand.name}&apos;s pieces
+                </Button>
+              </div>
+            ) : (
+              <OptionGroup value={option.service} onValueChange={(v) => onChange(g.brand.id, v as ShippingMethod)} label={`Shipping for ${g.brand.name}`} className={cn("mt-4", (g.options?.length ?? 0) > 1 && "sm:grid-cols-2")}>
+                {(g.options ?? []).map((o) => {
+                  const range = arrivalRange(o.estimate)
+                  return (
+                    <OptionCard
+                      key={o.service}
+                      value={o.service}
+                      checked={option.service === o.service}
+                      ringId={`ship-ring-${g.brand.id}`}
+                      title={o.label}
+                      description={
+                        <>
+                          {o.service === "pickup" ? (o.estimate?.arrivalFrom ? `Est. ready ${formatDay(o.estimate.arrivalFrom)}` : "Ready once packed") : range ? `Est. arrival ${range}` : "Estimated arrival unavailable"}
+                          <span className="block text-ink-3">{o.service === "pickup" ? "Collect from the brand's store" : `${businessDays(o.transit)} in transit`}</span>
+                        </>
+                      }
+                      aside={o.free ? "Free" : <Price amount={o.price.amount} currency={currency} />}
+                    />
+                  )
+                })}
+              </OptionGroup>
+            )}
+            {g.quote && option && !g.freeShipping && g.toFreeShipping > 0 && option.service === "standard" ? (
               <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-ink-2">
                 <Truck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0">
@@ -220,6 +271,7 @@ export function ShippingStep({
           </section>
         )
       })}
+      <p className="text-xs text-ink-3">Delivery dates are estimates, not guarantees. They skip weekends and public holidays.</p>
     </div>
   )
 }
@@ -408,7 +460,6 @@ export function ReviewStep({
   country,
   methodFor,
   onEdit,
-  today,
 }: {
   contact: ContactDraft
   address: AddressDraft
@@ -419,7 +470,6 @@ export function ReviewStep({
   country: CountryCode
   methodFor: (brandId: string) => ShippingMethod
   onEdit: (step: number) => void
-  today: Date
 }) {
   const rules = countryRules[country]
   return (
@@ -438,15 +488,20 @@ export function ReviewStep({
       <ReviewBlock title="Shipping" onChange={() => onEdit(2)}>
         <ul className="grid gap-2">
           {groups.map((g) => {
-            const m = methodFor(g.brand.id)
-            const price = shippingPrice(g, m)
+            const o = chosenOption(g, methodFor(g.brand.id))
+            const range = arrivalRange(o?.estimate)
             return (
               <li key={g.brand.id} className="flex flex-wrap items-baseline gap-x-3">
                 <span>{g.brand.name}</span>
-                <span className="text-ink-2">
-                  {shippingMethodLabel[m]}, arrives {arrivalRange(today, deliveryDays(g.brand, country, m))},{" "}
-                  {price === 0 ? "free" : <Price amount={price} currency={currency} className="text-ink-2" />}
-                </span>
+                {o ? (
+                  <span className="text-ink-2">
+                    {o.service === "pickup" ? o.label : shippingMethodLabel[o.service]}
+                    {range && o.service !== "pickup" ? `, est. arrival ${range}` : o.service === "pickup" && o.estimate?.arrivalFrom ? `, est. ready ${formatDay(o.estimate.arrivalFrom)}` : ""},{" "}
+                    {o.free ? "free" : <Price amount={o.price.amount} currency={currency} className="text-ink-2" />}
+                  </span>
+                ) : (
+                  <span className="text-ink-2">{g.quote ? `Doesn't ship to ${countries[country].name}` : "Shipping not calculated yet"}</span>
+                )}
               </li>
             )
           })}

@@ -18,6 +18,7 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { conditionalOrderTabs, ordersDescription, countryName, emptyOrderTab, formatDateTime, itemCount, orderMatchesTab, orderTabs, paymentView, plural, relativeDay, shopperName, type OrderTab } from "./model"
 import { TrackingDialog } from "./order-dialogs"
+import { useShipmentQueue } from "@/components/studio/shipping/shipment-sync"
 import { PhoneSort, phoneCell, useStudioReady } from "./shared"
 
 /** "Today" and "3 days ago" read lower case mid-sentence; dates keep their capital month. */
@@ -56,6 +57,8 @@ export function OrdersIndex() {
   const orders = useStudio((s) => s.orders)
   const setOrderStatus = useStudio((s) => s.setOrderStatus)
   const brand = brandById.get(brandId)!
+  // Shipment events saved while signed out or offline go to Yard's server once a brand session is back.
+  useShipmentQueue()
   const cur = brand.currency
 
   const [tab, setTab] = useState<OrderTab>("paid")

@@ -13,9 +13,10 @@ import type { AuditEntry, BrandApplication } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
-import { brandActions, brandAllowed, type BrandActionKey } from "./brand-actions"
+import { brandActions, brandAllowed, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
+import { ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
-import { ActionBar, ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
+import { ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, daysSince, formatDate, plural, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { useLast } from "./use-last"
@@ -43,6 +44,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
   const app = useAdmin((s) => s.applications.find((a) => a.id === shown))
   const audit = useAdmin((s) => s.audit)
   const moderation = useAdmin((s) => s.moderation)
+  const blockFor = useBrandStatusBlock()
 
   if (!app) return null
 
@@ -71,9 +73,9 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
         </>
       }
       actions={
-        <ActionBar
-          note={app.status === "pending_review" ? `${age === 0 ? "Submitted today." : `In the queue for ${plural(age, "day")}.`} Every decision needs a reason and is recorded in the audit log.` : "Every decision needs a reason and is recorded in the audit log."}
-          actions={brandAllowed[app.status].map((key) => ({ key, label: brandActions[key].label, icon: brandActions[key].icon, variant: brandActions[key].button, onSelect: () => onDecide(key, app) }))}
+        <TrustActionBar
+          note={`${app.status === "pending_review" ? `${age === 0 ? "Submitted today. " : `In the queue for ${plural(age, "day")}. `}` : ""}${onServer(app) ? "Enforced on Yard's server." : "Sample application in this browser only."} Every decision needs a reason and is recorded in the audit log.`}
+          actions={brandAllowed[app.status].map((key) => ({ key, label: brandActions[key].label, icon: brandActions[key].icon, variant: brandActions[key].button, disabledReason: blockFor(app), onSelect: () => onDecide(key, app) }))}
         />
       }
     >
@@ -125,7 +127,11 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
       </DetailSection>
 
       <DetailSection title="Activity">
-        <ActivityList entries={entries.filter((e) => e.action !== NOTE_ACTION)} extra={[{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }]} />
+        {app.brandId ? (
+          <ServerActivity subjectIds={[app.brandId]} legacy={entries.filter((e) => e.action !== NOTE_ACTION)} extra={[{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }]} />
+        ) : (
+          <ActivityList entries={entries.filter((e) => e.action !== NOTE_ACTION)} extra={[{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }]} />
+        )}
       </DetailSection>
 
       <DetailSection title="Links">

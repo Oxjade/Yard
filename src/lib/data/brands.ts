@@ -5,9 +5,9 @@ import type { Brand, StorefrontConfig, StorefrontSection, StorefrontTemplate } f
 
 function sections(template: StorefrontTemplate, extra: Partial<Record<string, Partial<StorefrontSection>>> = {}): StorefrontSection[] {
   const order: Record<StorefrontTemplate, StorefrontSection["type"][]> = {
-    editorial: ["hero", "story", "featured-products", "lookbook", "collections", "drops", "all-products"],
+    editorial: ["hero", "story", "featured-products", "lookbook", "social-feed", "collections", "drops", "all-products"],
     minimal: ["hero", "featured-products", "collections", "all-products", "story"],
-    street: ["hero", "drops", "featured-products", "lookbook", "all-products", "story"],
+    street: ["hero", "drops", "social-feed", "featured-products", "lookbook", "all-products", "story"],
     studio: ["hero", "featured-products", "story", "collections", "all-products", "drops"],
   }
   return order[template].map((type) => ({ id: type, type, enabled: true, ...(extra[type] ?? {}) }))

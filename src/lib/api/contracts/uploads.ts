@@ -23,7 +23,8 @@ export const mediaDto = z.object({
   width: z.number().nullable(),
   height: z.number().nullable(),
   durationMs: z.number().nullable(),
-  purpose: uploadPurpose,
+  /** Uploads are one of uploadPurpose; social_import (S's imports) and sample (seed rows) come from the server. */
+  purpose: z.enum(["social_post", "inbox_attachment", "location_image", "social_import", "sample"]),
   visibility: z.enum(["private", "public"]),
   createdAt: z.string(),
 })

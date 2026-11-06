@@ -1,5 +1,5 @@
 import "server-only"
-import { copyFileSync, mkdirSync } from "node:fs"
+import { chmodSync, copyFileSync, mkdirSync } from "node:fs"
 import path from "node:path"
 import { sql } from "drizzle-orm"
 import { adminTeam, brandApplications, platformUsers } from "@/lib/data/admin"
@@ -63,6 +63,8 @@ function copyPrivateFixture(publicPath: string, purpose: string, ownerId: string
   const dest = path.join(getEnv().envDir, "uploads", rel)
   mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 })
   copyFileSync(path.join(process.cwd(), "public", publicPath), dest)
+  // copyFile keeps the public file's mode (0644) whatever the umask: private uploads are 0600.
+  chmodSync(dest, 0o600)
   return rel
 }
 

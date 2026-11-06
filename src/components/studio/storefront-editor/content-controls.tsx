@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import Link from "next/link"
+import type { SocialAccountDto } from "@/lib/api/contracts/social"
 import type { Brand, BrandMark as BrandMarkType, ImageAsset } from "@/lib/data/types"
 import { cn } from "@/lib/utils"
 import { encodeImage, uploadError } from "./image-tools"
@@ -70,12 +72,15 @@ export function ContentControls({
   photos,
   errors,
   onChange,
+  socialAccounts,
 }: {
   config: EditorConfig
   brand: Brand
   photos: ImageAsset[]
   errors: FieldErrors
   onChange: Update
+  /** The brand's Instagram and TikTok connections (null signed out or still loading). */
+  socialAccounts?: SocialAccountDto[] | null
 }) {
   /* ---- Cover ---- */
   const cover = config.cover ?? brand.cover
@@ -357,7 +362,40 @@ export function ContentControls({
             )
           })}
         </div>
+        <SocialConnectionsNote accounts={socialAccounts ?? null} />
       </ControlGroup>
     </>
+  )
+}
+
+/** "Connected as @lagosstatic", "Not connected": one status line per network, then Manage connections (§6.1). */
+function SocialConnectionsNote({ accounts }: { accounts: SocialAccountDto[] | null }) {
+  const words = (a?: SocialAccountDto) =>
+    !a || a.status === "not_connected" || a.status === "disconnected"
+      ? "Not connected"
+      : a.status === "connected"
+        ? `Connected as @${a.handle ?? ""}${a.mode === "sandbox" ? " (sandbox)" : ""}`
+        : a.status === "needs_reauth"
+          ? "Needs reconnecting"
+          : a.status === "revoked"
+            ? "Access removed"
+            : "Connection error"
+  return (
+    <div className="mt-4 grid gap-1.5 border-t border-line-soft pt-4 text-xs">
+      <p className="text-ink-3">These links only point to your profiles. Your posts come from connected accounts and uploads.</p>
+      {accounts ? (
+        <ul className="grid gap-1 text-ink-2">
+          {(["instagram", "tiktok"] as const).map((p) => (
+            <li key={p} className="flex justify-between gap-3">
+              <span>{p === "instagram" ? "Instagram" : "TikTok"}</span>
+              <span className="truncate text-right text-ink">{words(accounts.find((a) => a.provider === p))}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Link href="/studio/social?tab=connections" className="inline-flex min-h-10 w-fit items-center rounded-sm text-violet hover:underline md:min-h-0">
+        Manage connections →
+      </Link>
+    </div>
   )
 }

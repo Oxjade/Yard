@@ -18,7 +18,14 @@ import { spring } from "@/lib/motion"
 import { studioSeedOrders, useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { useBrandSettings, useSettingsReady } from "./settings-store"
-import { CancelOrderDialog, DeclineRefundDialog, ApproveRefundDialog, TrackingDialog } from "./order-dialogs"
+import { CancelOrderDialog, DeclineRefundDialog, ApproveRefundDialog, ReportDelayDialog, TrackingDialog } from "./order-dialogs"
+import { OrderDeliveryCard } from "@/components/studio/shipping/order-delivery-card"
+import { syncMessage, syncShipment, useShipmentQueue } from "@/components/studio/shipping/shipment-sync"
+import { useStudioDelivery } from "@/components/studio/shipping/use-studio-delivery"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { getServerSessionState, useServerSession } from "@/lib/session/use-server-session"
+import { noonUtc } from "@/lib/shipping/calendar"
+import { DotsThreeIcon, ClockCountdownIcon } from "@phosphor-icons/react"
 import { DEMO_NOW, DAY_MS, countryName, formatDateYear, formatWeekday, itemCount, paymentView, payoutEstimate, plural, refundRequest, shipBy, shopperName } from "./model"
 import { Panel } from "@/components/studio/catalog/fields"
 import { Thumb } from "@/components/studio/catalog/parts"
@@ -53,7 +60,7 @@ export function OrderDetail({ id }: { id: string }) {
   return <OrderView order={order} brand={brand} />
 }
 
-type DialogKind = "tracking" | "cancel" | "approve" | "decline" | null
+type DialogKind = "tracking" | "cancel" | "approve" | "decline" | "delay" | null
 
 /** Orders that came with the sample data (not placed at checkout in this browser). */
 const seededIds = new Set(studioSeedOrders.map((o) => o.id))
@@ -95,6 +102,10 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
   const verified = o.paymentStatus === "captured" || o.paymentStatus === "refunded" || o.paymentStatus === "partially_refunded"
   const sample = seededIds.has(o.id)
   const tz = brandZone(brand).tz
+  // Shipment events from here go to Yard's server too; ones queued while offline go out now.
+  useShipmentQueue()
+  const brandSession = useServerSession((s) => s.brand)
+  const canReportDelay = !!brandSession?.permissions.includes("orders.fulfil") && brandSession.brand.id === o.brandId
 
   // A status change swaps the header buttons, and the new primary lands under the cursor.
   // Clicks in the first moments after a change are ignored, so a double-click never takes the next step.
@@ -121,25 +132,61 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
     if (useStudio.getState().orders.find((x) => x.id === o.id)?.status !== "shipped") return
     moved()
     setOrderStatus(o.id, "delivered", "Marked delivered by brand")
+    const signedIn = !!getServerSessionState().brand
+    if (signedIn) {
+      // Yard's server records it for the shopper; an event there can't be taken back, so no Undo.
+      void syncShipment(o.id, { status: "delivered" }, true).then((r) =>
+        toast.success(`#${o.reference} marked delivered`, { description: `The returns window starts today. ${syncMessage(r)}` }),
+      )
+      return
+    }
+    void syncShipment(o.id, { status: "delivered" }, false)
     toast.success(`#${o.reference} marked delivered`, {
-      description: "The returns window starts today. Your payout follows once it closes.",
+      description: "The returns window starts today. Saved in this browser: sign in to Brand Studio so the shopper's order updates too.",
       action: { label: "Undo", onClick: () => useStudio.getState().setOrderStatus(o.id, "shipped", "Delivery mark undone by brand") },
     })
   }
+
+  const delayable = o.status === "paid" || o.status === "processing" || o.status === "shipped"
+  const moreMenu = delayable ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="secondary" aria-label="More order actions" className="px-2.5">
+          <DotsThreeIcon weight="bold" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuItem disabled={!canReportDelay} onSelect={() => act(() => setDialog("delay"))} className="items-start">
+          <ClockCountdownIcon className="mt-0.5" />
+          <span className="grid gap-0.5">
+            <span>Report a delay</span>
+            {!canReportDelay ? <span className="text-[11px] text-ink-3">{brandSession ? "Needs the Fulfilment or Owner role for this brand" : "Sign in to Brand Studio to tell the shopper"}</span> : null}
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null
 
   let actions: React.ReactNode = null
   if (o.status === "paid") {
     actions = (
       <>
+        {moreMenu}
         <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
         <Button size="sm" variant="primary" onClick={() => act(markProcessing)}><PackageCheck /> Mark as processing</Button>
       </>
     )
   } else if (o.status === "processing") {
-    actions = <Button size="sm" variant="primary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
+    actions = (
+      <>
+        {moreMenu}
+        <Button size="sm" variant="primary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
+      </>
+    )
   } else if (o.status === "shipped") {
     actions = (
       <>
+        {moreMenu}
         <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}>Edit tracking</Button>
         <Button size="sm" variant="primary" onClick={() => act(markDelivered)}><Check /> Mark delivered</Button>
       </>
@@ -180,6 +227,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
         <div className="grid min-w-0 gap-6 xl:col-start-1">
           {o.status === "refund_requested" ? <RefundPanel order={o} cur={cur} /> : o.returnRequest?.decision ? <ReturnOutcome order={o} cur={cur} brandName={brand.name} /> : null}
           <FulfilmentPanel order={o} onCancel={() => act(() => setDialog("cancel"))} />
+          <OrderDeliveryCard order={o} brand={brand} />
           <ItemsPanel order={o} cur={cur} />
         </div>
 
@@ -197,6 +245,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
       <CancelOrderDialog open={dialog === "cancel"} onOpenChange={(v) => setDialog(v ? "cancel" : null)} order={o} />
       <ApproveRefundDialog open={dialog === "approve"} onOpenChange={(v) => setDialog(v ? "approve" : null)} order={o} />
       <DeclineRefundDialog open={dialog === "decline"} onOpenChange={(v) => setDialog(v ? "decline" : null)} order={o} />
+      <ReportDelayDialog open={dialog === "delay"} onOpenChange={(v) => setDialog(v ? "delay" : null)} order={o} />
     </div>
   )
 }
@@ -227,10 +276,13 @@ function CopyNumber({ value }: { value: string }) {
 
 function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCancel: () => void }) {
   const idx = stepIndex(o.status)
-  // The processing time saved in Settings (seeded from the brand profile).
+  // Yard's ship-by date (business days, the brand's handling time and closures) when Studio has it;
+  // else the same rule here with the processing time saved in this browser.
   const processingDays = useBrandSettings((s) => s.shipping.processingDays)
-  const due = shipBy(o, processingDays)
-  const daysLeft = Math.ceil((due - DEMO_NOW) / DAY_MS)
+  const server = useStudioDelivery(o.id).data?.estimate
+  const due = server?.shipBy ? noonUtc(server.shipBy) : shipBy(o, processingDays)
+  const late = server?.basis === "late" || server?.basis === "exception"
+  const daysLeft = late ? -1 : Math.ceil((due - DEMO_NOW) / DAY_MS)
   const open = o.status === "paid" || o.status === "processing"
   const cancelReason = o.status === "cancelled" ? (o.cancelReason ? `You cancelled it: ${o.cancelReason.replace(/\.$/, "")}.` : [...o.timeline].reverse().find((t) => /cancel/i.test(t.label))?.label) : null
 
@@ -253,7 +305,7 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
       className="min-w-0"
       action={open ? (
         <StatusBadge tone={daysLeft <= 0 ? "attention" : "muted"} className="shrink-0 tabular">
-          {daysLeft < 0 ? `Overdue since ${formatWeekday(due)}` : `Ship by ${formatWeekday(due)}`}
+          {daysLeft < 0 ? `Late: ship by was ${formatWeekday(due)}` : `Ship by ${formatWeekday(due)}`}
         </StatusBadge>
       ) : undefined}
     >

@@ -1,12 +1,179 @@
 import "server-only"
-import { NotImplemented } from "../http/errors"
+import { and, countDistinct, eq, ne } from "drizzle-orm"
+import { drops } from "@/lib/data/catalog"
+import { productById } from "@/lib/data/products"
+import { db, withTx } from "../db"
+import { chartEvents, shopperFollows, shopperReminders, shopperWishlist } from "../db/schema"
+import { badRequest } from "../http/errors"
+import { recordAbuse } from "../security/rate-limit"
 
-export type SignalInput = { kind: string; productId?: string; dropId?: string; brandId?: string }
+/**
+ * Signal ingest (§6.3, F2). The route has already checked the kind allowlist and that state kinds
+ * come with a shopper session. Here:
+ *  - the brand is resolved by the server: from the product or drop with the static catalogue, or
+ *    (follow, unfollow, storefront_view, post_open) a brandId that must exist; post_open may
+ *    name a public post instead;
+ *  - follows, wishlists and reminders keep server-side state and count only real changes;
+ *  - views and opens count once per actor, item, kind and day (partial unique index);
+ *  - verdicts, in order: excluded_self (a member of that brand), excluded_restricted, deduped,
+ *    excluded_anon (no established cookie), excluded_fraud (more than 3 distinct counted actors
+ *    from one known ip_hash for one brand and day, rule signal_ip_cap; skipped when the IP is
+ *    unknown), otherwise counted.
+ * Everything happens in one transaction, so the state change and its event commit together.
+ */
+export type SignalKind = "follow" | "unfollow" | "wishlist_add" | "wishlist_remove" | "reminder_set" | "reminder_unset" | "product_view" | "storefront_view" | "post_open"
+export type SignalInput = { kind: SignalKind | string; productId?: string; dropId?: string; brandId?: string; postId?: string }
 export type SignalVerdict = "counted" | "deduped" | "excluded_self" | "excluded_restricted" | "excluded_fraud" | "excluded_anon"
 
-/** POST /api/signals (F2, §6.3): allowlisted kinds, server-side state, dedupe and the IP cap. */
-export async function ingestSignal(input: SignalInput, who: { actorKind: "shopper" | "anon"; actorId: string; ipHash: string | null; uaHash: string | null; accountAgeDays: number | null }): Promise<SignalVerdict> {
-  void input
-  void who
-  throw new NotImplemented("signals.ingestSignal")
+export type SignalActor = {
+  actorKind: "shopper" | "anon"
+  actorId: string
+  ipHash: string | null
+  uaHash: string | null
+  accountAgeDays: number | null
+  /** Shoppers: the account's status. Anonymous: whether the yard_anon cookie is older than 60 s. */
+  status?: "active" | "restricted" | "suspended"
+  anonEstablished?: boolean
 }
+
+export const STATE_KINDS = new Set<string>(["follow", "unfollow", "wishlist_add", "wishlist_remove", "reminder_set", "reminder_unset"])
+export const IP_CAP = 3
+
+const dropById = (id: string) => drops.find((d) => d.id === id)
+
+/** The brand (and item ids) a signal is about, validated against the catalogue and the brands table. */
+async function resolveTarget(input: SignalInput): Promise<{ brandId: string; productId: string | null; dropId: string | null }> {
+  const d = await db()
+  const brandExists = async (id: string | undefined) => !!id && !!(await d.query.brands.findFirst({ columns: { id: true }, where: (b, { eq }) => eq(b.id, id) }))
+  switch (input.kind) {
+    case "product_view":
+    case "wishlist_add":
+    case "wishlist_remove": {
+      const p = input.productId ? productById.get(input.productId) : undefined
+      if (!p) throw badRequest({ productId: "Name a product in the catalogue." })
+      return { brandId: p.brandId, productId: p.id, dropId: null }
+    }
+    case "reminder_set":
+    case "reminder_unset": {
+      const drop = input.dropId ? dropById(input.dropId) : undefined
+      if (!drop) throw badRequest({ dropId: "Name a drop in the catalogue." })
+      return { brandId: drop.brandId, productId: null, dropId: drop.id }
+    }
+    case "post_open": {
+      if (input.postId) {
+        const post = await d.query.socialPosts.findFirst({
+          columns: { brandId: true },
+          where: (p, { and, eq }) => and(eq(p.id, input.postId!), eq(p.visibility, "published"), eq(p.moderationStatus, "ok")),
+        })
+        if (!post || (input.brandId && input.brandId !== post.brandId)) throw badRequest({ postId: "Name a published post." })
+        return { brandId: post.brandId, productId: null, dropId: null }
+      }
+      if (!(await brandExists(input.brandId))) throw badRequest({ brandId: "Name a brand on Yard." })
+      return { brandId: input.brandId!, productId: null, dropId: null }
+    }
+    case "follow":
+    case "unfollow":
+    case "storefront_view": {
+      if (!(await brandExists(input.brandId))) throw badRequest({ brandId: "Name a brand on Yard." })
+      return { brandId: input.brandId!, productId: null, dropId: null }
+    }
+    default:
+      throw badRequest({ kind: "This kind of signal isn't accepted." })
+  }
+}
+
+/** Applies a follow/wishlist/reminder state change; true when something actually changed. */
+async function applyState(kind: string, userId: string, t: { brandId: string; productId: string | null; dropId: string | null }) {
+  const d = await db()
+  switch (kind) {
+    case "follow":
+      return (await d.insert(shopperFollows).values({ userId, brandId: t.brandId }).onConflictDoNothing().returning({ u: shopperFollows.userId })).length > 0
+    case "unfollow":
+      return (await d.delete(shopperFollows).where(and(eq(shopperFollows.userId, userId), eq(shopperFollows.brandId, t.brandId))).returning({ u: shopperFollows.userId })).length > 0
+    case "wishlist_add":
+      return (await d.insert(shopperWishlist).values({ userId, productId: t.productId!, brandId: t.brandId }).onConflictDoNothing().returning({ u: shopperWishlist.userId })).length > 0
+    case "wishlist_remove":
+      return (await d.delete(shopperWishlist).where(and(eq(shopperWishlist.userId, userId), eq(shopperWishlist.productId, t.productId!))).returning({ u: shopperWishlist.userId })).length > 0
+    case "reminder_set":
+      return (await d.insert(shopperReminders).values({ userId, dropId: t.dropId!, brandId: t.brandId }).onConflictDoNothing().returning({ u: shopperReminders.userId })).length > 0
+    case "reminder_unset":
+      return (await d.delete(shopperReminders).where(and(eq(shopperReminders.userId, userId), eq(shopperReminders.dropId, t.dropId!))).returning({ u: shopperReminders.userId })).length > 0
+  }
+  return false
+}
+
+/** More than IP_CAP distinct counted actors from one ip_hash for one brand and day (excluding this actor). */
+async function overIpCap(ipHash: string, brandId: string, day: string, actorId: string) {
+  const d = await db()
+  const [row] = await d
+    .select({ n: countDistinct(chartEvents.actorId) })
+    .from(chartEvents)
+    .where(and(eq(chartEvents.ipHash, ipHash), eq(chartEvents.brandId, brandId), eq(chartEvents.day, day), eq(chartEvents.verdict, "counted"), ne(chartEvents.actorId, actorId)))
+  return (row?.n ?? 0) >= IP_CAP
+}
+
+export async function ingestSignal(input: SignalInput, who: SignalActor): Promise<SignalVerdict> {
+  return (await ingestSignalDetailed(input, who)).verdict
+}
+
+/** As ingestSignal, with the stored event's seq (the dev endpoint and tests). */
+export async function ingestSignalDetailed(input: SignalInput, who: SignalActor): Promise<{ verdict: SignalVerdict; seq: number; brandId: string }> {
+  const target = await resolveTarget(input)
+  const day = new Date().toISOString().slice(0, 10)
+  return withTx(async () => {
+    const d = await db()
+    const isState = STATE_KINDS.has(input.kind)
+    // State first: it's the shopper's own follow/wishlist/reminder list, whatever the verdict.
+    const changed = isState && who.actorKind === "shopper" ? await applyState(input.kind, who.actorId, target) : false
+
+    let verdict: SignalVerdict = "counted"
+    if (who.actorKind === "shopper") {
+      const member = await d.query.brandMembers.findFirst({ columns: { id: true }, where: (m, { and, eq }) => and(eq(m.userId, who.actorId), eq(m.brandId, target.brandId)) })
+      if (member) verdict = "excluded_self"
+      else if (who.status === "restricted" || who.status === "suspended") verdict = "excluded_restricted"
+    }
+    if (verdict === "counted" && isState && !changed) verdict = "deduped"
+    if (verdict === "counted" && who.actorKind === "anon" && !who.anonEstablished) verdict = "excluded_anon"
+    if (verdict === "counted" && who.ipHash && (await overIpCap(who.ipHash, target.brandId, day, who.actorId))) {
+      verdict = "excluded_fraud"
+      await recordAbuse(`signal_ip_cap:${who.ipHash}:${target.brandId}`, { kind: who.actorKind, id: who.actorId, ipHash: who.ipHash }, "signal", "signal_ip_cap", { brandId: target.brandId, kind: input.kind, cap: IP_CAP })
+    }
+
+    const values = {
+      brandId: target.brandId,
+      productId: target.productId,
+      dropId: target.dropId,
+      kind: input.kind,
+      actorKind: who.actorKind,
+      actorId: who.actorId,
+      accountAgeDays: who.accountAgeDays,
+      ipHash: who.ipHash,
+      uaHash: who.uaHash,
+      day,
+    }
+    if (verdict === "counted" && !isState) {
+      // Views and opens: one counted row per actor, item, kind and day (the partial unique index).
+      const [row] = await d
+        .insert(chartEvents)
+        .values({ ...values, verdict: "counted" })
+        .onConflictDoNothing()
+        .returning({ seq: chartEvents.seq })
+      if (row) return { verdict, seq: row.seq, brandId: target.brandId }
+      verdict = "deduped"
+    }
+    const [row] = await d
+      .insert(chartEvents)
+      .values({ ...values, verdict })
+      .returning({ seq: chartEvents.seq })
+    // Repeated state toggles and cookieless anonymous signals leave a trace for Admin › Abuse (at most one row per key per minute).
+    if (verdict === "deduped" && isState) await recordAbuse(`signal_dedupe:${who.actorId}`, { kind: who.actorKind, id: who.actorId, ipHash: who.ipHash }, "signal", "signal_dedupe", { brandId: target.brandId, kind: input.kind })
+    if (verdict === "excluded_anon") await recordAbuse(`signal_anon:${who.ipHash ?? "unknown"}`, { kind: "anon", id: null, ipHash: who.ipHash }, "signal", "signal_anon", { brandId: target.brandId, kind: input.kind })
+    return { verdict, seq: row.seq, brandId: target.brandId }
+  })
+}
+
+/** Days since the account was created (chart_events.account_age_days). */
+export function accountAgeDays(createdAt: Date) {
+  return Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 86_400_000))
+}
+

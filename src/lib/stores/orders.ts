@@ -4,9 +4,15 @@ import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
 import { site } from "@/config/site"
+import { ApiError, api } from "@/lib/api/client"
+import type { DemoSignInResult } from "@/lib/api/contracts/session"
+import type { QuoteGroupDto, RegisterOrderBody, RegisterResponse } from "@/lib/api/contracts/shipping"
+import { registerOrders } from "@/lib/api/shipping"
 import { brandById } from "@/lib/data/brands"
 import { convert, formatMoney } from "@/lib/money"
-import { priceCart } from "@/lib/cart"
+import { priceCart, type ShippingService } from "@/lib/cart"
+import { afterIdentityChange } from "@/lib/session/identity"
+import { DEMO_SHOPPER } from "./session"
 import { customerCheckoutGroups, customerOrders, sampleReturnRequest } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
 import type { CheckoutGroup, MerchantOrder, ReturnDecision } from "@/lib/data/types"
@@ -18,12 +24,12 @@ import { refreshSampleOrder } from "./sample-refresh"
 import { useStudio } from "./studio"
 
 /**
- * The shopper's orders in the frontend phase. `placeCheckout` mirrors what the backend
- * will do: one checkout group, one merchant order per brand, guarded by an idempotency key
- * so a double submit never creates two orders. Orders are created unpaid ("pending_payment")
- * and only a verified provider webhook may mark them paid — there is no provider in this
- * build, so they stay unpaid. In the backend phase this becomes a server action that
- * re-prices, reserves stock atomically and starts payment with the provider.
+ * The shopper's orders. `placeCheckout` registers the checkout with the server first
+ * (POST /api/orders/register, §6.5): the server re-checks every brand's shipping quote and mints
+ * the group id, order ids and references, which the local orders then use. Only after that are
+ * the orders created in this browser. Orders are created unpaid ("pending_payment") and only a
+ * verified provider webhook may mark them paid; there is no provider in this build, so they stay
+ * unpaid. The checkout's idempotency key makes a retry return the same server group.
  */
 
 export type CheckoutInput = {
@@ -31,18 +37,61 @@ export type CheckoutInput = {
   lines: CartLine[]
   currency: CurrencyCode
   shipTo: CountryCode
+  /** The delivery city (matches a brand's pickup point; never a street address). */
+  shipToCity?: string | null
   contact: { name: string; email: string; phone?: string }
   address: { line1: string; city: string; postcode?: string; country: CountryCode }
-  /** brandId → shipping method label */
-  shipping: Record<string, "standard" | "express">
+  /** brandId → the shipping service chosen. */
+  shipping: Record<string, ShippingService>
+  /** The server's quote per brand (its signed token goes with the order). */
+  quotes: Record<string, QuoteGroupDto>
   paymentMethod: "card" | "bank_transfer" | "ussd" | "mobile_money"
+  /** What the receipt says about payment: words only, never the card number, expiry or code. */
+  payment: { label: string; holder?: string; cardBrand?: string; last4?: string }
 }
+
+/** Why a checkout wasn't placed. Nothing is created locally in any of these cases. */
+export class CheckoutError extends Error {
+  constructor(
+    public kind: "signin" | "changed" | "network" | "blocked" | "other",
+    message: string,
+  ) {
+    super(message)
+    this.name = "CheckoutError"
+  }
+}
+
+/** Restores the demo shopper session (as SessionSync does) when the server lost it. */
+async function restoreShopperSession() {
+  await api<DemoSignInResult>("/api/auth/demo", { body: { actor: "shopper", account: DEMO_SHOPPER } })
+  await afterIdentityChange("market")
+}
+
+/** Registers the checkout; on 401 restores the session once and retries once (§6.5). */
+async function register(body: RegisterOrderBody): Promise<RegisterResponse> {
+  try {
+    return await registerOrders(body)
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 401) throw e
+  }
+  try {
+    await restoreShopperSession()
+    return await registerOrders(body)
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 401 || e.code === "suspended" || e.status === 404)) throw new CheckoutError("signin", "Sign in again to place your order. Nothing was placed.")
+    throw e
+  }
+}
+
+const methodWord: Record<CheckoutInput["paymentMethod"], string> = { card: "Card", bank_transfer: "Bank transfer", ussd: "USSD", mobile_money: "Mobile money" }
+const serviceLabel = (service: ShippingService, pickupArea?: string) => (service === "express" ? "Express" : service === "pickup" ? `Pickup${pickupArea ? `, ${pickupArea}` : ""}` : "Standard")
 
 type OrdersState = {
   groups: CheckoutGroup[]
   orders: MerchantOrder[]
   processedKeys: Record<string, string>
-  placeCheckout: (input: CheckoutInput) => { groupId: string; duplicate: boolean }
+  /** Throws CheckoutError (or an ApiError) when nothing was placed. */
+  placeCheckout: (input: CheckoutInput) => Promise<{ groupId: string; duplicate: boolean }>
   /**
    * A return request on a delivered order. It lands on the brand's order in Studio and in the
    * admin refund queue (in the backend phase: one row both read). Returns false when the order
@@ -50,8 +99,6 @@ type OrdersState = {
    */
   requestReturn: (orderId: string, request: { reason: string; reasonLabel: string; note?: string; variantIds: string[] }) => boolean
 }
-
-let seq = 0
 
 const sampleOrderById = new Map(customerOrders.map((o) => [o.id, o]))
 
@@ -61,49 +108,70 @@ export const useOrders = create<OrdersState>()(
       groups: customerCheckoutGroups,
       orders: customerOrders,
       processedKeys: {},
-      placeCheckout: (input) => {
+      placeCheckout: async (input) => {
         const existing = get().processedKeys[input.idempotencyKey]
         if (existing) return { groupId: existing, duplicate: true }
-        const bag = priceCart(input.lines, input.shipTo, input.currency)
-        const at = new Date().toISOString()
-        seq += 1
-        const groupId = `cg_${Date.now().toString(36)}${seq}`
-        const reference = `YRD-${Date.now().toString(36).slice(-4).toUpperCase()}-${String(seq).padStart(2, "0")}`
-        const orders: MerchantOrder[] = bag.groups.map((g, i) => {
-          const express = input.shipping[g.brand.id] === "express"
-          const shipping = express ? Math.round(g.shipping * 1.9) || Math.round(g.subtotal * 0.04) : g.shipping
+        const bag = priceCart(input.lines, input.shipTo, input.currency, input.quotes, (b) => input.shipping[b])
+        const blocked = bag.groups.find((g) => !g.quote || !g.option)
+        if (blocked) throw new CheckoutError("blocked", blocked.reason ? `${blocked.reason.replace(/\.$/, "")} for ${blocked.brand.name}. Nothing was placed.` : `Shipping for ${blocked.brand.name} isn't ready. Nothing was placed.`)
+        const body: RegisterOrderBody = {
+          idempotencyKey: input.idempotencyKey,
+          currency: input.currency,
+          shipTo: { country: input.shipTo, ...(input.shipToCity ? { city: input.shipToCity } : {}) },
+          groups: bag.groups.map((g) => ({ lines: g.lines.map((l) => ({ productId: l.product.id, variantId: l.variant.id, qty: l.line.quantity })), service: g.option!.service, quoteToken: g.quote!.quoteToken })),
+        }
+        let res: RegisterResponse
+        try {
+          res = await register(body)
+        } catch (e) {
+          if (e instanceof CheckoutError) throw e
+          if (e instanceof ApiError && e.status === 409) throw new CheckoutError("changed", e.message)
+          if (e instanceof ApiError && e.status === 0) throw new CheckoutError("network", "Couldn't reach Yard. Nothing was placed.")
+          throw new CheckoutError("other", e instanceof ApiError && e.message ? `${e.message.replace(/\.$/, "")}. Nothing was placed.` : "Your order wasn't placed. Nothing was charged. Try again.")
+        }
+        // A retry in another tab may already have created this group here.
+        if (get().groups.some((x) => x.id === res.groupId)) {
+          set({ processedKeys: { ...get().processedKeys, [input.idempotencyKey]: res.groupId } })
+          return { groupId: res.groupId, duplicate: true }
+        }
+        const at = res.placedAt
+        const orders: MerchantOrder[] = res.orders.map((r) => {
+          const g = bag.groups.find((x) => x.brand.id === r.brandId)!
           return {
-            id: `mo_${groupId}_${i}`,
-            reference: `${reference}-${i + 1}`,
-            groupId,
-            brandId: g.brand.id,
-            customerId: "u_ada",
-            // Never "paid" until the payment provider confirms it server-side (backend phase).
+            id: r.id,
+            reference: r.reference,
+            groupId: res.groupId,
+            brandId: r.brandId,
+            customerId: res.customerId,
+            // Never "paid" until the payment provider confirms it server-side.
             status: "pending_payment",
             paymentStatus: "pending",
             currency: input.currency,
             lines: g.lines.map((l) => ({ productId: l.product.id, variantId: l.variant.id, name: l.product.name, variantLabel: variantLabel(l.variant.options), image: l.product.images[0], quantity: l.line.quantity, unitPrice: l.unit })),
-            subtotal: g.subtotal,
-            shipping,
+            subtotal: r.subtotal,
+            shipping: r.shipping,
             tax: 0,
-            total: g.subtotal + shipping,
-            commission: Math.round(g.subtotal * 0.05),
+            total: r.total,
+            commission: Math.round(r.subtotal * 0.05),
             placedAt: at,
             shippingAddress: { name: input.contact.name, line1: input.address.line1, city: input.address.city, country: input.address.country, postcode: input.address.postcode, phone: input.contact.phone },
-            shippingMethod: express ? "Express" : "Standard",
+            shippingMethod: serviceLabel(r.service, g.option?.pickup?.area),
+            delivery: { ...r.delivery, service: r.service },
             timeline: [
               { at, label: "Order placed" },
               { at, label: "Waiting for the payment provider to confirm. No provider is connected in this development build, so this order stays unpaid." },
             ],
           }
         })
-        const group: CheckoutGroup = { id: groupId, reference, customerId: "u_ada", placedAt: at, currency: input.currency, orderIds: orders.map((o) => o.id), total: orders.reduce((s, o) => s + o.total, 0) }
-        set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: groupId } })
-        // The merchant sees their order immediately (in the backend phase: the same database row).
+        // Words only: the method, the summary the shopper saw ("Visa ending 4242") and the name on it.
+        const payment = { status: "not_charged" as const, method: methodWord[input.paymentMethod], note: input.payment.label, label: input.payment.label, holder: input.payment.holder, cardBrand: input.payment.cardBrand, last4: input.payment.last4 }
+        const group: CheckoutGroup = { id: res.groupId, reference: res.reference, customerId: res.customerId, placedAt: at, currency: input.currency, orderIds: orders.map((o) => o.id), total: orders.reduce((s, o) => s + o.total, 0), payment }
+        set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: res.groupId } })
+        // The merchant sees their order immediately (the server holds the same order_ref).
         const studio = useStudio.getState()
         const mine = orders.filter((o) => o.brandId === studio.brandId)
         if (mine.length) useStudio.setState({ orders: [...mine, ...studio.orders] })
-        return { groupId, duplicate: false }
+        return { groupId: res.groupId, duplicate: res.duplicate }
       },
       requestReturn: (orderId, request) => {
         const o = get().orders.find((x) => x.id === orderId)

@@ -5,6 +5,7 @@ import { ProductBreadcrumb } from "@/components/market/product/breadcrumb"
 import { ProductView } from "@/components/market/product/product-view"
 import { Rail } from "@/components/market/rail"
 import { SectionHeader } from "@/components/market/section-header"
+import { ViewBeacon } from "@/components/signals/view-beacon"
 import { brandById, categoryBySlug, drops, getProduct, products, productsOf, similarProducts } from "@/lib/data"
 import { initialDropPhase } from "@/lib/drops"
 
@@ -51,6 +52,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+      <ViewBeacon kind="product_view" productId={product.id} />
       <ProductBreadcrumb product={product} category={category} brand={brand} />
 
       <ProductView product={product} brand={brand} drop={drop}>

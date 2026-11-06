@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/dashboard/status-badge"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { useNow } from "@/hooks/use-now"
 import { adminRoles, adminTeam, adminUser, type AdminRole } from "@/lib/data/admin"
+import { ADMIN_PERMISSIONS, adminPermissionLabels, adminRolePermissions } from "@/lib/permissions"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { relTime } from "../format"
@@ -17,9 +18,17 @@ import { Initials } from "./initials"
 import { adminSessions, CURRENT_SESSION_ID, type AdminSession } from "./sample"
 
 const roles = Object.keys(adminRoles) as AdminRole[]
-const permissions = [...new Set(roles.flatMap((r) => adminRoles[r].can).filter((p) => p !== "everything"))]
+/**
+ * The matrix keeps the legacy pages' descriptive rows (adminRoles[*].can) and adds the v2 server
+ * permissions, generated from adminRolePermissions through adminPermissionLabels at module load
+ * (§2.4), so the server's table and this one can't drift.
+ */
+const v2Rows = (r: AdminRole) => adminRolePermissions[r].map((p) => adminPermissionLabels[p])
+const legacyPermissions = [...new Set(roles.flatMap((r) => adminRoles[r].can).filter((p) => p !== "everything"))]
+const serverPermissions = ADMIN_PERMISSIONS.map((p) => adminPermissionLabels[p]).filter((label) => !legacyPermissions.includes(label))
+const permissions = [...legacyPermissions, ...serverPermissions]
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-const can = (r: AdminRole, p: string) => adminRoles[r].can.includes("everything") || adminRoles[r].can.includes(p)
+const can = (r: AdminRole, p: string) => adminRoles[r].can.includes("everything") || adminRoles[r].can.includes(p) || v2Rows(r).includes(p)
 
 /** The admin team, each member's MFA status, and what every role is allowed to do. */
 export function TeamRoles({ ready, revoked, mfaRequired, onRevoke }: { ready: boolean; revoked: Set<string>; mfaRequired: Set<string>; onRevoke: (sessions: AdminSession[], opts: { announce: boolean }) => void }) {

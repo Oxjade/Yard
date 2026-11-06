@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import type { StudioShippingDto } from "@/lib/api/contracts/shipping"
+import { getStudioShipping, STUDIO_SHIPPING_KEY } from "@/lib/api/shipping"
+import { useApi } from "@/lib/api/use-api"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
 import { WarningIcon as AlertTriangle, ArchiveIcon as Archive, ArrowCounterClockwiseIcon as ArchiveRestore, CaretLeftIcon as ChevronLeft, XCircleIcon as PackageX, TrashIcon as Trash2 } from "@phosphor-icons/react"
@@ -27,7 +31,7 @@ import type { Brand, CategorySlug, Product, Variant } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { useBrandSettings, useSettingsReady } from "@/components/studio/business/settings-store"
+import { useSettingsReady } from "@/components/studio/business/settings-store"
 import { ConfirmDialog, control, Field, inputClass, Panel, Segmented, selectClass } from "./fields"
 import { ImageManager, type FormImage } from "./image-manager"
 import { OptionsBuilder } from "./options-builder"
@@ -91,16 +95,18 @@ export function ProductEditorRoute({ id }: { id?: string }) {
 }
 
 /**
- * The brand as the product form should see it: its default processing time is the one saved in
- * Settings (seeded from the brand profile), once that has loaded. The form names that default in
- * its hint for every product; a new product, or one without a time of its own, starts from it,
- * and a product saved with its own time keeps that.
+ * The brand as the product form should see it: its default processing time is the handling time
+ * in Shipping & fulfilment (Yard's server, §6.5) when Studio has a session for this brand, else the
+ * brand profile's. The form names that default in its hint for every product; a new product, or
+ * one without a time of its own, starts from it, and a product saved with its own time keeps that.
  */
 function useSettingsBrand(brand: Brand) {
   const ready = useSettingsReady()
-  const days = useBrandSettings((s) => s.shipping.processingDays)
-  const [min, max] = days
-  return useMemo(() => (ready ? { ...brand, processingDays: [min, max] as [number, number] } : brand), [brand, ready, min, max])
+  const sessionBrand = useServerSession((s) => s.brand?.brand.id ?? null)
+  const server = useApi<StudioShippingDto>(ready && sessionBrand === brand.id ? `${STUDIO_SHIPPING_KEY}:${brand.id}` : null, () => getStudioShipping(), { revalidateOnFocus: false })
+  const min = server.data?.profile.handlingMin
+  const max = server.data?.profile.handlingMax
+  return useMemo(() => (min !== undefined && max !== undefined ? { ...brand, processingDays: [min, max] as [number, number] } : brand), [brand, min, max])
 }
 
 function BackLink() {
@@ -582,7 +588,17 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
                 <Input {...control("pf-processing-max", errors.processing, true)} aria-label="Most days to ship" inputMode="numeric" value={form.processingMax} onChange={(e) => patch({ processingMax: e.target.value.replace(/\D/g, "").slice(0, 2) })} className={cn(inputClass, "w-20 tabular")} />
                 <span className="text-sm text-ink-2">business days</span>
               </div>
-              {errors.processing ? <p id="pf-processing-min-error" className="text-xs text-danger">{errors.processing}</p> : <p id="pf-processing-min-hint" className="text-xs text-ink-3">How long you take to pack an order and hand it to the courier. Your default is {brand.processingDays[0]} to {brand.processingDays[1]} days.</p>}
+              {errors.processing ? (
+                <p id="pf-processing-min-error" className="text-xs text-danger">{errors.processing}</p>
+              ) : (
+                <p id="pf-processing-min-hint" className="text-xs leading-relaxed text-ink-3">
+                  How long you take to pack an order and hand it to the courier (your default is {brand.processingDays[0]} to {brand.processingDays[1]} days). Changes here stay in this browser for now, so shoppers&apos; delivery estimates don&apos;t use them yet. Estimates use your handling time in{" "}
+                  <Link href="/studio/shipping" className="font-medium text-ink underline-offset-4 hover:text-violet hover:underline">
+                    Shipping &amp; fulfilment
+                  </Link>
+                  .
+                </p>
+              )}
             </fieldset>
           </Panel>
         </div>

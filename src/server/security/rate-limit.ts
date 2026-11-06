@@ -76,8 +76,14 @@ export async function recordAbuse(key: string, actor: AbuseActor, action: string
   await d.insert(abuseEvents).values({ actorKind: actor.kind, actorId: actor.id, ipHash: actor.ipHash ?? null, action, rule, detail })
 }
 
-/** Test hook: forget every in-memory window (dev only; used by the selftest). */
+/** Test hook: forget every in-memory window whose key starts with `prefix` (dev only). Returns how many. */
 export function resetWindows(prefix: string) {
   const l = limiter()
-  for (const k of [...l.windows.keys()]) if (k.startsWith(prefix)) l.windows.delete(k)
+  let n = 0
+  for (const k of [...l.windows.keys()])
+    if (k.startsWith(prefix)) {
+      l.windows.delete(k)
+      n++
+    }
+  return n
 }

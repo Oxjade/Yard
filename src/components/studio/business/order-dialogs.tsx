@@ -15,6 +15,9 @@ import { returnRefund } from "@/lib/payouts"
 import { useOrders } from "@/lib/stores/orders"
 import { useStudio } from "@/lib/stores/studio"
 import { cancellable, carriersFor, itemCount, payoutEstimate, plural, trackingError } from "./model"
+import { syncMessage, syncShipment } from "@/components/studio/shipping/shipment-sync"
+import { getServerSessionState } from "@/lib/session/use-server-session"
+import { toast } from "sonner"
 import { useFocusReturn } from "./shared"
 import { Field, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
 
@@ -78,13 +81,22 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
   // Wording is settled before the change: once tracking is saved the order is "shipped", which
   // would make a first save read as an edit.
   const save = useAsyncAction(
-    (carrierName: string, clean: string) => {
+    async (carrierName: string, clean: string) => {
       const title = editing ? "Tracking updated" : `#${o.reference} marked as shipped`
       setTracking(o.id, carrierName, clean)
-      const seen = shopperSees(o.id) ? "The customer's order shows it too." : "Saved on the order. The customer sees it once orders are connected."
-      return { title, description: `${carrierName}, ${clean}. ${seen}` }
+      // Then Yard's server, so the shopper's estimate and notification follow (§6.5).
+      const signedIn = !!getServerSessionState().brand
+      const r = await syncShipment(o.id, { status: editing ? "in_transit" : "shipped", carrier: carrierName, trackingNumber: clean, note: editing ? "Tracking updated" : undefined }, signedIn)
+      const seen = r === "sent" ? syncMessage(r) : r === "not_on_server" ? (shopperSees(o.id) ? "The customer's order in this browser shows it too." : syncMessage(r)) : syncMessage(r)
+      return { title, description: `${carrierName}, ${clean}. ${seen}`, warn: r === "signed_out" || r === "queued" }
     },
-    { success: (r) => r.title, successDescription: (r) => r.description, onSuccess: () => onOpenChange(false) },
+    {
+      onSuccess: (r) => {
+        if (r.warn) toast.warning(r.title, { description: r.description })
+        else toast.success(r.title, { description: r.description })
+        onOpenChange(false)
+      },
+    },
   )
   // Opened from a row menu on Orders, focus goes back to the order's link in that row, or to the list
   // once the order has moved to another tab; on the order's own page, to the fulfilment panel.
@@ -116,7 +128,9 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
           <DialogHeader>
             <DialogTitle>{editing ? "Edit tracking" : "Add tracking"}</DialogTitle>
             <DialogDescription>
-              {editing ? "Correct the carrier or number. The change is logged on the timeline." : `Saving tracking marks #${o.reference} as shipped: ${plural(itemCount(o), "item")} to ${o.shippingAddress.city}. Contacting the carrier isn't connected in this build, so enter the number from your label.`}
+              {editing
+                ? "Correct the carrier or number. The change is logged on the timeline and sent to the shopper's order."
+                : `Saving tracking marks the order shipped and updates the shopper's estimate: ${plural(itemCount(o), "item")} to ${o.shippingAddress.city}. Contacting the carrier isn't connected in this build, so enter the number from your label.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -390,6 +404,107 @@ export function DeclineRefundDialog({ open, onOpenChange, order: o }: DialogProp
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Back</Button>
             <Button type="submit" variant="destructive" loading={decline.pending} disabled={decline.succeeded}>Decline return</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ---------- Report a delay ---------- */
+
+const DELAY_REASONS = ["Waiting for stock or materials", "Carrier collection delayed", "Held up in transit", "Weather or a public holiday", "Address needs confirming", "Other"] as const
+
+/**
+ * Report a delay (§6.5): records an `exception` shipment event on Yard's server, which pushes the
+ * shopper's estimate out and tells them it's running late. Needs a brand session (the button says
+ * so when there isn't one); the order's timeline in this browser notes it too.
+ */
+export function ReportDelayDialog({ open, onOpenChange, order: o }: DialogProps) {
+  const [reason, setReason] = useState("")
+  const [note, setNote] = useState("")
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useResetOnOpen(open, () => {
+    setReason("")
+    setNote("")
+    setSubmitted(false)
+    setError(null)
+  })
+
+  const errors = {
+    reason: !reason ? "Choose what's holding it up." : undefined,
+    note: reason === "Other" && note.trim().length < 5 ? "Say what's holding it up." : note.length > 200 ? "Keep it under 200 characters." : undefined,
+  }
+  const shown: Partial<typeof errors> = submitted ? errors : {}
+
+  const report = useAsyncAction(
+    async () => {
+      const text = reason === "Other" ? note.trim() : note.trim() ? `${reason}: ${note.trim()}` : reason
+      const r = await syncShipment(o.id, { status: "exception", note: text.slice(0, 280) }, !!getServerSessionState().brand)
+      if (r !== "sent") throw new Error(r)
+      const st = useStudio.getState()
+      useStudio.setState({ orders: st.orders.map((x) => (x.id === o.id ? { ...x, timeline: [...x.timeline, { at: new Date().toISOString(), label: `Delay reported: ${text}` }] } : x)) })
+      return text
+    },
+    {
+      errorToast: false,
+      onError: (e) => setError(e instanceof Error && e.message === "not_on_server" ? "Yard's server doesn't hold this order for your brand, so the shopper can't be told from here." : "The delay wasn't recorded. Check your connection and try again."),
+      success: "Delay reported",
+      successDescription: "The shopper sees that it's running late, with a new estimate.",
+      onSuccess: () => onOpenChange(false),
+    },
+  )
+  const focus = useFocusReturn(() => resultHeading("delivery"))
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!open || report.pending || report.succeeded) return
+    setSubmitted(true)
+    if (errors.reason || errors.note) {
+      document.getElementById(errors.reason ? "delay-reason" : "delay-note")?.focus()
+      return
+    }
+    setError(null)
+    void report.run()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[460px]" {...focus}>
+        <form noValidate onSubmit={submit} className="grid gap-4">
+          <DialogHeader>
+            <DialogTitle>Report a delay</DialogTitle>
+            <DialogDescription>
+              The shopper&apos;s estimate moves out by a few business days and they&apos;re told #{o.reference} is running late. Use it when you know it won&apos;t make the current estimate.
+            </DialogDescription>
+          </DialogHeader>
+          <Field id="delay-reason" label="What's holding it up?" error={shown.reason}>
+            <Select value={reason} onValueChange={setReason}>
+              <SelectTrigger {...control("delay-reason", shown.reason)} className={selectClass}>
+                <SelectValue placeholder="Choose a reason" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {DELAY_REASONS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field id="delay-note" label={reason === "Other" ? "Details" : "Details (optional)"} error={shown.note} hint="The shopper sees this on their order.">
+            <Textarea {...control("delay-note", shown.note, true)} value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={220} placeholder="e.g. The fabric arrives on Monday; it ships the same day." />
+          </Field>
+          {error ? (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={report.pending} disabled={report.succeeded}>Report delay</Button>
           </DialogFooter>
         </form>
       </DialogContent>

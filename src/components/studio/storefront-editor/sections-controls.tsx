@@ -3,9 +3,11 @@
 import { useState } from "react"
 import Image from "next/image"
 import { AnimatePresence, Reorder, motion, useDragControls } from "motion/react"
-import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, BookOpenIcon as BookOpen, CalendarDotsIcon as CalendarClock, DotsSixVerticalIcon as GripVertical, ImagesIcon as Images, SquaresFourIcon as LayoutGrid, LockIcon as Lock, BrowserIcon as PanelTop, ShoppingBagOpenIcon as ShoppingBag, StarIcon as Star, type Icon } from "@phosphor-icons/react"
-import { storefrontSections, storefrontTemplates } from "@/components/storefront/theme"
-import { Field, FieldMessage, control, inputClass } from "@/components/studio/catalog/fields"
+import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, BookOpenIcon as BookOpen, CalendarDotsIcon as CalendarClock, DotsSixVerticalIcon as GripVertical, ImagesIcon as Images, SquaresFourIcon as LayoutGrid, LockIcon as Lock, BrowserIcon as PanelTop, MinusIcon, PlusIcon, ShareNetworkIcon as ShareNetwork, ShoppingBagOpenIcon as ShoppingBag, StarIcon as Star, type Icon } from "@phosphor-icons/react"
+import Link from "next/link"
+import { feedSettings, storefrontSections, storefrontTemplates } from "@/components/storefront/theme"
+import { coverOf } from "@/components/storefront/social/post-tile"
+import { Field, FieldMessage, Segmented, control, inputClass } from "@/components/studio/catalog/fields"
 import { CatalogueNote } from "@/components/studio/catalog/parts"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -13,9 +15,10 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import type { CurrencyCode } from "@/config/markets"
 import type { Collection, Product, StorefrontSection, StorefrontSectionType } from "@/lib/data/types"
+import { providerLabels, type FeedSource, type SocialAccountDto, type SocialPostDto } from "@/lib/api/contracts/social"
 import { formatMoney } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import { COLLECTIONS_MAX, FEATURED_MAX, HEADING_MAX, autoFeaturedCount, type EditorConfig, type FieldErrors } from "./model"
+import { COLLECTIONS_MAX, FEATURED_MAX, HEADING_MAX, SOCIAL_MAX, SOCIAL_MIN, autoFeaturedCount, type EditorConfig, type FieldErrors } from "./model"
 import type { Update } from "./content-controls"
 import { ControlGroup } from "./parts"
 
@@ -27,9 +30,38 @@ const icons: Record<StorefrontSectionType, Icon> = {
   story: BookOpen,
   lookbook: Images,
   "all-products": ShoppingBag,
+  "social-feed": ShareNetwork,
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * What the editor knows about the brand's social posts and connections (§6.1), from the server.
+ * `signed_out`: no brand session. `other_brand`: the session is another brand than this editor's.
+ */
+export type SocialEditorData = {
+  status: "loading" | "ready" | "signed_out" | "other_brand" | "error"
+  posts: SocialPostDto[] | null
+  accounts: SocialAccountDto[] | null
+}
+
+const sourceWords: Record<FeedSource, string> = { all: "from Instagram, TikTok and uploads", instagram: "from Instagram", tiktok: "from TikTok", uploads: "you upload" }
+
+/** "6 posts from Instagram, 1 pinned first". */
+function socialSummary(section: StorefrontSection) {
+  const { count, source } = feedSettings(section)
+  const pinned = section.postIds?.length ?? 0
+  return `${count} posts ${sourceWords[source]}${pinned ? `, ${pinned} pinned first` : ""}`
+}
+
+/** "connected as @lagosstatic", "not connected", "needs reconnecting". */
+function accountWords(a: SocialAccountDto | undefined) {
+  if (!a || a.status === "not_connected" || a.status === "disconnected") return "not connected"
+  if (a.status === "connected") return `connected as @${a.handle ?? ""}${a.mode === "sandbox" ? " (sandbox)" : ""}`
+  if (a.status === "needs_reauth") return "needs reconnecting"
+  if (a.status === "revoked") return "access removed"
+  return "connection error"
+}
 
 const firstPieces = (n: number) => (n === 0 ? "No published pieces yet" : n === 1 ? "Your first piece" : `Your first ${n} pieces`)
 
@@ -49,6 +81,8 @@ function summary(section: StorefrontSection, config: EditorConfig, products: Pro
     }
     case "all-products":
       return `${plural(products.length, "published piece")}`
+    case "social-feed":
+      return socialSummary(section)
     default:
       return storefrontSections[section.type].description
   }
@@ -64,12 +98,15 @@ export function SectionsControls({
   onLocate,
   onHighlight,
   onEditCover,
+  social,
 }: {
   config: EditorConfig
   products: Product[]
   collections: Collection[]
   /** The brand's currency: product prices are shown in it, as everywhere in Studio. */
   currency: CurrencyCode
+  /** The brand's social posts and connections, for the Social feed section's settings. */
+  social?: SocialEditorData
   errors: FieldErrors
   onChange: Update
   /** Scroll the preview to a section. */
@@ -133,6 +170,7 @@ export function SectionsControls({
             onHighlight={onHighlight}
             onLocate={onLocate}
             onEditCover={onEditCover}
+            social={social}
           />
         ) : null}
 
@@ -158,6 +196,7 @@ export function SectionsControls({
               onHighlight={onHighlight}
               onLocate={onLocate}
               onEditCover={onEditCover}
+              social={social}
             />
           ))}
         </Reorder.Group>
@@ -188,6 +227,7 @@ function SectionCard({
   onHighlight,
   onLocate,
   onEditCover,
+  social,
 }: {
   section: StorefrontSection
   locked?: boolean
@@ -208,6 +248,7 @@ function SectionCard({
   onHighlight: (section: StorefrontSection | null) => void
   onLocate: (section: StorefrontSection) => void
   onEditCover: () => void
+  social?: SocialEditorData
 }) {
   const drag = useDragControls()
   const meta = storefrontSections[section.type]
@@ -279,7 +320,7 @@ function SectionCard({
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div key="settings" id={panelId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} className="grid gap-4 border-t border-line-soft px-3 pt-3 pb-4">
-            <SectionSettings section={section} config={config} products={products} collections={collections} currency={currency} onPatch={onPatch} onEditCover={onEditCover} />
+            <SectionSettings section={section} config={config} products={products} collections={collections} currency={currency} onPatch={onPatch} onEditCover={onEditCover} social={social} />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -326,6 +367,7 @@ function SectionSettings({
   currency,
   onPatch,
   onEditCover,
+  social,
 }: {
   section: StorefrontSection
   config: EditorConfig
@@ -334,6 +376,7 @@ function SectionSettings({
   currency: CurrencyCode
   onPatch: (p: Partial<StorefrontSection>) => void
   onEditCover: () => void
+  social?: SocialEditorData
 }) {
   const meta = storefrontSections[section.type]
 
@@ -386,12 +429,104 @@ function SectionSettings({
           onChange={(ids) => onPatch({ collectionIds: ids.length ? ids : undefined })}
         />
       ) : null}
+      {section.type === "social-feed" ? <SocialFeedSettings section={section} onPatch={onPatch} social={social} /> : null}
+    </>
+  )
+}
+
+const postDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+const postSource = (p: SocialPostDto) => (p.source === "upload" ? "Upload" : p.sample ? "Sample" : p.provider ? `${providerLabels[p.provider]}${p.source === "sandbox" ? " sandbox" : ""}` : "Post")
+
+/** The Social feed section's settings: source, layout, count, pinned posts, and each network's status. */
+function SocialFeedSettings({ section, onPatch, social }: { section: StorefrontSection; onPatch: (p: Partial<StorefrontSection>) => void; social?: SocialEditorData }) {
+  const feed = feedSettings(section)
+  const id = `sf-section-${section.id}`
+  const set = (p: Partial<NonNullable<StorefrontSection["feed"]>>) => onPatch({ feed: { ...feed, ...p } })
+  const posts = social?.posts ?? []
+  const ig = social?.accounts?.find((a) => a.provider === "instagram")
+  const tt = social?.accounts?.find((a) => a.provider === "tiktok")
+  return (
+    <>
+      <div className="grid gap-1.5">
+        <p id={`${id}-source-label`} className="text-[13px] text-ink">Show posts from</p>
+        <Segmented<FeedSource>
+          id={`${id}-source`}
+          label="Show posts from"
+          labelledBy={`${id}-source-label`}
+          value={feed.source}
+          onChange={(source) => set({ source })}
+          options={[
+            { value: "all", label: "All" },
+            { value: "instagram", label: "Instagram" },
+            { value: "tiktok", label: "TikTok" },
+            { value: "uploads", label: "Uploads" },
+          ]}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <p id={`${id}-layout-label`} className="text-[13px] text-ink">Layout</p>
+        <Segmented<"grid" | "rail">
+          id={`${id}-layout`}
+          label="Layout"
+          labelledBy={`${id}-layout-label`}
+          value={feed.layout}
+          onChange={(layout) => set({ layout })}
+          options={[
+            { value: "grid", label: "Grid" },
+            { value: "rail", label: "Rail" },
+          ]}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p id={`${id}-count-label`} className="text-[13px] text-ink">Posts to show</p>
+        <div role="group" aria-labelledby={`${id}-count-label`} className="flex items-center gap-1 rounded-lg border border-line bg-surface/50 p-1">
+          <Button type="button" variant="ghost" size="icon-xs" className="size-9 md:size-7" aria-label="Fewer posts" disabled={feed.count <= SOCIAL_MIN} onClick={() => set({ count: feed.count - 1 })}>
+            <MinusIcon />
+          </Button>
+          <span className="w-8 text-center text-sm text-ink tabular" aria-live="polite" id={`${id}-count`}>
+            {feed.count}
+          </span>
+          <Button type="button" variant="ghost" size="icon-xs" className="size-9 md:size-7" aria-label="More posts" disabled={feed.count >= SOCIAL_MAX} onClick={() => set({ count: feed.count + 1 })}>
+            <PlusIcon />
+          </Button>
+        </div>
+      </div>
+      {social?.status === "ready" ? (
+        <ItemPicker
+          id={`${id}-pinned`}
+          legend="Pinned posts"
+          max={SOCIAL_MAX}
+          autoNote="Nothing pinned: featured posts first, then the newest."
+          empty="Nothing is on your storefront yet. Show posts in Content Studio to pin them here."
+          items={posts.map((p) => ({ id: p.id, name: p.caption.split("\n")[0]?.trim().slice(0, 80) || "Untitled post", image: coverOf(p).src, meta: `${postSource(p)}, ${postDate(p.postedAt)}` }))}
+          value={section.postIds ?? []}
+          onChange={(ids) => onPatch({ postIds: ids.length ? ids : undefined })}
+        />
+      ) : (
+        <p className="rounded-md border border-dashed border-line px-3 py-3 text-xs text-ink-2">
+          {social?.status === "loading"
+            ? "Loading your posts…"
+            : social?.status === "other_brand"
+              ? "Your demo session is for another brand, so its posts can't be pinned here."
+              : social?.status === "error"
+                ? "Couldn't load your posts. Pinning is back once they load."
+                : "Sign in to Brand Studio to pin posts and preview your social feed."}
+        </p>
+      )}
+      {social?.accounts ? (
+        <p className="text-xs text-ink-2">
+          Instagram: {accountWords(ig)}. TikTok: {accountWords(tt)}.{" "}
+          <Link href="/studio/social?tab=connections" className="inline-flex min-h-10 items-center rounded-sm text-violet hover:underline md:min-h-0">
+            Manage connections
+          </Link>
+        </p>
+      ) : null}
     </>
   )
 }
 
 /** Choose which items a section features, in the order they're picked. */
-function ItemPicker({
+export function ItemPicker({
   id,
   legend,
   max,
@@ -449,7 +584,7 @@ function ItemPicker({
                     onCheckedChange={(checked) => onChange(checked ? [...picked, item.id] : picked.filter((v) => v !== item.id))}
                   />
                   <span className="relative size-8 shrink-0 overflow-hidden rounded-[4px] bg-surface">
-                    {item.image ? <Image src={item.image} alt="" fill sizes="32px" className="object-cover" /> : null}
+                    {item.image ? <Image src={item.image} alt="" fill sizes="32px" unoptimized={item.image.startsWith("/api/")} className="object-cover" /> : null}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] text-ink">{item.name}</span>

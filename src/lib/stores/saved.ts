@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
+import { reportSignal } from "@/components/signals/report-signal"
 
 type SavedState = {
   wishlist: string[]
@@ -25,20 +26,28 @@ export const useSaved = create<SavedState>()(
       following: [],
       notify: [],
       recentlyViewed: [],
+      // Each toggle also tells the server (§1.11, §6.3): fire and forget, only with a shopper session.
+      // The server keeps its own state and counts real changes only.
       toggleWishlist: (id) => {
         const next = toggle(get().wishlist, id)
         set({ wishlist: next })
-        return next.includes(id)
+        const on = next.includes(id)
+        reportSignal({ kind: on ? "wishlist_add" : "wishlist_remove", productId: id })
+        return on
       },
       toggleFollow: (id) => {
         const next = toggle(get().following, id)
         set({ following: next })
-        return next.includes(id)
+        const on = next.includes(id)
+        reportSignal({ kind: on ? "follow" : "unfollow", brandId: id })
+        return on
       },
       toggleNotify: (id) => {
         const next = toggle(get().notify, id)
         set({ notify: next })
-        return next.includes(id)
+        const on = next.includes(id)
+        reportSignal({ kind: on ? "reminder_set" : "reminder_unset", dropId: id })
+        return on
       },
       viewed: (id) =>
         set({ recentlyViewed: [id, ...get().recentlyViewed.filter((x) => x !== id)].slice(0, 16) }),

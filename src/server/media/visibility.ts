@@ -1,12 +1,81 @@
 import "server-only"
-import { NotImplemented } from "../http/errors"
+import { eq, sql } from "drizzle-orm"
+import { db } from "../db"
+import { mediaAssets } from "../db/schema"
 
 /**
- * Derives media visibility from what references it (§5.4 step 7). Runs inside the same
- * transaction as every change that can affect it. A file is public only while a published, ok
- * post or a published, approved place or event of a listed brand references it.
+ * Derives media visibility from what references it (§5.4 step 7). Runs through db(), so it joins
+ * the caller's transaction: publishing, hiding, deleting or moderating a post, place or event;
+ * brand status changes; Disconnect; deauthorize and data deletion. A file is public only while at
+ * least one of these references it:
+ *  - a published, ok social post of a listed brand without an active social_disabled restriction;
+ *  - a published, approved place of a listed brand;
+ *  - a published, approved event of a listed brand, at a published, approved place.
+ * Everything else is private, including the media of pending_review places. Removed media is
+ * always private. Never set from a request.
+ *
+ * It also keeps `unreferenced_at`: null while anything at all references the file (a post of any
+ * visibility, a place, an event, an account avatar, a message), otherwise the time it was first
+ * seen unreferenced. The purge deletes post and place media 7 days after that.
  */
+const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)
+
+/** Any reference at all, whatever its visibility or moderation (what keeps a file from the purge). */
+export const referencedAtAll = sql.raw(`(
+  exists (select 1 from social_posts p, jsonb_array_elements(p.media) e where e ->> 'mediaId' = m.id or e ->> 'posterMediaId' = m.id)
+  or exists (select 1 from brand_locations l, jsonb_array_elements(l.images) e where e ->> 'mediaId' = m.id)
+  or exists (select 1 from location_events v where v.image ->> 'mediaId' = m.id)
+  or exists (select 1 from social_accounts a where a.avatar_media_id = m.id)
+  or exists (select 1 from message_attachments ma where ma.media_id = m.id)
+)`)
+
 export async function refreshVisibility(mediaIds: string[]): Promise<void> {
-  void mediaIds
-  throw new NotImplemented("media.refreshVisibility")
+  const ids = [...new Set(mediaIds.filter((x) => typeof x === "string" && x))]
+  if (!ids.length) return
+  const d = await db()
+  await d.execute(sql`
+    update media_assets m set visibility = case when m.moderation_status <> 'removed' and (
+      exists (
+        select 1 from social_posts p join brands b on b.id = p.brand_id
+        where p.visibility = 'published' and p.moderation_status = 'ok' and ${listed("b")}
+          and not exists (
+            select 1 from account_restrictions r
+            where r.subject_kind = 'brand' and r.subject_id = p.brand_id and r.kind = 'social_disabled'
+              and r.status = 'active' and (r.until is null or r.until > now()))
+          and exists (select 1 from jsonb_array_elements(p.media) e where e ->> 'mediaId' = m.id or e ->> 'posterMediaId' = m.id))
+      or exists (
+        select 1 from brand_locations l join brands b on b.id = l.brand_id
+        where l.visibility = 'published' and l.moderation_status = 'approved' and ${listed("b")}
+          and exists (select 1 from jsonb_array_elements(l.images) e where e ->> 'mediaId' = m.id))
+      or exists (
+        select 1 from location_events v join brands b on b.id = v.brand_id join brand_locations l on l.id = v.location_id
+        where v.visibility = 'published' and v.moderation_status = 'approved' and ${listed("b")}
+          and l.visibility = 'published' and l.moderation_status = 'approved'
+          and v.image ->> 'mediaId' = m.id)
+    ) then 'public' else 'private' end,
+    unreferenced_at = case when ${referencedAtAll} then null else coalesce(m.unreferenced_at, now()) end
+    where m.id in (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )})`)
+}
+
+/** Every media file of a brand (brand status changes, Disconnect, data deletion). */
+export async function refreshBrandMediaVisibility(brandId: string): Promise<void> {
+  const d = await db()
+  const rows = await d.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.brandId, brandId))
+  for (let i = 0; i < rows.length; i += 500)
+    await refreshVisibility(
+      rows.slice(i, i + 500).map((r) => r.id),
+    )
+}
+
+/** The media ids a social post's or place's media list references (for callers collecting ids). */
+export function mediaIdsOf(items: { mediaId?: string; posterMediaId?: string }[] | null | undefined): string[] {
+  const out: string[] = []
+  for (const it of items ?? []) {
+    if (it?.mediaId) out.push(it.mediaId)
+    if (it?.posterMediaId) out.push(it.posterMediaId)
+  }
+  return out
 }

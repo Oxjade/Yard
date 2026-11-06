@@ -286,7 +286,7 @@ export function useNotificationEvents() {
             }
             const theirs = mine.find((x) => x.id === o.id)
             if (!theirs) continue
-            useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === o.id ? { ...x, status: o.status, paymentStatus: o.paymentStatus, tracking: o.tracking, timeline: o.timeline, returnRequest: o.returnRequest ?? x.returnRequest, refund: o.refund ?? x.refund, cancelReason: o.cancelReason ?? x.cancelReason } : x)) })
+            useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === o.id ? { ...x, status: o.status, paymentStatus: o.paymentStatus, tracking: o.tracking, timeline: o.timeline, returnRequest: o.returnRequest ?? x.returnRequest, refund: o.refund ?? x.refund, cancelReason: o.cancelReason ?? x.cancelReason, delivery: o.delivery ?? x.delivery, shippedAt: o.shippedAt ?? x.shippedAt, deliveredAt: o.deliveredAt ?? x.deliveredAt } : x)) })
             if (before.status === o.status) continue
             // A decided return is announced from the decision itself (see the orders events above), not as "delivered".
             if (before.status === "refund_requested" && d) continue

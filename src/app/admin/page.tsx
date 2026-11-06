@@ -40,6 +40,7 @@ import { anchorDay } from "@/components/admin/finance/format"
 import { recordTime } from "@/components/admin/platform/format"
 import { actionLabel, readable } from "@/components/admin/platform/security/audit-words"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { isServerQueueTab, useServerAuditTrail, useServerQueues, type ServerQueueTab } from "@/components/admin/trust/overview-queues"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"
 import { chartEasing, chartIn } from "@/lib/motion"
@@ -175,7 +176,7 @@ function approvalAudience(r: Refund) {
 
 const ordersText = (n: number) => `${formatNumber(n)} ${n === 1 ? "order" : "orders"}`
 
-type QueueTab = "brands" | "payouts" | "refunds" | "campaigns" | "moderation"
+type QueueTab = "brands" | "payouts" | "refunds" | "campaigns" | "moderation" | ServerQueueTab
 
 function DecisionQueue({ className }: { className?: string }) {
   const router = useRouter()
@@ -192,6 +193,8 @@ function DecisionQueue({ className }: { className?: string }) {
   const refunds = useAdmin((s) => s.refunds)
   const campaigns = useAdmin((s) => s.campaigns)
   const moderation = useAdmin((s) => s.moderation)
+  // The v2 queues (§8.3) come from Yard's server, for an admin whose role can view each.
+  const server = useServerQueues(tab)
   const setPayoutStatus = useAdmin((s) => s.setPayoutStatus)
   const setRefundStatus = useAdmin((s) => s.setRefundStatus)
 
@@ -207,14 +210,14 @@ function DecisionQueue({ className }: { className?: string }) {
     moderation: moderation.filter((m) => m.status === "open" || m.status === "escalated"),
   }
   // Tab counts are the whole queue, not the six rows shown, so they agree with the command strip.
-  const totals: Record<QueueTab, number> = {
+  const totals: Record<Exclude<QueueTab, ServerQueueTab>, number> = {
     brands: lists.brands.length,
     payouts: payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length,
     refunds: refunds.filter((r) => r.status === "requested").length,
     campaigns: lists.campaigns.length,
     moderation: lists.moderation.length,
   }
-  const count = (k: QueueTab) => totals[k]
+  const count = (k: QueueTab) => (isServerQueueTab(k) ? (server.tabs.find((t) => t.value === k)?.count ?? 0) : totals[k])
   const scheduled = payouts.filter((p) => p.status === "scheduled").length
 
   function ask(e: React.MouseEvent<HTMLElement>, c: NonNullable<typeof confirm>) {
@@ -259,7 +262,9 @@ function DecisionQueue({ className }: { className?: string }) {
             }))
           : tab === "campaigns"
             ? lists.campaigns.map((c) => ({ id: c.id, title: c.name, meta: `${campaignTypes[c.type].name}, ${c.days} days`, amount: usdFull(c.budget), badge: { text: "in review", tone: "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/advertising")}>Review</Button> }))
-            : lists.moderation.map((m) => ({ id: m.id, title: m.title, meta: `${m.brandName}: ${m.reportedBy}`, badge: { text: m.reason.replace("_", " "), tone: m.reason === "counterfeit" || m.reason === "ip_complaint" ? "danger" : "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/products")}>Open</Button> }))
+            : tab === "moderation"
+              ? lists.moderation.map((m) => ({ id: m.id, title: m.title, meta: `${m.brandName}: ${m.reportedBy}`, badge: { text: m.reason.replace("_", " "), tone: m.reason === "counterfeit" || m.reason === "ip_complaint" ? "danger" : "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/products")}>Open</Button> }))
+              : (server.rows ?? []).map((r) => ({ id: r.id, title: r.title, meta: r.meta, badge: r.badge, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push(r.href)}>Open</Button> }))
 
   const badgeTone = { acid: "border-acid/45 text-acid", danger: "border-danger/45 text-danger", muted: "border-white/10 text-ink-3", purple: "border-purple bg-purple/20 text-ink" }
 
@@ -313,14 +318,20 @@ function DecisionQueue({ className }: { className?: string }) {
             { value: "brands", label: "Brands", count: count("brands") },
             { value: "campaigns", label: "Campaigns", count: count("campaigns") },
             { value: "moderation", label: "Moderation", count: count("moderation") },
+            ...server.tabs.map((t) => ({ value: t.value as QueueTab, label: t.label, count: t.count })),
           ]}
         />
       </div>
       <div ref={panelRef} id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="flex flex-1 flex-col border-t border-[var(--admin-hairline)]">
         {/* Rows are held at 65px, so the skeleton (one row per queued item) and the list match. */}
-        {!hydrated ? (
+        {isServerQueueTab(tab) && server.error && !server.rows ? (
+          <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+            <p className="text-[13px] text-ink">Couldn&apos;t load this queue</p>
+            <Button size="sm" variant="secondary" className="h-10 sm:h-8" onClick={server.retry}>Retry</Button>
+          </div>
+        ) : !hydrated || (isServerQueueTab(tab) && server.loading) ? (
           <ul aria-hidden className="admin-divide">
-            {Array.from({ length: Math.max(1, rows.length) }, (_, i) => (
+            {Array.from({ length: isServerQueueTab(tab) ? 4 : Math.max(1, rows.length) }, (_, i) => (
               <li key={i} className="flex h-[65px] items-center gap-3 px-4 md:px-5">
                 <span className="grid flex-1 gap-1.5">
                   <span className="skeleton h-3.5 w-1/3 rounded" />
@@ -377,7 +388,16 @@ function DecisionQueue({ className }: { className?: string }) {
 function AuditTrail({ className }: { className?: string }) {
   const hydrated = useHydrated()
   const now = useNow(60_000)
-  const audit = useAdmin((s) => s.audit)
+  const local = useAdmin((s) => s.audit)
+  const serverRows = useServerAuditTrail()
+  // Server rows (v2 decisions, sign-ins, audited views) and this browser's entries, newest first.
+  const audit = useMemo(
+    () =>
+      [...serverRows.map((e) => ({ id: e.id, at: e.at, actor: e.actor, action: e.action, target: e.target ?? "", reason: e.reason ?? undefined })), ...local]
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, 10),
+    [serverRows, local],
+  )
   return (
     // On wide screens the panel takes no height of its own ([contain:size]), so the Decision queue
     // beside it sets the row and this card fills it. The list then wraps whole entries that don't

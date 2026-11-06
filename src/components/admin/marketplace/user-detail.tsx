@@ -14,11 +14,12 @@ import { amountIn, usd } from "../finance/format"
 import { Initials } from "./bits"
 import { useDecision } from "./decision"
 import { reportsFor } from "./derive"
-import { ActionBar, ActivityList, DetailSection, DetailSheet, EmptyLine, Facts, insetClass } from "./detail-sheet"
+import { DetailSection, DetailSheet, EmptyLine, Facts, insetClass } from "./detail-sheet"
+import { ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
 import { countryName, formatDate, plural, relDays } from "./format"
 import { userStatusMeta } from "./meta"
 import { useLast } from "./use-last"
-import { userActions, userAllowed, userDecision } from "./user-actions"
+import { userActions, userAllowed, userDecision, useUserStatusBlock } from "./user-actions"
 
 /**
  * Whether an audit entry is about this account. Names aren't unique (the sample has several
@@ -45,6 +46,7 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
   const audit = useAdmin((s) => s.audit)
   const users = useAdmin((s) => s.users)
   const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('[data-slot="sheet-content"]'))
+  const block = useUserStatusBlock()
 
   if (!user) return null
 
@@ -70,15 +72,16 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
           </>
         }
         actions={
-          <ActionBar
-            note="Applies across the whole marketplace. A reason is required and recorded in the audit log."
+          <TrustActionBar
+            note="Enforced on Yard's server across the whole marketplace. A reason is required and recorded in the audit log."
             actions={userAllowed[user.status].map((key) => ({
               key,
               label: userActions[key].label,
               icon: userActions[key].icon,
               variant: userActions[key].button,
+              disabledReason: block,
               onSelect: () => {
-                const d = userDecision(key, [user], { announce: false })
+                const d = userDecision(key, [user])
                 if (d) ask(d)
               },
             }))}
@@ -151,7 +154,7 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
         </DetailSection>
 
         <DetailSection title="Account activity">
-          <ActivityList entries={entries} extra={[{ at: user.joinedAt, label: "Account created" }]} />
+          <ServerActivity subjectIds={[user.id]} legacy={entries} extra={[{ at: user.joinedAt, label: "Account created" }]} />
           {unattributed ? (
             <p className="text-[11px] text-ink-3">
               {plural(unattributed, "decision")} logged under the name {user.name} {unattributed === 1 ? "isn't" : "aren't"} shown here: another account has the same name and the log doesn&apos;t say which account it was.{" "}

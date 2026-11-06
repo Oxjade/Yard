@@ -12,6 +12,9 @@ import { cn } from "@/lib/utils"
 import { CopyValue } from "../marketplace/bits"
 import { DetailSection, DetailSheet, EmptyLine, Facts, LinkRow, insetClass } from "../marketplace/detail-sheet"
 import { useLast } from "../marketplace/use-last"
+import { orderEstimate } from "@/components/market/delivery/browser-estimate"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { formatDay, formatShortRange } from "@/lib/shipping/format"
 import { disputeStage, groupState, orderTimeline, paymentEvents, providerFor, type OrderRow } from "./derive"
 import { amountIn, formatWhen, providerName, signedUsd, usd } from "./format"
 import { fulfilMeta, groupMeta, payMeta, txStatusMeta } from "./meta"
@@ -45,6 +48,18 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
   const net = o.total - o.commission
   const paid = row.pay === "paid"
   const unpaid = row.pay === "pending" || row.pay === "failed"
+  // Delivery (§6.5): the order's stored estimate, else the same engine run here. Read after
+  // hydration, as it can read the clock.
+  const hydrated = useHydrated()
+  const delivery = hydrated && o.status !== "cancelled" && o.status !== "refunded" ? orderEstimate(o) : null
+  const late = !!delivery && !delivery.deliveredOn && (delivery.basis === "late" || delivery.basis === "exception")
+  const deliveryFacts = delivery
+    ? [
+        { label: delivery.deliveredOn ? "Delivered" : "Est. arrival", value: delivery.deliveredOn ? formatDay(delivery.deliveredOn) : delivery.arrivalFrom && delivery.arrivalTo ? formatShortRange(delivery.arrivalFrom, delivery.arrivalTo) : "Not available" },
+        { label: "Ship by", value: delivery.shipBy ? formatDay(delivery.shipBy) : o.tracking ? "Shipped" : "Not available" },
+        { label: "Late", value: late ? "Yes, re-estimated" : "No" },
+      ]
+    : []
   const money = (v: number) => amountIn(v, o.currency)
 
   return (
@@ -214,8 +229,10 @@ function OrderBody({ row, rows, audit, open, onOpenChange, onSelect }: { row: Or
               { label: "Method", value: o.shippingMethod.replace(" — ", ", ") },
               { label: "Carrier", value: o.tracking?.carrier ?? "Not shipped yet" },
               { label: "Tracking", value: o.tracking ? num(o.tracking.number) : "Not shipped yet" },
+              ...deliveryFacts,
             ]}
           />
+          {delivery ? <p className="mt-2 text-[11px] text-ink-3">{delivery.source === "server" ? "Yard's estimate when the order was placed or last updated in this browser." : "Estimated in this browser from the brand's handling time and the holiday calendar."} Estimates, never guaranteed.</p> : null}
         </DetailSection>
 
         <DetailSection title="Links">

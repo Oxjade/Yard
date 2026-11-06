@@ -57,6 +57,8 @@ export type StorefrontSectionType =
   | "story"
   | "lookbook"
   | "all-products"
+  /** v2 (§6.1): posts from Instagram and TikTok, and posts uploaded in Content Studio. */
+  | "social-feed"
 
 export type StorefrontSection = {
   id: string

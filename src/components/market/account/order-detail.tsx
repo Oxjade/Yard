@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils"
 import { daysSince, formatDay, formatOrderMoney } from "./format"
 import { isSampleCheckout, OrderStatusBadge, OrderStepper, SampleChip, TrackingLink, orderStatusNote, returnOutcome, trackingUrl } from "./order-status"
 import { ReturnDialog } from "./return-dialog"
+import { OrderDelivery } from "@/components/market/delivery/order-delivery"
+import { businessDays } from "@/lib/shipping/format"
 import { YouNav } from "./you-nav"
 
 function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
@@ -304,7 +306,8 @@ export function OrderDetail({ id }: { id: string }) {
           </Panel>
 
           <Panel title="Delivery">
-            <dl className="grid gap-4 text-sm">
+            <OrderDelivery order={order} brand={brand} />
+            <dl className="mt-5 grid gap-4 border-t border-line-soft pt-5 text-sm">
               <div>
                 <dt className="text-xs text-ink-3">Ship to</dt>
                 <dd className="mt-1 leading-relaxed text-ink">
@@ -327,7 +330,7 @@ export function OrderDetail({ id }: { id: string }) {
                 <dt className="text-xs text-ink-3">Shipping method</dt>
                 <dd className="mt-1 text-ink">{methodLabel(order.shippingMethod)}</dd>
                 <dd className="mt-0.5 text-xs text-ink-2">
-                  Ships from {brand.city}, {countries[brand.shipsFrom].name}. The brand dispatches within {brand.processingDays[0]}–{brand.processingDays[1]} days.
+                  Ships from {brand.city}, {countries[brand.shipsFrom].name}. Usually dispatches in {businessDays(brand.processingDays)}.
                 </dd>
               </div>
               <div>

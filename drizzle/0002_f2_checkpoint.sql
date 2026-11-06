@@ -1,0 +1,1 @@
+ALTER TABLE "media_assets" ADD COLUMN "unreferenced_at" timestamp with time zone;

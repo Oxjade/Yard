@@ -1,49 +1,52 @@
-import { shippingRatesUsd, shippingZone, type CountryCode } from "@/config/markets"
-import type { BrandGroup } from "@/lib/cart"
-import type { Brand } from "@/lib/data/types"
+import { optionFor, type BrandGroup, type ShippingService } from "@/lib/cart"
+import type { EstimateDto } from "@/lib/api/contracts/shipping"
+import { formatRange, formatShortRange } from "@/lib/shipping/format"
 
-export type ShippingMethod = "standard" | "express"
+/**
+ * Thin wrappers over the server's quote (§6.5), kept so their callers read the same. Prices,
+ * transit times and arrival ranges come only from the quote: there is no formula here, and with no
+ * quote the answer is null (callers show a Bone or "Shipping is calculated at checkout").
+ */
+
+export type ShippingMethod = ShippingService
 
 export const shippingMethodLabel: Record<ShippingMethod, string> = {
   standard: "Standard",
   express: "Express",
+  pickup: "Pickup",
 }
 
-/**
- * Shipping price for one brand order, in the shopper's currency. Express mirrors the
- * formula in useOrders().placeCheckout so the price shown here is the price recorded.
- */
-export function shippingPrice(group: BrandGroup, method: ShippingMethod) {
-  if (method === "standard") return group.shipping
-  return Math.round(group.shipping * 1.9) || Math.round(group.subtotal * 0.04)
+/** The option for a method in this group's quote, or null (not offered, or no quote yet). */
+export function quotedOption(group: BrandGroup, method: ShippingMethod) {
+  const o = group.options?.find((x) => x.service === method && x.available)
+  return o ?? null
 }
 
-/** Business days from order to doorstep: the brand's processing time plus transit. */
-export function deliveryDays(brand: Brand, shipTo: CountryCode, method: ShippingMethod): [number, number] {
-  const rate = shippingRatesUsd[shippingZone(brand.shipsFrom, shipTo)]
-  const transit: [number, number] =
-    method === "express" ? [Math.max(1, Math.round(rate.days[0] / 2)), Math.max(2, Math.round(rate.days[1] / 2))] : rate.days
-  return [brand.processingDays[0] + transit[0], brand.processingDays[1] + transit[1]]
+/** Shipping price for one brand order in the shopper's currency, from the quote; null without one. */
+export function shippingPrice(group: BrandGroup, method: ShippingMethod): number | null {
+  return quotedOption(group, method)?.price.amount ?? null
 }
 
+/** Business days from order to doorstep (handling plus transit) for a method, from the quote; null without one. */
+export function deliveryDays(group: BrandGroup, method: ShippingMethod): [number, number] | null {
+  const o = quotedOption(group, method)
+  if (!o || !group.quote) return null
+  return [group.quote.handling[0] + o.transit[0], group.quote.handling[1] + o.transit[1]]
+}
+
+/** The method a stored label names ("Express, international" → express). */
 export function methodFromLabel(label: string): ShippingMethod {
-  return label.toLowerCase().startsWith("express") ? "express" : "standard"
+  const l = label.toLowerCase()
+  return l.startsWith("express") ? "express" : l.startsWith("pick") ? "pickup" : "standard"
 }
 
-function addBusinessDays(from: Date, days: number) {
-  const d = new Date(from)
-  let left = days
-  while (left > 0) {
-    d.setDate(d.getDate() + 1)
-    const day = d.getDay()
-    if (day !== 0 && day !== 6) left -= 1
-  }
-  return d
+/** "Wed 11 – Mon 16 Nov" from an estimate, or null when it has no arrival range. */
+export function arrivalRange(estimate: Pick<EstimateDto, "arrivalFrom" | "arrivalTo"> | null | undefined, short = false) {
+  if (!estimate?.arrivalFrom || !estimate.arrivalTo) return null
+  return short ? formatShortRange(estimate.arrivalFrom, estimate.arrivalTo) : formatRange(estimate.arrivalFrom, estimate.arrivalTo)
 }
 
-const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
-
-/** "11–14 Nov" — call on the client only (it reads the clock through `from`). */
-export function arrivalRange(from: Date, [min, max]: [number, number]) {
-  return dayMonth.formatRange(addBusinessDays(from, min), addBusinessDays(from, max))
+/** The option a review row shows for a brand: the chosen method when offered, else the default. */
+export function chosenOption(group: BrandGroup, method: ShippingMethod) {
+  return optionFor(group.options, method)
 }

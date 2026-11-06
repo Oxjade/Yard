@@ -19,6 +19,7 @@ export const realtimeEvents = {
   "session.ended": z.object({ reason: z.string() }),
   resync: z.object({}),
   hello: z.object({ lastSeq: z.number(), serverTime: z.string() }),
+  /** reason: "replaced" (a 5th stream on this session), "refresh" (10-minute rotation) or "error". */
   bye: z.object({ reason: z.string() }),
   selftest: z.object({ run: z.string(), variant: z.string() }),
 }
@@ -28,4 +29,12 @@ export type RealtimePayload<K extends RealtimeEventType> = z.infer<(typeof realt
 export type Surface = "market" | "studio" | "admin"
 export type RealtimeStatus = "idle" | "connecting" | "open" | "retrying" | "polling" | "offline"
 
-export const pollResult = z.object({ events: z.array(z.object({ seq: z.number(), type: z.string(), payload: z.unknown(), partial: z.literal(true) })), lastSeq: z.number() })
+/**
+ * GET /api/realtime/<surface>/poll?after=<seq>: the redacted events after `after`. `resync` says
+ * the log no longer holds everything after it (refetch lists instead of trusting the events).
+ */
+export const pollResult = z.object({ events: z.array(z.object({ seq: z.number(), type: z.string(), payload: z.unknown(), partial: z.literal(true) })), lastSeq: z.number(), resync: z.boolean() })
+export type PollResult = z.infer<typeof pollResult>
+
+/** What a handler learns besides the payload: the event id (durable events only) and whether it is a replayed, redacted copy. */
+export type RealtimeMeta = { seq?: number; partial: boolean }

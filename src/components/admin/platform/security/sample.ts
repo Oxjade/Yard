@@ -1,4 +1,5 @@
 import { adminUser } from "@/lib/data/admin"
+import type { AdminPermission } from "@/lib/permissions"
 import { secondApproverLabel } from "../advertising/placements"
 
 /**
@@ -40,6 +41,12 @@ export type Policy = {
   /** When a second admin has to approve, in words; null when nobody else needs to. */
   approver: string | null
   note?: string
+  /**
+   * The v2 server permission behind the action (§2.4), when Yard's server enforces it. The table's
+   * "Who can do it" still reads `permission` from the legacy role list, so v2 rows name the legacy
+   * permission held by the same roles.
+   */
+  serverPermission?: AdminPermission
 }
 
 export const sensitivePolicy: Policy[] = [
@@ -56,4 +63,14 @@ export const sensitivePolicy: Policy[] = [
   { action: "Retry a background job", permission: "retry jobs", reason: false, approver: null },
   { action: "Revoke a session", permission: null, reason: true, approver: null },
   { action: "Require MFA for a member", permission: null, reason: true, approver: null },
+  // v2: enforced by Yard's server (§8), each with one audit row.
+  { action: "Remove a message", permission: "moderate products", reason: true, approver: null, note: "Both people in the conversation see “Message removed by Yard”; the sender sees your reason.", serverPermission: "messages.moderate" },
+  { action: "Lock a conversation", permission: "moderate products", reason: true, approver: null, note: "Nobody can send in it any more; both sides keep reading it.", serverPermission: "messages.moderate" },
+  { action: "Remove a post", permission: "moderate products", reason: true, approver: null, note: "The post is locked: the brand can delete it but not show it again.", serverPermission: "content.moderate" },
+  { action: "Remove a place or event", permission: "moderate products", reason: true, approver: null, note: "It leaves Yard Around and is locked for the brand.", serverPermission: "places.moderate" },
+  { action: "Pause a brand's social feed", permission: "moderate products", reason: true, approver: null, note: "Engineering can pause it too. The brand sees your reason.", serverPermission: "social.manage" },
+  { action: "Freeze a brand on Charts", permission: "moderate products", reason: true, approver: "Always; the approver can't be the requester", note: "The brand is told it's paused because of unusual activity, never the reason.", serverPermission: "charts.freeze" },
+  { action: "Restrict messaging, uploads or reports", permission: "restrict accounts", reason: true, approver: null, note: "For 24 hours, 7 days or 30 days. The account sees your reason.", serverPermission: "users.restrict" },
+  { action: "Suspend an account or brand", permission: "restrict accounts", reason: true, approver: null, note: "Signs every session out at once and blocks sign-in. The owner approval a brand suspension asks for isn't enforced by the server yet.", serverPermission: "users.restrict" },
+  { action: "Edit holidays", permission: "retry jobs", reason: true, approver: null, note: "Delivery estimates for that country change from their next calculation.", serverPermission: "holidays.edit" },
 ]

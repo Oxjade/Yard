@@ -18,7 +18,8 @@ export type Root = PgliteDatabase<Schema> & { $client: PGlite }
  * (ESLint no-restricted-imports); everything else uses db()/withTx() from "@/server/db".
  */
 export function getDb(): Promise<Root> {
-  checkJournal()
+  const pending = checkJournal()
+  if (pending) return pending
   return (yard.db ??= boot().catch((e) => {
     yard.db = undefined
     throw e
@@ -28,19 +29,53 @@ export function getDb(): Promise<Root> {
 const journalFile = () => path.join(process.cwd(), "drizzle", "meta", "_journal.json")
 const journalCount = () => (JSON.parse(readFileSync(journalFile(), "utf8")) as { entries: unknown[] }).entries.length
 
-/** A long-lived dev server doesn't pick up new migrations: say so once (§1.3). */
-function checkJournal() {
+/**
+ * A long-lived server and new migrations (§1.3). In development, a migration added to drizzle/
+ * while the server runs is applied in-process before the next query (F2's additive checkpoint,
+ * so the shared dev server needn't restart under everyone's streams): every query reaches PGlite
+ * through getDb() or a transaction that started there, and the journal is written before any
+ * schema file that needs it. Production never changes its migrations under a running process;
+ * there a changed journal is only reported.
+ */
+function checkJournal(): Promise<Root> | null {
   const m = yard.migrations
-  if (!m || m.warned || Date.now() - m.checkedAt < 10_000) return
+  if (!m || !yard.db) return null
+  if (m.applying) return m.applying as Promise<Root>
+  if (Date.now() - m.checkedAt < 1000) return null
   m.checkedAt = Date.now()
+  let count: number
   try {
-    if (journalCount() !== m.applied) {
-      m.warned = true
-      log.warn("[yard] Schema changed: restart npm run dev")
-    }
+    count = journalCount()
   } catch {
-    /* journal unreadable mid-write; try again later */
+    return null // journal unreadable mid-write; try again later
   }
+  if (count === m.applied) return null
+  if (!getEnv().dev) {
+    if (!m.warned) {
+      m.warned = true
+      log.warn("[yard] Schema changed: restart the server to apply the new migrations")
+    }
+    return null
+  }
+  const from = m.applied
+  const applying = (yard.db as Promise<Root>)
+    .then(async (root) => {
+      await migrate(root, { migrationsFolder: path.join(process.cwd(), "drizzle") })
+      m.applied = journalCount()
+      log.info(`[yard] applied ${m.applied - from} new migration${m.applied - from === 1 ? "" : "s"} in-process (journal ${from} → ${m.applied})`)
+      return root
+    })
+    .catch((e) => {
+      m.warned = true
+      log.error("[yard] Schema changed but the new migration failed; restart npm run dev", e)
+      m.applied = count
+      return yard.db as Promise<Root>
+    })
+    .finally(() => {
+      m.applying = undefined
+    })
+  m.applying = applying
+  return applying
 }
 
 /** Dev watchdog: any query that takes more than 1 s from call to resolve is logged (§1.3). */

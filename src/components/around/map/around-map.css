@@ -1,0 +1,31 @@
+/* YARD Around map (§6.4). Static: no animated stars, no glows. */
+.yard-around-map {
+  background-color: #050505;
+  background-image:
+    radial-gradient(circle, rgba(245, 245, 245, 0.32) 0.6px, transparent 0.9px),
+    radial-gradient(circle, rgba(245, 245, 245, 0.16) 0.6px, transparent 0.9px);
+  background-size: 113px 97px, 167px 151px;
+  background-position: 11px 23px, 71px 59px;
+}
+
+/* A marker on the far side of the globe can't be seen, so it can't be clicked or focused either. */
+.yard-around-map .maplibregl-marker-covered {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.yard-around-map .yard-pin-selected {
+  transform: scale(1.1);
+}
+
+.yard-around-map .maplibregl-canvas:focus-visible {
+  outline: 2px solid #9452ff;
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yard-around-map .yard-pin,
+  .yard-around-map .yard-pin-selected {
+    transition: none;
+  }
+}

@@ -11,8 +11,10 @@ import { DropsSection, groupDrops } from "./sections/drops"
 import { FeaturedProductsSection } from "./sections/featured-products"
 import { HeroSection } from "./sections/hero"
 import { LookbookSection } from "./sections/lookbook"
+import { LiveSocialFeed, SocialFeedSection } from "./sections/social-feed"
 import { StorySection } from "./sections/story"
-import { accentStyle, collectionIndexId, collectionsAnchorId, lookbookFrames, resolveCollections, resolveFeatured, saleProducts, storefrontType } from "./theme"
+import { accentStyle, collectionIndexId, collectionsAnchorId, lookbookFrames, resolveCollections, resolveFeatured, resolveSocialPosts, saleProducts, storefrontType } from "./theme"
+import type { SocialPostDto } from "@/lib/api/contracts/social"
 
 export type StorefrontRendererProps = {
   brand: Brand
@@ -27,15 +29,24 @@ export type StorefrontRendererProps = {
    * inert, and empty sections show a placeholder instead of disappearing.
    */
   preview?: boolean
+  /**
+   * The brand's published social posts, when the caller already has them (the Studio editor's
+   * preview). Absent on the live storefront: the Social feed section fetches its own.
+   */
+  socialPosts?: SocialPostDto[]
+  /** Preview only: why the Social feed has nothing to show (for example, no brand session). */
+  socialPlaceholder?: string
   className?: string
 }
+
+const SOCIAL_EMPTY = "Connect Instagram or TikTok, or upload posts in Content Studio."
 
 /**
  * Renders a brand storefront from its config. Pure: everything comes from props, so the
  * live page and the Studio editor render exactly the same thing. Layouts use container
  * queries, so a draft renders correctly in an editor pane of any width.
  */
-export function StorefrontRenderer({ brand, config, products, collections, drops, stories, preview = false, className }: StorefrontRendererProps) {
+export function StorefrontRenderer({ brand, config, products, collections, drops, stories, preview = false, socialPosts, socialPlaceholder, className }: StorefrontRendererProps) {
   const ctx: StorefrontContext = {
     brand,
     template: config.template,
@@ -100,6 +111,17 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
       case "all-products":
         if (!products.length) return placeholder(section, first, index, "Publish a product to show it here.")
         return <AllProductsSection {...common} products={products} />
+      case "social-feed": {
+        // Preview: the editor passes the brand's published posts. Live: the section fetches its own,
+        // so the storefront page stays prerendered with no server data dependency.
+        if (socialPosts) {
+          const posts = resolveSocialPosts(section, socialPosts)
+          if (!posts.length) return placeholder(section, first, index, socialPlaceholder ?? SOCIAL_EMPTY)
+          return <SocialFeedSection {...common} posts={posts} />
+        }
+        if (preview) return placeholder(section, first, index, socialPlaceholder ?? SOCIAL_EMPTY)
+        return <LiveSocialFeed {...common} />
+      }
       default:
         return null
     }

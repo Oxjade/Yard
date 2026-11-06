@@ -340,7 +340,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           </div>
 
           <div className="mt-8">
-            <DeliverySummary brand={brand} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
+            <DeliverySummary brand={brand} product={product} drop={drop} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
           </div>
 
           <section aria-labelledby="pdp-info-title" className="mt-8">

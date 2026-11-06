@@ -17,6 +17,7 @@ import { countries, currencies } from "@/config/markets"
 import { site } from "@/config/site"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession, type NotificationPrefs } from "@/lib/stores/session"
+import { ReadReceiptsSetting } from "@/components/inbox/read-receipts-setting"
 import { InterestEditor } from "./interest-editor"
 import { YouNav } from "./you-nav"
 
@@ -236,6 +237,10 @@ export function SettingsView() {
         <div className="mt-5 border-t border-line-soft pt-4">
           <SavedNote message={lastChange} idle="Changes save as you switch." />
         </div>
+      </Section>
+
+      <Section id="set-messages" title="Messages" description="How your conversations with brands work. Refunds, returns and delivery problems stay on each order page.">
+        <ReadReceiptsSetting />
       </Section>
 
       <Section id="set-region" title="Region and currency" description="Where you ship to sets delivery times and shipping costs. Prices show in your currency as an estimate; checkout confirms the rate.">

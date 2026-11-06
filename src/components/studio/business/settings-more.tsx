@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { CheckIcon as Check, PercentIcon as Percent, TrashIcon as Trash2, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
+import Link from "next/link"
+import { CheckIcon as Check, PercentIcon as Percent, TrashIcon as Trash2, TruckIcon as Truck, UserPlusIcon as UserPlus } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { InfoTip } from "@/components/feedback/info-tip"
 import { Button } from "@/components/ui/button"
@@ -14,13 +15,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { countries, currencies, shippingRatesUsd, type ShippingZone } from "@/config/markets"
 import { site } from "@/config/site"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { convert, formatMoney } from "@/lib/money"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { EMAIL_RE, invitableRoles, parseAmount, roleMeta, toInput } from "./settings-model"
+import { EMAIL_RE, invitableRoles, roleMeta } from "./settings-model"
 import { SaveRow } from "./settings-parts"
 import { useBrandSettings, type ReturnsSettings, type TeamMember, type TeamRole } from "./settings-store"
 import { Field, Panel, control, inputClass, selectClass } from "@/components/studio/catalog/fields"
@@ -28,178 +28,23 @@ import { Initials, useFocusReturn } from "./shared"
 
 /* ---------- Shipping ---------- */
 
-type ZoneForm = { zone: ShippingZone; enabled: boolean; standard: string; express: string }
-type ShipForm = { min: string; max: string; zones: ZoneForm[]; freeEnabled: boolean; threshold: string }
-
+/**
+ * Shipping moved to its own server-backed page (§6.5, §1.11): Settings keeps a link card. The old
+ * browser-only fields in useBrandSettings().shipping stay for compatibility, but nothing reads them
+ * for estimates or prices any more.
+ */
 export function ShippingSection() {
-  const profile = useBrandSettings((s) => s.profile)
-  const saved = useBrandSettings((s) => s.shipping)
-  const savedAt = useBrandSettings((s) => s.savedAt.shipping)
-  const saveShipping = useBrandSettings((s) => s.saveShipping)
-  const cur = profile.currency
-  const symbol = currencies[cur].symbol
-
-  const fromSaved = (): ShipForm => ({
-    min: String(saved.processingDays[0]),
-    max: String(saved.processingDays[1]),
-    zones: saved.zones.map((z) => ({ zone: z.zone, enabled: z.enabled, standard: toInput(z.standard, cur), express: toInput(z.express, cur) })),
-    freeEnabled: saved.freeShipping.enabled,
-    threshold: toInput(saved.freeShipping.threshold, cur),
-  })
-  const [form, setForm] = useState<ShipForm>(fromSaved)
-  const [base, setBase] = useState(saved)
-  const [submitted, setSubmitted] = useState(false)
-  // The store converts amounts when the currency changes; follow it.
-  if (base !== saved) {
-    setBase(saved)
-    setForm(fromSaved())
-  }
-
-  const dirty = JSON.stringify(form) !== JSON.stringify(fromSaved())
-  const min = Number(form.min)
-  const max = Number(form.max)
-  const whole = (s: string) => /^\d+$/.test(s.trim())
-
-  const zoneLabel: Record<ShippingZone, { title: string; where: string }> = {
-    domestic: { title: "Domestic", where: countries[profile.country].name },
-    regional: { title: "Regional", where: `Rest of ${countries[profile.country].region}` },
-    international: { title: "International", where: "Everywhere else we ship" },
-  }
-
-  const zoneErrors = form.zones.map((z) => {
-    if (!z.enabled) return {}
-    const std = parseAmount(z.standard, cur)
-    const exp = z.express.trim() ? parseAmount(z.express, cur) : null
-    return {
-      standard: std === null ? `Enter a rate in ${cur}, or 0 for free.` : undefined,
-      express: z.express.trim() && exp === null ? `Enter a rate in ${cur}, or leave it empty.` : exp !== null && std !== null && exp < std ? "Express should cost at least as much as standard." : undefined,
-    }
-  })
-  const errors = {
-    days: !whole(form.min) || !whole(form.max) ? "Use whole days." : min < 1 || max > 30 ? "Use 1 to 30 days." : min > max ? "The first number should be the shorter time." : undefined,
-    zones: form.zones.every((z) => !z.enabled) ? "Turn on at least one zone, or shoppers can't check out." : undefined,
-    threshold: form.freeEnabled && !(parseAmount(form.threshold, cur) ?? 0) ? `Enter an order amount in ${cur}.` : undefined,
-  }
-  const invalid = !!(errors.days || errors.zones || errors.threshold || zoneErrors.some((z) => z.standard || z.express))
-  const show = submitted
-
-  function setZone(i: number, patch: Partial<ZoneForm>) {
-    setForm((f) => ({ ...f, zones: f.zones.map((z, j) => (j === i ? { ...z, ...patch } : z)) }))
-  }
-
-  const save = useAsyncAction((next: Parameters<typeof saveShipping>[0]) => {
-    saveShipping(next)
-    setSubmitted(false)
-  })
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!dirty) return
-    setSubmitted(true)
-    if (invalid) {
-      const badZone = zoneErrors.findIndex((z) => z.standard || z.express)
-      const target = errors.days
-        ? "ship-min"
-        : errors.zones
-          ? `zone-${form.zones[0].zone}`
-          : badZone >= 0
-            ? `zone-${form.zones[badZone].zone}-${zoneErrors[badZone].standard ? "standard" : "express"}`
-            : errors.threshold
-              ? "ship-threshold"
-              : null
-      if (target) document.getElementById(target)?.focus()
-      return
-    }
-    void save.run({
-      processingDays: [min, max],
-      zones: form.zones.map((z) => ({ zone: z.zone, enabled: z.enabled, standard: parseAmount(z.standard, cur) ?? 0, express: z.express.trim() ? parseAmount(z.express, cur) : null })),
-      freeShipping: { enabled: form.freeEnabled, threshold: parseAmount(form.threshold, cur) ?? 0 },
-    })
-  }
-
   return (
-    <Panel id="shipping" title="Shipping" description={`Rates are per order to your brand, in ${cur}. Checkout uses them once the backend is connected; until then shoppers see the platform's standard rates.`}>
-      <form noValidate onSubmit={submit} className="grid gap-5">
-        <fieldset className="grid gap-1.5">
-          <legend className="mb-1.5 text-[13px] font-medium text-ink">Processing time</legend>
-          <div className="flex items-center gap-2">
-            <Input id="ship-min" aria-label="Fewest business days" aria-invalid={show && errors.days ? true : undefined} aria-describedby="ship-days-msg" value={form.min} onChange={(e) => setForm((f) => ({ ...f, min: e.target.value }))} inputMode="numeric" className={cn(inputClass, "w-20 text-center tabular")} />
-            <span className="text-ink-3">to</span>
-            <Input id="ship-max" aria-label="Most business days" aria-invalid={show && errors.days ? true : undefined} aria-describedby="ship-days-msg" value={form.max} onChange={(e) => setForm((f) => ({ ...f, max: e.target.value }))} inputMode="numeric" className={cn(inputClass, "w-20 text-center tabular")} />
-            <span className="text-sm text-ink-2">business days</span>
-          </div>
-          <p id="ship-days-msg" className={show && errors.days ? "text-xs text-danger" : "text-xs text-ink-3"}>{show && errors.days ? errors.days : "From payment to handing the parcel to the carrier. Your orders in Studio show a ship-by date from the longer time."}</p>
-        </fieldset>
-
-        <fieldset className="grid gap-2">
-          <legend className="mb-1.5 text-[13px] font-medium text-ink">Zones and rates</legend>
-          <ul className="grid gap-2">
-            {form.zones.map((z, i) => {
-              const ze = show ? zoneErrors[i] : {}
-              const days = shippingRatesUsd[z.zone].days
-              return (
-                <li key={z.zone} className={cn("grid gap-3 rounded-md border p-3 transition-colors md:grid-cols-[minmax(0,1fr)_160px_160px] md:items-start", z.enabled ? "border-line-soft bg-surface/40" : "border-line-soft/60")}>
-                  <div className="flex items-start gap-3">
-                    <Switch
-                      id={`zone-${z.zone}`}
-                      checked={z.enabled}
-                      onCheckedChange={(v) => setZone(i, { enabled: v })}
-                      aria-invalid={show && errors.zones ? true : undefined}
-                      aria-describedby={show && errors.zones ? "ship-zones-error" : undefined}
-                      className="mt-0.5"
-                    />
-                    <Label htmlFor={`zone-${z.zone}`} className="grid gap-0.5 font-normal">
-                      <span className={cn("text-sm", z.enabled ? "text-ink" : "text-ink-2")}>{zoneLabel[z.zone].title}</span>
-                      <span className="text-xs text-ink-3">{zoneLabel[z.zone].where}. {days[0]}–{days[1]} days in transit.</span>
-                    </Label>
-                  </div>
-                  {z.enabled ? (
-                    <div className="grid grid-cols-2 gap-3 md:contents">
-                      <Field id={`zone-${z.zone}-standard`} label={`Standard (${symbol})`} error={ze.standard}>
-                        <Input {...control(`zone-${z.zone}-standard`, ze.standard)} value={z.standard} onChange={(e) => setZone(i, { standard: e.target.value })} inputMode="decimal" className={cn(inputClass, "tabular")} />
-                      </Field>
-                      <Field id={`zone-${z.zone}-express`} label={`Express (${symbol})`} optional error={ze.express}>
-                        <Input {...control(`zone-${z.zone}-express`, ze.express)} value={z.express} onChange={(e) => setZone(i, { express: e.target.value })} inputMode="decimal" className={cn(inputClass, "tabular")} placeholder="Not offered" />
-                      </Field>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-ink-3 md:col-span-2 md:self-center">Not shipping here. Shoppers in this zone can still browse and save.</p>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-          {show && errors.zones ? <p id="ship-zones-error" role="alert" className="text-xs text-danger">{errors.zones}</p> : null}
-        </fieldset>
-
-        <div className="grid gap-3 rounded-md border border-line-soft p-3 md:grid-cols-[minmax(0,1fr)_200px] md:items-start">
-          <div className="flex items-start gap-3">
-            <Switch id="ship-free" checked={form.freeEnabled} onCheckedChange={(v) => setForm((f) => ({ ...f, freeEnabled: v }))} className="mt-0.5" />
-            <Label htmlFor="ship-free" className="grid gap-0.5 font-normal">
-              <span className="text-sm text-ink">Free standard shipping over a set amount</span>
-              <span className="text-xs text-ink-3">Counted on the items from your brand in the bag.</span>
-            </Label>
-          </div>
-          {form.freeEnabled ? (
-            <Field id="ship-threshold" label={`Orders over (${symbol})`} error={show ? errors.threshold : undefined}>
-              <Input {...control("ship-threshold", show ? errors.threshold : undefined)} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} inputMode="decimal" className={cn(inputClass, "tabular")} />
-            </Field>
-          ) : null}
-        </div>
-
-        <SaveRow
-          dirty={dirty}
-          savedAt={savedAt}
-          onDiscard={() => {
-            setForm(fromSaved())
-            setSubmitted(false)
-          }}
-          saveLabel="Save shipping"
-          pending={save.pending}
-          succeeded={save.succeeded}
-          note={save.succeeded ? "Ship-by dates on your orders use it now." : undefined}
-        />
-      </form>
+    <Panel id="shipping" title="Shipping" description="Zones, rates, handling time, pickup and closures now live in Shipping & fulfilment, where shoppers' delivery estimates and shipping prices come from.">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line-soft bg-surface/40 px-3 py-3">
+        <p className="flex items-center gap-2 text-sm text-ink-2">
+          <Truck className="size-4 shrink-0 text-ink-3" aria-hidden />
+          Product pages, the bag and checkout use those settings.
+        </p>
+        <Button asChild variant="secondary" size="sm">
+          <Link href="/studio/shipping">Open Shipping &amp; fulfilment</Link>
+        </Button>
+      </div>
     </Panel>
   )
 }
