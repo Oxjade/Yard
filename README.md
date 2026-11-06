@@ -1,4 +1,4 @@
-# NOCTURNE (working name)
+# Yard
 
 A global, discovery-driven marketplace for independent brands. It has three experiences:
 
@@ -11,7 +11,8 @@ A global, discovery-driven marketplace for independent brands. It has three expe
 > **Status: frontend phase.** Every screen runs on a typed local data layer
 > (`src/lib/data/*`) and browser stores (`src/lib/stores/*`), so flows really work — bag,
 > checkout, follows, Studio product editing, Admin decisions — but nothing persists beyond
-> your browser and payments are simulated. The backend phase swaps these for PostgreSQL
+> your browser, and no payment provider is connected: orders placed at checkout stay
+> "pending payment" and nothing is charged. The backend phase swaps these for PostgreSQL
 > (Drizzle), Better Auth, server actions and a payment-provider abstraction without
 > changing the page code.
 
@@ -63,9 +64,11 @@ src/components/market/ marketplace pieces: ProductCard, BrandCard, DropCard, Cou
 src/components/dashboard/  shared Studio/Admin pieces: AppShell, PageHeader, MetricTile,
                        TimeSeriesChart, StatusBadge, PeriodSelect, EmptyState
 src/components/storefront/ StorefrontRenderer — public brand pages and the Studio preview
-src/config/            site name, navigation, markets (currencies, countries, shipping)
+src/config/            site name (Yard), navigation, markets (currencies, countries, shipping)
 src/lib/data/          typed sample data + query functions (the backend seam)
 src/lib/stores/        browser state: cart, saved, session, orders, studio, admin
+                       (saved under "nocturne-*" keys, the old working name, kept on
+                       purpose so browsers keep what they have saved)
 public/media/          placeholder photography (Unsplash licence), with manifests
 ```
 

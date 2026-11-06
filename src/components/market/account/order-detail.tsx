@@ -4,10 +4,12 @@ import { useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, InfoIcon as Info, StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { agoText } from "@/components/market/ago-text"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
+import { site } from "@/config/site"
 import { brandById } from "@/lib/data/brands"
 import { productById } from "@/lib/data/products"
 import { formatMoney } from "@/lib/money"
@@ -68,14 +70,16 @@ export function OrderDetail({ id }: { id: string }) {
   const returnedUnits = order.lines.filter((l) => returnRequest?.variantIds.includes(l.variantId)).reduce((n, l) => n + l.quantity, 0)
   const status = order.status
   const note = orderStatusNote(order)
-  // Who decided a return: the brand, or NOCTURNE when the platform's team did.
-  const decidedBy = decision?.by === "platform" ? "NOCTURNE" : brand.name
+  // Who decided a return: the brand, or the platform (site.name) when its team did.
+  const decidedBy = decision?.by === "platform" ? site.name : brand.name
   const refundAmount = decision?.status === "approved" ? formatMoney(decision.amount ?? order.refund?.amount ?? 0, order.currency) : null
   // "Delivered" in the sample history, "Marked delivered by brand" when the brand marks it in Studio; the latest counts.
   const delivered = [...order.timeline].reverse().find((t) => /^(marked )?delivered\b/i.test(t.label))
   const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
   const returnDaysLeft = daysSinceDelivery === null ? null : brand.returnsDays - daysSinceDelivery
   const canReturn = order.status === "delivered" && !returnRequest && returnDaysLeft !== null && returnDaysLeft >= 0
+  // "closed yesterday", "closed 4 days ago": the window ends with its last day, so -1 is yesterday.
+  const returnClosedAgo = returnDaysLeft !== null && returnDaysLeft < 0 ? agoText(-returnDaysLeft * 86_400_000) : null
   const timeline = [...order.timeline].reverse()
   const count = order.lines.reduce((n, l) => n + l.quantity, 0)
   const address = order.shippingAddress
@@ -130,7 +134,7 @@ export function OrderDetail({ id }: { id: string }) {
       ) : (
         <p className="text-sm text-ink-2">
           {order.status === "delivered"
-            ? `The ${brand.returnsDays}-day return window for this order closed ${Math.abs(returnDaysLeft ?? 0)} days ago.`
+            ? `The ${brand.returnsDays}-day return window for this order ${returnClosedAgo ? `closed ${returnClosedAgo}` : "has closed"}.`
             : order.status === "refunded"
               ? order.refund
                 ? "A refund for this order is approved, so there's nothing to return."

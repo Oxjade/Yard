@@ -8,8 +8,9 @@ import { DropCard } from "@/components/market/drop-card"
 import { ProductCard } from "@/components/market/product-card"
 import { Rail } from "@/components/market/rail"
 import { SectionHeader } from "@/components/market/section-header"
+import { useUpcomingDrops } from "@/components/market/editorial/use-drop-phase"
 import { Button } from "@/components/ui/button"
-import { brandById, productById, recommendBrands, upcomingDrops } from "@/lib/data"
+import { brandById, drops as allDrops, productById, recommendBrands } from "@/lib/data"
 import { formatMoney } from "@/lib/money"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
@@ -67,7 +68,8 @@ export function YouOverview() {
   const rowBrands = [...visitFollowing, ...following.filter((id) => !visitFollowing.includes(id))]
     .map((id) => brandById.get(id))
     .filter((b): b is Brand => !!b)
-  const allUpcoming = upcomingDrops()
+  // On the demo clock, so a drop that has released during the visit leaves "Upcoming drops".
+  const allUpcoming = useUpcomingDrops(allDrops)
   const followedUpcoming = allUpcoming.filter((d) => following.includes(d.brandId))
   const drops = followedUpcoming.length ? followedUpcoming : allUpcoming
   const saved = wishlist.map((id) => productById.get(id)).filter((p): p is Product => !!p)

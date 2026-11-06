@@ -37,7 +37,8 @@ export function CatalogListingSkeleton({ chips = 8 }: { chips?: number }) {
         <div>
           <div className="flex items-center justify-between">
             <Bone className="h-5 w-32" />
-            <Bone className="h-11 w-44" />
+            {/* The sort select appears from lg (phones and tablets sort in the filter sheet). */}
+            <Bone className="hidden h-11 w-44 lg:block" />
           </div>
           <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3">
             {Array.from({ length: 6 }, (_, i) => (

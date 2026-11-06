@@ -9,6 +9,7 @@ import { customerOrders, merchantOrders } from "@/lib/data/orders"
 import { products as allProducts } from "@/lib/data/products"
 import type { Drop, MerchantOrder, MerchantOrderStatus, Product, StorefrontConfig } from "@/lib/data/types"
 import { readSaved, useAdmin } from "./admin"
+import { renameTimeline } from "./old-name"
 import { applyReturnDecision } from "./orders"
 
 /**
@@ -148,11 +149,13 @@ export const useStudio = create<StudioState>()(
       name: "nocturne-studio",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      version: 3,
+      version: 4,
       // v2: the brand's orders include the demo shopper's orders with it, and the sample
       // announcement no longer promises an alert for following (it points at the drop's reminder).
       // v3: a platform decision saved before the stores kept each other in step reaches the
       // brand's copy of the campaign.
+      // v4: decisions saved on an order's timeline before the platform was renamed read its
+      // current name ("approved by Yard").
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Partial<StudioState>
         const next = { ...p }
@@ -166,7 +169,7 @@ export const useStudio = create<StudioState>()(
         if (p.orders) {
           const known = new Set(p.orders.map((o) => o.id))
           const missing = customerOrders.filter((o) => o.brandId === (p.brandId ?? STUDIO_BRAND_ID) && !known.has(o.id))
-          next.orders = [...p.orders, ...missing].sort((a, b) => b.placedAt.localeCompare(a.placedAt))
+          next.orders = [...p.orders, ...missing].sort((a, b) => b.placedAt.localeCompare(a.placedAt)).map(renameTimeline)
         }
         if (p.storefront) {
           const fresh = brandById.get(p.brandId ?? STUDIO_BRAND_ID)?.storefront.announcement

@@ -116,14 +116,17 @@ export function SizeGrid({
 /**
  * One line of availability for the current choice: in stock, only N left (acid) or sold out.
  * Before a drop's release nothing can be chosen yet, so it says when sizes open instead of
- * counting them (which would read as buyable now), matching the drop module.
+ * counting them (which would read as buyable now), matching the drop module. A released draw
+ * (`closed`) sells only to drawn winners, so it says that instead of counting stock.
  */
-export function StockLine({ selection, locked = false, className }: { selection: ProductSelection; locked?: boolean; className?: string }) {
+export function StockLine({ selection, locked = false, closed = false, className }: { selection: ProductSelection; locked?: boolean; closed?: boolean; className?: string }) {
   const { variant, stock, sizes, needsSize, colourStock, sizesInStock, colour } = selection
   let text: string
   let tone: "ok" | "low" | "out" | "muted"
   if (locked) {
     ;[text, tone] = [sizes.length ? "Sizes open at release" : "Opens at release", "muted"]
+  } else if (closed) {
+    ;[text, tone] = ["Drawn winners only", "muted"]
   } else if (variant && stock !== null) {
     if (stock === 0) [text, tone] = ["Sold out", "out"]
     else if (stock <= LOW_STOCK) [text, tone] = [`Only ${stock} left`, "low"]

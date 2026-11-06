@@ -1,4 +1,5 @@
 import { Bone } from "@/components/feedback/skeletons"
+import { galleryFrame } from "@/components/market/product/gallery-frame"
 import { cn } from "@/lib/utils"
 
 /**
@@ -28,7 +29,7 @@ export default function Loading() {
               <Bone key={i} className="aspect-[4/5] w-full" />
             ))}
           </div>
-          <Bone className="-mx-4 aspect-[4/5] rounded-none md:mx-0 md:rounded-lg lg:max-h-[calc(100dvh-8rem)] lg:w-full" />
+          <Bone className={cn("rounded-none", galleryFrame)} />
         </div>
 
         {/* Buy box */}

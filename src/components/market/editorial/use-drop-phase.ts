@@ -34,6 +34,19 @@ export function useDropPhases(drops: Drop[], intervalMs = 15_000) {
   return { phases, now, anchor }
 }
 
+/** Soonest release first. */
+export const bySoonest = (a: Drop, b: Drop) => a.releaseOffsetHours - b.releaseOffsetHours
+
+/**
+ * The drops still to come on the demo clock, soonest first: what every "upcoming" list and
+ * lead card picks from, so a drop that has released while the demo ran never heads a list of
+ * releases coming up. Before mount, the phase the demo loads with (what the server renders).
+ */
+export function useUpcomingDrops(drops: Drop[], intervalMs = 15_000) {
+  const { phases } = useDropPhases(drops, intervalMs)
+  return drops.filter((d) => phases.get(d.id) === "upcoming").sort(bySoonest)
+}
+
 /** "2 days 4 hours", "3 hours 12 minutes", "8 minutes": the plain-language gap before a release. */
 export function releasesIn(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000))

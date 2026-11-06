@@ -2,15 +2,56 @@ import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 
 /**
- * Formatting for the orders and finance screens. Dates are relative to the demo's reference
- * day and formatted in UTC, so the prerendered HTML and the client always agree.
+ * Formatting for the orders and finance screens, in UTC. Sample rows are dated relative to the
+ * demo's reference day; a record made in this browser carries the real time it was made (see
+ * isLiveTime). Relative labels ("Today", "Tomorrow") count every row from one today, so a sample
+ * row and a record made here, side by side in one column, agree on which day is today: the demo's
+ * on the server and while hydrating, the real one once the client knows the time (see demoLag).
  */
 
 export const DEMO_NOW = new Date("2026-11-05T12:00:00Z").getTime()
 const DAY = 86_400_000
+const utcDay = (t: number) => Math.floor(t / DAY)
 
-export function relDays(iso: string) {
-  const d = Math.floor((DEMO_NOW - new Date(iso).getTime()) / DAY)
+/**
+ * Whether a record was made in this browser (a Studio payout request, a shopper's return, an
+ * adjustment or a decision) rather than shipped with the sample data. Sample rows sit on or before
+ * the demo's today, or at exactly noon UTC on a day relative to it (a payout scheduled two days
+ * out, evidence due next week); a record made here carries the real time, after the demo's today.
+ * Live records only exist once the stores rehydrate on the client, never in the server HTML.
+ */
+export function isLiveTime(iso: string) {
+  const t = new Date(iso).getTime()
+  return t > DEMO_NOW && (t - DAY / 2) % DAY !== 0
+}
+
+/**
+ * Whole days (UTC) the real today is past the demo's, once the client knows the time (`now`,
+ * useNow's reading); 0 on the server and while hydrating, where `now` is null, so the prerendered
+ * HTML never changes. A sample row's count from the demo's today moves on by this much, so it is
+ * counted from the same today as a record made here. Only the relative label moves: stored dates
+ * stay as they are.
+ */
+export function demoLag(now?: number | null) {
+  return now == null ? 0 : Math.max(0, utcDay(now) - utcDay(DEMO_NOW))
+}
+
+/**
+ * Whole days before today that `iso` falls on (negative for a later day): calendar days (UTC) from
+ * the real clock for a live record, from the demo's today moved on by demoLag for a sample row.
+ */
+function daysAgo(iso: string, now?: number | null) {
+  const t = new Date(iso).getTime()
+  return isLiveTime(iso) ? utcDay(now ?? Date.now()) - utcDay(t) : Math.floor((DEMO_NOW - t) / DAY) + demoLag(now)
+}
+
+/**
+ * "Today", "Yesterday", "4 days ago". Pass useNow's reading as `now` wherever a column can hold
+ * records made here, so every row counts from the same today and the label moves on while the
+ * page is open.
+ */
+export function relDays(iso: string, now?: number | null) {
+  const d = daysAgo(iso, now)
   if (d <= 0) return "Today"
   if (d === 1) return "Yesterday"
   if (d < 31) return `${d} days ago`
@@ -18,13 +59,14 @@ export function relDays(iso: string) {
   return m <= 1 ? "A month ago" : `${m} months ago`
 }
 
-/** Whole days from the demo's today until `iso` (negative when it has passed). */
-export function daysUntil(iso: string) {
-  return Math.ceil((new Date(iso).getTime() - DEMO_NOW) / DAY)
+/** Whole days until `iso` (negative when it has passed), counted from the same today as relDays. */
+export function daysUntil(iso: string, now?: number | null) {
+  const t = new Date(iso).getTime()
+  return isLiveTime(iso) ? utcDay(t) - utcDay(now ?? Date.now()) : Math.ceil((t - DEMO_NOW) / DAY) - demoLag(now)
 }
 
-export function dueLabel(iso: string) {
-  const d = daysUntil(iso)
+export function dueLabel(iso: string, now?: number | null) {
+  const d = daysUntil(iso, now)
   if (d < 0) return `Overdue by ${plural(-d, "day")}`
   if (d === 0) return "Due today"
   if (d === 1) return "Due tomorrow"

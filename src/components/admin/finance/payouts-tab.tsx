@@ -14,7 +14,7 @@ import { useNow } from "@/hooks/use-now"
 import { useDecision, type Decision } from "../marketplace/decision"
 import { Filters } from "../marketplace/filters"
 import { holdReason, providerFor } from "./derive"
-import { amountIn, daysUntil, formatDate, plural, providerName, usd } from "./format"
+import { amountIn, daysUntil, formatDate, isLiveTime, plural, providerName, relDays, usd } from "./format"
 import { payoutMeta } from "./meta"
 import { FocusCallout, useSearchParam, writeParams } from "./table"
 import type { Meta } from "./meta"
@@ -33,30 +33,32 @@ const kindDef: Record<Kind, { label: string; to: Payout["status"]; icon: React.C
   release: { label: "Release payout", to: "scheduled", icon: PlayCircleIcon, destructive: false, done: "released" },
 }
 
-const DAY = 86_400_000
 /**
- * Sample payouts are dated at noon UTC on a day relative to the demo's reference day; a payout a
- * brand requests in Studio carries the real time of the request. Each is measured by its own clock.
- */
-const isRealTime = (iso: string) => !iso.endsWith("T12:00:00.000Z")
-const utcDay = (t: number) => Math.floor(t / DAY)
-
-/**
- * The relative line under a payout's date. A sample payout counts days from the demo's today. A
- * Studio request is dated when the brand asked, so it says so ("Requested today"), counted in
- * calendar days from the real clock; `now` is null while hydrating, and the line waits for it.
+ * The relative line under a payout's date, counted from the same today for every row (see
+ * relDays). A sample payout is scheduled for a day: "Today", "Tomorrow", "In 3 days", and
+ * "Yesterday" once that day has passed. A Studio request is dated when the brand asked, so it says
+ * so: "Requested today". `now` is null while hydrating, and a request's line waits for it.
  */
 function when(iso: string, now: number | null) {
-  if (!isRealTime(iso)) {
-    const d = daysUntil(iso)
-    return d <= 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`
-  }
-  if (now === null) return null
-  const ago = Math.max(0, utcDay(now) - utcDay(new Date(iso).getTime()))
-  return ago === 0 ? "Requested today" : ago === 1 ? "Requested yesterday" : `Requested ${ago} days ago`
+  if (isLiveTime(iso)) return now === null ? null : `Requested ${relDays(iso, now).toLowerCase()}`
+  const d = daysUntil(iso, now)
+  return d === 0 ? "Today" : d === 1 ? "Tomorrow" : d > 1 ? `In ${d} days` : relDays(iso, now)
 }
-/** Whether a paid payout's date has passed, by the clock the record was written in. */
-const hasPassed = (iso: string, now: number | null) => (isRealTime(iso) ? now !== null && new Date(iso).getTime() <= now : daysUntil(iso) <= 0)
+/**
+ * The status and the Schedule column in one phrase, for phones, where both columns are folded:
+ * "Awaiting approval, requested today", "Scheduled, in 3 days", "Completed, 3 Nov 2026".
+ */
+function phoneLine(p: Payout, status: string, now: number | null) {
+  const at = p.status === "paid" ? (daysUntil(p.scheduledFor, now) <= 0 ? formatDate(p.scheduledFor) : null) : when(p.scheduledFor, now)?.toLowerCase()
+  // A wrap falls between the two parts, never inside "in 2 days".
+  return at ? (
+    <>
+      {status}, <span className="whitespace-nowrap">{at}</span>
+    </>
+  ) : (
+    status
+  )
+}
 /**
  * The payout's exact stored amount in the brand's own currency (a Studio request for ₦12,345.67
  * reads ₦12,345.67), in Finance's column format so mixed currencies line up. USD is the
@@ -109,7 +111,7 @@ function payoutDecision(kind: Kind, list: Payout[], audit: AuditEntry[]): Decisi
   const means = {
     approve: `Approval is recorded with your name. No payments provider is connected in this build, so the transfer through ${one ? providerOf(one) : "each brand's provider"} isn't sent; the payout shows Approval recorded and is marked completed only when a provider confirms it.`,
     hold: "The money stays in the brand's balance and isn't sent until someone releases it with a reason.",
-    release: one ? `It goes back on the schedule${isRealTime(one.scheduledFor) ? "" : ` for ${formatDate(one.scheduledFor)}`}.${why ? ` It was held because: ${why}` : ""}` : "They go back on their schedules.",
+    release: one ? `It goes back on the schedule${isLiveTime(one.scheduledFor) ? "" : ` for ${formatDate(one.scheduledFor)}`}.${why ? ` It was held because: ${why}` : ""}` : "They go back on their schedules.",
   }[kind]
   return {
     title: one ? `${def.label.replace(" payout", "")} the payout to ${one.brandName}?` : `${def.label.replace(" payout", "")} ${plural(items.length, "payout")}?`,
@@ -128,7 +130,7 @@ function payoutDecision(kind: Kind, list: Payout[], audit: AuditEntry[]): Decisi
 export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boolean }) {
   const payouts = useAdmin((s) => s.payouts)
   const phone = usePhone()
-  // Only a Studio request (dated with the real time) reads this; a minute is fine-grained enough for "Requested today".
+  // Every row's relative line counts from this (see relDays); a minute is fine-grained enough for "Requested today".
   const now = useNow(60_000)
   const audit = useAdmin((s) => s.audit)
   // The status filter lives in the URL (?status=…), so a reload keeps it.
@@ -174,14 +176,9 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
             {b ? <span className="hidden sm:inline-flex"><BrandMark brand={b} size="sm" /></span> : null}
             <span className="min-w-0 max-w-[34vw] sm:max-w-none">
               <span className="block truncate font-medium text-ink">{p.brandName}</span>
-              {/* Phones fold the status in here; a payout with no delivered orders on record (a brand's own request) says nothing about orders. */}
-              <span className="block truncate text-[11.5px] text-ink-3">
-                <span className="sm:hidden">
-                  {statusOf(p, audit).label}
-                  {ordersLine(p) ? ", " : null}
-                </span>
-                {ordersLine(p)}
-              </span>
+              {/* Phones fold the status and the schedule in here, wrapping rather than cutting "requested today" off; the order count gives way there. A payout with no delivered orders on record (a brand's own request) says nothing about orders. */}
+              <span className="line-clamp-2 text-[11.5px] leading-snug text-ink-3 sm:hidden">{phoneLine(p, statusOf(p, audit).label, now)}</span>
+              {ordersLine(p) ? <span className="hidden truncate text-[11.5px] text-ink-3 sm:block">{ordersLine(p)}</span> : null}
             </span>
           </span>
         )
@@ -211,7 +208,7 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
           // A completed payout isn't scheduled any more: it says Paid, with the date only once it has passed.
           <span className="block whitespace-nowrap">
             <span className="block text-ink-2">Paid</span>
-            {hasPassed(p.scheduledFor, now) ? <span className="block text-[11px] text-ink-3">{formatDate(p.scheduledFor)}</span> : null}
+            {daysUntil(p.scheduledFor, now) <= 0 ? <span className="block text-[11px] text-ink-3">{formatDate(p.scheduledFor)}</span> : null}
           </span>
         ) : (
           <span className="block whitespace-nowrap">
@@ -237,7 +234,7 @@ export function PayoutsTab({ focus, ready }: { focus?: string | null; ready: boo
         <FocusCallout
           title={`Payout to ${focused.brandName}, ${amountLine(focused)}`}
           badge={<StatusBadge tone={statusOf(focused, audit).tone}>{statusOf(focused, audit).label}</StatusBadge>}
-          meta={focused.status === "paid" ? `${focused.method}, paid` : approvedHere(focused, audit) ? `${focused.method}. Approval recorded; not sent, no payments provider in this build.` : `${focused.method}, ${isRealTime(focused.scheduledFor) ? "requested" : "scheduled for"} ${formatDate(focused.scheduledFor)}`}
+          meta={focused.status === "paid" ? `${focused.method}, paid` : approvedHere(focused, audit) ? `${focused.method}. Approval recorded; not sent, no payments provider in this build.` : `${focused.method}, ${isLiveTime(focused.scheduledFor) ? "requested" : "scheduled for"} ${formatDate(focused.scheduledFor)}`}
           actions={allowed[focused.status].map((k) => (
             <Button key={k} type="button" size="sm" className="h-10 sm:h-8" variant={k === "hold" ? "destructive" : "secondary"} onClick={() => decide(k, [focused])}>
               {kindDef[k].label}

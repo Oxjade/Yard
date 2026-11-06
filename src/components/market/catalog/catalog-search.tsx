@@ -240,7 +240,7 @@ export function CatalogSearch({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: duration.press, ease: ease.out }}
-            className="absolute top-1/2 right-1 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-2 transition-colors hover:bg-elevated hover:text-ink"
+            className="absolute top-1/2 right-1 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-2 outline-none transition-colors hover:bg-elevated hover:text-ink focus-visible:bg-elevated focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-violet"
           >
             <X className="size-4" />
           </motion.button>
@@ -264,7 +264,8 @@ export function CatalogSearch({
                   type="button"
                   onClick={clearRecent}
                   aria-label="Clear recent searches"
-                  className="-my-1 -mr-1.5 inline-flex min-h-10 items-center rounded-md px-2.5 text-xs text-ink-2 transition-colors hover:text-ink"
+                  // 32px box (so the violet ring sits inside the panel), with a 40px hit area.
+                  className="relative -mr-1.5 inline-flex h-8 items-center rounded-md px-2.5 text-xs text-ink-2 outline-none transition-colors after:absolute after:inset-x-0 after:-inset-y-1 hover:text-ink focus-visible:bg-elevated focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-violet"
                 >
                   Clear
                 </button>

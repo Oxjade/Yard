@@ -3,30 +3,15 @@
 import Link from "next/link"
 import { Countdown, formatRelease } from "@/components/market/countdown"
 import { Button } from "@/components/ui/button"
+import { site } from "@/config/site"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSaved } from "@/lib/stores/saved"
 import { cn } from "@/lib/utils"
 import type { Drop } from "@/lib/data/types"
 import { AddToCalendarButton, DropPrimaryAction, onPurple } from "./drop-actions"
-import { accessName, accessRule, runText } from "./drop-facts"
+import { accessName, accessRule, agoText, drawClosedRule, releasedAgo, runText } from "./drop-facts"
 import { StockBar } from "./stock-bar"
 import { useDropClock } from "./use-drop-phase"
-
-const HOUR = 3_600_000
-
-/**
- * "3 hours ago", "1 hour ago", "yesterday": time since release. Used for both the server text
- * (from the drop's release offset) and the demo clock once mounted, so the two always agree.
- */
-function agoText(ms: number) {
-  const hours = ms / HOUR
-  if (hours < 24) {
-    const n = Math.max(1, Math.round(hours))
-    return `${n} ${n === 1 ? "hour" : "hours"} ago`
-  }
-  const days = Math.round(hours / 24)
-  return days === 1 ? "yesterday" : `${days} days ago`
-}
 
 /**
  * The drop page's release panel: countdown, the one main action and the rules. The status pill
@@ -52,16 +37,17 @@ export function DropReleasePanel({ drop, brandName }: { drop: Drop; brandName: s
     : phase === "upcoming" && entered
       ? drop.access === "draw"
         ? "Entry saved in this browser. Picking winners needs the drops backend, which isn't connected in this build."
-        : "Reminder saved in this browser. When it opens you'll see an alert in Notifications while NOCTURNE is open; email and push aren't connected in this build."
+        : `Reminder saved in this browser. When it opens you'll see an alert in Notifications while ${site.name} is open; email and push aren't connected in this build.`
       : null
   const muted = quiet ? "text-ink-2" : "text-ink/70"
+  const releasedLine = now !== null && release !== null ? agoText(now - release) : releasedAgo(drop)
   return (
     <div className={cn("rounded-lg p-5 text-ink sm:p-6 lg:p-7", quiet ? "border border-line-soft bg-card" : "bg-purple")}>
       {over ? (
         <div>
           <p className="font-display text-display-md text-ink">{phase === "sold-out" ? "Sold out" : "Ended"}</p>
           {/* On the clock once mounted, so a drop that closed during this visit reads right; the server text until then. */}
-          <p className="mt-2 text-xs text-ink-2">Released {now !== null && release !== null ? agoText(now - release) : agoText(-drop.releaseOffsetHours * HOUR)}</p>
+          {releasedLine ? <p className="mt-2 text-xs text-ink-2">Released {releasedLine}</p> : null}
         </div>
       ) : drawClosed ? (
         <div>
@@ -107,7 +93,7 @@ export function DropReleasePanel({ drop, brandName }: { drop: Drop; brandName: s
         {over
           ? "This drop is closed. Its page stays up as a record of what was released."
           : drawClosed
-            ? "Winners are picked at random from the entries made before release, and only winners pay."
+            ? drawClosedRule
             : accessRule[drop.access]}
       </p>
     </div>

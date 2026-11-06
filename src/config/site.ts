@@ -1,9 +1,13 @@
 /**
- * Working name and global copy. The platform name is a placeholder — change it here.
+ * The platform's name and global copy. The product is called Yard: copy reads `site.name`
+ * ("Sign in to Yard") rather than spelling it, and wordmarks set it in capitals with CSS
+ * (`uppercase`), so the name lives here alone. Storage keys, event names and ids still carry
+ * the old working name ("nocturne-…") on purpose: renaming them would drop what browsers have
+ * already saved.
  */
 export const site = {
-  name: "NOCTURNE",
-  shortName: "NCTRN",
+  name: "Yard",
+  shortName: "Yard",
   tagline: "Independent brands, found first.",
   description:
     "A global destination for discovering, following and shopping independent brands.",

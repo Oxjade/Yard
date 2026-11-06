@@ -23,17 +23,25 @@ export const onPurple = "data-[variant=brand]:border-ink/45"
 
 /**
  * The one main action for a drop, following its phase: set a reminder (or enter the draw)
- * before release, shop while live, look back once it's over.
+ * before release, shop while live, look back once it's over. A draw that has released has no
+ * "Shop the drop": entries are closed and only drawn winners can buy (picking them needs the
+ * drops backend, not connected in this build), so it links to the drop page, which says so.
+ *
+ * `variant="glass"` keeps every state off acid, for a surface where another action is the
+ * view's one acid button (Discover's purple drops band).
  */
 export function DropPrimaryAction({
   drop,
   size = "lg",
+  variant = "primary",
   className,
   shopHref,
   quiet = false,
 }: {
   drop: Drop
   size?: "sm" | "default" | "lg"
+  /** Primary (acid) for the reminder and Shop the drop; glass where acid is already spent. */
+  variant?: "primary" | "glass"
   className?: string
   /** Where "Shop the drop" goes while live. Defaults to the drop page's product grid. */
   shopHref?: string
@@ -41,10 +49,18 @@ export function DropPrimaryAction({
   quiet?: boolean
 }) {
   const { phase } = useDropClock(drop, 5000)
-  if (phase === "upcoming") return <NotifyButton drop={drop} size={size} variant="primary" quiet={quiet} className={className} />
+  const quietVariant = variant === "glass" ? "glass" : "secondary"
+  if (phase === "upcoming") return <NotifyButton drop={drop} size={size} variant={variant} quiet={quiet} className={className} />
+  if (phase === "live" && drop.access === "draw") {
+    return (
+      <Button asChild variant={quietVariant} size={size} className={className}>
+        <Link href={`/drops/${drop.slug}`}>Drop details</Link>
+      </Button>
+    )
+  }
   if (phase === "live") {
     return (
-      <Button asChild variant="primary" size={size} className={className}>
+      <Button asChild variant={variant} size={size} className={className}>
         <Link href={shopHref ?? `/drops/${drop.slug}#in-this-drop`}>
           <ShoppingBag />
           Shop the drop
@@ -53,11 +69,18 @@ export function DropPrimaryAction({
     )
   }
   return (
-    <Button asChild variant="secondary" size={size} className={className}>
+    <Button asChild variant={quietVariant} size={size} className={className}>
       <Link href="/drops#upcoming">See upcoming drops</Link>
     </Button>
   )
 }
+
+/**
+ * The calendar event's UID domain. It identifies the event, not the product, so it keeps the
+ * old working name: a calendar that already holds a release updates it instead of adding a
+ * second copy when the file is downloaded again.
+ */
+const ICS_UID_DOMAIN = "nocturne"
 
 /** ICS dates are UTC in the basic format: 20261106T171500Z. */
 function icsDate(ms: number) {
@@ -82,7 +105,7 @@ export function AddToCalendarButton({ drop, brandName, className }: { drop: Drop
       `PRODID:-//${site.name}//Drops//EN`,
       "CALSCALE:GREGORIAN",
       "BEGIN:VEVENT",
-      `UID:${drop.id}@${site.name.toLowerCase()}`,
+      `UID:${drop.id}@${ICS_UID_DOMAIN}`,
       `DTSTAMP:${icsDate(Date.now())}`,
       `DTSTART:${icsDate(release)}`,
       `DTEND:${icsDate(release + 30 * 60_000)}`,

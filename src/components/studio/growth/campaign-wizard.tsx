@@ -16,6 +16,7 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { BackLink } from "@/components/studio/business/shared"
 import { useLeaveGuard } from "@/components/studio/catalog/save-bar"
 import { countries, countryCodes } from "@/config/markets"
+import { site } from "@/config/site"
 import { getDemoAnchor, useNow } from "@/hooks/use-now"
 import { categories, collectionsOf, curatedCollections } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
@@ -511,7 +512,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
                       <TargetList id="cw-target" label="Collection" error={errors.target} value={w.targetId} onChange={(id) => chooseTarget("collection", id)} items={collectionOptions.map((c) => ({ id: c.id, title: c.name, meta: `${c.productIds.length} products`, image: c.image.src }))} />
                     ) : null}
                     {w.targetKind === "curated" ? (
-                      <TargetList id="cw-target" label="Curated collection" error={errors.target} value={w.targetId} onChange={(id) => chooseTarget("curated", id)} items={curatedOptions.map((c) => ({ id: c.id, title: c.name, meta: `${c.brandIds.length} brands, curated by NOCTURNE`, image: c.image.src }))} empty="You can sponsor a curated collection once your brand is featured in one." />
+                      <TargetList id="cw-target" label="Curated collection" error={errors.target} value={w.targetId} onChange={(id) => chooseTarget("curated", id)} items={curatedOptions.map((c) => ({ id: c.id, title: c.name, meta: `${c.brandIds.length} brands, curated by ${site.name}`, image: c.image.src }))} empty="You can sponsor a curated collection once your brand is featured in one." />
                     ) : null}
                     {errors.target && w.targetKind !== "brand" ? <p id="cw-target-error" className="-mt-3 text-xs text-danger">{errors.target}</p> : null}
 
@@ -705,7 +706,7 @@ function Wizard({ existing, now, onReset }: { existing?: Campaign; now: number; 
                       <div className="grid content-start gap-3 text-sm">
                         <p className="text-ink">The platform team reviews it in the Admin Control Center, usually within 1 business day; campaigns that start within 48 hours go first. If it&apos;s rejected, you&apos;ll see the reason.</p>
                         <ul className="grid gap-2 text-ink-2">
-                          {["No third-party logos or trademarks in your images or copy.", "Clear pricing: the price shown matches the product page, with no hidden costs.", "The Sponsored label is always shown and can't be hidden or restyled.", "Links stay on NOCTURNE, and promoted products are published and in stock."].map((r) => (
+                          {["No third-party logos or trademarks in your images or copy.", "Clear pricing: the price shown matches the product page, with no hidden costs.", "The Sponsored label is always shown and can't be hidden or restyled.", `Links stay on ${site.name}, and promoted products are published and in stock.`].map((r) => (
                             <li key={r} className="flex gap-2">
                               <Check className="mt-0.5 size-4 shrink-0 text-violet" />
                               <span>{r}</span>

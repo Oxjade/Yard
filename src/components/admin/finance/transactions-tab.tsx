@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Panel } from "@/components/admin/ui/panel"
+import { site } from "@/config/site"
 import { useAdmin } from "@/lib/stores/admin"
+import { useNow } from "@/hooks/use-now"
 import { cn } from "@/lib/utils"
 import { CopyValue } from "../marketplace/bits"
 import { Filters } from "../marketplace/filters"
@@ -44,7 +46,7 @@ function exportRows(rows: LedgerRow[], name: string) {
     name,
     ["Date (UTC)", "Reference", "Brand", "Type", "Provider", "Amount (USD)", "Status", "Webhook"],
     rows.map((r) => [r.at, refText(r), r.brandName, txTypeLabel[r.type], providerName[r.provider], (r.amountUsd / 100).toFixed(2), txStatus(r).label, r.webhookVerified === null ? "Internal" : r.webhookVerified ? "Verified" : "Not verified"]),
-    "NOCTURNE ledger transactions, sample data",
+    `${site.name} ledger transactions, sample data`,
   )
 }
 
@@ -53,6 +55,8 @@ export function TransactionsTab({ ready }: { ready: boolean }) {
   const router = useRouter()
   const phone = usePhone()
   const adjustments = useAdmin((s) => s.adjustments)
+  // Entries made here (an approved adjustment) and sample rows count days from one today (see relDays).
+  const now = useNow(60_000)
   const rows = useMemo(() => ledgerRows(adjustments), [adjustments])
   const types = [...new Set(rows.map((r) => r.type))]
   // Filters live in the URL (?type=&provider=&status=), like every tab, so a reload keeps them.
@@ -88,7 +92,7 @@ export function TransactionsTab({ ready }: { ready: boolean }) {
       cell: (r) => (
         <span className="block whitespace-nowrap">
           <time dateTime={r.at} className="block text-ink-2 tabular">{formatDateTime(r.at)}</time>
-          <span className="block text-[11px] text-ink-3">{relDays(r.at)}</span>
+          <span className="block text-[11px] text-ink-3">{relDays(r.at, now)}</span>
         </span>
       ),
     },
@@ -142,7 +146,7 @@ export function TransactionsTab({ ready }: { ready: boolean }) {
     },
     { label: "Open the order", icon: ArrowSquareOutIcon, disabled: (r) => r.provider === "internal", onSelect: (r) => router.push(`/admin/orders?order=${orderIdOf(r.id)}`) },
   ]
-  const bulkActions: BulkAction<LedgerRow>[] = [{ label: "Export as CSV", onSelect: (list) => exportRows(list, `nocturne-transactions-${list.length}.csv`) }]
+  const bulkActions: BulkAction<LedgerRow>[] = [{ label: "Export as CSV", onSelect: (list) => exportRows(list, `${site.name.toLowerCase()}-transactions-${list.length}.csv`) }]
 
   return (
     <div className="grid gap-3">

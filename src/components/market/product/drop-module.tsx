@@ -4,12 +4,13 @@ import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import type { Drop, DropPhase } from "@/lib/data/types"
 import { Countdown, DropStatus } from "../countdown"
-import { accessRule, limitText } from "../editorial/drop-facts"
+import { accessRule, drawClosedRule, limitText } from "../editorial/drop-facts"
 
 /**
- * The release this product belongs to, while it is upcoming or live. Before release the page's
- * main action becomes the drop reminder (NotifyButton, in the buy box); once live, Add to bag
- * returns with the per-customer limit.
+ * The release this product belongs to, while it is upcoming or live, and a draw after release.
+ * Before release the page's main action becomes the drop reminder (NotifyButton, in the buy
+ * box); once live, Add to bag returns with the per-customer limit. A draw stays closed after
+ * release, also once its window ends (only drawn winners buy), so its module gives that rule.
  */
 export function DropModule({ drop, phase }: { drop: Drop; phase: DropPhase }) {
   return (
@@ -28,9 +29,10 @@ export function DropModule({ drop, phase }: { drop: Drop; phase: DropPhase }) {
         {drop.name}
       </h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-2">{drop.description}</p>
-      <Countdown drop={drop} className="mt-4" />
+      {/* Once ended, the status pill already says so; the countdown would only repeat it. */}
+      {phase === "ended" ? null : <Countdown drop={drop} className="mt-4" />}
       <p className="mt-4 border-t border-line-soft pt-3 text-xs text-ink-2">
-        {accessRule[drop.access]} {limitText(drop)}.{phase === "upcoming" && drop.access !== "draw" ? " Sizes open at release." : ""}
+        {phase !== "upcoming" && drop.access === "draw" ? drawClosedRule : accessRule[drop.access]} {limitText(drop)}.{phase === "upcoming" && drop.access !== "draw" ? " Sizes open at release." : ""}
       </p>
     </section>
   )

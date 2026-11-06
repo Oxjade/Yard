@@ -3,6 +3,7 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
+import { site } from "@/config/site"
 import { brandById } from "@/lib/data/brands"
 import { convert, formatMoney } from "@/lib/money"
 import { priceCart } from "@/lib/cart"
@@ -12,6 +13,7 @@ import type { CheckoutGroup, MerchantOrder, ReturnDecision } from "@/lib/data/ty
 import { returnRefund } from "@/lib/payouts"
 import type { CartLine } from "./cart"
 import { useAdmin } from "./admin"
+import { renameTimeline } from "./old-name"
 import { useStudio } from "./studio"
 
 /**
@@ -130,7 +132,18 @@ export const useOrders = create<OrdersState>()(
         return true
       },
     }),
-    { name: "nocturne-orders", storage: createJSONStorage(() => localStorage), skipHydration: true },
+    {
+      name: "nocturne-orders",
+      storage: createJSONStorage(() => localStorage),
+      skipHydration: true,
+      version: 1,
+      // v1: decisions saved on an order's timeline before the platform was renamed read its
+      // current name ("approved by Yard").
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<OrdersState>
+        return (p.orders ? { ...p, orders: p.orders.map(renameTimeline) } : p) as OrdersState
+      },
+    },
   ),
 )
 
@@ -165,7 +178,7 @@ export function applyReturnDecision(orderId: string, input: ReturnDecisionInput)
 
   const at = new Date().toISOString()
   const brandName = brandById.get(base.brandId)?.name ?? "The brand"
-  const who = input.by === "brand" ? brandName : "NOCTURNE"
+  const who = input.by === "brand" ? brandName : site.name
   // A sample order that came with a return requested has no request record: it gets the one
   // Studio and Finance show for it (the whole order), so the decision is recorded like any other.
   const request = base.returnRequest ?? sampleReturnRequest(base)

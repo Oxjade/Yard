@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
-import { motion, useReducedMotion } from "motion/react"
+import { motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import type { Brand, Drop, ImageAsset, Product } from "@/lib/data/types"
 import { BrandMark } from "./brand-mark"
@@ -12,9 +12,18 @@ import { SponsoredTag } from "./sponsored-tag"
 
 const ease = [0.22, 1, 0.36, 1] as const
 
+/** Rises one headline line out of its mask. */
+const rise = (i: number) => ({ initial: { y: "105%" }, animate: { y: 0 }, transition: { duration: 0.9, delay: 0.25 + i * 0.09, ease } })
+/** Fades a block in with a short lift. */
+const fade = (d: number) => ({ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay: d, ease } })
+
 /**
- * The Discover hero — the page's one orchestrated motion moment: the photograph settles,
- * then the headline rises line by line. Everything else on the page moves only when asked.
+ * The Discover hero, the page's one orchestrated motion moment: the photograph settles, then
+ * the headline rises line by line. Everything else on the page moves only when asked.
+ *
+ * The starting values are the same on the server and the client, so hydration always matches.
+ * Reduced motion is left to the root MotionConfig (reducedMotion="user"): it drops the
+ * movement (the rise, the lift and the photograph's scale land at once) and keeps the fades.
  */
 export function DiscoverHero({
   brand,
@@ -31,17 +40,11 @@ export function DiscoverHero({
   products: Product[]
   spotlight: { brand: Brand; title: string; image: ImageAsset; href: string }
 }) {
-  const reduce = useReducedMotion()
-  const rise = (i: number) =>
-    reduce ? {} : { initial: { y: "105%" }, animate: { y: 0 }, transition: { duration: 0.9, delay: 0.25 + i * 0.09, ease } }
-  const fade = (d: number) =>
-    reduce ? {} : { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay: d, ease } }
-
   return (
     <section aria-labelledby="hero-title" className="relative isolate min-h-[640px] overflow-hidden md:h-[min(100svh,960px)]">
       <motion.div
         className="absolute inset-0 -z-10"
-        initial={reduce ? false : { scale: 1.08, opacity: 0.4 }}
+        initial={{ scale: 1.08, opacity: 0.4 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 1.6, ease }}
       >

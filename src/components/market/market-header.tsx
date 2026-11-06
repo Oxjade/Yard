@@ -11,13 +11,16 @@ import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import { NotificationBell } from "@/components/feedback/notification-bell"
+import { bagCount } from "./bag-count"
 import { BagPop } from "./bag-pop"
 import { SearchCapsule } from "./search-capsule"
 import { useSearchOverlay } from "./search-overlay"
+import { wordmarkType } from "./wordmark-type"
 
+/** The name as the logo, linking home. */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <Link href="/" className={cn("font-wide chrome-text text-[15px] leading-none tracking-[0.14em] sm:text-base", className)} aria-label={`${site.name} home`}>
+    <Link href="/" className={cn(wordmarkType, "text-[17px] sm:text-lg", className)} aria-label={`${site.name} home`}>
       {site.name}
     </Link>
   )
@@ -61,7 +64,8 @@ export const floatIcon =
 export function MarketHeader() {
   const pathname = usePathname()
   const hydrated = useHydrated()
-  const count = useCart((s) => s.lines.reduce((n, l) => n + l.quantity, 0))
+  // Only lines that resolve to a piece, as the drawer lists them.
+  const count = useCart((s) => bagCount(s.lines))
   const pulse = useCart((s) => s.pulse)
   const openBag = useCart((s) => s.open)
   const user = useSession((s) => s.user)

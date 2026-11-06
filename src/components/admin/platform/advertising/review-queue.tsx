@@ -16,7 +16,7 @@ import { useNow } from "@/hooks/use-now"
 import { spring } from "@/lib/motion"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
-import { campaignWindow, formatRange, recordTime, usd } from "../format"
+import { formatRange, recordTime, usd } from "../format"
 import { CreativePreview } from "./creative-preview"
 import { audienceLabel, resolveCreative } from "./creative"
 import { DECISION_ACTIONS, needsSecond, useRequested, withdrawRequest, type Decision } from "./decisions"
@@ -24,20 +24,24 @@ import { placementRules, secondApproverLabel } from "./placements"
 
 type Check = { label: string; ok: boolean; detail?: string }
 
-/** Pre-flight checks for one campaign, computed from the catalogue and the other bookings. */
-function checksFor(c: Campaign, all: Campaign[], pricing: Record<CampaignType, number>): Check[] {
+/**
+ * Pre-flight checks for one campaign, computed from the catalogue and the other bookings. Slot
+ * clashes compare the brands' calendar days counted from `now` (campaignDates), the dates the
+ * queue shows and Studio booked.
+ */
+function checksFor(c: Campaign, all: Campaign[], pricing: Record<CampaignType, number>, now: number): Check[] {
   const brand = brandById.get(c.brandId)
   const creative = resolveCreative(c)
   const target = c.targetIds[0] ?? ""
   const destinationOk = target.startsWith("p_") ? productById.get(target)?.status === "published" : !!creative.image
   const t = campaignTypes[c.type]
   const rate = pricing[c.type] * (t.unit === "day" ? c.days : 1)
-  const win = campaignWindow(c.startDaysFromToday, c.days)
+  const win = campaignDates(c, now)
   const clashes = c.placements.filter((p) => {
     const others = all
       .filter((o) => o.id !== c.id && (o.status === "active" || o.status === "scheduled") && o.placements.includes(p))
       .filter((o) => {
-        const w = campaignWindow(o.startDaysFromToday, o.days)
+        const w = campaignDates(o, now)
         return w.start <= win.end && w.end >= win.start
       })
     return others.length >= placementRules[p].maxPerView
@@ -144,7 +148,7 @@ export function ReviewQueue({ campaigns, ready, onDecide }: { campaigns: Campaig
               const brand = brandById.get(c.brandId)
               const win = campaignDates(c, now)
               const start = startLabel(c.startDaysFromToday)
-              const checks = checksFor(c, campaigns, pricing)
+              const checks = checksFor(c, campaigns, pricing, now)
               const failing = checks.filter((x) => !x.ok).length
               const sent = requested.get(c.id)
               return (

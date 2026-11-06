@@ -14,6 +14,7 @@ import { DataTable, type Column, type RowAction } from "@/components/dashboard/d
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Panel } from "@/components/admin/ui/panel"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useNow } from "@/hooks/use-now"
 import { adminUser, type Dispute } from "@/lib/data/admin"
 import { merchantOrders } from "@/lib/data/orders"
 import { useAdmin } from "@/lib/stores/admin"
@@ -36,6 +37,8 @@ export function DisputesTab({ focus, ready }: { focus?: string | null; ready: bo
   const router = useRouter()
   const audit = useAdmin((s) => s.audit)
   const disputes = useAdmin((s) => s.disputes)
+  // Deadlines count from the same today as the other Finance tabs (see relDays).
+  const now = useNow(60_000)
   const [current, setCurrent] = useState<Dispute | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -54,10 +57,10 @@ export function DisputesTab({ focus, ready }: { focus?: string | null; ready: bo
 
   const due = (r: Row) => {
     if (!isOpen(r.stage)) return <span className="whitespace-nowrap text-ink-3">Closed</span>
-    const urgent = r.stage === "needs_evidence" && daysUntil(r.d.dueBy) <= 2
+    const urgent = r.stage === "needs_evidence" && daysUntil(r.d.dueBy, now) <= 2
     return (
       <span className="block whitespace-nowrap">
-        <span className={cn("block", r.stage === "needs_evidence" ? (urgent ? "text-danger" : "text-acid") : "text-ink-2")}>{r.stage === "needs_evidence" ? dueLabel(r.d.dueBy) : r.stage === "evidence_submitted" ? "Saved, not sent" : "With the provider"}</span>
+        <span className={cn("block", r.stage === "needs_evidence" ? (urgent ? "text-danger" : "text-acid") : "text-ink-2")}>{r.stage === "needs_evidence" ? dueLabel(r.d.dueBy, now) : r.stage === "evidence_submitted" ? "Saved, not sent" : "With the provider"}</span>
         <span className="block text-[11px] text-ink-3">{formatDate(r.d.dueBy)}</span>
       </span>
     )
@@ -93,7 +96,7 @@ export function DisputesTab({ focus, ready }: { focus?: string | null; ready: bo
       ),
     },
     { key: "amount", header: "Amount", align: "right", sortValue: (r) => r.d.amountUsd, cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.d.amountUsd)}</span> },
-    { key: "opened", header: "Opened", hideBelow: "lg", sortValue: (r) => r.d.openedAt, cell: (r) => <span className="whitespace-nowrap text-ink-2">{relDays(r.d.openedAt)}</span> },
+    { key: "opened", header: "Opened", hideBelow: "lg", sortValue: (r) => r.d.openedAt, cell: (r) => <span className="whitespace-nowrap text-ink-2">{relDays(r.d.openedAt, now)}</span> },
     { key: "due", header: "Evidence due", hideBelow: "md", sortValue: (r) => r.d.dueBy, cell: due },
     { key: "stage", header: "Stage", hideBelow: "sm", sortValue: (r) => rank[r.stage], cell: (r) => <StatusBadge tone={disputeMeta[r.stage].tone}>{disputeMeta[r.stage].label}</StatusBadge> },
   ]
@@ -109,7 +112,7 @@ export function DisputesTab({ focus, ready }: { focus?: string | null; ready: bo
         <FocusCallout
           title={`${focused.d.type === "chargeback" ? "Chargeback" : "Inquiry"} on #${focused.d.reference}, ${usd(focused.d.amountUsd)}`}
           badge={<StatusBadge tone={disputeMeta[focused.stage].tone}>{disputeMeta[focused.stage].label}</StatusBadge>}
-          meta={`${focused.d.brandName}: ${focused.d.reason.toLowerCase()}. ${isOpen(focused.stage) ? `Evidence ${focused.stage === "needs_evidence" ? dueLabel(focused.d.dueBy).toLowerCase() : "saved"}.` : "Closed."}`}
+          meta={`${focused.d.brandName}: ${focused.d.reason.toLowerCase()}. ${isOpen(focused.stage) ? `Evidence ${focused.stage === "needs_evidence" ? dueLabel(focused.d.dueBy, now).toLowerCase() : "saved"}.` : "Closed."}`}
           actions={focused.stage === "needs_evidence" ? <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => openEvidence(focused.d)}>Add evidence</Button> : null}
           onDismiss={() => writeParams({ focus: null })}
         />
@@ -136,6 +139,7 @@ export function DisputesTab({ focus, ready }: { focus?: string | null; ready: bo
 function EvidenceForm({ dispute, onDone }: { dispute: Dispute; onDone: () => void }) {
   const id = useId()
   const submitEvidence = useAdmin((s) => s.submitDisputeEvidence)
+  const now = useNow(60_000)
   const order = merchantOrders.find((o) => o.id === orderIdOf(dispute.id))
   const [items, setItems] = useState<string[]>(order?.tracking ? ["Proof of delivery", "Carrier tracking history"] : [])
   const [tracking, setTracking] = useState(order?.tracking ? `${order.tracking.carrier} ${order.tracking.number}` : "")
@@ -173,7 +177,7 @@ function EvidenceForm({ dispute, onDone }: { dispute: Dispute; onDone: () => voi
       <DialogHeader>
         <DialogTitle className="font-label pr-6 text-base leading-snug">Evidence for #{dispute.reference}</DialogTitle>
         <DialogDescription className="text-[13px] text-ink-2">
-          {dispute.type === "chargeback" ? "Chargeback" : "Inquiry"} for {usd(dispute.amountUsd)} from {dispute.brandName}: {dispute.reason.toLowerCase()}. {dueLabel(dispute.dueBy)}. Saved here and in the audit log; sending it to the provider needs the payments backend, which isn&apos;t connected in this build.
+          {dispute.type === "chargeback" ? "Chargeback" : "Inquiry"} for {usd(dispute.amountUsd)} from {dispute.brandName}: {dispute.reason.toLowerCase()}. {dueLabel(dispute.dueBy, now)}. Saved here and in the audit log; sending it to the provider needs the payments backend, which isn&apos;t connected in this build.
         </DialogDescription>
       </DialogHeader>
 

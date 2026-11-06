@@ -1,12 +1,9 @@
 import Image from "next/image"
 import Link from "next/link"
 import { BrandCard } from "@/components/market/brand-card"
-import { Countdown, DropStatus } from "@/components/market/countdown"
 import { DiscoverHero } from "@/components/market/discover-hero"
-import { DropCard } from "@/components/market/drop-card"
-import { NotifyButton } from "@/components/market/notify-button"
+import { UpcomingDropsBand } from "@/components/market/editorial/upcoming-drops-band"
 import { ProductCard } from "@/components/market/product-card"
-import { Rail } from "@/components/market/rail"
 import { RecommendedForYou } from "@/components/market/recommended"
 import { SectionHeader } from "@/components/market/section-header"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
@@ -15,6 +12,7 @@ import { withSponsoredSlots } from "@/lib/data/ads"
 import {
   brandById,
   curatedCollections,
+  drops,
   emergingBrands,
   getDrop,
   productById,
@@ -23,9 +21,7 @@ import {
   stories,
   trendingBrands,
   trendingProducts,
-  upcomingDrops,
 } from "@/lib/data"
-import { dropAccessLabel } from "@/lib/drops"
 import { img } from "@/lib/data/media"
 import type { Product } from "@/lib/data/types"
 
@@ -53,10 +49,6 @@ export default function DiscoverPage() {
   const heroProducts = heroDrop.productIds.map((id) => productById.get(id)).filter(Boolean) as Product[]
   const spotlightBrand = brandById.get("b_velvet_underpass")!
 
-  const upcoming = upcomingDrops()
-  const nextDrop = upcoming[0]
-  const nextDropBrand = brandById.get(nextDrop.brandId)!
-
   const trending = trendingProducts(9)
   const [feature, ...trendingRest] = trending
   const emerging = emergingBrands(4)
@@ -80,38 +72,8 @@ export default function DiscoverPage() {
         spotlight={{ brand: spotlightBrand, title: "Bags, saddle-stitched in Paris", image: spotlightBrand.cover, href: `/brands/${spotlightBrand.handle}` }}
       />
 
-      {/* Drops band — the page's one large purple surface */}
-      <section aria-labelledby="drops-title" className="relative mt-4 overflow-hidden bg-purple">
-        <div className="mx-auto grid max-w-page gap-10 px-4 py-14 md:px-8 md:py-20 lg:grid-cols-[minmax(0,420px)_1fr]">
-          <div className="flex flex-col">
-            <h2 id="drops-title" className="font-display text-display-lg text-ink">Upcoming drops</h2>
-            <p className="mt-3 max-w-sm text-[0.9375rem] leading-relaxed text-ink/80">
-              Limited releases on a schedule. Set a reminder and we&apos;ll tell you the moment one goes live.
-            </p>
-            <div className="mt-10 rounded-2xl border border-white/15 bg-obsidian/25 p-5 backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <DropStatus drop={nextDrop} />
-                {nextDrop.sponsored ? <SponsoredTag /> : null}
-              </div>
-              <p className="mt-4 text-sm text-ink/80">{nextDropBrand.name}</p>
-              <Link href={`/drops/${nextDrop.slug}`} className="mt-1 block font-display text-display-sm text-ink">{nextDrop.name}</Link>
-              <Countdown drop={nextDrop} size="lg" className="mt-6 text-ink" />
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-ink/70">{dropAccessLabel[nextDrop.access]}</p>
-                <NotifyButton drop={nextDrop} variant="glass" />
-              </div>
-            </div>
-          </div>
-          <div className="min-w-0 lg:pt-16">
-            <Rail label="Upcoming drops" itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48%]">
-              {upcoming.slice(1).map((d) => (
-                <DropCard key={d.id} drop={d} />
-              ))}
-            </Rail>
-            <Link href="/drops" className="mt-6 inline-flex text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
-          </div>
-        </div>
-      </section>
+      {/* Drops band, the page's one large purple surface. Its lead card and rail follow the demo clock. */}
+      <UpcomingDropsBand drops={drops} />
 
       <div className="mx-auto max-w-page px-4 md:px-8">
         {/* Trending */}

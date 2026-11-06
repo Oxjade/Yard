@@ -12,6 +12,7 @@ import { Panel } from "@/components/admin/ui/panel"
 import type { Refund } from "@/lib/data/admin"
 import { brands } from "@/lib/data/brands"
 import { useAdmin } from "@/lib/stores/admin"
+import { useNow } from "@/hooks/use-now"
 import { CopyValue } from "../marketplace/bits"
 import { useDecision, type Decision } from "../marketplace/decision"
 import { Filters } from "../marketplace/filters"
@@ -101,6 +102,8 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
   const router = useRouter()
   const phone = usePhone()
   const refunds = useAdmin((s) => s.refunds)
+  // A shopper's return request made here and the sample requests count days from one today (see relDays).
+  const now = useNow(60_000)
   const focused = focus ? refunds.find((r) => r.id === focus) : undefined
   // The status filter lives in the URL (?status=…, the queue of requests when absent), so a
   // reload keeps it. A linked refund opens on its own status, once, so it's in the table.
@@ -167,7 +170,7 @@ export function RefundsTab({ focus, ready }: { focus?: string | null; ready: boo
     },
     { key: "reason", header: "Reason", hideBelow: "lg", cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.reason}</span> },
     { key: "amount", header: "Amount", align: "right", sortValue: (r) => r.amountUsd, cell: (r) => <span className="whitespace-nowrap text-ink">{usd(r.amountUsd)}</span> },
-    { key: "requested", header: "Requested", hideBelow: "md", sortValue: (r) => r.requestedAt, cell: (r) => <time dateTime={r.requestedAt} title={formatDateTime(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt)}</time> },
+    { key: "requested", header: "Requested", hideBelow: "md", sortValue: (r) => r.requestedAt, cell: (r) => <time dateTime={r.requestedAt} title={formatDateTime(r.requestedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.requestedAt, now)}</time> },
     { key: "key", header: "Idempotency key", hideBelow: "lg", cell: (r) => <CopyValue value={r.idempotencyKey} label="Copy idempotency key" className="text-[12px] text-ink-2" /> },
     { key: "status", header: "Status", hideBelow: "sm", sortValue: (r) => ORDER.indexOf(r.status), cell: statusCell },
   ]

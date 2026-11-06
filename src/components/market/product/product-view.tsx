@@ -29,10 +29,11 @@ import { SizeGuide } from "./size-guide"
 import { SizeSheet } from "./size-sheet"
 import { useDropPhase, useProductSelection } from "./use-product-selection"
 
-type Action = "locked" | "choose-size" | "sold-out" | "limit" | "ready"
+type Action = "locked" | "closed" | "choose-size" | "sold-out" | "limit" | "ready"
 
 const actionLabel: Record<Action, string> = {
   locked: "Not released yet",
+  closed: "Entries closed",
   "choose-size": "Select a size",
   "sold-out": "Sold out",
   limit: "Add to bag",
@@ -47,11 +48,20 @@ const actionLabel: Record<Action, string> = {
  * Adding runs through useAsyncAction: the button shows a check while it succeeds and ignores
  * repeat presses meanwhile; the header's bag bubble (BagPop) is the confirmation, so there is
  * no toast. Pressing "Select a size" points at the size grid instead of doing nothing.
+ *
+ * A piece in a draw never goes in the bag from here: before release the action is the entry
+ * (NotifyButton), and after release (through its window and after it ends) entries are closed
+ * and only drawn winners can buy, which needs the drops backend this build doesn't have, so the
+ * button reads "Entries closed".
  */
 export function ProductView({ product, brand, drop, children }: { product: Product; brand: Brand; drop: Drop | null; children?: React.ReactNode }) {
   const sel = useProductSelection(product)
   const phase = useDropPhase(drop)
-  const activeDrop = drop && (phase === "upcoming" || phase === "live") ? drop : null
+  // A released draw: entries closed, and its window belongs to drawn winners only. It stays
+  // closed after the window ends: no winners are drawn in this build, so nothing goes on general sale.
+  const drawClosed = (phase === "live" || phase === "ended") && drop?.access === "draw"
+  // The drop module explains the buy box while the drop decides it: upcoming, live, or a closed draw.
+  const activeDrop = drop && (phase === "upcoming" || phase === "live" || drawClosed) ? drop : null
   const hydrated = useHydrated()
   const add = useCart((s) => s.add)
   const openBag = useCart((s) => s.open)
@@ -75,7 +85,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
 
   const productSoldOut = productStock(product) === 0
   const soldOut = productSoldOut || (sel.variant !== undefined && sel.stock === 0) || (sel.needsSize && sel.colourStock === 0)
-  const action: Action = phase === "upcoming" ? "locked" : soldOut ? "sold-out" : sel.needsSize ? "choose-size" : maxQty === 0 ? "limit" : "ready"
+  const action: Action = phase === "upcoming" ? "locked" : drawClosed ? "closed" : soldOut ? "sold-out" : sel.needsSize ? "choose-size" : maxQty === 0 ? "limit" : "ready"
   const fitNote = product.details.find((d) => /\bfit\b|size down|size up|true to size/i.test(d))
   // One status badge over the image, picked like ProductCard's; the sale signal stays beside the price.
   const overlayBadge = primaryBadge({ badges: product.badges, compareAt: undefined })
@@ -160,7 +170,9 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   }, [])
 
   const helper =
-    action === "limit"
+    action === "closed"
+      ? `${phase === "ended" ? "This draw has ended." : "Entries closed at release."} Only drawn winners can buy, and picking winners needs the drops backend, which isn't connected in this build.`
+      : action === "limit"
       ? phase === "live" && drop && cap === drop.limitPerCustomer
         ? `This drop is limited to ${drop.limitPerCustomer} per customer, and your bag already has ${inBag}.`
         : sel.stock !== null && sel.stock <= MAX_QTY_PER_LINE
@@ -189,7 +201,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
     </AnimatePresence>
   )
   // Blocked states are disabled, except while the success check is still showing.
-  const blocked = action === "locked" || action === "sold-out" || action === "limit"
+  const blocked = action === "locked" || action === "closed" || action === "sold-out" || action === "limit"
   const addDisabled = !adding.succeeded && blocked
   // Acid is for the action the shopper can take (add, choose a size, get notified). A blocked
   // state is not an action, so it drops to the quiet secondary slab instead of a dimmed acid one.
@@ -266,7 +278,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                       stockBySize={sel.stockBySize}
                       value={sel.size}
                       onChange={chooseSize}
-                      disabled={action === "locked"}
+                      disabled={action === "locked" || action === "closed"}
                       layoutKey="pdp"
                       labelledBy={sizeLabelId}
                       describedBy={sizePrompt && !sel.size ? sizeHintId : undefined}
@@ -282,8 +294,8 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           {/* Quantity, availability and the main action */}
           <div ref={ctaRef} className="mt-8">
             <div className="flex items-center justify-between gap-4">
-              <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={action === "locked" || action === "sold-out" || action === "limit"} />
-              <StockLine selection={sel} locked={action === "locked"} className="justify-end text-right" />
+              <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={blocked} />
+              <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} className="justify-end text-right" />
             </div>
             <div className="mt-3 flex gap-2">
               {action === "locked" && activeDrop ? (
@@ -328,7 +340,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           </div>
 
           <div className="mt-8">
-            <DeliverySummary brand={brand} status={action === "locked" ? "unreleased" : action === "sold-out" ? "unavailable" : "available"} />
+            <DeliverySummary brand={brand} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
           </div>
 
           <section aria-labelledby="pdp-info-title" className="mt-8">
@@ -432,7 +444,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           footer={
             <>
               <div className="flex items-center justify-between gap-3">
-                <StockLine selection={sel} locked={action === "locked"} />
+                <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} />
                 <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
               </div>
               <Button

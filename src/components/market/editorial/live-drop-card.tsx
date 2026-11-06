@@ -8,13 +8,19 @@ import { Countdown, DropStatus } from "@/components/market/countdown"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
 import { brandById } from "@/lib/data/brands"
 import type { Drop } from "@/lib/data/types"
-import { limitText } from "./drop-facts"
+import { drawClosedRule, limitText } from "./drop-facts"
 import { StockBar } from "./stock-bar"
 
-/** A drop that is open right now: closing countdown, stock left and the per-customer limit. */
+/**
+ * A drop in its live window: closing countdown, stock left and the per-customer limit. A draw
+ * in its window is not open to shoppers (entries closed at release; only drawn winners buy), so
+ * its card (in /drops' Entries closed group) says that once, in the rule, and links to the drop
+ * page instead of showing a countdown, stock and Shop the drop.
+ */
 export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boolean }) {
   const brand = brandById.get(drop.brandId)!
   const href = `/drops/${drop.slug}`
+  const draw = drop.access === "draw"
   return (
     <article className="group/live grid overflow-hidden rounded-lg border border-line-soft bg-card sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <Link href={href} className="relative block aspect-[16/10] overflow-hidden sm:aspect-auto sm:min-h-[320px]" aria-label={drop.name}>
@@ -40,12 +46,16 @@ export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boole
         <h3 className="mt-3 font-display text-display-sm text-ink">
           <Link href={href}>{drop.name}</Link>
         </h3>
-        <Countdown drop={drop} className="mt-5" />
-        <StockBar drop={drop} className="mt-6 sm:mt-auto sm:pt-6" />
+        {draw ? null : <Countdown drop={drop} className="mt-5" />}
+        {draw ? (
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-ink-2 sm:mt-auto sm:pt-6">{drawClosedRule}</p>
+        ) : (
+          <StockBar drop={drop} className="mt-6 sm:mt-auto sm:pt-6" />
+        )}
         <div className="mt-5 flex items-center justify-between gap-3">
           <p className="text-xs text-ink-2">{limitText(drop)}</p>
           <Button asChild size="sm" variant="secondary" className="h-10 sm:h-8">
-            <Link href={`${href}#in-this-drop`}>Shop the drop</Link>
+            {draw ? <Link href={href}>Drop details</Link> : <Link href={`${href}#in-this-drop`}>Shop the drop</Link>}
           </Button>
         </div>
       </div>

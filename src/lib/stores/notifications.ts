@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
+import { withCurrentName } from "./old-name"
 
 /**
  * Notifications, persisted and shared across tabs. Every notification comes from an event
@@ -94,7 +95,18 @@ export const useNotifications = create<State>()(
       remove: (id) => set({ items: get().items.filter((x) => x.id !== id) }),
       setSeeded: (audience) => set({ seeded: { ...get().seeded, [audience]: true } }),
     }),
-    { name: "nocturne-notifications", storage: createJSONStorage(() => localStorage), skipHydration: true },
+    {
+      name: "nocturne-notifications",
+      storage: createJSONStorage(() => localStorage),
+      skipHydration: true,
+      version: 1,
+      // v1: notifications saved before the platform was renamed read its current name ("Yard
+      // approved your application"). Event keys and ids stay as they were, so nothing is pushed twice.
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<State>
+        return (p.items ? { ...p, items: p.items.map((n) => ({ ...n, title: withCurrentName(n.title), body: withCurrentName(n.body) })) } : p) as State
+      },
+    },
   ),
 )
 

@@ -42,6 +42,8 @@ export function formatRelease(ms: number) {
  * prerender), with a same-size placeholder so nothing shifts.
  *
  * The release time reads in the shopper's own zone ("Releases Thu 12 Nov, 19:00, your time").
+ * A draw has no public window once it releases (entries are closed and only drawn winners can
+ * buy), so after release it says that instead of counting down to its close.
  * `formatRelease` replaces that wording with a time the caller formats, zone included (the
  * Studio drop builder shows its preview in the zone the drop is scheduled in).
  */
@@ -71,6 +73,9 @@ export function Countdown({
   if (phase === "sold-out" || phase === "ended") {
     return <p className={cn("text-sm text-ink-2", className)}>{phase === "sold-out" ? "Sold out" : "Ended"}</p>
   }
+  if (phase === "live" && drop.access === "draw") {
+    return <p className={cn("text-sm text-ink-2", className)}>Entries closed. Winners to be picked.</p>
+  }
 
   return (
     <div className={className}>
@@ -87,13 +92,19 @@ export function Countdown({
   )
 }
 
-/** Live/upcoming indicator: acid is the release signal. The dot is still: the colour already says it's happening. */
+/**
+ * Live/upcoming indicator: acid is the release signal. The dot is still: the colour already
+ * says it's happening. A released draw is not open to anyone but its winners, so it reads
+ * "Entries closed" in the quiet style, never "Live now".
+ */
 export function DropStatus({ drop, className }: { drop: Drop; className?: string }) {
   const now = useNow(5000)
   if (now === null) return <span className={cn("inline-block h-6", className)} />
   const phase = dropPhaseAt(drop, now, getDemoAnchor())
-  const label =
-    phase === "live"
+  const drawClosed = phase === "live" && drop.access === "draw"
+  const label = drawClosed
+    ? "Entries closed"
+    : phase === "live"
       ? `Live now, ${drop.unitsLeft} of ${drop.totalUnits} left`
       : phase === "upcoming"
         ? drop.releaseOffsetHours < 6
@@ -102,7 +113,7 @@ export function DropStatus({ drop, className }: { drop: Drop; className?: string
         : phase === "sold-out"
           ? "Sold out"
           : "Ended"
-  const hot = phase === "live" || (phase === "upcoming" && drop.releaseOffsetHours < 6)
+  const hot = (phase === "live" && !drawClosed) || (phase === "upcoming" && drop.releaseOffsetHours < 6)
   return (
     <span
       className={cn(

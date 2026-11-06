@@ -205,10 +205,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       workspace={{
         mark: (
           <span className="inline-flex size-8 items-center justify-center rounded-[9px] border border-white/12 bg-obsidian">
-            <span className="font-wide text-[13px] leading-none text-ink">{site.name.charAt(0)}</span>
+            <span className="font-wide text-[13px] leading-none text-ink uppercase">{site.name.charAt(0)}</span>
           </span>
         ),
-        name: <span className="font-wide text-[12px] tracking-[0.16em] text-ink">{site.name}</span>,
+        // The wordmark is set in capitals by CSS (site.name is sentence case in copy); a four-letter
+        // name carries a touch more tracking so it holds the line the way a longer one did.
+        name: <span className="font-wide text-[13px] tracking-[0.22em] text-ink uppercase">{site.name}</span>,
         caption: (
           <>
             Control Center

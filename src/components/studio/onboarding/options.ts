@@ -1,4 +1,5 @@
 import { countries, currencies, shippingRatesUsd, type CountryCode, type CurrencyCode } from "@/config/markets"
+import { site } from "@/config/site"
 import { brandByHandle } from "@/lib/data/brands"
 import { img } from "@/lib/data/media"
 import { convert } from "@/lib/money"
@@ -82,7 +83,7 @@ export const suggestedSizeSystem = (c: CategorySlug | null): SizeSystem =>
 const reserved = new Set([
   "admin", "studio", "brands", "brand", "shop", "drops", "drop", "categories", "category", "following", "wishlist", "search", "account",
   "sign-in", "signin", "sign-up", "signup", "login", "logout", "help", "support", "settings", "api", "checkout", "cart", "bag", "orders",
-  "about", "terms", "privacy", "nocturne", "official", "stories", "collections", "products", "you", "new", "sale",
+  "about", "terms", "privacy", site.name.toLowerCase(), "official", "stories", "collections", "products", "you", "new", "sale",
 ])
 
 export type HandleStatus = "empty" | "too-short" | "too-long" | "characters" | "hyphen" | "reserved" | "taken" | "available"

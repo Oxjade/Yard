@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { site } from "@/config/site"
 import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
 import { drops } from "@/lib/data/catalog"
 import { brandApplications, disputes, failedJobs, moderationQueue, payoutAmountIn, webhookFailures, type Payout } from "@/lib/data/admin"
@@ -71,7 +72,7 @@ function returnDecisionCopy(o: MerchantOrder): { title: string; body: string } |
   const d = o.returnRequest?.decision
   if (!d) return null
   const ref = `#${o.reference}`
-  const who = d.by === "brand" ? (brandById.get(o.brandId)?.name ?? "The brand") : "NOCTURNE"
+  const who = d.by === "brand" ? (brandById.get(o.brandId)?.name ?? "The brand") : site.name
   if (d.status === "declined") return { title: `Return declined for ${ref}`, body: d.reason ? `${who} declined it: ${d.reason}.` : `${who} declined it.` }
   const amount = formatMoney(d.amount ?? 0, o.currency)
   const count = returnedUnits(o)

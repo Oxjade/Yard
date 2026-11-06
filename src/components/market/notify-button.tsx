@@ -3,6 +3,7 @@
 import { BellIcon as Bell, BellRingingIcon as BellRing } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { site } from "@/config/site"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
@@ -11,7 +12,7 @@ import type { Drop } from "@/lib/data/types"
 
 /**
  * Set a reminder, or enter the draw, before a drop opens. Both are saved in this browser (the
- * saved store). A reminder becomes an alert in Notifications when the drop opens while NOCTURNE
+ * saved store). A reminder becomes an alert in Notifications when the drop opens while the site
  * is open (notification-events checks it against the demo clock); email, push and picking draw
  * winners need backends this build doesn't have, so the feedback says exactly that.
  *
@@ -48,7 +49,7 @@ export function NotifyButton({
       if (draw) toast(now ? "Entry saved in this browser" : "Entry withdrawn", { description: now ? "Picking winners isn't connected in this build." : undefined })
       else
         toast(now ? "Reminder saved in this browser" : "Reminder removed", {
-          description: now ? "You'll see an alert in Notifications when it opens while NOCTURNE is open. Email and push aren't connected in this build." : undefined,
+          description: now ? `You'll see an alert in Notifications when it opens while ${site.name} is open. Email and push aren't connected in this build.` : undefined,
         })
     }
     if (requireAuth("notify", run)) run()

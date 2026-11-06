@@ -11,8 +11,10 @@ import { releasesIn } from "./use-drop-phase"
 /**
  * The pieces in a drop, as ProductCards. Before release they are previews: quick add is shown
  * disabled and a tap explains when it opens. While live, adding works up to the per-customer
- * limit across the whole drop. Once sold out, adding stays closed; once ended, leftover pieces
- * are ordinary catalogue items again. The same rules hold on every other card for these pieces
+ * limit across the whole drop, except for a draw: its entries closed at release and only drawn
+ * winners can buy, so its pieces stay closed (after the window too) and the note says so. Once
+ * sold out, adding stays closed; once another kind of drop ends, leftover pieces are ordinary
+ * catalogue items again. The same rules hold on every other card for these pieces
  * (QuickAdd applies useDropAddBlock from the product's dropId), so the storefront and
  * collections never let one in early. Here the page applies them once, on the 1-second clock
  * its note uses, and passes the result down (`false` while adding is open) so the cards and the
@@ -20,24 +22,32 @@ import { releasesIn } from "./use-drop-phase"
  */
 export function DropProducts({ drop, products, brandName }: { drop: Drop; products: Product[]; brandName: string }) {
   const noteId = useId()
-  const { phase, now, release, inBag, atLimit, addBlocked: blocked } = useDropAddBlock(drop, { describedBy: noteId, intervalMs: 1000, onDropPage: true })
+  const { phase, now, release, inBag, atLimit, drawClosed, addBlocked: blocked } = useDropAddBlock(drop, { describedBy: noteId, intervalMs: 1000, onDropPage: true })
   const addBlocked = blocked ?? false
 
   // The time left changes every minute, so it stays outside the live region; only the status
-  // sentence (preview, live, at the limit, sold out) is announced when it changes.
+  // sentence (preview, live, entries closed, at the limit, sold out) is announced when it changes.
   const until = phase === "upcoming" && now !== null && release !== null ? `Releases in ${releasesIn(release - now)}.` : null
+  // A draw never opens the bag to everyone: before release it takes entries, after it only
+  // drawn winners can buy.
   const note =
     phase === "upcoming"
-      ? "These are previews; adding to your bag opens at release."
-      : phase === "live"
-        ? atLimit
-          ? `Live now. Your bag has ${inBag}, the limit of ${drop.limitPerCustomer} per customer for this drop.`
-          : inBag > 0
-            ? `Live now. Your bag has ${inBag} of the ${drop.limitPerCustomer} allowed per customer.`
-            : `Live now. Limit ${drop.limitPerCustomer} per customer across the drop.`
-        : phase === "sold-out"
-          ? `Sold out. Follow ${brandName} and their next run shows up in Following.`
-          : `This drop has ended. Anything left is back in ${brandName}'s shop.`
+      ? drop.access === "draw"
+        ? "These are previews. Enter the draw before release; only drawn winners can buy."
+        : "These are previews; adding to your bag opens at release."
+      : drawClosed
+        ? phase === "ended"
+          ? "This draw has ended. Its pieces are for drawn winners only, so they don't go on general sale."
+          : "Entries closed. Winners are picked from the entries made before release."
+        : phase === "live"
+          ? atLimit
+            ? `Live now. Your bag has ${inBag}, the limit of ${drop.limitPerCustomer} per customer for this drop.`
+            : inBag > 0
+              ? `Live now. Your bag has ${inBag} of the ${drop.limitPerCustomer} allowed per customer.`
+              : `Live now. Limit ${drop.limitPerCustomer} per customer across the drop.`
+          : phase === "sold-out"
+            ? `Sold out. Follow ${brandName} and their next run shows up in Following.`
+            : `This drop has ended. Anything left is back in ${brandName}'s shop.`
 
   const single = products.length === 1
   const split = products.length <= 2
@@ -57,7 +67,7 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
       <div id="in-this-drop-title">
         <SectionHeader title="In this drop" className="mb-3 md:mb-4" />
       </div>
-      <p className={cn("max-w-2xl text-[0.9375rem] leading-relaxed", phase === "live" ? "text-ink" : "text-ink-2")}>
+      <p className={cn("max-w-2xl text-[0.9375rem] leading-relaxed", phase === "live" && !drawClosed ? "text-ink" : "text-ink-2")}>
         {until ? <span className="text-ink tabular">{until} </span> : null}
         <span id={noteId} aria-live="polite">
           {note}

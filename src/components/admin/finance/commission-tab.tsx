@@ -13,6 +13,7 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { Panel } from "@/components/admin/ui/panel"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { site } from "@/config/site"
 import { merchantOrders } from "@/lib/data/orders"
 import { formatPercent } from "@/lib/money"
 import { commissionReport, commissionSeries, type CommissionRow } from "./derive"
@@ -45,7 +46,7 @@ export function CommissionTab() {
   const historyStart = useMemo(() => merchantOrders.reduce((m, o) => (o.placedAt.slice(0, 10) < m ? o.placedAt.slice(0, 10) : m), series[series.length - 1].date), [series])
   const total = rows.reduce((s, r) => ({ orders: s.orders + r.orders, base: s.base + r.baseUsd, assessed: s.assessed + r.assessedUsd, reversed: s.reversed + r.reversedUsd, net: s.net + r.netUsd }), { orders: 0, base: 0, assessed: 0, reversed: 0, net: 0 })
   const top = Math.max(1, ...rows.map((r) => r.netUsd))
-  const exporter = useAsyncAction(() => exportCsv(rows, days, `nocturne-commission-${days}d.csv`), { error: "The report couldn't be built. Try again." })
+  const exporter = useAsyncAction(() => exportCsv(rows, days, `${site.name.toLowerCase()}-commission-${days}d.csv`), { error: "The report couldn't be built. Try again." })
 
   const spec = buckets[bucket]
   const sum = (list: { commission: number }[]) => list.reduce((s, x) => s + x.commission, 0)
@@ -97,7 +98,7 @@ export function CommissionTab() {
       ),
     },
   ]
-  const bulkActions: BulkAction<CommissionRow>[] = [{ label: "Export as CSV", onSelect: (list) => exportCsv(list, days, `nocturne-commission-${days}d-${list.length}-brands.csv`) }]
+  const bulkActions: BulkAction<CommissionRow>[] = [{ label: "Export as CSV", onSelect: (list) => exportCsv(list, days, `${site.name.toLowerCase()}-commission-${days}d-${list.length}-brands.csv`) }]
 
   return (
     <div className="grid gap-3">

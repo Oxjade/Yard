@@ -1,5 +1,6 @@
 import { campaigns } from "@/lib/data/ads"
 import type { Drop } from "@/lib/data/types"
+import { agoText } from "@/components/market/ago-text"
 
 /**
  * Drops booked into the paid "drops-feature" slot on /drops. Read from the ad campaigns so a
@@ -28,6 +29,9 @@ export const accessRule: Record<Drop["access"], string> = {
   "early-access": "Followers of the brand get the first window, then it opens to everyone.",
 }
 
+/** A draw after release: entries are closed and the winners' window is not open to anyone else. */
+export const drawClosedRule = "Winners are picked at random from the entries made before release, and only winners pay."
+
 export const limitText = (d: Drop) => `Limit ${d.limitPerCustomer} per customer`
 
 /** Truthful scarcity: the run size, and how it went for past drops. */
@@ -38,10 +42,16 @@ export function runText(d: Drop) {
   return `${sold} of ${d.totalUnits} sold`
 }
 
-/** "10 days ago": release offsets are relative to the demo load, so this is safe on the server. */
+/** For the drop components. The helper lives in ago-text, so the account pages share it without the drop data. */
+export { agoText }
+
+const HOUR = 3_600_000
+
+/**
+ * Time since a drop's release, from the phase the demo loads with (release offsets are relative
+ * to the demo load, so this is safe on the server). Null for a drop that hasn't released. Once
+ * mounted, a list on the demo clock passes `now - release` to agoText instead (see DropArchive).
+ */
 export function releasedAgo(d: Drop) {
-  const hours = -d.releaseOffsetHours
-  if (hours < 24) return `${Math.max(1, Math.round(hours))} hours ago`
-  const days = Math.round(hours / 24)
-  return days === 1 ? "yesterday" : `${days} days ago`
+  return agoText(-d.releaseOffsetHours * HOUR)
 }

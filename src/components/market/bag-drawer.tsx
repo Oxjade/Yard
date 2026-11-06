@@ -13,6 +13,7 @@ import { formatMoney } from "@/lib/money"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
 import { BagGroups } from "./bag-contents"
+import { bagCount } from "./bag-count"
 
 /** The header's bag button: where focus lands when whatever opened the drawer (or the sign-in prompt) has gone. */
 export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Bag,"]')).find(canTakeFocus)
@@ -31,6 +32,7 @@ export function BagDrawer() {
   const shipTo = useSession((s) => s.shipTo)
   const requireAuth = useSession((s) => s.requireAuth)
   const bag = priceCart(lines, shipTo, currency)
+  const count = bagCount(lines)
   const close = () => setOpen(false)
   const focus = useFocusReturn(bagButton)
   // Removing the last line moves focus to the empty state's title (see BagGroups).
@@ -70,7 +72,7 @@ export function BagDrawer() {
                 <header className="flex items-center justify-between px-5 pt-5 pb-4">
                   <DialogPrimitive.Title className="flex items-baseline gap-2">
                     <span className="font-display text-display-sm">Bag</span>
-                    <span className="text-sm text-ink-2 tabular">{bag.count} {bag.count === 1 ? "item" : "items"}</span>
+                    <span className="text-sm text-ink-2 tabular">{count} {count === 1 ? "item" : "items"}</span>
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full text-ink-2 transition hover:bg-white/8 hover:text-ink" aria-label="Close bag">
                     <X className="size-5" />

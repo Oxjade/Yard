@@ -12,19 +12,20 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
+import { site } from "@/config/site"
 import { brands } from "@/lib/data/brands"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useOrders } from "@/lib/stores/orders"
+import { useNow } from "@/hooks/use-now"
 import { Filters } from "../marketplace/filters"
 import { AdminPageHead, PanelRail, StatRow } from "../marketplace/page-head"
 import { buildOrderRows, groupState, type OrderRow } from "./derive"
-import { DEMO_NOW, amountIn, formatDateTime, relDays, usd, usdCompact } from "./format"
+import { amountIn, daysUntil, formatDateTime, relDays, usd, usdCompact } from "./format"
 import { fulfilMeta, groupMeta, payMeta, type FulfilState } from "./meta"
 import { OrderDetail } from "./order-detail"
 import { downloadCsv, InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./table"
 
-const DAY = 86_400_000
 
 type StatusFilter = "all" | FulfilState | "awaiting_payment" | "refund_requested" | "refunded" | "failed" | "disputed"
 type View = "orders" | "checkouts"
@@ -65,10 +66,10 @@ const copy = (text: string, what: string) =>
 
 function exportOrders(rows: OrderRow[]) {
   downloadCsv(
-    `nocturne-orders-${rows.length}.csv`,
+    `${site.name.toLowerCase()}-orders-${rows.length}.csv`,
     ["Order", "Checkout", "Brand", "Customer", "Placed (UTC)", "Currency", "Total", "Total (USD)", "Payment", "Fulfilment"],
     rows.map((r) => [`#${r.order.reference}`, r.groupRef, r.brand.name, r.customer.name, r.order.placedAt, r.order.currency, amountIn(r.order.total, r.order.currency), (r.totalUsd / 100).toFixed(2), payMeta[r.pay].label, fulfilMeta[r.fulfil].label]),
-    "NOCTURNE brand orders, sample data",
+    `${site.name} brand orders, sample data`,
   )
 }
 
@@ -79,6 +80,8 @@ export function OrdersView() {
   const qid = useId()
   const clientOrders = useOrders((s) => s.orders)
   const groups = useOrders((s) => s.groups)
+  // Every row counts days from one today, sample orders and orders placed here alike (see relDays).
+  const now = useNow(60_000)
   const refunds = useAdmin((s) => s.refunds)
   const disputes = useAdmin((s) => s.disputes)
   const linkedStatus = useSearchParam("status")
@@ -107,8 +110,11 @@ export function OrdersView() {
   const open = !!orderId && rows.some((r) => r.order.id === orderId)
   const openOrder = (id: string) => writeParams({ order: id })
 
-  const recent = rows.filter((r) => new Date(r.order.placedAt).getTime() > DEMO_NOW - 30 * DAY)
-  const today = rows.filter((r) => new Date(r.order.placedAt).getTime() > DEMO_NOW - DAY).length
+  // Whole days since an order was placed, from the same today as its Placed column (see relDays),
+  // so "today" and "30 days" mean what the column says.
+  const age = (r: OrderRow) => -daysUntil(r.order.placedAt, now)
+  const recent = rows.filter((r) => age(r) < 30)
+  const today = rows.filter((r) => age(r) <= 0).length
   const gmv = recent.filter((r) => r.fulfil !== "cancelled" && r.pay !== "pending" && r.pay !== "failed").reduce((s, r) => s + r.totalUsd, 0)
   const unfulfilled = rows.filter((r) => r.fulfil === "unfulfilled").length
   const refundAsks = refunds.filter((r) => r.status === "requested").length
@@ -135,7 +141,9 @@ export function OrdersView() {
     {
       key: "group",
       header: "Checkout",
-      hideBelow: "lg",
+      // Checkout and Customer fold by the table's own width, not the viewport's: beside the open
+      // sidebar they would push the row menu out of view. The order's sheet carries both.
+      hideBelowContainer: "6xl",
       sortValue: (r) => r.groupRef,
       cell: (r) => (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
@@ -156,8 +164,8 @@ export function OrdersView() {
         </span>
       ),
     },
-    { key: "customer", header: "Customer", hideBelow: "lg", sortValue: (r) => r.customer.name, cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.customer.name}</span> },
-    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (r) => r.order.placedAt, cell: (r) => <time dateTime={r.order.placedAt} title={formatDateTime(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt)}</time> },
+    { key: "customer", header: "Customer", hideBelowContainer: "5xl", sortValue: (r) => r.customer.name, cell: (r) => <span className="whitespace-nowrap text-ink-2">{r.customer.name}</span> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (r) => r.order.placedAt, cell: (r) => <time dateTime={r.order.placedAt} title={formatDateTime(r.order.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(r.order.placedAt, now)}</time> },
     {
       key: "total",
       header: "Total",
@@ -166,7 +174,8 @@ export function OrdersView() {
       cell: (r) => (
         <span className="block whitespace-nowrap">
           <span className="block text-ink">{usd(r.totalUsd)}</span>
-          {r.order.currency !== "USD" ? <span className="hidden text-[11px] text-ink-3 sm:block">{amountIn(r.order.total, r.order.currency)}</span> : null}
+          {/* The amount in the order's own currency, at every width: on a phone the table's only amount column carries it too. */}
+          {r.order.currency !== "USD" ? <span className="block text-[11px] text-ink-3">{amountIn(r.order.total, r.order.currency)}</span> : null}
         </span>
       ),
     },
@@ -196,7 +205,7 @@ export function OrdersView() {
       ),
     },
     { key: "customer", header: "Customer", hideBelow: "md", sortValue: (c) => c.customer, cell: (c) => <span className="whitespace-nowrap text-ink-2">{c.customer}</span> },
-    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (c) => c.placedAt, cell: (c) => <time dateTime={c.placedAt} title={formatDateTime(c.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(c.placedAt)}</time> },
+    { key: "placed", header: "Placed", hideBelow: "md", sortValue: (c) => c.placedAt, cell: (c) => <time dateTime={c.placedAt} title={formatDateTime(c.placedAt)} className="whitespace-nowrap text-ink-2">{relDays(c.placedAt, now)}</time> },
     { key: "orders", header: "Brand orders", align: "right", hideBelow: "sm", sortValue: (c) => c.orders.length, cell: (c) => <span className="text-ink">{c.orders.length}</span> },
     { key: "total", header: "Total", align: "right", sortValue: (c) => c.totalUsd, cell: (c) => <span className="whitespace-nowrap text-ink">{usd(c.totalUsd)}</span> },
     {

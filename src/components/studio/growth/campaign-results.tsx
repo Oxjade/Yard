@@ -12,6 +12,7 @@ import { PageHeader, SampleDataNote } from "@/components/dashboard/page-header"
 import { StatusBadge, campaignStatusMeta } from "@/components/dashboard/status-badge"
 import { BackLink, useFocusReturn } from "@/components/studio/business/shared"
 import { useNow } from "@/hooks/use-now"
+import { site } from "@/config/site"
 import { categories } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
 import { ATTRIBUTION, campaignTypes, type Campaign } from "@/lib/data/ads"
@@ -159,7 +160,7 @@ function Results({ c, now }: { c: Campaign; now: number }) {
                   : c.status === "active"
                     ? `Running until ${formatDate(addDays(start, c.days - 1), { weekday: true })}. Numbers update daily.`
                     : c.status === "paused"
-                      ? "Paused by NOCTURNE. If it stays paused for more than a fifth of its run you get a credit for the missed days."
+                      ? `Paused by ${site.name}. If it stays paused for more than a fifth of its run you get a credit for the missed days.`
                       : "Finished. These are the final results."}
             </p>
           </>

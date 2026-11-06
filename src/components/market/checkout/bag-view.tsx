@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { PackageIcon as Package, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { BagGroups } from "@/components/market/bag-contents"
+import { bagCount } from "@/components/market/bag-count"
 import { Price } from "@/components/market/price"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
@@ -76,7 +77,7 @@ export function BagView() {
         <h1 className="font-display text-display-lg text-ink">Bag</h1>
         {ready && brandCount > 0 ? (
           <p className="text-sm text-ink-2 tabular">
-            {plural(bag.count, "item")} from {plural(brandCount, "brand")}
+            {plural(bagCount(lines), "item")} from {plural(brandCount, "brand")}
           </p>
         ) : null}
       </div>
@@ -168,7 +169,7 @@ export function BagView() {
             className="fixed inset-x-4 bottom-[calc(max(0.875rem,env(safe-area-inset-bottom))+4.125rem)] z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
           >
             <p className="min-w-0 text-xs text-ink-2">
-              Total, {plural(bag.count, "item")}
+              Total, {plural(bagCount(lines), "item")}
               <Price amount={bag.total} currency={currency} className="flex text-base text-ink" />
             </p>
             <Button variant="primary" size="lg" onClick={checkout} className="min-w-36">

@@ -6,6 +6,7 @@ import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { adminUser, reconciliation } from "@/lib/data/admin"
+import { useNow } from "@/hooks/use-now"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { AdminPageHead, PanelRail, StatRow } from "../marketplace/page-head"
@@ -34,6 +35,8 @@ export function FinanceView() {
   const adjustments = useAdmin((s) => s.adjustments)
   const disputes = useAdmin((s) => s.disputes)
   const audit = useAdmin((s) => s.audit)
+  // The next deadline counts from the same today as the Disputes tab (see relDays).
+  const now = useNow(60_000)
   const [prefill, setPrefill] = useState<{ value: AdjustmentPrefill; key: number } | null>(null)
 
   // Other screens link here as /admin/finance?tab=refunds&focus=rf_…; the tab and the linked
@@ -91,7 +94,7 @@ export function FinanceView() {
             <StatCard surface="admin" icon={ArrowCounterClockwiseIcon} label="Refunds to decide" value={requested.length} format={n} hint={ready ? `${usd(requested.reduce((s, r) => s + r.amountUsd, 0))} requested` : undefined} href="/admin/finance?tab=refunds#finance-sections" hrefLabel="Open refunds" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={GavelIcon} label="Evidence due" value={needEvidence.length} format={n} hint={ready ? (needEvidence[0] ? `Next ${dueLabel(needEvidence[0].dueBy).toLowerCase()}` : "Nothing due") : undefined} href="/admin/finance?tab=disputes#finance-sections" hrefLabel="Open disputes" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={GavelIcon} label="Evidence due" value={needEvidence.length} format={n} hint={ready ? (needEvidence[0] ? `Next ${dueLabel(needEvidence[0].dueBy, now).toLowerCase()}` : "Nothing due") : undefined} href="/admin/finance?tab=disputes#finance-sections" hrefLabel="Open disputes" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" icon={ScalesIcon} label="Unreconciled" value={unexplained} format={usd} hint={plural(mismatches.length, "mismatch", "mismatches")} href="/admin/finance?tab=reconciliation#finance-sections" hrefLabel="Open reconciliation" ready={ready} className="h-full" />

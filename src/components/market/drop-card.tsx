@@ -61,12 +61,16 @@ export function DropCard({
   )
 }
 
-/** The card's action follows the drop's phase: a reminder before release, the drop while it's live, nothing once it's over. */
+/**
+ * The card's action follows the drop's phase: a reminder before release, the drop while it's
+ * live, nothing once it's over. A released draw has nothing to shop (only drawn winners can
+ * buy), so it gets no action either; its status and the card's link say the rest.
+ */
 function DropAction({ drop, href }: { drop: Drop; href: string }) {
   const now = useNow(5000)
   const phase = now === null ? initialDropPhase(drop) : dropPhaseAt(drop, now, getDemoAnchor())
   if (phase === "upcoming") return <NotifyButton drop={drop} size="sm" className={hit} />
-  if (phase === "live") {
+  if (phase === "live" && drop.access !== "draw") {
     return (
       <Button asChild size="sm" variant="secondary" className={cn("relative z-10", hit)}>
         <Link href={href}>

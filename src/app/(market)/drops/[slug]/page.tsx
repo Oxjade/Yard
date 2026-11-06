@@ -6,14 +6,12 @@ import { CaretLeftIcon as ChevronLeft } from "@phosphor-icons/react/ssr"
 import { BrandCard } from "@/components/market/brand-card"
 import { BrandMark } from "@/components/market/brand-mark"
 import { DropStatus } from "@/components/market/countdown"
-import { DropCard } from "@/components/market/drop-card"
-import { Rail } from "@/components/market/rail"
-import { SectionHeader } from "@/components/market/section-header"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
 import { isSponsoredDrop } from "@/components/market/editorial/drop-facts"
 import { DropProducts } from "@/components/market/editorial/drop-products"
 import { DropReleasePanel } from "@/components/market/editorial/drop-release-panel"
-import { brandById, drops, getDrop, productById, upcomingDrops } from "@/lib/data"
+import { MoreDrops } from "@/components/market/editorial/more-drops"
+import { brandById, drops, getDrop, productById } from "@/lib/data"
 import type { Product } from "@/lib/data/types"
 
 /**
@@ -42,8 +40,6 @@ export default async function DropPage({ params }: PageProps<"/drops/[slug]">) {
   const brand = brandById.get(drop.brandId)!
   const products = drop.productIds.map((id) => productById.get(id)).filter((p): p is Product => !!p)
   const sponsored = isSponsoredDrop(drop)
-  // Other releases still to come, as Discover lists them. Live drops are on /drops, with their own card.
-  const others = upcomingDrops().filter((d) => d.id !== drop.id)
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
@@ -91,18 +87,8 @@ export default async function DropPage({ params }: PageProps<"/drops/[slug]">) {
         <DropProducts drop={drop} products={products} brandName={brand.name} />
       ) : null}
 
-      {others.length ? (
-        <section aria-labelledby="more-drops-title" className="mt-24 md:mt-32">
-          <div id="more-drops-title">
-            <SectionHeader title="More drops" description="Other releases coming up. Set a reminder or enter the draw before each one opens." href="/drops" action="Full calendar" />
-          </div>
-          <Rail label="More drops" itemClassName="w-[80vw] sm:w-[46vw] md:w-[38vw] lg:w-[31%]">
-            {others.map((d) => (
-              <DropCard key={d.id} drop={d} />
-            ))}
-          </Rail>
-        </section>
-      ) : null}
+      {/* Other releases still to come, picked on the demo clock (as Discover's band is). */}
+      <MoreDrops drops={drops} excludeId={drop.id} />
     </div>
   )
 }

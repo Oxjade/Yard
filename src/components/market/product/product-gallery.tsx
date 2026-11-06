@@ -7,6 +7,7 @@ import { AnimatePresence, motion, type PanInfo } from "motion/react"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { ImageAsset } from "@/lib/data/types"
+import { galleryFrame } from "./gallery-frame"
 import { ZoomViewer } from "./zoom-viewer"
 
 const SIZES = "(min-width: 1024px) 50vw, (min-width: 768px) 48vw, 100vw"
@@ -19,7 +20,8 @@ const slide = {
 
 /**
  * Product photography. Desktop: a vertical thumbnail strip beside one large image.
- * Phone: the image runs edge to edge, swipes sideways and shows dots. Images crossfade
+ * Phone: the image runs edge to edge, swipes sideways and shows dots, at a height that keeps
+ * the name and price above the tab bar on the first screen (see galleryFrame). Images crossfade
  * with a short slide in the direction of travel; tapping opens the zoom view. The images on
  * either side are fetched (lazily, at the same size) so a swipe never lands on a blank frame.
  */
@@ -78,7 +80,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
         </div>
       ) : null}
 
-      <div className="relative -mx-4 aspect-[4/5] overflow-hidden bg-card md:mx-0 md:rounded-lg lg:max-h-[calc(100dvh-8rem)] lg:w-full">
+      <div className={cn("relative overflow-hidden bg-card", galleryFrame)}>
         <AnimatePresence initial={false} custom={dir}>
           <motion.div
             key={image.src}

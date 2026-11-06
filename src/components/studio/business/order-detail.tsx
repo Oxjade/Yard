@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
 import { InfoTip } from "@/components/feedback/info-tip"
 import { Button } from "@/components/ui/button"
+import { site } from "@/config/site"
 import { brandById } from "@/lib/data/brands"
 import type { Brand, MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
@@ -337,7 +338,7 @@ function RefundPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
 function ReturnOutcome({ order: o, cur, brandName }: { order: MerchantOrder; cur: Brand["currency"]; brandName: string }) {
   const r = o.returnRequest!
   const d = r.decision!
-  const who = d.by === "brand" ? "You" : "NOCTURNE Finance"
+  const who = d.by === "brand" ? "You" : `${site.name} Finance`
   const returning = o.lines.filter((l) => r.variantIds.includes(l.variantId))
   const units = returning.reduce((n, l) => n + l.quantity, 0)
   const approved = d.status === "approved"

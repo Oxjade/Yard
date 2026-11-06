@@ -9,6 +9,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { duration, ease } from "@/lib/motion"
 import { AuthPanel } from "@/components/market/account/auth-panel"
 import { AuthForm } from "@/components/market/auth-prompt"
+import { bagCount } from "@/components/market/bag-count"
 import { Price } from "@/components/market/price"
 import { Button } from "@/components/ui/button"
 import { type CountryCode } from "@/config/markets"
@@ -56,7 +57,9 @@ export function CheckoutFlow() {
   const user = useSession((s) => s.user)
   const [placed, setPlaced] = useState(false)
   const placedRef = useRef(false)
-  const empty = ready && lines.length === 0
+  // Counted like the bag and the header: a saved line whose piece has left the catalogue isn't
+  // listed anywhere, so a bag holding only those is empty and goes back to /bag too.
+  const empty = ready && bagCount(lines) === 0
 
   useEffect(() => {
     if (empty && !placedRef.current) router.replace("/bag")
@@ -87,7 +90,7 @@ export function CheckoutFlow() {
   }
 
   if (ready && !empty && !user && !placed) {
-    const first = productById.get(lines[0].productId)
+    const first = lines.map((l) => productById.get(l.productId)).find((p) => p !== undefined)
     return (
       <AuthPanel
         eyebrow="Checkout"
@@ -160,7 +163,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const bag = useMemo(() => priceCart(lines, country, currency), [lines, country, currency])
   const methodFor = (brandId: string): ShippingMethod => shipping[brandId] ?? "standard"
   const shippingTotal = bag.groups.reduce((s, g) => s + shippingPrice(g, methodFor(g.brand.id)), 0)
-  const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: shippingTotal, total: bag.subtotal + shippingTotal, count: bag.count }
+  const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: shippingTotal, total: bag.subtotal + shippingTotal, count: bagCount(lines) }
 
   const methods = paymentMethodsFor(country)
   const method: PaymentMethod = methods.includes(payment.method) ? payment.method : methods[0]

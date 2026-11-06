@@ -1,5 +1,6 @@
 "use client"
 
+import { site } from "@/config/site"
 import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
 import type { BrandApplication, Refund } from "@/lib/data/admin"
 import { customerOrders, merchantOrders, sampleReturnRequest } from "@/lib/data/orders"
@@ -45,11 +46,11 @@ type BrandNoticeKey = "approve" | "verify" | "restrict" | "suspend" | "reinstate
 
 /** Merchant copy per decision, so reinstating doesn't read as a fresh verification. */
 const brandCopy: Record<BrandNoticeKey, { title: string; body: (reason: string) => string }> = {
-  approve: { title: "Your brand is approved", body: (r) => `NOCTURNE approved your application, so your brand can sell. Note from the review team: ${r}` },
+  approve: { title: "Your brand is approved", body: (r) => `${site.name} approved your application, so your brand can sell. Note from the review team: ${r}` },
   verify: { title: "The restriction on your brand is lifted", body: (r) => `Your brand is verified again: listings can show in discovery and search, and you can publish new products. Note from the review team: ${r}` },
   restrict: { title: "Your brand has been restricted", body: (r) => `Listings are held back from discovery and payouts are on hold while this is open. Reason: ${r}` },
   suspend: { title: "Your brand has been suspended", body: (r) => `Your storefront and payouts are on hold until the review team reinstates it. Reason: ${r}` },
-  reinstate: { title: "Your brand is reinstated", body: (r) => `NOCTURNE lifted the suspension, so your storefront and listings are back. Held payouts are released after the standard reserve period. Note from the review team: ${r}` },
+  reinstate: { title: "Your brand is reinstated", body: (r) => `${site.name} lifted the suspension, so your storefront and listings are back. Held payouts are released after the standard reserve period. Note from the review team: ${r}` },
 }
 
 /**

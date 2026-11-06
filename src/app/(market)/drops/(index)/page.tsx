@@ -1,11 +1,8 @@
 import type { Metadata } from "next"
-import { DropCard } from "@/components/market/drop-card"
 import { SectionHeader } from "@/components/market/section-header"
 import { DropsBoard } from "@/components/market/editorial/drops-board"
-import { accessName, accessRule, featuredDropIds, isSponsoredDrop } from "@/components/market/editorial/drop-facts"
-import { FeaturedDrop } from "@/components/market/editorial/featured-drop"
-import { withSponsoredSlots } from "@/lib/data/ads"
-import { drops, liveDrops, upcomingDrops } from "@/lib/data"
+import { accessName, accessRule } from "@/components/market/editorial/drop-facts"
+import { drops } from "@/lib/data"
 import type { Drop } from "@/lib/data/types"
 
 export const metadata: Metadata = {
@@ -14,14 +11,6 @@ export const metadata: Metadata = {
 }
 
 export default function DropsPage() {
-  const upcoming = upcomingDrops()
-  // The feature slot: the organic next release, with the paid "drops-feature" booking in its
-  // designated position (slot 0). A booked drop that is also next simply carries the label.
-  const organicNext: Drop | undefined = upcoming[0] ?? liveDrops()[0]
-  const booked = upcoming.filter((d) => featuredDropIds.has(d.id) && d.id !== organicNext?.id).slice(0, 1)
-  const slots = withSponsoredSlots(organicNext ? [organicNext] : [], booked, [0])
-  const [lead, second] = slots
-
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
       <header className="max-w-2xl">
@@ -31,13 +20,7 @@ export default function DropsPage() {
         </p>
       </header>
 
-      {lead ? (
-        <div className="mt-10 md:mt-12">
-          <FeaturedDrop drop={lead.item} sponsored={lead.sponsored || isSponsoredDrop(lead.item)} />
-          {second ? <DropCard drop={second.item} layout="wide" className="mt-4" /> : null}
-        </div>
-      ) : null}
-
+      {/* The feature slot and every group below follow the demo clock, so they are picked together on the client. */}
       <DropsBoard drops={drops} />
 
       <section aria-labelledby="how-title" className="mt-24 md:mt-32">

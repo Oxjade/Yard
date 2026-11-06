@@ -22,15 +22,15 @@ export const adminRoles: Record<AdminRole, { name: string; can: string[] }> = {
   engineering: { name: "Engineering", can: ["view health", "replay webhooks", "retry jobs"] },
 }
 
-export const adminUser = { id: "adm_1", name: "Kemi Ajayi", email: "kemi@nocturne.example", role: "owner" as AdminRole, mfa: true }
+export const adminUser = { id: "adm_1", name: "Kemi Ajayi", email: "kemi@yard.example", role: "owner" as AdminRole, mfa: true }
 
 export const adminTeam = [
   adminUser,
-  { id: "adm_2", name: "Daniel Okoro", email: "daniel@nocturne.example", role: "finance" as AdminRole, mfa: true },
-  { id: "adm_3", name: "Aisha Bello", email: "aisha@nocturne.example", role: "trust_safety" as AdminRole, mfa: true },
-  { id: "adm_4", name: "Sam Lee", email: "sam@nocturne.example", role: "ads_ops" as AdminRole, mfa: false },
-  { id: "adm_5", name: "Ngozi Eze", email: "ngozi@nocturne.example", role: "support" as AdminRole, mfa: true },
-  { id: "adm_6", name: "Lukas Brandt", email: "lukas@nocturne.example", role: "engineering" as AdminRole, mfa: true },
+  { id: "adm_2", name: "Daniel Okoro", email: "daniel@yard.example", role: "finance" as AdminRole, mfa: true },
+  { id: "adm_3", name: "Aisha Bello", email: "aisha@yard.example", role: "trust_safety" as AdminRole, mfa: true },
+  { id: "adm_4", name: "Sam Lee", email: "sam@yard.example", role: "ads_ops" as AdminRole, mfa: false },
+  { id: "adm_5", name: "Ngozi Eze", email: "ngozi@yard.example", role: "support" as AdminRole, mfa: true },
+  { id: "adm_6", name: "Lukas Brandt", email: "lukas@yard.example", role: "engineering" as AdminRole, mfa: true },
 ]
 
 /* ---------- Brand review ---------- */
