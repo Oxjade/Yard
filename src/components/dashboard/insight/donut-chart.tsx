@@ -1,11 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useRef, useState } from "react"
 import Link from "next/link"
-import { motion } from "motion/react"
+import { motion, useTransform } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { chartEase, progress, useEntranceClock } from "./clock"
+import { CountUp } from "./count-up"
+import { useSeen } from "./use-entrance"
+
+/** The ring's sweep on first appearance, in ms. */
+const SWEEP = 600
 
 export type DonutSegment = { key: string; label: string; value: number; href?: string }
 
@@ -15,6 +20,9 @@ const palette = ["#6d19d9", "#9452ff", "#858585", "#5e5e5e", "#3d3d3d"]
 /**
  * Donut with a centre total and a legend. Hovering or focusing a legend row (or a segment)
  * brings its share to the centre and dims the rest; rows with an `href` open that record.
+ * The first time it is seen, the ring sweeps in clockwise from twelve o'clock and the centre
+ * total counts up (not under reduced motion); later changes redraw in place. The sweep runs
+ * on its own clock (clock.ts), so a busy main thread delays it rather than skipping it.
  */
 export function DonutChart({
   segments,
@@ -41,6 +49,11 @@ export function DonutChart({
   className?: string
 }) {
   const hydrated = useHydrated()
+  const ring = useRef<HTMLDivElement>(null)
+  const inView = useSeen(ring)
+  const clock = useEntranceClock(inView, SWEEP)
+  const sweep = useTransform(clock, (t) => chartEase(progress(t, SWEEP)))
+  const mask = `donut-sweep-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
   const [active, setActive] = useState<string | null>(null)
   const total = segments.reduce((s, x) => s + x.value, 0)
   const stroke = 18
@@ -62,14 +75,28 @@ export function DonutChart({
   return (
     <div className={cn("@container min-w-0", className)}>
       <div className="flex flex-col items-center gap-5 @[21rem]:flex-row @[21rem]:items-center">
-        <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <div ref={ring} className="relative shrink-0" style={{ width: size, height: size }}>
           {!hydrated ? (
             <div key="skeleton" aria-hidden className="skeleton size-full rounded-full [mask:radial-gradient(circle,transparent_55%,#000_56%)]" />
           ) : (
-            <motion.div key="donut" initial={{ opacity: 0, rotate: -40 }} animate={{ opacity: 1, rotate: 0 }} transition={{ duration: duration.chart, ease: ease.out }}>
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}. ${total ? arcs.map((a) => `${a.label} ${pct(a.value)}`).join(", ") : empty}`}>
+            <svg key="donut" width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}. ${total ? arcs.map((a) => `${a.label} ${pct(a.value)}`).join(", ") : empty}`}>
+              <defs>
+                {/* The sweep: a mask ring that draws itself once, revealing every segment in turn. */}
+                <mask id={mask} maskUnits="userSpaceOnUse" x={0} y={0} width={size} height={size}>
+                  <motion.circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={r}
+                    fill="none"
+                    stroke="#fff"
+                    strokeWidth={stroke + 2}
+                    transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                    style={{ pathLength: sweep }}
+                  />
+                </mask>
+              </defs>
               <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
-              <g>
+              <g mask={`url(#${mask})`}>
                 <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
                   {total
                     ? arcs.map((a) =>
@@ -94,13 +121,16 @@ export function DonutChart({
                 </g>
               </g>
             </svg>
-            </motion.div>
           )}
           <div aria-hidden className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
             {hydrated ? (
               total || cur ? (
                 <span key="ready" className="flex flex-col items-center">
-                  <span className="font-metric text-[1.625rem] text-ink">{format(cur ? cur.value : total)}</span>
+                  {/* The total stays mounted under a hovered share, so it counts once, not on every hover. */}
+                  <span className="font-metric inline-grid justify-items-center text-[1.625rem] text-ink [&>*]:[grid-area:1/1]">
+                    <span className={cn(cur && "invisible")}>{total ? <CountUp value={total} format={format} /> : format(0)}</span>
+                    {cur ? <span>{format(cur.value)}</span> : null}
+                  </span>
                   <span className="mt-1.5 max-w-[7.5rem] truncate text-[11px] text-ink-3">{cur ? `${pct(cur.value)} of ${totalLabel.toLowerCase()}` : totalLabel}</span>
                 </span>
               ) : (

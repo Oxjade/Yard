@@ -366,8 +366,9 @@
 
 /* ─────────────────────────────────────────────────────────────
  * Admin Control Center — "control room" layer.
- * Only on [data-surface="admin"]: atmospheric depth from layered, very low-alpha
- * gradients and a purple ambient backlight; 1px low-opacity hairlines; deep surfaces.
+ * Only on [data-surface="admin"]: a flat near-black page (#080808, no backlight, no colour
+ * glows); depth comes from layered panels, 1px low-opacity hairlines and deep shadows.
+ * Purple marks active and selected states only.
  * Type scale (admin): 11 caption · 12 small · 13 body · 15 lead · 18 h2 · 28 h1 · 34/48 metrics.
  * ───────────────────────────────────────────────────────────── */
 @layer components {
@@ -393,36 +394,8 @@
     --admin-hairline-strong: rgba(255, 255, 255, 0.13);
     --admin-surface: #0c0c0c;
     --admin-surface-2: #111111;
-    --admin-glow: rgba(109, 25, 217, 0.16);
     position: relative;
     isolation: isolate;
-  }
-  /* Ambient backlight behind everything: purple from the top-left, a whisper of yellow below */
-  [data-surface="admin"]::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(1100px 620px at 14% -12%, rgba(109, 25, 217, 0.17), transparent 62%),
-      radial-gradient(760px 460px at 104% 6%, rgba(109, 25, 217, 0.07), transparent 60%),
-      radial-gradient(900px 420px at 60% 118%, rgba(245, 255, 0, 0.025), transparent 60%),
-      linear-gradient(180deg, #0a0a0a 0%, #080808 40%);
-  }
-  /* A barely-there grid texture so large dark areas never read as flat */
-  [data-surface="admin"]::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    opacity: 0.35;
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(1200px 700px at 30% 0%, #000 20%, transparent 75%);
   }
 
   /* Layered panel surface: top light falloff, inner highlight, deep drop shadow */
@@ -437,15 +410,6 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.045),
       0 1px 0 rgba(0, 0, 0, 0.6),
       0 24px 48px -32px rgba(0, 0, 0, 0.95);
-  }
-  /* Optional ambient bloom in a panel's corner (used on the hero metric) */
-  .admin-panel-glow::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: radial-gradient(420px 220px at 0% 0%, var(--admin-glow), transparent 70%);
   }
   .admin-panel-attention {
     border-color: rgba(245, 255, 0, 0.28);
@@ -631,6 +595,38 @@
   }
 }
 
+/*
+ * First-appearance entrances for metrics and charts (CountUp, Heatmap, RingGauge, the
+ * Control Center's latency bars). The server HTML and the hydrating render carry the final
+ * values; while an entrance is still to run they are held back here, and the component
+ * releases them the moment it starts. Only with scripting and motion allowed: without
+ * JavaScript, or under reduced motion, everything shows its final state from the first paint.
+ * The held-back state applies at once (no transition into it), so marks that were already
+ * painted, such as heatmap squares whose counts just arrived, go straight to the start of
+ * their entrance; the element's own transition then runs when it is released.
+ */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  /* A number that has not started counting yet (its width-holder keeps its place). */
+  [data-count="pending"] {
+    visibility: hidden;
+  }
+  /* Heatmap squares before they fade in by column. */
+  [data-entrance="pending"] [data-col] {
+    opacity: 0;
+    transition: none !important;
+  }
+  /* A gauge arc before it sweeps in from empty. */
+  [data-entrance="pending"] [data-sweep] {
+    stroke-dashoffset: var(--sweep-from) !important;
+    transition: none !important;
+  }
+  /* A horizontal bar before it grows from the left. */
+  [data-entrance="pending"] [data-grow] {
+    transform: scaleX(0) !important;
+    transition: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -695,10 +691,6 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.05),
       0 24px 48px -28px rgba(0, 0, 0, 0.9);
   }
-  /* Admin: slightly translucent so the control-room backlight reads through. No blur halo. */
-  [data-surface="admin"] .shell-panel {
-    background: rgba(13, 13, 13, 0.82);
-  }
   /* The active item: a raised pill. */
   .shell-pill {
     background: rgba(255, 255, 255, 0.06);
@@ -707,10 +699,9 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
       0 1px 2px rgba(0, 0, 0, 0.5);
   }
-  /* The purple edge indicator beside the active item. */
+  /* The purple edge indicator beside the active item: a solid mark, no glow. */
   .shell-indicator {
     background: #6d19d9;
-    box-shadow: 0 0 8px rgba(109, 25, 217, 0.35);
   }
   /* The section list fades out at an edge only while it has more to scroll there. */
   .shell-scroll[data-fade="bottom"] {

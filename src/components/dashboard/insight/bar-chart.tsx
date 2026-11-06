@@ -1,11 +1,13 @@
 "use client"
 
 import { useEffect, useId, useRef, useState } from "react"
-import { motion, useInView, useReducedMotion } from "motion/react"
+import { motion, useTransform, type HTMLMotionProps, type MotionValue } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { duration, ease, spring } from "@/lib/motion"
+import { chartIn, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { chartEase, progress, useEntranceClock } from "./clock"
 import { DeltaChip } from "./delta-chip"
+import { useSeen } from "./use-entrance"
 
 export type BarDatum = {
   key: string
@@ -53,13 +55,26 @@ function useWidth<T extends HTMLElement>() {
 /** Rough width of an 11px tabular axis label, to decide how many labels fit. */
 const labelWidth = (text: string) => text.length * 6.2 + 8
 
+/** The entrance, in ms: each bar grows for `grow`, starting up to `stagger` after the first;
+    the value chip and the in-bar label then fade in over `label`. */
+const entrance = { grow: chartIn.duration * 1000, stagger: chartIn.stagger * 1000, label: 150 }
+
+/** A bar that grows from the baseline as the entrance clock runs. */
+function GrowBar({ clock, delay, style, ...props }: HTMLMotionProps<"span"> & { clock: MotionValue<number>; delay: number }) {
+  const scaleY = useTransform(clock, (t) => chartEase(progress(t, entrance.grow, delay)))
+  return <motion.span {...props} style={{ ...style, scaleY }} />
+}
+
 /**
  * Hatched bar chart with one highlighted bar (acid), the latest by default. Hover, focus
  * or the arrow keys move the highlight; on touch, tapping or sliding a finger across the
  * plot does (the whole plot is the target, so narrow bars stay easy to hit). The readout
  * above the plot names the bar on two fixed lines. Bars grow from the baseline the first
- * time the chart is seen (not under reduced motion). Remount it with a new `key` when the
- * buckets change so the bars grow again.
+ * time the chart is seen, with a short stagger spread over the series; the value chip and
+ * the in-bar label fade in once the bars have grown (not under reduced motion, where the
+ * chart is drawn in full). The entrance runs on its own clock (clock.ts), so a busy main
+ * thread delays it rather than skipping it. Remount it with a new `key` when the buckets
+ * change so the bars grow again.
  */
 export function BarChart({
   data,
@@ -83,7 +98,6 @@ export function BarChart({
 }) {
   const id = useId()
   const hydrated = useHydrated()
-  const reduce = useReducedMotion()
   const last = data.length - 1
   // The latest bar by default; when the latest bucket is still empty (a day that has only
   // just begun), the latest bar that has something to show.
@@ -99,7 +113,10 @@ export function BarChart({
   // A touch already selected its bar on pointer down; the click that follows is ignored.
   const touched = useRef(false)
   const [plotRef, plotW] = useWidth<HTMLDivElement>()
-  const inView = useInView(plotRef, { once: true, margin: "0px 0px -10% 0px" })
+  const inView = useSeen(plotRef, "0px 0px -10% 0px")
+  const grown = entrance.grow + (data.length > 1 ? entrance.stagger : 0)
+  const clock = useEntranceClock(inView, grown + entrance.label)
+  const labelOpacity = useTransform(clock, [grown, grown + entrance.label], [0, 1])
 
   const max = Math.max(0, ...data.map((d) => d.value))
   const { top, ticks } = niceTicks(max)
@@ -216,12 +233,12 @@ export function BarChart({
                       className="group/bar absolute inset-x-0 bottom-0 flex justify-center outline-none"
                       style={{ height: areaH }}
                     >
-                      <motion.span
+                      <GrowBar
                         className="absolute bottom-0 origin-bottom rounded-t-[8px] rounded-b-[3px] group-focus-visible/bar:outline-2 group-focus-visible/bar:outline-offset-2 group-focus-visible/bar:outline-violet"
                         style={{ height: d.value > 0 ? `max(${pct * 100}%, 6px)` : 2, width: barW || "64%", maxWidth: 52 }}
-                        initial={reduce ? false : { scaleY: 0 }}
-                        animate={{ scaleY: reduce || inView ? 1 : 0 }}
-                        transition={{ duration: duration.chart, ease: ease.out, delay: Math.min(i * 0.025, 0.3) }}
+                        clock={clock}
+                        // The stagger is spread over the series, so 14 daily bars take no longer than 3 monthly ones.
+                        delay={data.length > 1 ? (i / (data.length - 1)) * entrance.stagger : 0}
                       >
                         <span
                           className="absolute inset-0 rounded-[inherit] bg-white/[0.035] ring-1 ring-white/[0.06] ring-inset"
@@ -233,15 +250,20 @@ export function BarChart({
                         ) : (
                           <span className="absolute inset-0 rounded-full bg-white/20" />
                         )}
-                        {inside ? <span className="font-metric absolute inset-x-0 bottom-2 text-center text-[13px] text-obsidian">{format(d.value)}</span> : null}
-                      </motion.span>
+                        {inside ? (
+                          <motion.span className="font-metric absolute inset-x-0 bottom-2 text-center text-[13px] text-obsidian" style={{ opacity: labelOpacity }}>
+                            {format(d.value)}
+                          </motion.span>
+                        ) : null}
+                      </GrowBar>
                     </button>
 
                     {chip ? (
-                      <div
+                      // Hidden while the bars grow, so it never floats above a half-grown bar.
+                      <motion.div
                         aria-hidden
                         className={cn("pointer-events-none absolute flex", i < 2 && data.length > 4 ? "left-0 justify-start" : i > last - 2 && data.length > 4 ? "right-0 justify-end" : "left-1/2 w-0 justify-center")}
-                        style={{ bottom: `calc(${d.value > 0 ? `max(${pct * areaH}px, 6px)` : "2px"} + 8px)` }}
+                        style={{ bottom: `calc(${d.value > 0 ? `max(${pct * areaH}px, 6px)` : "2px"} + 8px)`, opacity: labelOpacity }}
                       >
                         <motion.span layoutId={`bar-chip-${id}`} transition={spring.indicator} className="flex items-center gap-1 whitespace-nowrap">
                           {!inside ? (
@@ -255,7 +277,7 @@ export function BarChart({
                             </span>
                           )}
                         </motion.span>
-                      </div>
+                      </motion.div>
                     ) : null}
                   </div>
                 )

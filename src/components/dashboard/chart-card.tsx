@@ -1,6 +1,11 @@
 "use client"
 
+import { useRef } from "react"
+import { useReducedMotion } from "motion/react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { useSeen } from "@/components/dashboard/insight/use-entrance"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { chartEasing } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 type Datum = Record<string, string | number>
@@ -22,7 +27,10 @@ function ChartTooltip({ active, payload, label, format, labels }: { active?: boo
 
 /**
  * Time-series chart. Purple is the primary series; a second series, when shown, is a
- * muted line so the primary always reads first.
+ * muted line so the primary always reads first. The chart is drawn the first time it is
+ * seen (an empty frame of the same height holds its place until then), so areas draw in from
+ * the left and bars grow from the baseline in 600ms as it appears, not off screen on mount
+ * (Recharts skips it under reduced motion); later data changes ease from the previous values.
  */
 export function TimeSeriesChart({
   data,
@@ -43,49 +51,57 @@ export function TimeSeriesChart({
   const colors = ["#6d19d9", "#858585", "#f5ff00"]
   const tick = { fill: "#858585", fontSize: 11 }
   const xFormat = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+  const frame = useRef<HTMLDivElement>(null)
+  const hydrated = useHydrated()
+  const reduce = useReducedMotion()
+  const seen = useSeen(frame)
 
   return (
-    <div className={cn("w-full", className)} style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        {kind === "bar" ? (
-          <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
-            <CartesianGrid vertical={false} stroke="#1a1a1a" />
-            <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={24} />
-            <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
-            <Tooltip cursor={{ fill: "rgba(109,25,217,0.14)" }} content={<ChartTooltip format={format} labels={labels} />} />
-            {series.map((s, i) => (
-              <Bar key={s.key} dataKey={s.key} fill={s.color ?? colors[i]} radius={[3, 3, 0, 0]} maxBarSize={18} />
-            ))}
-          </BarChart>
-        ) : (
-          <AreaChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
-            <defs>
+    <div ref={frame} className={cn("w-full", className)} style={{ height }}>
+      {hydrated && (reduce || seen) ? (
+        <ResponsiveContainer width="100%" height="100%">
+          {kind === "bar" ? (
+            <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
+              <CartesianGrid vertical={false} stroke="#1a1a1a" />
+              <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
+              <Tooltip cursor={{ fill: "rgba(109,25,217,0.14)" }} content={<ChartTooltip format={format} labels={labels} />} />
               {series.map((s, i) => (
-                <linearGradient key={s.key} id={`fill-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
-                  <stop offset="100%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
-                </linearGradient>
+                <Bar key={s.key} dataKey={s.key} fill={s.color ?? colors[i]} radius={[3, 3, 0, 0]} maxBarSize={18} animationDuration={600} animationEasing={chartEasing} />
               ))}
-            </defs>
-            <CartesianGrid vertical={false} stroke="#1a1a1a" />
-            <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={28} />
-            <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
-            <Tooltip cursor={{ stroke: "#3a3a3a" }} content={<ChartTooltip format={format} labels={labels} />} />
-            {series.map((s, i) => (
-              <Area
-                key={s.key}
-                type="monotone"
-                dataKey={s.key}
-                stroke={s.color ?? colors[i]}
-                strokeWidth={i === 0 ? 2 : 1.5}
-                strokeDasharray={i === 0 ? undefined : "4 4"}
-                fill={`url(#fill-${s.key})`}
-                activeDot={{ r: 4, strokeWidth: 0 }}
-              />
-            ))}
-          </AreaChart>
-        )}
-      </ResponsiveContainer>
+            </BarChart>
+          ) : (
+            <AreaChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
+              <defs>
+                {series.map((s, i) => (
+                  <linearGradient key={s.key} id={`fill-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
+                    <stop offset="100%" stopColor={s.color ?? colors[i]} stopOpacity={i === 0 ? 0.16 : 0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid vertical={false} stroke="#1a1a1a" />
+              <XAxis dataKey="date" tickFormatter={xFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={28} />
+              <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
+              <Tooltip cursor={{ stroke: "#3a3a3a" }} content={<ChartTooltip format={format} labels={labels} />} />
+              {series.map((s, i) => (
+                <Area
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  stroke={s.color ?? colors[i]}
+                  strokeWidth={i === 0 ? 2 : 1.5}
+                  strokeDasharray={i === 0 ? undefined : "4 4"}
+                  fill={`url(#fill-${s.key})`}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
+                  animationDuration={600}
+                  animationEasing={chartEasing}
+                />
+              ))}
+            </AreaChart>
+          )}
+        </ResponsiveContainer>
+      ) : null}
     </div>
   )
 }

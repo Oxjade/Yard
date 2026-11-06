@@ -26,6 +26,11 @@ export const ease = {
   inOut: [0.65, 0, 0.35, 1] as const,
   /** Exits: leave quickly, no lingering. */
   in: [0.4, 0, 1, 1] as const,
+  /** A strong ease-out: most of the distance early, then a long, calm settle. */
+  settle: [0.16, 1, 0.3, 1] as const,
+  /** First counts and chart entrances (a cubic ease-out): quick off the mark, with the middle
+      of the count still readable (about half way at a fifth of the time), then a calm landing. */
+  count: [0.33, 1, 0.68, 1] as const,
 }
 
 export const duration = {
@@ -70,3 +75,22 @@ export const variants = {
 
 /** Number transitions: long enough to read the change, short enough not to wait for it. */
 export const counter = { duration: 0.6, ease: ease.out }
+
+/**
+ * The first count of a metric, from zero, when it first appears: a confident count, not a
+ * slot machine. Numbers in one row start together. `balance` is the shorter count for money
+ * balances and status figures (the sidebar card), which count on first load only.
+ * Entrance clocks start on the first frame after the figure is shown and never skip ahead
+ * when the main thread is busy (insight/clock.ts), so the whole count is seen.
+ */
+export const countIn = { duration: 1, ease: ease.count, balance: 0.75 }
+
+/**
+ * Charts on first appearance: bars grow from the baseline, donuts and gauges sweep in,
+ * heatmaps fade in by column, areas draw in. `stagger` is spread across the whole series
+ * (not per item), so a long series takes no longer than a short one.
+ */
+export const chartIn = { duration: 0.5, ease: ease.count, stagger: 0.12 }
+
+/** `chartIn.ease` as a CSS easing, for CSS transitions and Recharts. */
+export const chartEasing = `cubic-bezier(${chartIn.ease.join(",")})` as `cubic-bezier(${number},${number},${number},${number})`

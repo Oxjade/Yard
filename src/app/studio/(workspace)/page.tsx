@@ -25,6 +25,7 @@ import { SampleDataNote } from "@/components/dashboard/page-header"
 import { periodDays, periodLabel, type Period } from "@/components/dashboard/period-select"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
 import { BarChart, type BarDatum } from "@/components/dashboard/insight/bar-chart"
+import { CountUp } from "@/components/dashboard/insight/count-up"
 import { buckets, change, longDate, periodWindows, rangeLabel, shortDate, slices, today, weekdayByWeek, weekdays, type Bucket } from "@/components/dashboard/insight/derive"
 import { DeltaChip } from "@/components/dashboard/insight/delta-chip"
 import { DonutChart, type DonutSegment } from "@/components/dashboard/insight/donut-chart"
@@ -260,7 +261,9 @@ export default function StudioOverviewPage() {
             <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
               {hydrated ? (
                 <>
-                  <p className="font-metric text-[2rem] leading-none text-ink">{moneyFull(chartTotal)}</p>
+                  <p className="font-metric text-[2rem] leading-none text-ink">
+                    <CountUp value={chartTotal} format={moneyFull} />
+                  </p>
                   <DeltaChip value={chartDelta} context={`the ${spec.window.replace("last ", "")} before`} />
                 </>
               ) : (

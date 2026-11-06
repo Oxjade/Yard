@@ -1,24 +1,15 @@
 "use client"
 
-import { useEffect } from "react"
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react"
 import { ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
+import { CountUp } from "@/components/dashboard/insight/count-up"
 import { cn } from "@/lib/utils"
 
-/** A number that eases to its new value when the period changes. */
-export function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
-  const reduce = useReducedMotion()
-  const mv = useMotionValue(value)
-  const text = useTransform(mv, (v) => format(v))
-  useEffect(() => {
-    if (reduce) {
-      mv.set(value)
-      return
-    }
-    const controls = animate(mv, value, { duration: 0.6, ease: [0.22, 1, 0.36, 1] })
-    return () => controls.stop()
-  }, [value, mv, reduce])
-  return <motion.span>{text}</motion.span>
+/**
+ * A metric number: counts up from zero the first time it appears, then eases to its new
+ * value when the period changes. A thin wrapper over CountUp, kept for its callers.
+ */
+export function AnimatedNumber({ value, format, updates }: { value: number; format: (n: number) => string; updates?: "ease" | "instant" }) {
+  return <CountUp value={value} format={format} updates={updates} />
 }
 
 export function MetricTile({

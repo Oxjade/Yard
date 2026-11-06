@@ -1,8 +1,11 @@
 "use client"
 
-import { useId } from "react"
+import { useId, useRef } from "react"
+import { useReducedMotion } from "motion/react"
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { useSeen } from "@/components/dashboard/insight/use-entrance"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { chartEasing } from "@/lib/motion"
 import { PanelSkeleton } from "./panel"
 
 type Row = { date: string } & Record<string, number | string>
@@ -26,35 +29,39 @@ function GlassTooltip({ active, payload, label, format, labels }: { active?: boo
 }
 
 /**
- * The Control Center's main chart: the primary series as a purple area with a soft
- * downward falloff, the secondary as a dashed grey line. Fixed height; a same-size
- * skeleton stands in until the chart can measure itself, so nothing shifts.
+ * The Control Center's main chart: the primary series as a violet line over a flat, low
+ * purple fill (no soft falloff), the secondary as a dashed grey line. Fixed height; a
+ * same-size skeleton stands in until the chart can measure itself and has been seen, so
+ * nothing shifts and the series draw in from the left in 600ms as the chart first appears,
+ * not off screen on mount (Recharts skips it under reduced motion).
  */
 export function AdminAreaChart({ data, primary, secondary, format, height = 280 }: { data: Row[]; primary: { key: string; label: string }; secondary?: { key: string; label: string }; format: (n: number) => string; height?: number }) {
   const id = useId()
   const hydrated = useHydrated()
+  const frame = useRef<HTMLDivElement>(null)
+  const reduce = useReducedMotion()
+  const seen = useSeen(frame)
   const tick = { fill: "#858585", fontSize: 11 }
   const labels = { [primary.key]: primary.label, ...(secondary ? { [secondary.key]: secondary.label } : {}) }
   return (
-    <div style={{ height }} className="w-full">
-      {!hydrated ? (
+    <div ref={frame} style={{ height }} className="w-full">
+      {!hydrated || !(seen || reduce) ? (
         <PanelSkeleton className="h-full w-full" />
       ) : (
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 10, right: 6, bottom: 0, left: -14 }}>
             <defs>
               <linearGradient id={`a-${id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#6d19d9" stopOpacity={0.42} />
-                <stop offset="55%" stopColor="#6d19d9" stopOpacity={0.12} />
-                <stop offset="100%" stopColor="#6d19d9" stopOpacity={0} />
+                <stop offset="0%" stopColor="#6d19d9" stopOpacity={0.16} />
+                <stop offset="100%" stopColor="#6d19d9" stopOpacity={0.16} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="date" tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} tick={tick} axisLine={false} tickLine={false} minTickGap={32} />
             <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
             <Tooltip cursor={{ stroke: "rgba(255,255,255,0.16)", strokeDasharray: "3 3" }} content={<GlassTooltip format={format} labels={labels} />} />
-            <Area type="monotone" dataKey={primary.key} stroke="#9452ff" strokeWidth={2} fill={`url(#a-${id})`} activeDot={{ r: 4.5, fill: "#f5f5f5", stroke: "#6d19d9", strokeWidth: 2 }} animationDuration={900} />
-            {secondary ? <Line type="monotone" dataKey={secondary.key} stroke="#858585" strokeWidth={1.5} strokeDasharray="4 4" dot={false} activeDot={{ r: 3.5, fill: "#858585", strokeWidth: 0 }} animationDuration={900} /> : null}
+            <Area type="monotone" dataKey={primary.key} stroke="#9452ff" strokeWidth={2} fill={`url(#a-${id})`} activeDot={{ r: 4.5, fill: "#f5f5f5", stroke: "#6d19d9", strokeWidth: 2 }} animationDuration={600} animationEasing={chartEasing} />
+            {secondary ? <Line type="monotone" dataKey={secondary.key} stroke="#858585" strokeWidth={1.5} strokeDasharray="4 4" dot={false} activeDot={{ r: 3.5, fill: "#858585", strokeWidth: 0 }} animationDuration={600} animationEasing={chartEasing} /> : null}
           </ComposedChart>
         </ResponsiveContainer>
       )}

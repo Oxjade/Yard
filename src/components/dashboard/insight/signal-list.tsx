@@ -1,4 +1,7 @@
+"use client"
+
 import { cn } from "@/lib/utils"
+import { CountUp } from "./count-up"
 import { DeltaChip } from "./delta-chip"
 
 export type Signal = {
@@ -13,7 +16,8 @@ export type Signal = {
 
 /**
  * The signal ledger: compact rows for secondary metrics, each with its own change chip.
- * Until `ready`, same-size skeletons hold each row. Pass `flex-1 auto-rows-fr` in a flex
+ * Each figure counts up in its own format when the ledger first appears (CountUp), and eases
+ * when the period changes. Until `ready`, same-size skeletons hold each row. Pass `flex-1 auto-rows-fr` in a flex
  * column to spread equal rows over a card that is taller than the list; each row's content
  * stays centred.
  */
@@ -30,7 +34,7 @@ export function SignalList({ items, ready = true, deltaContext, className }: { i
             {ready ? (
               <>
                 <p className="flex min-w-0 items-baseline gap-2">
-                  {s.empty ? <span className="text-[13px] text-ink-3">{s.value}</span> : <span className="font-metric text-[1.25rem] text-ink">{s.value}</span>}
+                  {s.empty ? <span className="text-[13px] text-ink-3">{s.value}</span> : <CountUp text={s.value} className="font-metric text-[1.25rem] text-ink" />}
                   {s.hint ? <span className="truncate text-[11px] text-ink-3">{s.hint}</span> : null}
                 </p>
                 <DeltaChip value={s.delta} size="sm" context={deltaContext} />

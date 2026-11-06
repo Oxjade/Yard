@@ -68,7 +68,7 @@ export function DetailSheet({
         }}
         className={cn("gap-0 bg-[#0c0c0c] p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.04),-24px_0_64px_-24px_rgba(0,0,0,0.9)] focus:outline-none data-[side=right]:w-full data-[side=right]:sm:max-w-[500px]", hairline)}
       >
-        <SheetHeader className={cn("relative gap-3 border-b bg-[radial-gradient(420px_200px_at_0%_0%,rgba(109,25,217,0.14),transparent_70%)] p-5 pr-14", hairline)}>
+        <SheetHeader className={cn("relative gap-3 border-b p-5 pr-14", hairline)}>
           <div className="flex min-w-0 items-center gap-3">
             {lead}
             <div className="min-w-0">

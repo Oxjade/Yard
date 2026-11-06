@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { SampleDataNote } from "@/components/dashboard/page-header"
 import { ArrowLink } from "@/components/dashboard/insight/arrow-link"
 import { BarChart, type BarDatum } from "@/components/dashboard/insight/bar-chart"
+import { CountUp } from "@/components/dashboard/insight/count-up"
 import { addDays, buckets, change, longDate, periodWindows, rangeLabel, shortDate, slices, today, weekdayByWeek, weekdays, type Bucket } from "@/components/dashboard/insight/derive"
 import { DeltaChip } from "@/components/dashboard/insight/delta-chip"
 import { DonutChart, type DonutSegment } from "@/components/dashboard/insight/donut-chart"
@@ -28,6 +29,7 @@ import { InsightCard, InsightEmphasis } from "@/components/dashboard/insight/ins
 import { Segmented as Switch } from "@/components/dashboard/insight/segmented"
 import { SignalList } from "@/components/dashboard/insight/signal-list"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
+import { useEntrance } from "@/components/dashboard/insight/use-entrance"
 import { RingGauge } from "@/components/admin/ui/gauge"
 import { Reveal, RevealItem, springs } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
@@ -35,6 +37,7 @@ import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { notifyRefundDecision, refundAudience } from "@/components/admin/marketplace/notify"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { chartEasing, chartIn } from "@/lib/motion"
 import { adminUser, failedJobs, healthServices, platformOverview, transactions, webhookFailures, type Refund } from "@/lib/data/admin"
 import { campaignTypes, type CampaignType } from "@/lib/data/ads"
 import { merchantOrders } from "@/lib/data/orders"
@@ -112,7 +115,7 @@ function CommandStrip() {
   const total = chips.reduce((s, c) => s + c.count, 0)
 
   return (
-    <RevealItem as="section" aria-labelledby="cc-title" className="admin-panel admin-panel-glow overflow-hidden rounded-[20px]">
+    <RevealItem as="section" aria-labelledby="cc-title" className="admin-panel overflow-hidden rounded-[20px]">
       <div className="relative grid gap-6 p-5 md:p-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
@@ -509,6 +512,45 @@ function AdminInsight({ className }: { className?: string }) {
 
 /* ── Page ─────────────────────────────────────────────────────────────── */
 
+/**
+ * Each service's p95 latency against its target. The bars grow from the left the first time
+ * the list is seen, with a short stagger (CSS, released by useEntrance): the server HTML
+ * carries the final bars, so they show without JavaScript and under reduced motion.
+ */
+function LatencyBars() {
+  const list = useEntrance<HTMLUListElement>()
+  const last = healthServices.length - 1
+  return (
+    <ul ref={list} data-entrance="pending" className="grid gap-1">
+      {healthServices.map((s, i) => {
+        const target = latencyTarget[s.name] ?? 400
+        const ratio = Math.min(1, s.latencyP95 / target)
+        const bad = s.status !== "operational"
+        const delay = last > 0 ? Math.round((i / last) * chartIn.stagger * 1000) : 0
+        return (
+          <li key={s.name} className="rounded-lg px-2 py-2 transition-colors hover:bg-white/[0.02]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-[12.5px] text-ink">
+                <span className={cn("inline-flex size-2 rounded-full", bad ? "bg-acid" : "bg-violet")} aria-hidden />
+                {s.name}
+                {bad ? <span className="sr-only">(degraded)</span> : null}
+              </span>
+              <span className="text-[11px] text-ink-3 tabular">p95 {int(s.latencyP95)} ms, {formatPercent(s.uptime, 2)} up</span>
+            </div>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+              <div
+                data-grow
+                className={cn("h-full origin-left rounded-full", bad ? "bg-acid" : "bg-purple")}
+                style={{ transform: `scaleX(${Math.max(0.04, ratio)})`, transition: `transform ${chartIn.duration * 1000}ms ${chartEasing} ${delay}ms` }}
+              />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export default function AdminOverviewPage() {
   const hydrated = useHydrated()
   const [period, setPeriod] = useState<Period>("30d")
@@ -644,7 +686,9 @@ export default function AdminOverviewPage() {
             <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
               {hydrated ? (
                 <>
-                  <p className="font-metric text-[2rem] leading-none text-ink">{usdWhole(chartTotal)}</p>
+                  <p className="font-metric text-[2rem] leading-none text-ink">
+                    <CountUp value={chartTotal} format={usdWhole} />
+                  </p>
                   <DeltaChip value={chartDelta} context={`the ${spec.window.replace("last ", "")} before`} />
                 </>
               ) : (
@@ -692,32 +736,11 @@ export default function AdminOverviewPage() {
       {/* Health + payments */}
       <div className="grid gap-3 @2xl:grid-cols-2 @5xl:grid-cols-12">
         <Panel title="System health" description="Live service status, measured against each service's p95 target." className="rounded-[20px] @5xl:col-span-7" action={<ArrowLink href="/admin/health" label="Open system health" />}>
-          <ul className="grid gap-1">
-            {healthServices.map((s) => {
-              const target = latencyTarget[s.name] ?? 400
-              const ratio = Math.min(1, s.latencyP95 / target)
-              const bad = s.status !== "operational"
-              return (
-                <li key={s.name} className="rounded-lg px-2 py-2 transition-colors hover:bg-white/[0.02]">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-[12.5px] text-ink">
-                      <span className={cn("inline-flex size-2 rounded-full", bad ? "bg-acid" : "bg-violet")} aria-hidden />
-                      {s.name}
-                      {bad ? <span className="sr-only">(degraded)</span> : null}
-                    </span>
-                    <span className="text-[11px] text-ink-3 tabular">p95 {int(s.latencyP95)} ms, {formatPercent(s.uptime, 2)} up</span>
-                  </div>
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
-                    <motion.div className={cn("h-full origin-left rounded-full", bad ? "bg-acid" : "bg-purple")} initial={{ scaleX: 0 }} animate={{ scaleX: Math.max(0.04, ratio) }} transition={{ type: "spring", stiffness: 110, damping: 20, delay: 0.2 }} />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          <LatencyBars />
         </Panel>
         <Panel title="Payments" description="Success is counted only when the provider's webhook is verified." className="rounded-[20px] @5xl:col-span-5" action={<ArrowLink href="/admin/finance" label="Open payments in finance" />}>
           <div className="flex items-center gap-5">
-            <RingGauge value={o.paymentSuccess} threshold={0.97} label="Payment success" sublabel="success" entrance="fade" />
+            <RingGauge value={o.paymentSuccess} threshold={0.97} label="Payment success" sublabel="success" />
             <p className="min-w-0 flex-1 text-[12px] text-ink-2">Target 97% or better. Under it, the ring turns yellow and on-call is paged.</p>
           </div>
           <div className="mt-5 grid gap-2.5">

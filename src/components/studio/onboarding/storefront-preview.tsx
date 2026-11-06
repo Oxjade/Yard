@@ -45,7 +45,7 @@ function Cover({ cover, className, sizes, eager, imageClassName, label = true }:
       {cover ? (
         <Image src={cover.src} alt={cover.alt} fill sizes={sizes} loading={eager ? "eager" : undefined} fetchPriority={eager ? "high" : undefined} className={cn("object-cover", imageClassName)} />
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[radial-gradient(120%_90%_at_30%_20%,color-mix(in_oklab,var(--color-purple)_18%,transparent),transparent_60%)] text-ink-3">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-white/[0.03] text-ink-3">
           {label ? (
             <>
               <ImageIcon className="size-5" aria-hidden />

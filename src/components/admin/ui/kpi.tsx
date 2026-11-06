@@ -4,6 +4,7 @@ import { useId } from "react"
 import { motion } from "motion/react"
 import { ArrowDownRightIcon as ArrowDownRight, ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react"
 import { AnimatedNumber } from "@/components/dashboard/metric-tile"
+import { chartIn } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { RevealItem, springs } from "./motion"
 
@@ -25,11 +26,11 @@ export function Sparkline({ values, className, tone = "purple", height = 36 }: {
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("w-full overflow-visible", className)} style={{ height }} aria-hidden>
       <defs>
         <linearGradient id={`sl-${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.12" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.12" />
         </linearGradient>
         <clipPath id={`clip-${id}`}>
-          <motion.rect x="0" y="-4" height={h + 8} initial={{ width: 0 }} animate={{ width: w + 4 }} transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.2 }} />
+          <motion.rect x="0" y="-4" height={h + 8} initial={{ width: 0 }} animate={{ width: w + 4 }} transition={{ duration: 0.6, ease: chartIn.ease, delay: 0.1 }} />
         </clipPath>
       </defs>
       <g clipPath={`url(#clip-${id})`}>
@@ -54,8 +55,8 @@ export function Delta({ value, invert = false, className }: { value: number | nu
 }
 
 /**
- * Metric card. Numbers count up on mount and on period change; the card lifts on hover
- * and presses in on click when it links somewhere.
+ * Metric card. The number counts up from zero the first time it appears and eases on period
+ * change; the card lifts on hover and presses in on click when it links somewhere.
  */
 export function KpiCard({
   label,
@@ -67,7 +68,6 @@ export function KpiCard({
   sparkTone = "purple",
   size = "md",
   attention = false,
-  glow = false,
   onClick,
   className,
   children,
@@ -81,6 +81,7 @@ export function KpiCard({
   sparkTone?: "purple" | "acid" | "grey"
   size?: "lg" | "md" | "sm"
   attention?: boolean
+  /** @deprecated The corner bloom is gone (no colour glows); the prop is ignored. */
   glow?: boolean
   onClick?: () => void
   className?: string
@@ -99,7 +100,6 @@ export function KpiCard({
         className={cn(
           "admin-panel group flex h-full w-full flex-col text-left transition-[border-color] duration-300",
           "hover:border-[var(--admin-hairline-strong)]",
-          glow && "admin-panel-glow",
           attention && "admin-panel-attention",
           size === "lg" ? "p-5 md:p-6" : size === "md" ? "p-4" : "p-3.5",
           interactive && "cursor-pointer focus-visible:outline-2 focus-visible:outline-violet",

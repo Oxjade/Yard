@@ -1,8 +1,13 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { chartEasing } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { longDate, shortDate, type HeatCell } from "./derive"
+import { useEntrance } from "./use-entrance"
+
+/** The squares fade in column by column, oldest week first, the first time the grid is seen. */
+const fade = { duration: 320, spread: 260, ease: chartEasing }
 
 /**
  * Five steps, from a hairline grey through purple to violet. The low steps stay dark so the
@@ -19,7 +24,9 @@ const levelNames = ["None", "Low", "Medium", "High", "Highest"]
  * busy marketplace reads as mostly calm with a few highlights. Hover a square, or focus the
  * grid and use the arrow keys, to read that day's count. Three summary stats sit underneath.
  * Pass `ready={false}` while the counts depend on client-only state: the same grid then
- * renders as skeleton squares, so nothing moves on arrival.
+ * renders as skeleton squares, so nothing moves on arrival. The first time the grid is seen
+ * with its counts, the squares fade in by column (CSS, released by useEntrance; not under
+ * reduced motion, and the server HTML shows them as they are).
  */
 export function Heatmap({
   rows,
@@ -59,6 +66,7 @@ export function Heatmap({
   const [focus, setFocus] = useState(start)
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null)
   const refs = useRef<Record<string, HTMLDivElement | null>>({})
+  const grid = useEntrance<HTMLDivElement>(ready)
   const shown = hover ?? focus
   const cur = cells[shown.r]?.[shown.c]
   const every = columns.length > 8 ? 4 : 2
@@ -119,6 +127,8 @@ export function Heatmap({
       </div>
 
       <div
+        ref={grid}
+        data-entrance="pending"
         role={ready ? "grid" : undefined}
         aria-label={ready ? `${label}. Use the arrow keys to move between days.` : undefined}
         aria-hidden={ready ? undefined : true}
@@ -159,11 +169,15 @@ export function Heatmap({
                   }
                   onPointerEnter={ready ? () => setHover({ r, c }) : undefined}
                   onFocus={() => setFocus({ r, c })}
+                  data-col={ready ? c : undefined}
                   className={cn(
-                    "aspect-[4/3] max-h-7 w-full rounded-[4px] outline-offset-1 transition-[outline-color] duration-150 focus-visible:outline-2 focus-visible:outline-violet",
+                    "aspect-[4/3] max-h-7 w-full rounded-[4px] outline-offset-1 focus-visible:outline-2 focus-visible:outline-violet",
                     tone,
                     on ? "outline-1 outline-ink" : "outline-1 outline-transparent",
                   )}
+                  style={{
+                    transition: `opacity ${fade.duration}ms ${fade.ease} ${columns.length > 1 ? Math.round((c / (columns.length - 1)) * fade.spread) : 0}ms, outline-color 150ms ease-out`,
+                  }}
                 />
               )
             })}

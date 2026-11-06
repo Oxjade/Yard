@@ -20,7 +20,6 @@ export function Panel({
   children,
   className,
   bodyClassName,
-  glow = false,
   attention = false,
   interactive = false,
   as = "section",
@@ -36,6 +35,7 @@ export function Panel({
   children: React.ReactNode
   className?: string
   bodyClassName?: string
+  /** @deprecated The corner bloom is gone (no colour glows); the prop is ignored. */
   glow?: boolean
   attention?: boolean
   interactive?: boolean
@@ -48,7 +48,7 @@ export function Panel({
       as={as}
       id={sectionId}
       aria-labelledby={title ? id : undefined}
-      className={cn("admin-panel overflow-hidden", glow && "admin-panel-glow", attention && "admin-panel-attention", className)}
+      className={cn("admin-panel overflow-hidden", attention && "admin-panel-attention", className)}
       {...(interactive ? { whileHover: { y: -2 }, transition: springs.tactile } : {})}
     >
       {title ? (

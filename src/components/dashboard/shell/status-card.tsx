@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { ArrowUpRightIcon } from "@phosphor-icons/react"
+import { CountUp } from "@/components/dashboard/insight/count-up"
 import { Bone } from "@/components/feedback/skeletons"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -11,6 +12,7 @@ import { useRailTip } from "./use-rail-tip"
 /**
  * The bottom status card: one real figure and the action it leads to. On the collapsed rail
  * it becomes a single icon tile (with a dot when there is something to do) and a tooltip.
+ * The figure counts up once, the first time the shell shows it (`Figure`).
  */
 export function StatusCard({
   status,
@@ -66,7 +68,9 @@ export function StatusCard({
             ) : status.quiet ? (
               <span className="truncate text-[15px] leading-7 font-medium text-ink-2">{status.value}</span>
             ) : (
-              <span className="font-metric truncate text-[26px] text-ink">{status.value}</span>
+              <span className="font-metric truncate text-[26px] text-ink">
+                <Figure status={status} />
+              </span>
             )}
           </span>
           {/* On short windows the action line is visually dropped (still read, and the arrow stays). */}
@@ -99,6 +103,18 @@ export function StatusCard({
   )
 }
 
+/**
+ * The status figure. A number, or text holding one ("₦1,582,700", "21"), counts up from zero
+ * the first time any of the card's layouts shows it on this page load (the rail, the short
+ * window row and the phone drawer share one `once` key), and after that changes instantly: a
+ * balance that changes after a payout request must never look like money moving.
+ */
+function Figure({ status }: { status: ShellStatus }) {
+  const { value } = status
+  if (typeof value !== "string" && typeof value !== "number") return <>{value}</>
+  return <CountUp text={String(value)} updates="instant" once={`shell-status:${status.href}`} />
+}
+
 const compactRow = "items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5 pr-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors duration-150"
 
 /** The one-row status layout: icon, label over figure, arrow. Laid out by `compactRow`. */
@@ -118,7 +134,9 @@ function CompactBody({ status, arrowTone }: { status: ShellStatus; arrowTone: st
           ) : status.quiet ? (
             <span className="truncate text-[14px] leading-none font-medium text-ink-2">{status.value}</span>
           ) : (
-            <span className="font-metric truncate text-[20px] leading-none text-ink">{status.value}</span>
+            <span className="font-metric truncate text-[20px] leading-none text-ink">
+              <Figure status={status} />
+            </span>
           )}
         </span>
       </span>
