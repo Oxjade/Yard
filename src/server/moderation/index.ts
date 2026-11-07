@@ -1,17 +1,28 @@
 import "server-only"
 import type { AdminActor } from "../auth/dal"
-import { NotImplemented } from "../http/errors"
-import type { AdminPermission } from "@/lib/permissions"
+import { withTx } from "../db"
+import { forbidden } from "../http/errors"
+import { canAdmin, needsRole, type AdminPermission } from "@/lib/permissions"
+import { decisionBodies } from "@/lib/api/contracts/admin"
+import * as abuse from "./abuse"
+import * as auditLog from "./audit-log"
+import * as chartsMod from "./charts"
+import * as content from "./content"
+import * as delivery from "./delivery"
+import * as messagesMod from "./messages"
+import * as status from "./status"
+import type { DecisionCtx } from "./shared"
 
-/** Moderation contract (F1 draft; cluster M replaces the bodies and IMPL in wave 2). */
-export const IMPL: string = "stub"
+/** Moderation (cluster M, §8). Decisions, queues and the audit feed for the Control Center. */
+export const IMPL: string = "M-2026-11-06"
 
 /**
  * One spelling (§8.2): kebab-case in URLs, camelCase handlers. An action not in this map is 404.
- * Brand subjects of the account actions need brands.restrict instead (checked by M).
+ * `anyOf` lists the permissions that can take the action at all; the handler then checks the one
+ * the subject needs (a brand subject needs brands.restrict; a post report needs content.moderate).
  */
 export const decisionActions = {
-  "decide-report": { handler: "decideReport", permission: "messages.moderate" },
+  "decide-report": { handler: "decideReport", permission: "messages.moderate", anyOf: ["messages.view_reports", "messages.moderate", "content.moderate", "places.moderate"] },
   "remove-message": { handler: "removeMessage", permission: "messages.moderate" },
   "release-held-message": { handler: "releaseHeldMessage", permission: "messages.moderate" },
   "lock-conversation": { handler: "lockConversation", permission: "messages.moderate" },
@@ -32,20 +43,74 @@ export const decisionActions = {
   "add-holiday": { handler: "addHoliday", permission: "holidays.edit" },
   "remove-holiday": { handler: "removeHoliday", permission: "holidays.edit" },
   "set-user-status": { handler: "setUserStatus", permission: "users.restrict" },
-  "add-restriction": { handler: "addRestriction", permission: "users.restrict" },
-  "lift-restriction": { handler: "liftRestriction", permission: "users.restrict" },
+  "add-restriction": { handler: "addRestriction", permission: "users.restrict", anyOf: ["users.restrict", "brands.restrict"] },
+  "lift-restriction": { handler: "liftRestriction", permission: "users.restrict", anyOf: ["users.restrict", "brands.restrict"] },
   "set-brand-status": { handler: "setBrandStatus", permission: "brands.restrict" },
   "dismiss-abuse-alert": { handler: "dismissAbuseAlert", permission: "abuse.view" },
   "export-audit": { handler: "exportAudit", permission: "audit.view" },
-} as const satisfies Record<string, { handler: string; permission: AdminPermission }>
+} as const satisfies Record<string, { handler: string; permission: AdminPermission; anyOf?: readonly AdminPermission[] }>
 
 export type DecisionAction = keyof typeof decisionActions
 
-/** Runs one decision in one withTx: state change + writeAudit + in-transaction side effects (§8.2). */
-export async function runDecision(action: DecisionAction, actor: AdminActor, body: unknown): Promise<{ item: unknown; audit: unknown }> {
-  void actor
-  void body
-  throw new NotImplemented(`moderation.${decisionActions[action].handler}`)
+export const isDecisionAction = (a: string): a is DecisionAction => Object.prototype.hasOwnProperty.call(decisionActions, a)
+
+type Handler = (ctx: DecisionCtx, body: never) => Promise<{ item: unknown; audit: unknown }>
+
+const handlers: Record<(typeof decisionActions)[DecisionAction]["handler"], Handler> = {
+  decideReport: messagesMod.decideReport,
+  removeMessage: messagesMod.removeMessage,
+  releaseHeldMessage: messagesMod.releaseHeld,
+  lockConversation: messagesMod.lockConversation,
+  setPostModeration: content.setPostModeration,
+  setPlaceModeration: content.setPlaceModeration,
+  setEventModeration: content.setEventModeration,
+  retrySocialSync: content.retrySocialSync,
+  forceDisconnectSocial: content.forceDisconnectSocial,
+  setSocialPaused: content.setSocialPaused,
+  decideChartFlag: chartsMod.decideChartFlag,
+  recomputeCharts: chartsMod.recomputeCharts,
+  requestChartFreeze: chartsMod.requestChartFreeze,
+  approveChartFreeze: chartsMod.approveChartFreeze,
+  liftChartFreeze: chartsMod.liftChartFreeze,
+  contactBrandAboutDelivery: delivery.contactBrand,
+  resolveDeliveryIssue: delivery.resolveIssue,
+  escalateDeliveryIssue: delivery.escalateIssue,
+  addHoliday: delivery.addHoliday,
+  removeHoliday: delivery.removeHoliday,
+  setUserStatus: status.setUserStatus,
+  addRestriction: abuse.addRestriction,
+  liftRestriction: abuse.liftRestriction,
+  setBrandStatus: status.setBrandStatus,
+  dismissAbuseAlert: abuse.dismissAlert,
+  exportAudit: auditLog.exportAudit,
 }
+
+/** The permission check that happens before the body is read: 403 when no role path allows it. */
+export function assertMayDecide(action: DecisionAction, actor: AdminActor) {
+  const def = decisionActions[action]
+  const options: readonly AdminPermission[] = "anyOf" in def ? def.anyOf : [def.permission]
+  if (!options.some((p) => canAdmin(actor.role, p))) throw forbidden(`${needsRole(def.permission)}.`)
+}
+
+/**
+ * Runs one decision (§8.2): permission, strict body, then ONE withTx holding the state change, its
+ * single audit row and the in-transaction side effects. Publishes and notifications reach their
+ * listeners after commit. Returns { item: <DTO>, audit: <AuditEntryDto> }.
+ */
+export async function runDecision(action: DecisionAction, actor: AdminActor, rawBody: unknown, ipHash: string | null = null) {
+  assertMayDecide(action, actor)
+  const body = decisionBodies[action].parse(rawBody ?? {})
+  const handler = handlers[decisionActions[action].handler]
+  return withTx(() => handler({ actor, ipHash }, body as never))
+}
+
+export { queueCountsFor, allQueueCounts, queuePermission } from "./counts"
+export { listMessages, messageCase, viewEvidence, viewHeld } from "./messages"
+export { listPosts, listPlaces, listIntegrations, contentCounts } from "./content"
+export { chartsOverview, listFlags, flagDetail, sponsoredList } from "./charts"
+export { listDelivery, listHolidays } from "./delivery"
+export { listAbuse, abuseRowFor, listRestrictions } from "./abuse"
+export { listAudit } from "./audit-log"
+export { statusesFor, reinstateTargets } from "./status"
 
 export const jobs = {}

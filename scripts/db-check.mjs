@@ -5,6 +5,8 @@
 //   node scripts/db-check.mjs          the above, plus the running server's migrations and seed
 //                                      versions (GET /api/dev/selftest as a demo admin), then every
 //                                      project check in scripts/checks/*.mjs (PASS / FAIL / SKIP)
+//   node scripts/db-check.mjs f2 s     the same, running only the named project checks; this is what
+//                                      `node scripts/checks/f2.mjs` hands over to when run on its own
 import { chmodSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -121,7 +123,10 @@ try {
 
 // Every cluster's project checks.
 const checksDir = path.join(process.cwd(), "scripts", "checks")
-for (const f of readdirSync(checksDir).filter((x) => x.endsWith(".mjs")).sort()) {
+const only = process.argv.slice(2)
+const files = readdirSync(checksDir).filter((x) => x.endsWith(".mjs") && (!only.length || only.includes(x.replace(".mjs", ""))))
+for (const name of only) if (!files.includes(`${name}.mjs`)) out("FAIL", `${name}`, `no scripts/checks/${name}.mjs`)
+for (const f of files.sort()) {
   try {
     const mod = await import(pathToFileURL(path.join(checksDir, f)).href)
     const list = await mod.default({ base, cookie, dataDir: dir })

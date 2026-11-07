@@ -12,8 +12,11 @@ import { priceCart } from "@/lib/cart"
 import { formatMoney } from "@/lib/money"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
+import { cn } from "@/lib/utils"
 import { BagGroups } from "./bag-contents"
 import { bagCount } from "./bag-count"
+import { BrandDeliveryList, LEGACY_SHIPPING_HIDDEN, ShippingAmount } from "./delivery/delivery-bits"
+import { useShippingQuote } from "./delivery/use-shipping-quote"
 
 /** The header's bag button: where focus lands when whatever opened the drawer (or the sign-in prompt) has gone. */
 export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Bag,"]')).find(canTakeFocus)
@@ -30,8 +33,12 @@ export function BagDrawer() {
   const lines = useCart((s) => s.lines)
   const currency = useSession((s) => s.currency)
   const shipTo = useSession((s) => s.shipTo)
+  const shipToCity = useSession((s) => s.shipToCity)
   const requireAuth = useSession((s) => s.requireAuth)
-  const bag = priceCart(lines, shipTo, currency)
+  // The quote loads only while the drawer is open; shipping comes from it alone (§6.5).
+  const quote = useShippingQuote(lines, shipTo, shipToCity, currency, { enabled: isOpen })
+  const bag = priceCart(lines, shipTo, currency, quote.quotes)
+  const quoteFailed = !quote.isLoading && !!quote.error
   const count = bagCount(lines)
   const close = () => setOpen(false)
   const focus = useFocusReturn(bagButton)
@@ -102,20 +109,36 @@ export function BagDrawer() {
                           {bag.groups.length} brands, one checkout. Each brand ships its own order.
                         </p>
                       ) : null}
-                      <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
+                      {/* Until every brand has a quote, the shared bag sections' own shipping footer and
+                          day count would read the platform's old demo rates, so they're hidden: the
+                          list below and the totals say what's known (§6.5: never a number of our own). */}
+                      <div className={cn(bag.shipping === null && LEGACY_SHIPPING_HIDDEN)}>
+                        <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
+                      </div>
+                      <BrandDeliveryList groups={bag.groups} state={quote} className="mt-4 px-1" title="Estimated delivery by brand" />
                     </div>
                     <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
                       <dl className="space-y-1.5 text-sm">
-                        <div className="flex justify-between text-ink-2">
+                        <div className="flex items-center justify-between gap-3 text-ink-2">
                           <dt>Subtotal</dt>
                           <dd className="tabular text-ink">{formatMoney(bag.subtotal, currency)}</dd>
                         </div>
-                        <div className="flex justify-between text-ink-2">
+                        <div className="flex min-h-5 items-center justify-between gap-3 text-ink-2">
                           <dt>Shipping, {bag.groups.length} {bag.groups.length === 1 ? "brand" : "brands"}</dt>
-                          <dd className="tabular text-ink">{bag.shipping === 0 ? "Free" : formatMoney(bag.shipping, currency)}</dd>
+                          <dd className="tabular text-ink">
+                            <ShippingAmount amount={bag.shipping} currency={currency} state={quote} unavailable={bag.blocked.length > 0} />
+                          </dd>
                         </div>
+                        {bag.total !== null ? (
+                          <div className="flex items-center justify-between gap-3 border-t border-white/8 pt-1.5 text-ink">
+                            <dt>Total</dt>
+                            <dd className="tabular">{formatMoney(bag.total, currency)}</dd>
+                          </div>
+                        ) : null}
                       </dl>
-                      <p className="mt-2 text-xs text-ink-3">Taxes and duties are confirmed at checkout.</p>
+                      <p className="mt-2 text-xs text-ink-3">
+                        {quoteFailed ? "Shipping is calculated at checkout. " : ""}Taxes aren&apos;t calculated in this build; import duties, if any, are collected by the courier.
+                      </p>
                       <div className="mt-4 grid gap-2">
                         <Button variant="primary" size="lg" onClick={checkout} className="w-full">
                           Checkout

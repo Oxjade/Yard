@@ -40,3 +40,9 @@ export const notificationsReadResult = z.object({ updated: z.number(), keys: z.a
 
 /** Payload of notification.read on the realtime channel. */
 export const notificationReadEvent = z.object({ recipient: z.object({ kind: actorKind, id: z.string() }), keys: z.array(z.string()), all: z.boolean(), read: z.boolean() })
+
+/**
+ * Payload of notification.removed: the recipient's notifications that were deleted on the server
+ * (a test-data restore, a removed conversation). Tabs drop those srv: items at once.
+ */
+export const notificationRemovedEvent = z.object({ recipient: z.object({ kind: actorKind, id: z.string() }), keys: z.array(z.string()) })

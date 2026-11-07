@@ -19,7 +19,10 @@ import { useOrders } from "@/lib/stores/orders"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import type { MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
-import { arrivalRange, deliveryDays, methodFromLabel, shippingMethodLabel } from "./shipping"
+import { orderEstimate } from "@/components/market/delivery/browser-estimate"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { formatRange } from "@/lib/shipping/format"
+import { methodFromLabel, shippingMethodLabel } from "./shipping"
 import { ConfirmationSkeleton } from "./skeletons"
 import { useStoresReady } from "./use-stores-ready"
 
@@ -197,6 +200,10 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
   const brand = brandById.get(order.brandId)!
   const method = methodFromLabel(order.shippingMethod)
   const country = order.shippingAddress.country
+  // The estimate the server returned with the order; an older order without one gets the same
+  // engine's estimate computed here, labelled so. Read after hydration (it can read the clock).
+  const hydrated = useHydrated()
+  const estimate = hydrated ? orderEstimate(order) : null
   return (
     <article aria-label={`${brand.name} order ${order.reference}`} className="flex flex-col rounded-lg border border-line-soft bg-card">
       <header className="border-b border-line-soft px-4 py-3.5 md:px-5">
@@ -231,13 +238,16 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-ink-2">Shipping</dt>
           <dd className="text-right text-ink tabular">
-            {shippingMethodLabel[method]}, {order.shipping === 0 ? "free" : formatOrderMoney(order.shipping, order.currency)}
+            {method === "pickup" ? order.shippingMethod : shippingMethodLabel[method]}, {order.shipping === 0 ? "free" : formatOrderMoney(order.shipping, order.currency)}
           </dd>
         </div>
         {expecting.has(order.status) ? (
           <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-ink-2">Expected</dt>
-            <dd className="text-right text-ink tabular">{arrivalRange(new Date(order.placedAt), deliveryDays(brand, country, method))}</dd>
+            <dt className="text-ink-2">{method === "pickup" ? "Estimated ready" : "Estimated arrival"}</dt>
+            <dd className="text-right text-ink tabular">
+              {estimate?.arrivalFrom && estimate.arrivalTo ? (method === "pickup" ? formatRange(estimate.arrivalFrom, estimate.arrivalFrom) : formatRange(estimate.arrivalFrom, estimate.arrivalTo)) : estimate ? "Not available" : <span className="inline-block h-4 w-28 rounded-md skeleton align-middle" aria-hidden />}
+              {estimate?.source === "browser" ? <span className="block text-xs text-ink-3">Estimated in this browser</span> : null}
+            </dd>
           </div>
         ) : null}
         <div className="flex items-baseline justify-between gap-4">

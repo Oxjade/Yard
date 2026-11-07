@@ -11,6 +11,7 @@ import type {
   StorefrontTemplate,
   StorefrontTypePreset,
 } from "@/lib/data/types"
+import type { FeedSource, SocialPostDto } from "@/lib/api/contracts/social"
 
 /**
  * Storefront theming: the constrained set of choices a brand can make (template, accent,
@@ -182,6 +183,7 @@ export const storefrontSections: Record<StorefrontSectionType, { label: string; 
   story: { label: "Story", description: "Your story, your founder and your journal.", defaultTitle: "The story" },
   lookbook: { label: "Lookbook", description: "An editorial spread built from your product photography.", defaultTitle: "Lookbook" },
   "all-products": { label: "All products", description: "Every published piece, with a category filter.", defaultTitle: "Shop all" },
+  "social-feed": { label: "Social feed", description: "Posts from your Instagram and TikTok, and posts you upload in Content Studio.", defaultTitle: "From the feed" },
 }
 
 export function sectionTitle(section: StorefrontSection) {
@@ -287,6 +289,38 @@ export function lookbookFrames(
   for (const { p } of byShown) push(p.images[0], productLink(p))
   if (!coverInHero || frames.length < minimum) push(brand.cover)
   return frames
+}
+
+/* ---------- Social feed (§6.1) ---------- */
+
+export const SOCIAL_FEED_DEFAULT_COUNT = 8
+export const SOCIAL_FEED_MIN = 3
+export const SOCIAL_FEED_MAX = 12
+
+/** The section's feed settings with defaults filled in (all sources, grid, 8 posts). */
+export function feedSettings(section: StorefrontSection): NonNullable<StorefrontSection["feed"]> {
+  const f = section.feed
+  const count = Math.min(SOCIAL_FEED_MAX, Math.max(SOCIAL_FEED_MIN, Math.round(f?.count ?? SOCIAL_FEED_DEFAULT_COUNT)))
+  return { source: f?.source ?? "all", layout: f?.layout ?? "grid", count }
+}
+
+const fromSource = (post: SocialPostDto, source: FeedSource) =>
+  source === "all" ? true : source === "uploads" ? post.source === "upload" || post.source === "sample" : post.provider === source
+
+/**
+ * The posts a Social feed section shows: pinned postIds first, in their order; then the rest
+ * filtered by the section's source, featured first by feature order, then newest; sliced to the
+ * section's count (default 8, 3–12).
+ */
+export function resolveSocialPosts(section: StorefrontSection, posts: SocialPostDto[]): SocialPostDto[] {
+  const { source, count } = feedSettings(section)
+  const byId = new Map(posts.map((p) => [p.id, p]))
+  const pinned = (section.postIds ?? []).map((id) => byId.get(id)).filter((p): p is SocialPostDto => !!p)
+  const taken = new Set(pinned.map((p) => p.id))
+  const rest = posts
+    .filter((p) => !taken.has(p.id) && fromSource(p, source))
+    .sort((a, b) => Number(b.featured) - Number(a.featured) || (a.featureOrder ?? Infinity) - (b.featureOrder ?? Infinity) || b.postedAt.localeCompare(a.postedAt))
+  return [...pinned, ...rest].slice(0, count)
 }
 
 export function isStorefrontEmpty(config: StorefrontConfig) {

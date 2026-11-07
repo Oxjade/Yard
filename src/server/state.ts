@@ -10,7 +10,7 @@ export type YardState = {
   /** The PGlite + drizzle boot promise (src/server/db/client.ts). */
   db?: Promise<unknown>
   /** Journal entry count applied at boot, for the "schema changed" notice. */
-  migrations?: { applied: number; checkedAt: number; warned: boolean }
+  migrations?: { applied: number; checkedAt: number; warned: boolean; applying?: Promise<unknown> }
   env?: unknown
   keys?: unknown
   bus?: EventEmitter

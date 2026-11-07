@@ -14,7 +14,8 @@ import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { Initials } from "./bits"
 import { BrandDetail } from "./brand-detail"
-import { brandActions, brandAllowed, brandDecision, type BrandActionKey } from "./brand-actions"
+import { brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
+import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
 import { useDecision } from "./decision"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
@@ -39,6 +40,8 @@ export function BrandsView() {
   const phone = usePhone()
   const qid = useId()
   const applications = useAdmin((s) => s.applications)
+  const blockFor = useBrandStatusBlock()
+  const { reinstateTo } = useMirrorServerStatuses("brand", useMemo(() => applications.flatMap((a) => (a.brandId ? [a.brandId] : [])), [applications]))
   const linkedTab = useSearchParam("tab")
   const reviewId = useSearchParam("review")
 
@@ -92,8 +95,9 @@ export function BrandsView() {
   const open = (a: BrandApplication) => writeParams({ review: a.id })
   // What `ask` returns goes back to the bulk bar, so a cancelled decision keeps the selection
   // and the rows leave it only once the decision is made.
-  const decide = (key: BrandActionKey, list: BrandApplication[], announce = true) => {
-    const d = brandDecision(key, list, { announce })
+  // Every decision, from the table, the bulk bar or the sheet, ends with the same calm toast.
+  const decide = (key: BrandActionKey, list: BrandApplication[]) => {
+    const d = brandDecision(key, list, { reinstateTo })
     return d ? ask(d) : false
   }
 
@@ -103,7 +107,7 @@ export function BrandsView() {
       header: "Brand",
       sortValue: (a) => a.brandName.toLowerCase(),
       cell: (a) => (
-        <button type="button" onClick={() => open(a)} className="group flex max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
+        <button type="button" onClick={() => open(a)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
           <Initials name={a.brandName} />
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink group-hover:text-violet">{a.brandName}</span>
@@ -126,9 +130,9 @@ export function BrandsView() {
   const allowedHere = brandAllowed[tab]
   const rowActions: RowAction<BrandApplication>[] = [
     { label: "Open review", icon: EyeIcon, onSelect: open },
-    ...allowedHere.map((key, i) => ({ label: brandActions[key].label, icon: brandActions[key].icon, destructive: brandActions[key].destructive, separatorBefore: i === 0, onSelect: (a: BrandApplication) => decide(key, [a]) })),
+    ...allowedHere.map((key, i) => ({ label: brandActions[key].label, icon: brandActions[key].icon, destructive: brandActions[key].destructive, separatorBefore: i === 0, disabled: (a: BrandApplication) => !!blockFor(a), disabledReason: (a: BrandApplication) => blockFor(a), onSelect: (a: BrandApplication) => decide(key, [a]) })),
   ]
-  const bulkActions: BulkAction<BrandApplication>[] = allowedHere.map((key) => ({ label: brandActions[key].verb, destructive: brandActions[key].destructive, onSelect: (list) => decide(key, list) }))
+  const bulkActions: BulkAction<BrandApplication>[] = allowedHere.map((key) => ({ label: brandActions[key].verb, destructive: brandActions[key].destructive, appliesTo: (a: BrandApplication) => !blockFor(a), disabledReason: "Sign in with a demo admin account that can restrict brands. Yard enforces brand status on the server.", onSelect: (list) => decide(key, list.filter((a) => !blockFor(a))) }))
   const current = TABS.find((t) => t.value === tab)!
 
   return (
@@ -136,7 +140,7 @@ export function BrandsView() {
       <AdminPageHead
         title="Brands"
         description="Review new applications, check verification and act on brands that break marketplace rules."
-        note="Decisions are recorded here and in the audit log with your reason. The marketplace reads the sample catalogue in this build, so storefronts change once brand status comes from the backend."
+        note="Status decisions on catalogue brands run on Yard's server: a suspension signs the brand's team out and takes its posts, places and chart entries off the marketplace. Sample applications with no catalogue brand are recorded in this browser only."
       />
 
       <InPageLinks>
@@ -191,7 +195,7 @@ export function BrandsView() {
       <BrandDetail
         id={reviewing?.id ?? null}
         open={!!reviewing}
-        onDecide={(key, a) => decide(key, [a], false)}
+        onDecide={(key, a) => decide(key, [a])}
         onOpenChange={(o) => {
           if (!o) writeParams({ review: null })
         }}

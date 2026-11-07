@@ -11,6 +11,9 @@ import { Price } from "@/components/market/price"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
+import { ArrivalChip, LEGACY_SHIPPING_HIDDEN, RetryButton, ShippingAmount } from "@/components/market/delivery/delivery-bits"
+import { useShippingQuote } from "@/components/market/delivery/use-shipping-quote"
+import { Bone } from "@/components/feedback/skeletons"
 import { countries } from "@/config/markets"
 import { priceCart } from "@/lib/cart"
 import { productById, productStock } from "@/lib/data/products"
@@ -18,6 +21,7 @@ import { duration, ease } from "@/lib/motion"
 import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
+import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
 import { Notice } from "./fields"
 import { BagSkeleton } from "./skeletons"
@@ -32,9 +36,14 @@ export function BagView() {
   const lines = useCart((s) => s.lines)
   const currency = useSession((s) => s.currency)
   const shipTo = useSession((s) => s.shipTo)
+  const shipToCity = useSession((s) => s.shipToCity)
   const requireAuth = useSession((s) => s.requireAuth)
   const wishlist = useSaved((s) => s.wishlist)
-  const bag = useMemo(() => priceCart(lines, shipTo, currency), [lines, shipTo, currency])
+  // Shipping comes only from the server's quote (§6.5): a Bone while it loads, "Shipping not
+  // included" when it couldn't load.
+  const quote = useShippingQuote(lines, shipTo, shipToCity, currency, { enabled: ready })
+  const bag = useMemo(() => priceCart(lines, shipTo, currency, quote.quotes), [lines, shipTo, currency, quote.quotes])
+  const quoteFailed = !quote.isLoading && !!quote.error
 
   const saved = useMemo(() => {
     const inBag = new Set(lines.map((l) => l.productId))
@@ -105,7 +114,11 @@ export function BagView() {
             <Notice icon={Package} className="mb-4">
               One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.
             </Notice>
-            <BagGroups groups={bag.groups} currency={currency} focusWhenEmpty={emptyTitle} />
+            {/* The shared sections' shipping footer and day count read old demo rates until the quote
+                has loaded for every brand, so they're hidden until then (§6.5). */}
+            <div className={cn(bag.shipping === null && LEGACY_SHIPPING_HIDDEN)}>
+              <BagGroups groups={bag.groups} currency={currency} focusWhenEmpty={emptyTitle} />
+            </div>
           </div>
 
           <aside ref={summaryRef} aria-labelledby="bag-summary-title" className="rounded-lg border border-line-soft bg-card p-5 md:p-6 lg:sticky lg:top-28">
@@ -120,24 +133,53 @@ export function BagView() {
                 </dd>
               </div>
               <div>
-                <div className="flex items-baseline justify-between gap-4">
+                <div className="flex min-h-5 items-center justify-between gap-4">
                   <dt className="text-ink-2">Shipping, {plural(brandCount, "brand")}</dt>
-                  <dd>{bag.shipping === 0 ? <span className="text-sm">Free</span> : <Price amount={bag.shipping} currency={currency} />}</dd>
+                  <dd>
+                    <ShippingAmount amount={bag.shipping} currency={currency} state={quote} unavailable={bag.blocked.length > 0} />
+                  </dd>
                 </div>
-                <ul className="mt-2 grid gap-1.5 border-l border-line pl-3" aria-label="Shipping by brand">
-                  {bag.groups.map((g) => (
-                    <li key={g.brand.id} className="flex items-baseline justify-between gap-3 text-xs text-ink-2">
-                      <span className="truncate">{g.brand.name}, standard</span>
-                      {g.freeShipping ? <span>Free</span> : <Price amount={g.shipping} currency={currency} className="text-xs text-ink-2" />}
-                    </li>
-                  ))}
-                </ul>
+                {quoteFailed ? (
+                  <p role="status" className="mt-2 flex flex-wrap items-center gap-x-2 border-l border-line pl-3 text-xs text-ink-2">
+                    Shipping is calculated at checkout
+                    <RetryButton onRetry={quote.retry} retrying={quote.retrying} />
+                  </p>
+                ) : (
+                  <ul className="mt-2 grid gap-2 border-l border-line pl-3" aria-label="Shipping by brand">
+                    {bag.groups.map((g) => (
+                      <li key={g.brand.id} className="grid gap-1 text-xs text-ink-2">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className="truncate">
+                            {g.brand.name}
+                            {g.option ? `, ${g.option.service === "express" ? "express" : "standard"}` : ""}
+                          </span>
+                          {g.quote ? (
+                            g.unavailable ? (
+                              <span className="shrink-0">Not available</span>
+                            ) : g.option?.free ? (
+                              <span>Free</span>
+                            ) : g.option ? (
+                              <Price amount={g.option.price.amount} currency={currency} className="text-xs text-ink-2" />
+                            ) : null
+                          ) : (
+                            <Bone className="h-3.5 w-12" />
+                          )}
+                        </span>
+                        {g.quote ? (
+                          g.unavailable ? <span className="text-ink-3">{g.reason}. Remove its pieces or change the delivery country at checkout.</span> : <ArrivalChip estimate={g.estimate} className="justify-self-start" />
+                        ) : (
+                          <Bone className="h-5 w-32 rounded-full" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </dl>
-            <p className="mt-4 text-xs text-ink-3">Taxes are included in prices. Any import duties are explained at checkout.</p>
+            <p className="mt-4 text-xs text-ink-3">Taxes aren&apos;t calculated in this build. Import duties, if any, are collected by the courier on delivery. Delivery dates are estimates, not guarantees.</p>
             <div className="mt-5 flex items-baseline justify-between gap-4 border-t border-line-soft pt-5">
-              <span className="text-base text-ink">Total</span>
-              <Price amount={bag.total} currency={currency} size="lg" />
+              <span className="text-base text-ink">{bag.total === null ? "Subtotal" : "Total"}</span>
+              <Price amount={bag.total ?? bag.subtotal} currency={currency} size="lg" />
             </div>
             <div className="mt-5 grid gap-2">
               <Button variant="primary" size="lg" className="w-full" onClick={checkout}>
@@ -148,7 +190,7 @@ export function BagView() {
               </Button>
             </div>
             <ul className="mt-5 grid gap-1.5 text-xs leading-relaxed text-ink-3">
-              <li>Shipping estimated for delivery to {countries[shipTo].name}. You can change the address at checkout.</li>
+              <li>{quoteFailed ? `Shipping to ${countries[shipTo].name} is priced at checkout.` : `Shipping priced for delivery to ${countries[shipTo].name}.`} You can change the address at checkout.</li>
               <li>
                 {minReturns === maxReturns
                   ? `Returns accepted within ${minReturns} days of delivery.`
@@ -169,8 +211,8 @@ export function BagView() {
             className="fixed inset-x-4 bottom-[calc(max(0.875rem,env(safe-area-inset-bottom))+4.125rem)] z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
           >
             <p className="min-w-0 text-xs text-ink-2">
-              Total, {plural(bagCount(lines), "item")}
-              <Price amount={bag.total} currency={currency} className="flex text-base text-ink" />
+              {bag.total === null ? "Subtotal" : "Total"}, {plural(bagCount(lines), "item")}
+              <Price amount={bag.total ?? bag.subtotal} currency={currency} className="flex text-base text-ink" />
             </p>
             <Button variant="primary" size="lg" onClick={checkout} className="min-w-36">
               Checkout

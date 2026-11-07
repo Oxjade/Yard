@@ -153,6 +153,13 @@ type State = {
   applyServerRead: (target: { eventKeys: string[] } | { recipient: string; audience: Audience }, read: boolean) => void
   /** Removes srv: items of `audience` whose recipient isn't `keepRecipient` (null: all of them). */
   purgeServerItems: (audience: Audience, keepRecipient: string | null) => void
+  /**
+   * Bridge only, after a full (not `after=`) read: drops `recipient`'s srv: items that the server
+   * no longer has (deleted rows), among those dated `from` … `upTo` (null: no bound on that side).
+   */
+  reconcileServer: (audience: Audience, recipient: string, keepEventKeys: string[], from: string | null, upTo: string | null) => void
+  /** Bridge only: drops srv: items by event key (a notification.removed event). */
+  removeServer: (eventKeys: string[]) => void
 }
 
 const MAX = 200
@@ -265,6 +272,19 @@ export const useNotifications = create<State>()(
       purgeServerItems: (audience, keepRecipient) => {
         const items = get().items
         const next = items.filter((x) => !(x.audience === audience && isServerItem(x) && x.recipient !== keepRecipient))
+        if (next.length !== items.length) set({ items: next })
+      },
+      reconcileServer: (audience, recipient, keepEventKeys, from, upTo) => {
+        const keep = new Set(keepEventKeys)
+        const items = get().items
+        const next = items.filter((x) => !(x.audience === audience && isServerItem(x) && x.recipient === recipient && !keep.has(x.eventKey) && (upTo === null || x.at <= upTo) && (from === null || x.at >= from)))
+        if (next.length !== items.length) set({ items: next })
+      },
+      removeServer: (eventKeys) => {
+        const gone = new Set(eventKeys.filter((k) => k.startsWith(SRV)))
+        if (!gone.size) return
+        const items = get().items
+        const next = items.filter((x) => !gone.has(x.eventKey))
         if (next.length !== items.length) set({ items: next })
       },
     }),

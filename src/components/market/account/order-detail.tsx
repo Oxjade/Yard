@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils"
 import { daysSince, formatDay, formatOrderMoney } from "./format"
 import { isSampleCheckout, OrderStatusBadge, OrderStepper, SampleChip, TrackingLink, orderStatusNote, returnOutcome, trackingUrl } from "./order-status"
 import { ReturnDialog } from "./return-dialog"
+import { OrderDelivery } from "@/components/market/delivery/order-delivery"
+import { businessDays } from "@/lib/shipping/format"
 import { YouNav } from "./you-nav"
 
 function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
@@ -74,7 +76,9 @@ export function OrderDetail({ id }: { id: string }) {
   const refundAmount = decision?.status === "approved" ? formatOrderMoney(decision.amount ?? order.refund?.amount ?? 0, order.currency) : null
   // "Delivered" in the sample history, "Marked delivered by brand" when the brand marks it in Studio; the latest counts.
   const delivered = [...order.timeline].reverse().find((t) => /^(marked )?delivered\b/i.test(t.label))
-  const daysSinceDelivery = delivered ? daysSince(delivered.at) : null
+  // Never negative: a delivery recorded on Yard's server carries the real time, which can be later than
+  // the sample data's demo "today", and the window can't have more days left than the brand allows.
+  const daysSinceDelivery = delivered ? Math.max(0, daysSince(delivered.at)) : null
   const returnDaysLeft = daysSinceDelivery === null ? null : brand.returnsDays - daysSinceDelivery
   const canReturn = order.status === "delivered" && !returnRequest && returnDaysLeft !== null && returnDaysLeft >= 0
   // "closed yesterday", "closed 4 days ago": the window ends with its last day, so -1 is yesterday.
@@ -304,7 +308,8 @@ export function OrderDetail({ id }: { id: string }) {
           </Panel>
 
           <Panel title="Delivery">
-            <dl className="grid gap-4 text-sm">
+            <OrderDelivery order={order} brand={brand} />
+            <dl className="mt-5 grid gap-4 border-t border-line-soft pt-5 text-sm">
               <div>
                 <dt className="text-xs text-ink-3">Ship to</dt>
                 <dd className="mt-1 leading-relaxed text-ink">
@@ -327,7 +332,7 @@ export function OrderDetail({ id }: { id: string }) {
                 <dt className="text-xs text-ink-3">Shipping method</dt>
                 <dd className="mt-1 text-ink">{methodLabel(order.shippingMethod)}</dd>
                 <dd className="mt-0.5 text-xs text-ink-2">
-                  Ships from {brand.city}, {countries[brand.shipsFrom].name}. The brand dispatches within {brand.processingDays[0]}–{brand.processingDays[1]} days.
+                  Ships from {brand.city}, {countries[brand.shipsFrom].name}. Usually dispatches in {businessDays(brand.processingDays)}.
                 </dd>
               </div>
               <div>

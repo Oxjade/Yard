@@ -18,6 +18,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { adminLinks, useNotifications, type AppNotification } from "@/lib/stores/notifications"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
+import { PLACED_ORDER_ID } from "@/lib/shipping/order-ids"
 import { useStudio, type InventoryEvent } from "@/lib/stores/studio"
 
 type New = Omit<AppNotification, "id" | "read"> & { read?: boolean }
@@ -286,7 +287,7 @@ export function useNotificationEvents() {
             }
             const theirs = mine.find((x) => x.id === o.id)
             if (!theirs) continue
-            useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === o.id ? { ...x, status: o.status, paymentStatus: o.paymentStatus, tracking: o.tracking, timeline: o.timeline, returnRequest: o.returnRequest ?? x.returnRequest, refund: o.refund ?? x.refund, cancelReason: o.cancelReason ?? x.cancelReason } : x)) })
+            useOrders.setState({ orders: useOrders.getState().orders.map((x) => (x.id === o.id ? { ...x, status: o.status, paymentStatus: o.paymentStatus, tracking: o.tracking, timeline: o.timeline, returnRequest: o.returnRequest ?? x.returnRequest, refund: o.refund ?? x.refund, cancelReason: o.cancelReason ?? x.cancelReason, delivery: o.delivery ?? x.delivery, shippedAt: o.shippedAt ?? x.shippedAt, deliveredAt: o.deliveredAt ?? x.deliveredAt } : x)) })
             if (before.status === o.status) continue
             // A decided return is announced from the decision itself (see the orders events above), not as "delivered".
             if (before.status === "refund_requested" && d) continue
@@ -300,6 +301,9 @@ export function useNotificationEvents() {
               cancelled: { category: "refund", title: `#${o.reference} was cancelled`, body: o.cancelReason ? `${brand}: ${o.cancelReason}` : `${brand} cancelled it.` },
             }
             const c = copy[o.status]
+            // Yard's server tells the shopper itself when an order it holds ships ("Lagos Static shipped
+            // your order — estimated arrival …", §6.5), so this browser doesn't add a second one.
+            if (o.status === "shipped" && PLACED_ORDER_ID.test(o.id)) continue
             if (c) push({ eventKey: `c:status:${o.id}:${o.status}`, audience: "customer", ...c, href: `/you/orders/${o.id}`, at: new Date().toISOString() })
           }
         }),

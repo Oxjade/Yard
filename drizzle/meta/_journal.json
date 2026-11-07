@@ -15,6 +15,13 @@
       "when": 1793992307125,
       "tag": "0001_custom_views_and_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794001163850,
+      "tag": "0002_f2_checkpoint",
+      "breakpoints": true
     }
   ]
 }

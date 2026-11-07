@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { BrandCard } from "@/components/market/brand-card"
 import { SectionHeader } from "@/components/market/section-header"
+import { ViewBeacon } from "@/components/signals/view-beacon"
 import { LiveStorefront } from "@/components/storefront/live-storefront"
 import { brands, collectionsOf, dropsOf, getBrand, productsOf, storiesOf } from "@/lib/data"
 import type { Brand } from "@/lib/data/types"
@@ -49,6 +50,7 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
 
   return (
     <>
+      <ViewBeacon kind="storefront_view" brandId={brand.id} />
       <LiveStorefront
         brand={brand}
         config={brand.storefront}

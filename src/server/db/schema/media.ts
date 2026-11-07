@@ -6,8 +6,8 @@ import { conversations } from "./inbox"
 import { users } from "./people"
 
 /**
- * Every stored media file (§3.2, §5.4). `visibility` is derived by media.refreshVisibility and is
- * never set from a request. `storage_path` is relative to ${dataDir}/<env>/uploads, except for
+ * Every stored media file (§3.2, §5.4). `visibility` and `unreferenced_at` are derived by
+ * media.refreshVisibility and are never set from a request. `storage_path` is relative to ${dataDir}/<env>/uploads, except for
  * sample rows, which carry a /media/… public path.
  */
 export const mediaAssets = pgTable(
@@ -34,6 +34,12 @@ export const mediaAssets = pgTable(
     createdBy: text("created_by").references(() => users.id),
     createdAt: tz("created_at").notNull().defaultNow(),
     attachedAt: tz("attached_at"),
+    /**
+     * When nothing (a post of any visibility, a place, an event, an account avatar) referenced the
+     * file any more, as of the last refreshVisibility; null while referenced or never used. The
+     * purge deletes post and place media 7 days after this (F2 checkpoint, 0002_f2_checkpoint).
+     */
+    unreferencedAt: tz("unreferenced_at"),
   },
   (t) => [
     index("media_assets_brand_purpose_ix").on(t.brandId, t.purpose),

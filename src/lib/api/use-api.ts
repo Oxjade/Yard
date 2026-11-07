@@ -65,7 +65,11 @@ async function load<T>(key: string, fetcher: (key: string) => Promise<T>): Promi
   }
 }
 
-/** Drops every cached entry and aborts in-flight requests (sign-in, sign-out, account switch). */
+/**
+ * Drops every cached entry and aborts in-flight requests (sign-in, sign-out, account switch), then
+ * refetches every key a mounted hook still shows, as the new identity. Hooks stop showing their
+ * previous data (it belonged to the old identity), so they show their loading state until then.
+ */
 export function resetApiCache() {
   epoch++
   for (const c of inflight) c.abort()
@@ -77,7 +81,16 @@ export function resetApiCache() {
     e.validating = false
     emit(e)
   }
+  // After the aborted requests have settled (their finally blocks run on the next ticks).
+  const mine = epoch
+  window.setTimeout(() => {
+    if (mine !== epoch) return
+    for (const [k, e] of cache) if (e.listeners.size && e.fetcher && e.data === undefined && !e.promise) void load(k, e.fetcher).catch(() => {})
+  }, 0)
 }
+
+/** The cache epoch (bumped by resetApiCache): hooks drop data they kept from an older epoch. */
+export const cacheEpoch = () => epoch
 
 /** Refetches every mounted key whose name starts with `prefix` (after a mutation elsewhere). */
 export function revalidatePrefix(prefix: string) {
@@ -93,7 +106,8 @@ export function useApi<T>(key: string | null, fetcher: (key: string) => Promise<
     fetcherRef.current = fetcher
   })
   // keepPrevious: the last data this hook showed, so a key change doesn't flash the loading state.
-  const [previous, setPrevious] = useState<T | undefined>(undefined)
+  // Tagged with the cache epoch: after resetApiCache (an identity change) it's never shown again.
+  const [previous, setPrevious] = useState<{ data: T; epoch: number } | undefined>(undefined)
 
   const subscribe = useCallback(
     (cb: () => void) => {
@@ -165,8 +179,9 @@ export function useApi<T>(key: string | null, fetcher: (key: string) => Promise<
   )
 
   const data = e?.data
-  if (data !== undefined && data !== previous) setPrevious(data)
-  const shown = data ?? (keepPrevious && key ? previous : undefined)
+  if (data !== undefined && (data !== previous?.data || previous.epoch !== epoch)) setPrevious({ data, epoch })
+  const kept = previous && previous.epoch === epoch ? previous.data : undefined
+  const shown = data ?? (keepPrevious && key ? kept : undefined)
   return {
     data: shown,
     error: e?.error,

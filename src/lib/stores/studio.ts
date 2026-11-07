@@ -54,7 +54,11 @@ type StudioState = {
    * and the platform's refund queue. Returns false when the order isn't waiting for a decision.
    */
   decideReturn: (id: string, status: "approved" | "declined", reason?: string) => boolean
-  /** Adds or corrects tracking. The first time on a paid or processing order it also marks the order shipped. */
+  /**
+   * Adds or corrects tracking. The first time on a paid or processing order it also marks the order
+   * shipped. The page then posts a shipment event to Yard's server (shipment-sync), so the
+   * shopper's estimate follows.
+   */
   setTracking: (id: string, carrier: string, number: string) => void
   saveStorefrontDraft: (draft: StorefrontConfig) => void
   publishStorefront: () => void
@@ -164,7 +168,10 @@ export const useStudio = create<StudioState>()(
             // Money that was taken goes back on a cancel or refund; an unpaid order simply closes.
             const taken = o.paymentStatus === "captured" || o.paymentStatus === "authorized" || o.paymentStatus === "partially_refunded"
             const paymentStatus = (status === "refunded" || status === "cancelled") && taken ? "refunded" : o.paymentStatus
-            return { ...o, ...patch, status, paymentStatus, timeline: [...o.timeline, { at: now(), label: label ?? `Status changed to ${status.replace(/_/g, " ")}` }] }
+            const at = now()
+            // v2: when it was delivered (the shopper's order reads it; Yard's server gets a shipment event from the page).
+            const deliveredAt = status === "delivered" && o.status === "shipped" ? at : status === "shipped" && o.status === "delivered" ? undefined : o.deliveredAt
+            return { ...o, ...patch, status, paymentStatus, deliveredAt, timeline: [...o.timeline, { at, label: label ?? `Status changed to ${status.replace(/_/g, " ")}` }] }
           }),
         }),
       decideReturn: (id, status, reason) => !!applyReturnDecision(id, { status, reason, by: "brand" }),
@@ -177,6 +184,7 @@ export const useStudio = create<StudioState>()(
                   ...o,
                   tracking: { carrier, number },
                   status: o.status === "processing" || o.status === "paid" ? "shipped" : o.status,
+                  shippedAt: o.shippedAt ?? (o.status === "processing" || o.status === "paid" ? now() : undefined),
                   timeline: [...o.timeline, { at: now(), label: o.tracking ? `Tracking updated: ${carrier}, ${number}` : `Shipped with ${carrier}, tracking ${number}` }],
                 },
           ),

@@ -14,17 +14,23 @@ import { Price } from "@/components/market/price"
 import { Button } from "@/components/ui/button"
 import { type CountryCode } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useShippingQuote } from "@/components/market/delivery/use-shipping-quote"
 import { priceCart } from "@/lib/cart"
 import { img } from "@/lib/data/media"
 import { productById } from "@/lib/data/products"
 import { useCart } from "@/lib/stores/cart"
-import { useOrders } from "@/lib/stores/orders"
+import { CheckoutError, useOrders } from "@/lib/stores/orders"
 import { useSession } from "@/lib/stores/session"
+import { WarningCircleIcon } from "@phosphor-icons/react"
+import { toast } from "sonner"
+import { countries } from "@/config/markets"
 import { Notice } from "./fields"
 import { OrderSummaryAside, OrderSummaryDisclosure, type CheckoutTotals } from "./order-summary"
 import {
+  cardBrand,
   cityLine,
   parsePhone,
+  paymentSummary,
   paymentMethodsFor,
   validateAddress,
   validateContact,
@@ -39,7 +45,7 @@ import { CheckoutSkeleton } from "./skeletons"
 import { clearCheckoutDraft, readCheckoutDraft, writeCheckoutDraft } from "./draft"
 import { checkoutSteps, StepIndicator } from "./step-indicator"
 import { AddressStep, ContactStep, PaymentStep, ReviewStep, ShippingStep } from "./steps"
-import { shippingPrice, type ShippingMethod } from "./shipping"
+import { type ShippingMethod } from "./shipping"
 import { useStoresReady } from "./use-stores-ready"
 
 const REVIEW = checkoutSteps.length - 1
@@ -136,8 +142,10 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const lines = useCart((s) => s.lines)
   const currency = useSession((s) => s.currency)
   const country = useSession((s) => s.shipTo)
+  const shipToCity = useSession((s) => s.shipToCity)
   const setShipTo = useSession((s) => s.setShipTo)
   const placeCheckout = useOrders((s) => s.placeCheckout)
+  const removeLine = useCart((s) => s.remove)
   const reduceMotion = useReducedMotion()
 
   // The draft survives a reload in this tab (sessionStorage). Card number, expiry and
@@ -155,15 +163,31 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const [attempted, setAttempted] = useState<Record<number, boolean>>({})
   /** Fields left with a value in them: checked on blur, before the shopper presses Continue. */
   const [touched, setTouched] = useState<Record<string, boolean>>({})
-  /** One key per checkout attempt: a repeated submit returns the same checkout group. */
-  const idempotencyKey = useRef<string | null>(null)
+  /**
+   * One key per checkout attempt, kept in the draft: a repeated submit, or a retry after a reload
+   * when the first answer was lost, returns the same server group (§6.5).
+   */
+  const [attemptKey, setAttemptKey] = useState<string | null>(() => saved?.idempotencyKey ?? null)
   const topRef = useRef<HTMLDivElement>(null)
-  const [today] = useState(() => new Date())
+  const [placeError, setPlaceError] = useState<string | null>(null)
 
-  const bag = useMemo(() => priceCart(lines, country, currency), [lines, country, currency])
+  // The delivery city: the address's once the shopper has given it, else the one chosen on a
+  // product page (it decides store pickup). The quote follows it.
+  const quoteCity = step >= 2 && address.city.trim() ? address.city.trim().slice(0, 60) : shipToCity
+  const quote = useShippingQuote(lines, country, quoteCity, currency)
   const methodFor = (brandId: string): ShippingMethod => shipping[brandId] ?? "standard"
-  const shippingTotal = bag.groups.reduce((s, g) => s + shippingPrice(g, methodFor(g.brand.id)), 0)
-  const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: shippingTotal, total: bag.subtotal + shippingTotal, count: bagCount(lines) }
+  const bag = useMemo(() => priceCart(lines, country, currency, quote.quotes, (b) => shipping[b]), [lines, country, currency, quote.quotes, shipping])
+  const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: bag.shipping, total: bag.total, count: bagCount(lines) }
+  const quoteFailed = !quote.isLoading && !!quote.error && !quote.quotes
+  const shippingBlock = quote.isLoading && !quote.quotes
+    ? "Shipping is still being calculated."
+    : quoteFailed
+      ? "Couldn't calculate shipping. Retry to continue."
+      : bag.blocked.length
+        ? `${bag.blocked[0].brand.name} doesn't ship to ${countries[country].name}. Remove its pieces or change the delivery country.`
+        : bag.shipping === null
+          ? "Shipping isn't ready for every brand yet."
+          : null
 
   const methods = paymentMethodsFor(country)
   const method: PaymentMethod = methods.includes(payment.method) ? payment.method : methods[0]
@@ -178,8 +202,8 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
     if (doneRef.current) return
     // Card number, expiry and security code stay in memory only.
     const keep = { method: payment.method, cardName: payment.cardName, ussdBank: payment.ussdBank, momoNetwork: payment.momoNetwork, momoNumber: payment.momoNumber }
-    writeCheckoutDraft({ owner: userEmail, step, furthest, contact, address, shipping, payment: keep })
-  }, [userEmail, step, furthest, contact, address, shipping, payment])
+    writeCheckoutDraft({ owner: userEmail, step, furthest, contact, address, shipping, payment: keep, idempotencyKey: attemptKey ?? undefined })
+  }, [userEmail, step, furthest, contact, address, shipping, payment, attemptKey])
 
   function onFieldBlur(e: React.FocusEvent<HTMLFormElement>) {
     const t = e.target
@@ -209,6 +233,8 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   }
 
   function continueFrom(i: number) {
+    // Shipping: every brand needs an option before the shopper moves on (the button says why not).
+    if (i === 2 && shippingBlock) return
     if (!isValid(i)) {
       showErrors(i)
       focusFirstError(stepErrors[i])
@@ -247,18 +273,22 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
     setAttempted((a) => ({ ...a, 3: false }))
   }
 
-  // No payment provider is connected: placeCheckout records the orders unpaid, as the backend will
-  // before the provider confirms. The in-flight guard blocks a second submit while this
-  // runs, and the idempotency key makes any repeat return the same checkout group.
+  // No payment provider is connected: the server registers the orders unpaid, and the local orders
+  // take its ids. The in-flight guard blocks a second submit while this runs, and the idempotency
+  // key makes any repeat (here or after a reload) return the same checkout group.
   const submit = useAsyncAction(
     () => {
-      const key = (idempotencyKey.current ??= globalThis.crypto?.randomUUID?.() ?? `ck_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`)
+      const key = attemptKey ?? globalThis.crypto?.randomUUID?.() ?? `ck_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+      if (!attemptKey) setAttemptKey(key)
+      setPlaceError(null)
       const phone = parsePhone(contact.phone, country) ?? contact.phone.trim()
+      const digits = payment.cardNumber.replace(/\D/g, "")
       return placeCheckout({
         idempotencyKey: key,
         lines,
         currency,
         shipTo: country,
+        shipToCity: quoteCity,
         contact: { name: contact.name.trim(), email: contact.email.trim(), phone },
         address: {
           line1: [address.line1.trim(), address.line2.trim()].filter(Boolean).join(", "),
@@ -266,12 +296,28 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           postcode: address.postcode.trim().toUpperCase() || undefined,
           country,
         },
-        shipping: Object.fromEntries(bag.groups.map((g) => [g.brand.id, methodFor(g.brand.id)])),
+        shipping: Object.fromEntries(bag.groups.map((g) => [g.brand.id, g.option?.service ?? methodFor(g.brand.id)])),
+        quotes: quote.quotes ?? {},
         paymentMethod: method,
+        payment: {
+          label: paymentSummary(payment, method, country),
+          holder: method === "card" ? payment.cardName.trim() || contact.name.trim() : contact.name.trim(),
+          cardBrand: method === "card" ? (cardBrand(digits) ?? undefined) : undefined,
+          last4: method === "card" && digits.length >= 4 ? digits.slice(-4) : undefined,
+        },
       })
     },
     {
-      error: "Your order wasn't placed. Nothing was charged. Try again.",
+      errorToast: false,
+      onError: (e) => {
+        const message = e instanceof CheckoutError ? e.message : "Your order wasn't placed. Nothing was charged. Try again."
+        setPlaceError(message)
+        if (e instanceof CheckoutError && e.kind === "changed") quote.retry()
+        if (e instanceof CheckoutError && e.kind === "signin") {
+          toast.error(message)
+          useSession.setState({ authPrompt: { intent: "checkout" } })
+        }
+      },
       onSuccess: ({ groupId }) => {
         doneRef.current = true
         onPlaced(groupId)
@@ -281,7 +327,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const submitting = submit.pending
 
   function placeOrder() {
-    if (submitting) return
+    if (submitting || shippingBlock) return
     const firstInvalid = stepErrors.findIndex((e) => Object.keys(e).length > 0)
     if (firstInvalid !== -1) {
       showErrors(firstInvalid)
@@ -293,7 +339,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   }
 
   const current = checkoutSteps[step]
-  const summaryProps = { groups: bag.groups, totals, currency, shipTo: country, methodFor }
+  const summaryProps = { groups: bag.groups, totals, currency, shipTo: country, methodFor, quote }
 
   return (
     // The summary starts level with the title, so its height cap (viewport minus the
@@ -337,11 +383,18 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                   ) : step === 1 ? (
                     <AddressStep value={address} onChange={setAddress} errors={shownErrors} country={country} onCountryChange={changeCountry} />
                   ) : step === 2 ? (
-                    <ShippingStep groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onChange={(b, m) => setShipping((s) => ({ ...s, [b]: m }))} today={today} />
+                    <ShippingStep
+                      groups={bag.groups}
+                      currency={currency}
+                      country={country}
+                      onChange={(b, m) => setShipping((s) => ({ ...s, [b]: m }))}
+                      quote={quote}
+                      onRemoveBrand={(b) => bag.groups.find((g) => g.brand.id === b)?.lines.forEach((l) => removeLine(l.variant.id))}
+                    />
                   ) : step === 3 ? (
                     <PaymentStep value={payment} method={method} methods={methods} onChange={setPayment} onMethodChange={changeMethod} errors={shownErrors} country={country} cardCleared={cardCleared} />
                   ) : (
-                    <ReviewStep contact={contact} address={address} payment={payment} method={method} groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onEdit={edit} today={today} />
+                    <ReviewStep contact={contact} address={address} payment={payment} method={method} groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onEdit={edit} />
                   )}
                 </div>
 
@@ -353,6 +406,12 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
 
                 {step === REVIEW ? (
                   <div className="mt-6 grid gap-4">
+                    {placeError ? (
+                      <div role="alert" className="flex items-start gap-3 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-ink">
+                        <WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+                        <span>{placeError}</span>
+                      </div>
+                    ) : null}
                     <Notice icon={Package}>
                       {bag.groups.length === 1
                         ? `Placing this order creates one order with ${bag.groups[0].brand.name}.`
@@ -360,12 +419,17 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                       No payment provider is connected in this development build, so nothing is charged and the orders are recorded as awaiting payment confirmation.
                     </Notice>
                     <div className="flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
-                      <span className="text-base text-ink">Total to pay</span>
-                      <Price amount={totals.total} currency={currency} size="lg" />
+                      <span className="text-base text-ink">{totals.total === null ? "Subtotal" : "Total to pay"}</span>
+                      <Price amount={totals.total ?? totals.subtotal} currency={currency} size="lg" />
                     </div>
                   </div>
                 ) : null}
 
+                {(step === 2 || step === REVIEW) && shippingBlock ? (
+                  <p id="ship-block-reason" role="status" className="mt-5 text-sm text-ink-2">
+                    {shippingBlock}
+                  </p>
+                ) : null}
                 {/* Phones: the step's actions stay within reach at the foot of the screen. */}
                 <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex items-center gap-3 border-t border-line-soft bg-obsidian/92 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:static sm:mx-0 sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
                   {step === 0 ? (
@@ -378,11 +442,11 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                     </Button>
                   )}
                   {step === REVIEW ? (
-                    <Button type="submit" variant="primary" size="xl" loading={submitting} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
+                    <Button type="submit" variant="primary" size="xl" loading={submitting} disabled={!!shippingBlock && !submitting} aria-describedby={shippingBlock ? "ship-block-reason" : undefined} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
                       Place order
                     </Button>
                   ) : (
-                    <Button type="submit" variant="primary" size="lg" className="flex-1 sm:min-w-56 sm:flex-none">
+                    <Button type="submit" variant="primary" size="lg" disabled={step === 2 && !!shippingBlock} aria-describedby={step === 2 && shippingBlock ? "ship-block-reason" : undefined} className="flex-1 sm:min-w-56 sm:flex-none">
                       {reviewing ? "Save and review" : nextLabel[step]}
                     </Button>
                   )}

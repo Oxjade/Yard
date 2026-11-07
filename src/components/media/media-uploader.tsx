@@ -69,15 +69,20 @@ export function uploadErrorCopy(e: unknown, kind: "image" | "video", purpose: Up
     // The file already had an allowed extension and type: the server read its bytes as something else.
     if (e.code === "unsupported_type") return kind === "video" ? "Yard couldn't read this as an MP4 or WebM video. Export it again and add it." : "Yard couldn't read this as a JPEG, PNG or WebP photo. Export it again and add it."
     if (e.code === "rate_limited") return `You've uploaded a lot in the last few minutes. Try again in ${formatWait(e.retryAfter ?? 600)}.`
-    if (e.status === 404) return "Uploads aren't available here yet."
+    // The target (a conversation, or the brand of a new one) was removed or is no longer visible.
+    if (e.status === 404) return purpose === "inbox_attachment" ? "This conversation isn't available any more. Reload and try again." : errorMessage(e, "We couldn't find that.")
   }
   return errorMessage(e, "The upload didn't go through. Try again.")
 }
 
-/** Whether sending the same file again could work: not after a size, type or preparation refusal. */
+/**
+ * Whether sending the same file again could work: only after a network failure, a server error
+ * (5xx) or a rate limit (429, once its wait has passed). A refusal of the file itself (size, type,
+ * dimensions, validation) or of the target (401, 403, 404) fails the same way every time.
+ */
 export function uploadRetryable(e: unknown) {
   if (e instanceof ImagePrepareError) return false
-  if (e instanceof ApiError && (e.status === 413 || e.status === 415 || e.code === "too_large" || e.code === "unsupported_type")) return false
+  if (e instanceof ApiError) return e.status === 0 || e.status === 429 || e.status >= 500
   return true
 }
 
@@ -121,6 +126,16 @@ export function MediaUploader({ purpose, as, conversationId, brandId, maxFiles, 
   }, [])
 
   const patch = (key: string, p: Partial<UploadItem>) => setItems((list) => list.map((i) => (i.key === key ? { ...i, ...p } : i)))
+  /** Releases a row's thumbnail and shows the file-kind placeholder instead. */
+  const dropPreview = (key: string) =>
+    setItems((list) =>
+      list.map((i) => {
+        if (i.key !== key || !i.preview) return i
+        URL.revokeObjectURL(i.preview)
+        previews.current.delete(i.preview)
+        return { ...i, preview: undefined }
+      }),
+    )
 
   async function start(key: string, file: File) {
     const kind = VIDEO.test(file.type) ? "video" : "image"
@@ -141,6 +156,8 @@ export function MediaUploader({ purpose, as, conversationId, brandId, maxFiles, 
         setItems((list) => list.filter((i) => i.key !== key))
         return
       }
+      // The browser couldn't read the bytes as an image: its thumbnail would be a broken image too.
+      if (e instanceof ImagePrepareError) dropPreview(key)
       patch(key, { state: "error", error: uploadErrorCopy(e, kind, purpose), retryable: uploadRetryable(e) })
     }
   }
@@ -268,13 +285,16 @@ export function MediaUploader({ purpose, as, conversationId, brandId, maxFiles, 
 export function UploadRow({ item, onCancel, onRetry, canRetry = true }: { item: UploadItem; onCancel?: () => void; onRetry?: () => void; canRetry?: boolean }) {
   const pct = Math.round(item.progress * 100)
   const Kind = item.kind === "video" ? FilmStripIcon : ImageIcon
+  // A preview the browser can't decode shows the file-kind placeholder, never a broken image.
+  const [brokenPreview, setBrokenPreview] = useState<string | null>(null)
+  const preview = item.preview && item.preview !== brokenPreview ? item.preview : undefined
   return (
     <li className={cn("flex items-center gap-3 rounded-lg border bg-card p-2.5", item.state === "error" ? "border-danger/40" : "border-line-soft")}>
       <span className="relative inline-flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-elevated">
-        {item.preview ? (
+        {preview ? (
           // A local object URL: next/image can't optimise it.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.preview} alt="" className="size-full object-cover" />
+          <img src={preview} alt="" className="size-full object-cover" onError={() => setBrokenPreview(preview)} />
         ) : (
           <Kind aria-hidden className="size-5 text-ink-3" />
         )}

@@ -18,16 +18,19 @@ import { countryName, formatDate, relDays } from "./format"
 import { userStatusMeta } from "./meta"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
-import { userActions, userAllowed, userDecision, type UserActionKey } from "./user-actions"
+import { NO_ADMIN_SESSION, userActions, userAllowed, userDecision, useUserStatusBlock, type UserActionKey } from "./user-actions"
 import { UserDetail } from "./user-detail"
+import { AbusePanel } from "@/components/admin/trust/abuse-panel"
+import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
 
-type Filter = "all" | "reported" | PlatformUser["status"]
+type Filter = "all" | "reported" | PlatformUser["status"] | "abuse"
 const FILTERS: { value: Filter; label: string; empty: string }[] = [
   { value: "all", label: "All", empty: "No shopper accounts yet" },
   { value: "reported", label: "Reported", empty: "No reported accounts are still active" },
   { value: "active", label: "Active", empty: "No active accounts" },
   { value: "restricted", label: "Restricted", empty: "No restricted accounts" },
   { value: "suspended", label: "Suspended", empty: "No suspended accounts" },
+  { value: "abuse", label: "Abuse", empty: "No abuse signals" },
 ]
 const isFilter = (v: string | null): v is Filter => FILTERS.some((f) => f.value === v)
 const n = (v: number) => formatNumber(Math.round(v))
@@ -46,6 +49,7 @@ function onlyFrom(key: UserActionKey) {
 
 function inFilter(u: PlatformUser, f: Filter) {
   if (f === "all") return true
+  if (f === "abuse") return false
   if (f === "reported") return u.reports > 0 && u.status === "active"
   return u.status === f
 }
@@ -58,7 +62,12 @@ export function UsersView() {
   const qid = useId()
   const users = useAdmin((s) => s.users)
   const linked = useSearchParam("status")
-  const filter: Filter = isFilter(linked) ? linked : "all"
+  // Users › Abuse is ?tab=abuse (§8.1); the account filters stay on ?status=.
+  const abuseTab = useSearchParam("tab") === "abuse"
+  const filter: Filter = abuseTab ? "abuse" : isFilter(linked) ? linked : "all"
+  // Status decisions run on Yard's server: without an admin session (or the role) they're disabled.
+  const block = useUserStatusBlock()
+  useMirrorServerStatuses("user", useMemo(() => users.map((u) => u.id), [users]))
   // /admin/users?user=<id> opens that account, so other screens can link to it.
   const userId = useSearchParam("user")
   const open = !!userId && users.some((u) => u.id === userId)
@@ -66,7 +75,7 @@ export function UsersView() {
   const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, filter)))
 
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: users.length, reported: 0, active: 0, restricted: 0, suspended: 0 }
+    const c: Record<Filter, number> = { all: users.length, reported: 0, active: 0, restricted: 0, suspended: 0, abuse: 0 }
     for (const u of users) {
       c[u.status]++
       if (inFilter(u, "reported")) c.reported++
@@ -97,7 +106,7 @@ export function UsersView() {
       header: "Name",
       sortValue: (u) => u.name.toLowerCase(),
       cell: (u) => (
-        <button type="button" onClick={() => openUser(u)} className="group flex max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
+        <button type="button" onClick={() => openUser(u)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
           <Initials name={u.name} round />
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink group-hover:text-violet">{u.name}</span>
@@ -121,11 +130,11 @@ export function UsersView() {
   const keys: UserActionKey[] = ["restrict", "suspend", "reinstate"]
   const rowActions: RowAction<PlatformUser>[] = [
     { label: "Open account", icon: EyeIcon, onSelect: openUser },
-    ...keys.map((key, i) => ({ label: userActions[key].label, icon: userActions[key].icon, destructive: userActions[key].destructive, separatorBefore: i === 0, disabled: (u: PlatformUser) => !allows(key)(u), disabledReason: unavailable(key), onSelect: (u: PlatformUser) => decide(key, [u]) })),
+    ...keys.map((key, i) => ({ label: userActions[key].label, icon: userActions[key].icon, destructive: userActions[key].destructive, separatorBefore: i === 0, disabled: (u: PlatformUser) => !allows(key)(u) || !!block, disabledReason: (u: PlatformUser) => block ?? unavailable(key)(u), onSelect: (u: PlatformUser) => decide(key, [u]) })),
   ]
   // Bulk: the decisions this tab's accounts can take (Reported lists active accounts only); the
   // bar counts the selected accounts each applies to. A tab with none has no checkboxes.
-  const bulkKeys = keys.filter((k) => filter === "all" || userAllowed[filter === "reported" ? "active" : filter].includes(k))
+  const bulkKeys = block || filter === "abuse" ? [] : keys.filter((k) => filter === "all" || userAllowed[filter === "reported" ? "active" : filter].includes(k))
   const bulkActions: BulkAction<PlatformUser>[] = bulkKeys.map((key) => ({ label: userActions[key].label, destructive: userActions[key].destructive, appliesTo: allows(key), disabledReason: onlyFrom(key), onSelect: (list) => decide(key, list) }))
   const current = FILTERS.find((f) => f.value === filter)!
 
@@ -134,7 +143,7 @@ export function UsersView() {
       <AdminPageHead
         title="Users"
         description="Find a shopper, read the reports against them and restrict or suspend the account."
-        note="Account decisions are recorded here and in the audit log. Signing shoppers out and blocking checkout need the accounts backend, which isn't connected in this build."
+        note={block === NO_ADMIN_SESSION ? NO_ADMIN_SESSION : "Restrict, Suspend and Reinstate run on Yard's server: a suspension signs the account out everywhere and blocks sign-in. Checkout and drops still run in this browser, so a restriction doesn't block them yet."}
       />
 
       <InPageLinks>
@@ -146,7 +155,7 @@ export function UsersView() {
             <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, active" value={counts.reported} format={n} hint="Worth a look first" href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={n} hint="Can browse, can't buy" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={n} hint="Pauses are set under Abuse" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" icon={ProhibitIcon} label="Suspended" value={counts.suspended} format={n} hint="Can't sign in" href="/admin/users?status=suspended#accounts" hrefLabel="Show suspended accounts" ready={ready} className="h-full" />
@@ -154,11 +163,14 @@ export function UsersView() {
         </StatRow>
       </InPageLinks>
 
-      <Panel id="accounts" title="Accounts" description="Accounts with reports come first. Open one for its reports, orders and history." className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+      <Panel id="accounts" title={filter === "abuse" ? "Abuse signals" : "Accounts"} description={filter === "abuse" ? "Rate-limit hits, held messages, spam marks and alerts from Yard's server. Open an account to confirm or dismiss." : "Accounts with reports come first. Open one for its reports, orders and history."} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
         <PanelRail value={filter}>
-          <Segmented label="Account status" size="sm" value={filter} onChange={(f) => writeParams({ status: f === "all" ? null : f })} loading={!ready} idBase={qid} panelId={`${qid}-panel`} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "reported" ? counts.reported : undefined }))} />
+          <Segmented label="Account status" size="sm" value={filter} onChange={(f) => writeParams(f === "abuse" ? { tab: "abuse", status: null, user: null } : { tab: null, case: null, status: f === "all" ? null : f })} loading={!ready} idBase={qid} panelId={`${qid}-panel`} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "reported" ? counts.reported : undefined }))} />
         </PanelRail>
         <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, filter)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
+          {filter === "abuse" ? (
+            <AbusePanel />
+          ) : (
           <DataTable
             key={filter}
             label={`${current.label} shopper accounts`}
@@ -173,6 +185,7 @@ export function UsersView() {
             initialPageSize={25}
             minWidth={300}
           />
+          )}
         </div>
       </Panel>
 

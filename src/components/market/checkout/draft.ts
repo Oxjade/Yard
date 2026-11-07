@@ -20,6 +20,11 @@ export type CheckoutDraft = {
   address: AddressDraft
   shipping: Record<string, ShippingMethod>
   payment: Omit<PaymentDraft, "cardNumber" | "expiry" | "cvc">
+  /**
+   * The checkout attempt's idempotency key (§6.5): a retry after a reload, when the first answer
+   * was lost, registers nothing new and returns the same server group.
+   */
+  idempotencyKey?: string
 }
 
 export function readCheckoutDraft(owner: string): CheckoutDraft | null {

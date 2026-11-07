@@ -2,17 +2,14 @@ import "server-only"
 import { purgeOrphans } from "./purge"
 
 /**
- * Media contract (F1 signatures; F2 implements uploads, serving, visibility and purge, §5.4).
- * The module files (store, sniff, strip-metadata, serve, visibility, purge) hold the signatures.
+ * Media contract (§5.4): uploads, serving, derived visibility and the purge job. Other clusters
+ * call refreshVisibility (inside the transaction that changed a reference), mediaSrc and
+ * toMediaDto; the scheduler runs jobs.purgeOrphans hourly.
  */
-export const IMPL: string = "stub"
+export const IMPL: string = "F2-2026-11-06"
 
-export { refreshVisibility } from "./visibility"
+export { refreshVisibility, refreshBrandMediaVisibility, mediaIdsOf } from "./visibility"
+export { mediaSrc, toMediaDto } from "./dto"
 export { purgeOrphans }
-
-/** `/api/media/<id>` (+ `?as=` for private media): the only src the server ever builds for stored media. */
-export function mediaSrc(id: string, as?: "shopper" | "brand" | "admin") {
-  return `/api/media/${encodeURIComponent(id)}${as ? `?as=${as}` : ""}`
-}
 
 export const jobs = { purgeOrphans }

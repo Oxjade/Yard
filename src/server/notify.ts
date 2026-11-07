@@ -1,6 +1,7 @@
 import "server-only"
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm"
 import { adminRolePermissions, type AdminPermission, type AdminRole } from "@/lib/permissions"
+import { detectorLabels } from "@/lib/api/contracts/admin"
 import { isSameOriginPath, type NotificationDto } from "@/lib/api/contracts/notifications"
 import type { Actor } from "./auth/dal"
 import { db } from "./db"
@@ -24,14 +25,38 @@ export function recipientChannel(r: Recipient) {
   return r.kind === "shopper" ? channels.user(r.id) : r.kind === "brand" ? channels.brand(r.id) : channels.adminUser(r.id)
 }
 
+/** Detector names as Admin › Charts labels them, by key or by a lower-cased label (older chart.integrity rows). */
+const detectorNames: Record<string, string> = Object.fromEntries(Object.entries(detectorLabels).flatMap(([k, v]) => [[k, v], [v.toLowerCase(), v]]))
+
+/**
+ * Text stored by older templates, as the current templates write it: "Brand · high severity"
+ * meta strings become a sentence, and chart.integrity titles name the detector as Admin › Charts
+ * does ("IP concentration", not "ip concentration"). Rows aren't rewritten; every read upgrades them.
+ */
+export function currentNotificationText(category: string, title: string, body: string) {
+  let t = title
+  const b = body
+  if (category === "chart_integrity") {
+    const m = /^Chart integrity: (.+)$/.exec(t)
+    if (m) t = `Chart integrity: ${detectorNames[m[1]] ?? detectorNames[m[1].toLowerCase()] ?? m[1].charAt(0).toUpperCase() + m[1].slice(1)}`
+  }
+  const sentence = (s: string) => {
+    if (!s.includes(" · ")) return s
+    const joined = s.split(" · ").join(", ")
+    return /[.!?]$/.test(joined) ? joined : `${joined}.`
+  }
+  return { title: sentence(t), body: sentence(b) }
+}
+
 export function toNotificationDto(row: typeof notifications.$inferSelect): NotificationDto {
+  const text = currentNotificationText(row.category, row.title, row.body)
   return {
     id: row.id,
     key: row.eventKey,
     recipient: { kind: row.recipientKind as Recipient["kind"], id: row.recipientId },
     category: row.category,
-    title: row.title,
-    body: row.body,
+    title: text.title,
+    body: text.body,
     href: row.href,
     at: row.createdAt.toISOString(),
     read: !!row.readAt,
@@ -59,6 +84,26 @@ export async function notify(recipient: Recipient, n: { key: string; template: T
   const dto = toNotificationDto(row)
   await publish(recipientChannel(recipient), "notification.created", dto)
   return dto
+}
+
+/**
+ * Tells every open tab of each recipient that these notifications were deleted on the server
+ * (publishes notification.removed on the recipient's channel; durable, so a tab that reconnects
+ * learns it from the replay too). Call it inside the transaction that deleted the rows: the
+ * event is announced after commit. I, M and D restores should call it for rows they delete.
+ */
+export async function announceRemovedNotifications(rows: { kind: Recipient["kind"]; id: string; key: string }[]) {
+  const by = new Map<string, { recipient: Recipient; keys: string[] }>()
+  for (const r of rows) {
+    const k = `${r.kind}:${r.id}`
+    const e = by.get(k) ?? { recipient: { kind: r.kind, id: r.id }, keys: [] }
+    if (!e.keys.includes(r.key)) e.keys.push(r.key)
+    by.set(k, e)
+  }
+  for (const { recipient, keys } of by.values()) {
+    for (let i = 0; i < keys.length; i += 200) await publish(recipientChannel(recipient), "notification.removed", { recipient, keys: keys.slice(i, i + 200) })
+  }
+  return by.size
 }
 
 /** The admin roles that hold `permission`. */

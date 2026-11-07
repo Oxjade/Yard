@@ -30,3 +30,10 @@ export default async function f1({ base, cookie }) {
   } else add(null, "transaction self-test", "no admin cookie")
   return out
 }
+
+// Run on its own (`node scripts/checks/<name>.mjs`): db-check signs in a demo admin and runs just this file.
+if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
+  const { spawnSync } = await import("node:child_process")
+  const root = path.resolve(import.meta.dirname, "..", "..")
+  process.exit(spawnSync(process.execPath, [path.join(root, "scripts", "db-check.mjs"), path.basename(import.meta.filename, ".mjs")], { cwd: root, stdio: "inherit" }).status ?? 1)
+}

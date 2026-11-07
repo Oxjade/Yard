@@ -15,6 +15,27 @@ import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { formatDay, formatOrderMoney } from "./format"
 import { checkoutPayment, isSampleCheckout, OrderStatusBadge, SampleChip, TrackingLink } from "./order-status"
+import { orderEstimate } from "@/components/market/delivery/browser-estimate"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { formatDayShort, formatShortRange } from "@/lib/shipping/format"
+
+/** "Est. 11–16 Nov" or "Delivered 12 Nov": an estimate, labelled as one (§6.5). Read after hydration. */
+function DeliveryChip({ order }: { order: MerchantOrder }) {
+  const hydrated = useHydrated()
+  if (!hydrated || order.status === "cancelled" || order.status === "refunded" || order.status === "refund_requested") return null
+  const e = orderEstimate(order)
+  const text = e.deliveredOn ? `Delivered ${formatDayShort(e.deliveredOn)}` : e.arrivalFrom && e.arrivalTo && order.status !== "delivered" ? `Est. ${formatShortRange(e.arrivalFrom, e.arrivalTo)}` : null
+  if (!text) return null
+  // Computed here rather than read from Yard's server (the order page reads the server and updates
+  // this copy): said in words, since a tooltip doesn't reach touch or most screen readers (§6.5).
+  const here = e.source === "browser"
+  return (
+    <span className={cn("inline-flex min-h-6 flex-wrap items-center gap-x-1 border px-2.5 py-0.5 text-[11px] tabular", here ? "rounded-lg" : "rounded-full", e.late && !e.deliveredOn ? "border-line text-ink" : "border-line-soft text-ink-2")}>
+      <span className="whitespace-nowrap">{e.late && !e.deliveredOn ? `Running late, est. ${formatShortRange(e.arrivalFrom!, e.arrivalTo!)}` : text}</span>
+      {here ? <span className="whitespace-nowrap text-ink-3">(estimated in this browser)</span> : null}
+    </span>
+  )
+}
 import { YouNav } from "./you-nav"
 
 type Filter = "all" | "open" | "closed"
@@ -52,6 +73,7 @@ export function OrderRow({ order }: { order: MerchantOrder }) {
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
             <OrderStatusBadge status={order.status} order={order} />
+            <DeliveryChip order={order} />
             {order.tracking ? <TrackingLink tracking={order.tracking} /> : null}
             {!order.tracking && openStatuses.has(order.status) ? <span className="text-xs text-ink-3">Tracking appears when it ships</span> : null}
           </div>

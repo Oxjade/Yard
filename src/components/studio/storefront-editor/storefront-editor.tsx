@@ -14,6 +14,9 @@ import { formatDateTime } from "@/components/studio/catalog/utils"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useApi } from "@/lib/api/use-api"
+import { accountsKey, getAccounts, getStudioPosts, studioPostsKey } from "@/lib/api/social"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { storiesOf } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
 import type { StorefrontSection } from "@/lib/data/types"
@@ -35,7 +38,7 @@ import {
 } from "./model"
 import { DeviceToggle, EDITOR_DESCRIPTION, EDITOR_TITLE, EditorSkeleton, editorFrame, storefrontStatusMeta, type SaveState } from "./parts"
 import { PreviewFrame, scrollPreviewTo, sectionDomId, type Device } from "./preview-frame"
-import { SectionsControls } from "./sections-controls"
+import { SectionsControls, type SocialEditorData } from "./sections-controls"
 
 const AUTOSAVE_MS = 900
 const TITLE = EDITOR_TITLE
@@ -120,6 +123,24 @@ function Editor() {
   const collections = useBrandCollections(brandId)
 
   const products = useMemo(() => studioProducts.filter((p) => p.status === "published"), [studioProducts])
+
+  /* ---------- Social feed preview data (§6.1): the session brand's published posts ---------- */
+
+  const session = useServerSession()
+  const sessionBrand = session.brand?.brand.id ?? null
+  const ownSession = session.status === "ready" && sessionBrand === brandId
+  const socialPostsApi = useApi(ownSession ? studioPostsKey("all", "published") : null, getStudioPosts, { revalidateOnFocus: true })
+  const socialAccountsApi = useApi(ownSession ? accountsKey : null, getAccounts)
+  const social = useMemo<SocialEditorData>(() => {
+    if (session.status === "loading") return { status: "loading", posts: null, accounts: null }
+    if (!session.brand) return { status: "signed_out", posts: null, accounts: null }
+    if (!ownSession) return { status: "other_brand", posts: null, accounts: null }
+    if (socialPostsApi.error) return { status: "error", posts: null, accounts: socialAccountsApi.data?.accounts ?? null }
+    if (!socialPostsApi.data) return { status: "loading", posts: null, accounts: socialAccountsApi.data?.accounts ?? null }
+    return { status: "ready", posts: socialPostsApi.data.posts, accounts: socialAccountsApi.data?.accounts ?? null }
+  }, [session.status, session.brand, ownSession, socialPostsApi.data, socialPostsApi.error, socialAccountsApi.data])
+  // Not ready: the preview's Social feed says why (it never claims the live section is hidden).
+  const socialPreviewState = social.status === "ready" ? undefined : social.status
   const stories = useMemo(() => storiesOf(brandId), [brandId])
   const photos = useMemo(() => brandPhotos(brand, studioProducts, collections, drops, stories), [brand, studioProducts, collections, drops, stories])
 
@@ -319,6 +340,8 @@ function Editor() {
     collections,
     drops,
     stories,
+    socialPosts: social.posts ?? undefined,
+    socialPreviewState,
   }
 
   return (
@@ -399,7 +422,7 @@ function Editor() {
                 <DesignControls config={config} brandName={brand.name} cover={config.cover ?? brand.cover} onChange={update} />
               </TabsPrimitive.Content>
               <TabsPrimitive.Content value="content" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
-                <ContentControls key={resetKey} config={config} brand={brand} photos={photos} errors={errors} onChange={update} />
+                <ContentControls key={resetKey} config={config} brand={brand} photos={photos} errors={errors} onChange={update} socialAccounts={social.accounts} />
               </TabsPrimitive.Content>
               <TabsPrimitive.Content value="sections" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <SectionsControls
@@ -410,6 +433,7 @@ function Editor() {
                   errors={errors}
                   onChange={update}
                   onLocate={locate}
+                  social={social}
                   onHighlight={(s) => setHighlight(s ? sectionDomId(s) : null)}
                   onEditCover={() => {
                     setTab("content")

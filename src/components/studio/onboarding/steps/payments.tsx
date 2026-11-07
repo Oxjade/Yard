@@ -158,7 +158,7 @@ export function PaymentsStep({ onNext }: StepProps) {
         </div>
       </Panel>
 
-      <Panel title="Delivery" description="Where you'll ship. Rates use the platform shipping table for now; set your own in Settings later.">
+      <Panel title="Delivery" description="Set your zones, rates and handling time in Shipping & fulfilment after you publish.">
         <div className="grid gap-2" role="group" aria-labelledby="ob-delivery-label" data-invalid={e.delivery ? true : undefined} aria-describedby={e.delivery ? "ob-delivery-error" : undefined}>
           <span id="ob-delivery-label" className="sr-only">Delivery options</span>
           {options.map((o) => {

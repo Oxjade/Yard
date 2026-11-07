@@ -11,9 +11,12 @@ import { countries, shippingZone, type CountryCode, type CurrencyCode } from "@/
 import { variantLabel } from "@/lib/data/products"
 import { cn } from "@/lib/utils"
 import type { BrandGroup } from "@/lib/cart"
-import { shippingMethodLabel, shippingPrice, type ShippingMethod } from "./shipping"
+import { ArrivalChip, ShippingAmount, type QuoteState } from "@/components/market/delivery/delivery-bits"
+import { Bone } from "@/components/feedback/skeletons"
+import { chosenOption, shippingMethodLabel, type ShippingMethod } from "./shipping"
 
-export type CheckoutTotals = { subtotal: number; shipping: number; total: number; count: number }
+/** Shipping and total are null until every brand has a quote (§6.5): never a number of our own. */
+export type CheckoutTotals = { subtotal: number; shipping: number | null; total: number | null; count: number }
 
 type SummaryProps = {
   groups: BrandGroup[]
@@ -21,17 +24,18 @@ type SummaryProps = {
   currency: CurrencyCode
   shipTo: CountryCode
   methodFor: (brandId: string) => ShippingMethod
+  quote: QuoteState
 }
 
 const money = (amount: number, currency: CurrencyCode, className?: string) =>
   amount === 0 ? <span className={cn("text-sm", className)}>Free</span> : <Price amount={amount} currency={currency} className={className} />
 
 /** The bag again, grouped by brand, with the shipping each brand will charge. */
-function SummaryLines({ groups, currency, methodFor }: Pick<SummaryProps, "groups" | "currency" | "methodFor">) {
+function SummaryLines({ groups, currency, methodFor, quote }: Pick<SummaryProps, "groups" | "currency" | "methodFor" | "quote">) {
   return (
     <ul className="grid gap-6" aria-label="Pieces by brand">
       {groups.map((g) => {
-        const method = methodFor(g.brand.id)
+        const option = chosenOption(g, methodFor(g.brand.id))
         return (
           <li key={g.brand.id}>
             <div className="flex items-center gap-2.5">
@@ -63,9 +67,20 @@ function SummaryLines({ groups, currency, methodFor }: Pick<SummaryProps, "group
                 </li>
               ))}
             </ul>
-            <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-line-soft pt-2.5 text-xs text-ink-2">
-              <span>{shippingMethodLabel[method]} shipping</span>
-              {money(shippingPrice(g, method), currency, "text-xs text-ink-2")}
+            <div className="mt-3 grid gap-1.5 border-t border-line-soft pt-2.5 text-xs text-ink-2">
+              <div className="flex min-h-4 items-center justify-between gap-3">
+                <span>{option ? (option.service === "pickup" ? option.label : `${shippingMethodLabel[option.service]} shipping`) : "Shipping"}</span>
+                {option ? (
+                  money(option.price.amount, currency, "text-xs text-ink-2")
+                ) : g.quote ? (
+                  <span>Not available</span>
+                ) : quote.isLoading ? (
+                  <Bone className="h-3.5 w-12" />
+                ) : (
+                  <span>Not calculated</span>
+                )}
+              </div>
+              {option?.estimate && option.service !== "pickup" ? <ArrivalChip estimate={option.estimate} className="justify-self-start" /> : null}
             </div>
           </li>
         )
@@ -75,7 +90,7 @@ function SummaryLines({ groups, currency, methodFor }: Pick<SummaryProps, "group
 }
 
 /** Subtotal, shipping, taxes and the total: always visible, never inside a scroll area. */
-function SummaryTotals({ groups, totals, currency, shipTo }: Pick<SummaryProps, "groups" | "totals" | "currency" | "shipTo">) {
+function SummaryTotals({ groups, totals, currency, shipTo, quote }: Pick<SummaryProps, "groups" | "totals" | "currency" | "shipTo" | "quote">) {
   const crossBorder = groups.some((g) => shippingZone(g.brand.shipsFrom, shipTo) !== "domestic")
   return (
     <div>
@@ -86,11 +101,13 @@ function SummaryTotals({ groups, totals, currency, shipTo }: Pick<SummaryProps, 
             <Price amount={totals.subtotal} currency={currency} />
           </dd>
         </div>
-        <div className="flex items-baseline justify-between gap-4">
+        <div className="flex min-h-5 items-center justify-between gap-4">
           <dt className="text-ink-2">
             Shipping, {groups.length} {groups.length === 1 ? "brand" : "brands"}
           </dt>
-          <dd>{money(totals.shipping, currency)}</dd>
+          <dd>
+            <ShippingAmount amount={totals.shipping} currency={currency} state={quote} unavailable={groups.some((g) => g.quote && g.unavailable)} />
+          </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-ink-2">Taxes</dt>
@@ -98,8 +115,8 @@ function SummaryTotals({ groups, totals, currency, shipTo }: Pick<SummaryProps, 
         </div>
       </dl>
       <div className="mt-4 flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
-        <span className="text-base text-ink">Total</span>
-        <Price amount={totals.total} currency={currency} size="lg" />
+        <span className="text-base text-ink">{totals.total === null ? "Subtotal" : "Total"}</span>
+        <Price amount={totals.total ?? totals.subtotal} currency={currency} size="lg" />
       </div>
       <p className="mt-3 text-xs leading-relaxed text-ink-3">
         {crossBorder
@@ -192,7 +209,7 @@ export function OrderSummaryDisclosure(props: SummaryProps) {
           {open ? "Hide order summary" : "Show order summary"}
         </span>
         <span className="flex items-center gap-2">
-          <Price amount={props.totals.total} currency={props.currency} />
+          <Price amount={props.totals.total ?? props.totals.subtotal} currency={props.currency} />
           <ChevronDown className={cn("size-4 text-ink-2 transition-transform duration-200 ease-out-quint", open && "rotate-180")} />
         </span>
       </button>
