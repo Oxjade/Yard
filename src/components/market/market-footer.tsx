@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { site } from "@/config/site"
 import { LocaleSelect } from "./locale-select"
-import { wordmarkType } from "./wordmark-type"
+import { YardLogo } from "@/components/brand/yard-logo"
 
 const columns = [
   { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories"]] },
@@ -15,7 +15,7 @@ export function MarketFooter() {
       <div className="mx-auto max-w-page px-4 pt-14 md:px-8">
         <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div className="max-w-sm">
-            <p className={`${wordmarkType} text-[22px]`}>{site.name}</p>
+            <YardLogo className="block h-10" />
             <p className="mt-4 text-sm leading-relaxed text-ink-2">{site.description}</p>
             <p className="mt-4 text-sm leading-relaxed text-ink-2">
               Brands join free and keep their storefront free. We take {Math.round(site.commissionRate * 100)}% when a sale completes — nothing before.

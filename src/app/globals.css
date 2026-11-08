@@ -334,25 +334,6 @@
     }
   }
 
-  /* Chrome finish — wordmark only */
-  .chrome-text {
-    background: linear-gradient(
-      100deg,
-      #6f6a78 0%,
-      #f4f1f7 22%,
-      #a39dad 38%,
-      #ffffff 52%,
-      #8c869a 68%,
-      #e9e5ee 84%,
-      #77717f 100%
-    );
-    background-size: 220% 100%;
-    background-position: 0% 50%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
   /* Editorial image treatment: a quiet scrim so overlaid type stays legible */
   .scrim-b {
     background: linear-gradient(180deg, rgba(8, 8, 8, 0) 35%, rgba(8, 8, 8, 0.86) 100%);

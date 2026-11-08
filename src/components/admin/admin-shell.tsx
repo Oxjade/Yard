@@ -51,6 +51,7 @@ import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useOrders } from "@/lib/stores/orders"
 import { site } from "@/config/site"
+import { YardLogo } from "@/components/brand/yard-logo"
 import { cn } from "@/lib/utils"
 
 /** System status pill for the top bar: operational, or how many services are degraded. A static dot: nothing loops for attention. */
@@ -363,13 +364,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       search={search}
       workspace={{
         mark: (
+          // The square mark, as on the app icon: the acid logo on obsidian. The name beside it says "Yard".
           <span className="inline-flex size-8 items-center justify-center rounded-[9px] border border-white/12 bg-obsidian">
-            <span className="font-wide text-[13px] leading-none text-ink uppercase">{site.name.charAt(0)}</span>
+            <YardLogo decorative className="h-auto w-[26px]" />
           </span>
         ),
-        // The wordmark is set in capitals by CSS (site.name is sentence case in copy); a four-letter
-        // name carries a touch more tracking so it holds the line the way a longer one did.
-        name: <span className="font-wide text-[13px] tracking-[0.22em] text-ink uppercase">{site.name}</span>,
+        // The logo names the workspace ("Yard"), in the trigger and in the menu's label.
+        name: <YardLogo className="block h-[18px]" />,
         caption: (
           <>
             Control Center

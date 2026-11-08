@@ -10,18 +10,21 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
+import { YardLogo } from "@/components/brand/yard-logo"
 import { NotificationBell } from "@/components/feedback/notification-bell"
 import { InboxHeaderButton } from "@/components/inbox/entry"
 import { bagCount } from "./bag-count"
 import { BagPop, useLgUp } from "./bag-pop"
 import { SearchCapsule } from "./search-capsule"
-import { wordmarkType } from "./wordmark-type"
 
-/** The name as the logo, linking home. */
-export function Wordmark({ className }: { className?: string }) {
+/**
+ * The Yard logo, linking home. The link carries the name, so the logo inside is decorative.
+ * `logoClassName` overrides the logo's height (and colour, on an acid surface).
+ */
+export function Wordmark({ className, logoClassName }: { className?: string; logoClassName?: string }) {
   return (
-    <Link href="/" className={cn(wordmarkType, "text-[17px] sm:text-lg", className)} aria-label={`${site.name} home`}>
-      {site.name}
+    <Link href="/" className={cn("inline-flex shrink-0 items-center", className)} aria-label={`${site.name} home`}>
+      <YardLogo decorative className={cn("h-7 sm:h-8", logoClassName)} />
     </Link>
   )
 }
@@ -101,7 +104,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
             (8px on phones, 12px from md), so the pair sits evenly between the screen edges. */}
         <div className="pointer-events-auto relative isolate -mx-2 flex h-10 min-w-0 items-center gap-10 px-2 md:-mx-3 md:px-3 lg:mr-0 lg:gap-6 lg:pr-0 xl:gap-10">
           <Backdrop shown={backdrops} />
-          <Wordmark className={solid ? undefined : "text-float"} />
+          <Wordmark className={solid ? undefined : "icon-float"} />
 
           <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
             {marketNav.map((item) => {
