@@ -226,13 +226,14 @@ export async function receiveReturn(tx: Tx, input: { orderRefId: string; returnI
 }
 
 /** Job: approved returns never sent back within RETURN_SHIP_BACK_DAYS close as expired. */
-export async function expireStaleReturns(now = Date.now()) {
+export async function expireStaleReturns(now = Date.now(), only?: string[]) {
+  if (only && !only.length) return { checked: 0, expired: 0 }
   const cutoff = new Date(now - RETURN_SHIP_BACK_DAYS * 86_400_000)
   const stale = await withTx((tx) =>
     tx
       .select({ id: orderReturns.id, orderRefId: orderReturns.orderRefId })
       .from(orderReturns)
-      .where(and(eq(orderReturns.status, "approved"), lt(orderReturns.decidedAt, cutoff)))
+      .where(and(eq(orderReturns.status, "approved"), lt(orderReturns.decidedAt, cutoff), only ? inArray(orderReturns.orderRefId, only) : undefined))
       .limit(200),
   )
   let expired = 0

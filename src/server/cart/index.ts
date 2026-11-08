@@ -146,7 +146,9 @@ export async function viewCart(owner: CartOwner | null, opts: { currency: string
 
 async function checkSellable(variantId: string, qty: number) {
   const [line] = await priceLines([{ variantId, qty }], "USD")
-  if (!line || line.status === "unavailable") throw notFound("That piece isn't available.")
+  // Unknown or no longer sold (CATALOG leaves it out) → 404; sold out or short → 409.
+  if (!line || !line.productId) throw notFound("That piece isn't available.")
+  if (line.available <= 0) throw conflict("That piece is sold out.")
   if (line.available < qty) throw conflict(line.available === 1 ? "Only 1 left." : `Only ${line.available} left.`)
 }
 

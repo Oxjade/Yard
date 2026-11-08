@@ -16,13 +16,14 @@ const BATCH = 200
  * window starts) for open, paid orders. Reads stay live either way; this keeps filters and the
  * completion job right.
  */
-export async function syncFulfilmentDue() {
+export async function syncFulfilmentDue(only?: string[]) {
+  if (only && !only.length) return { checked: 0, changed: 0 }
   const d = await db()
   const rows = await d
     .select({ id: orderStates.orderRefId })
     .from(orderStates)
     .innerJoin(orderRefs, eq(orderRefs.id, orderStates.orderRefId))
-    .where(and(isNull(orderStates.completedAt), notInArray(orderStates.fulfilmentStatus, ["delivered", "cancelled", "returned_to_sender"]), inArray(orderStates.paymentStatus, ["paid", "partially_refunded"]), inArray(orderRefs.status, ["shipped", "delivered", "refund_requested"])))
+    .where(and(isNull(orderStates.completedAt), notInArray(orderStates.fulfilmentStatus, ["delivered", "cancelled", "returned_to_sender"]), inArray(orderStates.paymentStatus, ["paid", "partially_refunded"]), inArray(orderRefs.status, ["shipped", "delivered", "refund_requested"]), only ? inArray(orderStates.orderRefId, only) : undefined))
     .limit(500)
   let changed = 0
   for (const r of rows) {
@@ -64,7 +65,8 @@ async function hasOpenReturn(tx: Tx, orderRefId: string) {
  * available. Cancelled orders close once their refunds have settled (paid ones through the ledger
  * too; unpaid ones have nothing to settle).
  */
-export async function completeDue(now = Date.now()) {
+export async function completeDue(now = Date.now(), only?: string[]) {
+  if (only && !only.length) return { checked: 0, completed: 0 }
   const d = await db()
   const at = new Date(now)
   const due = await d
@@ -79,6 +81,7 @@ export async function completeDue(now = Date.now()) {
           and(lt(orderStates.returnWindowEndsAt, at), inArray(orderStates.paymentStatus, ["paid", "partially_refunded", "refunded"]), sql`${orderStates.fulfilmentStatus} <> 'cancelled'`),
           eq(orderStates.fulfilmentStatus, "cancelled"),
         ),
+        only ? inArray(orderStates.orderRefId, only) : undefined,
       ),
     )
     .limit(BATCH)
@@ -108,12 +111,13 @@ export async function completeDue(now = Date.now()) {
 }
 
 /** Hourly: cancelled orders whose payment landed but whose refund isn't recorded yet. */
-export async function retryCancelledRefunds() {
+export async function retryCancelledRefunds(only?: string[]) {
+  if (only && !only.length) return { checked: 0, refunded: 0 }
   const d = await db()
   const rows = await d
     .select({ id: orderStates.orderRefId })
     .from(orderStates)
-    .where(and(eq(orderStates.fulfilmentStatus, "cancelled"), inArray(orderStates.paymentStatus, ["paid", "partially_refunded"]), isNull(orderStates.completedAt)))
+    .where(and(eq(orderStates.fulfilmentStatus, "cancelled"), inArray(orderStates.paymentStatus, ["paid", "partially_refunded"]), isNull(orderStates.completedAt), only ? inArray(orderStates.orderRefId, only) : undefined))
     .limit(BATCH)
   let refunded = 0
   for (const r of rows) {
@@ -128,11 +132,11 @@ export async function retryCancelledRefunds() {
 }
 
 /** The scheduler entry (§1.3 FeatureModule.jobs): one hourly run of everything above. */
-export async function hourly() {
-  const sync = await syncFulfilmentDue()
-  const retried = await retryCancelledRefunds()
-  const returns = await expireStaleReturns()
-  const done = await completeDue()
+export async function hourly(opts: { now?: number; only?: string[] } = {}) {
+  const sync = await syncFulfilmentDue(opts.only)
+  const retried = await retryCancelledRefunds(opts.only)
+  const returns = await expireStaleReturns(opts.now, opts.only)
+  const done = await completeDue(opts.now, opts.only)
   if (sync.changed + retried.refunded + returns.expired + done.completed) {
     log.info(`[yard] orders: ${sync.changed} fulfilment updates, ${retried.refunded} cancellation refunds, ${returns.expired} returns expired, ${done.completed} orders completed`)
   }

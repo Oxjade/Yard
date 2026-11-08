@@ -397,6 +397,17 @@ export async function simulateStubPayment(actor: ShopperActor, checkoutId: strin
   return getCheckout(actor, checkoutId)
 }
 
+/**
+ * DEVELOPMENT ONLY, STUB ONLY: runs the expiry job for one of the shopper's own stub checkouts as
+ * if its hold had run out, so the release path can be exercised without waiting 30 minutes.
+ */
+export async function simulateStubExpiry(actor: ShopperActor, checkoutId: string): Promise<CheckoutView> {
+  const view = await getCheckout(actor, checkoutId)
+  if (!view.payment || view.payment.provider !== "stub") throw rule("Only stub checkouts can be expired here.")
+  if (view.status === "pending_payment") await expireCheckouts(new Date(Math.max(Date.now(), Date.parse(view.expiresAt)) + 1000), { checkoutId })
+  return getCheckout(actor, checkoutId)
+}
+
 /* ---------- Expiry job ---------- */
 
 /**
@@ -404,12 +415,12 @@ export async function simulateStubPayment(actor: ShopperActor, checkoutId: strin
  * shopper who paid at the last second is never expired); anything not paid is expired, its stock
  * hold released and ORDERS told the payment failed.
  */
-export async function expireCheckouts(now = new Date()) {
+export async function expireCheckouts(now = new Date(), opts: { checkoutId?: string } = {}) {
   const d = await db()
   const due = await d
     .select()
     .from(checkouts)
-    .where(and(eq(checkouts.status, "pending_payment"), lt(checkouts.expiresAt, now)))
+    .where(and(eq(checkouts.status, "pending_payment"), lt(checkouts.expiresAt, now), opts.checkoutId ? eq(checkouts.id, opts.checkoutId) : undefined))
     .limit(100)
   let expired = 0
   let paid = 0
