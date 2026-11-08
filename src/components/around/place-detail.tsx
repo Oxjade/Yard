@@ -108,9 +108,10 @@ export function PlaceDetail({ summary, detail, loading, error, onRetry, onBack, 
             {/* Stored media can be private (brand preview) or public: a plain img keeps cookies and never goes through the optimizer. */}
             {im.src!.startsWith("/api/media/") ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={im.src!} alt={im.alt} className="absolute inset-0 size-full object-cover" loading="lazy" />
+              <img src={im.src!} alt={im.alt} className="absolute inset-0 size-full object-cover" loading={i === 0 ? "eager" : "lazy"} />
             ) : (
-              <Image src={im.src!} alt={im.alt} fill sizes="(min-width: 1024px) 380px, 90vw" className="object-cover" />
+              // The first photo is above the fold (often the largest paint); the rest load lazily.
+              <Image src={im.src!} alt={im.alt} fill sizes="(min-width: 1024px) 380px, 90vw" className="object-cover" loading={i === 0 ? "eager" : "lazy"} />
             )}
             {!photos.length ? <span className="absolute bottom-2 left-2 rounded-full bg-obsidian/70 px-2 py-0.5 text-[10px] text-ink-2">Brand photo</span> : null}
           </div>
@@ -125,7 +126,7 @@ export function PlaceDetail({ summary, detail, loading, error, onRetry, onBack, 
               <Link href={`/brands/${p.brand.handle}`} className="truncate hover:underline">
                 {p.brand.name}
               </Link>
-              {p.brand.verified ? <SealCheckIcon weight="fill" className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
+              {p.brand.verified ? <SealCheckIcon weight="fill" className="size-4 shrink-0 text-ink" aria-label="Verified brand" /> : null}
             </p>
             <p className="truncate text-xs text-ink-2">{p.name}</p>
           </div>
@@ -283,11 +284,11 @@ function Happening({ place, now, onReport }: { place: PlaceDetailDto; now: numbe
                 </p>
                 {e.promoText ? (
                   <p className="flex items-center gap-1.5 text-xs text-ink">
-                    <TagIcon className="size-3.5 text-violet" aria-hidden /> {e.promoText}
+                    <TagIcon className="size-3.5 text-ink-2" aria-hidden /> {e.promoText}
                   </p>
                 ) : null}
                 {e.drop ? (
-                  <Link href={`/drops/${e.drop.slug}`} className="justify-self-start text-xs text-violet hover:underline">
+                  <Link href={`/drops/${e.drop.slug}`} className="justify-self-start text-xs text-ink underline decoration-ink-2/60 underline-offset-2 hover:decoration-ink">
                     See {e.drop.name}
                   </Link>
                 ) : null}

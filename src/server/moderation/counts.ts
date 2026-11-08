@@ -6,7 +6,7 @@ import { abuseAlerts, accountRestrictions, brandLocations, chartFlags, deliveryC
 import { canAdmin, type AdminPermission } from "@/lib/permissions"
 import type { QueueCountsDto } from "@/lib/api/contracts/admin"
 import { OPEN_REPORT } from "./shared"
-import { lateOrderCount } from "./delivery"
+import { heldNoteCount, lateOrderCount } from "./delivery"
 
 /** The view permission behind each queue count (§8.1, §2.7). */
 export const queuePermission: Record<keyof QueueCountsDto, AdminPermission> = {
@@ -18,7 +18,7 @@ export const queuePermission: Record<keyof QueueCountsDto, AdminPermission> = {
   abuse: "abuse.view",
 }
 
-const n = (rows: { n: number | string }[]) => Number(rows[0]?.n ?? 0)
+const n = (rows: { n: number | string }[]) => Number(rows.at(0)?.n ?? 0)
 
 async function openReports(types: string[]) {
   const d = await db()
@@ -27,12 +27,13 @@ async function openReports(types: string[]) {
 
 /**
  * Every queue's count (GET /api/admin/queues/counts filters it per role). Delivery counts open
- * complaints plus late orders measured against a recorded promise, so the Overview's badge matches
- * the rows its Delivery tab lists; sample orders with no promise on record aren't work.
+ * complaints, late orders measured against a recorded promise and orders with a brand note held for
+ * review, so the Overview's badge matches the rows its Delivery tab lists; sample orders with no
+ * promise on record aren't work.
  */
 export async function allQueueCounts(): Promise<Required<QueueCountsDto>> {
   const d = await db()
-  const [msgReports, held, posts, placeReports, places, events, flags, freezes, complaints, late, alerts] = await Promise.all([
+  const [msgReports, held, posts, placeReports, places, events, flags, freezes, complaints, late, alerts, heldNotes] = await Promise.all([
     openReports(["message", "conversation"]),
     d.select({ n: sql<number>`count(*)::int` }).from(messages).where(eq(messages.status, "held")).then(n),
     openReports(["social_post"]),
@@ -45,8 +46,9 @@ export async function allQueueCounts(): Promise<Required<QueueCountsDto>> {
     d.select({ n: sql<number>`count(*)::int` }).from(deliveryComplaints).where(inArray(deliveryComplaints.status, ["open", "waiting_brand", "brand_responded", "escalated"])).then(n),
     lateOrderCount(),
     d.select({ n: sql<number>`count(*)::int` }).from(abuseAlerts).where(eq(abuseAlerts.status, "open")).then(n),
+    heldNoteCount(),
   ])
-  return { messages: msgReports + held, content: posts, places: placeReports + places + events, charts: flags + freezes, delivery: complaints + late, abuse: alerts }
+  return { messages: msgReports + held, content: posts, places: placeReports + places + events, charts: flags + freezes, delivery: complaints + late + heldNotes, abuse: alerts }
 }
 
 /** GET /api/admin/queues/counts: only the counts this admin's role may see; the others are left out. */

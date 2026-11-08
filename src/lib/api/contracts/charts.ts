@@ -156,3 +156,7 @@ export const brandRankDto = z.object({
   sample: z.literal(true),
 })
 export type BrandRankDto = z.infer<typeof brandRankDto>
+
+/** GET /api/charts/brands?ids=…: each asked brand's best weekly rank, keyed by brand id. */
+export const brandRanksDto = z.object({ ranks: z.record(z.string(), brandRankDto) })
+export type BrandRanksDto = z.infer<typeof brandRanksDto>

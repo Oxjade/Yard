@@ -21,6 +21,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
 import type { AdminRole, AuditEntry } from "@/lib/data/admin"
 import { canAdmin, needsRole, type AdminPermission } from "@/lib/permissions"
+import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { cn } from "@/lib/utils"
 
@@ -162,6 +163,25 @@ export function useServerDecision(fallback?: () => HTMLElement | null | undefine
     })
   }
   return { ask: askServer, dialog }
+}
+
+/* ── Liveness ──────────────────────────────────────────────────────── */
+
+/** Admin notification categories that mean a queue gained an item (a report, a flag, a complaint, an alert). */
+const QUEUE_CATEGORIES = new Set(["message_report", "content_report", "place_report", "chart_integrity", "shipping_issue", "delivery_complaint", "abuse_alert"])
+
+/**
+ * Keeps a queue live: it refetches when a decision moves the counts (moderation.counts) and when the
+ * admin's own bell gets a new queue item (notification.created), so a report filed while the page is
+ * open shows up at once rather than at the next poll. The queue counts (sidebar and Overview) refetch too.
+ */
+export function useQueueLive(refresh: () => void) {
+  useRealtimeEvent("moderation.counts", () => refresh())
+  useRealtimeEvent("notification.created", (n) => {
+    if (!QUEUE_CATEGORIES.has(n.category)) return
+    refresh()
+    revalidatePrefix(adminKeys.counts)
+  })
 }
 
 /* ── Queue figures ─────────────────────────────────────────────────── */

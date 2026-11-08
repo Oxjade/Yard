@@ -1,4 +1,4 @@
-import { freeShippingThresholdUsd, shippingRatesUsd, shippingZone, type CountryCode, type CurrencyCode } from "@/config/markets"
+import type { CountryCode, CurrencyCode } from "@/config/markets"
 import type { EstimateDto, QuoteGroupDto, QuoteOptionDto } from "@/lib/api/contracts/shipping"
 import { brandById } from "@/lib/data/brands"
 import { availableStock, variantById } from "@/lib/data/products"
@@ -42,13 +42,15 @@ export type BrandGroup = {
   /** That option's estimate. */
   estimate: EstimateDto | null
   /**
-   * Legacy fields, read by the shared bag lines (bag-contents). From the quote when there is one;
-   * without a quote they hold the platform's demo rates, and `shippingKnown` is false.
+   * The default option's numbers, for the bag sections (bag-contents) and checkout's free-shipping
+   * nudge. They come from the quote alone: until it has loaded (or when it couldn't load)
+   * `shippingKnown` is false and the rest are zero, and nothing shows them.
    */
   shipping: number
   freeShipping: boolean
-  /** Remaining spend (shopper currency) before this brand's order ships free. */
+  /** Remaining spend (shopper currency) before this brand's order ships free; 0 when no free tier applies. */
   toFreeShipping: number
+  /** Business days, handling plus transit, for the default option. */
   days: [number, number]
   shippingKnown: boolean
 }
@@ -93,14 +95,6 @@ export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: Curr
       const over = g.option?.freeOver?.amount
       g.toFreeShipping = !g.freeShipping && over ? Math.max(0, over - g.subtotal) : 0
       g.days = g.option ? [q.handling[0] + g.option.transit[0], q.handling[1] + g.option.transit[1]] : [0, 0]
-    } else {
-      // Legacy values for the shared bag lines only; nothing here is shown as Yard's shipping price.
-      const rate = shippingRatesUsd[shippingZone(g.brand.shipsFrom, shipTo)]
-      const threshold = convert(freeShippingThresholdUsd, "USD", currency)
-      g.freeShipping = g.subtotal >= threshold
-      g.toFreeShipping = Math.max(0, threshold - g.subtotal)
-      g.shipping = g.freeShipping ? 0 : convert(rate.standard, "USD", currency)
-      g.days = [g.brand.processingDays[0] + rate.days[0], g.brand.processingDays[1] + rate.days[1]]
     }
   }
   const list = [...groups.values()]

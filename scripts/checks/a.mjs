@@ -25,6 +25,25 @@ export default async function a({ base }) {
   add(/placeInTx\(/.test(svc) && /conflict\(/.test(svc) && /sameInstant\(/.test(svc), "writes re-read the row inside the transaction and compare-and-swap (409 on a change)")
   add(/dateRangeProblems/.test(read("src/lib/api/contracts/around.ts")) && /otherCityPinProblem/.test(svc), "date ranges and Other-city pins are checked on the server")
 
+  // Globe polish (owner screenshots 2026-11-07, 22:45). The browser proof is scratchpad/a2g/verify.js.
+  const map = read("src/components/around/map/around-map.tsx")
+  const rim = map.match(/ref=\{rimRef\}[^>]*className="([^"]+)"/)?.[1] ?? ""
+  add(!!rim && !/purple|violet/.test(rim) && !/"horizon-color": "#1c0f36"/.test(map), "the globe's rim and horizon are grey, not purple (purple is for active and selected only)")
+  add(/pickCreditSpot\(/.test(map) && /creditSpots=\{desktop \? CREDITS_DESKTOP : CREDITS_PHONE\}/.test(app) && /z-\[5\]/.test(map), "map credits sit above pins and move to a spot no pin covers")
+  add(!/text-violet/.test(read("src/components/around/place-card.tsx")) && !/showroom: "bg-violet"/.test(read("src/components/around/map/pins.ts")) && !/StorefrontIcon[^>]*text-violet/.test(app), "drop and event lines, the showroom dot and the pill icon are ink or grey, not violet")
+  add(/railKeyRef/.test(app) && /className="shrink-0"/.test(app), "the phone rail restarts at the nearest card after a re-sort and its slots never shrink")
+  add(/revealPlace\(placeParam, p\)/.test(app) && !/inBounds\(p, v\.bounds\)/.test(app), "an opened place's pin is brought into the free part of the map, not just anywhere on the canvas")
+
+  // Review 2026-11-08. The browser proof is scratchpad/a2g/verify2.js.
+  add(/pinState: async/.test(map) && /getClusterExpansionZoom\(cid\)/.test(map) && /pinClear\(root, st\.rect\)/.test(app), "an opened place counts as in view only when its own pin is drawn (not folded into a cluster)")
+  add(/data-map-chrome onClick=\{onPill\}/.test(app) && /querySelectorAll\("\[data-map-chrome\]"\)/.test(app), "a selected pin under the area pill or another control isn't in view: the camera moves")
+  add(/note=\{desktop \? null : youHint\}/.test(app) && /data-map-note/.test(map) && !/\{youHint \? <p className="glass/.test(app), "the phone's \"you\" hint moves with the credits to a spot no pin covers, not over the pins above the pill")
+  add(/areaCamera\(fit\.area, frameNow\(\), all\)/.test(app) && /cameraForFix\(pos\.lat, pos\.lng, frameNow\(\), knownRef\.current\)/.test(app) && !/areaCamera\([^)]*shownOnMap/.test(app), "small phones frame a city's places; the camera uses every known place, never the distance-filtered set (§5.6)")
+  add(/w-\[calc\(100vw-280px\)\]/.test(app) && /scroll-px-4 gap-4/.test(app), "the phone rail lets every card, the last included, rest at the left edge")
+  const detailSrc = read("src/components/around/place-detail.tsx")
+  add(!/text-violet/.test(detailSrc) && /loading=\{i === 0 \? "eager" : "lazy"\}/.test(detailSrc), "PlaceDetail: the verified seal is ink and the first photo loads eagerly")
+  add(!/hover:text-violet/.test(read("src/components/studio/locations/locations-index.tsx")) && /min-h-10/.test(read("src/components/studio/locations/pickers.tsx")), "Studio Locations: name links underline in ink; the pickers' Clear has a 40 px tap target")
+
   let world
   try {
     world = await (await fetch(`${base}/api/around/places?scope=world`)).json()

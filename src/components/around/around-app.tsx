@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { motion } from "motion/react"
 import { CompassIcon, ListBulletsIcon, MapTrifoldIcon, MinusIcon, NavigationArrowIcon, PlusIcon, StorefrontIcon } from "@phosphor-icons/react"
 import type { PlaceSummaryDto } from "@/lib/api/contracts/around"
@@ -22,6 +22,7 @@ import { FiltersControl, KindChips } from "./filters"
 import { ListView, type SortKey } from "./list-view"
 import { useLocate } from "./locate"
 import { AroundMap, rememberedCamera, type AroundMapHandle, type Camera, type Enhancement, type MapView } from "./map/around-map"
+import type { CreditSpot } from "./map/areas"
 import { PlaceCard } from "./place-card"
 import { PlaceDetail } from "./place-detail"
 import { PlaceSheet } from "./place-sheet"
@@ -65,19 +66,91 @@ function insetBy(b: Bounds, px: number, zoom: number, lat: number): Bounds {
 }
 
 type Origin = { lat: number; lng: number; label: string }
+type Reveal = { id: string; at: { lat: number; lng: number }; tries: number; polls: number; waiting: boolean; fromCard: boolean }
 
 /** Camera padding: the camera's centre sits in what the panel (desktop) or the carousel (phone) leaves free. */
 const PAD_DESKTOP = { top: 120, right: 96, bottom: 48, left: 460 }
 const PAD_PHONE = { top: 140, right: 72, bottom: 260, left: 32 }
+/** Phones: from the home bar's clear line to the top of the area pill (carousel 108 px, pill 40 px), plus a 12 px gap. */
+const PHONE_STACK = 160
+/** The phone's `--tabbar-clear` in px (the home bar plus the safe area), measured. */
+function tabbarClear() {
+  const probe = document.createElement("div")
+  probe.style.cssText = "position:fixed;left:0;bottom:0;width:0;visibility:hidden;pointer-events:none;height:var(--tabbar-clear,6.25rem)"
+  document.body.appendChild(probe)
+  const h = probe.getBoundingClientRect().height
+  probe.remove()
+  return h > 0 ? h : 100
+}
+/** Phone camera padding: its bottom is the measured bottom stack (home bar, carousel, pill), so framed places sit above the pill. */
+const phonePadding = () => ({ ...PAD_PHONE, bottom: Math.round(tabbarClear()) + PHONE_STACK })
 /** What counts as "in view": not under the header, the panel, the control column or the carousel. */
 const VIEW_DESKTOP = { top: 88, right: 88, bottom: 16, left: 436 }
 const VIEW_PHONE = { top: 108, right: 68, bottom: 240, left: 8 }
+/**
+ * Where the map credits may sit, in order (owner review 2026-11-07, 22:45). Phones: under the
+ * header on the left, else under the area title, else a row lower. Desktop: the bottom-right
+ * corner, else left of the control column, else under the title. They move only when a pin
+ * would sit on them, so the credit stays readable and never hides a pin.
+ */
+const CREDITS_PHONE: CreditSpot[] = [
+  { top: 116, left: 16 },
+  { top: 116, right: 16 },
+  { top: 152, left: 16 },
+  { top: 152, right: 16 },
+  { top: 188, left: 16 },
+  { top: 188, right: 16 },
+]
+const CREDITS_DESKTOP: CreditSpot[] = [
+  { bottom: 4, right: 8 },
+  { bottom: 4, right: 88 },
+  { top: 156, right: 24 },
+]
+/** A pin's radius with its ring, the selected lift and a margin: a pin this far inside the free area is wholly in view. */
+const PIN_R = 30
+/** How many camera moves revealing one place may take (a flight, then a closer one out of a cluster). */
+const REVEAL_TRIES = 3
 
-/** The part of the map a camera frames on this screen (§5.6: the same for a manual choice and Locate). */
+/** Phone: the offset that puts a place in the strip of map between the header and an open sheet (64 dvh). */
+function sheetStripOffset() {
+  const h = window.innerHeight
+  const pad = phonePadding()
+  const paddedCentre = pad.top + (h - pad.top - pad.bottom) / 2
+  const aboveSheet = (88 + h * 0.36) / 2
+  return Math.round(aboveSheet - paddedCentre)
+}
+
+/**
+ * The part of the map a camera frames on this screen (§5.6: the same for a manual choice and
+ * Locate). It never includes the "you" hint, so a fix can't change the camera.
+ */
 function frameNow(): Frame {
   const wide = window.matchMedia("(min-width: 1024px)").matches
-  const pad = wide ? PAD_DESKTOP : PAD_PHONE
+  const pad = wide ? PAD_DESKTOP : phonePadding()
   return { w: window.innerWidth - pad.left - pad.right, h: window.innerHeight - pad.top - pad.bottom }
+}
+
+type Box = { left: number; top: number; right: number; bottom: number }
+const boxesTouch = (a: Box, b: Box) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5
+
+/**
+ * The part of the map a selected pin must sit in, on screen: right of the desktop panel and clear
+ * of the header and controls, or on a phone the strip between the header and an open sheet.
+ */
+function freeBox(root: HTMLElement): Box {
+  const host = root.getBoundingClientRect()
+  if (window.matchMedia("(min-width: 1024px)").matches) return { left: host.left + VIEW_DESKTOP.left, top: host.top + VIEW_DESKTOP.top, right: host.right - VIEW_DESKTOP.right, bottom: host.bottom - VIEW_DESKTOP.bottom }
+  return { left: host.left + VIEW_PHONE.left, top: host.top + VIEW_PHONE.top, right: host.right - VIEW_PHONE.right, bottom: window.innerHeight * 0.36 }
+}
+/** Whether a pin's screen box is wholly in the free area and under none of the page's controls drawn over the map (title, control column, area pill, notes: `data-map-chrome`). */
+function pinClear(root: HTMLElement, pin: Box) {
+  const free = freeBox(root)
+  if (pin.left < free.left + 4 || pin.right > free.right - 4 || pin.top < free.top + 4 || pin.bottom > free.bottom - 4) return false
+  for (const el of root.querySelectorAll("[data-map-chrome]")) {
+    const r = el.getBoundingClientRect()
+    if (r.width && r.height && boxesTouch(r, pin)) return false
+  }
+  return true
 }
 
 const WINDS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
@@ -120,12 +193,30 @@ export function AroundApp() {
   const hydrated = useHydrated()
   // The first client render: the URL's area, else a saved manual area (never a fix), else the
   // camera this page had when it was left, else the globe. Rendered only after hydration.
-  const [initial] = useState<{ camera: Camera; areaKey: string } | null>(() => {
+  const [initial] = useState<{ camera: Camera; areaKey: string; fitArea: AreaHit | null; padPhone: typeof PAD_PHONE } | null>(() => {
     if (typeof window === "undefined") return null
-    const a = areaBySlug(new URL(window.location.href).searchParams.get("area") ?? readSavedArea() ?? "")
-    return { camera: a ? areaCamera(a, frameNow()) : (rememberedCamera() ?? globeCamera(window.matchMedia("(min-width: 1024px)").matches)), areaKey: a ? `${a.slug}:0` : "" }
+    const url = new URL(window.location.href)
+    const a = areaBySlug(url.searchParams.get("area") ?? readSavedArea() ?? "")
+    const camera = a ? areaCamera(a, frameNow()) : (rememberedCamera() ?? globeCamera(window.matchMedia("(min-width: 1024px)").matches))
+    // A city opened before its places are known may settle once they arrive (unless a place is being opened).
+    return { camera, areaKey: a ? `${a.slug}:0` : "", fitArea: a?.kind === "city" && !url.searchParams.get("place") ? a : null, padPhone: phonePadding() }
   })
   const initialCamera = initial?.camera ?? null
+  const rootRef = useRef<HTMLDivElement>(null)
+  /**
+   * An area camera chosen before that city's places were known (a deep link, or a choice made
+   * while other tiles were loaded). When they arrive, and if the shopper hasn't moved the map, the
+   * camera settles on what areaCamera frames with them: on a small phone, the places instead of
+   * neighbourhoods that can't fit. The same for a manual choice and Locate (§5.6).
+   */
+  const areaFit = useRef<{ area: AreaHit; applied: Camera } | null>(initial?.fitArea ? { area: initial.fitArea, applied: initial.camera } : null)
+  /**
+   * Every place the page holds, for area cameras computed in callbacks. Never the filtered set:
+   * a distance filter is measured from a fix, and the camera must not depend on one (§5.6).
+   */
+  const knownRef = useRef<{ lat: number; lng: number }[]>([])
+  /** The place whose pin is being brought into view, if any (see runReveal). */
+  const revealRef = useRef<Reveal | null>(null)
   const [view, setView] = useState<MapView | null>(null)
   // What the carousel and the panel list are drawn from. It follows the camera, except for a
   // flight a card started: the rail then keeps its cards and order instead of re-sorting under
@@ -157,13 +248,19 @@ export function AroundApp() {
   // A manual area choice flies there (also when the same area is chosen again).
   // The area the page opened on is already the camera; any other choice (or the same one again) flies.
   const lastArea = useRef(initial?.areaKey ?? "")
+  /** Flies to an area's camera (a manual choice, or Locate's area: the same camera, §5.6). */
+  const flyToArea = useCallback((area: AreaHit, camera: Camera) => {
+    revealRef.current = null
+    areaFit.current = area.kind === "city" ? { area, applied: camera } : null
+    mapRef.current?.flyTo(camera)
+  }, [])
   useEffect(() => {
     if (!initialCamera || !manualArea) return
     const key = `${manualArea.slug}:${areaNonce}`
     if (lastArea.current === key) return
     lastArea.current = key
-    mapRef.current?.flyTo(areaCamera(manualArea, frameNow()))
-  }, [manualArea, areaNonce, initialCamera])
+    flyToArea(manualArea, areaCamera(manualArea, frameNow(), knownRef.current))
+  }, [manualArea, areaNonce, initialCamera, flyToArea])
 
   /* ---- data ---- */
   // The list (and the no-WebGL fallback) covers every city, so it reads the whole world.
@@ -203,6 +300,23 @@ export function AroundApp() {
     () => applyFilters(all, { kinds: parseKinds(kindsKey), cats: parseList(catsKey), openNow, thisWeek, within }, now, oLat !== null && oLng !== null ? { lat: oLat, lng: oLng } : null),
     [all, kindsKey, catsKey, openNow, thisWeek, within, now, oLat, oLng],
   )
+  useEffect(() => {
+    knownRef.current = all.map((p) => ({ lat: p.lat, lng: p.lng }))
+  }, [all])
+  // The city's places arrived after its camera was chosen: settle on the camera that frames them
+  // (once the map has loaded: a camera set before that would be lost).
+  const mapReady = view !== null
+  useEffect(() => {
+    const fit = areaFit.current
+    const map = mapRef.current
+    if (!fit || !map || !mapReady) return
+    const city = fit.area.city
+    if (!all.some((p) => haversineKm(city.lat, city.lng, p.lat, p.lng) <= areaRadiusKm(fit.area))) return
+    areaFit.current = null
+    const cam = areaCamera(fit.area, frameNow(), all)
+    const same = Math.abs(cam.zoom - fit.applied.zoom) < 0.01 && Math.abs(cam.center.lat - fit.applied.center.lat) < 1e-5 && Math.abs(cam.center.lng - fit.applied.center.lng) < 1e-5
+    if (!same) map.flyTo(cam)
+  }, [all, mapReady])
   // "In view" leaves out what sits under the header, the panel, the control column or the carousel.
   const inView = useMemo(() => (basis && basis.zoom >= 4 ? shownOnMap.filter((p) => inBounds(p, basis.inner)) : shownOnMap), [shownOnMap, basis])
   const cLat = oLat ?? basis?.center.lat ?? GLOBE_CAMERA.center.lat
@@ -240,6 +354,7 @@ export function AroundApp() {
   // While the area's places are still loading the pill says so, never "No brands" too early.
   const pillText = pillArea ? (pillBrands ? `${pillBrands} ${pillBrands === 1 ? "brand" : "brands"} near ${pillArea.label}` : loading ? `Loading places near ${pillArea.label}…` : `No brands near ${pillArea.label} yet`) : "Pick your city"
   const onPill = () => {
+    areaFit.current = null
     if (pillArea && pillPlaces.length) mapRef.current?.fitTo(pillPlaces.map((p) => ({ lat: p.lat, lng: p.lng })))
     else if (desktop) focusSearch()
     else setSearchOpen(true)
@@ -250,16 +365,77 @@ export function AroundApp() {
   const detailQ = useApi(placeParam ? `around:place:${placeParam}` : null, () => getPlace(placeParam!))
   const detail = detailQ.data?.place && detailQ.data.place.id === placeParam ? detailQ.data.place : null
   const flownFor = useRef<string | null>(null)
-  const mapLoaded = view !== null
+  const mapLoaded = mapReady
+  // An opened place's own pin must be in view, so the title (the place's area) and the map agree
+  // (owner review 2026-11-07, 22:45: Oyin Atelier opened from the desktop list while the map stayed
+  // on Lekki, its pin under the panel). In view means its own pin is drawn (not folded into a
+  // cluster, review 2026-11-08: Mute Objects in Tokyo), wholly in the free part of the map, and
+  // under none of the controls drawn over it (the area pill, the title, the control column).
+  // Otherwise the camera flies there (a jump under reduced motion), closer when a cluster holds it.
+  const runReveal = useCallback(async (r: Reveal) => {
+    for (;;) {
+      const map = mapRef.current
+      const root = rootRef.current
+      if (!map || !root || revealRef.current !== r) return
+      const st = await map.pinState(r.id, r.at)
+      const v = map.view()
+      if (revealRef.current !== r || !v) return
+      if (st.rect && v.zoom >= 9 && pinClear(root, st.rect)) {
+        revealRef.current = null
+        return
+      }
+      if (!st.inData) {
+        // The map was still busy (tiles or new places on their way): look again shortly.
+        if (!st.settled && r.polls < 5) {
+          r.polls += 1
+          await new Promise((done) => window.setTimeout(done, 500))
+          continue
+        }
+        // Not on the map yet (its tiles are loading) or filtered out: bring its spot into view
+        // once; when the map's places change, the check runs again.
+        const at = map.project(r.at)
+        const host = root.getBoundingClientRect()
+        const spot = at ? { left: host.left + at.x - PIN_R, top: host.top + at.y - PIN_R, right: host.left + at.x + PIN_R, bottom: host.top + at.y + PIN_R } : null
+        if (r.tries >= REVEAL_TRIES || (spot && v.zoom >= 9 && pinClear(root, spot))) {
+          r.waiting = true
+          return
+        }
+      } else if (r.tries >= REVEAL_TRIES) {
+        revealRef.current = null
+        return
+      }
+      r.tries += 1
+      r.waiting = false
+      areaFit.current = null
+      // A flight a card started keeps the rail's cards and order (onView).
+      if (r.fromCard) cardFlight.current = true
+      const wide = window.matchMedia("(min-width: 1024px)").matches
+      map.flyTo({ center: r.at, zoom: Math.max(v.zoom, 13, st.clusterZoom != null ? st.clusterZoom + 0.05 : 0) }, wide ? undefined : { offset: [0, sheetStripOffset()] })
+    }
+  }, [])
+  const revealPlace = useCallback(
+    (id: string, at: { lat: number; lng: number }, fromCard = false) => {
+      const r: Reveal = { id, at: { lat: at.lat, lng: at.lng }, tries: 0, polls: 0, waiting: false, fromCard }
+      revealRef.current = r
+      void runReveal(r)
+    },
+    [runReveal],
+  )
   useEffect(() => {
     const p = detail ?? selectedSummary
-    // Only once the map has reported a view (it has loaded), so a deep link always flies.
+    // Only once the map has reported a view (it has loaded), so a deep link always checks.
     if (!p || !placeParam || flownFor.current === placeParam || !mapLoaded) return
     flownFor.current = placeParam
-    const v = mapRef.current?.view()
-    if (v && v.zoom >= 9 && inBounds(p, v.bounds)) return
-    mapRef.current?.flyTo({ center: { lat: p.lat, lng: p.lng }, zoom: Math.max(v?.zoom ?? 0, 13) })
-  }, [detail, selectedSummary, placeParam, mapLoaded])
+    revealPlace(placeParam, p)
+  }, [detail, selectedSummary, placeParam, mapLoaded, revealPlace])
+  // Waiting for the opened place's data: check again once it is on the map.
+  useEffect(() => {
+    const r = revealRef.current
+    if (!r?.waiting || !shownOnMap.some((p) => p.id === r.id)) return
+    r.waiting = false
+    r.polls = 0
+    void runReveal(r)
+  }, [shownOnMap, runReveal])
 
   const openPlace = useCallback((id: string) => {
     const url = new URL(window.location.href)
@@ -283,7 +459,11 @@ export function AroundApp() {
     } else writeParams({ place: null })
   }, [])
   useEffect(() => {
-    if (!placeParam) pushedPlace.current = false
+    if (placeParam) return
+    pushedPlace.current = false
+    // Closed: opening the same place again checks its pin is in view again.
+    flownFor.current = null
+    revealRef.current = null
   }, [placeParam])
 
   const onPin = useCallback(
@@ -313,34 +493,58 @@ export function AroundApp() {
   const openFromCard = useCallback(
     (p: PlaceSummaryDto) => {
       setFocusId(p.id)
-      const v = mapRef.current?.view()
-      const h = window.innerHeight
-      // The map's padded centre sits at (top 140, bottom 260); the sheet covers the lower 64 dvh.
-      const paddedCentre = 140 + (h - 400) / 2
-      const aboveSheet = (88 + h * 0.36) / 2
-      cardFlight.current = true
       flownFor.current = p.id
-      mapRef.current?.flyTo({ center: { lat: p.lat, lng: p.lng }, zoom: Math.max(v?.zoom ?? 0, 13) }, { offset: [0, Math.round(aboveSheet - paddedCentre)] })
+      // Its own pin into the strip of map above the sheet (64 dvh), out of any cluster.
+      revealPlace(p.id, p, true)
       openPlace(p.id)
     },
-    [openPlace],
+    [openPlace, revealPlace],
   )
 
+  /* ---- the phone rail after a re-sort ---- */
+  // When the rail's cards change (the map moved, an area was chosen, Locate), it starts again from
+  // the nearest card, or keeps the card whose pin is selected in view. Without this the browser
+  // kept the old scroll offset and re-snapped to whichever card it had snapped before, so after
+  // Locate the nearest card sat half off the left edge (owner review 2026-11-07, 22:45).
+  const railKey = desktop ? "" : near.map((p) => p.id).join(",")
+  const railKeyRef = useRef("")
+  useLayoutEffect(() => {
+    const rail = carouselRef.current
+    if (!rail || railKey === railKeyRef.current) return
+    railKeyRef.current = railKey
+    const card = focusId ? rail.querySelector<HTMLElement>(`[data-card="${CSS.escape(focusId)}"]`) : null
+    // scroll-px-4: a card snaps 16 px from the rail's left edge.
+    const left = card ? rail.scrollLeft + card.getBoundingClientRect().left - rail.getBoundingClientRect().left - 16 : 0
+    rail.scrollTo({ left: Math.max(0, left), behavior: "instant" })
+  }, [railKey, focusId])
+
   /* ---- Locate ---- */
-  const onFix = useCallback((pos: { lat: number; lng: number }) => {
-    setFix(pos)
-    const cam = cameraForFix(pos.lat, pos.lng, frameNow())
-    setFixArea(cam.area)
-    // A fix never reaches the URL: a manual area there would now be stale, so it goes.
-    if (new URL(window.location.href).searchParams.has("area")) writeParams({ area: null })
-    mapRef.current?.flyTo({ center: cam.center, zoom: cam.zoom })
-  }, [])
+  const onFix = useCallback(
+    (pos: { lat: number; lng: number }) => {
+      setFix(pos)
+      // The same camera a manual choice of that area gets (§5.6), never the fix.
+      const cam = cameraForFix(pos.lat, pos.lng, frameNow(), knownRef.current)
+      setFixArea(cam.area)
+      // A fix never reaches the URL: a manual area there would now be stale, so it goes.
+      if (new URL(window.location.href).searchParams.has("area")) writeParams({ area: null })
+      if (cam.area) flyToArea(cam.area, { center: cam.center, zoom: cam.zoom })
+      else {
+        revealRef.current = null
+        areaFit.current = null
+        mapRef.current?.flyTo({ center: cam.center, zoom: cam.zoom })
+      }
+    },
+    [flyToArea],
+  )
   const locate = useLocate(onFix, () => (desktop ? focusSearch() : setSearchOpen(true)))
 
   /* ---- carousel collapse while the map is dragged (§6.4) ---- */
   const onUserMoveStart = useCallback(() => {
     window.clearTimeout(collapseTimer.current)
     setCollapsed(true)
+    // The shopper took the map: no camera move of ours follows.
+    revealRef.current = null
+    areaFit.current = null
   }, [])
   const onIdle = useCallback(() => {
     window.clearTimeout(collapseTimer.current)
@@ -432,7 +636,7 @@ export function AroundApp() {
   const filtersBtn = <FiltersControl filters={filters} onChange={setFilters} distanceEnabled={distanceEnabled} resultCount={inView.length} phone={!desktop} open={filtersOpen} onOpenChange={setFiltersOpen} />
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-[#050505]" data-around-root>
+    <div ref={rootRef} className="relative h-dvh w-full overflow-hidden bg-[#050505]" data-around-root>
       <style ref={lockPageScroll}>{"html,body{overflow:hidden;overscroll-behavior:none}"}</style>
       {hydrated && initialCamera ? (
         <AroundMap
@@ -448,11 +652,15 @@ export function AroundApp() {
           onEnhancement={setEnhancement}
           onFallback={() => setFallback(true)}
           you={youHint ? null : fix}
-          padding={desktop ? PAD_DESKTOP : PAD_PHONE}
+          padding={desktop ? PAD_DESKTOP : (initial?.padPhone ?? PAD_PHONE)}
           viewInsets={desktop ? VIEW_DESKTOP : VIEW_PHONE}
           // Phones: the home bar, carousel and pill fill the bottom, so credits go under the header.
-          creditsClassName={desktop ? undefined : "top-[116px] right-auto bottom-auto left-4 flex-row-reverse items-center"}
+          creditsClassName={desktop ? undefined : "flex-row-reverse items-center"}
+          creditSpots={desktop ? CREDITS_DESKTOP : CREDITS_PHONE}
           compactCredits={!desktop}
+          // Phones: the "you" hint sits with the credits, which move to a spot no pin covers (review
+          // 2026-11-08: above the pill it hid Lekki and Ikoyi). Desktop shows it in the panel.
+          note={desktop ? null : youHint}
           // Names stay out from under the header and the title (and the panel on desktop).
           // The control column marks itself as hard chrome (data-map-chrome) as well.
           labelInsets={desktop ? { top: 150, left: 448 } : { top: 108, right: 72, bottom: 240 }}
@@ -525,6 +733,8 @@ export function AroundApp() {
                       </p>
                       {errorPill}
                     </div>
+                    {/* Where the shopper is when the "you" dot isn't on screen: in the panel, so it never covers a pin. */}
+                    {youHint ? <p className="text-[13px] text-ink-2">{youHint}</p> : null}
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
                     {loading ? <CardSkeletons /> : null}
@@ -582,21 +792,21 @@ export function AroundApp() {
             {mapToggle}
           </div>
 
-          {/* The area pill: informational, so glass and ink with a violet icon — not purple. */}
+          {/* The area pill: informational, so glass and ink, icon included — purple is for active and selected states only. */}
+          {/* data-map-chrome: names stay out from under these, and a selected pin under one isn't "in view". */}
           <div className={cn("pointer-events-none absolute left-4 z-20 flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-2", "bottom-[calc(var(--tabbar-clear,6.25rem)+108px)] lg:bottom-6 lg:left-[448px]")}>
-            {!desktop ? errorPill : null}
-            {youHint ? <p className="glass rounded-full px-3.5 py-2 text-[13px] text-ink">{youHint}</p> : null}
+            {!desktop && errorPill ? <div data-map-chrome>{errorPill}</div> : null}
             {emptyView && !desktop ? (
               pillPlaces.length ? (
-                <button type="button" onClick={onPill} className="glass pointer-events-auto inline-flex h-10 items-center rounded-full px-3.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-violet">
+                <button type="button" data-map-chrome onClick={onPill} className="glass pointer-events-auto inline-flex h-10 items-center rounded-full px-3.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-violet">
                   None in view. Show the {pillPlaces.length === 1 ? "1 place" : `${pillPlaces.length} places`} nearby
                 </button>
               ) : (
-                <p className="glass rounded-full px-3.5 py-2 text-[13px] text-ink">No places here yet. Zoom out or pick another city.</p>
+                <p data-map-chrome className="glass rounded-full px-3.5 py-2 text-[13px] text-ink">No places here yet. Zoom out or pick another city.</p>
               )
             ) : null}
-            <button type="button" onClick={onPill} className="pointer-events-auto inline-flex h-10 max-w-full items-center gap-2 rounded-full border border-white/10 bg-obsidian/70 px-3.5 text-[13px] text-ink backdrop-blur-xl outline-none focus-visible:ring-2 focus-visible:ring-violet">
-              <StorefrontIcon weight="fill" className="size-4 shrink-0 text-violet" aria-hidden />
+            <button type="button" data-map-chrome onClick={onPill} className="pointer-events-auto inline-flex h-10 max-w-full items-center gap-2 rounded-full border border-white/10 bg-obsidian/70 px-3.5 text-[13px] text-ink backdrop-blur-xl outline-none focus-visible:ring-2 focus-visible:ring-violet">
+              <StorefrontIcon weight="fill" className="size-4 shrink-0 text-ink" aria-hidden />
               <span className="truncate">{pillText}</span>
             </button>
           </div>
@@ -612,12 +822,13 @@ export function AroundApp() {
               className="absolute inset-x-0 bottom-[var(--tabbar-clear,6.25rem)] z-20"
               data-collapsed={collapsed ? "true" : "false"}
             >
-              <div ref={carouselRef} role="list" aria-label="Places nearby" className="flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+              <div ref={carouselRef} role="list" aria-label="Places nearby" className="flex snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
                 {loading ? (
                   <CardSkeletons row />
                 ) : (
                   near.map((p) => (
-                    <div role="listitem" key={p.id} data-card={p.id}>
+                    // shrink-0: a card's slot never narrows below the card, so cards can't overlap.
+                    <div role="listitem" key={p.id} data-card={p.id} className="shrink-0">
                       <PlaceCard
                         variant="carousel"
                         place={p}
@@ -629,6 +840,10 @@ export function AroundApp() {
                     </div>
                   ))
                 )}
+                {/* Room after the last card, so every card, the last included, can snap to the left
+                    edge and none rests half off screen (review 2026-11-08). The 16 px gap equals the
+                    snap inset, so the card before a snapped one ends exactly at the screen's edge. */}
+                {!loading && near.length > 1 ? <div aria-hidden className="w-[calc(100vw-280px)] shrink-0" /> : null}
               </div>
             </motion.div>
           ) : null}
@@ -656,7 +871,7 @@ function Tip({ label, children }: { label: string; children: React.ReactElement 
 
 function CardSkeletons({ row = false }: { row?: boolean }) {
   return (
-    <div role="status" aria-label="Loading places" className={cn(row ? "flex gap-3" : "grid gap-1 px-2")}>
+    <div role="status" aria-label="Loading places" className={cn(row ? "flex gap-4" : "grid gap-1 px-2")}>
       {[0, 1, 2].map((i) => (
         <span key={i} className={cn("skeleton block rounded-2xl", row ? "h-24 w-[248px] shrink-0" : "h-[76px]")} />
       ))}

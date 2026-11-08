@@ -39,6 +39,7 @@ import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { NotificationRow } from "@/components/feedback/notification-bell"
 import { bestSellers as rankBestSellers, lowConversion, periodSummary, productTraffic, salesByProduct, useBrandSeries } from "@/components/studio/business/brand-series"
 import { orderCustomerName } from "@/components/studio/business/model"
+import { SetupCard } from "@/components/studio/setup/setup-card"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { brandById } from "@/lib/data/brands"
 import { formatMoney, formatNumber, formatPercent } from "@/lib/money"
@@ -210,6 +211,9 @@ export default function StudioOverviewPage() {
           </DropdownMenu>
         </div>
       </header>
+
+      {/* Server-backed guidance for the v2 features; nothing when signed out, dismissed or all done (§7.4). */}
+      <SetupCard className="mt-6" />
 
       {/* Key metrics */}
       <section aria-labelledby="studio-key-metrics" className="mt-6 grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">

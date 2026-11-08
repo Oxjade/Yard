@@ -1,6 +1,8 @@
 import "server-only"
 import type { AdminActor } from "../auth/dal"
-import { withTx } from "../db"
+import { eq, sql } from "drizzle-orm"
+import { db, withTx } from "../db"
+import { auditLog as auditTable } from "../db/schema"
 import { forbidden } from "../http/errors"
 import { canAdmin, needsRole, type AdminPermission } from "@/lib/permissions"
 import { decisionBodies } from "@/lib/api/contracts/admin"
@@ -11,7 +13,7 @@ import * as content from "./content"
 import * as delivery from "./delivery"
 import * as messagesMod from "./messages"
 import * as status from "./status"
-import type { DecisionCtx } from "./shared"
+import { priorNotes, type DecisionCtx } from "./shared"
 
 /** Moderation (cluster M, §8). Decisions, queues and the audit feed for the Control Center. */
 export const IMPL: string = "M-2026-11-06"
@@ -97,11 +99,30 @@ export function assertMayDecide(action: DecisionAction, actor: AdminActor) {
  * single audit row and the in-transaction side effects. Publishes and notifications reach their
  * listeners after commit. Returns { item: <DTO>, audit: <AuditEntryDto> }.
  */
-export async function runDecision(action: DecisionAction, actor: AdminActor, rawBody: unknown, ipHash: string | null = null) {
+export async function runDecision(action: DecisionAction, actor: AdminActor, rawBody: unknown, ipHash: string | null = null, kit = false) {
   assertMayDecide(action, actor)
   const body = decisionBodies[action].parse(rawBody ?? {})
   const handler = handlers[decisionActions[action].handler]
-  return withTx(() => handler({ actor, ipHash }, body as never))
+  const ctx = { actor, ipHash, kit }
+  if (process.env.NODE_ENV === "production") return withTx(() => handler(ctx, body as never))
+  // Development: the notifications this decision overwrites are recorded in its audit meta
+  // (`priorNotes`), so the dev cleanup can put them back rather than delete them (shared.ts).
+  return priorNotes.run([], () =>
+    withTx(async () => {
+      const out = await handler(ctx, body as never)
+      const notes = priorNotes.getStore() ?? []
+      const auditId = (out.audit as { id?: unknown } | null)?.id
+      // Always written (even empty), so the cleanup knows this decision's notifications were recorded.
+      if (typeof auditId === "string") {
+        const d = await db()
+        await d
+          .update(auditTable)
+          .set({ meta: sql`coalesce(${auditTable.meta}, '{}'::jsonb) || ${JSON.stringify({ priorNotes: notes })}::jsonb` })
+          .where(eq(auditTable.id, auditId))
+      }
+      return out
+    }),
+  )
 }
 
 export { queueCountsFor, allQueueCounts, queuePermission } from "./counts"

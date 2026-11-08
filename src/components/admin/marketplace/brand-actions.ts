@@ -26,7 +26,10 @@ type Def = {
   icon: React.ComponentType<{ className?: string }>
   button: "primary" | "secondary" | "destructive"
   destructive: boolean
-  /** What the decision means, as policy. Written once for one brand and for several. */
+  /**
+   * What the decision means for a sample application kept in this browser only (no server brand),
+   * as policy. Server brands are described by `serverMeans` below: only what Yard really does.
+   */
   means: string
   confirm: string
   done: string
@@ -131,10 +134,16 @@ export function mirrorBrandStatus(appId: string, status: BrandReviewStatus) {
   useAdmin.setState((s) => (s.applications.some((a) => a.id === appId && a.status !== status) ? { applications: s.applications.map((a) => (a.id === appId ? { ...a, status } : a)) } : s))
 }
 
-const serverMeans: Partial<Record<BrandActionKey, string>> = {
-  restrict: "Yard's server pauses its publishing and replies, and takes its posts and places off the marketplace until it's verified again.",
-  suspend: "Yard's server signs its members out of Studio at once and takes its posts, places and chart entries off the marketplace.",
+/** What Yard's server really does for a brand with a server record (set-brand-status, §8.2). Nothing else is implied. */
+const serverMeans: Record<BrandActionKey, string> = {
+  approve: "Yard marks the brand verified: its posts and places can show on the marketplace, it can rank on Yard Charts and shoppers can message it.",
+  verify: "Yard lifts the restriction: its team can publish and reply again, and its posts, places and chart entries come back to the marketplace at the next refresh.",
+  restrict: "Yard pauses its team's publishing and replies, takes its posts, places and chart entries off the marketplace and stops shoppers messaging it until it's verified again.",
+  suspend: "Yard signs its team out of Studio, takes its posts, places and chart entries off the marketplace and stops shoppers messaging it.",
+  reinstate: "Yard brings its posts, places and chart entries back to the marketplace, and its team can sign in, publish and reply again.",
 }
+/** Said with every server decision: the parts of the brand that are still sample pages and don't change. */
+const SAMPLE_PAGES = "The storefront, products, checkout and payouts are sample pages in this build, so they aren't hidden, blocked or held yet."
 
 /**
  * The decision for one brand or several (a bulk action applies one reason to each, and
@@ -164,9 +173,11 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
   return {
     title: one ? `${def.verb} ${one.brandName}?` : `${def.verb} ${plural(apps.length)}?`,
     description: [
-      def.means,
+      // Sample applications only: the policy wording. A server brand hears only what Yard really does.
+      local.length ? def.means : null,
       restoreLine,
       server.length ? serverMeans[key] : null,
+      server.length ? SAMPLE_PAGES : null,
       local.length ? (one ? "This application is sample data in this browser only, with no account on Yard's server yet, so the decision is recorded here." : `${plural(local.length)} selected ${local.length === 1 ? "is" : "are"} sample applications in this browser only; ${local.length === 1 ? "its" : "their"} decision is recorded here.`) : null,
       one ? warnings[0] : warnings.length ? `${warnings.length} of them ${warnings.length === 1 ? "has" : "have"} KYC that isn't verified yet.` : null,
       skipped ? `${plural(skipped)} selected ${skipped === 1 ? "isn't" : "aren't"} in a status this applies to and ${skipped === 1 ? "is" : "are"} left as ${skipped === 1 ? "it is" : "they are"}.` : null,

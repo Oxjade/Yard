@@ -4,10 +4,11 @@
  * DOM for the map's markers (§6.4 step 6). Plain elements, not React roots: MapLibre positions
  * them, and the map reconciles them by key so an unchanged pin is never recreated.
  *
- * Colour rules: pins are ink on card; a kind dot at the bottom right (store ink, showroom violet,
+ * Colour rules: pins are ink on card; a kind dot at the bottom right (store ink, showroom grey,
  * a live pop-up or exhibition acid — the only acid on the map — and upcoming an ink-2 outline);
- * the selected pin gets the purple ring; sample places get a dashed outer ring. Cluster count
- * chips are ink on obsidian with a hairline.
+ * purple is for active and selected states only, so the selected pin alone gets the purple ring
+ * (the "you" dot's ring shows only while Locate is on, like the Locate button's fill); sample
+ * places get a dashed outer ring. Cluster count chips are ink on obsidian with a hairline.
  */
 
 export type PinStatus = "store" | "showroom" | "live" | "upcoming"
@@ -17,7 +18,7 @@ const markFont = (style: string) => (style === "condensed" ? "font-display" : st
 
 const dotClass: Record<PinStatus, string> = {
   store: "bg-ink",
-  showroom: "bg-violet",
+  showroom: "bg-ink-2",
   live: "bg-acid",
   upcoming: "bg-obsidian ring-1 ring-inset ring-ink-2",
 }

@@ -33,11 +33,10 @@ import { MESSAGE_TABS, type EvidenceDto, type EvidenceMessage, type HeldViewResu
 import { useApi } from "@/lib/api/use-api"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { formatNumber } from "@/lib/money"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { cn } from "@/lib/utils"
 import { DURATIONS, restrictDecision } from "./restrict"
 import { durationLabels } from "@/lib/api/contracts/admin"
-import { LoadError, NotInQueue, RelatedLinks, SampleTag, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useServerDecision, type TrustAction } from "./shared"
+import { LoadError, NotInQueue, RelatedLinks, SampleTag, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
 /*
  * Admin › Messages (§8.1). Metadata first: the rows say who, which brand and why, never what was
@@ -102,7 +101,7 @@ function MessagesQueue() {
   const caseParam = useSearchParam("case")
   const caseId = caseParam ?? reportLink
   const q = useApi(adminKeys.messages(tab), () => listMessages(tab), { refreshInterval: 30_000 })
-  useRealtimeEvent("moderation.counts", () => void q.revalidate())
+  useQueueLive(() => void q.revalidate())
   const { reason } = useAdminSession()
   const { ask, dialog } = useServerDecision(() => document.getElementById(segmentedTabId(qid, tab)))
   // Counts come with each tab's response: the last ones stay while another tab loads.
@@ -112,7 +111,10 @@ function MessagesQueue() {
   const rows = q.data?.tab === tab ? q.data.items : []
 
   const open = (c: MessageCaseDto) => writeParams({ case: c.id })
-  const decisions = useMessageDecisions(ask)
+  // The case a decision just returned: the open sheet shows it at once (a released message leaves the
+  // Held tab, so its row can't be the sheet's source any more).
+  const [decided, setDecided] = useState<MessageCaseDto | null>(null)
+  const decisions = useMessageDecisions(ask, setDecided)
 
   const columns: Column<MessageCaseDto>[] = [
     {
@@ -147,7 +149,7 @@ function MessagesQueue() {
     { label: "Open case", icon: EyeIcon, onSelect: open },
     { label: "Dismiss report", icon: XCircleIcon, separatorBefore: true, hidden: (c) => !openReport(c), disabled: () => !!reason("messages.moderate"), disabledReason: () => reason("messages.moderate"), onSelect: (c) => void decisions.dismiss(c) },
     { label: "Escalate", icon: GavelIcon, hidden: (c) => !(openReport(c) && c.status !== "escalated"), disabled: () => !!reason("messages.view_reports"), disabledReason: () => reason("messages.view_reports"), onSelect: (c) => void decisions.escalate(c) },
-    { label: "Release message", icon: PaperPlaneTiltIcon, hidden: (c) => !(c.kind === "held" && c.status === "held"), disabled: () => !!reason("messages.moderate"), disabledReason: () => reason("messages.moderate"), onSelect: (c) => void decisions.release(c) },
+    { label: "Release message", icon: PaperPlaneTiltIcon, hidden: (c) => !(c.kind === "held" && c.status === "held"), disabled: (c) => !!releaseOff(c, reason), disabledReason: (c) => releaseOff(c, reason), onSelect: (c) => void decisions.release(c) },
     { label: "Remove message", icon: TrashIcon, destructive: true, hidden: (c) => !(c.messageId && c.messageStatus !== "removed" && (openReport(c) || c.status === "held")), disabled: () => !!reason("messages.moderate"), disabledReason: () => reason("messages.moderate"), onSelect: (c) => void decisions.remove(c) },
     { label: "Lock conversation", icon: LockSimpleIcon, destructive: true, hidden: (c) => c.conversationLocked || c.kind === "held" || (c.kind === "report" && !openReport(c)), disabled: () => !!reason("messages.moderate"), disabledReason: () => reason("messages.moderate"), onSelect: (c) => void decisions.lock(c) },
   ]
@@ -205,7 +207,17 @@ function MessagesQueue() {
         </div>
       </Panel>
 
-      <MessageCaseSheet id={caseId} listed={rows.find((r) => r.id === caseId)} decisions={decisions} onOpenChange={(o) => !o && writeParams({ case: null, report: null })} />
+      <MessageCaseSheet
+        id={caseId}
+        listed={rows.find((r) => r.id === caseId)}
+        decided={decided?.id === caseId ? decided : null}
+        decisions={decisions}
+        onOpenChange={(o) => {
+          if (o) return
+          setDecided(null)
+          writeParams({ case: null, report: null })
+        }}
+      />
       {dialog}
     </div>
   )
@@ -213,8 +225,18 @@ function MessagesQueue() {
 
 type Ask = ReturnType<typeof useServerDecision>["ask"]
 
-/** The decisions a message case can take, worded for who hears about them. */
-function useMessageDecisions(ask: Ask) {
+/** Why Release is off for this case: the role, or what would refuse the send now (a lock, a block, a status). */
+function releaseOff(c: MessageCaseDto, reason: (p: "messages.moderate") => string | undefined) {
+  return reason("messages.moderate") ?? (c.blockers?.length ? `Release is off. ${c.blockers.join(" ")}` : undefined)
+}
+
+const isCase = (v: unknown): v is MessageCaseDto => !!v && typeof v === "object" && "kind" in v && "conversationId" in v && "status" in v
+
+/** The decisions a message case can take, worded for who hears about them. `onCase`: the case each one returns. */
+function useMessageDecisions(ask: Ask, onCase: (c: MessageCaseDto) => void) {
+  const keep = (r: { item: unknown }) => {
+    if (isCase(r.item)) onCase(r.item)
+  }
   return {
     dismiss: (c: MessageCaseDto) =>
       ask({
@@ -225,6 +247,7 @@ function useMessageDecisions(ask: Ask) {
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Dismiss report",
         done: "Report dismissed",
+        onDone: keep,
       }),
     escalate: (c: MessageCaseDto) =>
       ask({
@@ -235,19 +258,26 @@ function useMessageDecisions(ask: Ask) {
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Escalate",
         done: "Report escalated",
+        onDone: keep,
       }),
     remove: (c: MessageCaseDto) => {
       const sender = senderOf(c)
+      // A held message only ever reached its sender: the other side never got it and sees nothing.
+      const wasHeld = c.kind === "held" || c.messageStatus === "held"
+      const other = sender.kind === "brand" ? c.customer.name : c.brand.name
       return ask({
         action: "remove-message",
         body: { id: c.messageId!, ...(c.kind === "report" ? { reportId: c.id } : {}) },
         title: "Remove this message?",
-        description: `Both ${c.customer.name} and ${c.brand.name} see "Message removed by Yard" in place of it, and its reports are closed as acted on. ${sender.name} is notified and sees your reason.`,
+        description: wasHeld
+          ? `${sender.name} sees "Message removed by Yard" in place of it; ${other} never received it and sees nothing. ${sender.name} is notified and sees your reason.`
+          : `Both ${c.customer.name} and ${c.brand.name} see "Message removed by Yard" in place of it, and its reports are closed as acted on. ${sender.name} is notified and sees your reason.`,
         fieldLabel: `Reason, shown to ${sender.name}`,
         confirmLabel: "Remove message",
         destructive: true,
         presets: ["Asks for payment outside Yard", "Spam or scam links", "Harassment"],
         done: "Message removed",
+        onDone: keep,
       })
     },
     release: (c: MessageCaseDto) =>
@@ -259,6 +289,7 @@ function useMessageDecisions(ask: Ask) {
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Release message",
         done: "Message released",
+        onDone: keep,
       }),
     lock: (c: MessageCaseDto) =>
       ask({
@@ -270,6 +301,7 @@ function useMessageDecisions(ask: Ask) {
         confirmLabel: "Lock conversation",
         destructive: true,
         done: "Conversation locked",
+        onDone: keep,
       }),
     restrict: (c: MessageCaseDto, duration: (typeof DURATIONS)[number]) => ask(restrictDecision(senderOf(c), duration)),
   }
@@ -277,15 +309,16 @@ function useMessageDecisions(ask: Ask) {
 
 /* ── The case sheet ────────────────────────────────────────────────── */
 
-function MessageCaseSheet({ id, listed, decisions, onOpenChange }: { id: string | null; listed?: MessageCaseDto; decisions: ReturnType<typeof useMessageDecisions>; onOpenChange: (o: boolean) => void }) {
+function MessageCaseSheet({ id, listed, decided, decisions, onOpenChange }: { id: string | null; listed?: MessageCaseDto; decided: MessageCaseDto | null; decisions: ReturnType<typeof useMessageDecisions>; onOpenChange: (o: boolean) => void }) {
   const shown = useLast(id)
   const now = useNow(60_000)
   const { reason } = useAdminSession()
   // A case linked from elsewhere (a notification) loads on its own when it isn't in this tab.
   const one = useApi(shown && !listed ? `admin:message-case:${shown}` : null, () => getMessageCase(shown!))
-  // After a decision the case can leave this tab: keep showing it while it loads on its own.
-  const kept = useLast(listed ?? one.data ?? null)
-  const c = listed ?? one.data ?? (kept?.id === shown ? kept : undefined)
+  // After a decision the case can leave this tab: the decision's own result comes first, then the
+  // row, then the case loaded on its own; the last one shown stays while the next loads.
+  const kept = useLast(decided ?? listed ?? one.data ?? null)
+  const c = decided ?? listed ?? one.data ?? (kept?.id === shown ? kept : undefined)
   const [evidence, setEvidence] = useState<{ id: string; data: EvidenceDto; details: string | null } | null>(null)
   const [held, setHeld] = useState<{ id: string; data: HeldViewResult["message"] } | null>(null)
   const openEvidence = useAsyncAction(
@@ -324,7 +357,7 @@ function MessageCaseSheet({ id, listed, decisions, onOpenChange }: { id: string 
     actions.push({ key: "dismiss", label: "Dismiss", icon: XCircleIcon, variant: "secondary", onSelect: () => void decisions.dismiss(c), disabledReason: reason("messages.moderate") })
     if (c.status !== "escalated") actions.push({ key: "escalate", label: "Escalate", icon: GavelIcon, variant: "secondary", onSelect: () => void decisions.escalate(c), disabledReason: reason("messages.view_reports") })
   }
-  if (c.kind === "held" && c.status === "held") actions.push({ key: "release", label: "Release", icon: PaperPlaneTiltIcon, variant: "primary", onSelect: () => void decisions.release(c), disabledReason: reason("messages.moderate") })
+  if (c.kind === "held" && c.status === "held") actions.push({ key: "release", label: "Release", icon: PaperPlaneTiltIcon, variant: "primary", onSelect: () => void decisions.release(c), disabledReason: releaseOff(c, reason) })
   if (c.messageId && c.messageStatus !== "removed" && (openReport(c) || c.status === "held")) actions.push({ key: "remove", label: "Remove message", icon: TrashIcon, variant: "destructive", onSelect: () => void decisions.remove(c), disabledReason: reason("messages.moderate") })
   if (!c.conversationLocked && c.kind !== "held" && (c.kind === "spam" || openReport(c))) actions.push({ key: "lock", label: "Lock conversation", icon: LockSimpleIcon, variant: "destructive", onSelect: () => void decisions.lock(c), disabledReason: reason("messages.moderate") })
   if (openReport(c) || c.status === "held" || c.kind === "spam")
@@ -339,7 +372,8 @@ function MessageCaseSheet({ id, listed, decisions, onOpenChange }: { id: string 
 
   const ev = evidence?.id === c.id ? evidence.data : null
   const evDetails = evidence?.id === c.id ? evidence.details : null
-  const heldMsg = held?.id === c.messageId ? held.data : null
+  // The text shows only while the message is still held: once released or removed it's no longer evidence here.
+  const heldMsg = held?.id === c.messageId && c.status === "held" ? held.data : null
 
   return (
     <DetailSheet
@@ -407,7 +441,11 @@ function MessageCaseSheet({ id, listed, decisions, onOpenChange }: { id: string 
               <p className="text-[11.5px] text-ink-3">Held because: {heldMsg.heldReasonLabel.toLowerCase()}. Only this message is shown; the rest of the conversation stays private.</p>
             </div>
           ) : c.status !== "held" ? (
-            <EmptyLine>This message isn&apos;t held any more, so its text isn&apos;t shown here.</EmptyLine>
+            <EmptyLine>
+              {c.status === "sent"
+                ? `Released: it was delivered to ${c.side === "brand" ? c.customer.name : c.brand.name}, so its text isn't shown here any more.`
+                : "This message isn't held any more, so its text isn't shown here."}
+            </EmptyLine>
           ) : (
             <div className={cn("grid gap-2.5 p-3", insetClass)}>
               <p className="text-[12.5px] text-ink-2">The held message is the evidence. Opening it is recorded in the audit log with your name.</p>
@@ -421,6 +459,20 @@ function MessageCaseSheet({ id, listed, decisions, onOpenChange }: { id: string 
               {openHeld.error ? <p role="alert" className="text-[12px] text-danger">{openHeld.error}</p> : null}
             </div>
           )}
+        </DetailSection>
+      ) : null}
+
+      {c.kind === "held" && c.status === "held" && c.blockers?.length ? (
+        <DetailSection title="Release is off" className={sheetTrack}>
+          <ul className="grid gap-1.5 text-[12.5px] text-ink-2">
+            {c.blockers.map((b) => (
+              <li key={b} className="flex items-start gap-2">
+                <ProhibitIcon className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
+                {b}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11.5px] text-ink-3">Releasing delivers the message as if it had just been sent, so Yard refuses it while a send would be refused. Remove the message or leave it held.</p>
         </DetailSection>
       ) : null}
 
@@ -476,9 +528,9 @@ function EvidenceBubble({ m }: { m: EvidenceMessage }) {
       <p className={cn("text-[11px] text-ink-3", right && "text-right")}>
         {m.sender}
         {m.at ? `, ${formatDateTime(m.at)}` : ""}
-        {m.reported ? <span className="ml-1.5 text-acid">Reported</span> : null}
+        {m.reported ? <span className="ml-1.5 font-medium text-ink">Reported</span> : null}
       </p>
-      <div className={cn("rounded-[12px] border px-3 py-2 text-[13px] leading-snug", m.reported ? "border-acid/40 bg-acid/[0.06] text-ink" : "border-white/[0.07] bg-white/[0.03] text-ink-2")}>
+      <div className={cn("rounded-[12px] border px-3 py-2 text-[13px] leading-snug", m.reported ? "border-white/35 bg-white/[0.06] text-ink" : "border-white/[0.07] bg-white/[0.03] text-ink-2")}>
         {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
         {m.product ? <p className="text-[12px] text-ink-3">Product card: {m.product}</p> : null}
         {m.order ? <p className="text-[12px] text-ink-3">Order card: {m.order}</p> : null}

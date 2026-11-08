@@ -1,15 +1,11 @@
 "use client"
 
-import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { CheckIcon as Check, CopyIcon as Copy, HourglassMediumIcon as Hourglass, StackIcon as PackageSearch } from "@phosphor-icons/react"
-import { motion } from "motion/react"
-import { toast } from "sonner"
-import { spring } from "@/lib/motion"
-import { checkoutPayment, isSampleCheckout, OrderStatusBadge, orderStatusNote, SampleChip } from "@/components/market/account/order-status"
-import { formatDay, formatOrderMoney } from "@/components/market/account/format"
+import { StackIcon as PackageSearch } from "@phosphor-icons/react"
+import { isSampleCheckout, OrderStatusBadge, orderStatusNote } from "@/components/market/account/order-status"
+import { formatOrderMoney } from "@/components/market/account/format"
 import { BrandMark } from "@/components/market/brand-mark"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
@@ -23,6 +19,7 @@ import { orderEstimate } from "@/components/market/delivery/browser-estimate"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { formatRange } from "@/lib/shipping/format"
 import { methodFromLabel, shippingMethodLabel } from "./shipping"
+import { ReceiptTicket } from "./receipt-ticket"
 import { ConfirmationSkeleton } from "./skeletons"
 import { useStoresReady } from "./use-stores-ready"
 
@@ -63,7 +60,6 @@ export function ConfirmationView() {
     )
   }
 
-  const firstName = user?.name.split(" ")[0]
   const brandsOf = orders.map((o) => brandById.get(o.brandId)!)
   const processing = brandsOf.flatMap((b) => b.processingDays)
   const returns = brandsOf.map((b) => b.returnsDays)
@@ -72,95 +68,64 @@ export function ConfirmationView() {
   // heading and labels follow the orders' real status instead of assuming success.
   const awaitingPayment = orders.some((o) => o.status === "pending_payment")
   const allPaid = orders.every((o) => o.status === "paid")
-  const payment = checkoutPayment(orders)
   const sample = isSampleCheckout(group.id)
 
   return (
     <>
-      <section aria-labelledby="confirmed-title">
-        {/* A check only once the provider has confirmed payment; until then, a pending mark. */}
-        <motion.span
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={spring.snappy}
-          className={cn(
-            "inline-flex size-12 items-center justify-center rounded-full",
-            awaitingPayment ? "border border-violet/50 bg-purple/15 text-violet" : "bg-acid text-obsidian",
-          )}
-          aria-hidden
-        >
-          {awaitingPayment ? <Hourglass className="size-6" /> : <Check className="size-6" weight="bold" />}
-        </motion.span>
-        <h1 id="confirmed-title" className="mt-6 font-display text-display-lg text-ink">
-          {awaitingPayment ? "Order placed" : "Order confirmed"}
-        </h1>
-        <p className="mt-4 max-w-2xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">
-          {firstName ? `Thank you, ${firstName}. ` : "Thank you. "}
-          {awaitingPayment
-            ? single
-              ? `Your order with ${brandsOf[0].name} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
-              : `Your checkout created ${orders.length} orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it.`
-            : allPaid
-              ? `Your payment went through and ${single ? `${brandsOf[0].name} is preparing your order.` : `${orders.length} brands are preparing their orders, each one shipping separately.`}`
-              : `Here is where ${single ? "the order" : `each of the ${orders.length} brand orders`} from this checkout stands.`}
-        </p>
+      {/* The page's heading and what happens now, beside the ticket receipt (§6.6): the ticket
+          carries the reference, total, date, payment method and each brand's estimate, so the
+          print view (and Save as PDF) is the ticket alone, centred on one page. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[minmax(0,1fr)_28rem] lg:gap-16">
+        <section aria-labelledby="confirmed-title" className="lg:pt-6 print:hidden">
+          <h1 id="confirmed-title" className="font-display text-display-lg text-ink">
+            {awaitingPayment ? "Order placed" : "Order confirmed"}
+          </h1>
+          <p className="mt-4 max-w-2xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">
+            {awaitingPayment
+              ? single
+                ? `Your order with ${brandsOf[0].name} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
+                : `Your checkout created ${orders.length} orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it.`
+              : allPaid
+                ? `Your payment went through and ${single ? `${brandsOf[0].name} is preparing your order.` : `${orders.length} brands are preparing their orders, each one shipping separately.`}`
+                : `Here is where ${single ? "the order" : `each of the ${orders.length} brand orders`} from this checkout stands.`}
+          </p>
+          <p className="mt-3 max-w-2xl text-xs leading-relaxed text-ink-3">
+            {awaitingPayment
+              ? "No payment provider is connected in this development build, so nothing was charged and these orders stay awaiting payment confirmation. "
+              : sample
+                ? "This is sample order history for the demo account. It shows how a paid checkout reads; no payment was taken. "
+                : ""}
+            Quote the order ID if you contact us or a brand.
+          </p>
 
-        <dl className="mt-8 grid gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4">
-          <div className="bg-card px-4 py-3.5 md:px-5">
-            <dt className="text-xs text-ink-3">Checkout reference</dt>
-            <dd className="mt-1 flex items-center gap-1.5">
-              <span className="text-lg text-ink tabular">{group.reference}</span>
-              <CopyReference value={group.reference} />
-              {sample ? <SampleChip className="ml-0.5" /> : null}
-            </dd>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row print:hidden">
+            <Button asChild variant="primary" size="lg">
+              <Link href="/you/orders">Track in Your World</Link>
+            </Button>
+            <Button asChild variant="secondary" size="lg">
+              <Link href="/shop">Continue shopping</Link>
+            </Button>
           </div>
-          <div className="bg-card px-4 py-3.5 md:px-5">
-            <dt className="text-xs text-ink-3">Placed</dt>
-            <dd className="mt-1 text-lg text-ink tabular">{formatDay(group.placedAt, { year: true })}</dd>
-          </div>
-          <div className="bg-card px-4 py-3.5 md:px-5">
-            <dt className="text-xs text-ink-3">{payment.label}</dt>
-            <dd className="mt-1 text-lg text-ink tabular">{formatOrderMoney(group.total, group.currency)}</dd>
-          </div>
-          <div className="bg-card px-4 py-3.5 md:px-5">
-            <dt className="text-xs text-ink-3">Payment</dt>
-            <dd className="mt-1 text-lg text-ink">{payment.status}</dd>
-          </div>
-        </dl>
-        <p className="mt-3 text-xs leading-relaxed text-ink-3">
-          {awaitingPayment
-            ? "No payment provider is connected in this development build, so nothing was charged and these orders stay awaiting payment confirmation. "
-            : sample
-              ? "This is sample order history for the demo account. It shows how a paid checkout reads; no payment was taken. "
-              : ""}
-          Quote the reference if you contact us or a brand.
-        </p>
+        </section>
 
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Button asChild variant="primary" size="lg">
-            <Link href="/you/orders">Track in Your World</Link>
-          </Button>
-          <Button asChild variant="secondary" size="lg">
-            <Link href="/shop">Continue shopping</Link>
-          </Button>
-        </div>
-      </section>
+        <ReceiptTicket group={group} orders={orders} sample={sample} holder={user?.name} className="lg:mx-0 print:mx-auto print:break-inside-avoid" />
+      </div>
 
-      <section aria-labelledby="orders-title" className="mt-24 md:mt-32">
+      <section aria-labelledby="orders-title" className="mt-24 md:mt-32 print:hidden">
         <div id="orders-title">
           <SectionHeader
             title={single ? "Your order" : `${orders.length} orders, one per brand`}
             description={single ? undefined : "Each brand packs and ships its own parcel, with its own tracking and returns."}
           />
         </div>
-        <div className={cn("grid gap-4 md:grid-cols-2", orders.length >= 3 && "xl:grid-cols-3")}>
+        <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2", orders.length >= 3 && "xl:grid-cols-3")}>
           {orders.map((o) => (
             <BrandOrderCard key={o.id} order={o} />
           ))}
         </div>
       </section>
 
-      <section aria-labelledby="next-title" className="mt-24 md:mt-32">
+      <section aria-labelledby="next-title" className="mt-24 md:mt-32 print:hidden">
         <div id="next-title">
           <SectionHeader title="What happens next" description="Every brand runs its own studio, so each order moves at its own pace. You can follow all of them from Orders in Your World." href="/you/orders" action="Your orders" />
         </div>
@@ -262,34 +227,5 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
         </div>
       </dl>
     </article>
-  )
-}
-
-function CopyReference({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
-    } catch {
-      toast.error("Couldn't copy the reference", { description: "Select it and copy it instead." })
-    }
-  }
-  // The check in place is the confirmation; a toast would repeat it.
-  return (
-    <>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy checkout reference"
-        className="-my-1.5 inline-flex size-10 items-center justify-center rounded-md text-ink-2 transition-[background-color,color,transform] duration-150 hover:bg-elevated hover:text-ink focus-visible:ring-2 focus-visible:ring-violet focus-visible:outline-none active:scale-95"
-      >
-        {copied ? <Check className="size-4 text-acid" /> : <Copy className="size-4" />}
-      </button>
-      <span className="sr-only" role="status">
-        {copied ? "Reference copied" : ""}
-      </span>
-    </>
   )
 }

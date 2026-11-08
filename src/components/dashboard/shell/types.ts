@@ -11,7 +11,7 @@ export type ShellNavItem = {
   badge?: string | number
   /** What the count means, read after it by screen readers and in the collapsed tooltip, e.g. "not yet shipped". */
   badgeLabel?: string
-  /** "attention": the count needs action (acid outline and dot). */
+  /** "attention": the count needs action (a brighter ink outline and an ink dot; acid stays for the one primary action). */
   tone?: "default" | "attention"
 }
 
@@ -47,7 +47,7 @@ export type ShellStatus = {
   /** The action line, e.g. "Request payout". */
   action: string
   href: string
-  /** Something here needs doing: acid arrow and dot. Otherwise purple. */
+  /** Something here needs doing: ink arrow and dot (attention, like the nav badges). Otherwise purple. */
   attention: boolean
   /** Whether the collapsed tile carries a dot. */
   dot: boolean

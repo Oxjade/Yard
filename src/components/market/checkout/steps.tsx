@@ -285,6 +285,14 @@ const methodIcon: Record<PaymentMethod, React.ReactNode> = {
   mobile_money: <Smartphone className="size-[18px]" />,
 }
 
+/** Room kept at the card field's end for the detected brand: only as wide as its label, so the number stays readable on a phone. */
+const brandPad: Record<NonNullable<ReturnType<typeof cardBrand>>, string> = {
+  "American Express": "pr-32",
+  Mastercard: "pr-24",
+  Verve: "pr-16",
+  Visa: "pr-16",
+}
+
 export function PaymentStep({
   value,
   method,
@@ -342,7 +350,7 @@ export function PaymentStep({
                     placeholder="1234 5678 9012 3456"
                     value={value.cardNumber}
                     onChange={set("cardNumber", formatCardNumber)}
-                    className={cn(inputClass, brand ? "pr-36" : undefined, "tabular")}
+                    className={cn(inputClass, brand ? brandPad[brand] : undefined, "tabular")}
                   />
                   {brand ? <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-2">{brand}</span> : null}
                 </div>

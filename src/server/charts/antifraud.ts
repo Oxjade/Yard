@@ -7,6 +7,8 @@ import { getEnv } from "../env"
 import { newId } from "../ids"
 import { log } from "../log"
 import { notifyAdmins } from "../notify"
+import { publish } from "../realtime/bus"
+import { channels } from "../realtime/channels"
 import { addDays, todayUtc } from "./baseline"
 import { dropCaches } from "./public"
 import { detectAll, type ChartEvent, type Detection } from "./detect"
@@ -103,6 +105,9 @@ export async function refreshFlags(now = Date.now()): Promise<FlagRefresh> {
         })
       }
     }
+    // New open flags change Admin's Charts queue: an empty signal, delivered after commit, so each
+    // admin refetches the counts their role may see (low and medium flags notify no one).
+    if (created) await publish(channels.admin, "moderation.counts", {})
     if (created) log.info(`[yard] charts: ${created} new ${created === 1 ? "flag" : "flags"} (${[...new Set(held)].join(", ") || "none held"})`)
     return { flags: found.length, created, excluded, held: [...new Set(held)] }
   })

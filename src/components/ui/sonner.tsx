@@ -116,7 +116,7 @@ function useToastLift(mobileBottom: number) {
 }
 
 /**
- * Toasts pop up like comic speech bubbles from the bottom corner (above the phone tab bar):
+ * Toasts pop up like comic speech bubbles from the bottom corner (above the phone home bar):
  * a quick spring pop, a tail, a hard purple offset shadow. `comic` (marketplace) is a white
  * bubble with black type; `calm` (Studio, Admin) is a dark bubble — same shape, quieter.
  * Concise, stackable (3 visible), dismissible, with actions where useful. Not for every
@@ -128,7 +128,8 @@ function useToastLift(mobileBottom: number) {
  */
 const Toaster = ({ tone = "comic", style, ...props }: ToasterProps & { tone?: "comic" | "calm" }) => {
   const comic = tone === "comic"
-  const mobileBottom = comic ? 88 : 16
+  // Marketplace phones: clear of the home bar and its raised Around pin (--tabbar-clear, 100px).
+  const mobileBottom = comic ? 100 : 16
   useToastLift(mobileBottom)
   return (
     <Sonner

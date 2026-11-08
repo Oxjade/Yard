@@ -180,7 +180,7 @@ function OnlineOnly({ city }: { city: { slug: string; name: string } }) {
   return (
     <aside aria-labelledby={`online-${city.slug}`} className="mt-3 grid gap-2 rounded-2xl border border-white/[0.08] p-3">
       <div className="flex items-center gap-2">
-        <StorefrontIcon className="size-4 text-violet" aria-hidden />
+        <StorefrontIcon className="size-4 text-ink-2" aria-hidden />
         <h3 id={`online-${city.slug}`} className="text-sm font-medium text-ink">
           Online only in {city.name}
         </h3>

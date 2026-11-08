@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { isoDate } from "./common"
 import { COMPLAINT_KINDS, COMPLAINT_STATUSES, ESTIMATE_BASES, SHIPMENT_SOURCES, SHIPMENT_STATUSES, SHIPPING_SERVICES, ZONE_KINDS } from "./enums"
 
 /**
@@ -317,7 +318,8 @@ export const shippingProfileBody = z
     localPickup: z.boolean(),
     pickupLocationId: idText().nullable(),
     zones: z.array(zoneInput).min(1).max(12),
-    closures: z.array(z.object({ id: rowId, dateFrom: date, dateTo: date, reason: safeLine().trim().max(80).nullable().optional() }).strict()).max(20),
+    // isoDate refuses dates that don't exist (2027-02-30), so they're a field error here.
+    closures: z.array(z.object({ id: rowId, dateFrom: isoDate, dateTo: isoDate, reason: safeLine().trim().max(80).nullable().optional() }).strict()).max(20),
   })
   .strict()
 export type ShippingProfileBody = z.infer<typeof shippingProfileBody>

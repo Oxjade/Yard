@@ -59,6 +59,28 @@ function saveCsv(text: string, name: string) {
 
 const browserCsv = (rows: Row[]) => rows.map((a) => auditCsvLine({ at: a.at, source: "browser", actor: a.actor, roleName: a.roleName, action: a.action, target: a.target, reason: a.reason, approvedBy: a.approvedBy, ip: a.ip }))
 
+/**
+ * The figures for Security's "Audit entries" card, counted the way the log below lists them: the
+ * server's rows (admins and Yard, its default feed) plus this browser's legacy rows, with the
+ * second-approver count from both. Without an audit.view session only this browser's rows count,
+ * and `label` says so. Shares the log's own request (same key), so it costs nothing extra.
+ */
+export function useAuditFigures() {
+  const audit = useAdmin((s) => s.audit)
+  const admin = useServerSession((s) => s.admin)
+  const canRead = !!admin && canAdmin(admin.role, "audit.view")
+  const server = useApi(canRead ? "admin:audit:feed:admins" : null, () => listAudit({ limit: 200 }), { refreshInterval: 30_000 })
+  const t = server.data?.totals
+  const local = { entries: audit.length, withApprover: audit.filter((a) => a.approvedBy).length }
+  return {
+    entries: local.entries + (t?.entries ?? 0),
+    withApprover: local.withApprover + (t?.withApprover ?? 0),
+    /** False while the server's count is still loading (the card shows its skeleton). */
+    ready: !canRead || !!t || !!server.error,
+    label: canRead ? (server.error && !t ? "This browser's entries (the server's couldn't load)" : "Server and this browser") : "This browser's legacy entries",
+  }
+}
+
 /** The audit log: every decision, who made it, why and who approved it. Read-only; exports are logged too. */
 export function AuditLog({ ready }: { ready: boolean }) {
   const audit = useAdmin((s) => s.audit)

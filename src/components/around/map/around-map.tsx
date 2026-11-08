@@ -10,16 +10,16 @@ import type { PlaceSummaryDto } from "@/lib/api/contracts/around"
 import { cities, haversineKm } from "@/lib/around/gazetteer"
 import { kindLabel } from "@/lib/around/labels"
 import { timedStatus } from "@/lib/around/hours"
-import { CITY_ZOOM_MIN, type Bounds } from "@/lib/around/geo"
+import { HOOD_ZOOM, type Bounds } from "@/lib/around/geo"
 import { cn } from "@/lib/utils"
 import { areaLabel, clusterPin, fillCluster, placePin, setPinSelected, youDot, type ClusterLeaf, type PinProps, type PinStatus } from "./pins"
 import { loadCoast, loadWorld, type CityCoast, type LandData } from "./world-data"
-import { areaFeatures, overlap, placeLabel, type Rect } from "./areas"
+import { areaFeatures, overlap, pickCreditSpot, placeLabel, type CreditSpot, type Rect } from "./areas"
 
 /**
  * The Around map engine (§6.4). MapLibre loads client-side only, with its worker served from
  * /vendor (Turbopack can't serve the worker beside the chunk). The base style is Yard's own:
- * the bundled Natural Earth land on a dark globe with a purple rim, no glyphs and no symbol
+ * the bundled Natural Earth land on a dark globe with a grey hairline rim, no glyphs and no symbol
  * layers; city and neighbourhood names are HTML overlays from the gazetteer. OpenFreeMap streets
  * are a quiet enhancement that reports its state through `onEnhancement` and fails silently.
  *
@@ -45,6 +45,33 @@ export type AroundMapHandle = {
   zoomBy: (delta: number) => void
   resetNorth: () => void
   view: () => MapView | null
+  /** Where a point is on screen now, in px from the map's top left (null before the map loads). */
+  project: (p: LatLng) => { x: number; y: number } | null
+  /**
+   * Once the map is at rest with its data drawn: the screen box of place `id`'s own pin (viewport
+   * px, like getBoundingClientRect; null when it isn't drawn as its own pin), or, when it is inside a cluster,
+   * the zoom at which it gets its own pin; `inData` says whether the map holds the place at all.
+   */
+  pinState: (id: string, at: LatLng) => Promise<PinState>
+}
+
+/** `settled`: the map came to rest with every tile loaded; false when it was still busy after the wait. */
+export type PinState = { rect: { left: number; top: number; right: number; bottom: number } | null; clusterZoom: number | null; inData: boolean; settled: boolean }
+const NO_PIN: PinState = { rect: null, clusterZoom: null, inData: false, settled: true }
+
+/** Resolves true once `type` fires on the map, or false after `ms`. `kick` runs once the listener is on. */
+function mapEvent(map: MLMap, type: "moveend" | "idle", ms: number, kick?: () => void) {
+  return new Promise<boolean>((resolve) => {
+    const finish = (fired: boolean) => {
+      window.clearTimeout(timer)
+      map.off(type, onEvent)
+      resolve(fired)
+    }
+    const onEvent = () => finish(true)
+    const timer = window.setTimeout(() => finish(false), ms)
+    map.on(type, onEvent)
+    kick?.()
+  })
 }
 
 type Props = {
@@ -68,10 +95,20 @@ type Props = {
   creditsClassName?: string
   /** Credits behind an info button (phones), so they never run into the area title. */
   compactCredits?: boolean
+  /**
+   * Places the credits block may sit, in order of preference. At rest it takes the first one no
+   * pin, cluster or "you" dot touches, so the credit stays readable and never covers a pin.
+   */
+  creditSpots?: CreditSpot[]
   /** Screen bands (px from each edge) under page chrome, which area names try to stay out of. */
   labelInsets?: { top?: number; right?: number; bottom?: number; left?: number }
   /** Screen bands that count as hidden for MapView.inner ("in view" means not under these). */
   viewInsets?: { top: number; right: number; bottom: number; left: number }
+  /**
+   * A short line shown under the credits (the phone's "You're 13 km south-east of the map centre").
+   * It moves with them to a spot no pin covers, so it never hides a place.
+   */
+  note?: string | null
   label?: string
   ref?: React.Ref<AroundMapHandle>
 }
@@ -88,8 +125,7 @@ const RING_OPACITY = 0.18
 const COAST_MIN_ZOOM = 9.4
 const coastFade = (to: number) => ["interpolate", ["linear"], ["zoom"], COAST_MIN_ZOOM, 0, 10.2, to] as unknown as number
 const RING_OPACITY_STREETS = 0.07
-/** Neighbourhood names, dots and rings show from here (a phone frames a whole city at about 10.4). */
-const HOOD_ZOOM = CITY_ZOOM_MIN
+/** Neighbourhood names, dots and rings show from HOOD_ZOOM (geo.ts), so a framed city always has them. */
 /** Past this the bundled map has nothing more to show, so it stops here until street tiles load. */
 const BUNDLED_MAX_ZOOM = 14.5
 const STREETS_MAX_ZOOM = 18
@@ -125,9 +161,10 @@ function baseStyle(world: LandData, mode: "browse" | "pick"): StyleSpecification
     projection: { type: "globe" },
     sky: {
       "sky-color": "#080808",
-      "horizon-color": "#1c0f36",
+      "horizon-color": "#121212",
       "fog-color": "#080808",
-      // No glow (house rule): the atmosphere is off and the rim is a purple hairline overlay instead.
+      // No glow (house rule): the atmosphere is off and the rim is a grey hairline overlay instead
+      // (purple is for active and selected states only).
       "atmosphere-blend": 0,
     },
     sources: {
@@ -309,6 +346,73 @@ export function AroundMap(props: Props) {
       },
       resetNorth: () => mapRef.current?.resetNorthPitch({ duration: reducedMotion() ? 0 : 300 }),
       view: () => (mapRef.current ? viewOf(mapRef.current, propsRef.current.viewInsets) : null),
+      project: (p) => {
+        const map = mapRef.current
+        if (!map) return null
+        const at = map.project([p.lng, p.lat])
+        return { x: at.x, y: at.y }
+      },
+      pinState: async (id, p) => {
+        const map = mapRef.current
+        if (!map) return NO_PIN
+        // At rest, every tile loaded and the places source drawn (a flight, a jump or new data).
+        if (map.isMoving()) await mapEvent(map, "moveend", 12000)
+        const settled = await mapEvent(map, "idle", 4000, () => map.triggerRepaint())
+        if (mapRef.current !== map) return NO_PIN
+        reconcileRef.current()
+        const own = markersRef.current.get(`p:${id}`)
+        if (own && !own.el.classList.contains("maplibregl-marker-covered")) {
+          const r = own.el.getBoundingClientRect()
+          if (r.width) return { rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, clusterZoom: null, inData: true, settled }
+        }
+        const src = map.getSource("places") as GeoJSONSource | undefined
+        if (!src) return { ...NO_PIN, settled }
+        const feats = map.querySourceFeatures("places")
+        if (feats.some((f) => !f.properties?.cluster && f.properties?.id === id)) return { rect: null, clusterZoom: null, inData: true, settled }
+        // Which cluster holds it: the nearest ones on screen first.
+        const target = map.project([p.lng, p.lat])
+        const seen = new Set<number>()
+        const clusters: { id: number; count: number; d: number }[] = []
+        for (const f of feats) {
+          if (!f.properties?.cluster) continue
+          const cid = Number(f.properties.cluster_id)
+          if (seen.has(cid)) continue
+          seen.add(cid)
+          const c = map.project((f.geometry as Point).coordinates as [number, number])
+          clusters.push({ id: cid, count: Number(f.properties.point_count) || 0, d: Math.hypot(c.x - target.x, c.y - target.y) })
+        }
+        clusters.sort((a, b) => a.d - b.d)
+        const holds = async (cid: number, count: number) => (await src.getClusterLeaves(cid, count, 0)).some((l) => l.properties?.id === id)
+        try {
+          for (const c of clusters.slice(0, 8)) {
+            if (!(await holds(c.id, c.count))) continue
+            // Down the cluster tree until the place is its own point.
+            let cid = c.id
+            for (let depth = 0; depth < 24; depth++) {
+              const z = await src.getClusterExpansionZoom(cid)
+              let next: number | null = null
+              for (const k of await src.getClusterChildren(cid)) {
+                if (!k.properties?.cluster) {
+                  if (k.properties?.id === id) return { rect: null, clusterZoom: z, inData: true, settled }
+                  continue
+                }
+                const kid = Number(k.properties.cluster_id)
+                if (await holds(kid, Number(k.properties.point_count) || 0)) {
+                  next = kid
+                  break
+                }
+              }
+              if (next === null) return { rect: null, clusterZoom: z, inData: true, settled }
+              cid = next
+            }
+            return { rect: null, clusterZoom: null, inData: true, settled }
+          }
+        } catch {
+          // The source changed under the query (new data): the caller asks again once it settles.
+          return { ...NO_PIN, settled: false }
+        }
+        return { ...NO_PIN, settled }
+      },
     }),
     [],
   )
@@ -324,6 +428,8 @@ export function AroundMap(props: Props) {
     let raf = 0
     let ofmErrors = 0
     let layoutDirty = true
+    /** The credits are re-placed only at rest, so they never chase pins during a flight. */
+    let creditsDirty = true
     const fallback = (reason: "webgl" | "error") => {
       if (!disposed) propsRef.current.onFallback?.(reason)
     }
@@ -435,7 +541,7 @@ export function AroundMap(props: Props) {
         }
       }
       reconcileRef.current = reconcile
-      /* ---- the globe's rim: a purple hairline where Snap Map has a blue glow ---- */
+      /* ---- the globe's rim: a grey hairline where Snap Map has a blue glow ---- */
       const syncRim = () => {
         const rim = rimRef.current
         if (!rim) return
@@ -577,21 +683,47 @@ export function AroundMap(props: Props) {
       }
       extra.push(...cityLabels.map((l) => l.marker), ...hoodLabels.map((l) => l.marker))
 
+      /** Screen boxes of every pin, cluster (with its count chip), "you" dot and pick pin. */
+      const markerRects = (visibleOnly = false): Rect[] => {
+        const out: Rect[] = []
+        const box = (at: { x: number; y: number }, w: number, h: number, pad: number): Rect => ({ x: at.x - w / 2 - pad, y: at.y - h / 2 - pad, w: w + 2 * pad, h: h + 2 * pad })
+        for (const m of markers.values()) {
+          // A pin on the far side of the globe is hidden by MapLibre (opacityWhenCovered 0).
+          if (visibleOnly && m.el.classList.contains("maplibregl-marker-covered")) continue
+          if (!m.size) m.size = { w: m.el.offsetWidth || 44, h: m.el.offsetHeight || 44 }
+          const at = map.project(m.marker.getLngLat())
+          // A cluster's count chip hangs off its top right; a selected pin is scaled up 10%.
+          out.push(m.cluster ? { x: at.x - m.size.w / 2 - 3, y: at.y - m.size.h / 2 - 11, w: m.size.w + 18, h: m.size.h + 14 } : box(at, m.size.w, m.size.h, 5))
+        }
+        for (const [m, size] of obstaclesRef.current) out.push(box(map.project(m.getLngLat()), size, size, 4))
+        return out
+      }
+
+      // The credits (and the phone's scale bar) take the first of their spots that no pin covers
+      // (owner review 2026-11-07, 22:45: London and Paris sat on "Natural Earth" on a phone's globe).
+      // Returns whether they moved, so the area names can make room.
+      let creditSpot = -1
+      const placeCredits = () => {
+        const spots = propsRef.current.creditSpots
+        const el = creditsRef.current
+        if (!spots?.length || !el) return false
+        const { clientWidth: W, clientHeight: H } = map.getContainer()
+        const size = { w: el.offsetWidth, h: el.offsetHeight }
+        if (!size.w || !size.h) return false
+        const i = pickCreditSpot(spots, size, { w: W, h: H }, markerRects(true))
+        if (i === creditSpot) return false
+        creditSpot = i
+        applySpot(el, spots[i], i)
+        return true
+      }
+
       // Each name takes the first spot around its centroid that no pin, cluster, "you" dot or
       // earlier name covers; names are placed in gazetteer order, so the result is stable.
       const placeLabels = () => {
         const active = shown === "city" ? cityLabels : shown === "hood" ? hoodLabels : []
         if (!active.length) return
         const { clientWidth: W, clientHeight: H } = map.getContainer()
-        const obstacles: Rect[] = []
-        const box = (at: { x: number; y: number }, w: number, h: number, pad: number): Rect => ({ x: at.x - w / 2 - pad, y: at.y - h / 2 - pad, w: w + 2 * pad, h: h + 2 * pad })
-        for (const m of markers.values()) {
-          if (!m.size) m.size = { w: m.el.offsetWidth || 44, h: m.el.offsetHeight || 44 }
-          const at = map.project(m.marker.getLngLat())
-          // A cluster's count chip hangs off its top right; a selected pin is scaled up 10%.
-          obstacles.push(m.cluster ? { x: at.x - m.size.w / 2 - 3, y: at.y - m.size.h / 2 - 11, w: m.size.w + 18, h: m.size.h + 14 } : box(at, m.size.w, m.size.h, 5))
-        }
-        for (const [m, size] of obstaclesRef.current) obstacles.push(box(map.project(m.getLngLat()), size, size, 4))
+        const obstacles = markerRects()
         // Page chrome (header, title, panel) and the credits: names avoid them, but pins come first.
         // Solid chrome (header, title, desktop panel) hides what's under it; the phone's bottom band
         // (pill and carousel) has gaps, so it's only a preference.
@@ -646,6 +778,7 @@ export function AroundMap(props: Props) {
       }
       relayoutRef.current = () => {
         layoutDirty = true
+        creditsDirty = true
         schedule()
       }
 
@@ -656,6 +789,11 @@ export function AroundMap(props: Props) {
           reconcile()
           syncRim()
           syncScale()
+          if (layoutDirty) creditsDirty = true
+          if (creditsDirty && !map.isMoving()) {
+            creditsDirty = false
+            if (placeCredits()) layoutDirty = true
+          }
           if (layoutDirty) {
             layoutDirty = false
             placeLabels()
@@ -696,6 +834,9 @@ export function AroundMap(props: Props) {
         }
         ensureCoasts()
         syncCoastCredit()
+        // Pins moved under the fixed credits: re-place them now the map is at rest.
+        creditsDirty = true
+        schedule()
         propsRef.current.onView?.(viewOf(map, propsRef.current.viewInsets), !!e.originalEvent)
         propsRef.current.onIdle?.()
       })
@@ -806,10 +947,18 @@ export function AroundMap(props: Props) {
     src?.setData(fc)
   }, [ready, places, props.mode])
 
-  // The credits opening or closing changes what names must avoid.
+  // The credits opening, closing or changing width (the scale bar) changes their best spot and
+  // what names must avoid.
+  const scaleSig = scale ? `${scale.label}:${scale.px}` : ""
   useEffect(() => {
     if (ready) relayoutRef.current()
-  }, [ready, creditsOpen, coastCredit, attribution])
+  }, [ready, creditsOpen, coastCredit, attribution, scaleSig, props.note])
+
+  // Before the map has loaded, the credits sit in their first spot.
+  const firstSpot = props.creditSpots?.[0]
+  useLayoutEffect(() => {
+    if (firstSpot && creditsRef.current && !creditsRef.current.dataset.spot) applySpot(creditsRef.current, firstSpot, 0)
+  }, [firstSpot])
 
   // Selection → ring.
   const selectedId = props.selectedId
@@ -879,38 +1028,59 @@ export function AroundMap(props: Props) {
 
   const credits = `Natural Earth${attribution === "streets" ? ", © OpenStreetMap contributors, OpenFreeMap" : coastCredit ? ", © OpenStreetMap contributors" : ""}`
   return (
-    <div className={cn("yard-around-map relative overflow-hidden", className)}>
+    // `isolate`: pins, names and credits stack among themselves, under the page's own chrome.
+    <div className={cn("yard-around-map relative isolate overflow-hidden", className)}>
       {/* MapLibre makes its container position: relative, so it fills an absolute wrapper. */}
       <div className="absolute inset-0">
         <div ref={containerRef} role="region" aria-label={label} className="h-full w-full" />
       </div>
-      <div ref={rimRef} aria-hidden className="pointer-events-none absolute top-0 left-0 hidden rounded-full border border-purple/70" />
-      <div ref={creditsRef} className={cn("pointer-events-none absolute right-2 bottom-1 z-[1] flex items-end gap-3 text-[10px] text-ink-3/80 [text-shadow:0_1px_2px_#080808]", creditsClassName)}>
-        {scale ? (
-          <span className="flex flex-col items-start gap-0.5" aria-label={`Scale: this bar is ${scale.label}`} role="img">
-            <span aria-hidden className="tabular leading-none">{scale.label}</span>
-            <span aria-hidden className="block h-1 border-x border-b border-ink-2/70" style={{ width: scale.px }} />
-          </span>
+      <div ref={rimRef} aria-hidden className="pointer-events-none absolute top-0 left-0 hidden rounded-full border border-ink-2/45" />
+      {/* Above every pin (z 2–3) and name (z 1), so the credit is always readable; at rest it also
+          moves to a spot no pin covers (creditSpots). */}
+      <div ref={creditsRef} data-map-credits className="pointer-events-none absolute right-2 bottom-1 z-[5] flex max-w-[calc(100%-2rem)] flex-col items-end gap-1.5 text-[10px] text-ink-3/80 [text-shadow:0_1px_2px_#080808]">
+        <div className={cn("flex items-end gap-3", creditsClassName)}>
+          {scale ? (
+            <span className="flex flex-col items-start gap-0.5" aria-label={`Scale: this bar is ${scale.label}`} role="img">
+              <span aria-hidden className="tabular leading-none">{scale.label}</span>
+              <span aria-hidden className="block h-1 border-x border-b border-ink-2/70" style={{ width: scale.px }} />
+            </span>
+          ) : null}
+          {compactCredits ? (
+            <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={creditsOpen ? "Hide map credits" : "Map credits"}
+                aria-expanded={creditsOpen}
+                onClick={() => setCreditsOpen((o) => !o)}
+                className="pointer-events-auto -m-2.5 inline-flex size-10 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-violet"
+              >
+                <InfoIcon className="size-4 text-ink-2" aria-hidden />
+              </button>
+              {creditsOpen ? <p className="rounded-full bg-obsidian/80 px-2 py-1 text-ink-2">{credits}</p> : null}
+            </span>
+          ) : (
+            <p>{credits}</p>
+          )}
+        </div>
+        {props.note ? (
+          <p data-map-note className="glass max-w-full rounded-2xl px-3 py-1.5 text-xs leading-4 text-ink [text-wrap:balance]">
+            {props.note}
+          </p>
         ) : null}
-        {compactCredits ? (
-          <span className="flex items-center gap-1.5">
-            <button
-              type="button"
-              aria-label={creditsOpen ? "Hide map credits" : "Map credits"}
-              aria-expanded={creditsOpen}
-              onClick={() => setCreditsOpen((o) => !o)}
-              className="pointer-events-auto -m-2.5 inline-flex size-10 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-violet"
-            >
-              <InfoIcon className="size-4 text-ink-2" aria-hidden />
-            </button>
-            {creditsOpen ? <p className="rounded-full bg-obsidian/80 px-2 py-1 text-ink-2">{credits}</p> : null}
-          </span>
-        ) : (
-          <p>{credits}</p>
-        )}
       </div>
     </div>
   )
+}
+
+function applySpot(el: HTMLElement, spot: CreditSpot, index: number) {
+  const px = (v: number | undefined) => (v == null ? "auto" : `${v}px`)
+  el.style.top = px(spot.top)
+  el.style.bottom = px(spot.bottom)
+  el.style.left = px(spot.left)
+  el.style.right = px(spot.right)
+  // A spot on the right keeps the credits and the note flush with the right edge.
+  el.style.alignItems = spot.right != null ? "flex-end" : "flex-start"
+  el.dataset.spot = String(index)
 }
 
 let logged = false

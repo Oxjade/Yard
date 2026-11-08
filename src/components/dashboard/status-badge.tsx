@@ -5,7 +5,8 @@ type Tone = "neutral" | "info" | "attention" | "success" | "danger" | "muted"
 const tones: Record<Tone, string> = {
   neutral: "border-white/12 text-ink",
   info: "border-purple bg-purple/20 text-ink",
-  attention: "border-acid/50 text-acid",
+  // Needs action: a bright ink edge and a ringed dot. Not acid, which belongs to a page's one primary action.
+  attention: "border-ink/70 text-ink",
   success: "border-white/12 bg-white/5 text-ink",
   danger: "border-danger/40 text-danger",
   muted: "border-white/10 text-ink-3",
@@ -14,13 +15,13 @@ const tones: Record<Tone, string> = {
 const dots: Record<Tone, string> = {
   neutral: "bg-ink",
   info: "bg-violet",
-  attention: "bg-acid",
+  attention: "bg-ink ring-2 ring-ink/25",
   success: "bg-ink",
   danger: "bg-danger",
   muted: "bg-ink-3",
 }
 
-/** Status pill used in every Studio and Admin table. Acid = needs action; purple = in progress. */
+/** Status pill used in every Studio and Admin table. A bright ink edge = needs action; purple = in progress. */
 export function StatusBadge({ tone = "neutral", children, className }: { tone?: Tone; children: React.ReactNode; className?: string }) {
   return (
     <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-[5px] border px-2 text-[11px] font-medium whitespace-nowrap", tones[tone], className)}>

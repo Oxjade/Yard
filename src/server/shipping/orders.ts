@@ -528,6 +528,8 @@ export async function recordShipment(actor: BrandActor, loaded: OrderRefRow, bod
     if (body.status === "exception" || (body.status !== "returned" && r.changed && estimate.basis === "late")) await notifyLateOnce(order, brandName, range, now)
     if (screen.held) {
       await notifyAdmins("messages.view_reports", { key: `delivery-held:${event.id}`, template: "delivery.admin_issue", vars: { kind: "brand note held for review", reference: order.reference, brand: brandName }, href: `/admin/delivery?order=${order.id}` })
+      // A held note is counted in Admin's Delivery queue too.
+      await publish(channels.admin, "moderation.counts", {})
     }
     await writeAudit({
       actor: { kind: "brand", id: actor.userId, name: actor.name, role: actor.role },
@@ -565,6 +567,9 @@ export async function fileComplaint(actor: ShopperActor, order: OrderRefRow, bod
     await notify({ kind: "brand", id: order.brandId }, { key: `complaint:${row.id}`, template: "delivery.complaint_for_brand", vars: { reference: order.reference, kind: complaintKindLabels[body.kind] }, href: `/studio/orders/${order.id}` })
     const current = await latestEstimate(order.id)
     if (current) await publish(channels.brand(order.brandId), "order.estimate", { orderId: order.id, estimate: estimateOnly(current) })
+    // A new complaint joins Admin's Delivery queue: an empty signal after commit, so each admin
+    // refetches the counts their role may see.
+    await publish(channels.admin, "moderation.counts", {})
     await writeAudit({ actor: { kind: "shopper", id: actor.userId, name: actor.name }, action: "delivery_complaint.created", target: `Order ${order.reference}`, subjectType: "delivery_complaint", subjectId: row.id, brandId: order.brandId, meta: { kind: body.kind } })
     return toComplaintDto(row, "shopper")
   })
@@ -595,6 +600,8 @@ export async function respondToComplaint(actor: BrandActor, order: OrderRefRow, 
     await recordScreen(actor, screen, { type: "delivery_complaint", id: c.id, orderRefId: order.id, brandId: order.brandId }, text, ipHash)
     if (screen.held) {
       await notifyAdmins("messages.view_reports", { key: `delivery-held:${c.id}`, template: "delivery.admin_issue", vars: { kind: "brand reply held for review", reference: order.reference, brand: actor.brand.name }, href: `/admin/delivery?complaint=${c.id}` })
+      // A held reply is counted in Admin's Delivery queue too.
+      await publish(channels.admin, "moderation.counts", {})
     } else {
       // The shopper on the order, never one named by the request (SEC-6).
       await notify({ kind: "shopper", id: order.customerId }, { key: `complaint-reply:${c.id}`, template: "delivery.complaint_reply", vars: { brand: actor.brand.name }, href: `/you/orders/${order.id}` })

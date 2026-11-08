@@ -10,8 +10,19 @@ import { formatMoney } from "@/lib/money"
 export const DEMO_NOW = new Date(`${DEMO_TODAY}T12:00:00Z`).getTime()
 const DAY = 86_400_000
 
-export function daysSince(iso: string) {
-  return Math.floor((DEMO_NOW - new Date(iso).getTime()) / DAY)
+/**
+ * Whole days from `iso` to now, never negative. Two clocks meet on these pages: sample data is
+ * dated against the demo's reference day (DEMO_NOW), while anything after it (an order placed in
+ * this browser, a shipment event from the server) happened on the real clock. So a time after
+ * DEMO_NOW is measured against the real clock instead, and a mix of the two can't produce a
+ * negative age. Real times only reach these pages after hydration (browser stores, API data), so
+ * reading the clock here never differs between the server and client render.
+ */
+export function daysSince(iso: string, now?: number) {
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return 0
+  const ref = now ?? (t > DEMO_NOW ? Math.max(Date.now(), t) : DEMO_NOW)
+  return Math.max(0, Math.floor((ref - t) / DAY))
 }
 
 export function formatDay(iso: string, opts: { year?: boolean; weekday?: boolean } = {}) {

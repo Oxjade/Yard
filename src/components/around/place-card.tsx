@@ -92,7 +92,8 @@ export const PlaceCard = forwardRef<HTMLButtonElement, Props>(function PlaceCard
           <StatusText place={place} now={now} />
           {distanceKm != null ? <span className="shrink-0 tabular text-ink-2">{formatDistance(distanceKm)}</span> : null}
         </span>
-        {next ? <span className="truncate text-xs text-violet">{next}</span> : null}
+        {/* Ink, not violet: purple is for active and selected states only (owner palette). */}
+        {next ? <span className="truncate text-xs text-ink">{next}</span> : null}
       </span>
     </button>
   )

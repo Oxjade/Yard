@@ -66,7 +66,7 @@ function GrowBar({ clock, delay, style, ...props }: HTMLMotionProps<"span"> & { 
 }
 
 /**
- * Hatched bar chart with one highlighted bar (acid), the latest by default. Hover, focus
+ * Hatched bar chart with one highlighted bar (purple: the selected one), the latest by default. Hover, focus
  * or the arrow keys move the highlight; on touch, tapping or sliding a finger across the
  * plot does (the whole plot is the target, so narrow bars stay easy to hit). The readout
  * above the plot names the bar on two fixed lines. Bars grow from the baseline the first
@@ -244,14 +244,14 @@ export function BarChart({
                           className="absolute inset-0 rounded-[inherit] bg-white/[0.035] ring-1 ring-white/[0.06] ring-inset"
                           style={{ backgroundImage: hatch }}
                         />
-                        <span className={cn("absolute inset-0 rounded-[inherit] bg-acid transition-opacity duration-150", on ? "opacity-100" : "opacity-0")} />
+                        <span className={cn("absolute inset-0 rounded-[inherit] bg-purple transition-opacity duration-150", on ? "opacity-100" : "opacity-0")} />
                         {d.value > 0 ? (
-                          <span className={cn("absolute top-[5px] left-1/2 h-[2px] w-[46%] -translate-x-1/2 rounded-full transition-colors duration-150", on ? "bg-obsidian/45" : "bg-white/45")} />
+                          <span className={cn("absolute top-[5px] left-1/2 h-[2px] w-[46%] -translate-x-1/2 rounded-full transition-colors duration-150", on ? "bg-white/60" : "bg-white/45")} />
                         ) : (
                           <span className="absolute inset-0 rounded-full bg-white/20" />
                         )}
                         {inside ? (
-                          <motion.span className="font-metric absolute inset-x-0 bottom-2 text-center text-[13px] text-obsidian" style={{ opacity: labelOpacity }}>
+                          <motion.span className="font-metric absolute inset-x-0 bottom-2 text-center text-[13px] text-ink" style={{ opacity: labelOpacity }}>
                             {format(d.value)}
                           </motion.span>
                         ) : null}

@@ -97,7 +97,7 @@ function AppliedDropQuickAdd({ drop, addBlocked, ...props }: Omit<Props, "addBlo
 /*
  * The capsule. At rest it is the 40px "+" circle; on hover (a mouse), keyboard focus, an open
  * picker or just after a tap it widens to the left into a capsule with the bag icon and its
- * words ("Add to bag", "Choose size", "Added", or why adding is closed). The circle's 40px slot
+ * words ("Add to cart", "Choose size", "Added", or why adding is closed). The circle's 40px slot
  * never changes size, so the card never reflows: the button is absolutely placed in it and
  * grows over the photograph. The button's box takes its new width at once (it has no paint of
  * its own); the visible pill is a layer inside it that Motion carries to that width as a
@@ -123,7 +123,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   const [open, setOpen] = useState(false)
   /** Set briefly after a tap on a closed capsule, so a touch shows the reason as it explains. */
   const [explainAt, setExplainAt] = useState(0)
-  const [result, setResult] = useState<"added" | "in-bag">("added")
+  const [result, setResult] = useState<"added" | "in-cart">("added")
   /** A mouse over the capsule (touch never hovers: a tap expands it as it acts). */
   const [hovered, setHovered] = useState(false)
   /** Keyboard focus (focus-visible), so a click's focus doesn't hold the capsule open. */
@@ -149,12 +149,12 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   const sizeVariants = useMemo(() => product.variants.filter((v) => !colour || v.options.Colour === colour), [product.variants, colour])
 
   // A local add completes at once; the check shows for a moment and repeat presses meanwhile
-  // are ignored, as on the product page. The header's bag bubble (BagPop) confirms it.
+  // are ignored, as on the product page. The "Added to cart" bubble (BagPop) confirms it.
   const adding = useAsyncAction(
     (variantId: string) => {
       const before = useCart.getState().lines.find((l) => l.variantId === variantId)?.quantity ?? 0
       add(product.id, variantId, 1)
-      return before >= MAX_QTY_PER_LINE ? ("in-bag" as const) : ("added" as const)
+      return before >= MAX_QTY_PER_LINE ? ("in-cart" as const) : ("added" as const)
     },
     { successFlashMs: 1500, onSuccess: setResult },
   )
@@ -169,7 +169,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   // From the tap until the flash ends the capsule belongs to the add: it keeps the add's look
   // (an add that just reached a drop's limit still confirms in acid) and ignores repeat presses.
   const busy = adding.pending || added
-  const readyLabel = closed ? closed.label : single ? "Add to bag" : `Choose ${noun}`
+  const readyLabel = closed ? closed.label : single ? "Add to cart" : `Choose ${noun}`
 
   function commit(variantId: string) {
     setOpen(false)
@@ -177,15 +177,15 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
     void adding.run(variantId)
   }
 
-  const label = added ? (result === "in-bag" ? "In your bag" : "Added") : adding.pending ? heldLabel : readyLabel
+  const label = added ? (result === "in-cart" ? "In your cart" : "Added") : adding.pending ? heldLabel : readyLabel
   // Closed looks (grey glass, not-allowed) only once any add on it has finished confirming.
   const closedLook = closed !== undefined && !busy
   const ariaLabel = soldOut
     ? `${product.name} is sold out`
     : closed
-      ? `Add ${product.name} to bag, ${closedWords(closed)}`
+      ? `Add ${product.name} to cart, ${closedWords(closed)}`
       : single
-        ? `Add ${product.name} to bag`
+        ? `Add ${product.name} to cart`
         : `Choose a ${noun} for ${product.name}`
   const pickerOpen = open && pickable
   const expanded = hovered || focusRing || pickerOpen || busy || explainAt > 0
@@ -273,8 +273,8 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
         <motion.span layout="position" transition={morph} className="absolute inset-y-0 right-0 grid w-[38px] place-items-center">
           {added ? (
             <motion.span key={result} className="col-start-1 row-start-1" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={spring.snappy}>
-              {/* Nothing went in when the bag already held the most: the bag, not a check. */}
-              {result === "in-bag" ? <ShoppingBagOpenIcon weight="fill" className="size-[18px]" /> : <CheckIcon weight="bold" className="size-[18px]" />}
+              {/* Nothing went in when the cart already held the most: the cart, not a check. */}
+              {result === "in-cart" ? <ShoppingBagOpenIcon weight="fill" className="size-[18px]" /> : <CheckIcon weight="bold" className="size-[18px]" />}
             </motion.span>
           ) : (
             <>
@@ -333,7 +333,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
                   key={v.id}
                   type="button"
                   disabled={out}
-                  aria-label={out ? `Size ${v.options.Size}, sold out` : `Add size ${v.options.Size} to bag`}
+                  aria-label={out ? `Size ${v.options.Size}, sold out` : `Add size ${v.options.Size} to cart`}
                   onClick={() => commit(v.id)}
                   className={cn(
                     "h-10 rounded-sm border border-line text-xs tabular transition-colors hover:border-violet hover:bg-purple/15 sm:h-9",
@@ -352,7 +352,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
             onClick={() => commit(sizeVariants[0].id)}
             className="mt-3 h-10 w-full rounded-sm bg-acid text-sm font-medium text-obsidian transition-[background-color,transform] duration-150 hover:bg-acid/85 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:h-9"
           >
-            {sizeVariants[0] && availableStock(sizeVariants[0]) === 0 ? `${colour} is sold out` : `Add ${colour} to bag`}
+            {sizeVariants[0] && availableStock(sizeVariants[0]) === 0 ? `${colour} is sold out` : `Add ${colour} to cart`}
           </button>
         )}
       </PopoverContent>

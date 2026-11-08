@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import {
   PulseIcon,
@@ -20,6 +20,17 @@ import {
   WalletIcon,
   HeartbeatIcon,
   UserSwitchIcon,
+  ChatsCircleIcon,
+  CircleNotchIcon,
+  ImagesSquareIcon,
+  RankingIcon,
+  TruckIcon,
+  HandPalmIcon,
+  MapPinAreaIcon,
+  PlugsConnectedIcon,
+  ShieldWarningIcon,
+  CalendarXIcon,
+  ProhibitIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
@@ -28,7 +39,12 @@ import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/co
 import { buildOrderRows, type OrderRow } from "@/components/admin/finance/derive"
 import { moderationReasonMeta, moderationStatusMeta } from "@/components/admin/marketplace/meta"
 import { healthServices, type BrandApplication, type Payout, type PlatformUser } from "@/lib/data/admin"
-import { adminRoleLabels } from "@/lib/permissions"
+import { CommandItem } from "@/components/ui/command"
+import { getQueueCounts, listChartFlags, listContent, listDelivery, listMessages } from "@/lib/api/admin"
+import type { QueueCountsDto } from "@/lib/api/contracts/admin"
+import { useApi } from "@/lib/api/use-api"
+import { adminRoleLabels, canAdmin, type AdminPermission } from "@/lib/permissions"
+import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { categories } from "@/lib/data/catalog"
 import { formatMoney } from "@/lib/money"
@@ -45,10 +61,11 @@ function SystemStatus() {
       href="/admin/health"
       className={cn(
         "hidden h-10 items-center gap-2 rounded-full border px-3.5 text-[12px] transition-colors duration-150 md:inline-flex",
-        degraded ? "border-acid/40 text-acid hover:bg-acid/5" : "border-white/[0.08] bg-white/[0.025] text-ink-2 hover:text-ink",
+        // Degraded reads as attention in ink (StatusBadge's attention tone): acid is kept for the one primary action.
+        degraded ? "border-ink/70 text-ink hover:bg-white/[0.05]" : "border-white/[0.08] bg-white/[0.025] text-ink-2 hover:text-ink",
       )}
     >
-      <span aria-hidden className={cn("inline-flex size-2 rounded-full", degraded ? "bg-acid" : "bg-violet")} />
+      <span aria-hidden className={cn("inline-flex size-2 rounded-full", degraded ? "bg-ink ring-2 ring-ink/25" : "bg-violet")} />
       {degraded ? `${degraded} ${degraded === 1 ? "service" : "services"} degraded` : "All systems operational"}
     </Link>
   )
@@ -116,7 +133,7 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
         </PaletteGroup>
       ) : null}
       {m.length ? (
-        <PaletteGroup heading="Moderation">
+        <PaletteGroup heading="Listings">
           {m.map((x) => (
             <PaletteItem key={x.id} value={`case ${x.id}`} icon={FlagIcon} title={x.title} detail={`${moderationReasonMeta[x.reason].label}, ${x.brandName}`} meta={moderationStatusMeta[x.status].label} onSelect={() => go(`/admin/products?case=${encodeURIComponent(x.id)}`)} />
           ))}
@@ -140,10 +157,110 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
   )
 }
 
+/** The query once it has stopped changing for `ms` (the palette's server records wait for it). */
+function useDebounced(value: string, ms: number) {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(value), ms)
+    return () => window.clearTimeout(t)
+  }, [value, ms])
+  return settled
+}
+
+/**
+ * The palette's server records (§7.6): message reports and held messages (reason, parties and
+ * status only, never a message body), reported posts and places, chart flags and delivery issues.
+ * Only the queues the admin's role may view are asked for; each fetch waits 200ms after typing
+ * stops, with a loading row meanwhile so "No matches" never flashes first.
+ */
+function AdminServerResults({ query, go }: { query: string; go: (href: string) => void }) {
+  const admin = useServerSession((s) => s.admin)
+  const settled = useDebounced(query, 200)
+  const q = settled.length >= 2 ? settled : ""
+  const can = (p: AdminPermission) => !!admin && canAdmin(admin.role, p)
+  const on = !!admin && !!q
+  const reported = useApi(on && can("messages.view_reports") ? "/api/admin/messages?tab=reported" : null, () => listMessages("reported"), { revalidateOnFocus: false })
+  const held = useApi(on && can("messages.view_reports") ? "/api/admin/messages?tab=held" : null, () => listMessages("held"), { revalidateOnFocus: false })
+  const posts = useApi(on && can("content.moderate") ? "/api/admin/content?tab=posts" : null, () => listContent("posts"), { revalidateOnFocus: false })
+  const places = useApi(on && can("places.moderate") ? "/api/admin/content?tab=places" : null, () => listContent("places"), { revalidateOnFocus: false })
+  const flags = useApi(on && can("charts.review") ? "/api/admin/charts/flags?status=open" : null, () => listChartFlags("open"), { revalidateOnFocus: false })
+  const complaints = useApi(on && can("shipping.view") ? "/api/admin/delivery?tab=complaints" : null, () => listDelivery("complaints"), { revalidateOnFocus: false })
+  if (!admin || query.length < 2) return null
+  const all = [reported, held, posts, places, flags, complaints]
+  const waiting = query !== settled || all.some((x) => x.isLoading && !x.data)
+
+  const msgs = topMatches([...(reported.data?.items ?? []), ...(held.data?.items ?? [])], q, (x) => x.reasonLabel, (x) => [x.brand.name, x.customer.name, x.reporter?.name, x.status, x.kind === "held" ? "held" : "report"])
+  const postRows = posts.data?.tab === "posts" ? posts.data.posts : []
+  const placeRows = places.data?.tab === "places" ? places.data.places : []
+  const content = topMatches(postRows, q, (x) => x.brand.name, (x) => [x.source, x.visibility, "post"])
+  const placeHits = topMatches(placeRows, q, (x) => x.name, (x) => [x.brand.name, x.kind, x.neighbourhood, x.city, "place"])
+  const flagHits = topMatches(flags.data?.items ?? [], q, (x) => x.brand.name, (x) => [x.detectorLabel, x.severity, "flag"])
+  const issues = topMatches(complaints.data?.items ?? [], q, (x) => x.reference, (x) => [x.brand.name, x.customer.name, x.complaintKind, x.status, "complaint"])
+  return (
+    <>
+      {msgs.length ? (
+        <PaletteGroup heading="Message reports">
+          {msgs.map((x) => (
+            <PaletteItem key={`${x.kind}-${x.id}`} value={`message ${x.kind} ${x.id}`} icon={x.kind === "held" ? HandPalmIcon : ChatsCircleIcon} title={x.kind === "held" ? `Held: ${x.reasonLabel}` : x.reasonLabel} detail={`${x.customer.name} and ${x.brand.name}`} meta={x.status.replace(/_/g, " ")} onSelect={() => go(`/admin/messages?tab=${x.kind === "held" ? "held" : "reported"}&case=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {content.length || placeHits.length ? (
+        <PaletteGroup heading="Content and places">
+          {content.map((x) => (
+            <PaletteItem key={x.id} value={`post ${x.id}`} icon={ImagesSquareIcon} title={`Post by ${x.brand.name}`} detail={`${x.source}, ${x.visibility}`} onSelect={() => go(`/admin/content?tab=posts&case=${encodeURIComponent(x.id)}`)} />
+          ))}
+          {placeHits.map((x) => (
+            <PaletteItem key={x.id} value={`place ${x.id}`} icon={MapPinAreaIcon} title={x.name} detail={`${x.brand.name}, ${x.neighbourhood ? `${x.neighbourhood}, ` : ""}${x.city}`} onSelect={() => go(`/admin/content?tab=places&case=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {flagHits.length ? (
+        <PaletteGroup heading="Chart flags">
+          {flagHits.map((x) => (
+            <PaletteItem key={x.id} value={`flag ${x.id}`} icon={ShieldWarningIcon} title={x.brand.name} detail={`${x.detectorLabel}, ${x.severity} severity`} meta={x.status} onSelect={() => go(`/admin/charts?tab=flags&flag=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {issues.length ? (
+        <PaletteGroup heading="Delivery issues">
+          {issues.map((x) => (
+            <PaletteItem key={x.id} value={`delivery ${x.id}`} icon={TruckIcon} title={`#${x.reference}`} detail={`${x.customer.name}, ${x.brand.name}`} meta={x.status.replace(/_/g, " ")} onSelect={() => go(`/admin/delivery?tab=complaints&case=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {waiting ? (
+        <CommandItem disabled value="loading" className="gap-3 rounded-xl px-2.5 py-2 text-[13px] text-ink-3 data-[disabled=true]:opacity-100">
+          <CircleNotchIcon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+          Searching the trust and safety queues…
+        </CommandItem>
+      ) : null}
+    </>
+  )
+}
+
+function AdminAllResults({ query, go }: { query: string; go: (href: string) => void }) {
+  return (
+    <>
+      <AdminResults query={query} go={go} />
+      <AdminServerResults query={query} go={go} />
+    </>
+  )
+}
+
 const search: ShellSearch = {
   placeholder: "Search brands, users, cases, orders, payouts",
-  destinations: [{ label: "Notifications", href: "/admin/notifications", icon: BellIcon }],
-  Results: AdminResults,
+  destinations: [
+    { label: "Held messages", href: "/admin/messages?tab=held", icon: HandPalmIcon, hint: "Trust & safety" },
+    { label: "Places to review", href: "/admin/content?tab=places", icon: MapPinAreaIcon, hint: "Trust & safety" },
+    { label: "Social integrations", href: "/admin/content?tab=integrations", icon: PlugsConnectedIcon, hint: "Trust & safety" },
+    { label: "Chart flags", href: "/admin/charts?tab=flags", icon: ShieldWarningIcon, hint: "Trust & safety" },
+    { label: "Delivery complaints", href: "/admin/delivery?tab=complaints", icon: TruckIcon, hint: "Marketplace" },
+    { label: "Holidays", href: "/admin/delivery?tab=holidays", icon: CalendarXIcon, hint: "Marketplace" },
+    { label: "Abuse", href: "/admin/users?tab=abuse", icon: ProhibitIcon, hint: "Marketplace" },
+    { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
+  ],
+  Results: AdminAllResults,
 }
 
 function useAdminReady() {
@@ -168,17 +285,46 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const inReview = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   // Counts appear once the store has loaded from this browser, so they never flash a stale figure.
   const n = (v: number) => (ready && v > 0 ? v : undefined)
-  const decisions = pendingBrands + openModeration + refunds + payoutsToApprove + inReview
 
+  // The demo admin session (§2.3): the account row names who is signed in on the server.
+  const session = useServerSession()
+  const admin = session.admin
+  // The server queues (§7.6): GET /api/admin/queues/counts, refetched whenever the admin stream
+  // says the counts changed (moderation.counts). Each count is only present when the role may see
+  // that queue. Unknown or zero shows no badge.
+  const counts = useApi<QueueCountsDto>(admin ? `/api/admin/queues/counts#${admin.id}` : null, getQueueCounts)
+  useRealtimeEvent("moderation.counts", () => void counts.revalidate())
+  const c = admin ? counts.data : undefined
+  const q = (v: number | undefined) => (v && v > 0 ? v : undefined)
+  // A queue's item shows for an admin whose role holds its view permission (§8.1). Signed out, it
+  // shows (the page asks to sign in); while the session loads, it waits, so it never flashes in or out.
+  const sees = (...p: AdminPermission[]) => session.status === "ready" && (!admin || p.some((x) => canAdmin(admin.role, x)))
+  const serverDecisions = (c?.messages ?? 0) + (c?.content ?? 0) + (c?.places ?? 0) + (c?.charts ?? 0) + (c?.delivery ?? 0)
+  const decisions = pendingBrands + openModeration + refunds + payoutsToApprove + inReview + serverDecisions
+
+  type Item = ShellNavGroup["items"][number]
+  /** The item, or nothing when the admin can't view that queue. */
+  const when = (show: boolean, item: Item): Item[] => (show ? [item] : [])
+  // §7.6: 13 items. "Listings" is the old Moderation page (/admin/products, unchanged URL), renamed
+  // because the Trust & safety group now holds four kinds of moderation (§7.8 decision 6).
   const groups: ShellNavGroup[] = [
     { items: [{ href: "/admin", label: "Overview", icon: SquaresFourIcon }] },
     {
       label: "Marketplace",
       items: [
         { href: "/admin/brands", label: "Brands", icon: SealCheckIcon, badge: n(pendingBrands), badgeLabel: "to review", tone: "attention" },
-        { href: "/admin/users", label: "Users", icon: UsersIcon },
-        { href: "/admin/products", label: "Moderation", icon: FlagIcon, badge: n(openModeration), badgeLabel: "open or escalated", tone: "attention" },
+        { href: "/admin/users", label: "Users", icon: UsersIcon, badge: q(c?.abuse), badgeLabel: "abuse alerts", tone: "attention" },
         { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon },
+        ...when(sees("shipping.view"), { href: "/admin/delivery", label: "Delivery", icon: TruckIcon, badge: q(c?.delivery), badgeLabel: "open issues", tone: "attention" }),
+      ],
+    },
+    {
+      label: "Trust & safety",
+      items: [
+        { href: "/admin/products", label: "Listings", icon: FlagIcon, badge: n(openModeration), badgeLabel: "open or escalated", tone: "attention" },
+        ...when(sees("messages.view_reports"), { href: "/admin/messages", label: "Messages", icon: ChatsCircleIcon, badge: q(c?.messages), badgeLabel: "reports and held", tone: "attention" }),
+        ...when(sees("content.moderate", "places.moderate", "social.manage"), { href: "/admin/content", label: "Content", icon: ImagesSquareIcon, badge: q((c?.content ?? 0) + (c?.places ?? 0)), badgeLabel: "to review", tone: "attention" }),
+        ...when(sees("charts.review", "sponsored.view"), { href: "/admin/charts", label: "Charts", icon: RankingIcon, badge: q(c?.charts), badgeLabel: "flags and freezes", tone: "attention" }),
       ],
     },
     {
@@ -197,9 +343,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     },
   ]
 
-  // The demo admin session (§2.3): the account row names who is signed in on the server.
-  const session = useServerSession()
-  const admin = session.admin
   const demoOn = !!session.demoAuth?.admin
   // The existing admin pages keep their browser data and act as Kemi Ajayi (the Owner, adm_1);
   // say so whenever the server session is someone else, or nobody (§1.11, §8.3).

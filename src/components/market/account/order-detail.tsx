@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, InfoIcon as Info, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { agoText } from "@/components/market/ago-text"
+import { MessageAboutOrderLink } from "@/components/inbox/entry"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -197,8 +198,8 @@ export function OrderDetail({ id }: { id: string }) {
       </header>
       <YouNav className="mt-8" />
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
-        <div className="grid content-start gap-6">
+      <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
+        <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-6">
           <Panel title="Progress">
             {status === "cancelled" ? (
               <StatusBadge tone="muted">Cancelled before it shipped</StatusBadge>
@@ -264,7 +265,7 @@ export function OrderDetail({ id }: { id: string }) {
           <div className="hidden lg:block">{timelinePanel}</div>
         </div>
 
-        <aside className="grid content-start gap-6">
+        <aside className="grid grid-cols-[minmax(0,1fr)] content-start gap-6">
           <Panel title="Summary">
             <dl className="grid gap-2 text-sm">
               <div className="flex justify-between gap-4 text-ink-2">
@@ -309,6 +310,12 @@ export function OrderDetail({ id }: { id: string }) {
 
           <Panel title="Delivery">
             <OrderDelivery order={order} brand={brand} />
+            {/* Questions go to the brand's inbox with this order attached; anything that needs a
+                record Yard can act on stays in the order's own workflows (§6.2, §7.4). */}
+            <div className="mt-4 grid gap-1">
+              <MessageAboutOrderLink orderId={order.id} brand={brand} className="-my-1 justify-self-start" />
+              <p className="text-xs leading-relaxed text-ink-3">For returns, refunds or a missing parcel, use the options above — they keep a record Yard can act on.</p>
+            </div>
             <dl className="mt-5 grid gap-4 border-t border-line-soft pt-5 text-sm">
               <div>
                 <dt className="text-xs text-ink-3">Ship to</dt>

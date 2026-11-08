@@ -129,7 +129,7 @@ function NavItem({
             aria-hidden
             className={cn(
               "absolute -top-0.5 -right-0.5 size-[7px] rounded-full opacity-0 ring-2 ring-[#0e0e0e] transition-opacity duration-150 sidebar-collapsed:opacity-100",
-              attention ? "bg-acid" : "bg-violet",
+              attention ? "bg-ink" : "bg-violet",
             )}
           />
         ) : null}
@@ -139,7 +139,7 @@ function NavItem({
         <span
           className={cn(
             "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border px-1.5 text-[11px] leading-none font-medium tabular transition-opacity duration-150 sidebar-collapsed:opacity-0",
-            attention ? "border-acid/40 text-acid" : "border-white/15 text-ink-2",
+            attention ? "border-white/35 text-ink" : "border-white/15 text-ink-2",
           )}
         >
           {item.badge}

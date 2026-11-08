@@ -154,8 +154,8 @@ export function ReasonDialog({
             </dl>
           ) : null}
           {warning ? (
-            <p className="flex items-start gap-2 rounded-md border border-acid/25 bg-acid/5 px-3 py-2.5 text-[12px] leading-snug text-ink">
-              <WarningIcon aria-hidden className="mt-px size-3.5 shrink-0 text-acid" />
+            <p className="flex items-start gap-2 rounded-md border border-ink/40 bg-white/[0.04] px-3 py-2.5 text-[12px] leading-snug text-ink">
+              <WarningIcon aria-hidden className="mt-px size-3.5 shrink-0 text-ink" />
               <span>{warning}</span>
             </p>
           ) : null}

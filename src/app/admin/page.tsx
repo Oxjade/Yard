@@ -154,13 +154,13 @@ function CommandStrip() {
               className={cn(
                 "group flex h-12 w-full items-center gap-2.5 rounded-xl border pr-2 pl-3 text-[12.5px] transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet @5xl:col-span-1",
                 i < 3 ? "@2xl:col-span-2" : i === 3 ? "@2xl:col-span-3" : "@lg:col-span-2 @2xl:col-span-3",
-                hydrated && c.count ? "border-[var(--admin-hairline-strong)] bg-white/[0.03] text-ink hover:border-acid/50" : "border-[var(--admin-hairline)] text-ink-2 hover:text-ink",
+                hydrated && c.count ? "border-[var(--admin-hairline-strong)] bg-white/[0.03] text-ink hover:border-white/30" : "border-[var(--admin-hairline)] text-ink-2 hover:text-ink",
               )}
             >
               <c.icon className="size-4 shrink-0 text-ink-3 transition-colors group-hover:text-ink" />
               <span className="min-w-0 truncate">{c.label}</span>
               {hydrated ? (
-                <span className={cn("ml-auto inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full border px-1.5 text-[12px] font-semibold tabular", c.count ? "border-acid/45 text-acid" : "border-white/10 text-ink-3")}>{c.count}</span>
+                <span className={cn("ml-auto inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full border px-1.5 text-[12px] font-semibold tabular", c.count ? "border-ink/60 text-ink" : "border-white/10 text-ink-3")}>{c.count}</span>
               ) : (
                 <span aria-hidden className="skeleton ml-auto inline-block h-6 w-6 shrink-0 rounded-full" />
               )}
@@ -243,16 +243,16 @@ function DecisionQueue({ className }: { className?: string }) {
     next?.focus()
   }
 
-  const rows: { id: string; title: string; meta: string; amount?: string; badge?: { text: string; tone: "acid" | "danger" | "muted" | "purple" }; action: React.ReactNode }[] =
+  const rows: { id: string; title: string; meta: string; amount?: string; badge?: { text: string; tone: "attention" | "danger" | "muted" | "purple" }; action: React.ReactNode }[] =
     tab === "brands"
-      ? lists.brands.map((a) => ({ id: a.id, title: a.brandName, meta: `${a.country}, ${a.products} products, KYC ${a.kyc.replace("_", " ")}`, badge: { text: `${a.risk} risk`, tone: a.risk === "high" ? "danger" : a.risk === "medium" ? "acid" : "muted" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/brands")}>Review</Button> }))
+      ? lists.brands.map((a) => ({ id: a.id, title: a.brandName, meta: `${a.country}, ${a.products} products, KYC ${a.kyc.replace("_", " ")}`, badge: { text: `${a.risk} risk`, tone: a.risk === "high" ? "danger" : a.risk === "medium" ? "attention" : "muted" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/brands")}>Review</Button> }))
       : tab === "payouts"
         ? lists.payouts.map((p) => ({
             id: p.id,
             title: p.brandName,
             meta: p.status === "held" ? `Held: ${p.holdReason}` : p.orders ? `${p.method}, ${ordersText(p.orders)}` : p.method,
             amount: usdFull(p.amountUsd),
-            badge: { text: p.status.replace("_", " "), tone: p.status === "held" ? "danger" : p.status === "awaiting_approval" ? "acid" : "purple" },
+            badge: { text: p.status.replace("_", " "), tone: p.status === "held" ? "danger" : p.status === "awaiting_approval" ? "attention" : "purple" },
             action:
               p.status === "awaiting_approval" ? (
                 <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="primary" onClick={(e) => ask(e, { kind: "payout-approve", id: p.id, title: `Approve the payout to ${p.brandName}?`, description: `${usdFull(p.amountUsd)}${p.currency !== "USD" ? ` (${formatMoney(p.amount, p.currency)})` : ""} via ${p.method}. Approval is recorded with your name. No payments provider is connected in this build, so the transfer isn't sent; the payout shows Approval recorded and is marked completed only when a provider confirms it.`, label: "Approve payout" })}>Approve</Button>
@@ -269,12 +269,13 @@ function DecisionQueue({ className }: { className?: string }) {
               action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={(e) => ask(e, { kind: "refund-approve", id: r.id, title: `Approve the ${usdFull(r.amountUsd)} refund for #${r.reference}?`, description: `${r.customer} asked for it: ${r.reason.toLowerCase()}. Approval is recorded with idempotency key ${r.idempotencyKey}, so a retry can never refund twice. No payments provider is connected in this build, so nothing is sent and no money moves yet; the brand's share and the 5% commission reverse when the provider confirms.${approvalAudience(r)} To decline with a reason, use Finance.`, label: "Approve refund" })}>Approve</Button>,
             }))
           : tab === "campaigns"
-            ? lists.campaigns.map((c) => ({ id: c.id, title: c.name, meta: `${campaignTypes[c.type].name}, ${c.days} days`, amount: usdFull(c.budget), badge: { text: "in review", tone: "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/advertising")}>Review</Button> }))
+            ? lists.campaigns.map((c) => ({ id: c.id, title: c.name, meta: `${campaignTypes[c.type].name}, ${c.days} days`, amount: usdFull(c.budget), badge: { text: "in review", tone: "attention" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/advertising")}>Review</Button> }))
             : tab === "moderation"
-              ? lists.moderation.map((m) => ({ id: m.id, title: m.title, meta: `${m.brandName}: ${m.reportedBy}`, badge: { text: m.reason.replace("_", " "), tone: m.reason === "counterfeit" || m.reason === "ip_complaint" ? "danger" : "acid" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/products")}>Open</Button> }))
+              ? lists.moderation.map((m) => ({ id: m.id, title: m.title, meta: `${m.brandName}: ${m.reportedBy}`, badge: { text: m.reason.replace("_", " "), tone: m.reason === "counterfeit" || m.reason === "ip_complaint" ? "danger" : "attention" }, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push("/admin/products")}>Open</Button> }))
               : (server.rows ?? []).map((r) => ({ id: r.id, title: r.title, meta: r.meta, badge: r.badge, action: <Button size="xs" className="h-10 px-3.5 sm:h-7 sm:px-2.5" variant="secondary" onClick={() => router.push(r.href)}>Open</Button> }))
 
-  const badgeTone = { acid: "border-acid/45 text-acid", danger: "border-danger/45 text-danger", muted: "border-white/10 text-ink-3", purple: "border-purple bg-purple/20 text-ink" }
+  // Needs action: a bright ink edge, never acid (acid is the page's one primary action).
+  const badgeTone = { attention: "border-ink/60 text-ink", danger: "border-danger/45 text-danger", muted: "border-white/10 text-ink-3", purple: "border-purple bg-purple/20 text-ink" }
 
   // The same store actions and words as Finance: an approval is recorded, never sent or paid here.
   function run(reason: string) {
@@ -311,10 +312,13 @@ function DecisionQueue({ className }: { className?: string }) {
       className={cn("flex scroll-mt-24 flex-col rounded-[20px]", className)}
       bodyClassName="flex flex-1 flex-col px-0 pb-0 md:px-0 md:pb-0"
     >
-      <div ref={tabsRef} className="rail shrink-0 overflow-x-auto px-4 pb-3 md:px-5">
+      {/* Ten queues once the server tabs are in: the rail wraps onto a second row rather than hiding
+          tabs off the edge with no cue, so every queue and its count is always in view. */}
+      <div ref={tabsRef} className="shrink-0 px-4 pb-3 md:px-5">
         <Segmented
           label="Queue"
           size="sm"
+          className="flex flex-wrap rounded-[20px]"
           value={tab}
           onChange={setTab}
           loading={!hydrated}
@@ -573,7 +577,8 @@ function LatencyBars() {
           <li key={s.name} className="rounded-lg px-2 py-2 transition-colors hover:bg-white/[0.02]">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2 text-[12.5px] text-ink">
-                <span className={cn("inline-flex size-2 rounded-full", bad ? "bg-acid" : "bg-violet")} aria-hidden />
+                {/* Degraded: the attention tone (a ringed ink dot), never acid. */}
+                <span className={cn("inline-flex size-2 rounded-full", bad ? "bg-ink ring-2 ring-ink/25" : "bg-violet")} aria-hidden />
                 {s.name}
                 {bad ? <span className="sr-only">(degraded)</span> : null}
               </span>
@@ -582,7 +587,7 @@ function LatencyBars() {
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
               <div
                 data-grow
-                className={cn("h-full origin-left rounded-full", bad ? "bg-acid" : "bg-purple")}
+                className={cn("h-full origin-left rounded-full", bad ? "bg-ink" : "bg-purple")}
                 style={{ transform: `scaleX(${Math.max(0.04, ratio)})`, transition: `transform ${chartIn.duration * 1000}ms ${chartEasing} ${delay}ms` }}
               />
             </div>
@@ -794,8 +799,8 @@ export default function AdminOverviewPage() {
         </Panel>
         <Panel title="Payments" description="Success is counted only when the provider's webhook is verified." className="rounded-[20px] @5xl:col-span-5" action={<ArrowLink href="/admin/finance" label="Open payments in finance" />}>
           <div className="flex items-center gap-5">
-            <RingGauge value={o.paymentSuccess} threshold={0.97} label="Payment success" sublabel="success" />
-            <p className="min-w-0 flex-1 text-[12px] text-ink-2">Target 97% or better. Under it, the ring turns yellow and on-call is paged.</p>
+            <RingGauge value={o.paymentSuccess} threshold={0.97} belowTone="ink" label="Payment success" sublabel="success" />
+            <p className="min-w-0 flex-1 text-[12px] text-ink-2">Target 97% or better, marked by the tick. Under it, the ring turns white.</p>
           </div>
           <div className="mt-5 grid gap-2.5">
             {byProvider.map((p) => (
@@ -803,7 +808,15 @@ export default function AdminOverviewPage() {
                 <span className="text-[12.5px] text-ink capitalize">{p.p}</span>
                 <span className="flex items-center gap-3 text-[12px] tabular">
                   <span className="text-ink-3">{p.n} charges</span>
-                  <span className={cn(p.n && p.ok / p.n < 0.97 ? "text-acid" : "text-ink")}>{p.n ? formatPercent(p.ok / p.n, 1) : "None"}</span>
+                  {/* Under the 97% target: the attention edge, never acid. */}
+                  {p.n && p.ok / p.n < 0.97 ? (
+                    <span className="rounded-[5px] border border-ink/70 px-1.5 text-ink">
+                      {formatPercent(p.ok / p.n, 1)}
+                      <span className="sr-only">, below target</span>
+                    </span>
+                  ) : (
+                    <span className="text-ink">{p.n ? formatPercent(p.ok / p.n, 1) : "None"}</span>
+                  )}
                 </span>
               </div>
             ))}

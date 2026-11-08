@@ -170,7 +170,7 @@ export function BrandsView() {
             loading={!ready}
             idBase={qid}
             panelId={`${qid}-panel`}
-            // Only the queue carries a count: the Segmented shows any count above zero in acid, which is for work waiting.
+            // Only the queue carries a count: the Segmented gives any count above zero the attention edge, which is for work waiting.
             options={TABS.map((t) => ({ value: t.value, label: t.label, count: t.value === "pending_review" ? counts[t.value] : undefined }))}
           />
         </PanelRail>

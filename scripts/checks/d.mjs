@@ -4,6 +4,8 @@ import path from "node:path"
 
 export default async function d({ base, cookie }) {
   const out = []
+  // This check's start (second precision, a little early): its cleanup sweeps u_t_d1 checkouts from here on only.
+  const started = new Date(Date.now() - 2000).toISOString()
   const add = (ok, name, detail) => out.push({ status: ok === null ? "SKIP" : ok ? "PASS" : "FAIL", name, detail })
   const headers = (extra = {}) => ({ Origin: base, "X-Yard-Client": "1", "Content-Type": "application/json", ...extra })
   const read = (p) => readFileSync(path.join(process.cwd(), p), "utf8")
@@ -58,7 +60,7 @@ export default async function d({ base, cookie }) {
 
   // Test-data hygiene (§9.0): remove this check's checkout (D's test shopper only, owner admin).
   if (cookie) {
-    const scope = { customers: ["u_t_d1"] }
+    const scope = { customers: ["u_t_d1"], since: started }
     const c = await fetch(`${base}/api/shipping/dev/cleanup`, { method: "POST", headers: headers({ cookie }), body: JSON.stringify(scope) })
     const left = c.ok ? await (await fetch(`${base}/api/shipping/dev/cleanup`, { method: "POST", headers: headers({ cookie }), body: JSON.stringify({ ...scope, dryRun: true }) })).json() : null
     add(c.ok && left && left.groups.length === 0, "cleanup leaves no u_t_d1 checkouts", c.ok ? `${(await c.json()).groups.length} removed` : `${c.status}`)

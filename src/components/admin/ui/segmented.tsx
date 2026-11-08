@@ -13,8 +13,9 @@ export const segmentedTabId = (idBase: string, value: string) => `${idBase}-tab-
  * tabs pattern: one tab stop, the arrow keys move the selection, Home and End jump to the
  * ends. Pass `idBase` and `panelId` to link each tab to the panel it controls.
  *
- * Counts: an "attention" count above zero is acid, for work waiting on a person (a queue,
- * flagged items). A "neutral" count is grey, for plain totals that need nothing (unread,
+ * Counts: an "attention" count above zero has a bright ink edge (StatusBadge's attention tone),
+ * for work waiting on a person (a queue, flagged items). Never acid: that is the page's one
+ * primary action. A "neutral" count is grey, for plain totals that need nothing (unread,
  * all records). Set the tone for the whole switch with `countTone`, or per option.
  */
 export type CountTone = "attention" | "neutral"
@@ -90,7 +91,7 @@ export function Segmented<T extends string>({
               <span
                 className={cn(
                   "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] leading-none tabular",
-                  on ? "bg-black/25 text-ink" : o.count > 0 && (o.countTone ?? countTone) === "attention" ? "border border-acid/40 text-acid" : o.count > 0 ? "border border-white/10 text-ink-2" : "border border-white/10 text-ink-3",
+                  on ? "bg-black/25 text-ink" : o.count > 0 && (o.countTone ?? countTone) === "attention" ? "border border-ink/70 text-ink" : o.count > 0 ? "border border-white/10 text-ink-2" : "border border-white/10 text-ink-3",
                 )}
               >
                 {o.count}

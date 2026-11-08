@@ -12,8 +12,22 @@ A global, discovery-driven marketplace for independent brands. It has three expe
 > and delivery estimates (see "The v2 embedded server" below). The pages that existed before
 > v2 still run on the browser data layer described next.
 >
+> - **Navigation:** the desktop header links Discover, Brands, Charts, Around, Drops and
+>   Following, then Search, Inbox, notifications, Wishlist, Cart and your profile. Phones get a
+>   home bar: Home, Explore (search, opening on Charts, Around, Drops, Brands, Shop and
+>   Categories), the raised Around pin, Cart and Me. Shop and Categories live in Explore, the
+>   footer and Discover. The shopping bag is called the cart everywhere (the route is still `/bag`).
+> - **Studio** has Inbox, Social (Social connections and Content Studio), Locations and
+>   Shipping & fulfilment in its sidebar, with live badges, and an Overview card that ticks off
+>   the new features from server state. **Admin** has Delivery, Messages, Content and Charts
+>   queues with live counts; Moderation is now called Listings.
+> - **Still labelled, not connected:** no payment provider (receipts say "Not charged" and
+>   "Order received — awaiting payment confirmation. Nothing was charged."); Instagram and TikTok
+>   need app keys (a development sandbox stands in); Charts and Around carry sample activity and
+>   sample places; delivery dates are estimates.
+>
 > **Frontend phase.** Every screen runs on a typed local data layer
-> (`src/lib/data/*`) and browser stores (`src/lib/stores/*`), so flows really work — bag,
+> (`src/lib/data/*`) and browser stores (`src/lib/stores/*`), so flows really work — cart,
 > checkout, follows, Studio product editing, Admin decisions — but nothing persists beyond
 > your browser, and no payment provider is connected: orders placed at checkout stay
 > "pending payment" and nothing is charged. The backend phase swaps these for PostgreSQL

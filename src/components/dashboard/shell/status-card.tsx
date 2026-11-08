@@ -31,7 +31,8 @@ export function StatusCard({
   const Icon = status.icon
   const loading = status.value === null
   // Until the figure loads, the arrow stays neutral: its tone depends on data not yet read.
-  const arrowTone = loading ? "bg-white/[0.06] text-ink-2" : status.attention ? "bg-acid text-obsidian" : "bg-purple text-ink"
+  // Something waiting is attention in ink, like the nav badges; acid is kept for the one primary action.
+  const arrowTone = loading ? "bg-white/[0.06] text-ink-2" : status.attention ? "bg-ink text-obsidian" : "bg-purple text-ink"
 
   // The phone drawer: one row (icon, figure, arrow), so every section fits above it on a phone.
   if (compact) {
@@ -86,7 +87,7 @@ export function StatusCard({
       </span>
       <span className="relative hidden size-11 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025] text-ink-2 transition-colors duration-150 group-hover/status:border-white/[0.14] group-hover/status:text-ink sidebar-collapsed:inline-flex">
         <Icon aria-hidden className="size-5" />
-        {status.dot && !loading ? <span aria-hidden className={cn("absolute top-2 right-2 size-[7px] rounded-full ring-2 ring-[#0e0e0e]", status.attention ? "bg-acid" : "bg-violet")} /> : null}
+        {status.dot && !loading ? <span aria-hidden className={cn("absolute top-2 right-2 size-[7px] rounded-full ring-2 ring-[#0e0e0e]", status.attention ? "bg-ink" : "bg-violet")} /> : null}
         <span className="sr-only">{loading ? status.label : status.summary}</span>
       </span>
     </Link>

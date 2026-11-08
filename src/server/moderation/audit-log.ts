@@ -7,7 +7,7 @@ import { badRequest } from "../http/errors"
 import type { AuditListResult } from "@/lib/api/contracts/admin"
 import { adminRoleLabels, type AdminRole } from "@/lib/permissions"
 import { AUDIT_CSV_HEADER, actionLabel, auditCsvLine, csvCell } from "@/components/admin/platform/security/audit-words"
-import { audit, type DecisionCtx } from "./shared"
+import { audit, kitMeta, type DecisionCtx } from "./shared"
 
 /**
  * GET /api/admin/audit (§8.3). Brand-side writes (actor_kind brand) are left out of the main feed
@@ -26,22 +26,28 @@ export async function listAudit(q: { subjectType?: string; subjectId?: string; a
     cursor = { at: t, id }
   }
   const kinds = q.actorKind && q.actorKind !== "all" ? [q.actorKind] : subjects.length || q.actorKind === "all" ? null : ["admin", "system"]
+  const filter = and(
+    q.subjectType ? eq(auditLog.subjectType, q.subjectType) : undefined,
+    subjects.length ? inArray(auditLog.subjectId, subjects) : undefined,
+    kinds ? inArray(auditLog.actorKind, kinds) : undefined,
+  )
   const rows = await d
     .select()
     .from(auditLog)
-    .where(
-      and(
-        q.subjectType ? eq(auditLog.subjectType, q.subjectType) : undefined,
-        subjects.length ? inArray(auditLog.subjectId, subjects) : undefined,
-        kinds ? inArray(auditLog.actorKind, kinds) : undefined,
-        cursor ? or(lt(auditLog.at, cursor.at), and(eq(auditLog.at, cursor.at), lt(auditLog.id, cursor.id))) : undefined,
-      ),
-    )
+    .where(and(filter, cursor ? or(lt(auditLog.at, cursor.at), and(eq(auditLog.at, cursor.at), lt(auditLog.id, cursor.id))) : undefined))
     .orderBy(desc(auditLog.at), desc(auditLog.id))
     .limit(limit + 1)
   const page = rows.slice(0, limit)
   const last = page[page.length - 1]
-  return { items: page.map(toAuditDto), nextCursor: rows.length > limit && last ? `${last.at.toISOString()}|${last.id}` : null }
+  // The first page also says how many rows the filter matches in all (Security's "Audit entries" card).
+  const totals = cursor
+    ? undefined
+    : await d
+        .select({ entries: sql<number>`count(*)::int`, withApprover: sql<number>`count(${auditLog.approvedBy})::int` })
+        .from(auditLog)
+        .where(filter)
+        .then((r) => ({ entries: Number(r[0]?.entries ?? 0), withApprover: Number(r[0]?.withApprover ?? 0) }))
+  return { items: page.map(toAuditDto), nextCursor: rows.length > limit && last ? `${last.at.toISOString()}|${last.id}` : null, ...(totals ? { totals } : {}) }
 }
 
 export async function auditCount() {
@@ -101,7 +107,7 @@ export async function exportAudit(ctx: DecisionCtx, body: { id: string; ids?: st
     subjectType: "audit_log",
     subjectId: "audit_log",
     reason: body.reason ?? null,
-    meta: { count, scope, capped },
+    meta: { count, scope, capped, ...kitMeta(ctx) },
   })
   return { item: { csv, count, scope, capped }, audit: entry }
 }

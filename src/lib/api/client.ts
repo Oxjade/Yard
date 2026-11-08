@@ -25,6 +25,12 @@ export type ApiInit<T> = {
   signal?: AbortSignal
   schema?: z.ZodType<T>
   keepalive?: boolean
+  /**
+   * The fetch cache mode. Default "no-store": most reads are per-identity and must be fresh. Pass
+   * "default" only for a public GET whose route declares `cache: { public }`, so the browser honours
+   * its max-age instead of asking the server again on every page.
+   */
+  cache?: RequestCache
 }
 
 /** Every in-flight request, so resetApiCache() can abort them on an identity change. */
@@ -58,7 +64,7 @@ export async function api<T = unknown>(path: string, init: ApiInit<T> = {}): Pro
         body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
         signal: controller.signal,
         keepalive: init.keepalive,
-        cache: "no-store",
+        cache: init.cache ?? "no-store",
       })
     } catch (e) {
       if (controller.signal.aborted) throw e

@@ -45,6 +45,8 @@ export const templates = {
   "delivery.complaint_reply": { category: "delivery_update", build: (v) => ({ title: `${s(v.brand)} replied about your delivery`, body: "Open your order to read it." }) },
   "delivery.admin_issue": { category: "shipping_issue", build: (v) => ({ title: `Delivery issue: ${s(v.kind, "late order")}`, body: `Order ${s(v.reference)} with ${s(v.brand)}.` }) },
   "delivery.resolved": { category: "delivery_update", build: (v) => ({ title: `Your delivery issue on ${s(v.reference)} is resolved`, body: "Open your order for the details." }) },
+  // A parcel that came back to the brand (shipment event `returned`, D's caller).
+  "delivery.returned": { category: "delivery_update", build: (v) => ({ title: `${s(v.brand)} says your parcel came back to them`, body: "Open your order for what happens next." }) },
   // Social (S)
   "social.status": { category: "social_status", build: (v) => ({ title: `${s(v.provider, "Social")} needs attention`, body: s(v.detail, "Reconnect to keep your feed updating.") }) },
   // Content and places (M, A)

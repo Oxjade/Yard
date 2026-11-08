@@ -9,6 +9,7 @@ import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
 import type { AdminPermission, BrandPermission } from "@/lib/permissions"
 import { assertSameOrigin } from "./csrf"
 import { badRequest, errorBody, HttpError, NotImplemented, rateLimited } from "./errors"
+import { pgDataException } from "./pg-errors"
 import { clientIp, ipHash as hashIp } from "./request"
 
 /**
@@ -264,6 +265,16 @@ function errorResponse(e: unknown, requestId: string): Response {
   if (e instanceof NotImplemented) {
     log.once(`notimpl:${e.fn}`, "warn", `[yard] ${e.fn} called before its cluster implemented it (request ${requestId})`)
     return Response.json({ error: { code: "not_configured", message: "This part of Yard isn't switched on yet." } }, { status: 503 })
+  }
+  // A backstop for values Postgres refuses as a data exception (SQLSTATE class 22, pg-errors.ts): a
+  // NUL (22021, 22P05), a date that doesn't exist (22007, 22008), text where a number or uuid belongs
+  // (22P02), a number out of range (22003), text too long (22001). Contracts should already refuse
+  // these, but if one slips through it's the caller's input, so a 400, never a 500 that logs the
+  // statement. The warning (once per code) names the missing contract rule, in fixed words.
+  const data = pgDataException(e)
+  if (data) {
+    log.once(`pg-data:${data.code}`, "warn", `[yard] request ${requestId}: Postgres refused a value (${data.code} ${data.name}); a contract is missing ${data.text ? "safeText()/safeId()" : "a rule for this field"}`)
+    return Response.json({ error: { code: "validation", message: data.message } }, { status: 400 })
   }
   log.error(`[yard] request ${requestId} failed`, e)
   return Response.json({ error: { code: "internal", message: "Something went wrong on our side. Try again." } }, { status: 500 })

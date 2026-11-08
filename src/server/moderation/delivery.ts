@@ -1,12 +1,13 @@
 import "server-only"
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
-import { db } from "../db"
-import { deliveryComplaints, holidays, orderRefs } from "../db/schema"
-import { conflict, notFound } from "../http/errors"
+import { db, withTx } from "../db"
+import { abuseEvents, deliveryComplaints, holidays, orderRefs, shipmentEvents } from "../db/schema"
+import { conflict, forbidden, notFound } from "../http/errors"
 import { newId } from "../ids"
-import { notify } from "../notify"
-import { complaintKindLabels, type DeliveryIssueDto, type DeliveryListDto, type DeliveryTab, type HolidayDto } from "@/lib/api/contracts/admin"
-import { assertState, audit, brandMap, brandRefOf, iso, nameOf, publishCountsAfterCommit, userMap, type DecisionCtx } from "./shared"
+import { markFor, SCREEN_ACTION, screensFor } from "../shipping/screen"
+import { canAdmin, needsRole } from "@/lib/permissions"
+import { complaintKindLabels, type DeliveryIssueDto, type DeliveryListDto, type DeliveryTab, type HeldNoteViewResult, type HolidayDto } from "@/lib/api/contracts/admin"
+import { assertState, audit, brandMap, brandRefOf, iso, kitMeta, nameOf, publishCountsAfterCommit, userMap, notify, type DecisionCtx } from "./shared"
 
 /**
  * Admin › Delivery (§6.5, §8.1): late orders, complaints, carrier exceptions and the holiday
@@ -75,6 +76,12 @@ export async function lateOrderCounts() {
   return { late: Number(row.late ?? 0), unmeasured: Number(row.unmeasured ?? 0) }
 }
 
+/** For the queue counts: orders with a brand note held for review (a person must read it). */
+export async function heldNoteCount() {
+  const ids = await ordersWithHeldNotes()
+  return ids.length
+}
+
 /** For the queue counts: late orders that can be measured against a promise. */
 export async function lateOrderCount() {
   return (await lateOrderCounts()).late
@@ -82,13 +89,67 @@ export async function lateOrderCount() {
 
 type OrderRow = typeof orderRefs.$inferSelect
 type ComplaintRow = typeof deliveryComplaints.$inferSelect
+type BrandNote = DeliveryIssueDto["brandNotes"][number]
+
+/** What D's screen held: the shopper never saw it. The list never carries its text (opened through an audited POST). */
+const HELD_STATUS = "complaint_reply"
+
+/**
+ * The brand's notes on each order, newest first, with D's screen marks: its notes on shipment updates
+ * and its replies to complaints (status "complaint_reply"). A held note never reached the shopper
+ * (links or payment outside Yard, §5.2 scoring); a flagged one reached them under "Keep payments on
+ * Yard". A held note's text is NOT in list responses: it's opened through POST
+ * /api/admin/delivery/notes/{id}/view, audited as delivery_note.viewed (like held messages, §8.1).
+ */
+async function brandNotesFor(orderIds: string[]): Promise<Map<string, BrandNote[]>> {
+  const out = new Map<string, BrandNote[]>()
+  if (!orderIds.length) return out
+  const d = await db()
+  const ids = [...new Set(orderIds)]
+  const events = await d
+    .select({ id: shipmentEvents.id, orderId: shipmentEvents.orderRefId, status: shipmentEvents.status, at: shipmentEvents.occurredAt, note: shipmentEvents.note })
+    .from(shipmentEvents)
+    .where(and(inArray(shipmentEvents.orderRefId, ids), sql`${shipmentEvents.note} is not null and ${shipmentEvents.note} <> ''`))
+    .orderBy(desc(shipmentEvents.occurredAt))
+  const replies = await d
+    .select({ id: deliveryComplaints.id, orderId: deliveryComplaints.orderRefId, at: deliveryComplaints.createdAt, note: deliveryComplaints.brandResponse })
+    .from(deliveryComplaints)
+    .where(and(inArray(deliveryComplaints.orderRefId, ids), sql`${deliveryComplaints.brandResponse} is not null and ${deliveryComplaints.brandResponse} <> ''`))
+  const marks = await screensFor([...events.map((r) => r.id), ...replies.map((r) => r.id)])
+  const rows = [...events, ...replies.map((r) => ({ ...r, status: HELD_STATUS }))].sort((a, b) => b.at.getTime() - a.at.getTime())
+  for (const r of rows) {
+    const list = out.get(r.orderId) ?? []
+    const m = markFor(marks, r.id, r.note)
+    // Six newest notes, but a held one is always listed (it's waiting on a person).
+    if (list.length >= 6 && !m?.held) continue
+    list.push({ id: r.id, status: r.status, at: r.at.toISOString(), text: m?.held ? null : (r.note ?? ""), held: !!m?.held, notice: !!m?.notice })
+    out.set(r.orderId, list)
+  }
+  return out
+}
+
+/** Orders with a brand note D's screen held (abuse rows delivery.brand_text, held = true: a shipment update's note or a complaint reply). */
+async function ordersWithHeldNotes(): Promise<string[]> {
+  const d = await db()
+  const rows = await d
+    .selectDistinct({ orderId: sql<string>`${abuseEvents.detail}->>'orderRefId'` })
+    .from(abuseEvents)
+    .where(and(eq(abuseEvents.action, SCREEN_ACTION), sql`${abuseEvents.detail}->>'subjectType' in ('shipment_event', 'delivery_complaint')`, sql`(${abuseEvents.detail}->>'held')::boolean is true`))
+  const ids = rows.map((r) => r.orderId).filter(Boolean)
+  if (!ids.length) return []
+  // Only where the held text is still the note on record (a later edit with clean text isn't held).
+  const notes = await brandNotesFor(ids)
+  return ids.filter((id) => notes.get(id)?.some((n) => n.held))
+}
 
 async function issueDtos(items: { kind: DeliveryIssueDto["kind"]; order: OrderRow; complaint?: ComplaintRow }[]): Promise<DeliveryIssueDto[]> {
   const est = await estimates(items.map((i) => i.order.id))
+  const notes = await brandNotesFor(items.map((i) => i.order.id))
   const brands = await brandMap(items.map((i) => i.order.brandId))
   const people = await userMap(items.map((i) => i.order.customerId))
   return items.map(({ kind, order: o, complaint: c }) => {
     const e = est.get(o.id)
+    const reply = c ? (notes.get(o.id) ?? []).find((n) => n.id === c.id) : undefined
     // Late against the promise: unshipped past its ship-by date, or past its arrival window.
     const shipped = !!e?.shipment && e.shipment !== "label_created"
     const open = c?.status !== "resolved" && e?.basis !== "delivered" && e?.shipment !== "delivered"
@@ -113,12 +174,17 @@ async function issueDtos(items: { kind: DeliveryIssueDto["kind"]; order: OrderRo
       measurable,
       complaintKind: (c?.kind as DeliveryIssueDto["complaintKind"]) ?? null,
       details: c?.details || null,
-      brandResponse: c?.brandResponse ?? null,
+      // A held reply never reached the shopper: no text here, only the mark (opened through the audited view).
+      brandResponse: reply?.held ? null : (c?.brandResponse ?? null),
+      brandResponseHeld: !!reply?.held,
+      brandResponseNotice: !!reply?.notice,
       resolution: c?.resolution ?? null,
       status: c?.status ?? (kind === "late" ? "late" : "exception"),
       shipment: e?.shipment ?? null,
       createdAt: (c?.createdAt ?? o.placedAt).toISOString(),
       resolvedAt: iso(c?.resolvedAt),
+      brandNotes: notes.get(o.id) ?? [],
+      heldNotes: (notes.get(o.id) ?? []).filter((n) => n.held).length,
     }
   })
 }
@@ -146,11 +212,15 @@ async function complaintIssues(statuses: string[]) {
 async function orderIssues(which: "late" | "exception") {
   const d = await db()
   const est = await estimates()
-  const candidates = [...est.values()].filter((e) => (which === "late" ? e.basis === "late" || (!!e.arrival_to && e.arrival_to < today()) : isException(e))).map((e) => e.order_ref_id)
+  // Exceptions: carrier or brand-reported problems, plus every order with a brand note held for review.
+  const held = which === "exception" ? new Set(await ordersWithHeldNotes()) : new Set<string>()
+  const candidates = [...new Set([...[...est.values()].filter((e) => (which === "late" ? e.basis === "late" || (!!e.arrival_to && e.arrival_to < today()) : isException(e))).map((e) => e.order_ref_id), ...held])]
   if (!candidates.length) return []
   const orders = await d.select().from(orderRefs).where(inArray(orderRefs.id, candidates)).orderBy(asc(orderRefs.placedAt)).limit(300)
-  const keep = orders.filter((o) => (which === "late" ? isLate(est.get(o.id), o.status) : isException(est.get(o.id))))
-  return issueDtos(keep.map((o) => ({ kind: which, order: o })))
+  const keep = orders.filter((o) => (which === "late" ? isLate(est.get(o.id), o.status) : isException(est.get(o.id)) || held.has(o.id)))
+  const out = await issueDtos(keep.map((o) => ({ kind: which, order: o })))
+  // Held notes first: they're the ones waiting on a person.
+  return which === "exception" ? out.sort((a, b) => b.heldNotes - a.heldNotes) : out
 }
 
 function holidayDto(h: typeof holidays.$inferSelect): HolidayDto {
@@ -189,6 +259,41 @@ export async function listDelivery(tab: DeliveryTab, country?: string): Promise<
   const measured = tab === "late" ? items.filter((i) => i.measurable).sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0)) : items
   const unmeasured = tab === "late" ? items.filter((i) => !i.measurable) : []
   return { tab, items: measured, unmeasured, holidays: all, countries, counts: await deliveryCounts() }
+}
+
+/**
+ * POST /api/admin/delivery/notes/{id}/view: the text of a brand note D's screen held (a shipment
+ * update's note, or a complaint reply by its complaint id), audited as delivery_note.viewed. Held
+ * text may carry payment details outside Yard, so only the roles that act on it open it.
+ */
+export async function viewHeldNote(ctx: DecisionCtx, id: string): Promise<HeldNoteViewResult> {
+  if (!canAdmin(ctx.actor.role, "shipping.resolve") && !canAdmin(ctx.actor.role, "messages.view_reports")) throw forbidden(`${needsRole("shipping.resolve")}.`)
+  return withTx(async () => {
+    const d = await db()
+    let found: { orderId: string; text: string | null; at: Date; kind: "shipment_note" | "complaint_reply" } | null = null
+    if (id.startsWith("dc_")) {
+      const c = await d.query.deliveryComplaints.findFirst({ where: (x, { eq }) => eq(x.id, id) })
+      if (c) found = { orderId: c.orderRefId, text: c.brandResponse, at: c.createdAt, kind: "complaint_reply" }
+    } else {
+      const e = await d.query.shipmentEvents.findFirst({ where: (x, { eq }) => eq(x.id, id) })
+      if (e) found = { orderId: e.orderRefId, text: e.note, at: e.occurredAt, kind: "shipment_note" }
+    }
+    if (!found || !found.text) throw notFound()
+    const mark = markFor(await screensFor([id]), id, found.text)
+    if (!mark?.held) throw conflict("This note wasn't held, so it's already shown with the order.")
+    const order = await d.query.orderRefs.findFirst({ where: (x, { eq }) => eq(x.id, found.orderId) })
+    if (!order) throw notFound()
+    const brands = await brandMap([order.brandId])
+    const entry = await audit(ctx, {
+      action: "delivery_note.viewed",
+      target: `Held ${found.kind === "complaint_reply" ? "complaint reply" : "shipment note"} from ${brandRefOf(brands, order.brandId).name} on order ${order.reference}`,
+      subjectType: found.kind === "complaint_reply" ? "delivery_complaint" : "shipment_event",
+      subjectId: id,
+      brandId: order.brandId,
+      meta: { orderId: order.id, ...kitMeta(ctx) },
+    })
+    return { id, orderId: order.id, kind: found.kind, at: found.at.toISOString(), text: found.text, audit: entry }
+  })
 }
 
 /* ── Decisions ─────────────────────────────────────────────────────── */
@@ -230,7 +335,7 @@ export async function contactBrand(ctx: DecisionCtx, body: { id: string; reason:
     subjectId: complaint?.id ?? order.id,
     brandId: order.brandId,
     reason: body.reason,
-    meta: { orderId: order.id, kind: complaint?.kind ?? "late" },
+    meta: { orderId: order.id, kind: complaint?.kind ?? "late", from: complaint?.status ?? null },
   })
   publishCountsAfterCommit()
   return { item: await dtoFor(order, c), audit: entry }
@@ -258,7 +363,7 @@ export async function resolveIssue(ctx: DecisionCtx, body: { id: string; resolut
     subjectId: c.id,
     brandId: order.brandId,
     reason: body.reason,
-    meta: { orderId: order.id },
+    meta: { orderId: order.id, from: complaint!.status },
   })
   publishCountsAfterCommit()
   return { item: await dtoFor(order, c), audit: entry }
@@ -279,7 +384,7 @@ export async function escalateIssue(ctx: DecisionCtx, body: { id: string; reason
     subjectId: c.id,
     brandId: order.brandId,
     reason: body.reason,
-    meta: { orderId: order.id },
+    meta: { orderId: order.id, from: complaint!.status },
   })
   publishCountsAfterCommit()
   return { item: await dtoFor(order, c), audit: entry }

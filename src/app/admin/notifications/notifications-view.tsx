@@ -111,7 +111,7 @@ export function AdminNotificationsView() {
             panelId={`${tid}-panel`}
             options={[
               { value: "all", label: "All" },
-              // Unread is a plain total, not work waiting on a person: grey, not the attention acid.
+              // Unread is a plain total, not work waiting on a person: grey, not the attention edge.
               { value: "unread", label: "Unread", count: unread.length, countTone: "neutral" },
             ]}
           />

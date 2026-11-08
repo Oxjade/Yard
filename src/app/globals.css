@@ -233,6 +233,13 @@
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.07);
   --glass-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+  /* The phone home bar (§7.2). --tabbar-top: from the bottom of the screen to the top of its
+     58px capsule. --tabbar-clear: where a floating bar's bottom edge may sit, clear of the raised
+     Around pin (it rises 14px above the capsule) with room to spare (about 100px). Floating
+     bars, toasts and the PDP gallery budget use these instead of their own numbers. */
+  --tabbar-top: calc(max(0.875rem, env(safe-area-inset-bottom)) + 3.625rem);
+  --tabbar-clear: calc(var(--tabbar-top) + 1.75rem);
 }
 
 @layer base {

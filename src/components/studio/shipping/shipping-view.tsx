@@ -36,7 +36,7 @@ const sections = [
   { id: "providers", label: "Delivery providers" },
 ] as const
 
-export const shippingDescription = "How long you take to dispatch, where you ship and what it costs. Product pages, the bag and checkout estimate delivery from these settings."
+export const shippingDescription = "How long you take to dispatch, where you ship and what it costs. Product pages, the cart and checkout estimate delivery from these settings."
 
 /** /studio/shipping (§6.5). Server-backed: a brand session is needed to read it, shipping.manage to change it. */
 export function ShippingView() {
@@ -141,6 +141,23 @@ function ShippingForm({ data, onSaved }: { data: StudioShippingDto; onSaved: (d:
     )
     els.forEach((el) => io.observe(el))
     return () => io.disconnect()
+  }, [])
+
+  // A link to a section (the Studio palette's /studio/shipping#holidays) lands on it: this form
+  // exists only once the settings have loaded, after the browser's own jump found nothing. The
+  // shell's useLateHashTarget does the same scroll; this also selects the section in the nav.
+  useEffect(() => {
+    let id = ""
+    try {
+      id = decodeURIComponent(window.location.hash.slice(1))
+    } catch {
+      return // a malformed #fragment names nothing
+    }
+    if (!sections.some((s) => s.id === id)) return
+    const raf = window.requestAnimationFrame(() => jump(id))
+    return () => window.cancelAnimationFrame(raf)
+    // Once, on mount: later hash changes come from this page's own nav, which jumps itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function update(patch: Partial<ShippingForm>) {

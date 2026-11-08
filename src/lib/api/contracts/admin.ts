@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { auditEntryDto, isoDate } from "./common"
+import { auditEntryDto, CONTROL_CHARS, isoDate } from "./common"
 import { COMPLAINT_KINDS, HOLIDAY_KINDS, MESSAGE_STATUSES, REPORTER_KINDS, RESTRICTION_KINDS } from "./enums"
 
 /**
@@ -8,8 +8,40 @@ import { COMPLAINT_KINDS, HOLIDAY_KINDS, MESSAGE_STATUSES, REPORTER_KINDS, RESTR
  * audited evidence and held-message views (POST).
  */
 
-const reason = z.string().trim().min(8, { error: "Give a reason of at least 8 characters." }).max(500, { error: "Keep the reason to 500 characters." })
+/**
+ * Free text an admin writes that other people read: the reason (audit log, CSV export, and the
+ * "Reason: …" line of brand and shopper notifications), a resolution, a holiday name. The shared rule
+ * of contracts/common.ts (no control characters; no line breaks in a one-line field), plus bidi
+ * controls and zero-width characters stripped first, as I's cleanBody does for message bodies.
+ */
+const INVISIBLE_TEXT = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g
+const LINE_BREAKS = /[\r\n\t]/
+const shownText = (o: { min: number; max: number; short: string; long: string; line?: boolean }) =>
+  z
+    .string()
+    .transform((v) => v.replace(INVISIBLE_TEXT, "").trim())
+    .pipe(
+      z
+        .string()
+        .min(o.min, { error: o.short })
+        .max(o.max, { error: o.long })
+        .refine((v) => !CONTROL_CHARS.test(v) && (!o.line || !LINE_BREAKS.test(v)), { error: "Remove the hidden characters." }),
+    )
+const reason = shownText({ min: 8, max: 500, short: "Give a reason of at least 8 characters.", long: "Keep the reason to 500 characters." })
 export const decisionBase = z.object({ id: z.string().min(1).max(80), reason })
+
+/** A real calendar date (2027-13-45 and 0000-00-00 are refused), from a year ago to two years ahead. */
+const DAY_MS = 86_400_000
+export const holidayDate = isoDate.refine(
+  (v) => {
+    const [y, m, d] = v.split("-").map(Number)
+    const t = Date.UTC(y, m - 1, d)
+    if (new Date(t).toISOString().slice(0, 10) !== v) return false
+    const now = Date.now()
+    return t >= now - 366 * DAY_MS && t <= now + 2 * 366 * DAY_MS
+  },
+  { error: "Use a real date from a year ago to two years ahead, like 2026-12-25." },
+)
 
 /* ── Shared pieces ─────────────────────────────────────────────────── */
 
@@ -73,6 +105,11 @@ export const messageCaseDto = z.object({
   sample: z.boolean(),
   /** The reported message or conversation no longer exists (deleted since; the frozen evidence stays). */
   subjectGone: z.boolean(),
+  /**
+   * Held messages only: why Release would be refused right now (the conversation is locked, a block
+   * either way, the brand's status, the sender's suspension or messaging restriction). Empty when it can go.
+   */
+  blockers: z.array(z.string()).optional(),
 })
 export type MessageCaseDto = z.infer<typeof messageCaseDto>
 
@@ -224,6 +261,15 @@ export const chartBoardHealthDto = z.object({
   excludedShare: z.number(),
   openFlags: z.number(),
 })
+/** One open high-severity flag that holds a brand from the public boards (auto-action held_from_charts). */
+export const chartHoldFlagDto = z.object({ id: z.string(), detector: z.string(), detectorLabel: z.string(), windowStart: z.string(), windowEnd: z.string(), excludedEvents: z.number() })
+/**
+ * A brand held from every public board. C's rule (not changed here): a brand is held while ANY open
+ * high-severity flag holds it, so every flag listed must be cleared or confirmed before it returns.
+ */
+export const chartHoldDto = z.object({ brand: brandRef, since: z.string(), flags: z.array(chartHoldFlagDto), frozen: z.boolean() })
+export type ChartHoldDto = z.infer<typeof chartHoldDto>
+
 export const chartsOverviewDto = z.object({
   boards: z.array(chartBoardHealthDto),
   /** One row per day for 14 days. excludedShare is null on a day with no signals (drawn as a gap, never as 0 %). */
@@ -234,7 +280,11 @@ export const chartsOverviewDto = z.object({
   surface: z.object({ organic: z.number(), sponsored: z.number() }),
   flags: z.object({ open: z.number(), high: z.number(), frozen: z.number(), pendingFreeze: z.number() }),
   ipSignal: z.enum(["available", "unavailable"]),
+  /** YARD_TRUSTED_PROXY_HOPS as the server reads it (0 = client IPs unknown, IP detectors off). */
+  proxyHops: z.number(),
   orderSignals: z.literal("not_connected"),
+  /** Brands held from every public board by open high-severity flags, with the flags holding each. */
+  holds: z.array(chartHoldDto),
   /** The sample baseline is part of every board in this build. */
   sample: z.boolean(),
 })
@@ -243,7 +293,7 @@ export type ChartsOverviewDto = z.infer<typeof chartsOverviewDto>
 export const freezeDto = z.object({
   id: z.string(),
   brand: brandRef,
-  status: z.enum(["pending_approval", "active", "lifted"]),
+  status: z.enum(["pending_approval", "active", "lifted", "expired"]),
   until: z.string().nullable(),
   reason: z.string(),
   requestedBy: personRef,
@@ -252,6 +302,7 @@ export const freezeDto = z.object({
   liftedAt: z.string().nullable(),
 })
 export type FreezeDto = z.infer<typeof freezeDto>
+
 
 export const chartFlagDto = z.object({
   id: z.string(),
@@ -267,6 +318,13 @@ export const chartFlagDto = z.object({
   decidedAt: z.string().nullable(),
   createdAt: z.string(),
   freeze: freezeDto.nullable(),
+  /**
+   * Whether this flag holds its brand from the public boards right now (open and held_from_charts),
+   * and the brand's OTHER open flags that hold it too: deciding this one alone doesn't re-list it.
+   */
+  hold: z.object({ holding: z.boolean(), others: z.array(z.object({ id: z.string(), detectorLabel: z.string() })) }),
+  /** coordinated_ring only: the other brands the same ring followed (each flagged and held the same way). */
+  ringPeers: z.array(brandRef),
 })
 export type ChartFlagDto = z.infer<typeof chartFlagDto>
 
@@ -278,7 +336,7 @@ export const chartFlagDetailDto = chartFlagDto.extend({
 export type ChartFlagDetailDto = z.infer<typeof chartFlagDetailDto>
 
 export const chartFlagsQuery = z.object({ status: z.enum(["open", "decided", "frozen", "all"]).default("open") })
-export const chartFlagsDto = z.object({ items: z.array(chartFlagDto), freezes: z.array(freezeDto), counts: z.object({ open: z.number(), decided: z.number(), frozen: z.number() }) })
+export const chartFlagsDto = z.object({ items: z.array(chartFlagDto), freezes: z.array(freezeDto), holds: z.array(chartHoldDto), counts: z.object({ open: z.number(), decided: z.number(), frozen: z.number() }) })
 export type ChartFlagsDto = z.infer<typeof chartFlagsDto>
 
 export const sponsoredRowDto = z.object({ campaignId: z.string(), name: z.string(), brand: brandRef, status: z.string(), placements: z.array(z.string()), sample: z.boolean() })
@@ -318,7 +376,23 @@ export const deliveryIssueDto = z.object({
   shipment: z.string().nullable(),
   createdAt: z.string(),
   resolvedAt: z.string().nullable(),
+  /** A complaint whose brand reply D's screen held: `brandResponse` is null and the shopper hasn't seen the reply. */
+  brandResponseHeld: z.boolean(),
+  /** The shopper saw the brand's reply under "Keep payments on Yard". */
+  brandResponseNotice: z.boolean(),
+  /**
+   * The brand's notes on this order, newest first (at most 6, plus any held one): its notes on
+   * shipment updates and its complaint replies (status "complaint_reply", id = the complaint's).
+   * `held`: D's screen held the text (links or payment outside Yard), so the shopper never saw it, and
+   * `text` is null here: it opens through POST /api/admin/delivery/notes/{id}/view (audited,
+   * shipping.resolve or messages.view_reports). `notice`: the shopper saw it under "Keep payments on Yard".
+   */
+  brandNotes: z.array(z.object({ id: z.string(), status: z.string(), at: z.string(), text: z.string().nullable(), held: z.boolean(), notice: z.boolean() })),
+  /** How many of those notes are held for review. */
+  heldNotes: z.number(),
 })
+export const heldNoteViewResult = z.object({ id: z.string(), orderId: z.string(), kind: z.enum(["shipment_note", "complaint_reply"]), at: z.string(), text: z.string(), audit: auditEntryDto })
+export type HeldNoteViewResult = z.infer<typeof heldNoteViewResult>
 export type DeliveryIssueDto = z.infer<typeof deliveryIssueDto>
 
 export const holidayDto = z.object({ id: z.string(), country: z.string(), date: z.string(), name: z.string(), kind: z.enum(HOLIDAY_KINDS), estimated: z.boolean(), source: z.enum(["config", "admin"]) })
@@ -388,7 +462,8 @@ export const auditQuery = z.object({
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
 })
-export const auditListResult = z.object({ items: z.array(auditEntryDto), nextCursor: z.string().nullable() })
+/** `totals`: on the first page only, how many rows match the filter in all, and how many name a second approver. */
+export const auditListResult = z.object({ items: z.array(auditEntryDto), nextCursor: z.string().nullable(), totals: z.object({ entries: z.number(), withApprover: z.number() }).optional() })
 export type AuditListResult = z.infer<typeof auditListResult>
 
 /* ── Decisions (POST /api/admin/decisions/{kebab-case}) ────────────── */
@@ -413,9 +488,9 @@ export const decisionBodies = {
   "approve-chart-freeze": strict({}),
   "lift-chart-freeze": strict({}),
   "contact-brand-about-delivery": strict({}),
-  "resolve-delivery-issue": strict({ resolution: z.string().trim().min(8, { error: "Describe the resolution in at least 8 characters." }).max(500) }),
+  "resolve-delivery-issue": strict({ resolution: shownText({ min: 8, max: 500, short: "Describe the resolution in at least 8 characters.", long: "Keep the resolution to 500 characters." }) }),
   "escalate-delivery-issue": strict({}),
-  "add-holiday": strict({ date: isoDate, name: z.string().trim().min(2).max(80), kind: z.enum(HOLIDAY_KINDS).default("public"), estimated: z.boolean().default(false) }),
+  "add-holiday": strict({ date: holidayDate, name: shownText({ min: 2, max: 80, short: "Name the holiday.", long: "Keep the name to 80 characters.", line: true }), kind: z.enum(HOLIDAY_KINDS).default("public"), estimated: z.boolean().default(false) }),
   "remove-holiday": strict({}),
   "set-user-status": strict({ status: z.enum(["active", "restricted", "suspended"]) }),
   "add-restriction": strict({ subjectKind: z.enum(["user", "brand"]).default("user"), kind: z.enum(["messaging", "uploads", "reports"]), duration: z.enum(["24h", "7d", "30d"]), alertId: z.string().max(80).optional() }),
@@ -431,7 +506,7 @@ export const decisionBodies = {
       actorKind: z.enum(["admins", "all"]).optional(),
       actor: z.string().max(120).optional(),
       action: z.string().max(120).optional(),
-      reason: z.string().max(500).optional(),
+      reason: shownText({ min: 0, max: 500, short: "", long: "Keep the reason to 500 characters." }).optional(),
     })
     .strict(),
 } as const

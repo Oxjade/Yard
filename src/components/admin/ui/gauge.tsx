@@ -7,21 +7,29 @@ import { chartEasing } from "@/lib/motion"
 
 const percent = (v: number) => `${(v * 100).toFixed(1)}%`
 
+/** What a ring's arc does under its threshold (never acid, which is the page's one primary action). */
+export type RingBelowTone = "ink" | "danger" | "tick"
+const belowStroke: Record<RingBelowTone, string> = { ink: "#f5f5f5", danger: "#ff5470", tick: "#6d19d9" }
+
 /**
- * A ring gauge for a ratio (0–1) with a threshold tick. Purple arc on a hairline track;
- * the value turns yellow when it falls under the threshold. The first time it is seen, the
- * arc sweeps in from empty and the figure counts up (CSS released by useEntrance, so the
- * server HTML already shows the final arc; nothing moves under reduced motion).
+ * A ring gauge for a ratio (0–1) with a threshold tick. Purple arc on a hairline track. Under
+ * the threshold the arc takes `belowTone`: bright ink (the default, the attention tone), the
+ * danger colour for an error state, or "tick" to stay purple and let the tick mark the target.
+ * The first time it is seen, the arc sweeps in from empty and the figure counts up (CSS
+ * released by useEntrance, so the server HTML already shows the final arc; nothing moves
+ * under reduced motion).
  */
 export function RingGauge({
   value,
   threshold,
+  belowTone = "ink",
   size = 132,
   label,
   sublabel,
 }: {
   value: number
   threshold?: number
+  belowTone?: RingBelowTone
   size?: number
   label: string
   sublabel?: string
@@ -38,7 +46,7 @@ export function RingGauge({
   const ring = useEntrance<HTMLDivElement>()
   return (
     <div ref={ring} data-entrance="pending" className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${percent(value)}`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${percent(value)}${below ? `, below the ${percent(threshold!)} target` : ""}`}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={stroke} />
         <circle
           data-sweep
@@ -46,7 +54,7 @@ export function RingGauge({
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={below ? "#f5ff00" : "#6d19d9"}
+          stroke={below ? belowStroke[belowTone] : "#6d19d9"}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}

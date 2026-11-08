@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { cities } from "@/lib/around/gazetteer"
-import { areaFeatures, neighbourhoodRadiusKm, overlap, placeLabel } from "./areas"
+import { areaFeatures, neighbourhoodRadiusKm, overlap, pickCreditSpot, placeLabel, spotRect } from "./areas"
 
 test("every gazetteer neighbourhood gets a ring and a dot; every city a dot", () => {
   const { rings, dots } = areaFeatures()
@@ -35,4 +35,19 @@ test("a name moves off a pin sitting on its centroid, and stays on screen", () =
 test("a free spot under the centroid's dot is preferred", () => {
   const { offset } = placeLabel({ x: 100, y: 100 }, { w: 40, h: 12 }, [], [], { w: 400, h: 400 })
   assert.deepEqual(offset, [0, 13])
+})
+
+test("the map credits stay where they are unless a pin sits on them, then take the next free spot", () => {
+  const view = { w: 390, h: 664 }
+  const size = { w: 120, h: 24 }
+  const spots = [{ top: 116, left: 16 }, { top: 116, right: 16 }, { top: 152, left: 16 }]
+  assert.equal(pickCreditSpot(spots, size, view, []), 0)
+  // The London/Paris cluster over the top-left spot (the owner's Earth screenshot) → under the title.
+  const cluster = { x: 100, y: 112, w: 90, h: 50 }
+  const i = pickCreditSpot(spots, size, view, [cluster])
+  assert.equal(i, 1)
+  assert.equal(overlap(spotRect(spots[i], size, view), cluster), 0)
+  // Pins on every spot: the least covered one wins.
+  const big = [{ x: 0, y: 100, w: 390, h: 30 }, { x: 0, y: 150, w: 60, h: 10 }]
+  assert.equal(pickCreditSpot(spots, size, view, big), 2)
 })

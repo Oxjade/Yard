@@ -113,7 +113,7 @@ function AnalyticsBody({ period, brandId, currency: cur, followers }: { period: 
   const funnel = [
     { label: "Store visits", value: now.visits, hint: "Sessions on your storefront, product and drop pages." },
     { label: "Viewed a product", value: viewed, hint: "Sessions that opened at least one product page." },
-    { label: "Added to bag", value: bagged, hint: "Sessions that added one of your products to the bag." },
+    { label: "Added to cart", value: bagged, hint: "Sessions that added one of your products to the cart." },
     { label: "Ordered", value: now.orders, hint: "Paid orders placed in the period, before refunds. Cancelled orders don't count." },
   ]
 

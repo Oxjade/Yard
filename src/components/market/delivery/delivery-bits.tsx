@@ -9,14 +9,6 @@ import type { BrandGroup } from "@/lib/cart"
 import { formatShortRange } from "@/lib/shipping/format"
 import { cn } from "@/lib/utils"
 
-/**
- * For a wrapper around the shared bag sections (`BagGroups`, bag-contents.tsx): hides each
- * section's shipping footer and its header day count. Those read the BrandGroup's legacy fields,
- * which hold the platform's old demo rates until a quote has loaded, so they must not show while
- * the quote loads or after it failed. Hand-off asks bag-contents' owner to read the quote instead.
- */
-export const LEGACY_SHIPPING_HIDDEN = "[&_section>footer]:hidden [&_section>header>p]:hidden"
-
 /** "Est. arrival 11–16 Nov": always worded as an estimate (§10). */
 export function ArrivalChip({ estimate, className, prefix = "Est. arrival" }: { estimate: Pick<EstimateDto, "arrivalFrom" | "arrivalTo"> | null | undefined; className?: string; prefix?: string }) {
   if (!estimate?.arrivalFrom || !estimate.arrivalTo) return null

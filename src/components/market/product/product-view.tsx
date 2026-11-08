@@ -5,6 +5,10 @@ import Image from "next/image"
 import Link from "next/link"
 import { SealCheckIcon as BadgeCheck, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
+import { PlaceBadge } from "@/components/around/entry/place-badge"
+import { RankBadge } from "@/components/charts/entry/rank-badge"
+import { MessageBrandButton } from "@/components/inbox/entry"
+import { SeenOnFeed } from "@/components/storefront/social/seen-on-feed"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
@@ -36,20 +40,20 @@ const actionLabel: Record<Action, string> = {
   closed: "Entries closed",
   "choose-size": "Select a size",
   "sold-out": "Sold out",
-  limit: "Add to bag",
-  ready: "Add to bag",
+  limit: "Add to cart",
+  ready: "Add to cart",
 }
 
 /**
- * The product page body: gallery, buy box and (on phones) the floating add-to-bag bar.
+ * The product page body: gallery, buy box and (on phones) the floating add-to-cart bar.
  * Everything below the buy box (the rails) comes in as children so the bar can step aside
  * when the page reaches its end.
  *
  * Adding runs through useAsyncAction: the button shows a check while it succeeds and ignores
- * repeat presses meanwhile; the header's bag bubble (BagPop) is the confirmation, so there is
+ * repeat presses meanwhile; the "Added to cart" bubble (BagPop) is the confirmation, so there is
  * no toast. Pressing "Select a size" points at the size grid instead of doing nothing.
  *
- * A piece in a draw never goes in the bag from here: before release the action is the entry
+ * A piece in a draw never goes in the cart from here: before release the action is the entry
  * (NotifyButton), and after release (through its window and after it ends) entries are closed
  * and only drawn winners can buy, which needs the drops backend this build doesn't have, so the
  * button reads "Entries closed".
@@ -77,7 +81,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   const sizeGridRef = useRef<HTMLDivElement>(null)
   const sheetGridRef = useRef<HTMLDivElement>(null)
 
-  // What can still go in the bag: stock, the 10-per-line cap and, during a live drop, its per-customer limit.
+  // What can still go in the cart: stock, the 10-per-line cap and, during a live drop, its per-customer limit.
   const limit = phase === "live" && drop ? drop.limitPerCustomer : MAX_QTY_PER_LINE
   const cap = sel.stock === null ? Math.min(MAX_QTY_PER_LINE, limit) : Math.min(MAX_QTY_PER_LINE, limit, sel.stock)
   const maxQty = Math.max(0, cap - inBag)
@@ -106,7 +110,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
       sel.setQuantity(1)
       return true
     },
-    { error: "That piece couldn't be added to your bag. Try again in a moment.", successFlashMs: 1200 },
+    { error: "That piece couldn't be added to your cart. Try again in a moment.", successFlashMs: 1200 },
   )
 
   /** Move focus to the first size that can be chosen, and say why. */
@@ -127,7 +131,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
     setSizePrompt(false)
   }
 
-  /** Resolves true once the piece is in the bag. */
+  /** Resolves true once the piece is in the cart. */
   async function addToBag(grid: HTMLElement | null = sizeGridRef.current) {
     if (adding.pending || adding.succeeded) return false
     if (action === "choose-size") {
@@ -174,17 +178,17 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
       ? `${phase === "ended" ? "This draw has ended." : "Entries closed at release."} Only drawn winners can buy, and picking winners needs the drops backend, which isn't connected in this build.`
       : action === "limit"
       ? phase === "live" && drop && cap === drop.limitPerCustomer
-        ? `This drop is limited to ${drop.limitPerCustomer} per customer, and your bag already has ${inBag}.`
+        ? `This drop is limited to ${drop.limitPerCustomer} per customer, and your cart already has ${inBag}.`
         : sel.stock !== null && sel.stock <= MAX_QTY_PER_LINE
-          ? `All ${sel.stock} available are already in your bag.`
-          : `Your bag already holds the most you can buy at once (${MAX_QTY_PER_LINE}).`
+          ? `All ${sel.stock} available are already in your cart.`
+          : `Your cart already holds the most you can buy at once (${MAX_QTY_PER_LINE}).`
       : action === "ready" && inBag > 0
-        ? `${inBag} already in your bag.`
+        ? `${inBag} already in your cart.`
         : action === "sold-out" && (productSoldOut || !sel.sizes.length)
           ? `Sold out for now. Save it to keep it in your wishlist, or see more from ${brand.name} below.`
           : null
 
-  // The label changes with the selection (Select a size, Add to bag, Sold out): a short roll.
+  // The label changes with the selection (Select a size, Add to cart, Sold out): a short roll.
   const addButtonContent = (
     <AnimatePresence mode="popLayout" initial={false}>
       <motion.span
@@ -225,22 +229,33 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
         </div>
 
         <div className="mt-6 md:mt-0">
-          {/* Brand identity */}
-          <div className="flex items-center gap-3">
-            <Link href={`/brands/${brand.handle}`} className="group flex min-w-0 flex-1 items-center gap-3">
+          {/* Brand identity: the mark and name open the storefront; the line under the name adds
+              the brand's place on Around and its chart position when it has them (§7.4). They're
+              links of their own, so they sit beside the storefront link, not inside it. A grid, so
+              that line runs under the Message and Follow buttons too and its badges don't break
+              mid-phrase in a narrow buy box. */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
+            <Link href={`/brands/${brand.handle}`} aria-hidden tabIndex={-1} className="row-span-2 shrink-0">
               <BrandMark brand={brand} size="md" />
-              <span className="min-w-0">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-ink transition-colors group-hover:text-violet">
-                  <span className="truncate">{brand.name}</span>
-                  {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
-                </span>
-                <span className="block truncate text-xs text-ink-2">
-                  {brand.city}, {countries[brand.country].name}
-                </span>
-              </span>
             </Link>
-            {/* 40px on phones and tablets; the compact size beside the desktop buy box. */}
-            <FollowButton brandId={brand.id} brandName={brand.name} size="sm" className="max-lg:h-10 max-lg:px-4" />
+            {/* 40px tap targets on phones and tablets without moving the row (negative margins); compact beside the desktop buy box. */}
+            <Link href={`/brands/${brand.handle}`} className="col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 self-end text-sm font-medium text-ink transition-colors hover:text-violet max-lg:min-h-10 max-lg:self-center">
+              <span className="truncate">{brand.name}</span>
+              {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
+            </Link>
+            <div className="col-start-3 row-start-1 flex items-center gap-3">
+              {/* 40px icon with the tooltip "Message {brand}"; the brand's own Studio members see "Open Studio inbox". */}
+              <MessageBrandButton brand={brand} productId={product.id} variantId={sel.variant?.id ?? null} variant="icon" className="max-lg:size-10" />
+              {/* 40px on phones and tablets; the compact size beside the desktop buy box. */}
+              <FollowButton brandId={brand.id} brandName={brand.name} size="sm" className="max-lg:h-10 max-lg:px-4" />
+            </div>
+            <span className="col-start-2 col-end-4 row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 self-start text-xs text-ink-2">
+              <span className="truncate">
+                {brand.city}, {countries[brand.country].name}
+              </span>
+              <PlaceBadge brandId={brand.id} className="-my-2" />
+              <RankBadge brandId={brand.id} variant="meta" className="max-lg:-my-2 max-lg:min-h-10" />
+            </span>
           </div>
 
           <h1 className="mt-6 font-display text-display-lg text-balance text-ink lg:text-display-md">{product.name}</h1>
@@ -331,7 +346,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                   {inBag > 0 ? (
                     // A 40px target that keeps the line's height (negative margin, as the breadcrumb does).
                     <button type="button" onClick={openBag} className="-my-3 inline-flex min-h-10 items-center rounded-md text-violet underline-offset-4 hover:underline">
-                      View bag
+                      View cart
                     </button>
                   ) : null}
                 </motion.p>
@@ -340,7 +355,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           </div>
 
           <div className="mt-8">
-            <DeliverySummary brand={brand} product={product} drop={drop} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
+            <DeliverySummary brand={brand} product={product} drop={drop} variantId={sel.variant?.id ?? null} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
           </div>
 
           <section aria-labelledby="pdp-info-title" className="mt-8">
@@ -376,13 +391,16 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
               </AccordionItem>
             </Accordion>
           </section>
+
+          {/* Posts by the brand that tag this piece (§7.4). Renders nothing while loading or when none do. */}
+          <SeenOnFeed brandId={brand.id} productId={product.id} brandName={brand.name} className="mt-10" />
         </div>
       </div>
 
       {children}
       <div ref={endRef} aria-hidden className="h-px" />
 
-      {/* Phone: floating add-to-bag bar above the tab bar */}
+      {/* Phone: floating add-to-cart bar, clear of the home bar and its raised pin */}
       <AnimatePresence>
         {showBar ? (
           <motion.div
@@ -391,7 +409,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={spring.snappy}
-            className="fixed inset-x-0 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+4.75rem)] z-30 px-3 lg:hidden"
+            className="fixed inset-x-0 bottom-(--tabbar-clear) z-30 px-3 lg:hidden"
           >
             <div className="glass glass-sheen mx-auto flex max-w-md items-center gap-3 rounded-2xl p-2">
               <div className="relative h-12 w-10 shrink-0 overflow-hidden rounded-md bg-card">
@@ -412,7 +430,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                 </Button>
               ) : action === "limit" ? (
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={openBag}>
-                  View bag
+                  View cart
                 </Button>
               ) : (
                 <Button
@@ -455,7 +473,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                 loading={adding.pending}
                 disabled={addDisabled}
                 onClick={async () => {
-                  // The sheet closes on success; the bag bubble in the header confirms.
+                  // The sheet closes on success; the "Added to cart" bubble confirms.
                   if (await addToBag(sheetGridRef.current)) setSheetOpen(false)
                 }}
               >
@@ -483,7 +501,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   )
 }
 
-/** "Choose a size" under the size grid, shown after Add to bag was pressed without one. */
+/** "Choose a size" under the size grid, shown after Add to cart was pressed without one. */
 function SizeHint({ id, show }: { id: string; show: boolean }) {
   return (
     <AnimatePresence initial={false}>
@@ -498,7 +516,7 @@ function SizeHint({ id, show }: { id: string; show: boolean }) {
           transition={{ duration: duration.hover, ease: ease.out }}
           className="mt-2 text-xs text-danger"
         >
-          Choose a size to add this to your bag.
+          Choose a size to add this to your cart.
         </motion.p>
       ) : null}
     </AnimatePresence>
