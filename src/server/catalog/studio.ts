@@ -55,12 +55,16 @@ async function uniqueProductSlug(d: Executor, wanted: string, explicit: boolean,
   return `${wanted}-${Date.now().toString(36)}`
 }
 
-/** True while the brand's own application is waiting for review (or was rejected): nothing goes public yet. */
+/**
+ * True until the brand's own application is approved: submitted, rejected, or rejected and being
+ * edited again (status back to draft, brand still set): nothing goes public yet. Brands that never
+ * went through onboarding (seeded, admin-created) have no row and are not under review.
+ */
 export async function brandUnderReview(d: Executor, brandId: string) {
   const [row] = await d
     .select({ status: brandOnboardings.status })
     .from(brandOnboardings)
-    .where(and(eq(brandOnboardings.brandId, brandId), inArray(brandOnboardings.status, ["submitted", "rejected"])))
+    .where(and(eq(brandOnboardings.brandId, brandId), inArray(brandOnboardings.status, ["draft", "submitted", "rejected"])))
     .limit(1)
   return !!row
 }

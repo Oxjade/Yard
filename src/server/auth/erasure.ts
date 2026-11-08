@@ -42,7 +42,7 @@ const hookModules: Record<string, () => Promise<Record<string, unknown>>> = {
   email: () => import("../email"),
   cart: () => import("../cart"),
   follows: () => import("../follows"),
-  // drops: add `() => import("../drops")` once src/server/drops/index.ts exists (ENGAGEMENT).
+  drops: () => import("../drops"),
 }
 
 export async function requestAccountDeletion(actor: ShopperActor, meta: RequestMeta) {

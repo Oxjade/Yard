@@ -3,6 +3,7 @@ import { getEnv } from "../env"
 import { rateLimited } from "../http/errors"
 import { sha256hex } from "../security/crypto"
 import { hit, recordAbuse } from "../security/rate-limit"
+import { yard } from "../state"
 
 /**
  * Sign-in rate limits (§5.1 pattern): per client IP (one global bucket when the IP is unknown)
@@ -45,6 +46,17 @@ export async function limitSignIn(email: string, ipHash: string | null) {
   if (ipHash) await check(`auth.signin:ip:${ipHash}`, dev ? 120 : LIMITS.signInPerIp.limit, LIMITS.signInPerIp.windowSec, "auth.signin", ipHash, tooMany)
   else await check("auth.signin:anon-global", LIMITS.signInGlobalUnknownIp.limit, LIMITS.signInGlobalUnknownIp.windowSec, "auth.signin", null, tooMany)
   await check(`auth.signin:email:${emailKey(email)}`, LIMITS.signInPerEmail.limit, LIMITS.signInPerEmail.windowSec, "auth.signin", ipHash, tooMany)
+}
+
+/**
+ * Forgets the per-email sign-in window. A password reset proves the address and clears the
+ * durable lockout; without this the in-memory per-email window (which counts the wrong guesses
+ * that caused the lockout) would keep answering 429 "…or reset your password" for up to 15
+ * minutes after the person did exactly that.
+ */
+export function clearSignInEmailLimit(email: string) {
+  const windows = (yard.limiter as { windows?: Map<string, unknown> } | undefined)?.windows
+  windows?.delete(`auth.signin:email:${emailKey(email)}`)
 }
 
 /** Anything that sends an email to an address the caller typed (verify, reset, magic link, sign-up). */

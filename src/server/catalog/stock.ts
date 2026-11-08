@@ -137,6 +137,14 @@ export async function commitHold(tx: Tx, holdKey: string): Promise<void> {
   for (const h of open) {
     const v = byId.get(h.variantId)
     if (!v) continue
+    // Claim the row in the state we read it: a concurrent commit, release or sweep that got there
+    // first (holds were read before the variant locks) makes this a no-op instead of moving stock twice.
+    const [claimed] = await tx
+      .update(stockHolds)
+      .set({ status: "committed", settledAt: now })
+      .where(and(eq(stockHolds.id, h.id), eq(stockHolds.status, h.status)))
+      .returning({ id: stockHolds.id })
+    if (!claimed) continue
     let take = h.qty
     let note: string | null = null
     if (h.status === "active") {
@@ -153,7 +161,6 @@ export async function commitHold(tx: Tx, holdKey: string): Promise<void> {
     if (take > 0) await moveStock(tx, { variantId: h.variantId, brandId: v.brandId, delta: -take, reason: "sale", note, refType: "hold", refId: holdKey })
     else await tx.insert(stockMovements).values({ id: newId("sm"), variantId: h.variantId, brandId: v.brandId, delta: 0, onHandAfter: v.onHand, reason: "sale", note, refType: "hold", refId: holdKey })
     v.onHand -= take
-    await tx.update(stockHolds).set({ status: "committed", settledAt: now }).where(eq(stockHolds.id, h.id))
   }
   catalogChanged({ variants: open.map((h) => h.variantId), reindexVariants: true })
 }
@@ -171,8 +178,13 @@ export async function releaseHold(tx: Tx, holdKey: string): Promise<void> {
   )
   const now = new Date()
   for (const h of active) {
-    await tx.update(catalogVariants).set({ held: sql`${catalogVariants.held} - ${h.qty}` }).where(eq(catalogVariants.id, h.variantId))
-    await tx.update(stockHolds).set({ status: "released", settledAt: now }).where(eq(stockHolds.id, h.id))
+    // Only a hold still active when we hold the lock gives stock back (a concurrent commit or sweep may have settled it).
+    const [claimed] = await tx
+      .update(stockHolds)
+      .set({ status: "released", settledAt: now })
+      .where(and(eq(stockHolds.id, h.id), eq(stockHolds.status, "active")))
+      .returning({ id: stockHolds.id })
+    if (claimed) await tx.update(catalogVariants).set({ held: sql`${catalogVariants.held} - ${h.qty}` }).where(eq(catalogVariants.id, h.variantId))
   }
   catalogChanged({ variants: active.map((h) => h.variantId) })
 }
@@ -201,12 +213,19 @@ export async function sweepExpiredHolds(): Promise<{ expired: number }> {
       due.map((h) => h.variantId),
     )
     const now = new Date()
+    let expired = 0
     for (const h of due) {
+      const [claimed] = await tx
+        .update(stockHolds)
+        .set({ status: "expired", settledAt: now })
+        .where(and(eq(stockHolds.id, h.id), eq(stockHolds.status, "active")))
+        .returning({ id: stockHolds.id })
+      if (!claimed) continue
+      expired++
       await tx.update(catalogVariants).set({ held: sql`greatest(0, ${catalogVariants.held} - ${h.qty})` }).where(eq(catalogVariants.id, h.variantId))
-      await tx.update(stockHolds).set({ status: "expired", settledAt: now }).where(eq(stockHolds.id, h.id))
     }
     catalogChanged({ variants: due.map((h) => h.variantId) })
-    return { expired: due.length }
+    return { expired }
   })
 }
 

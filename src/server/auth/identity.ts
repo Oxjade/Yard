@@ -11,7 +11,7 @@ import { HttpError, badRequest, rateLimited, suspended } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { authLinks } from "./auth-env"
-import { limitEmailSend, limitSignIn, limitTokenConsume, LOCKOUT } from "./limits"
+import { clearSignInEmailLimit, limitEmailSend, limitSignIn, limitTokenConsume, LOCKOUT } from "./limits"
 import { hashPassword, needsRehash, passwordProblem, verifyPassword } from "./passwords"
 import { createSession, endCurrentSession, endSession, endSessionsForUser, type ActorKind } from "./session"
 import { recordSessionAuth, type AuthMethod } from "./session-auth"
@@ -350,7 +350,7 @@ export async function requestPasswordReset(emailRaw: string, meta: RequestMeta) 
 export async function resetPassword(token: string, password: string, meta: RequestMeta) {
   await limitTokenConsume("reset", meta.ipHash)
   const hash = await hashPassword(password)
-  return withTx(async (tx) => {
+  const out = await withTx(async (tx) => {
     const row = await consumeToken(token, "reset_password")
     if (!row) throw badRequest({ token: "This reset link has expired or was already used. Ask for a new one." }, "This reset link has expired or was already used.")
     const user = await userById(row.userId)
@@ -364,8 +364,11 @@ export async function resetPassword(token: string, password: string, meta: Reque
     await endSessionsForUser(user.id, ["shopper", "brand", "admin"], "password_reset")
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.passwordChanged, user.email, { name: user.name }, `pw-changed:${user.id}:${now.getTime()}`)
     await writeAudit({ actor: { kind: "system" }, action: "auth.password_reset", target: user.name, subjectType: "user", subjectId: user.id, ipHash: meta.ipHash })
-    return { ok: true as const }
+    return { email: user.email }
   })
+  // Committed: the per-email sign-in window goes with the lockout (see clearSignInEmailLimit).
+  clearSignInEmailLimit(out.email)
+  return { ok: true as const }
 }
 
 /** Signed-in password change. Ends the user's OTHER sessions; keeps this one. */
