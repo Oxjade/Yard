@@ -8,12 +8,14 @@ import { devCleanup, devListPlaced } from "@/server/shipping/dev-cleanup"
  * Development only (404 in production, before auth). Owner or engineering admins only (403 for
  * other admins). D's kits call it last, so the demo accounts see only the seeded sample data.
  * GET  ?customer=u_ada → that shopper's non-seed checkouts (what a browser run left)
- * POST { groupIds?, references?, customers?, since?, dryRun? } → see devCleanup for the scoping rules
+ * POST { groupIds?, references?, actorPrefix?, customers?, since?, dryRun? } → see devCleanup for the
+ * scoping rules (a sweep is the caller's own run only: its test shoppers AND its start time)
  */
 const ids = z.array(z.string().trim().regex(/^[\w-]{3,64}$/)).max(200)
 const body = z.strictObject({
   groupIds: ids.optional(),
   references: ids.optional(),
+  actorPrefix: z.string().regex(/^u_t_[a-z0-9_]{1,40}$/).optional(),
   customers: z.array(z.string().regex(/^u_t_[a-z0-9_]{1,40}$/)).max(20).optional(),
   since: z.iso.datetime({ offset: true }).optional(),
   dryRun: z.boolean().optional(),

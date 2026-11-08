@@ -44,7 +44,7 @@ export function TagProductsSheet({ post, brandId, onClose, onSaved }: { post: St
       open={!!post}
       onOpenChange={(o) => !o && onClose()}
       title="Tag products"
-      description="Tagged pieces show under the post in its lightbox."
+      description="Tagged pieces show under the post in its lightbox, and the post appears on their product pages."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

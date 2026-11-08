@@ -114,46 +114,66 @@ export function cameraArea(lat: number, lng: number, zoom: number): CameraArea {
 export type Frame = { w: number; h: number }
 
 export const CITY_ZOOM_MAX = 11.5
-/** Neighbourhood names, rings and dots show from this zoom, so a framed city always has them. */
+/** A city's neighbourhoods are framed no further out than this. */
 export const CITY_ZOOM_MIN = 10.4
+/**
+ * Neighbourhood names, rings and dots show from this zoom, so a framed city always has them: its
+ * neighbourhoods (10.4 and closer), or on a small phone its places (down to this zoom).
+ */
+export const HOOD_ZOOM = 10.2
 const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
 const fromMercY = (y: number) => (Math.atan(Math.exp(y)) * 360) / Math.PI - 90
 /** Room around the outermost neighbourhoods (about a ring's radius), in degrees. */
 const FRAME_PAD = 0.012
+
+type LatLng = { lat: number; lng: number }
+
+/** The camera that frames `pts` (plus a ring's radius) in `frame`, no further out than `minZoom`, and whether they fit. */
+function fitPoints(pts: readonly LatLng[], frame: Frame | undefined, minZoom: number) {
+  const west = Math.min(...pts.map((p) => p.lng)) - FRAME_PAD
+  const east = Math.max(...pts.map((p) => p.lng)) + FRAME_PAD
+  const south = Math.min(...pts.map((p) => p.lat)) - FRAME_PAD
+  const north = Math.max(...pts.map((p) => p.lat)) + FRAME_PAD
+  const center = { lat: Math.round(fromMercY((mercY(south) + mercY(north)) / 2) * 1e5) / 1e5, lng: Math.round(((west + east) / 2) * 1e5) / 1e5 }
+  if (!frame || frame.w <= 0 || frame.h <= 0) return { camera: { center, zoom: CITY_ZOOM_MAX }, fits: true }
+  // MapLibre's world is 512·2^z px wide; mercator y spans 2π over that height.
+  const zx = Math.log2((frame.w * 360) / (512 * (east - west)))
+  const zy = Math.log2((frame.h * 2 * Math.PI) / (512 * (mercY(north) - mercY(south))))
+  const z = Math.floor(Math.min(zx, zy) * 20) / 20
+  return { camera: { center, zoom: Math.min(CITY_ZOOM_MAX, Math.max(minZoom, z)) }, fits: z >= minZoom }
+}
 
 /**
  * The camera that a manual area choice and a location fix both use (§5.6): never the fix itself.
  * A neighbourhood: its centroid at zoom 13.5. A city: the box around its centroid and gazetteer
  * neighbourhoods (public data), as close as 11.5 and no further out than 10.4, fitted to `frame`.
  * On a 390 px phone that shows Lagos from Ikeja to Lekki instead of the 10 km around the centroid.
- * It depends only on the area and the screen, so a fix and a manual choice still land identically.
+ *
+ * Where even 10.4 can't fit that box (a 390×664 or 320×568 phone), the box of the city's places
+ * (`places`, public data the page already holds) is framed instead, as far out as 10.2 where the
+ * neighbourhood names still show, so the brands near the shopper
+ * sit in the free part of the map and not under the pill, controls and carousel (review
+ * 2026-11-08). It depends only on the area, the screen and the places, never on a fix, so a fix
+ * and a manual choice still land identically.
  */
-export function areaCamera(area: AreaHit, frame?: Frame) {
+export function areaCamera(area: AreaHit, frame?: Frame, places: readonly LatLng[] = []) {
   if (area.kind === "neighbourhood") return { center: { lat: area.lat, lng: area.lng }, zoom: 13.5 }
-  const pts = [area.city, ...area.city.neighbourhoods]
-  const west = Math.min(...pts.map((p) => p.lng)) - FRAME_PAD
-  const east = Math.max(...pts.map((p) => p.lng)) + FRAME_PAD
-  const south = Math.min(...pts.map((p) => p.lat)) - FRAME_PAD
-  const north = Math.max(...pts.map((p) => p.lat)) + FRAME_PAD
-  const center = { lat: Math.round(fromMercY((mercY(south) + mercY(north)) / 2) * 1e5) / 1e5, lng: Math.round(((west + east) / 2) * 1e5) / 1e5 }
-  if (!frame || frame.w <= 0 || frame.h <= 0) return { center, zoom: CITY_ZOOM_MAX }
-  // MapLibre's world is 512·2^z px wide; mercator y spans 2π over that height.
-  const zx = Math.log2((frame.w * 360) / (512 * (east - west)))
-  const zy = Math.log2((frame.h * 2 * Math.PI) / (512 * (mercY(north) - mercY(south))))
-  const zoom = Math.min(CITY_ZOOM_MAX, Math.max(CITY_ZOOM_MIN, Math.floor(Math.min(zx, zy) * 20) / 20))
-  return { center, zoom }
+  const city = fitPoints([area.city, ...area.city.neighbourhoods], frame, CITY_ZOOM_MIN)
+  if (city.fits) return city.camera
+  const near = places.filter((p) => haversineKm(area.city.lat, area.city.lng, p.lat, p.lng) <= areaRadiusKm(area))
+  return near.length ? fitPoints(near, frame, HOOD_ZOOM).camera : city.camera
 }
 
 /**
  * After a location fix: the nearest gazetteer neighbourhood within 5 km, else the nearest city
  * within 60 km, else the fix itself at zoom ≤ 10 (tiles of about 40 km). The returned area is
- * shown but never saved or put in a URL.
+ * shown but never saved or put in a URL. `places` is what a manual choice would frame too.
  */
-export function cameraForFix(lat: number, lng: number, frame?: Frame): { center: { lat: number; lng: number }; zoom: number; area: AreaHit | null } {
+export function cameraForFix(lat: number, lng: number, frame?: Frame, places: readonly LatLng[] = []): { center: { lat: number; lng: number }; zoom: number; area: AreaHit | null } {
   const hood = nearestArea(lat, lng, 5, "neighbourhood")
-  if (hood) return { ...areaCamera(hood, frame), area: hood }
+  if (hood) return { ...areaCamera(hood, frame, places), area: hood }
   const city = nearestArea(lat, lng, 60, "city")
-  if (city) return { ...areaCamera(city, frame), area: city }
+  if (city) return { ...areaCamera(city, frame, places), area: city }
   return { center: { lat, lng }, zoom: 10, area: null }
 }
 

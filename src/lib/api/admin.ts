@@ -13,6 +13,7 @@ import type {
   DeliveryListDto,
   DeliveryTab,
   EvidenceResult,
+  HeldNoteViewResult,
   HeldViewResult,
   HolidayDto,
   MessageCaseDto,
@@ -53,6 +54,8 @@ export const listChartFlags = (status: "open" | "decided" | "frozen" | "all") =>
 export const getChartFlag = (id: string) => api<ChartFlagDetailDto>(`/api/admin/charts/flags/${encodeURIComponent(id)}`)
 export const listSponsored = () => api<{ items: SponsoredRowDto[] }>("/api/admin/charts/sponsored")
 export const listDelivery = (tab: DeliveryTab, country?: string) => api<DeliveryListDto>("/api/admin/delivery", { query: { tab, country } })
+/** POST: a held brand note's text (audited delivery_note.viewed; Support, Trust & safety and owners). */
+export const viewHeldNote = (id: string) => api<HeldNoteViewResult>(`/api/admin/delivery/notes/${encodeURIComponent(id)}/view`, { method: "POST" })
 export const listHolidays = (country?: string) => api<{ items: HolidayDto[] }>("/api/admin/holidays", { query: { country } })
 export const listAbuse = (user?: string) => api<AbuseListDto>("/api/admin/abuse", { query: { user } })
 export const listRestrictions = (subject?: string) => api<{ items: RestrictionDto[] }>("/api/admin/restrictions", { query: { subject } })

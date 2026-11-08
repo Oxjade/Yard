@@ -74,7 +74,7 @@ export function DestinationPicker({ className }: { className?: string }) {
       <PopoverTrigger asChild>
         <Trigger label={label} open={open} className={className} />
       </PopoverTrigger>
-      {/* Opaque, not glass: it opens over the acid "Add to bag", which mustn't bleed through as a glow. */}
+      {/* Opaque, not glass: it opens over the acid "Add to cart", which mustn't bleed through as a glow. */}
       <PopoverContent align="start" className="w-80 bg-surface p-0 backdrop-blur-none">
         <PickerForm country={country} city={city} onDone={() => setOpen(false)} />
       </PopoverContent>

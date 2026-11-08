@@ -139,7 +139,7 @@ export function WishlistView() {
         <h1 className="mt-2 font-display text-display-lg text-ink">Wishlist</h1>
         <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">
           {saved.length
-            ? `${saved.length} saved ${saved.length === 1 ? "piece" : "pieces"} from ${brandCount} ${brandCount === 1 ? "brand" : "brands"}. Add one to your bag and it moves out of your wishlist.`
+            ? `${saved.length} saved ${saved.length === 1 ? "piece" : "pieces"} from ${brandCount} ${brandCount === 1 ? "brand" : "brands"}. Add one to your cart and it moves out of your wishlist.`
             : "Pieces you save from any brand wait here until you're ready."}
         </p>
       </header>

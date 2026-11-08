@@ -34,16 +34,16 @@ export function DropProducts({ drop, products, brandName }: { drop: Drop; produc
     phase === "upcoming"
       ? drop.access === "draw"
         ? "These are previews. Enter the draw before release; only drawn winners can buy."
-        : "These are previews; adding to your bag opens at release."
+        : "These are previews; adding to your cart opens at release."
       : drawClosed
         ? phase === "ended"
           ? "This draw has ended. Its pieces are for drawn winners only, so they don't go on general sale."
           : "Entries closed. Winners are picked from the entries made before release."
         : phase === "live"
           ? atLimit
-            ? `Live now. Your bag has ${inBag}, the limit of ${drop.limitPerCustomer} per customer for this drop.`
+            ? `Live now. Your cart has ${inBag}, the limit of ${drop.limitPerCustomer} per customer for this drop.`
             : inBag > 0
-              ? `Live now. Your bag has ${inBag} of the ${drop.limitPerCustomer} allowed per customer.`
+              ? `Live now. Your cart has ${inBag} of the ${drop.limitPerCustomer} allowed per customer.`
               : `Live now. Limit ${drop.limitPerCustomer} per customer across the drop.`
           : phase === "sold-out"
             ? `Sold out. Follow ${brandName} and their next run shows up in Following.`

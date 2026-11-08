@@ -26,9 +26,11 @@ export type CleanupInput = {
   groupIds?: string[]
   /** References, for u_t_* test shoppers' checkouts only (a reference is visible to shoppers, brands and admins). */
   references?: string[]
-  /** Sweep these u_t_* test shoppers' checkouts (each must start with u_t_). */
+  /** The run's test shoppers by id prefix (u_t_d covers u_t_d1, u_t_d2…). A sweep needs it (or `customers`) and `since`. */
+  actorPrefix?: string
+  /** The run's test shoppers by id (each must start with u_t_). A sweep needs them (or `actorPrefix`) and `since`. */
   customers?: string[]
-  /** Sweep only checkouts created from this moment on (with `customers`, both apply). */
+  /** The run's start: a sweep takes only checkouts created from this moment on. */
   since?: string
   dryRun?: boolean
 }
@@ -36,8 +38,9 @@ export type CleanupInput = {
 /**
  * Development only: removes what D's curl kit and browser scripts registered, so the demo accounts
  * see only the seeded sample data afterwards (§9.0 test-data hygiene).
- * - The u_t_* sweep is scoped: test shoppers named in `customers`, and/or checkouts created since
- *   `since`. With neither, nothing is swept, so a parallel run's fixtures stay put.
+ * - The u_t_* sweep is scoped to the caller's own run: its test shoppers (`actorPrefix` and/or
+ *   `customers`) AND its start (`since`). Either half alone is refused (400), so one kit's cleanup
+ *   never takes another run's checkouts (it once took M2's u_t_m1 order during N's run).
  * - Named checkouts: by reference only for u_t_* shoppers; by group id also for the demo shopper's
  *   own browser checkouts created since `since` and within the last day. Seeded groups never.
  * - For those orders: delivery problems, estimates and shipment events (cascade), the notifications
@@ -55,11 +58,20 @@ export async function devCleanup(actor: AdminActor, input: CleanupInput) {
   const customers = input.customers ?? []
   const badCustomer = customers.find((c) => !c.startsWith("u_t_"))
   if (badCustomer) throw rule(`Only u_t_* test shoppers can be swept (got ${badCustomer}).`)
+  const prefix = input.actorPrefix ?? null
+  if (prefix !== null && !/^u_t_[a-z0-9_]{1,40}$/.test(prefix)) throw rule("`actorPrefix` must start with u_t_.")
+  const runActors = prefix !== null || customers.length > 0
+  const named = (input.groupIds?.length ?? 0) + (input.references?.length ?? 0) > 0
+  if (runActors && !since) throw rule("A sweep needs `since`, the run's start, so it takes only this run's checkouts.")
+  if (since && !runActors && !named) throw rule("Name the run's test shoppers (`actorPrefix` or `customers`) with `since`: a sweep never takes every test shopper's checkouts.")
   return withTx(async () => {
     const d = await db()
     const testShopper = like(orderGroups.customerId, "u_t_%")
-    // 1. The scoped sweep of test shoppers' checkouts.
-    const sweepWhere = customers.length || since ? and(testShopper, customers.length ? inArray(orderGroups.customerId, customers) : undefined, since ? gte(orderGroups.createdAt, since) : undefined) : undefined
+    // 1. The sweep of this run's checkouts: its test shoppers, created since its start. `_` and `%`
+    // in the prefix are literal (LIKE would read them as wildcards).
+    const byPrefix = prefix !== null ? like(orderGroups.customerId, `${prefix.replace(/[\\%_]/g, "\\$&")}%`) : undefined
+    const byId = customers.length ? inArray(orderGroups.customerId, customers) : undefined
+    const sweepWhere = runActors && since ? and(testShopper, or(byPrefix, byId), gte(orderGroups.createdAt, since)) : undefined
     // 2. Named checkouts.
     const refs = input.references ?? []
     const ids = input.groupIds ?? []
@@ -126,7 +138,7 @@ export async function devCleanup(actor: AdminActor, input: CleanupInput) {
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },
       action: "dev.cleanup",
       target: "Delivery test data (development only)",
-      meta: { groups: doomedGroups.length, orders: doomedOrders.length, complaints: complaints.length, events: events.length, notifications: notes.length, auditRows: audits.length, abuseRows: abuse.length, dailyBuckets: buckets.length },
+      meta: { scope: { actorPrefix: prefix, customers, since: since?.toISOString() ?? null, named }, groups: doomedGroups.length, orders: doomedOrders.length, complaints: complaints.length, events: events.length, notifications: notes.length, auditRows: audits.length, abuseRows: abuse.length, dailyBuckets: buckets.length },
     })
     return summary
   })

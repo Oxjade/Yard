@@ -22,7 +22,7 @@ const stepButton =
   "inline-flex size-10 items-center justify-center rounded-md text-ink-2 outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-violet disabled:opacity-30 sm:size-8"
 
 /**
- * Bag lines grouped by brand — shared by the bag drawer and the bag page.
+ * Cart lines grouped by brand — shared by the cart drawer and the cart page (/bag).
  *
  * Removing a line (its ×, or − at quantity 1) unmounts it. Focus moves to the remove button
  * of the line that takes its place (or the one before, for the last line), so keyboard users
@@ -116,7 +116,9 @@ function BagSection({
             <p className="truncate text-xs text-ink-2">Ships from {g.brand.city}, {countries[g.brand.shipsFrom].name}</p>
           </div>
         </Link>
-        <p className="shrink-0 text-xs text-ink-2 tabular">{g.days[0]}–{g.days[1]} days</p>
+        {/* The day count and the shipping footer come from this brand's quote alone, so they
+            appear once it has loaded and never show a number Yard didn't quote (§6.5). */}
+        {g.shippingKnown ? <p className="shrink-0 text-xs text-ink-2 tabular">{g.days[0]}–{g.days[1]} business days</p> : null}
       </header>
       <ul className="divide-y divide-white/6">
         <AnimatePresence initial={false}>
@@ -125,13 +127,17 @@ function BagSection({
           ))}
         </AnimatePresence>
       </ul>
-      <footer className="flex items-center justify-between gap-3 border-t border-white/6 px-4 py-2.5 text-xs">
-        <span className="flex items-center gap-1.5 text-ink-2">
-          <Truck className="size-3.5" />
-          {g.freeShipping ? "Free standard shipping" : `${formatMoney(g.toFreeShipping, currency)} more for free shipping`}
-        </span>
-        <span className="tabular text-ink">{g.freeShipping ? "Free" : formatMoney(g.shipping, currency)}</span>
-      </footer>
+      {g.shippingKnown && g.option ? (
+        <footer className="flex items-center justify-between gap-3 border-t border-white/6 px-4 py-2.5 text-xs">
+          <span className="flex min-w-0 items-center gap-1.5 text-ink-2">
+            <Truck className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">
+              {g.freeShipping ? `${g.option.label} ships free` : g.toFreeShipping > 0 ? `${formatMoney(g.toFreeShipping, currency)} more for free shipping` : g.option.service === "pickup" ? g.option.label : `${g.option.label} shipping`}
+            </span>
+          </span>
+          <span className="shrink-0 tabular text-ink">{g.freeShipping ? "Free" : formatMoney(g.shipping, currency)}</span>
+        </footer>
+      ) : null}
     </motion.section>
   )
 }

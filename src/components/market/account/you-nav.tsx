@@ -5,12 +5,15 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { useUnread } from "@/lib/realtime/unread"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { cn } from "@/lib/utils"
 
 const items = [
   { href: "/you", label: "Overview", exact: true },
+  { href: "/inbox", label: "Inbox", count: "inbox" },
   { href: "/following", label: "Following", count: "following" },
   { href: "/wishlist", label: "Wishlist", count: "wishlist" },
   { href: "/you/orders", label: "Orders", count: "orders" },
@@ -37,7 +40,11 @@ export function YouNav({ className }: { className?: string }) {
   const following = useSaved((s) => s.following.length)
   const wishlist = useSaved((s) => s.wishlist.length)
   const orders = useOrders((s) => s.groups.length)
-  const counts = { following, wishlist, orders }
+  // Unread conversations from the server (the realtime provider keeps it current); unknown or
+  // signed out reads as no count, never 0.
+  const signedIn = useServerSession((s) => !!s.shopper)
+  const unread = useUnread("market")
+  const counts = { following, wishlist, orders, inbox: signedIn && unread ? unread : 0 }
   const navRef = useRef<HTMLElement>(null)
   const [fade, setFade] = useState<Fade>("none")
 
@@ -90,7 +97,12 @@ export function YouNav({ className }: { className?: string }) {
                 className={cn("relative flex h-11 items-center gap-2 px-3 text-sm transition-colors", active ? "text-ink" : "text-ink-2 hover:text-ink")}
               >
                 {item.label}
-                {count ? <span className="tabular text-xs text-ink-3">{count}</span> : null}
+                {count ? (
+                  <span className="tabular text-xs text-ink-3">
+                    {count}
+                    {item.href === "/inbox" ? <span className="sr-only"> unread</span> : null}
+                  </span>
+                ) : null}
                 {active ? <motion.span layoutId="you-nav-underline" className="absolute inset-x-3 -bottom-px h-[2px] rounded-full bg-purple" /> : null}
               </Link>
             </li>

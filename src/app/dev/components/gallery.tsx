@@ -64,7 +64,7 @@ export function DevGallery() {
         </div>
       </Section>
 
-      <Section title="ReportSheet" note="Each subject type's reasons. Opening one uses the real POST /api/reports (built by F2): until then a send shows the failure state.">
+      <Section title="ReportSheet" note="Each subject type's reasons. Opening one uses the real POST /api/reports; the demo subjects don't exist, so a send shows the “may have been removed” state.">
         <div className="grid gap-3 md:grid-cols-2">
           {subjects.map((s) => (
             <div key={s} className="grid gap-2 rounded-lg border border-line-soft bg-card p-3">

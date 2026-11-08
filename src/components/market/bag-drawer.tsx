@@ -12,19 +12,23 @@ import { priceCart } from "@/lib/cart"
 import { formatMoney } from "@/lib/money"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
-import { cn } from "@/lib/utils"
 import { BagGroups } from "./bag-contents"
 import { bagCount } from "./bag-count"
-import { BrandDeliveryList, LEGACY_SHIPPING_HIDDEN, ShippingAmount } from "./delivery/delivery-bits"
+import { BrandDeliveryList, ShippingAmount } from "./delivery/delivery-bits"
 import { useShippingQuote } from "./delivery/use-shipping-quote"
 
-/** The header's bag button: where focus lands when whatever opened the drawer (or the sign-in prompt) has gone. */
-export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Bag,"]')).find(canTakeFocus)
+/**
+ * The Cart button that can take focus right now: the header's on desktop, the home bar's on phones
+ * (only one is visible at a time). Where focus lands when whatever opened the drawer (or the
+ * sign-in prompt) has gone.
+ */
+export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Cart,"], nav[aria-label="Primary"] button[aria-label^="Cart,"]')).find(canTakeFocus)
 
 /**
- * The bag drawer: a floating Liquid Glass panel that springs in from the right. On close,
- * focus goes back to what opened it (the bag button, a product's "View bag"), or to the bag
- * button when that control has gone (the "Added to bag" bubble, a toast's action).
+ * The cart drawer: a floating Liquid Glass panel that springs in from the right. On close,
+ * focus goes back to what opened it (the Cart button in the header or the home bar, a product's
+ * "View cart"), or to the visible Cart button when that control has gone (the "Added to cart"
+ * bubble, a toast's action).
  */
 export function BagDrawer() {
   const router = useRouter()
@@ -78,10 +82,10 @@ export function BagDrawer() {
                 {focus.probe}
                 <header className="flex items-center justify-between px-5 pt-5 pb-4">
                   <DialogPrimitive.Title className="flex items-baseline gap-2">
-                    <span className="font-display text-display-sm">Bag</span>
+                    <span className="font-display text-display-sm">Cart</span>
                     <span className="text-sm text-ink-2 tabular">{count} {count === 1 ? "item" : "items"}</span>
                   </DialogPrimitive.Title>
-                  <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full text-ink-2 transition hover:bg-white/8 hover:text-ink" aria-label="Close bag">
+                  <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full text-ink-2 transition hover:bg-white/8 hover:text-ink" aria-label="Close cart">
                     <X className="size-5" />
                   </DialogPrimitive.Close>
                 </header>
@@ -93,7 +97,7 @@ export function BagDrawer() {
                     </span>
                     <div>
                       <p ref={emptyTitle} tabIndex={-1} className="text-base text-ink outline-none">
-                        Your bag is empty
+                        Your cart is empty
                       </p>
                       <p className="mt-1 text-sm text-ink-2">Add pieces from any brand and they check out together, one order per brand.</p>
                     </div>
@@ -109,12 +113,8 @@ export function BagDrawer() {
                           {bag.groups.length} brands, one checkout. Each brand ships its own order.
                         </p>
                       ) : null}
-                      {/* Until every brand has a quote, the shared bag sections' own shipping footer and
-                          day count would read the platform's old demo rates, so they're hidden: the
-                          list below and the totals say what's known (§6.5: never a number of our own). */}
-                      <div className={cn(bag.shipping === null && LEGACY_SHIPPING_HIDDEN)}>
-                        <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
-                      </div>
+                      {/* Each brand's section shows its day count and shipping line once its own quote has loaded (§6.5). */}
+                      <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
                       <BrandDeliveryList groups={bag.groups} state={quote} className="mt-4 px-1" title="Estimated delivery by brand" />
                     </div>
                     <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
@@ -144,7 +144,7 @@ export function BagDrawer() {
                           Checkout
                         </Button>
                         <Button asChild variant="secondary" size="lg" onClick={close} className="w-full">
-                          <Link href="/bag">View bag</Link>
+                          <Link href="/bag">View cart</Link>
                         </Button>
                       </div>
                     </footer>

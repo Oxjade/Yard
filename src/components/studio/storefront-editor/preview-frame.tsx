@@ -91,7 +91,7 @@ export const PreviewFrame = forwardRef<HTMLDivElement, Props>(function PreviewFr
     if (target.closest("article button:not([data-preview-allowed])")) {
       e.preventDefault()
       e.stopPropagation()
-      toast("Shopping is off in the preview", { id: "sf-preview-shop", description: "Bag and wishlist work on your live storefront." })
+      toast("Shopping is off in the preview", { id: "sf-preview-shop", description: "Cart and wishlist work on your live storefront." })
     }
   }
 

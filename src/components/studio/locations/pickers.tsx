@@ -26,7 +26,7 @@ export function ProductPicker({ id, legend, max, products, value, onChange, erro
             <span className="text-xs text-ink-3 tabular">
               {picked.length} of {max}
             </span>
-            <button type="button" onClick={() => onChange([])} className="rounded-sm text-xs text-violet hover:underline">
+            <button type="button" onClick={() => onChange([])} className="-mx-2 -my-3 inline-flex min-h-10 items-center rounded-sm px-2 text-xs text-ink-2 underline underline-offset-2 hover:text-ink md:min-h-0">
               Clear
             </button>
           </span>

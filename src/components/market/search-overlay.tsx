@@ -4,9 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
+import { ArrowRightIcon, MagnifyingGlassIcon as Search, MapPinAreaIcon, RankingIcon, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { chooseArea } from "@/components/around/around-store"
+import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
+import { browseLinks } from "@/config/site"
+import { CHART_SLUGS, chartLabels } from "@/lib/api/contracts/charts"
+import { fold, searchAreas } from "@/lib/around/gazetteer"
 import { categories, searchBrands, searchProducts } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
 import { create } from "zustand"
@@ -17,12 +22,31 @@ export const useSearchOverlay = create<{ open: boolean; setOpen: (o: boolean) =>
 
 const suggestions = ["hoodie", "silver", "sneakers", "ceramics", "fragrance", "kente"]
 
+/** Boards whose name matches the query ("trend" → Trending); "chart" or "charts" lists them all. */
+function matchCharts(term: string) {
+  const q = fold(term)
+  if (!q) return []
+  if ("charts".startsWith(q) && q.length >= 4) return CHART_SLUGS.map((slug) => ({ slug, label: chartLabels[slug] }))
+  return CHART_SLUGS.filter((slug) => fold(chartLabels[slug]).split(" ").some((w) => w.startsWith(q)) || fold(chartLabels[slug]).startsWith(q)).map((slug) => ({ slug, label: chartLabels[slug] }))
+}
+
+/** Where focus goes when whatever opened the overlay has gone: the visible search control (header capsule or the home bar's Explore). */
+const searchOpener = () =>
+  Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label="Search brands and products"], nav[aria-label="Primary"] button[aria-haspopup="dialog"]')).find(canTakeFocus)
+
+/**
+ * Search (⌘K, the header capsule, or Explore in the phone home bar). Empty, it opens on Browse:
+ * Charts, Around, Drops, Brands, Shop and Categories as 40px chips (§7.3), then a few searches to
+ * try. Typing searches brands, products and categories, plus Cities (the Around gazetteer, which
+ * never leaves the device) and Charts (board names). Closing returns focus to what opened it.
+ */
 export function SearchOverlay() {
   const router = useRouter()
   const open = useSearchOverlay((s) => s.open)
   const setOpen = useSearchOverlay((s) => s.setOpen)
   const [q, setQ] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const focus = useFocusReturn(searchOpener)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,6 +66,8 @@ export function SearchOverlay() {
       products: searchProducts({ q: term }).slice(0, 6),
       brands: searchBrands({ q: term }).slice(0, 4),
       categories: categories.filter((c) => c.name.toLowerCase().includes(term.toLowerCase())).slice(0, 3),
+      cities: searchAreas(term, 4),
+      charts: matchCharts(term).slice(0, 7),
     }
   }, [q])
 
@@ -53,7 +79,8 @@ export function SearchOverlay() {
     router.push(`/shop?q=${encodeURIComponent(q.trim())}`)
   }
 
-  const empty = results && !results.products.length && !results.brands.length && !results.categories.length
+  const empty = results && !results.products.length && !results.brands.length && !results.categories.length && !results.cities.length && !results.charts.length
+  const chip = "inline-flex h-10 items-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-ink transition-colors hover:border-white/25 hover:bg-white/6 focus-visible:outline-2 focus-visible:outline-violet"
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -71,40 +98,65 @@ export function SearchOverlay() {
                 e.preventDefault()
                 inputRef.current?.focus()
               }}
+              onCloseAutoFocus={focus.onCloseAutoFocus}
+              // The phone home bar stays above the scrim while this is open (§7.2), with Explore in
+              // its pressed state: a tap on Explore closes the overlay through its own toggle, so
+              // that press doesn't also count as a tap outside (which would close, then reopen).
+              onPointerDownOutside={(e) => {
+                if (e.target instanceof Element && e.target.closest("[data-search-toggle]")) e.preventDefault()
+              }}
             >
+              {/* Below lg it ends clear of the home bar and its raised pin, which sit above the scrim. */}
               <motion.div
-                className="glass-strong glass-sheen fixed inset-x-2 top-2 z-50 mx-auto max-h-[calc(100dvh-1rem)] max-w-2xl overflow-hidden rounded-2xl outline-none sm:top-16"
+                className="glass-strong glass-sheen fixed inset-x-2 top-2 z-50 mx-auto flex max-h-[calc(100dvh-var(--tabbar-top)-2.25rem)] max-w-2xl flex-col overflow-hidden rounded-2xl outline-none sm:top-16 sm:max-h-[calc(100dvh-var(--tabbar-top)-5.75rem)] lg:max-h-[calc(100dvh-5rem)]"
                 initial={{ opacity: 0, y: -12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 500, damping: 38 }}
               >
+                {focus.probe}
                 <DialogPrimitive.Title className="sr-only">Search</DialogPrimitive.Title>
-                <form onSubmit={submit} className="flex items-center gap-3 border-b border-white/8 px-4">
+                <form onSubmit={submit} className="flex shrink-0 items-center gap-3 border-b border-white/8 px-4">
                   <Search className="size-5 shrink-0 text-ink-2" />
                   <input
                     ref={inputRef}
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search brands, products and categories"
-                    className="h-14 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
+                    placeholder="Brands, products, cities"
+                    className="h-14 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
                     aria-label="Search"
                   />
-                  <DialogPrimitive.Close className="inline-flex size-8 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close search">
+                  <DialogPrimitive.Close className="-mr-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close search">
                     <X className="size-4" />
                   </DialogPrimitive.Close>
                 </form>
 
-                <div className="max-h-[70dvh] overflow-y-auto p-4">
+                <div className="max-h-[70dvh] min-h-0 flex-1 overflow-y-auto p-4">
                   {!results ? (
-                    <div>
-                      <p className="text-xs text-ink-3">Try</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {suggestions.map((s) => (
-                          <button key={s} type="button" onClick={() => setQ(s)} className="h-8 rounded-full border border-white/10 px-3 text-sm text-ink-2 transition hover:border-violet hover:text-ink">
-                            {s}
-                          </button>
-                        ))}
+                    <div className="grid gap-5">
+                      <nav aria-labelledby="search-browse">
+                        <p id="search-browse" className="text-xs text-ink-3">
+                          Browse
+                        </p>
+                        <ul className="mt-2 flex flex-wrap gap-2">
+                          {browseLinks.map((l) => (
+                            <li key={l.href}>
+                              <Link href={l.href} onClick={close} className={chip}>
+                                {l.label}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </nav>
+                      <div>
+                        <p className="text-xs text-ink-3">Try</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {suggestions.map((s) => (
+                            <button key={s} type="button" onClick={() => setQ(s)} className="h-10 rounded-full border border-white/10 px-3.5 text-sm text-ink-2 transition hover:border-white/25 hover:text-ink sm:h-8 sm:px-3">
+                              {s}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : empty ? (
@@ -148,20 +200,60 @@ export function SearchOverlay() {
                           </ul>
                         </div>
                       ) : null}
+                      {results.cities.length ? (
+                        <div>
+                          <p className="mb-2 text-xs text-ink-3">Cities</p>
+                          <ul className="grid gap-1">
+                            {results.cities.map((c) => (
+                              <li key={c.slug}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    close()
+                                    chooseArea(c.slug, (href) => router.push(href))
+                                  }}
+                                  className="flex min-h-10 w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-white/6"
+                                >
+                                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10">
+                                    <MapPinAreaIcon className="size-4 text-ink-2" aria-hidden />
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.label}</span>
+                                  <span className="shrink-0 text-xs text-ink-2">Brands near here on Around</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {results.charts.length ? (
+                        <div>
+                          <p className="mb-2 text-xs text-ink-3">Charts</p>
+                          <ul className="flex flex-wrap gap-2">
+                            {results.charts.map((c) => (
+                              <li key={c.slug}>
+                                <Link href={`/charts?chart=${c.slug}`} onClick={close} className={chip}>
+                                  <RankingIcon className="size-4 text-ink-2" aria-hidden />
+                                  {c.label}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                       {results.categories.length ? (
                         <div>
                           <p className="mb-2 text-xs text-ink-3">Categories</p>
                           <div className="flex flex-wrap gap-2">
                             {results.categories.map((c) => (
-                              <Link key={c.slug} href={`/categories/${c.slug}`} onClick={close} className="h-8 rounded-full border border-white/10 px-3 text-sm leading-8 text-ink-2 hover:text-ink">
+                              <Link key={c.slug} href={`/categories/${c.slug}`} onClick={close} className={chip}>
                                 {c.name}
                               </Link>
                             ))}
                           </div>
                         </div>
                       ) : null}
-                      <button type="submit" onClick={submit} className="h-10 rounded-md border border-white/10 text-sm text-ink-2 hover:bg-white/6 hover:text-ink">
-                        See all results for “{q}”
+                      <button type="submit" onClick={submit} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-white/10 text-sm text-ink-2 hover:bg-white/6 hover:text-ink">
+                        See all products for “{q}” <ArrowRightIcon className="size-3.5" aria-hidden />
                       </button>
                     </div>
                   )}

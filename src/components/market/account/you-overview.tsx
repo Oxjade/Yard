@@ -18,6 +18,7 @@ import type { Brand, MerchantOrder, Product } from "@/lib/data/types"
 import { firstName, formatDay, formatOrderMoney } from "./format"
 import { InterestEditor } from "./interest-editor"
 import { isSampleCheckout, OrderStatusBadge, SampleChip } from "./order-status"
+import { InboxSummaryCard } from "@/components/inbox/entry"
 import { YouNav } from "./you-nav"
 
 function greeting(hour: number) {
@@ -103,6 +104,9 @@ export function YouOverview() {
         <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{summary.join(" ")}</p>
       </header>
       <YouNav className="mt-8" />
+
+      {/* Unread count and the 3 latest conversations; nothing when signed out (§7.3). */}
+      <InboxSummaryCard className="mt-10" />
 
       {!onboarded ? (
         <div className="mt-10 flex flex-col gap-4 rounded-lg border border-line-soft bg-card p-5 sm:flex-row sm:items-center sm:justify-between md:p-6">
@@ -203,13 +207,13 @@ export function YouOverview() {
         </section>
       ) : null}
 
-      <div className="mt-24 grid gap-16 md:mt-32 lg:grid-cols-2 lg:gap-12">
+      <div className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-16 md:mt-32 lg:grid-cols-2 lg:gap-12">
         <section aria-labelledby="you-orders">
           <div id="you-orders">
             <SectionHeader title="Recent orders" description="Each brand ships its own part of a checkout." href={recentGroups.length ? "/you/orders" : undefined} action="All orders" />
           </div>
           {recentGroups.length ? (
-            <ul className="grid gap-3">
+            <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
               {recentGroups.map((g) => {
                 const list = g.orderIds.map((id) => orderById.get(id)).filter((o): o is MerchantOrder => !!o)
                 return (

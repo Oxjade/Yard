@@ -111,13 +111,16 @@ export function ChartsApp({ initial, initialScopes }: { initial?: ChartBoardDto;
   const switching = !current && !error
 
   return (
-    <div className="mt-6 grid gap-6 md:mt-8">
+    // One column that may shrink below its content, and children that may too, so nothing (the
+    // edition line, How Charts work, the board) widens the page at 320 px.
+    <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 md:mt-8 *:min-w-0">
       <EditionLine board={current ? board : undefined} loading={switching} period={state.period} hydrated={hydrated} reduce={!!reduce} />
       <HowChartsWork />
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
         <BoardRail value={state.chart} onChange={changeChart} panelId={PANEL_ID} />
-        <div className="flex items-center gap-2 md:flex-wrap md:gap-3">
+        {/* Wraps at every width: at 320 px Filters drops under the period switch instead of off the page. */}
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <PeriodControl value={state.period} onChange={(period) => setState({ ...state, period })} />
           <div className="ml-auto md:hidden">
             <PhoneFilters state={state} scopes={scopes} onChange={setState} resolvedCity={resolvedCity} />

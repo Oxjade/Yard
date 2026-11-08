@@ -15,10 +15,9 @@ import { adminKeys, listAbuse } from "@/lib/api/admin"
 import { abuseAlertKindLabels, durationLabels, restrictionKindLabels, type AbuseAlertDto, type AbuseRowDto, type RestrictionDto } from "@/lib/api/contracts/admin"
 import { useApi } from "@/lib/api/use-api"
 import { mirrorUserStatus } from "@/components/admin/marketplace/user-actions"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { cn } from "@/lib/utils"
 import { DURATIONS, restrictDecision } from "./restrict"
-import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, sheetTrack, useAdminSession, useServerDecision, type TrustAction } from "./shared"
+import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, sheetTrack, useAdminSession, useServerDecision, type TrustAction, useQueueLive } from "./shared"
 
 /*
  * Users › Abuse (§5.2, §8.1): accounts with abuse signals in the last 7 days. Nothing here
@@ -81,7 +80,7 @@ function decisions(ask: Ask) {
 function AbuseTable() {
   const now = useNow(60_000)
   const q = useApi(adminKeys.abuse, () => listAbuse(), { refreshInterval: 60_000 })
-  useRealtimeEvent("moderation.counts", () => void q.revalidate())
+  useQueueLive(() => void q.revalidate())
   const { reason } = useAdminSession()
   const { ask, dialog } = useServerDecision()
   const d = decisions(ask)

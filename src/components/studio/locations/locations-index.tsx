@@ -37,7 +37,7 @@ export function LocationsIndex() {
   // without locations.manage, the gate below explains what to do instead.
   const canAdd = s.status === "ready" && !!s.brand && canBrand(s.brand.role, "locations.manage")
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       <PageHeader
         title="Locations"
         description={locationsDescription}
@@ -92,13 +92,13 @@ function LocationsList() {
   }
   const replace = (loc: StudioLocationDto) => mutate((cur) => (cur ? { ...cur, locations: cur.locations.map((l) => (l.id === loc.id ? loc : l)) } : cur))
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       {!data.brand.verified ? (
         <p className="rounded-lg border border-line-soft bg-card px-4 py-3 text-xs text-ink-2">
           {data.brand.name} isn&apos;t verified yet, so Yard reviews each place and event before it shows on Around.
         </p>
       ) : null}
-      <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3" aria-label="Your places">
+      <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 2xl:grid-cols-3" aria-label="Your places">
         {data.locations.map((l) => (
           <li key={l.id}>
             <LocationCard
@@ -209,7 +209,7 @@ function LocationCard({ loc, now, onChanged, onAdded, onDeleted }: { loc: Studio
             {loc.locked ? (
               <p className="truncate text-sm font-medium text-ink">{loc.name}</p>
             ) : (
-              <Link href={editHref} className="block truncate text-sm font-medium text-ink hover:text-violet">
+              <Link href={editHref} className="block truncate text-sm font-medium text-ink underline-offset-2 hover:underline">
                 {loc.name}
               </Link>
             )}
@@ -268,7 +268,7 @@ function LocationCard({ loc, now, onChanged, onAdded, onDeleted }: { loc: Studio
         {loc.locked && loc.moderationReason ? <p className="text-xs text-danger">{loc.status === "removed" ? `Yard removed this place: ${loc.moderationReason}.` : `Yard rejected this place: ${loc.moderationReason}.`}</p> : null}
         {loc.status === "in_review" ? <p className="text-xs text-ink-2">Yard is reviewing it. It shows on Around once approved.</p> : null}
         {(loc.kind === "popup" || loc.kind === "exhibition") && loc.startsAt && loc.endsAt ? <p className="text-xs text-ink-2">{dateRange(loc.startsAt, loc.endsAt, loc.timeZone)}</p> : null}
-        {nextEvent ? <p className="truncate text-xs text-violet">Next: {nextEvent.title}, {dayTimeIn(nextEvent.startsAt, loc.timeZone)}</p> : null}
+        {nextEvent ? <p className="truncate text-xs text-ink">Next: {nextEvent.title}, {dayTimeIn(nextEvent.startsAt, loc.timeZone)}</p> : null}
         {ended || loc.status === "rejected" ? (
           <div className="mt-1 flex gap-2">
             {ended || loc.canDuplicate ? (

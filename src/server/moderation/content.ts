@@ -1,5 +1,5 @@
 import "server-only"
-import { and, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { activeRestriction } from "../auth/dal"
 import { afterCommit, db } from "../db"
 import { accountRestrictions, brandLocations, locationEvents, mediaAssets, reports, socialAccounts, socialPosts } from "../db/schema"
@@ -8,11 +8,10 @@ import { log } from "../log"
 import { notFound } from "../http/errors"
 import { newId } from "../ids"
 import * as media from "../media"
-import { notify } from "../notify"
 import * as social from "../social"
 import type { ContentPostDto, IntegrationDto, PlaceDto, PlaceEventDto } from "@/lib/api/contracts/admin"
 import { adminMediaSrc } from "./evidence"
-import { actionReports, assertState, audit, brandMap, brandRefOf, iso, OPEN_REPORT, openReportsFor, publishCountsAfterCommit, reportIdsFor, tryFeature, type DecisionCtx } from "./shared"
+import { actionReports, assertState, audit, brandMap, brandRefOf, iso, OPEN_REPORT, openReportsFor, publishCountsAfterCommit, reportIdsFor, reportMeta, tryFeature, notify, type DecisionCtx } from "./shared"
 
 /**
  * Admin › Content (§8.1): posts and uploads (content.moderate), places with their events as child
@@ -24,7 +23,7 @@ type PostRow = typeof socialPosts.$inferSelect
 type PlaceRow = typeof brandLocations.$inferSelect
 type EventRow = typeof locationEvents.$inferSelect
 
-const IMPORT_SOURCES = ["instagram", "tiktok", "sandbox", "sample"]
+const IMPORT_SOURCES: string[] = ["instagram", "tiktok", "sandbox", "sample"]
 const LIMIT = 300
 
 export async function refreshMedia(ids: (string | null | undefined)[]) {
@@ -43,6 +42,41 @@ export async function setMediaModeration(ids: (string | null | undefined)[], sta
     .update(mediaAssets)
     .set({ moderationStatus: status })
     .where(and(inArray(mediaAssets.id, list), status === "ok" ? eq(mediaAssets.moderationStatus, "removed") : ne(mediaAssets.moderationStatus, "removed")))
+}
+
+/**
+ * Files another subject still uses. A brand may attach one upload to a place and its event, or to two
+ * posts (assertOwned doesn't require an unused file), so removing one subject must not take down a
+ * file a live post, place or event still shows. "Live" is anything Yard hasn't removed: a hidden post
+ * or a rejected place keeps its file too, so it works again once the brand fixes it. `except`: the
+ * subjects the decision itself is about.
+ */
+async function usedElsewhere(ids: (string | null | undefined)[], except: { posts?: string[]; places?: string[]; events?: string[] } = {}) {
+  const list = [...new Set(ids.filter((x): x is string => !!x))]
+  const out = new Set<string>()
+  if (!list.length) return out
+  const d = await db()
+  const arr = sql`array[${sql.join(list.map((x) => sql`${x}`), sql`, `)}]::text[]`
+  // `alias` is one of the fixed table aliases below (p, l, e), never input.
+  const notIn = (alias: "p" | "l" | "e", xs?: string[]) => (xs?.length ? sql`and ${sql.raw(alias)}.id not in (${sql.join(xs.map((x) => sql`${x}`), sql`, `)})` : sql``)
+  const posts = await d.execute(sql`
+    select m->>'mediaId' as a, m->>'posterMediaId' as b from ${socialPosts} p, jsonb_array_elements(p.media) m
+    where p.moderation_status <> 'removed' ${notIn("p", except.posts)} and (m->>'mediaId' = any(${arr}) or m->>'posterMediaId' = any(${arr}))`)
+  const places = await d.execute(sql`
+    select i->>'mediaId' as a from ${brandLocations} l, jsonb_array_elements(l.images) i
+    where l.moderation_status <> 'removed' ${notIn("l", except.places)} and i->>'mediaId' = any(${arr})`)
+  const events = await d.execute(sql`
+    select e.image->>'mediaId' as a from ${locationEvents} e join ${brandLocations} l on l.id = e.location_id
+    where e.moderation_status <> 'removed' and l.moderation_status <> 'removed' ${notIn("e", except.events)} ${notIn("l", except.places)} and e.image->>'mediaId' = any(${arr})`)
+  for (const r of [...posts.rows, ...places.rows, ...events.rows] as { a?: string | null; b?: string | null }[])
+    for (const v of [r.a, r.b]) if (v && list.includes(v)) out.add(v)
+  return out
+}
+
+/** Marks a subject's files removed, except those another live subject still uses. */
+async function removeMediaOf(ids: (string | null | undefined)[], except: Parameters<typeof usedElsewhere>[1]) {
+  const keep = await usedElsewhere(ids, except)
+  await setMediaModeration(ids.filter((x) => !!x && !keep.has(x)), "removed")
 }
 
 /* ── Posts and uploads ─────────────────────────────────────────────── */
@@ -102,7 +136,7 @@ export async function setPostModeration(ctx: DecisionCtx, body: { id: string; ac
     .where(and(eq(socialPosts.id, p.id), inArray(socialPosts.moderationStatus, from)))
     .returning()
   assertState(!!updated)
-  if (body.action === "remove") await setMediaModeration(postMediaIds(p), "removed")
+  if (body.action === "remove") await removeMediaOf(postMediaIds(p), { posts: [p.id] })
   if (body.action === "restore") await setMediaModeration(postMediaIds(p), "ok")
   await refreshMedia(postMediaIds(p))
   const actioned = body.action === "restore" ? [] : await actionReports(ctx, "social_post", p.id, { subjectLabel: "a post" })
@@ -115,7 +149,7 @@ export async function setPostModeration(ctx: DecisionCtx, body: { id: string; ac
     subjectId: p.id,
     brandId: p.brandId,
     reason: body.reason,
-    meta: { source: p.source, reportIds: actioned.map((r) => r.id) },
+    meta: { source: p.source, from: p.moderationStatus, fromReason: p.removedReason, ...reportMeta(actioned) },
   })
   if (body.action !== "restore")
     await notify({ kind: "brand", id: p.brandId }, { key: `post-moderation:${p.id}`, template: "content.removed", vars: { kind: body.action === "hide" ? "post from your feed for review" : "post", reason: body.reason }, href: "/studio/social?tab=content" })
@@ -216,8 +250,9 @@ export async function setPlaceModeration(ctx: DecisionCtx, body: { id: string; a
   assertState(!!updated)
   const events = await d.select().from(locationEvents).where(eq(locationEvents.locationId, p.id))
   const mediaIds = [...placeImages(p), ...events.map((e) => e.image?.mediaId)]
-  if (body.action === "remove") await setMediaModeration(mediaIds, "removed")
-  if (body.action === "restore") await setMediaModeration(mediaIds, "ok")
+  if (body.action === "remove") await removeMediaOf(mediaIds, { places: [p.id], events: events.map((e) => e.id) })
+  // Restore: the place's own photos and its events' images, but not an event Yard removed on its own.
+  if (body.action === "restore") await setMediaModeration([...placeImages(p), ...events.filter((e) => e.moderationStatus !== "removed").map((e) => e.image?.mediaId)], "ok")
   await refreshMedia(mediaIds)
   const { invalidate } = await import("../around")
   await tryFeature("around.invalidate", () => invalidate())
@@ -230,7 +265,7 @@ export async function setPlaceModeration(ctx: DecisionCtx, body: { id: string; a
     subjectId: p.id,
     brandId: p.brandId,
     reason: body.reason,
-    meta: { kind: p.kind, from: p.moderationStatus, reportIds: actioned.map((r) => r.id) },
+    meta: { kind: p.kind, from: p.moderationStatus, fromReason: p.moderationReason, fromReviewedAt: iso(p.reviewedAt), ...reportMeta(actioned) },
   })
   await notify(
     { kind: "brand", id: p.brandId },
@@ -257,7 +292,7 @@ export async function setEventModeration(ctx: DecisionCtx, body: { id: string; a
     .where(and(eq(locationEvents.id, e.id), inArray(locationEvents.moderationStatus, from)))
     .returning()
   assertState(!!updated)
-  if (body.action === "remove") await setMediaModeration([e.image?.mediaId], "removed")
+  if (body.action === "remove") await removeMediaOf([e.image?.mediaId], { events: [e.id] })
   await refreshMedia([e.image?.mediaId])
   const { invalidate } = await import("../around")
   await tryFeature("around.invalidate", () => invalidate())
@@ -271,7 +306,7 @@ export async function setEventModeration(ctx: DecisionCtx, body: { id: string; a
     subjectId: e.id,
     brandId: e.brandId,
     reason: body.reason,
-    meta: { locationId: e.locationId, from: e.moderationStatus, reportIds: actioned.map((r) => r.id) },
+    meta: { locationId: e.locationId, from: e.moderationStatus, fromReason: e.moderationReason, fromReviewedAt: iso(e.reviewedAt), ...reportMeta(actioned) },
   })
   await notify(
     { kind: "brand", id: e.brandId },

@@ -35,3 +35,23 @@ test("titles and distances", () => {
   assert.equal(formatDistance(1.234), "1.2 km")
   assert.equal(formatDistance(0.42), "400 m")
 })
+
+test("a small phone frames the city's places when its neighbourhoods can't fit, still the same for a fix and a choice", () => {
+  const small = { w: 286, h: 264 } // 390×664: the frame between the header and the pill
+  const lagos = areaBySlug("lagos")!
+  const places = [
+    { lat: 6.5095, lng: 3.3711 },
+    { lat: 6.4474, lng: 3.4336 },
+    { lat: 6.4478, lng: 3.4723 },
+    { lat: 51.52, lng: -0.08 }, // London: not one of Lagos's places
+  ]
+  const boxOnly = areaCamera(lagos, small)
+  const withPlaces = areaCamera(lagos, small, places)
+  assert.equal(boxOnly.zoom, 10.4)
+  assert.ok(withPlaces.zoom > 10.4 && withPlaces.zoom <= 11.5, String(withPlaces.zoom))
+  assert.ok(Math.abs(withPlaces.center.lat - 6.4785) < 0.01 && Math.abs(withPlaces.center.lng - 3.4217) < 0.01, JSON.stringify(withPlaces))
+  const fix = cameraForFix(6.46, 3.52, small, places)
+  assert.deepEqual({ center: fix.center, zoom: fix.zoom }, withPlaces)
+  // Where the neighbourhoods fit (390×844, desktop), the places change nothing.
+  assert.deepEqual(areaCamera(lagos, { w: 286, h: 444 }, places), areaCamera(lagos, { w: 286, h: 444 }))
+})

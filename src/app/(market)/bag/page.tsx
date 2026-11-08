@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { BagView } from "@/components/market/checkout/bag-view"
 
 export const metadata: Metadata = {
-  title: "Bag",
+  title: "Cart",
   robots: { index: false },
 }
 

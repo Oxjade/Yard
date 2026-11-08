@@ -4,14 +4,14 @@ import { LocaleSelect } from "./locale-select"
 import { wordmarkType } from "./wordmark-type"
 
 const columns = [
-  { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories"]] },
-  { title: "You", links: [["Your World", "/you"], ["Following", "/following"], ["Wishlist", "/wishlist"], ["Orders", "/you/orders"], ["Settings", "/you/settings"]] },
+  { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories"]] },
+  { title: "You", links: [["Your World", "/you"], ["Inbox", "/inbox"], ["Following", "/following"], ["Wishlist", "/wishlist"], ["Orders", "/you/orders"], ["Settings", "/you/settings"]] },
   { title: "For brands", links: [["Sell on " + site.name, "/studio/onboarding"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising"]] },
 ] as const
 
 export function MarketFooter() {
   return (
-    <footer className="mt-24 border-t border-line-soft pb-28 lg:pb-10">
+    <footer className="mt-24 border-t border-line-soft pb-32 lg:pb-10 print:hidden">
       <div className="mx-auto max-w-page px-4 pt-14 md:px-8">
         <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div className="max-w-sm">
@@ -24,10 +24,11 @@ export function MarketFooter() {
           {columns.map((col) => (
             <div key={col.title}>
               <h2 className="text-sm text-ink">{col.title}</h2>
-              <ul className="mt-4 grid gap-2.5">
+              <ul className="mt-2 grid md:mt-4 md:gap-2.5">
                 {col.links.map(([label, href]) => (
                   <li key={href}>
-                    <Link href={href} className="text-sm text-ink-2 transition-colors hover:text-ink">{label}</Link>
+                    {/* 40px tall on phones (a tap target), the quiet list from md. */}
+                    <Link href={href} className="inline-flex min-h-10 items-center text-sm text-ink-2 transition-colors hover:text-ink md:min-h-0">{label}</Link>
                   </li>
                 ))}
               </ul>

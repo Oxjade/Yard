@@ -2,6 +2,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { BrandCard } from "@/components/market/brand-card"
 import { DiscoverHero } from "@/components/market/discover-hero"
+import { AroundTeaser, ChartsThisWeek } from "@/components/market/discover-modules"
 import { UpcomingDropsBand } from "@/components/market/editorial/upcoming-drops-band"
 import { ProductCard } from "@/components/market/product-card"
 import { RecommendedForYou } from "@/components/market/recommended"
@@ -107,6 +108,13 @@ export default function DiscoverPage() {
             ))}
           </div>
         </section>
+
+        {/* The week's Trending board and a way into Around (§7.3). Both fetch on the client: the
+            page itself stays a static shell. */}
+        <div className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-4 md:mt-32 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <ChartsThisWeek />
+          <AroundTeaser />
+        </div>
 
         {/* Underground Index */}
         <section aria-labelledby="index-title" className="mt-24 md:mt-32">

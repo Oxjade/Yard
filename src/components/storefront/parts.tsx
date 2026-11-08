@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import {
   ArrowUpRightIcon as ArrowUpRight,
+  ChatCircleDotsIcon,
   CheckIcon as Check,
   GlobeSimpleIcon as Globe,
   InstagramLogoIcon as Instagram,
@@ -15,6 +16,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
+import { inboxHrefFor, useMessageBrand } from "@/components/inbox/entry/message-brand-button"
 import { BrandMark } from "@/components/market/brand-mark"
 import { FollowButton } from "@/components/market/follow-button"
 import { Button } from "@/components/ui/button"
@@ -22,6 +24,7 @@ import { useAsyncAction } from "@/hooks/use-async-action"
 import { countries } from "@/config/markets"
 import { site } from "@/config/site"
 import { formatNumber } from "@/lib/money"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, StorefrontAccent, StorefrontSection, StorefrontTemplate } from "@/lib/data/types"
 import { collectionIndexId, sectionTitle, storefrontAccents, type TypeTokens } from "./theme"
@@ -395,6 +398,42 @@ export function CollectionIndex({ ctx, collections, first }: { ctx: StorefrontCo
   )
 }
 
+/**
+ * "Questions? Message {brand}" under the footer blurb (§7.4). Guests go through sign-in first;
+ * a member of this brand signed in to Studio is pointed at the Studio inbox instead (brands
+ * reply there and never start conversations). Inert in the editor's preview.
+ */
+function FooterMessageLink({ ctx }: { ctx: StorefrontContext }) {
+  const { brand } = ctx
+  const go = useMessageBrand()
+  const own = useServerSession((s) => s.brand?.brand.id === brand.id)
+  const look = "-my-2 mt-0 inline-flex min-h-10 items-center gap-1.5 text-left text-xs text-ink-2 underline-offset-4 transition-colors hover:text-ink hover:underline md:min-h-8"
+  if (ctx.preview) {
+    return (
+      <p className="mt-1 inline-flex min-h-8 items-center gap-1.5 text-xs text-ink-3">
+        <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden />
+        Questions? Message {brand.name} (works on your live storefront)
+      </p>
+    )
+  }
+  if (own) {
+    return (
+      <Link href="/studio/inbox" className={cn(look, "mt-1")}>
+        <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden />
+        Shoppers&apos; questions arrive in your Studio inbox
+      </Link>
+    )
+  }
+  return (
+    <button type="button" onClick={() => go(inboxHrefFor(brand))} className={cn(look, "mt-1")}>
+      <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden />
+      <span>
+        Questions? <span className="text-ink">Message {brand.name}</span>
+      </span>
+    </button>
+  )
+}
+
 /** Policies every storefront shows; brands can't remove them. */
 export function StorefrontFooter({ ctx }: { ctx: StorefrontContext }) {
   const { brand } = ctx
@@ -403,7 +442,7 @@ export function StorefrontFooter({ ctx }: { ctx: StorefrontContext }) {
     { label: "Ships from", value: countries[brand.shipsFrom].name },
     { label: "Dispatched within", value: minDays === maxDays ? `${maxDays} working days` : `${minDays} to ${maxDays} working days` },
     { label: "Returns", value: `${brand.returnsDays} days from delivery` },
-    { label: "Checkout", value: `One payment for every brand in your bag` },
+    { label: "Checkout", value: `One payment for every brand in your cart` },
   ]
   return (
     <Container className="mt-24 @3xl:mt-32">
@@ -415,6 +454,7 @@ export function StorefrontFooter({ ctx }: { ctx: StorefrontContext }) {
             <p className="mt-1 max-w-xs text-xs leading-relaxed text-ink-2">
               Sold and shipped by {brand.name}. Checkout runs through {site.name}.
             </p>
+            <FooterMessageLink ctx={ctx} />
           </div>
         </div>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-5 @3xl:grid-cols-4">

@@ -149,7 +149,7 @@ export function BrandSections() {
         <div id="az-title">
           <SectionHeader title="All brands" description={`Every studio on ${site.name}, A to Z.`} />
         </div>
-        <ul className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
           {az.map((b) => (
             <li key={b.id} className="border-b border-line-soft py-1">
               <BrandCard brand={b} variant="row" />

@@ -13,6 +13,12 @@ import { isPlacedOrderId } from "@/lib/shipping/order-ids"
  * Only this brand's orders resolve here — in the backend phase the server enforces it per request.
  */
 export const instant = false
+/**
+ * The whole route is static output, so an address that wasn't prerendered waits for its own
+ * render (where the check runs before anything is sent) instead of being served the shared
+ * fallback shell with a 200 first.
+ */
+export const ensureStatic = "navigation"
 
 /** The brand's sample orders, and the demo shopper's orders with it (the Studio store holds both). */
 const brandOrders = [...merchantOrders, ...customerOrders].filter((o) => o.brandId === STUDIO_BRAND_ID)

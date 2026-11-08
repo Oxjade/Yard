@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import { ArrowUpRightIcon, CopySimpleIcon, DotsThreeIcon, EyeIcon, EyeSlashIcon, ImagesSquareIcon, PencilSimpleIcon, PlayIcon, SortAscendingIcon, StarIcon, TagIcon, TrashIcon, UploadSimpleIcon, WarningCircleIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -47,7 +47,7 @@ function emptyCopy(status: StudioPostStatus, source: FeedSource) {
   }
 }
 
-const statusOf = (p: StudioSocialPostDto): StudioPostStatus => (p.moderationStatus === "removed" ? "removed" : p.visibility)
+export const statusOf = (p: StudioSocialPostDto): StudioPostStatus => (p.moderationStatus === "removed" ? "removed" : p.visibility)
 
 function GridSkeleton() {
   return (
@@ -72,6 +72,7 @@ type Act = (post: StudioSocialPostDto) => void
 function Tile({
   post,
   selected,
+  opened = false,
   mayPublish,
   onSelect,
   onPatch,
@@ -81,6 +82,8 @@ function Tile({
 }: {
   post: StudioSocialPostDto
   selected: boolean
+  /** The post a link opened (?post=<id>): marked and focusable, so the merchant sees which one it is. */
+  opened?: boolean
   mayPublish: boolean
   onSelect: (on: boolean) => void
   onPatch: (post: StudioSocialPostDto, body: Parameters<typeof patchPost>[1], done: string) => void
@@ -103,8 +106,12 @@ function Tile({
   // A removed upload can only be deleted; a removed import has nothing left to do.
   const menu = mayPublish && (!removed || upload)
   return (
-    <li className="min-w-0">
-      <figure className={cn("group relative h-full overflow-hidden rounded-lg border bg-card transition-colors", selected ? "border-purple" : "border-line-soft")}>
+    <li id={`post-${post.id}`} className="min-w-0 scroll-mt-24">
+      <figure
+        tabIndex={opened ? -1 : undefined}
+        aria-current={opened ? "true" : undefined}
+        className={cn("group relative h-full overflow-hidden rounded-lg border bg-card transition-colors outline-none", selected || opened ? "border-purple" : "border-line-soft", opened && "ring-1 ring-purple")}
+      >
         <div className="relative aspect-square bg-surface">
           <Image src={cover.src} alt={cover.alt} fill unoptimized sizes="(min-width: 1024px) 22vw, 50vw" className={cn("object-cover", (removed || status !== "published") && "opacity-70")} />
           {!removed && mayPublish ? (
@@ -224,6 +231,7 @@ export function ContentStudio({
   onStatusChange,
   uploadOpen,
   onUploadOpenChange,
+  openPostId = null,
   anyConnected,
   onChanged,
 }: {
@@ -234,6 +242,8 @@ export function ContentStudio({
   onStatusChange: (s: StudioPostStatus) => void
   uploadOpen: boolean
   onUploadOpenChange: (o: boolean) => void
+  /** A post a link opened (?post=<id>, resolved by the page): scrolled to once it shows, and marked. */
+  openPostId?: string | null
   anyConnected: boolean
   onChanged: () => void
 }) {
@@ -255,6 +265,17 @@ export function ContentStudio({
   // Arrange featured orders what leads the storefront feed, so it lists only featured posts that are on it.
   const featured = posts.filter((p) => p.featured && statusOf(p) === "published")
   const selectedIds = [...selected].filter((id) => posts.some((p) => p.id === id && statusOf(p) !== "removed"))
+  // The opened post's tile, once its status tab shows it: scrolled to and focused, once per link.
+  const openedShown = !!openPostId && shown.some((p) => p.id === openPostId)
+  const scrolledTo = useRef<string | null>(null)
+  useEffect(() => {
+    if (!openedShown || !openPostId || scrolledTo.current === openPostId) return
+    const el = document.getElementById(`post-${openPostId}`)
+    if (!el) return
+    scrolledTo.current = openPostId
+    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" })
+    el.querySelector<HTMLElement>("figure")?.focus({ preventScroll: true })
+  }, [openedShown, openPostId])
 
   const replace = (next: StudioSocialPostDto[]) =>
     mutate((cur) => {
@@ -385,6 +406,7 @@ export function ContentStudio({
                 key={p.id}
                 post={p}
                 selected={selected.has(p.id)}
+                opened={p.id === openPostId}
                 mayPublish={mayPublish}
                 onSelect={(on) =>
                   setSelected((s) => {

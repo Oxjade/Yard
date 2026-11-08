@@ -31,7 +31,6 @@ import {
   messages,
   orderRefs,
   quickReplies,
-  reports,
   users,
 } from "../db/schema"
 import { badRequest, conflict, notFound, rateLimited, rule } from "../http/errors"
@@ -268,15 +267,13 @@ async function publishConversation(conv: Pick<ConvRow, "id" | "customerId" | "br
   }
 }
 
-/** Admin queue counts: held messages plus open message and conversation reports. */
+/**
+ * Tells admins the message queue changed. An empty signal: each admin refetches the counts their
+ * role may see (GET /api/admin/queues/counts), so queue sizes never reach a role without that
+ * queue, Ads operations included (N, from M2).
+ */
 async function publishModerationCounts() {
-  const d = await db()
-  const [held] = await d.select({ n: sql<number>`count(*)::int` }).from(messages).where(eq(messages.status, "held"))
-  const [open] = await d
-    .select({ n: sql<number>`count(*)::int` })
-    .from(reports)
-    .where(and(inArray(reports.subjectType, ["message", "conversation"]), inArray(reports.status, ["open", "in_review"])))
-  await publish(channels.admin, "moderation.counts", { messages: held.n + open.n })
+  await publish(channels.admin, "moderation.counts", {})
 }
 
 /* ------------------------------------------------------------------ send */
@@ -797,9 +794,9 @@ async function maybeRaiseSpamAlert(customerId: string) {
   const id = newId("aa")
   await d.insert(abuseAlerts).values({ id, subjectKind: "user", subjectId: customerId, kind: "spam_marks", evidence: { count: marks.count, brands: marks.brands, markers: marks.users, conversations: marks.conversations } })
   const [u] = await d.select({ name: users.name }).from(users).where(eq(users.id, customerId)).limit(1)
-  await notifyAdmins("abuse.view", { key: `abuse:${id}`, template: "abuse.alert", vars: { kind: "spam marks", subject: u?.name ?? "A shopper", count: marks.count }, href: "/admin/users?tab=abuse" })
-  const [{ n }] = await d.select({ n: sql<number>`count(*)::int` }).from(abuseAlerts).where(eq(abuseAlerts.status, "open"))
-  await publish(channels.admin, "moderation.counts", { abuse: n })
+  await notifyAdmins("abuse.view", { key: `abuse:${id}`, template: "abuse.alert", vars: { kind: "spam marks", subject: u?.name ?? "A shopper", count: marks.count }, href: `/admin/users?tab=abuse&case=${encodeURIComponent(customerId)}` })
+  // An empty signal: each admin refetches the counts their role may see (N, from M2).
+  await publish(channels.admin, "moderation.counts", {})
   return true
 }
 

@@ -80,8 +80,8 @@ export function useDropAddBlock(drop: Drop, { describedBy, intervalMs = 15_000, 
       toast("Sold out", { description: `Every piece in ${drop.name} has gone.`, action: seeDrop })
     } else {
       toast("Drop limit reached", {
-        description: `${drop.name} allows ${drop.limitPerCustomer} per customer, and your bag already has ${inBag}.`,
-        action: { label: "View bag", onClick: () => useCart.getState().open() },
+        description: `${drop.name} allows ${drop.limitPerCustomer} per customer, and your cart already has ${inBag}.`,
+        action: { label: "View cart", onClick: () => useCart.getState().open() },
       })
     }
   }

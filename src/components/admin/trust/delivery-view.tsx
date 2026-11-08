@@ -19,13 +19,14 @@ import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplac
 import { InPageLinks, useSearchParam, writeParams } from "@/components/admin/marketplace/url-state"
 import { useLast } from "@/components/admin/marketplace/use-last"
 import { useNow } from "@/hooks/use-now"
-import { adminKeys, listDelivery } from "@/lib/api/admin"
+import { adminKeys, listDelivery, viewHeldNote } from "@/lib/api/admin"
+import { ApiError } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import { complaintKindLabels, DELIVERY_TABS, type DeliveryIssueDto, type DeliveryListDto, type DeliveryTab, type HolidayDto } from "@/lib/api/contracts/admin"
 import { useApi } from "@/lib/api/use-api"
 import { cn } from "@/lib/utils"
 import { formatNumber } from "@/lib/money"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
-import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, TrustGate, sheetTrack, useAdminSession, useQueueFigures, useServerDecision, type TrustAction } from "./shared"
+import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
 /*
  * Admin › Delivery (§6.5, §8.1): orders past their estimate, delivery complaints, carrier
@@ -35,7 +36,7 @@ import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, Tr
 const TABS: Record<DeliveryTab, { label: string; empty: string; emptyBody: string }> = {
   late: { label: "Late", empty: "No late orders to measure", emptyBody: "Orders still unshipped after their promised ship-by date, or past their promised arrival, show here." },
   complaints: { label: "Complaints", empty: "No open complaints", emptyBody: "Delivery problems shoppers report on their orders land here." },
-  exceptions: { label: "Exceptions", empty: "No carrier exceptions", emptyBody: "Shipments a carrier or brand marked as an exception or returned show here." },
+  exceptions: { label: "Exceptions", empty: "No carrier exceptions", emptyBody: "Shipments a carrier or brand marked as an exception or returned, and brand notes held for review, show here." },
   resolved: { label: "Resolved", empty: "Nothing resolved yet", emptyBody: "Complaints you resolve are kept here." },
   holidays: { label: "Holidays", empty: "No holidays", emptyBody: "Public holidays and carrier closures the estimates skip." },
 }
@@ -66,7 +67,11 @@ const lateWords = (i: Pick<DeliveryIssueDto, "daysLate" | "measurable">) =>
   !i.measurable || i.daysLate == null ? "Not recorded" : i.daysLate ? `${i.daysLate} ${i.daysLate === 1 ? "day" : "days"}` : "On time"
 /** Why an order is in the queue, only from what's on record. */
 function whyHere(i: DeliveryIssueDto) {
-  if (i.kind === "exception") return "The latest shipment update is an exception or a return."
+  if (i.kind === "exception" && i.heldNotes && i.status !== "exception" && (!i.current || i.current.basis !== "exception") && i.shipment !== "exception" && i.shipment !== "returned")
+    return i.brandNotes.some((n) => n.held && n.status === "complaint_reply") && !i.brandNotes.some((n) => n.held && n.status !== "complaint_reply")
+      ? `${i.brand.name} replied to a complaint on this order, and Yard held the reply for review, so the shopper hasn't seen it.`
+      : `${i.brand.name} wrote a note that Yard held for review, so the shopper hasn't seen it.`
+  if (i.kind === "exception") return i.heldNotes ? `The latest shipment update is an exception or a return, and ${i.brand.name} has a note held for review.` : "The latest shipment update is an exception or a return."
   if (!i.measurable) return "Its estimate was recomputed as late; the original promise isn't on record (sample order)."
   if (i.shipment && i.shipment !== "label_created") return "Shipped, but past the end of its promised arrival."
   return "Still not shipped after its promised ship-by date."
@@ -97,7 +102,7 @@ function DeliveryQueues() {
   const caseId = useSearchParam("case") ?? complaintLink ?? orderLink
   const [country, setCountry] = useState<string | undefined>(undefined)
   const q = useApi(adminKeys.delivery(tab, tab === "holidays" ? country : undefined), () => listDelivery(tab, tab === "holidays" ? country : undefined), { refreshInterval: 60_000 })
-  useRealtimeEvent("moderation.counts", () => void q.revalidate())
+  useQueueLive(() => void q.revalidate())
   const { ask, dialog } = useServerDecision(() => document.getElementById(segmentedTabId(qid, tab)))
   // Counts come with each tab's response: the last ones stay while another tab loads.
   const figures = useQueueFigures(q.data?.counts, q.error)
@@ -210,6 +215,7 @@ function Issues({ tab, items, unmeasured, ask, caseId }: { tab: DeliveryTab; ite
         <button type="button" onClick={() => open(i)} className="group block min-h-10 max-w-full min-w-0 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
           <span className="flex items-center gap-1.5">
             <span className="block truncate font-medium text-ink tabular group-hover:text-violet">{i.reference}</span>
+            {i.heldNotes ? <StatusBadge tone="attention">{i.heldNotes === 1 ? "Held note" : `${i.heldNotes} held notes`}</StatusBadge> : null}
           </span>
           <span className="block max-w-[44vw] truncate text-[11.5px] text-ink-3 sm:max-w-[220px]">
             {i.brand.name}, to {i.city ? `${i.city}, ` : ""}
@@ -309,6 +315,7 @@ function IssueSheet({ issue, open, d, resolveR, viewR, now, onOpenChange }: { is
           {i.complaintKind ? <StatusBadge tone="attention">{complaintKindLabels[i.complaintKind]}</StatusBadge> : null}
           <StatusBadge tone={st?.tone ?? "neutral"}>{st?.label ?? i.status}</StatusBadge>
           {i.daysLate ? <StatusBadge tone="attention">{i.daysLate} {i.daysLate === 1 ? "day" : "days"} late</StatusBadge> : !i.measurable ? <StatusBadge tone="muted">No promise on record</StatusBadge> : null}
+          {i.heldNotes ? <StatusBadge tone="attention">{i.heldNotes === 1 ? "Brand note held" : `${i.heldNotes} brand notes held`}</StatusBadge> : null}
         </>
       }
       actions={actions.length ? <TrustActionBar note="Every decision needs a reason and is recorded in the audit log." actions={actions} /> : undefined}
@@ -330,10 +337,15 @@ function IssueSheet({ issue, open, d, resolveR, viewR, now, onOpenChange }: { is
               <span className="text-ink-3">{i.customer.name}: </span>
               {i.details || `${complaintKindLabels[i.complaintKind!]}, no details given.`}
             </p>
-            {i.brandResponse ? (
+            {i.brandResponseHeld ? (
+              <p className="text-ink-3">
+                {i.brand.name} replied, but Yard held the reply, so {i.customer.name} hasn&apos;t seen it. It&apos;s under Brand notes below.
+              </p>
+            ) : i.brandResponse ? (
               <p>
                 <span className="text-ink-3">{i.brand.name}: </span>
                 {i.brandResponse}
+                {i.brandResponseNotice ? <span className="text-ink-3"> (shown with a payment warning)</span> : null}
               </p>
             ) : (
               <p className="text-ink-3">{i.brand.name} hasn&apos;t responded yet.</p>
@@ -351,11 +363,77 @@ function IssueSheet({ issue, open, d, resolveR, viewR, now, onOpenChange }: { is
           <EmptyLine>{whyHere(i)}</EmptyLine>
         </DetailSection>
       )}
+      {i.brandNotes.length ? <BrandNotes key={i.id} i={i} /> : null}
       <RelatedLinks links={[{ href: `/admin/orders?order=${encodeURIComponent(i.orderId)}`, label: `Order ${i.reference} in Orders`, hint: "Items and timeline (sample)" }]} />
       <DetailSection title="Activity" className={sheetTrack}>
         <ServerActivity subjectIds={[i.id, i.orderId]} extra={[{ at: i.createdAt, label: i.kind === "complaint" ? "Complaint received" : "Order placed" }]} />
       </DetailSection>
     </DetailSheet>
+  )
+}
+
+const shipmentWords: Record<string, string> = { label_created: "Label created", shipped: "Shipped", in_transit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered", exception: "Delay reported", returned: "Returned", complaint_reply: "Reply to the complaint" }
+
+/**
+ * The brand's notes on the order: its notes on shipment updates and its replies to complaints. A held
+ * note never reached the shopper (Yard's screen found links or a payment request outside checkout),
+ * and its text isn't in the list: Support, Trust & safety and owners open it here, and each opening
+ * is recorded in the audit log (delivery_note.viewed). A flagged one reached them under "Keep
+ * payments on Yard".
+ */
+function BrandNotes({ i }: { i: DeliveryIssueDto }) {
+  const { can, admin } = useAdminSession()
+  const mayOpen = can("shipping.resolve") || can("messages.view_reports")
+  const [opened, setOpened] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<Record<string, string>>({})
+  const open = async (id: string) => {
+    setBusy(id)
+    setError((e) => ({ ...e, [id]: "" }))
+    try {
+      const r = await viewHeldNote(id)
+      pushAudit(r.audit)
+      setOpened((o) => ({ ...o, [id]: r.text }))
+    } catch (e) {
+      setError((x) => ({ ...x, [id]: e instanceof ApiError ? e.message : errorMessage(e) }))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const noRole = admin ? "Your role can't open held text. Support, Trust & safety and owners can." : "Sign in with a demo admin account to open held text."
+  return (
+    <DetailSection title="Brand notes" className={sheetTrack} aside={<span className="text-[11px] text-ink-3">{i.heldNotes ? `${i.heldNotes} held` : "None held"}</span>}>
+      <ul className="grid gap-2">
+        {i.brandNotes.map((b) => (
+          <li key={b.id} className={cn("grid gap-1.5 rounded-[10px] border-l-2 bg-white/[0.02] px-3 py-2.5", b.held ? "border-white/45" : "border-white/12")}>
+            <p className="flex flex-wrap items-center gap-2 text-[11.5px] text-ink-3">
+              <span>
+                {shipmentWords[b.status] ?? b.status}, {formatDate(b.at)}
+              </span>
+              {b.held ? <StatusBadge tone="attention">Held, the shopper hasn&apos;t seen it</StatusBadge> : b.notice ? <StatusBadge tone="info">Shown with a payment warning</StatusBadge> : null}
+            </p>
+            {!b.held ? (
+              <p className="text-[13px] break-words text-ink-2">{b.text}</p>
+            ) : opened[b.id] != null ? (
+              <p className="text-[13px] break-words text-ink-2">{opened[b.id]}</p>
+            ) : (
+              <div className="grid gap-1.5">
+                <Button type="button" size="sm" variant="secondary" className="h-10 justify-self-start sm:h-9" disabled={!mayOpen || busy === b.id} title={mayOpen ? undefined : noRole} onClick={() => void open(b.id)}>
+                  <EyeIcon aria-hidden /> {busy === b.id ? "Opening held note" : "View held note"}
+                </Button>
+                <p className="text-[11.5px] text-ink-3">{mayOpen ? "Opening it is recorded in the audit log." : noRole}</p>
+                {error[b.id] ? (
+                  <p role="alert" className="text-[11.5px] text-danger">
+                    {error[b.id]}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {i.heldNotes ? <p className="text-[11.5px] text-ink-3">Held notes stay hidden from {i.customer.name}. To get a corrected note to them, contact {i.brand.name}; they can add a new update from the order in Studio.</p> : null}
+    </DetailSection>
   )
 }
 

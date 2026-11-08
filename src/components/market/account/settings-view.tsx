@@ -254,7 +254,7 @@ export function SettingsView() {
         <InterestEditor />
       </Section>
 
-      <Section id="set-signout" title="Sign out" description={`Sign out of ${site.name} on this device. Your bag stays here for next time.`}>
+      <Section id="set-signout" title="Sign out" description={`Sign out of ${site.name} on this device. Your cart stays here for next time.`}>
         <Button
           variant="secondary"
           onClick={async () => {

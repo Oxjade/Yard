@@ -1,12 +1,11 @@
 import "server-only"
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm"
 import { db } from "../db"
-import { abuseAlerts, abuseEvents, accountRestrictions, conversations, messages, reports, users } from "../db/schema"
+import { abuseAlerts, abuseEvents, accountRestrictions, brandMembers, conversations, messages, reports, users } from "../db/schema"
 import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
-import { notify } from "../notify"
 import { abuseAlertKindLabels, durationLabels, restrictionKindLabels, type AbuseAlertDto, type AbuseListDto, type AbuseRowDto, type RestrictionDto } from "@/lib/api/contracts/admin"
-import { assertCan, assertState, audit, brandMap, brandRefOf, dateLabel, iso, publishCountsAfterCommit, userMap, type DecisionCtx } from "./shared"
+import { assertCan, assertState, audit, brandMap, brandRefOf, dateLabel, iso, publishCountsAfterCommit, userMap, notify, type DecisionCtx } from "./shared"
 
 /**
  * Users › Abuse (§5.2, §8.1): per-account signals over 7 days, open alerts and restrictions.
@@ -44,14 +43,37 @@ async function alertDtos(rows: AlertRow[]): Promise<AbuseAlertDto[]> {
     return Array.isArray(b) ? b.filter((x): x is string => typeof x === "string") : []
   })
   const brands = await brandMap(brandIds)
+  // Marks from brands that share a team member count once (I's independence rule): say which, so
+  // "3 marks from 4 brands" isn't a puzzle.
+  const markerIds = rows.flatMap((a) => (Array.isArray(ev(a).markers) ? (ev(a).markers as unknown[]) : [])).filter((x): x is string => typeof x === "string")
+  const d = await db()
+  const memberships =
+    brandIds.length && markerIds.length
+      ? await d
+          .select({ brandId: brandMembers.brandId, userId: brandMembers.userId })
+          .from(brandMembers)
+          .where(and(inArray(brandMembers.brandId, [...new Set(brandIds)]), inArray(brandMembers.userId, [...new Set(markerIds)])))
+      : []
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`)
+  /** A sentence ending in a name: no second full stop after "Kumasi Thread Co.". */
+  const ends = (t: string) => (/[.!?]$/.test(t) ? t : `${t}.`)
   return rows.map((a) => {
     const e = ev(a)
     const count = Number(e.independentMarks ?? e.marks ?? e.count ?? 0)
     const ids = (Array.isArray(e.brandIds) ? e.brandIds : Array.isArray(e.brands) ? e.brands : []).filter((x): x is string => typeof x === "string")
     const names = ids.map((id) => brandRefOf(brands, id).name)
+    const markers = (Array.isArray(e.markers) ? e.markers : []).filter((x): x is string => typeof x === "string")
+    // Groups of this alert's brands that one marker belongs to (2 or more brands each).
+    const shared = new Map<string, string[]>()
+    for (const m of memberships) if (markers.includes(m.userId) && ids.includes(m.brandId)) shared.set(m.userId, [...new Set([...(shared.get(m.userId) ?? []), m.brandId])])
+    const groups = [...shared.values()].filter((g) => g.length > 1).map((g) => list(g.map((id) => brandRefOf(brands, id).name)))
+    const n = count || names.length
+    const marks = `${n} independent spam ${n === 1 ? "mark" : "marks"}`
     const summary =
       a.kind === "spam_marks"
-        ? `${count || names.length} independent spam marks${names.length ? ` from ${names.join(", ")}` : ""}`
+        ? names.length > n
+          ? `${ends(`${marks} from ${names.length} brands: ${list(names)}`)}${groups.length ? ` ${groups.map((g) => `${g} share a team member`).join("; ")}, so ${groups.length === 1 ? "they count" : "each group counts"} once.` : " Brands that share a team member count once."}`
+          : ends(`${marks}${names.length ? `, from ${list(names)}` : ""}`)
         : `${abuseAlertKindLabels[a.kind] ?? a.kind}${count ? `: ${count}` : ""}`
     return { id: a.id, subjectKind: a.subjectKind as AbuseAlertDto["subjectKind"], subjectId: a.subjectId, kind: a.kind as AbuseAlertDto["kind"], status: a.status as AbuseAlertDto["status"], summary, createdAt: a.createdAt.toISOString(), decidedAt: iso(a.decidedAt) }
   })

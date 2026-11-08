@@ -34,9 +34,8 @@ import { CONTENT_TABS, type ContentListDto, type ContentPostDto, type ContentTab
 import { useApi } from "@/lib/api/use-api"
 import { formatNumber } from "@/lib/money"
 import type { AdminPermission } from "@/lib/permissions"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { cn } from "@/lib/utils"
-import { AdminImg, LoadError, SampleTag, ServerActivity, TrustActionBar, TrustGate, useAdminSession, useServerDecision, type TrustAction, RelatedLinks, sheetTrack, useQueueFigures } from "./shared"
+import { AdminImg, LoadError, SampleTag, ServerActivity, TrustActionBar, TrustGate, useAdminSession, useServerDecision, type TrustAction, RelatedLinks, sheetTrack, useQueueFigures, useQueueLive } from "./shared"
 
 /*
  * Admin › Content (§8.1): posts and uploads, places with their events as child rows, and social
@@ -101,7 +100,7 @@ function ContentQueues() {
   const reportLink = useSearchParam("report")
   const caseParam = useSearchParam("case")
   const q = useApi(allowed ? adminKeys.content(tab) : null, () => listContent(tab), { refreshInterval: 30_000 })
-  useRealtimeEvent("moderation.counts", () => void q.revalidate())
+  useQueueLive(() => void q.revalidate())
   const { ask, dialog } = useServerDecision(() => document.getElementById(segmentedTabId(qid, tab)))
   // Counts come with each tab's response: the last ones stay while another tab loads.
   const figures = useQueueFigures(q.data?.counts, q.error)

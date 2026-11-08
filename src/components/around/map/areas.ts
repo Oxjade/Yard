@@ -109,3 +109,36 @@ export function placeLabel(anchor: { x: number; y: number }, size: { w: number; 
   }
   return best!
 }
+
+/* ---- map credits: kept readable and clear of pins (owner review 2026-11-07, 22:45) ---- */
+
+/** A place the credits block may sit, in px from the map's edges (one of top/bottom, one of left/right). */
+export type CreditSpot = { top?: number; bottom?: number; left?: number; right?: number }
+
+export function spotRect(spot: CreditSpot, size: { w: number; h: number }, view: { w: number; h: number }): Rect {
+  const x = spot.left ?? view.w - (spot.right ?? 0) - size.w
+  const y = spot.top ?? view.h - (spot.bottom ?? 0) - size.h
+  return { x, y, w: size.w, h: size.h }
+}
+
+/**
+ * The first spot whose block (plus a 4 px margin) no pin, cluster or "you" dot touches; failing
+ * that, the one they cover least. Spots are in order of preference, so the credits only move
+ * when a pin would sit on them.
+ */
+export function pickCreditSpot(spots: CreditSpot[], size: { w: number; h: number }, view: { w: number; h: number }, pins: Rect[]): number {
+  let best = 0
+  let bestCost = Infinity
+  for (let i = 0; i < spots.length; i++) {
+    const r = spotRect(spots[i], size, view)
+    const padded = { x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 }
+    let cost = 0
+    for (const p of pins) cost += overlap(padded, p)
+    if (cost === 0) return i
+    if (cost < bestCost) {
+      bestCost = cost
+      best = i
+    }
+  }
+  return best
+}

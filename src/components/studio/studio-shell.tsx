@@ -1,11 +1,21 @@
 "use client"
 
-import { useMemo, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import {
   ArrowUpRightIcon,
   BellIcon,
+  CalendarXIcon,
   ChartBarIcon,
+  ChatsCircleIcon,
+  CircleNotchIcon,
+  ImagesSquareIcon,
+  LightningIcon,
+  MapPinIcon,
+  MapPinPlusIcon,
+  ShareNetworkIcon,
+  TruckIcon,
   StackIcon,
   CalendarDotsIcon,
   GearIcon,
@@ -20,6 +30,7 @@ import {
   WarehouseIcon,
   StorefrontIcon,
   TagIcon,
+  UploadSimpleIcon,
   UserIcon,
   UserSwitchIcon,
   UsersIcon,
@@ -32,9 +43,17 @@ import { WorkspaceNote } from "@/components/session/workspace-note"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/components/dashboard/shell/command-palette"
 import { orderStatusMeta, productStatusMeta } from "@/components/dashboard/status-badge"
+import { CommandItem } from "@/components/ui/command"
 import { buildCustomers } from "@/components/studio/business/model"
 import { brandById } from "@/lib/data/brands"
-import { teamRoleLabels } from "@/lib/permissions"
+import { listStudioLocations, STUDIO_LOCATIONS_KEY } from "@/lib/api/around"
+import { listStudioConversations } from "@/lib/api/inbox"
+import { accountsKey, getAccounts, getStudioPosts, studioPostsKey } from "@/lib/api/social"
+import { useApi } from "@/lib/api/use-api"
+import { kindLabel } from "@/lib/around/labels"
+import { teamRoleLabels, type BrandPermission } from "@/lib/permissions"
+import { useUnread } from "@/lib/realtime/unread"
+import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
@@ -51,8 +70,134 @@ function useStoreReady(store: { persist: { onFinishHydration: (fn: () => void) =
   )
 }
 
-/** Command palette records: the brand's products, orders (by reference) and customers. */
+/** The query once it has stopped changing for `ms` (the palette's server records wait for it). */
+function useDebounced(value: string, ms: number) {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(value), ms)
+    return () => window.clearTimeout(t)
+  }, [value, ms])
+  return settled
+}
+
+/**
+ * A Studio link with a #section (the palette's "Holidays & closures" → /studio/shipping#holidays)
+ * lands on that section even when it renders only after the page's data loads, where the browser's
+ * own jump finds nothing. Once the target appears it is scrolled into view (the page's section nav
+ * follows the scroll); a scroll, tap or key press by the merchant first cancels it, and so do 8 s.
+ */
+function useLateHashTarget() {
+  const pathname = usePathname()
+  useEffect(() => {
+    let id = ""
+    try {
+      id = decodeURIComponent(window.location.hash.slice(1))
+    } catch {
+      return // a malformed #fragment names nothing
+    }
+    if (!id || document.getElementById(id)) return
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const mo = new MutationObserver(() => {
+      const el = document.getElementById(id)
+      if (!el) return
+      stop()
+      el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" })
+    })
+    const t = window.setTimeout(() => stop(), 8000)
+    const cancel = ["wheel", "touchstart", "keydown", "pointerdown"] as const
+    function stop() {
+      mo.disconnect()
+      window.clearTimeout(t)
+      for (const ev of cancel) window.removeEventListener(ev, stop)
+    }
+    mo.observe(document.body, { childList: true, subtree: true })
+    for (const ev of cancel) window.addEventListener(ev, stop, { passive: true, once: true })
+    return stop
+  }, [pathname])
+}
+
+/** A row that holds the list while server records load, so "No matches" never flashes first. */
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <CommandItem disabled value="loading" className="gap-3 rounded-xl px-2.5 py-2 text-[13px] text-ink-3 data-[disabled=true]:opacity-100">
+      <CircleNotchIcon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+      {label}
+    </CommandItem>
+  )
+}
+
+/**
+ * The palette's server records for the signed-in brand (§7.5): conversations (searched by the
+ * Inbox's own search), places and social posts. Places and posts are fetched once and filtered
+ * here with the query as typed. Conversations are searched on the server 200ms after typing stops;
+ * until that answer belongs to the query on screen, no conversation rows show (never an older
+ * query's), only the loading row. Only what the member's role can read is asked for.
+ */
+function StudioServerResults({ query, go }: { query: string; go: (href: string) => void }) {
+  const member = useServerSession((s) => s.brand)
+  const settled = useDebounced(query, 200)
+  const live = query.length >= 2 ? query : ""
+  const q = settled.length >= 2 ? settled : ""
+  const can = (p: BrandPermission) => !!member?.permissions.includes(p)
+  const convKey = member && q && can("inbox.read") ? `/api/studio/inbox/conversations?q=${encodeURIComponent(q)}` : null
+  const conv = useApi(convKey, () => listStudioConversations({ q }), { revalidateOnFocus: false, keepPrevious: false })
+  const places = useApi(member && live ? STUDIO_LOCATIONS_KEY : null, listStudioLocations, { revalidateOnFocus: false })
+  const postsKey = member && live ? studioPostsKey("all", "all") : null
+  const posts = useApi(postsKey, getStudioPosts, { revalidateOnFocus: false })
+  if (!member || query.length < 2) return null
+  const fresh = query === settled
+  const waiting = !fresh || (convKey && conv.isLoading) || (places.isLoading && !places.data) || (postsKey && posts.isLoading && !posts.data)
+
+  const c = fresh ? (conv.data?.items ?? []).slice(0, 5) : []
+  const l = topMatches(places.data?.locations ?? [], live, (x) => x.name, (x) => [kindLabel[x.kind], x.neighbourhood, x.city])
+  const p = topMatches(posts.data?.posts ?? [], live, (x) => x.caption || "Untitled post", (x) => [x.source])
+  return (
+    <>
+      {c.length ? (
+        <PaletteGroup heading="Conversations">
+          {c.map((x) => (
+            <PaletteItem
+              key={x.id}
+              value={`conversation ${x.id}`}
+              icon={ChatsCircleIcon}
+              title={x.customer?.name ?? "Customer"}
+              detail={x.lastMessage?.preview || "No messages yet"}
+              meta={x.status === "resolved" ? "Resolved" : x.unread > 0 || x.markedUnread ? "Unread" : undefined}
+              onSelect={() => go(`/studio/inbox?thread=${encodeURIComponent(x.id)}`)}
+            />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {l.length ? (
+        <PaletteGroup heading="Locations">
+          {l.map((x) => (
+            <PaletteItem key={x.id} value={`location ${x.id}`} icon={MapPinIcon} title={x.name} detail={`${kindLabel[x.kind]}, ${x.neighbourhood ? `${x.neighbourhood}, ` : ""}${x.city}`} onSelect={() => go(`/studio/locations/edit?id=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {p.length ? (
+        <PaletteGroup heading="Posts">
+          {p.map((x) => (
+            <PaletteItem key={x.id} value={`post ${x.id}`} icon={ImagesSquareIcon} title={x.caption ? x.caption.slice(0, 80) : "Untitled post"} detail={x.moderationStatus === "removed" ? "Removed by Yard" : x.visibility === "published" ? "On your storefront" : x.visibility === "draft" ? "Draft" : "Hidden"} onSelect={() => go(`/studio/social?tab=content&status=${x.moderationStatus === "removed" ? "removed" : x.visibility}&post=${encodeURIComponent(x.id)}`)} />
+          ))}
+        </PaletteGroup>
+      ) : null}
+      {waiting ? <LoadingRow label="Searching conversations, places and posts…" /> : null}
+    </>
+  )
+}
+
+/** Command palette records: the brand's products, orders (by reference) and customers from this browser, then the server's records. */
 function StudioResults({ query, go }: { query: string; go: (href: string) => void }) {
+  return (
+    <>
+      <StudioLocalResults query={query} go={go} />
+      <StudioServerResults query={query} go={go} />
+    </>
+  )
+}
+
+function StudioLocalResults({ query, go }: { query: string; go: (href: string) => void }) {
   const products = useStudio((s) => s.products)
   const orders = useStudio((s) => s.orders)
   const brandId = useStudio((s) => s.brandId)
@@ -107,9 +252,15 @@ function StudioResults({ query, go }: { query: string; go: (href: string) => voi
 }
 
 const search: ShellSearch = {
-  placeholder: "Search orders, products, customers",
+  placeholder: "Search orders, products, customers, conversations",
   destinations: [
     { label: "Add a product", href: "/studio/products/new", icon: PlusIcon, hint: "Catalogue" },
+    { label: "Social connections", href: "/studio/social?tab=connections", icon: ShareNetworkIcon, hint: "Brand" },
+    { label: "Content Studio", href: "/studio/social?tab=content", icon: ImagesSquareIcon, hint: "Brand" },
+    { label: "Upload content", href: "/studio/social?tab=content&upload=1", icon: UploadSimpleIcon, hint: "Brand" },
+    { label: "Add a location", href: "/studio/locations/new", icon: MapPinPlusIcon, hint: "Brand" },
+    { label: "Quick replies", href: "/studio/inbox?sheet=quick-replies", icon: LightningIcon, hint: "Inbox" },
+    { label: "Holidays & closures", href: "/studio/shipping#holidays", icon: CalendarXIcon, hint: "Business" },
     { label: "Notifications", href: "/studio/notifications", icon: BellIcon },
   ],
   Results: StudioResults,
@@ -127,6 +278,7 @@ const MISMATCH_NOTE = "Catalogue, orders and payouts still show Lagos Static's s
 
 /** Brand Studio: the merchant's operating environment. Calm, structured, functional. */
 export function StudioShell({ children }: { children: React.ReactNode }) {
+  useLateHashTarget()
   const studioReady = useStoreReady(useStudio)
   const adminReady = useStoreReady(useAdmin)
   const brandId = useStudio((s) => s.brandId)
@@ -152,11 +304,31 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   const ready = studioReady && adminReady
   const amount = formatMoney(available, brand.currency)
 
+  // Live counts for the signed-in brand: unread conversations (the realtime provider keeps the
+  // Studio unread store current) and social accounts that need reconnecting. Unknown or zero
+  // shows no badge.
+  const studioUnread = useUnread("studio")
+  const inboxBadge = member && studioUnread ? studioUnread : undefined
+  const social = useApi(member ? accountsKey : null, getAccounts, { revalidateOnFocus: false })
+  useRealtimeEvent("social.status", () => void social.revalidate())
+  const reconnect = member ? (social.data?.accounts.filter((a) => a.status === "needs_reauth" || a.status === "error").length ?? 0) : 0
+
+  // §7.5: 17 items in 5 groups. The daily-work items with badges sit at the top; Social holds the
+  // owner's "Social connections" and "Content Studio" as its two tabs (§7.8 decision 1).
   const groups: ShellNavGroup[] = [
     {
       items: [
         { href: "/studio", label: "Overview", icon: SquaresFourIcon },
+        { href: "/studio/inbox", label: "Inbox", icon: ChatsCircleIcon, badge: inboxBadge, badgeLabel: "unread", tone: "attention" },
+        { href: "/studio/orders", label: "Orders", icon: ShoppingCartIcon, badge: studioReady && notShipped ? notShipped : undefined, badgeLabel: "not yet shipped", tone: "attention" },
+      ],
+    },
+    {
+      label: "Brand",
+      items: [
         { href: "/studio/storefront", label: "Storefront", icon: LayoutIcon },
+        { href: "/studio/social", label: "Social", icon: ShareNetworkIcon, badge: reconnect || undefined, badgeLabel: "to reconnect", tone: "attention" },
+        { href: "/studio/locations", label: "Locations", icon: MapPinIcon },
       ],
     },
     {
@@ -178,7 +350,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
     {
       label: "Business",
       items: [
-        { href: "/studio/orders", label: "Orders", icon: ShoppingCartIcon, badge: studioReady && notShipped ? notShipped : undefined, badgeLabel: "not yet shipped", tone: "attention" },
+        { href: "/studio/shipping", label: "Shipping & fulfilment", icon: TruckIcon },
         { href: "/studio/payouts", label: "Payouts", icon: WalletIcon },
         { href: "/studio/customers", label: "Customers", icon: UsersIcon },
         { href: "/studio/analytics", label: "Analytics", icon: ChartBarIcon },

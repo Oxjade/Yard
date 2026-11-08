@@ -15,7 +15,7 @@ import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { Button } from "@/components/ui/button"
 import { ConnectionCard, ConnectionSkeleton } from "./connections"
-import { ContentStudio } from "./content-studio"
+import { ContentStudio, statusOf } from "./content-studio"
 
 type Tab = "connections" | "content"
 const TABS: readonly Tab[] = ["connections", "content"]
@@ -62,6 +62,38 @@ function ResultFromUrl({ accounts, ready, onChoose }: { accounts: SocialAccounts
   return null
 }
 
+/** Removes params a deep link has used, so closing the sheet and reloading doesn't reopen it. */
+function dropParams(...names: string[]) {
+  const url = new URL(window.location.href)
+  for (const n of names) url.searchParams.delete(n)
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
+}
+
+/**
+ * Deep links (the Studio palette, notifications, shared links): ?upload=1 opens the upload sheet in
+ * Content Studio; ?post=<id> opens Content Studio on that post. Each is read once, then dropped.
+ */
+function DeepLinkFromUrl({ onUpload, onPost }: { onUpload: () => void; onPost: (id: string) => void }) {
+  const params = useSearchParams()
+  const upload = params.get("upload")
+  const post = params.get("post")
+  const handlers = useRef({ onUpload, onPost })
+  useEffect(() => {
+    handlers.current = { onUpload, onPost }
+  })
+  useEffect(() => {
+    if (upload === null) return
+    if (upload === "1") handlers.current.onUpload()
+    dropParams("upload")
+  }, [upload])
+  useEffect(() => {
+    if (post === null) return
+    if (/^[\w-]{1,80}$/.test(post)) handlers.current.onPost(post)
+    dropParams("post")
+  }, [post])
+  return null
+}
+
 function Body() {
   const brand = useServerSession((s) => s.brand)
   const [tab, setTab] = useState<Tab>("connections")
@@ -69,6 +101,8 @@ function Body() {
   const [source, setSource] = useState<FeedSource>("all")
   const [status, setStatus] = useState<StudioPostStatus>("published")
   const [uploadOpen, setUploadOpen] = useState(false)
+  // The post a ?post=<id> link opened (marked in Content Studio).
+  const [openPost, setOpenPost] = useState<string | null>(null)
   // The status "Choose posts" picked, until the brand picks another one itself.
   const chosen = useRef<StudioPostStatus | null>(null)
   // A sync runs after the response: poll while one is running, then stop.
@@ -115,6 +149,30 @@ function Body() {
       })
       .catch(() => {})
   }
+  /**
+   * ?post=<id>: Content Studio on All sources and that post's status tab, the post scrolled to and
+   * marked. The post is looked up in the brand's full list first (never in a filtered one), so a
+   * post that's gone says so instead of opening an empty tab.
+   */
+  const openPostById = (id: string) => {
+    choose("content")
+    getStudioPosts(studioPostsKey("all", "all"))
+      .then((r) => {
+        const post = r.posts.find((p) => p.id === id)
+        if (!post) {
+          toast.error("That post isn't in Content Studio", { id: "social-post", description: "It may have been deleted, or it belongs to another brand." })
+          return
+        }
+        chooseSource("all")
+        chooseStatus(statusOf(post))
+        setOpenPost(post.id)
+      })
+      .catch((e) => toast.error("Couldn't open that post", { id: "social-post", description: errorMessage(e, "Check your connection, then try again.") }))
+  }
+  const openUpload = () => {
+    choose("content")
+    setUploadOpen(true)
+  }
   const refreshAll = () => {
     void revalidate()
     revalidatePrefix("/api/studio/social/posts")
@@ -129,6 +187,7 @@ function Body() {
       <TabParam param="status" values={STUDIO_POST_STATUSES} onChange={setStatus} />
       <Suspense fallback={null}>
         <ResultFromUrl accounts={data} ready={!!data || !!error} onChoose={choosePosts} />
+        <DeepLinkFromUrl onUpload={openUpload} onPost={openPostById} />
       </Suspense>
       <StatusTabs
         id="social-tab"
@@ -166,10 +225,7 @@ function Body() {
                   brand={brand}
                   paused={data.paused}
                   onChanged={refreshAll}
-                  onUpload={() => {
-                    choose("content")
-                    setUploadOpen(true)
-                  }}
+                  onUpload={openUpload}
                   onChoosePosts={choosePosts}
                 />
               ))}
@@ -184,6 +240,7 @@ function Body() {
             onStatusChange={chooseStatus}
             uploadOpen={uploadOpen}
             onUploadOpenChange={setUploadOpen}
+            openPostId={openPost}
             anyConnected={anyConnected}
             onChanged={() => void revalidate()}
           />

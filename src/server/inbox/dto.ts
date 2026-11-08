@@ -102,7 +102,9 @@ export async function summaryFor(conversationId: string, side: Side) {
 
 /** Which messages a side may see: delivered and removed ones, plus its own held messages. */
 export function visibleTo(side: Side) {
-  return sql`(${messages.status} in ('sent', 'removed') or (${messages.status} = 'held' and ${messages.senderSide} = ${side}))`
+  // A held message Yard removed never reached the other side, so only its sender sees the
+  // "Message removed by Yard" bubble; a delivered message Yard removed shows to both (N, from M2).
+  return sql`(${messages.status} = 'sent' or (${messages.status} = 'removed' and (${messages.heldReason} is null or ${messages.senderSide} = ${side})) or (${messages.status} = 'held' and ${messages.senderSide} = ${side}))`
 }
 
 const asOf = (side: Side) => (side === "customer" ? "shopper" : "brand")

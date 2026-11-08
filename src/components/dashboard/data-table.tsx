@@ -332,7 +332,9 @@ export function DataTable<T>({
   const boxHit = "max-sm:after:-inset-y-3"
 
   return (
-    <div ref={rootRef} className={cn("grid gap-3", columns.some((c) => c.hideBelowContainer) && "@container/dt")}>
+    // One minmax(0,1fr) column: the table takes its width from the page, so a toolbar's controls
+    // (min-w-0) shrink on a phone instead of widening the page's grid past its gutter.
+    <div ref={rootRef} className={cn("grid grid-cols-[minmax(0,1fr)] gap-3", columns.some((c) => c.hideBelowContainer) && "@container/dt")}>
       {search || toolbar ? (
         <div className="flex flex-wrap items-center gap-2">
           {search ? (

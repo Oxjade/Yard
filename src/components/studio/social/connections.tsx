@@ -205,7 +205,8 @@ export function ConnectionCard({ account: a, brand, paused, onChanged, onUpload,
               </Button>
               {a.sandboxAvailable ? (
                 <Button variant="secondary" disabled={!!disabledReason} loading={connect.pending} onClick={() => void connect.run(true)}>
-                  <FlaskIcon aria-hidden /> Try the development sandbox
+                  {/* Below 380px the full label is wider than the card; screen readers keep it whole. */}
+                  <FlaskIcon aria-hidden /> Try the <span className="max-[379px]:sr-only">development</span> sandbox
                 </Button>
               ) : null}
             </>

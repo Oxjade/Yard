@@ -6,10 +6,9 @@ import { accountRestrictions, chartEntries, chartEvents, chartFlags, chartSnapsh
 import { getEnv } from "../env"
 import { conflict, notFound } from "../http/errors"
 import { newId } from "../ids"
-import { notify } from "../notify"
-import { chartBoardLabels, detectorLabel, type ChartFlagDetailDto, type ChartFlagDto, type ChartsOverviewDto, type FreezeDto, type SponsoredRowDto } from "@/lib/api/contracts/admin"
+import { chartBoardLabels, detectorLabel, type ChartFlagDetailDto, type ChartFlagDto, type ChartHoldDto, type ChartsOverviewDto, type FreezeDto, type SponsoredRowDto } from "@/lib/api/contracts/admin"
 import { CHART_KINDS } from "@/lib/api/contracts/enums"
-import { assertState, audit, brandMap, brandRefOf, dateLabel, iso, publishCountsAfterCommit, tryFeature, userMap, type DecisionCtx } from "./shared"
+import { assertState, audit, brandMap, brandRefOf, dateLabel, iso, publishCountsAfterCommit, tryFeature, userMap, notify, type DecisionCtx } from "./shared"
 
 /**
  * Admin › Charts (§6.3, §8.1): board health, flags, freezes (two-person rule) and the read-only
@@ -101,7 +100,7 @@ export async function chartsOverview(): Promise<ChartsOverviewDto> {
   const organic = topLatest ? Number((await d.select({ n: sql<number>`count(*)::int` }).from(chartEntries).where(eq(chartEntries.snapshotId, topLatest.id)))[0]?.n ?? 0) : 0
   const sponsored = campaigns.filter((c) => c.type === "sponsored-brand" && c.status === "active").length
   const flagRows = await d.select({ status: chartFlags.status, severity: chartFlags.severity }).from(chartFlags)
-  const freezes = await d.select({ status: accountRestrictions.status }).from(accountRestrictions).where(eq(accountRestrictions.kind, "charts_freeze"))
+  const freezes = await d.select({ status: accountRestrictions.status, until: accountRestrictions.until }).from(accountRestrictions).where(eq(accountRestrictions.kind, "charts_freeze"))
 
   return {
     boards,
@@ -113,16 +112,55 @@ export async function chartsOverview(): Promise<ChartsOverviewDto> {
     flags: {
       open: flagRows.filter((f) => f.status === "open").length,
       high: flagRows.filter((f) => f.status === "open" && f.severity === "high").length,
-      frozen: freezes.filter((f) => f.status === "active").length,
+      frozen: freezes.filter(inForce).length,
       pendingFreeze: freezes.filter((f) => f.status === "pending_approval").length,
     },
     ipSignal: getEnv().trustedProxyHops > 0 ? "available" : "unavailable",
+    proxyHops: getEnv().trustedProxyHops,
     orderSignals: "not_connected",
+    holds: await chartHolds(),
     sample: true,
   }
 }
 
+const HELD = "held_from_charts"
+
+/**
+ * Brands held from every public board right now, with the flags holding each. This mirrors C's own
+ * rule (charts/metrics.ts loadHolds: status open AND auto_action held_from_charts, any detector), so
+ * the page can say exactly which flags must be cleared or confirmed before a brand returns.
+ */
+export async function chartHolds(): Promise<ChartHoldDto[]> {
+  const d = await db()
+  const rows = await d.select().from(chartFlags).where(and(eq(chartFlags.status, "open"), eq(chartFlags.autoAction, HELD))).orderBy(chartFlags.windowStart, chartFlags.createdAt)
+  if (!rows.length) return []
+  const brands = await brandMap(rows.map((f) => f.brandId))
+  const frozen = new Set((await currentFreezes(rows.map((f) => f.brandId))).filter(inForce).map((z) => z.subjectId))
+  const byBrand = new Map<string, typeof rows>()
+  for (const f of rows) byBrand.set(f.brandId, [...(byBrand.get(f.brandId) ?? []), f])
+  return [...byBrand.entries()]
+    .map(([brandId, flags]) => ({
+      brand: brandRefOf(brands, brandId),
+      since: flags.reduce((m, f) => (f.windowStart < m ? f.windowStart : m), flags[0].windowStart),
+      flags: flags.map((f) => ({ id: f.id, detector: f.detector, detectorLabel: detectorLabel(f.detector), windowStart: f.windowStart, windowEnd: f.windowEnd, excludedEvents: f.excludedEvents })),
+      frozen: frozen.has(brandId),
+    }))
+    .sort((a, b) => a.brand.name.localeCompare(b.brand.name, "en"))
+}
+
+/** The ids in a coordinated_ring flag's evidence (`otherBrands`: the other brands the ring followed). */
+function ringPeerIds(f: Pick<FlagRow, "detector" | "evidence">): string[] {
+  if (f.detector !== "coordinated_ring") return []
+  const v = (f.evidence as Record<string, unknown> | null)?.otherBrands
+  return (typeof v === "string" ? v.split(/[\s,]+/) : Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && /^b_[a-z0-9_]+$/.test(x))
+}
+
 type RestrictionRow = typeof accountRestrictions.$inferSelect
+
+/** An approved freeze whose `until` has passed: C's loadFrozen no longer applies it, so it isn't shown as frozen. */
+const expired = (r: Pick<RestrictionRow, "status" | "until">, now = Date.now()) => r.status === "active" && !!r.until && r.until.getTime() <= now
+/** In force on the boards right now (C's loadFrozen rule: active, and no `until` or a future one). */
+const inForce = (r: Pick<RestrictionRow, "status" | "until">) => r.status === "active" && !expired(r)
 
 async function freezeDtos(rows: RestrictionRow[]): Promise<FreezeDto[]> {
   const brands = await brandMap(rows.map((r) => r.subjectId))
@@ -130,7 +168,7 @@ async function freezeDtos(rows: RestrictionRow[]): Promise<FreezeDto[]> {
   return rows.map((r) => ({
     id: r.id,
     brand: brandRefOf(brands, r.subjectId),
-    status: r.status as FreezeDto["status"],
+    status: (expired(r) ? "expired" : r.status) as FreezeDto["status"],
     until: iso(r.until),
     reason: r.reason,
     requestedBy: { id: r.requestedBy, name: people.get(r.requestedBy)?.name ?? r.requestedBy },
@@ -140,20 +178,30 @@ async function freezeDtos(rows: RestrictionRow[]): Promise<FreezeDto[]> {
   }))
 }
 
+/** Freezes waiting for a second admin or in force now (an expired one is neither). */
 async function currentFreezes(brandIds?: string[]) {
   const d = await db()
-  return d
+  const rows = await d
     .select()
     .from(accountRestrictions)
     .where(and(eq(accountRestrictions.kind, "charts_freeze"), inArray(accountRestrictions.status, ["pending_approval", "active"]), brandIds ? inArray(accountRestrictions.subjectId, brandIds.length ? brandIds : ["-"]) : undefined))
     .orderBy(desc(accountRestrictions.createdAt))
+  return rows.filter((r) => !expired(r))
 }
 
 type FlagRow = typeof chartFlags.$inferSelect
 
 async function flagDtos(rows: FlagRow[]): Promise<ChartFlagDto[]> {
-  const brands = await brandMap(rows.map((f) => f.brandId))
+  const brands = await brandMap([...rows.map((f) => f.brandId), ...rows.flatMap(ringPeerIds)])
   const freezes = await freezeDtos(await currentFreezes(rows.map((f) => f.brandId)))
+  // Every open flag that holds its brand: a brand stays off the boards while any one of them is open.
+  const d = await db()
+  const holding = rows.length
+    ? await d
+        .select({ id: chartFlags.id, brandId: chartFlags.brandId, detector: chartFlags.detector })
+        .from(chartFlags)
+        .where(and(eq(chartFlags.status, "open"), eq(chartFlags.autoAction, HELD), inArray(chartFlags.brandId, [...new Set(rows.map((f) => f.brandId))])))
+    : []
   return rows.map((f) => ({
     id: f.id,
     brand: brandRefOf(brands, f.brandId),
@@ -168,6 +216,11 @@ async function flagDtos(rows: FlagRow[]): Promise<ChartFlagDto[]> {
     decidedAt: iso(f.decidedAt),
     createdAt: f.createdAt.toISOString(),
     freeze: freezes.find((z) => z.brand.id === f.brandId) ?? null,
+    hold: {
+      holding: f.status === "open" && f.autoAction === HELD,
+      others: holding.filter((h) => h.brandId === f.brandId && h.id !== f.id).map((h) => ({ id: h.id, detectorLabel: detectorLabel(h.detector) })),
+    },
+    ringPeers: ringPeerIds(f).map((id) => brandRefOf(brands, id)),
   }))
 }
 
@@ -182,12 +235,13 @@ export async function listFlags(status: "open" | "decided" | "frozen" | "all") {
   return {
     items,
     freezes: await freezeDtos(allFreezes),
-    counts: { open: rows.filter((f) => f.status === "open").length, decided: rows.filter((f) => f.status === "cleared" || f.status === "confirmed").length, frozen: allFreezes.filter((r) => r.status !== "lifted").length },
+    holds: await chartHolds(),
+    counts: { open: rows.filter((f) => f.status === "open").length, decided: rows.filter((f) => f.status === "cleared" || f.status === "confirmed").length, frozen: allFreezes.filter((r) => r.status === "pending_approval" || inForce(r)).length },
   }
 }
 
 /** Evidence as label/value pairs: counts and ratios; anything IP-like cut to 8 characters. */
-function evidencePairs(evidence: unknown): { label: string; value: string }[] {
+function evidencePairs(evidence: unknown, names: Map<string, { name: string }> = new Map()): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = []
   const label = (k: string) =>
     (k.charAt(0).toUpperCase() + k.slice(1))
@@ -211,7 +265,9 @@ function evidencePairs(evidence: unknown): { label: string; value: string }[] {
         .join(", ")
     return String(v)
   }
-  if (evidence && typeof evidence === "object" && !Array.isArray(evidence)) for (const [k, v] of Object.entries(evidence)) out.push({ label: label(k), value: show(k, v) })
+  // A ring's other brands are stored as ids; the reviewer reads names.
+  const brandNames = (v: unknown) => (typeof v === "string" ? v.split(/[\s,]+/).filter(Boolean).map((id) => names.get(id)?.name ?? id).join(", ") : show("otherBrands", v))
+  if (evidence && typeof evidence === "object" && !Array.isArray(evidence)) for (const [k, v] of Object.entries(evidence)) out.push({ label: label(k), value: k === "otherBrands" ? brandNames(v) : show(k, v) })
   return out.slice(0, 20)
 }
 
@@ -228,7 +284,8 @@ export async function flagDetail(id: string): Promise<ChartFlagDetailDto> {
     .orderBy(desc(chartSnapshots.edition))
     .limit(12)
   const nums = (c: unknown) => Object.fromEntries(Object.entries((c ?? {}) as Record<string, unknown>).filter(([, v]) => typeof v === "number")) as Record<string, number>
-  return { ...dto, evidence: evidencePairs(f.evidence), components: rows.map((r) => ({ ...r, components: nums(r.components) })) }
+  const names = await brandMap(ringPeerIds(f))
+  return { ...dto, evidence: evidencePairs(f.evidence, names), components: rows.map((r) => ({ ...r, components: nums(r.components) })) }
 }
 
 /** Sponsored placements are read-only here and never ranked (§6.3); sample campaigns in this build. */
@@ -245,12 +302,15 @@ export async function decideChartFlag(ctx: DecisionCtx, body: { id: string; outc
   const d = await db()
   const f = await d.query.chartFlags.findFirst({ where: (x, { eq }) => eq(x.id, body.id) })
   if (!f) throw notFound()
-  assertState(f.status === "open")
+  // Freezes leave flags open now. A flag an earlier build set to "frozen" can still be decided once
+  // no freeze on its brand is in force, so it never stays undecidable.
+  const decidable = f.status === "open" || (f.status === "frozen" && !(await currentFreezes([f.brandId])).some(inForce))
+  assertState(decidable)
   const now = new Date()
   const [updated] = await d
     .update(chartFlags)
     .set({ status: body.outcome === "clear" ? "cleared" : "confirmed", decidedBy: ctx.actor.userId, decidedAt: now, decisionReason: body.reason })
-    .where(and(eq(chartFlags.id, f.id), eq(chartFlags.status, "open")))
+    .where(and(eq(chartFlags.id, f.id), eq(chartFlags.status, f.status)))
     .returning()
   assertState(!!updated)
   let reincluded = 0
@@ -283,7 +343,7 @@ export async function decideChartFlag(ctx: DecisionCtx, body: { id: string; outc
     subjectId: f.id,
     brandId: f.brandId,
     reason: body.reason,
-    meta: { detector: f.detector, severity: f.severity, excludedEvents: f.excludedEvents, reincluded },
+    meta: { detector: f.detector, severity: f.severity, excludedEvents: f.excludedEvents, reincluded, from: f.status, autoAction: f.autoAction },
   })
   publishCountsAfterCommit()
   return { item: (await flagDtos([updated]))[0], audit: entry }
@@ -347,7 +407,14 @@ export async function approveChartFreeze(ctx: DecisionCtx, body: { id: string; r
     .where(and(eq(accountRestrictions.id, r.id), eq(accountRestrictions.status, "pending_approval")))
     .returning()
   assertState(!!row)
-  await d.update(chartFlags).set({ status: "frozen", decidedBy: ctx.actor.userId, decidedAt: new Date(), decisionReason: body.reason }).where(and(eq(chartFlags.brandId, r.subjectId), eq(chartFlags.status, "open")))
+  // The brand's flags stay open: the freeze keeps it off every board on its own (C's loadFrozen), and
+  // its open flags keep holding it after the freeze ends, until each is cleared or confirmed.
+  const openFlags = (
+    await d
+      .select({ id: chartFlags.id })
+      .from(chartFlags)
+      .where(and(eq(chartFlags.brandId, r.subjectId), eq(chartFlags.status, "open"), eq(chartFlags.autoAction, HELD)))
+  ).map((f) => f.id)
   const { invalidate } = await charts()
   await tryFeature("charts.invalidate", () => invalidate(r.subjectId))
   const brands = await brandMap([r.subjectId])
@@ -361,7 +428,7 @@ export async function approveChartFreeze(ctx: DecisionCtx, body: { id: string; r
     brandId: r.subjectId,
     reason: body.reason,
     approvedBy: ctx.actor.name,
-    meta: { restrictionId: r.id, requestedBy: r.requestedBy },
+    meta: { restrictionId: r.id, requestedBy: r.requestedBy, openFlags },
   })
   // The brand hears that it's paused and until when; never the detector or the admins' reasons.
   await notify(
@@ -384,6 +451,16 @@ export async function liftChartFreeze(ctx: DecisionCtx, body: { id: string; reas
     .where(and(eq(accountRestrictions.id, r.id), inArray(accountRestrictions.status, ["pending_approval", "active"])))
     .returning()
   assertState(!!row)
+  // An earlier build set the brand's open flags to "frozen" on approval; they're opened again here, so
+  // they hold the brand until each is cleared or confirmed (approvals now leave flags open).
+  const reopenedFlags = (
+    await d
+      .update(chartFlags)
+      .set({ status: "open", decidedBy: null, decidedAt: null, decisionReason: null })
+      .where(and(eq(chartFlags.brandId, r.subjectId), eq(chartFlags.status, "frozen")))
+      .returning({ id: chartFlags.id })
+  ).map((f) => f.id)
+  const stillHolding = (await d.select({ id: chartFlags.id }).from(chartFlags).where(and(eq(chartFlags.brandId, r.subjectId), eq(chartFlags.status, "open"), eq(chartFlags.autoAction, HELD)))).length
   const { invalidate } = await charts()
   await tryFeature("charts.invalidate", () => invalidate(r.subjectId))
   const brands = await brandMap([r.subjectId])
@@ -395,9 +472,10 @@ export async function liftChartFreeze(ctx: DecisionCtx, body: { id: string; reas
     subjectId: r.subjectId,
     brandId: r.subjectId,
     reason: body.reason,
-    meta: { restrictionId: r.id, was: r.status },
+    meta: { restrictionId: r.id, was: expired(r) ? "expired" : r.status, reopenedFlags, stillHolding },
   })
-  if (r.status === "active")
+  // A brand that open flags still hold stays off the boards, so it isn't told it's back.
+  if (r.status === "active" && !expired(r) && !stillHolding)
     await notify({ kind: "brand", id: r.subjectId }, { key: `charts-freeze:${r.id}`, template: "brand.status", vars: { status: "resumed", brand: `${name} on Yard Charts`, reason: "the review is finished" }, href: "/charts" })
   publishCountsAfterCommit()
   return { item: (await freezeDtos([row]))[0], audit: entry }

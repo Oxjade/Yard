@@ -11,7 +11,7 @@ import { Price } from "@/components/market/price"
 import { ProductCard } from "@/components/market/product-card"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
-import { ArrivalChip, LEGACY_SHIPPING_HIDDEN, RetryButton, ShippingAmount } from "@/components/market/delivery/delivery-bits"
+import { ArrivalChip, RetryButton, ShippingAmount } from "@/components/market/delivery/delivery-bits"
 import { useShippingQuote } from "@/components/market/delivery/use-shipping-quote"
 import { Bone } from "@/components/feedback/skeletons"
 import { countries } from "@/config/markets"
@@ -21,7 +21,6 @@ import { duration, ease } from "@/lib/motion"
 import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
-import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
 import { Notice } from "./fields"
 import { BagSkeleton } from "./skeletons"
@@ -29,7 +28,7 @@ import { useStoresReady } from "./use-stores-ready"
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** The bag page: lines grouped by brand, a summary with one Checkout, and saved pieces. */
+/** The cart page (/bag): lines grouped by brand, a summary with one Checkout, and saved pieces. */
 export function BagView() {
   const ready = useStoresReady()
   const router = useRouter()
@@ -62,7 +61,7 @@ export function BagView() {
   const brandCount = bag.groups.length
 
   // Phones: until the summary scrolls into view, a compact total with Checkout floats above
-  // the tab bar so the next step is always one tap away.
+  // the home bar (clear of its raised Around pin) so the next step is always one tap away.
   const summaryRef = useRef<HTMLElement>(null)
   const [summaryAhead, setSummaryAhead] = useState(false)
   const hasLines = ready && brandCount > 0
@@ -83,7 +82,7 @@ export function BagView() {
   return (
     <>
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
-        <h1 className="font-display text-display-lg text-ink">Bag</h1>
+        <h1 className="font-display text-display-lg text-ink">Cart</h1>
         {ready && brandCount > 0 ? (
           <p className="text-sm text-ink-2 tabular">
             {plural(bagCount(lines), "item")} from {plural(brandCount, "brand")}
@@ -100,7 +99,7 @@ export function BagView() {
           </span>
           <div>
             <p ref={emptyTitle} tabIndex={-1} className="text-base text-ink outline-none">
-              Your bag is empty
+              Your cart is empty
             </p>
             <p className="mt-1 max-w-sm text-sm text-ink-2">Add pieces from any brand and they check out together, one order per brand.</p>
           </div>
@@ -114,11 +113,8 @@ export function BagView() {
             <Notice icon={Package} className="mb-4">
               One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.
             </Notice>
-            {/* The shared sections' shipping footer and day count read old demo rates until the quote
-                has loaded for every brand, so they're hidden until then (§6.5). */}
-            <div className={cn(bag.shipping === null && LEGACY_SHIPPING_HIDDEN)}>
-              <BagGroups groups={bag.groups} currency={currency} focusWhenEmpty={emptyTitle} />
-            </div>
+            {/* Each brand's section shows its day count and shipping line once its quote has loaded (§6.5). */}
+            <BagGroups groups={bag.groups} currency={currency} focusWhenEmpty={emptyTitle} />
           </div>
 
           <aside ref={summaryRef} aria-labelledby="bag-summary-title" className="rounded-lg border border-line-soft bg-card p-5 md:p-6 lg:sticky lg:top-28">
@@ -208,7 +204,7 @@ export function BagView() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0, transition: { duration: duration.dropdown, ease: ease.out } }}
             exit={{ opacity: 0, y: 12, transition: { duration: duration.press, ease: ease.in } }}
-            className="fixed inset-x-4 bottom-[calc(max(0.875rem,env(safe-area-inset-bottom))+4.125rem)] z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
+            className="fixed inset-x-4 bottom-(--tabbar-clear) z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
           >
             <p className="min-w-0 text-xs text-ink-2">
               {bag.total === null ? "Subtotal" : "Total"}, {plural(bagCount(lines), "item")}

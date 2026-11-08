@@ -1,12 +1,13 @@
 import "server-only"
+import { AsyncLocalStorage } from "node:async_hooks"
 import { and, eq, inArray, sql } from "drizzle-orm"
 import type { AdminActor } from "../auth/dal"
 import { writeAudit, type AuditInput } from "../audit"
 import { afterCommit, db } from "../db"
-import { brandMembers, brands, reports, users } from "../db/schema"
+import { brandMembers, brands, notifications, reports, users } from "../db/schema"
 import { conflict, NotImplemented } from "../http/errors"
 import { log } from "../log"
-import { notify, type Recipient } from "../notify"
+import { notify as sendNotification, type Recipient } from "../notify"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { canAdmin, needsRole, type AdminPermission } from "@/lib/permissions"
@@ -14,8 +15,55 @@ import { forbidden } from "../http/errors"
 import { reportReasonLabels } from "@/lib/api/contracts/reports"
 import type { BrandRef, ReportRef } from "@/lib/api/contracts/admin"
 
-/** What every decision handler receives: the admin, checked by the route, and the request's IP hash. */
-export type DecisionCtx = { actor: AdminActor; ipHash: string | null }
+/**
+ * What every decision handler receives: the admin, checked by the route, and the request's IP hash.
+ * `kit`: development only, a request from one of M's kits (the X-Yard-Kit header). Audited views
+ * then carry meta.kit, the only way the dev cleanup may remove a view row (they have no reason).
+ */
+export type DecisionCtx = { actor: AdminActor; ipHash: string | null; kit?: boolean }
+
+/** Development only: the request carries M's kit header. Always false in production. */
+export function kitRequest(req: Request) {
+  return process.env.NODE_ENV !== "production" && req.headers.get("x-yard-kit") === "1"
+}
+
+/** The meta a kit's audited view adds (nothing outside development). */
+export const kitMeta = (ctx: DecisionCtx) => (ctx.kit ? { kit: true } : {})
+
+/**
+ * Development only: the notification each decision is about to overwrite. notify() upserts by key and
+ * refreshes created_at, so the dev cleanup can't tell a refreshed notification from a new one unless
+ * the decision records what was there. runDecision opens a store; notify() below records the row
+ * before it's overwritten (title, wording, time, read state), and runDecision saves the list to the
+ * decision's audit meta (`priorNotes`). The cleanup puts those rows back instead of deleting them.
+ * Never in production: audit rows there don't hold notification wording.
+ */
+export type PriorNote = { kind: Recipient["kind"]; id: string; key: string; was: null | { title: string; wording: string; category: string; href: string | null; createdAt: string; readAt: string | null } }
+export const priorNotes = new AsyncLocalStorage<PriorNote[]>()
+
+/** Records the row a notification with this key is about to overwrite (development, inside a decision). */
+export async function recordPriorNote(to: Recipient, key: string) {
+  const store = priorNotes.getStore()
+  if (!store || store.some((n) => n.kind === to.kind && n.id === to.id && n.key === key)) return
+  const d = await db()
+  const [row] = await d
+    .select()
+    .from(notifications)
+    .where(and(eq(notifications.recipientKind, to.kind), eq(notifications.recipientId, to.id), eq(notifications.eventKey, key)))
+    .limit(1)
+  store.push({
+    kind: to.kind,
+    id: to.id,
+    key,
+    was: row ? { title: row.title, wording: row.body, category: row.category, href: row.href, createdAt: row.createdAt.toISOString(), readAt: row.readAt ? row.readAt.toISOString() : null } : null,
+  })
+}
+
+/** notify() for decisions: the same call, with the overwritten row recorded first in development. */
+export async function notify(to: Recipient, n: Parameters<typeof sendNotification>[1]) {
+  await recordPriorNote(to, n.key)
+  return sendNotification(to, n)
+}
 
 export const ALREADY_DECIDED = "Someone already decided this — refreshed."
 
@@ -148,13 +196,17 @@ export function toReportRef(r: ReportRow, reporterName: string, others = 0): Rep
 export async function actionReports(ctx: DecisionCtx, subjectType: string | string[], subjectId: string, opts: { onlyId?: string; subjectLabel: string }) {
   const d = await db()
   const types = Array.isArray(subjectType) ? subjectType : [subjectType]
-  const rows = await d
-    .update(reports)
-    .set({ status: "actioned", decidedBy: ctx.actor.userId, decidedAt: new Date(), decision: "actioned" })
-    .where(and(inArray(reports.subjectType, types), eq(reports.subjectId, subjectId), inArray(reports.status, [...OPEN_REPORT]), opts.onlyId ? eq(reports.id, opts.onlyId) : undefined))
-    .returning()
+  const where = and(inArray(reports.subjectType, types), eq(reports.subjectId, subjectId), inArray(reports.status, [...OPEN_REPORT]), opts.onlyId ? eq(reports.id, opts.onlyId) : undefined)
+  // The status each report had, so the audit row records what the decision changed (meta.reportFrom).
+  const before = new Map((await d.select({ id: reports.id, status: reports.status }).from(reports).where(where)).map((r) => [r.id, r.status]))
+  const rows = await d.update(reports).set({ status: "actioned", decidedBy: ctx.actor.userId, decidedAt: new Date(), decision: "actioned" }).where(where).returning()
   for (const r of rows) await notifyReporter(r, opts.subjectLabel)
-  return rows
+  return rows.map((r) => Object.assign(r, { fromStatus: before.get(r.id) ?? "open" }))
+}
+
+/** The audit meta for reports a decision actioned: their ids and the status each had before (dev-undo reads it). */
+export function reportMeta(rows: { id: string; fromStatus: string }[]) {
+  return { reportIds: rows.map((r) => r.id), reportFrom: Object.fromEntries(rows.map((r) => [r.id, r.fromStatus])) }
 }
 
 /**

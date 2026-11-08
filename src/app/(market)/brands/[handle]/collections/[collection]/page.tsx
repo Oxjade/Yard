@@ -9,6 +9,12 @@ import type { Product } from "@/lib/data/types"
  * page can sit under a loading state. Every known one is prerendered below.
  */
 export const instant = false
+/**
+ * The whole route is static output, so an address that wasn't prerendered waits for its own
+ * render (where the check runs before anything is sent) instead of being served the shared
+ * fallback shell with a 200 first.
+ */
+export const ensureStatic = "navigation"
 
 export function generateStaticParams() {
   return collections.map((c) => ({ handle: brandById.get(c.brandId)!.handle, collection: c.handle }))

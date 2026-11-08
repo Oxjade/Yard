@@ -10,6 +10,12 @@ import { STUDIO_BRAND_ID } from "@/lib/data/brands"
  * prerendered below.
  */
 export const instant = false
+/**
+ * The whole route is static output, so an address that wasn't prerendered waits for its own
+ * render (where the check runs before anything is sent) instead of being served the shared
+ * fallback shell with a 200 first.
+ */
+export const ensureStatic = "navigation"
 
 /** Products created in this browser get ids like p_<slug>; they live in the local Studio store. */
 const LOCAL_PRODUCT_ID = /^p_[a-z0-9_]+$/

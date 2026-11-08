@@ -62,7 +62,7 @@ function SummaryBone({ rows = 3 }: { rows?: number }) {
 /** The bag body below the title: brand groups on the left, the summary on the right. */
 export function BagSkeleton() {
   return (
-    <div className="mt-8 grid gap-8 md:mt-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-12" role="status" aria-label="Loading your bag">
+    <div className="mt-8 grid gap-8 md:mt-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-12" role="status" aria-label="Loading your cart">
       <div className="grid min-w-0 gap-4">
         <Bone className="h-11 w-full rounded-lg" />
         <BrandGroupBone lines={2} />
@@ -113,25 +113,51 @@ export function CheckoutSkeleton({ withTitle = false }: { withTitle?: boolean })
   )
 }
 
-/** The confirmation heading, its reference strip and the brand order cards. */
+/** The confirmation heading beside the ticket receipt, then the brand order cards. */
 export function ConfirmationSkeleton() {
   return (
     <div role="status" aria-label="Loading your order">
-      <Bone className="size-12 rounded-full" />
-      <Bone className="mt-6 h-14 w-full max-w-lg md:h-20" />
-      <Bone className="mt-4 h-4 w-full max-w-2xl" />
-      <Bone className="mt-2 h-4 w-2/3 max-w-xl" />
-      <div className="mt-8 grid gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4" aria-hidden>
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="bg-card px-4 py-3.5 md:px-5">
-            <Bone className="h-3 w-24" />
-            <Bone className="mt-2 h-5 w-32" />
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[minmax(0,1fr)_28rem] lg:gap-16">
+        <div className="lg:pt-6" aria-hidden>
+          <Bone className="h-14 w-full max-w-lg md:h-20" />
+          <Bone className="mt-4 h-4 w-full max-w-2xl" />
+          <Bone className="mt-2 h-4 w-2/3 max-w-xl" />
+          <Bone className="mt-3 h-3 w-1/2 max-w-md" />
+          <div className="mt-8 flex gap-3">
+            <Bone className="h-12 w-48" />
+            <Bone className="h-12 w-44" />
           </div>
-        ))}
-      </div>
-      <div className="mt-8 flex gap-3" aria-hidden>
-        <Bone className="h-12 w-48" />
-        <Bone className="h-12 w-44" />
+        </div>
+        {/* The ticket's outline: paper with the perforation, the details, the payment box, the
+            barcode and the scalloped foot, as ReceiptTicket draws them. */}
+        <div aria-hidden className="mx-auto w-full max-w-md overflow-hidden rounded-[10px] bg-white/[0.06]">
+          <div className="flex flex-col items-center px-6 pt-8 pb-6">
+            <Bone className="size-10 rounded-full" />
+            <Bone className="mt-3 h-8 w-40" />
+            <Bone className="mt-3 h-3.5 w-56" />
+            <Bone className="mt-1.5 h-3.5 w-40" />
+          </div>
+          <div className="border-t-2 border-dashed border-white/10 px-6 pt-6 pb-6">
+            <div className="flex justify-between">
+              <div>
+                <Bone className="h-2.5 w-16" />
+                <Bone className="mt-2 h-4 w-32" />
+              </div>
+              <div className="flex flex-col items-end">
+                <Bone className="h-2.5 w-10" />
+                <Bone className="mt-2 h-4 w-24" />
+              </div>
+            </div>
+            <Bone className="mt-5 h-2.5 w-20" />
+            <Bone className="mt-2 h-4 w-40" />
+            <Bone className="mt-5 h-[72px] w-full rounded-lg" />
+            <Bone className="mt-5 h-3.5 w-full" />
+          </div>
+          <div className="border-t-2 border-dashed border-white/10 px-6 pt-5 pb-5">
+            <Bone className="h-14 w-full rounded-sm" />
+            <Bone className="mx-auto mt-2 h-3 w-28" />
+          </div>
+        </div>
       </div>
       <div className="mt-24 grid gap-4 md:mt-32 md:grid-cols-2" aria-hidden>
         <Bone className="h-72 rounded-lg" />

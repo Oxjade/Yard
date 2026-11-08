@@ -7,12 +7,11 @@ import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { adminTeam } from "@/lib/data/admin"
-import { useAdmin } from "@/lib/stores/admin"
 import { int } from "../format"
 import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplace/page-head"
 import { useAdminReady } from "../ready"
 import { inPageTab, TabParam, writeTabParam } from "../tab-param"
-import { AuditLog } from "./audit-log"
+import { AuditLog, useAuditFigures } from "./audit-log"
 import { useSecurityState } from "./derive"
 import { PolicyTable } from "./policy"
 import { useRevoke } from "./revoke"
@@ -32,7 +31,8 @@ const description: Record<Tab, string> = {
 
 export function SecurityView() {
   const ready = useAdminReady()
-  const audit = useAdmin((s) => s.audit)
+  // Server entries plus this browser's legacy rows, from the log's own request (M2).
+  const fig = useAuditFigures()
   const { revoked, mfaRequired } = useSecurityState()
   const { ask: revoke, dialog: revokeDialog } = useRevoke()
   const [tab, setTab] = useState<Tab>("audit")
@@ -43,7 +43,6 @@ export function SecurityView() {
   // A pending revoke still counts as signed in: the device stays signed in until the auth service ends it.
   const signedIn = adminSessions.length
   const flagged = adminSessions.filter((s) => s.flag && !revoked.has(s.id))
-  const approvals = audit.filter((a) => a.approvedBy).length
 
   function choose(v: Tab) {
     setTab(v)
@@ -62,7 +61,7 @@ export function SecurityView() {
 
       <StatRow label="Security figures">
         <RevealItem className="min-w-0" {...open("audit")}>
-          <StatCard surface="admin" icon={ListMagnifyingGlassIcon} label="Audit entries" value={audit.length} format={int} hint={ready ? `${approvals} with a second approver` : undefined} href="?tab=audit#security-sections" hrefLabel="Open the audit log" ready={ready} className="h-full" />
+          <StatCard surface="admin" icon={ListMagnifyingGlassIcon} label="Audit entries" value={fig.entries} format={int} hint={ready && fig.ready ? `${fig.withApprover} with a second approver` : undefined} href="?tab=audit#security-sections" hrefLabel="Open the audit log" ready={ready && fig.ready} className="h-full" />
         </RevealItem>
         <RevealItem className="min-w-0" {...open("team")}>
           <StatCard surface="admin" variant={ready && unaddressed.length ? "brand" : "default"} icon={FingerprintIcon} label="Without MFA" value={noMfa.length} format={int} hint={ready ? (mfaRequired.size ? `${mfaRequired.size} required to set it up` : `Of ${adminTeam.length} on the team`) : undefined} href="?tab=team#security-sections" hrefLabel="Open team and roles" ready={ready} className="h-full" />

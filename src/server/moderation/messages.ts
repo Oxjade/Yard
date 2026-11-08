@@ -1,11 +1,11 @@
 import "server-only"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm"
 import { db, withTx } from "../db"
-import { conversations, messageAttachments, messages, reports } from "../db/schema"
+import { accountRestrictions, auditLog, blocks, conversations, messageAttachments, messages, reports } from "../db/schema"
 import { conflict, notFound } from "../http/errors"
 import * as inbox from "../inbox"
+import { messageDtoFor, summaryFor } from "../inbox/dto"
 import { mediaSrc } from "../media"
-import { notify } from "../notify"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { heldReasonLabel, type EvidenceResult, type HeldViewResult, type MessageCaseDto, type MessageListDto, type MessageTab } from "@/lib/api/contracts/admin"
@@ -19,16 +19,21 @@ import {
   audit,
   brandMap,
   brandRefOf,
+  dateLabel,
   iso,
+  kitMeta,
   nameOf,
   OPEN_REPORT,
   notifyReporter,
   publishCountsAfterCommit,
   reasonLabel,
+  recordPriorNote,
+  reportMeta,
   reporterNames,
   toReportRef,
   tryFeature,
   userMap,
+  notify,
   type DecisionCtx,
 } from "./shared"
 
@@ -98,18 +103,86 @@ async function reportCases(rows: ReportRow[]): Promise<MessageCaseDto[]> {
   })
 }
 
-async function heldCases(rows: MessageRow[]): Promise<MessageCaseDto[]> {
+/**
+ * Why Release would be refused right now, in the words the held sheet shows. A release delivers the
+ * message as if just sent, so it must pass what a send passes (I's shopperCanInteract and
+ * brandCanInteract): the conversation's lock, blocks either way, the brand's status, the sender's
+ * account status and messaging restriction.
+ */
+async function releaseBlockers(rows: MessageRow[], convs: Map<string, ConversationRow>): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const held = rows.filter((m) => m.status === "held" && convs.has(m.conversationId))
+  if (!held.length) return out
+  const cs = held.map((m) => convs.get(m.conversationId)!)
+  const brandIds = [...new Set(cs.map((c) => c.brandId))]
+  const customerIds = [...new Set(cs.map((c) => c.customerId))]
+  const d = await db()
+  const [bs, people] = [await brandMap(brandIds), await userMap(customerIds)]
+  const blockRows = await d
+    .select({ blockerKind: blocks.blockerKind, blockerId: blocks.blockerId, blockedId: blocks.blockedId })
+    .from(blocks)
+    .where(
+      or(
+        and(eq(blocks.blockerKind, "shopper"), inArray(blocks.blockerId, customerIds), eq(blocks.blockedKind, "brand"), inArray(blocks.blockedId, brandIds)),
+        and(eq(blocks.blockerKind, "brand"), inArray(blocks.blockerId, brandIds), eq(blocks.blockedKind, "shopper"), inArray(blocks.blockedId, customerIds)),
+      ),
+    )
+  const now = new Date()
+  const restrictions = await d
+    .select({ subjectKind: accountRestrictions.subjectKind, subjectId: accountRestrictions.subjectId, until: accountRestrictions.until })
+    .from(accountRestrictions)
+    .where(
+      and(
+        eq(accountRestrictions.kind, "messaging"),
+        eq(accountRestrictions.status, "active"),
+        or(isNull(accountRestrictions.until), gt(accountRestrictions.until, now)),
+        or(and(eq(accountRestrictions.subjectKind, "user"), inArray(accountRestrictions.subjectId, customerIds)), and(eq(accountRestrictions.subjectKind, "brand"), inArray(accountRestrictions.subjectId, brandIds))),
+      ),
+    )
+  const ends = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`)
+  for (const m of held) {
+    const c = convs.get(m.conversationId)!
+    const brand = bs.get(c.brandId)
+    const brandName = brand?.name ?? "The brand"
+    const shopper = nameOf(people, c.customerId, "This shopper")
+    const why: string[] = []
+    if (c.locked) why.push("This conversation was locked by Yard.")
+    if (!brand || brand.reviewStatus === "suspended" || brand.reviewStatus === "restricted") {
+      const state = brand?.reviewStatus === "restricted" ? "restricted" : "suspended"
+      why.push(m.senderSide === "brand" ? ends(`Yard has ${state} ${brandName}, so its replies are paused`) : ends(`${brandName} is ${state} on Yard, so it isn't taking messages`))
+    }
+    if (blockRows.some((b) => b.blockerKind === "brand" && b.blockerId === c.brandId && b.blockedId === c.customerId)) why.push(ends(`${brandName} has blocked ${shopper}`))
+    if (blockRows.some((b) => b.blockerKind === "shopper" && b.blockerId === c.customerId && b.blockedId === c.brandId)) why.push(ends(`${shopper} has blocked ${brandName}`))
+    if (m.senderSide === "customer") {
+      if (people.get(c.customerId)?.status === "suspended") why.push(`${shopper}'s account is suspended.`)
+      const r = restrictions.find((x) => x.subjectKind === "user" && x.subjectId === c.customerId)
+      if (r) why.push(r.until ? `Messaging is paused on ${shopper}'s account until ${dateLabel(r.until)}.` : `Messaging is paused on ${shopper}'s account.`)
+    } else if (m.senderSide === "brand") {
+      const r = restrictions.find((x) => x.subjectKind === "brand" && x.subjectId === c.brandId)
+      if (r) why.push(r.until ? `Yard paused replies from ${brandName} until ${dateLabel(r.until)}.` : ends(`Yard paused replies from ${brandName}`))
+    }
+    if (why.length) out.set(m.id, why)
+  }
+  return out
+}
+
+/** `released`: messages Yard released, by id → the reason they were held (I clears held_reason on release; the audit row keeps it). */
+async function heldCases(rows: MessageRow[], released: Map<string, string | null> = new Map()): Promise<MessageCaseDto[]> {
   const convs = await conversationsFor(rows.map((m) => m.conversationId))
   const brands = await brandMap([...convs.values()].map((c) => c.brandId))
   const people = await userMap([...convs.values()].map((c) => c.customerId))
+  const blockers = await releaseBlockers(rows, convs)
   return rows.map((m) => {
     const c = convs.get(m.conversationId)
+    const wasHeld = released.has(m.id)
+    const heldReason = m.heldReason ?? (wasHeld ? (released.get(m.id) ?? null) : null)
     return {
       id: m.id,
       kind: "held",
       status: m.status,
-      reason: m.heldReason,
-      reasonLabel: heldReasonLabel(m.heldReason),
+      reason: heldReason,
+      // A message removed without ever being held (a direct removal) has no held reason to name.
+      reasonLabel: heldReason || wasHeld ? heldReasonLabel(heldReason) : m.status === "removed" ? "Removed by Yard" : "Delivered",
       side: m.senderSide as MessageCaseDto["side"],
       subjectType: null,
       reporter: null,
@@ -125,11 +198,32 @@ async function heldCases(rows: MessageRow[]): Promise<MessageCaseDto[]> {
       decision: m.status === "removed" ? "removed" : m.status === "sent" ? "released" : null,
       sample: !!c?.sample,
       subjectGone: !c,
+      ...(m.status === "held" ? { blockers: blockers.get(m.id) ?? [] } : {}),
     }
   })
 }
 
-async function spamCases(rows: ConversationRow[]): Promise<MessageCaseDto[]> {
+/** Messages Yard released (a message.released audit row) → the held reason each had. */
+async function releasedReasons(ids: string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  if (!ids.length) return out
+  const d = await db()
+  const rows = await d
+    .select({ subjectId: auditLog.subjectId, meta: auditLog.meta })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, "message.released"), eq(auditLog.subjectType, "message"), inArray(auditLog.subjectId, ids)))
+    .orderBy(desc(auditLog.at))
+  for (const r of rows) {
+    if (!r.subjectId || out.has(r.subjectId)) continue
+    const h = (r.meta as { heldReason?: unknown } | null)?.heldReason
+    out.set(r.subjectId, typeof h === "string" ? h : null)
+  }
+  return out
+}
+
+/** Conversations with a spam signal (suspected or confirmed). One without a signal is no case at all. */
+async function spamCases(all: ConversationRow[]): Promise<MessageCaseDto[]> {
+  const rows = all.filter((c) => c.spamState === "suspected" || c.spamState === "confirmed")
   const brands = await brandMap(rows.map((c) => c.brandId))
   const people = await userMap(rows.map((c) => c.customerId))
   return rows.map((c) => ({
@@ -191,14 +285,25 @@ export async function listMessages(tab: MessageTab): Promise<MessageListDto> {
 export async function messageCase(id: string): Promise<MessageCaseDto> {
   const d = await db()
   if (id.startsWith("msg_")) {
+    // A held message, or one Yard has since released (its case reads Released, with no actions left).
+    // Any other message is no case: admins never browse conversations (§8.1).
     const m = await d.query.messages.findFirst({ where: (x, { eq }) => eq(x.id, id) })
-    if (!m || !m.heldReason) throw notFound()
-    return (await heldCases([m]))[0]
+    if (!m) throw notFound()
+    if (m.heldReason) return (await heldCases([m]))[0]
+    const released = await releasedReasons([m.id])
+    if (!released.has(m.id)) throw notFound()
+    return (await heldCases([m], released))[0]
   }
   if (id.startsWith("cv_")) {
+    // Only a conversation with a spam signal is a spam case. One a report names opens as that report's
+    // case; any other conversation id is 404 (no browsing by id, and no signal implied that isn't there).
     const c = await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, id) })
     if (!c) throw notFound()
-    return (await spamCases([c]))[0]
+    const [spam] = await spamCases([c])
+    if (spam) return spam
+    const [r] = await d.select().from(reports).where(and(eq(reports.subjectType, "conversation"), eq(reports.subjectId, c.id))).orderBy(desc(reports.createdAt)).limit(1)
+    if (r) return (await reportCases([r]))[0]
+    throw notFound()
   }
   const r = await d.query.reports.findFirst({ where: (x, { and, eq, inArray }) => and(eq(x.id, id), inArray(x.subjectType, MESSAGE_SUBJECTS)) })
   if (!r) throw notFound()
@@ -219,7 +324,7 @@ export async function viewEvidence(ctx: DecisionCtx, reportId: string): Promise<
       subjectType: "report",
       subjectId: r.id,
       brandId: row.brand.id || null,
-      meta: { conversationId: row.conversationId, messages: evidence.kind === "messages" ? evidence.messages.length : 0 },
+      meta: { conversationId: row.conversationId, messages: evidence.kind === "messages" ? evidence.messages.length : 0, ...kitMeta(ctx) },
     })
     return { reportId: r.id, capturedAt: r.createdAt.toISOString(), details: r.details, evidence, audit: entry }
   })
@@ -240,7 +345,7 @@ export async function viewHeld(ctx: DecisionCtx, messageId: string): Promise<Hel
       subjectType: "message",
       subjectId: m.id,
       brandId: row.brand.id || null,
-      meta: { conversationId: m.conversationId, side: m.senderSide },
+      meta: { conversationId: m.conversationId, side: m.senderSide, ...kitMeta(ctx) },
     })
     return {
       message: {
@@ -295,7 +400,7 @@ export async function decideReport(ctx: DecisionCtx, body: { id: string; outcome
     subjectId: r.id,
     brandId: r.brandId,
     reason: body.reason,
-    meta: { subjectType: r.subjectType, subjectId: r.subjectId },
+    meta: { subjectType: r.subjectType, subjectId: r.subjectId, from: r.status },
   })
   if (body.outcome === "dismiss") {
     await notifyReporter(updated, subjectWords[r.subjectType]?.replace(/^an? /, "the ") ?? "your report")
@@ -357,13 +462,17 @@ export async function removeMessage(ctx: DecisionCtx, body: { id: string; reason
     subjectId: m.id,
     brandId: c.brandId,
     reason: body.reason,
-    meta: { conversationId: c.id, wasHeld: m.status === "held", reportIds: actioned.map((r) => r.id), attachments: attached.length },
+    meta: { conversationId: c.id, wasHeld: m.status === "held", ...reportMeta(actioned), attachments: attached.length },
   })
-  // A held message was only ever on its sender's side; a sent one is on both.
-  const dto = removedDto(updated)
-  const sides = m.status === "held" ? [m.senderSide] : ["customer", "brand"]
-  if (sides.includes("customer")) await publish(channels.user(c.customerId), "message.updated", { message: dto })
-  if (sides.includes("brand")) await publish(channels.brand(c.brandId), "message.updated", { message: dto })
+  // A held message was only ever on its sender's side; a sent one is on both. Each side gets I's own
+  // DTOs (body and attachments null on the wire) with its conversation summary, so the list preview
+  // ("Message removed by Yard") changes at once instead of waiting for a refetch.
+  const sides = (m.status === "held" ? [m.senderSide] : ["customer", "brand"]).filter((x): x is "customer" | "brand" => x === "customer" || x === "brand")
+  for (const side of sides) {
+    const message = (await messageDtoFor(m.id, side)) ?? removedDto(updated)
+    const conversation = await summaryFor(c.id, side)
+    await publish(side === "customer" ? channels.user(c.customerId) : channels.brand(c.brandId), "message.updated", { message, conversation: conversation ?? undefined })
+  }
   // The sender hears why (the reason is shared with them, §8.1).
   if (m.senderSide === "customer") await notify({ kind: "shopper", id: c.customerId }, { key: `msg-removed:${m.id}`, template: "content.removed", vars: { kind: "message", reason: body.reason }, href: `/inbox?thread=${c.id}` })
   else if (m.senderSide === "brand") await notify({ kind: "brand", id: c.brandId }, { key: `msg-removed:${m.id}`, template: "content.removed", vars: { kind: "message", reason: body.reason }, href: `/studio/inbox?thread=${c.id}` })
@@ -386,10 +495,19 @@ export async function releaseHeld(ctx: DecisionCtx, body: { id: string; reason: 
   const m = await d.query.messages.findFirst({ where: (x, { eq }) => eq(x.id, body.id) })
   if (!m) throw notFound()
   assertState(m.status === "held")
+  // Release delivers it as if just sent, so it's refused for whatever would refuse that send now.
+  const convs = await conversationsFor([m.conversationId])
+  const why = (await releaseBlockers([m], convs)).get(m.id)
+  if (why?.length) throw conflict(`${why.join(" ")} Release is off; remove the message or leave it held.`)
+  // I's delivery refreshes the receiver's "New message from …" item (msg:<conversation>); record it first (development).
+  const conv = convs.get(m.conversationId)
+  if (conv) await recordPriorNote(m.senderSide === "brand" ? { kind: "shopper", id: conv.customerId } : { kind: "brand", id: conv.brandId }, `msg:${conv.id}`)
   const delivered = await tryFeature("inbox.releaseHeldMessage", () => inbox.releaseHeldMessage(m.id))
   const after = await d.query.messages.findFirst({ where: (x, { eq }) => eq(x.id, m.id) })
-  // The inbox contract sets the status itself; while it's a stub, only the status changes.
-  if (after?.status === "held") await d.update(messages).set({ status: "sent" }).where(eq(messages.id, m.id))
+  // The inbox contract sets the status itself; while it's a stub, only the status changes. heldReason
+  // goes too, as I's release clears it: a delivered message must read as delivered to the inbox's
+  // visibleTo, so a later removal shows on both sides.
+  if (after?.status === "held") await d.update(messages).set({ status: "sent", heldReason: null }).where(eq(messages.id, m.id))
   const c = (await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, m.conversationId) }))!
   const brands = await brandMap([c.brandId])
   const people = await userMap([c.customerId])
@@ -404,7 +522,7 @@ export async function releaseHeld(ctx: DecisionCtx, body: { id: string; reason: 
   })
   publishCountsAfterCommit()
   const fresh = (await d.query.messages.findFirst({ where: (x, { eq }) => eq(x.id, m.id) }))!
-  return { item: (await heldCases([fresh]))[0], audit: entry }
+  return { item: (await heldCases([fresh], new Map([[m.id, m.heldReason]])))[0], audit: entry }
 }
 
 /** lock-conversation: nobody can send in it any more; both sides see Yard's notice. */
@@ -420,8 +538,9 @@ export async function lockConversation(ctx: DecisionCtx, body: { id: string; rea
   }
   await d.update(conversations).set({ locked: true }).where(eq(conversations.id, c.id))
   await tryFeature("inbox.publishSystemNotice", () => inbox.publishSystemNotice(c.id, "This conversation was closed by Yard."))
-  const actioned = body.reportId ? await d.select().from(reports).where(eq(reports.id, body.reportId)) : []
-  for (const r of actioned) await actionReports(ctx, r.subjectType, r.subjectId, { onlyId: r.id, subjectLabel: r.subjectType === "message" ? "a message" : "a conversation" })
+  const named = body.reportId ? await d.select().from(reports).where(eq(reports.id, body.reportId)) : []
+  const actioned: Awaited<ReturnType<typeof actionReports>> = []
+  for (const r of named) actioned.push(...(await actionReports(ctx, r.subjectType, r.subjectId, { onlyId: r.id, subjectLabel: r.subjectType === "message" ? "a message" : "a conversation" })))
   const brands = await brandMap([c.brandId])
   const people = await userMap([c.customerId])
   const entry = await audit(ctx, {
@@ -431,7 +550,7 @@ export async function lockConversation(ctx: DecisionCtx, body: { id: string; rea
     subjectId: c.id,
     brandId: c.brandId,
     reason: body.reason,
-    meta: { reportId: body.reportId ?? null },
+    meta: { reportId: body.reportId ?? null, ...reportMeta(actioned) },
   })
   publishCountsAfterCommit()
   if (body.reportId) {
@@ -439,5 +558,5 @@ export async function lockConversation(ctx: DecisionCtx, body: { id: string; rea
     if (r) return { item: (await reportCases([r]))[0], audit: entry }
   }
   const fresh = (await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, c.id) }))!
-  return { item: (await spamCases([fresh]))[0], audit: entry }
+  return { item: (await spamCases([fresh]))[0] ?? null, audit: entry }
 }

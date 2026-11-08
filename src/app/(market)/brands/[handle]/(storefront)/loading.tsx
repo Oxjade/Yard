@@ -24,6 +24,8 @@ export default function Loading() {
           </div>
           <div className="col-start-1 row-start-3 mt-5 flex items-center gap-2 md:col-start-2 md:row-start-2 md:mt-0 md:self-center md:pt-7">
             <Bone className="h-10 w-24 rounded-full md:h-11 md:w-28" />
+            {/* Message, then Share: two round icon actions. */}
+            <Bone className="size-10 rounded-full md:size-11" />
             <Bone className="size-10 rounded-full md:size-11" />
             <Bone className="h-10 flex-1 rounded-full min-[32rem]:w-40 min-[32rem]:flex-none md:h-11" />
           </div>

@@ -101,9 +101,9 @@ export function CheckoutFlow() {
       <AuthPanel
         eyebrow="Checkout"
         title="Sign in to check out"
-        body="One account keeps the orders from every brand in this bag, and their tracking, in one place. Your bag stays as it is."
+        body="One account keeps the orders from every brand in this cart, and their tracking, in one place. Your cart stays as it is."
         image={first ? first.images[0] : img("objects/bags/2")}
-        caption={first ? `In your bag: ${first.name}` : undefined}
+        caption={first ? `In your cart: ${first.name}` : undefined}
       >
         {/* Signing in here keeps the shopper on /checkout: the steps appear in place. */}
         <AuthForm />
@@ -434,7 +434,10 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                 <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex items-center gap-3 border-t border-line-soft bg-obsidian/92 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:static sm:mx-0 sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
                   {step === 0 ? (
                     <Button asChild variant="secondary" size="lg">
-                      <Link href="/bag">Back to bag</Link>
+                      {/* Below 380px "Back" and the next-step label share 288px; the full name stays for screen readers. */}
+                      <Link href="/bag">
+                        Back<span className="max-[379px]:sr-only"> to cart</span>
+                      </Link>
                     </Button>
                   ) : (
                     <Button type="button" variant="secondary" size="lg" onClick={() => goTo(step - 1)} disabled={submitting}>

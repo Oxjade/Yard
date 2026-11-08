@@ -8,6 +8,12 @@ export const metadata: Metadata = { title: "Order" }
 
 /** layout.tsx checks the id first, so an unknown order answers with a real 404. Known ids are prerendered. */
 export const instant = false
+/**
+ * The whole route is static output, so an id that wasn't prerendered waits for its own render
+ * (where layout.tsx's check runs before anything is sent) instead of being served the shared
+ * fallback shell with a 200 first.
+ */
+export const ensureStatic = "navigation"
 
 export function generateStaticParams() {
   return customerOrders.map((o) => ({ id: o.id }))

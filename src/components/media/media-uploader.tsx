@@ -35,6 +35,12 @@ export type UploadItem = {
   media?: MediaDto
 }
 
+/**
+ * A file name as the uploader shows it: bidirectional control characters (RLO, LRI, the marks…)
+ * removed, so "\u202Egnp.exe" can't display as "exe.png". The row also isolates it (`dir="auto"`).
+ */
+export const displayFileName = (name: string) => name.replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "") || "file"
+
 type Uploader = (file: Blob & { name?: string }, target: UploadTarget, onProgress: (f: number) => void) => { promise: Promise<MediaDto>; abort: () => void }
 
 type Props = {
@@ -184,7 +190,7 @@ export function MediaUploader({ purpose, as, conversationId, brandId, maxFiles, 
       const tooBig = !problem && file.size > (video ? 50 * MB : 25 * MB) ? (video ? "Videos can be up to 50 MB." : "This photo is over 25 MB. Use a smaller one.") : null
       const preview = !problem && !video ? URL.createObjectURL(file) : undefined
       if (preview) previews.current.add(preview)
-      const item: UploadItem = { key, name: file.name, size: file.size, kind, preview, state: problem || tooBig ? "error" : "preparing", progress: 0, error: problem ?? tooBig ?? undefined, retryable: !problem && !tooBig }
+      const item: UploadItem = { key, name: displayFileName(file.name), size: file.size, kind, preview, state: problem || tooBig ? "error" : "preparing", progress: 0, error: problem ?? tooBig ?? undefined, retryable: !problem && !tooBig }
       setItems((l) => [...l, item])
       if (!problem && !tooBig) {
         files.current.set(key, file)
@@ -300,7 +306,7 @@ export function UploadRow({ item, onCancel, onRetry, canRetry = true }: { item: 
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-ink">{item.name}</span>
+        <span dir="auto" className="block truncate text-[13px] text-ink [unicode-bidi:isolate]">{item.name}</span>
         {item.state === "error" ? (
           <span role="alert" className="mt-0.5 flex items-start gap-1 text-xs text-danger">
             <WarningCircleIcon aria-hidden className="mt-px size-3.5 shrink-0" />

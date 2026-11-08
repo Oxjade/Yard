@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ClockIcon, PackageIcon as Package, ArrowCounterClockwiseIcon as RotateCcw, TruckIcon as Truck, LightningIcon } from "@phosphor-icons/react"
 import { Bone } from "@/components/feedback/skeletons"
+import { AskAboutProductLink } from "@/components/inbox/entry"
 import { RetryButton } from "@/components/market/delivery/delivery-bits"
 import { DestinationPicker } from "@/components/market/delivery/destination-picker"
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
@@ -67,7 +68,7 @@ function holidayNote(o: QuoteOptionDto | null) {
 }
 
 /** Lines under Add to bag: destination, estimated delivery, dispatch, express, who ships it, returns (§6.5). */
-export function DeliverySummary({ brand, product, drop, status = "available" }: { brand: Brand; product: Product; drop?: Drop | null; status?: "available" | "unreleased" | "unavailable" }) {
+export function DeliverySummary({ brand, product, drop, status = "available", variantId }: { brand: Brand; product: Product; drop?: Drop | null; status?: "available" | "unreleased" | "unavailable"; variantId?: string | null }) {
   const e = useProductEstimate(product, status === "unreleased" ? drop : null)
   const now = useNow(30_000)
   const d = e.data
@@ -163,6 +164,8 @@ export function DeliverySummary({ brand, product, drop, status = "available" }: 
           Estimates, not guarantees. They skip weekends and public holidays in {countriesNamed}.{holidays ? ` ${holidays}` : ""}
         </p>
       ) : null}
+      {/* Sizing, stock or a delivery that doesn't fit: ask the brand, with this piece (and size) attached (§7.4). */}
+      <AskAboutProductLink brand={brand} productId={product.id} variantId={variantId} className="-my-1 justify-self-start" />
     </div>
   )
 }
@@ -224,7 +227,7 @@ export function ShippingDetails({ brand, product }: { brand: Brand; product: Pro
           ) : null}
         </dl>
       ) : null}
-      <p className="text-xs text-ink-3">Prices are for this piece alone. Checkout prices shipping once for everything in your bag from {brand.name}. Delivery dates are estimates, not guarantees.</p>
+      <p className="text-xs text-ink-3">Prices are for this piece alone. Checkout prices shipping once for everything in your cart from {brand.name}. Delivery dates are estimates, not guarantees.</p>
       {to && d && to !== d.brand.originCountry ? <p>Import duties for {countryInSentence(to)}, if any, are collected by the courier on delivery.</p> : null}
       <div>
         <p className="mb-2 text-xs text-ink-3">Shipping somewhere else? Change your country and the estimate updates.</p>

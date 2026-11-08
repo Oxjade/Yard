@@ -174,7 +174,7 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.5, opacity: 0 }}
                 transition={spring.snappy}
-                className="absolute top-1.5 right-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-acid px-1 text-[10px] font-semibold text-obsidian tabular"
+                className="absolute top-1.5 right-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[10px] font-semibold text-obsidian tabular"
               >
                 <motion.span key={unread} initial={{ y: -4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={spring.snappy}>
                   {unread > 9 ? "9+" : unread}

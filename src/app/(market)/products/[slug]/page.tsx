@@ -15,6 +15,12 @@ import { initialDropPhase } from "@/lib/drops"
  * The page is ad-free: both rails below the buy box are organic.
  */
 export const instant = false
+/**
+ * The whole route is static output, so an address that wasn't prerendered waits for its own
+ * render (where the check runs before anything is sent) instead of being served the shared
+ * fallback shell with a 200 first.
+ */
+export const ensureStatic = "navigation"
 
 export function generateStaticParams() {
   return products.filter((p) => p.status === "published").map((p) => ({ slug: p.slug }))

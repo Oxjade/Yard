@@ -9,6 +9,8 @@ import { badRequest, conflict, forbidden, rateLimited, restricted } from "../htt
 import { newId } from "../ids"
 import { notifyAdmins } from "../notify"
 import type { TemplateKey } from "../notify-templates"
+import { publish } from "../realtime/bus"
+import { channels } from "../realtime/channels"
 import { freezeSubject } from "./snapshot"
 
 /**
@@ -91,6 +93,9 @@ export async function createReport(actor: Actor, input: ReportInput): Promise<{ 
         vars: { reason: label.charAt(0).toLowerCase() + label.slice(1), subject: input.subjectType, brand: frozen.brandName ?? undefined },
         href: q.href(row.id),
       })
+      // An empty signal, sent once the report commits: each admin refetches the queue counts their
+      // role may see, so the sidebar badges move for roles this notification doesn't reach (M2).
+      await publish(channels.admin, "moderation.counts", {})
       return { id: row.id, status: row.status, createdAt: row.createdAt.toISOString() }
     })
   } catch (e) {

@@ -13,8 +13,13 @@ import {
   UsersThreeIcon as UsersThree,
   type Icon,
 } from "@phosphor-icons/react"
+import { PlaceBadge } from "@/components/around/entry/place-badge"
+import { RankBadge } from "@/components/charts/entry/rank-badge"
+import { MessageAction } from "@/components/inbox/entry"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
+import { getBrandPlaces } from "@/lib/api/around"
+import { useApi } from "@/lib/api/use-api"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { categoryBySlug } from "@/lib/data/catalog"
 import { cn } from "@/lib/utils"
@@ -248,13 +253,22 @@ function ProfileName({ ctx, size }: { ctx: StorefrontContext; size: Look["name"]
   )
 }
 
-/** What and where, as a profile's quiet meta line: the brand's category, then its city and country. */
+/**
+ * What and where, as a profile's quiet meta line: the brand's category, then its city and country,
+ * then its best weekly chart position (§7.4). When the brand has places on Around the city item
+ * becomes the PlaceBadge ("Store in Yaba"), linking to the place; until that's known, or without
+ * places, the city stays. Both badges fetch their own data, render nothing in the editor's
+ * preview, and end with " · sample" while their data is sample. Never a fifth stat.
+ */
 function ProfileMeta({ ctx, className }: { ctx: StorefrontContext; className?: string }) {
   const { brand } = ctx
   const category = categoryBySlug.get(brand.categories[0])?.name
+  // The same request PlaceBadge makes (shared by key), so this only decides which item shows.
+  const { data: places } = useApi(ctx.preview ? null : `around:badge:${brand.id}`, () => getBrandPlaces(brand.id), { revalidateOnFocus: false })
+  const hasPlaces = !!places?.count && !!places.primary
   const items: { key: string; icon: Icon; text: string }[] = [
     ...(category ? [{ key: "category", icon: Tag, text: category }] : []),
-    { key: "place", icon: MapPin, text: placeOf(brand) },
+    ...(hasPlaces ? [] : [{ key: "place", icon: MapPin, text: placeOf(brand) }]),
   ]
   return (
     <ul className={cn("flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-2", className)} aria-label={`About ${brand.name}`}>
@@ -264,6 +278,14 @@ function ProfileMeta({ ctx, className }: { ctx: StorefrontContext; className?: s
           {m.text}
         </li>
       ))}
+      {hasPlaces ? (
+        <li className="inline-flex items-center empty:hidden">
+          <PlaceBadge brandId={brand.id} preview={ctx.preview} className="gap-1.5 md:min-h-0 [&>svg]:size-4" />
+        </li>
+      ) : null}
+      <li className="inline-flex items-center empty:hidden">
+        <RankBadge brandId={brand.id} variant="meta" preview={ctx.preview} className="min-h-10 gap-1.5 md:min-h-0 [&>svg]:size-4" />
+      </li>
     </ul>
   )
 }
@@ -374,6 +396,7 @@ export function HeroSection({ ctx, intro, products, first, opening, shopHref }: 
           </div>
           <div className="col-start-1 row-start-3 mt-5 flex items-center gap-2 @3xl:col-start-2 @3xl:row-start-2 @3xl:mt-0 @3xl:self-center @3xl:pt-7">
             <FollowAction ctx={ctx} className={pill} />
+            <MessageAction ctx={ctx} className="@3xl:size-11" />
             <ShareAction ctx={ctx} className="@3xl:size-11" />
             <ShopAction ctx={ctx} href={shopHref} short className={cn(pill, "min-w-0 flex-1 @lg:flex-none")} />
           </div>

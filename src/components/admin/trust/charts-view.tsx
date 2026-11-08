@@ -3,6 +3,7 @@
 import { useId } from "react"
 import {
   ArrowClockwiseIcon,
+  CaretRightIcon,
   CheckIcon,
   EyeIcon,
   FlagIcon,
@@ -31,13 +32,12 @@ import { InPageLinks, useSearchParam, writeParams } from "@/components/admin/mar
 import { useLast } from "@/components/admin/marketplace/use-last"
 import { useNow } from "@/hooks/use-now"
 import { adminKeys, getChartFlag, getChartsOverview, listChartFlags, listSponsored } from "@/lib/api/admin"
-import { chartBoardLabels, type ChartFlagDto, type ChartsOverviewDto, type FreezeDto, type SponsoredRowDto } from "@/lib/api/contracts/admin"
+import { chartBoardLabels, type ChartFlagDto, type ChartHoldDto, type ChartsOverviewDto, type FreezeDto, type SponsoredRowDto } from "@/lib/api/contracts/admin"
 import { useApi } from "@/lib/api/use-api"
 import { formatNumber, formatPercent } from "@/lib/money"
 import type { AdminPermission } from "@/lib/permissions"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { cn } from "@/lib/utils"
-import { LoadError, ServerActivity, TrustActionBar, TrustGate, sheetTrack, useAdminSession, useQueueFigures, useServerDecision, type TrustAction } from "./shared"
+import { LoadError, NotInQueue, ServerActivity, TrustActionBar, TrustGate, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
 /*
  * Admin › Charts (§6.3, §8.1): is each board counting real interest? Flags are computed by the
@@ -60,12 +60,19 @@ const flagStatus: Record<string, { label: string; tone: Tone }> = {
   open: { label: "Open", tone: "attention" },
   cleared: { label: "Cleared", tone: "success" },
   confirmed: { label: "Confirmed", tone: "muted" },
+  // Only flags an earlier build froze on approval: approvals now leave flags open.
   frozen: { label: "Frozen", tone: "info" },
 }
+/** Clear or Confirm applies: an open flag, or one an earlier build froze once no freeze is in force. */
+const decidable = (f: ChartFlagDto) => f.status === "open" || (f.status === "frozen" && f.freeze?.status !== "active")
+/** "both" for two, "all 3" from three up. */
+const allOf = (k: number) => (k === 2 ? "both are" : `all ${k} are`)
 const autoAction: Record<string, string> = { none: "Listed for review", excluded_signals: "Signals excluded", held_from_charts: "Held from every board" }
 function freezeStatus(f: FreezeDto): { label: string; tone: Tone } {
   if (f.status === "pending_approval") return { label: "Waiting for a second admin", tone: "attention" }
   if (f.status === "active") return { label: f.until ? `Frozen until ${formatDate(f.until)}` : "Frozen", tone: "info" }
+  // Its days ran out: the boards no longer apply it (C reads only freezes still in force).
+  if (f.status === "expired") return { label: f.until ? `Ended ${formatDate(f.until)}` : "Ended", tone: "muted" }
   // A request closed before anyone approved it never froze anything: it was withdrawn, not lifted.
   return f.approvedBy ? { label: "Lifted", tone: "muted" } : { label: "Withdrawn", tone: "muted" }
 }
@@ -124,7 +131,7 @@ function ChartsBody() {
   const reviewer = can("charts.review")
   const overview = useApi(reviewer ? adminKeys.chartsOverview : null, getChartsOverview, { refreshInterval: 60_000 })
   const flags = useApi(reviewer && tab !== "sponsored" ? adminKeys.chartFlags("all") : null, () => listChartFlags("all"), { refreshInterval: 60_000 })
-  useRealtimeEvent("moderation.counts", () => {
+  useQueueLive(() => {
     void overview.revalidate()
     void flags.revalidate()
   })
@@ -179,9 +186,9 @@ function ChartsBody() {
           ) : flags.error && !flags.data ? (
             <LoadError error={flags.error} onRetry={() => void flags.revalidate()} what="the flags" />
           ) : tab === "flags" ? (
-            <Flags items={flags.data?.items} ask={ask} />
+            <Flags items={flags.data?.items} holds={flags.data?.holds} ask={ask} />
           ) : (
-            <Freezes items={flags.data?.freezes} ask={ask} />
+            <Freezes items={flags.data?.freezes} holds={flags.data?.holds} ask={ask} />
           )}
         </div>
       </Panel>
@@ -192,10 +199,13 @@ function ChartsBody() {
 
 /** The two plain notes the overview must always show when they apply (§8.1, §10). */
 function SignalNotes({ o }: { o: ChartsOverviewDto }) {
+  const hops = `${o.proxyHops} trusted proxy ${o.proxyHops === 1 ? "hop" : "hops"}`
   const notes = [
-    o.ipSignal === "unavailable" ? "IP signal: unavailable — set YARD_TRUSTED_PROXY_HOPS behind a proxy. Without it Yard can't see client IPs, so the IP-based detectors are off now; flags they raised earlier, while it was set, are still listed." : null,
+    o.ipSignal === "unavailable"
+      ? "IP signal: unavailable — set YARD_TRUSTED_PROXY_HOPS behind a proxy. Without it Yard can't see client IPs, so the IP-based detectors are off now; flags they raised earlier, while it was set, are still listed."
+      : `IP signal: on — Yard reads client IPs through ${hops} (YARD_TRUSTED_PROXY_HOPS=${o.proxyHops}), so the IP cap and IP concentration detector run. Addresses are kept only as monthly hashes.`,
     "Order signals: not connected (no payment provider). Sales count only from the labelled sample baseline until payments are confirmed.",
-  ].filter(Boolean) as string[]
+  ]
   return (
     <ul className="grid gap-1.5 px-1">
       {notes.map((t) => (
@@ -225,6 +235,7 @@ function Overview({ o, ask }: { o?: ChartsOverviewDto; ask: Ask }) {
   return (
     <div className="grid gap-5">
       <p className="text-[12.5px] text-ink-2">{boardSummary(o)}</p>
+      <Holds holds={o.holds} compact />
       <ul className="grid gap-2 @xl:grid-cols-2 @5xl:grid-cols-3" aria-label="Boards">
         {o.boards.map((b) => {
           const over = b.totalEvents > 0 && b.excludedShare > o.threshold
@@ -241,7 +252,7 @@ function Overview({ o, ask }: { o?: ChartsOverviewDto; ask: Ask }) {
                 </div>
                 <div>
                   <dt className="text-[11px] text-ink-3">Excluded</dt>
-                  {b.totalEvents ? <dd className={cn("font-metric mt-1 text-[1.25rem]", over ? "text-acid" : "text-ink")}>{pct(b.excludedShare)}</dd> : <dd className="mt-1.5 text-[12.5px] text-ink-3">No signals yet</dd>}
+                  {b.totalEvents ? <dd className="font-metric mt-1 text-[1.25rem] text-ink">{pct(b.excludedShare)}</dd> : <dd className="mt-1.5 text-[12.5px] text-ink-3">No signals yet</dd>}
                 </div>
                 <div>
                   <dt className="text-[11px] text-ink-3">Signals, 7 days</dt>
@@ -269,8 +280,14 @@ function Overview({ o, ask }: { o?: ChartsOverviewDto; ask: Ask }) {
         </section>
         <section aria-label="Signal quality" className="grid content-start gap-4">
           <div className="flex items-center gap-4">
-            <RingGauge value={o.verifiedShare ?? 0} threshold={1 - o.threshold} label="Verified signals" sublabel="Verified signals" size={124} />
-            <p className="text-[12px] leading-snug text-ink-2">{o.totals.total ? `${n(o.totals.counted)} of ${n(o.totals.total)} signals counted in the last 7 days.` : "No signals in the last 7 days yet."}</p>
+            <RingGauge value={o.verifiedShare ?? 0} label="Verified signals" sublabel="Verified signals" size={124} />
+            <div className="grid gap-1">
+              <p className="text-[12px] leading-snug text-ink-2">{o.totals.total ? `${n(o.totals.counted)} of ${n(o.totals.total)} signals counted in the last 7 days.` : "No signals in the last 7 days yet."}</p>
+              <p className="text-[11.5px] leading-snug text-ink-3">
+                {o.verifiedShare == null ? "" : o.verifiedShare < 1 - o.threshold ? `Below ${pct(1 - o.threshold)}: excluded signals are over the ${pct(o.threshold)} threshold. ` : `At or above ${pct(1 - o.threshold)}, inside the ${pct(o.threshold)} threshold. `}
+                Seeded sample signals count toward it.
+              </p>
+            </div>
           </div>
           <div className="grid gap-2">
             <h3 className="font-label text-[13px] text-ink">Organic and sponsored surface</h3>
@@ -336,14 +353,90 @@ function DailyExcluded({ o }: { o: ChartsOverviewDto }) {
   )
 }
 
-function flagDecisions(ask: Ask, me: string | undefined) {
+const plural = (k: number, one: string, many: string) => (k === 1 ? one : many)
+/** A detector label inside a sentence: "Coordinated ring" → "coordinated ring", but "IP concentration" keeps its acronym. */
+const lc = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1))
+const listWords = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`)
+
+/** What deciding this one flag does to its brand's hold (C's rule: held while ANY open high flag holds it). */
+function holdAfter(f: ChartFlagDto) {
+  if (!f.hold.holding) return f.severity === "high" ? "" : `This ${f.severity}-severity flag doesn't hold ${f.brand.name} from the boards.`
+  if (!f.hold.others.length) return `It's the last flag holding ${f.brand.name}, so ${f.brand.name} returns to the boards at the next recompute.`
+  const others = f.hold.others.map((x) => lc(x.detectorLabel))
+  return `${f.brand.name} stays off every board: its ${listWords(others)} ${plural(others.length, "flag", "flags")} still ${plural(others.length, "holds", "hold")} it until ${plural(others.length, "that one is", "those are")} cleared or confirmed too.`
+}
+
+/**
+ * Brands held from every public board and the flags holding each (§6.3; the rule itself is C's and
+ * unchanged): every listed flag must be cleared or confirmed before the brand returns.
+ */
+function Holds({ holds, compact = false, onOpen }: { holds?: ChartHoldDto[]; compact?: boolean; onOpen?: (flagId: string) => void }) {
+  if (!holds) return compact ? null : <div className="skeleton h-24 rounded-[12px]" aria-hidden />
+  if (!holds.length)
+    return compact ? null : <p className="text-[12px] text-ink-3">No brand is held from the boards right now. A high-severity flag holds its brand until it&apos;s cleared or confirmed.</p>
+  return (
+    <section aria-label="Brands held from the boards" className="grid gap-2.5 rounded-[12px] border border-[var(--admin-hairline)] p-3 sm:p-3.5">
+      <div className="grid gap-1">
+        <h3 className="font-label text-[13px] text-ink">
+          {holds.length} {plural(holds.length, "brand is", "brands are")} held from every public board
+        </h3>
+        <p className="text-[12px] leading-snug text-ink-3">
+          A brand stays off the boards while any open high-severity flag holds it. Clearing a flag counts its excluded signals again; confirming keeps them excluded. Either way the brand returns only once every flag below it is decided, at the next recompute.
+        </p>
+      </div>
+      <ul className="grid gap-2 @3xl:grid-cols-2 @6xl:grid-cols-3">
+        {holds.map((h) => (
+          <li key={h.brand.id} className="admin-inset grid gap-2 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[13px] font-medium text-ink">{h.brand.name}</p>
+              <StatusBadge tone={h.frozen ? "info" : "neutral"}>{h.frozen ? "Also frozen" : `Held since ${formatDate(h.since)}`}</StatusBadge>
+            </div>
+            <p className="text-[12px] text-ink-2">
+              {h.flags.length === 1 ? "1 open flag holds it. Deciding it re-lists the brand." : `${h.flags.length} open flags hold it. Deciding one leaves the other${h.flags.length > 2 ? "s" : ""} holding it.`}
+            </p>
+            {compact ? (
+              <p className="text-[11.5px] text-ink-3">{listWords(h.flags.map((f) => f.detectorLabel))}</p>
+            ) : (
+              <ul className="grid gap-1">
+                {h.flags.map((f) => (
+                  <li key={f.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpen?.(f.id)}
+                      aria-label={`Open the ${lc(f.detectorLabel)} flag on ${h.brand.name}`}
+                      className="group flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] text-ink outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-violet sm:min-h-9"
+                    >
+                      <span className="min-w-0 flex-1 truncate underline decoration-white/25 underline-offset-[3px] group-hover:decoration-white/60">{f.detectorLabel}</span>
+                      <span className="shrink-0 text-[11.5px] text-ink-3 tabular">{n(f.excludedEvents)} excluded</span>
+                      <CaretRightIcon aria-hidden className="size-3.5 shrink-0 text-ink-3 group-hover:text-ink" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+      {compact ? (
+        <button type="button" onClick={() => writeParams({ tab: "flags", case: null })} className="min-h-10 justify-self-start rounded-md text-left text-[12px] text-ink-2 underline-offset-2 outline-none hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-violet sm:min-h-0">
+          Show the flags holding them
+        </button>
+      ) : null}
+    </section>
+  )
+}
+
+function flagDecisions(ask: Ask, me: string | undefined, holds?: ChartHoldDto[]) {
+  // Open flags holding the brand right now (they keep holding it after a freeze ends).
+  const holding = (brandId: string) => holds?.find((h) => h.brand.id === brandId)?.flags.length ?? 0
+  const flagsWords = (k: number) => (k === 1 ? "open flag" : `${k} open flags`)
   return {
     clear: (f: ChartFlagDto) =>
       ask({
         action: "decide-chart-flag",
         body: { id: f.id, outcome: "clear" },
-        title: `Clear the ${f.detectorLabel.toLowerCase()} flag on ${f.brand.name}?`,
-        description: `Its ${n(f.excludedEvents)} excluded signals count again, and ${f.brand.name} can return to the boards at the next recompute. ${f.brand.name} isn't told; your reason stays in the audit log.`,
+        title: `Clear the ${lc(f.detectorLabel)} flag on ${f.brand.name}?`,
+        description: `The signals this flag excluded count again. ${holdAfter(f)} ${f.brand.name} isn't told; your reason stays in the audit log.`,
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Clear flag",
         done: "Flag cleared",
@@ -352,8 +445,8 @@ function flagDecisions(ask: Ask, me: string | undefined) {
       ask({
         action: "decide-chart-flag",
         body: { id: f.id, outcome: "confirm" },
-        title: `Confirm the ${f.detectorLabel.toLowerCase()} flag on ${f.brand.name}?`,
-        description: `The flagged signals stay excluded. A hold from every board ends, so ${f.brand.name} ranks on its genuine signals. Request a freeze to keep it off the charts. Your reason stays in the audit log.`,
+        title: `Confirm the ${lc(f.detectorLabel)} flag on ${f.brand.name}?`,
+        description: `The flagged signals stay excluded and ${f.brand.name} ranks on its genuine signals only. ${holdAfter(f)} Request a freeze to keep it off the charts. Your reason stays in the audit log.`,
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Confirm flag",
         done: "Flag confirmed",
@@ -374,7 +467,11 @@ function flagDecisions(ask: Ask, me: string | undefined) {
         action: "approve-chart-freeze",
         body: { id: z.id },
         title: `Approve the Charts freeze on ${z.brand.name}?`,
-        description: `${z.requestedBy.name} asked for it: ${z.reason} ${z.brand.name} leaves every board${z.until ? ` until ${formatDate(z.until)}` : ""} and is told it's paused because of unusual activity.`,
+        description: `${z.requestedBy.name} asked for it: "${z.reason.replace(/[.!?]+$/, "")}." ${z.brand.name} leaves every board${z.until ? ` until ${formatDate(z.until)}` : ""} and is told it's paused because of unusual activity.${
+          holding(z.brand.id)
+            ? ` Its ${flagsWords(holding(z.brand.id))} ${holding(z.brand.id) === 1 ? "stays" : "stay"} open: when the freeze ends, ${z.brand.name} stays off the boards until ${holding(z.brand.id) === 1 ? "it is" : allOf(holding(z.brand.id))} cleared or confirmed.`
+            : ""
+        }`,
         fieldLabel: "Reason, for the audit log",
         confirmLabel: "Approve freeze",
         destructive: true,
@@ -386,7 +483,12 @@ function flagDecisions(ask: Ask, me: string | undefined) {
         action: "lift-chart-freeze",
         body: { id: z.id },
         title: z.status === "pending_approval" ? `Withdraw the freeze request for ${z.brand.name}?` : `Lift the Charts freeze on ${z.brand.name}?`,
-        description: z.status === "pending_approval" ? "Nothing changed on the boards yet, so withdrawing only closes the request. Your reason stays in the audit log." : `${z.brand.name} can rank again at the next recompute and is told the pause ended. Your reason stays in the audit log.`,
+        description:
+          z.status === "pending_approval"
+            ? "Nothing changed on the boards yet, so withdrawing only closes the request. Your reason stays in the audit log."
+            : holding(z.brand.id)
+              ? `${z.brand.name} still stays off the boards: its ${flagsWords(holding(z.brand.id))} ${holding(z.brand.id) === 1 ? "holds" : "hold"} it until ${holding(z.brand.id) === 1 ? "it is" : allOf(holding(z.brand.id))} cleared or confirmed, and it isn't told the pause ended until then. Your reason stays in the audit log.`
+              : `${z.brand.name} can rank again at the next recompute and is told the pause ended. Your reason stays in the audit log.`,
         fieldLabel: "Reason, for the audit log",
         confirmLabel: z.status === "pending_approval" ? "Withdraw request" : "Lift freeze",
         done: z.status === "pending_approval" ? "Freeze request withdrawn" : "Freeze lifted",
@@ -395,19 +497,20 @@ function flagDecisions(ask: Ask, me: string | undefined) {
 }
 
 function freezeActions(z: FreezeDto | null, d: ReturnType<typeof flagDecisions>, me: string | undefined, reason: (p: AdminPermission) => string | undefined): TrustAction[] {
-  if (!z || z.status === "lifted") return []
+  if (!z || z.status === "lifted" || z.status === "expired") return []
   const r = reason("charts.freeze")
   const out: TrustAction[] = [{ key: "lift", label: z.status === "pending_approval" ? "Withdraw request" : "Lift freeze", icon: LockSimpleOpenIcon, variant: "secondary", onSelect: () => void d.lift(z), disabledReason: r }]
   if (z.status === "pending_approval") out.push({ key: "approve", label: "Approve freeze", icon: SnowflakeIcon, variant: "destructive", onSelect: () => void d.approve(z), disabledReason: r ?? (z.requestedBy.id === me ? "You requested it. Needs a second admin." : undefined) })
   return out
 }
 
-function Flags({ items, ask }: { items?: ChartFlagDto[]; ask: Ask }) {
+function Flags({ items, holds, ask }: { items?: ChartFlagDto[]; holds?: ChartHoldDto[]; ask: Ask }) {
   const { reason, admin } = useAdminSession()
   const caseParam = useSearchParam("case")
   const flagParam = useSearchParam("flag")
   const caseId = caseParam ?? flagParam
-  const d = flagDecisions(ask, admin?.id)
+  const d = flagDecisions(ask, admin?.id, holds)
+  const missing = !!caseId && !!items && !items.some((f) => f.id === caseId)
   const r = reason("charts.review")
   const open = (f: ChartFlagDto) => writeParams({ case: f.id })
   const columns: Column<ChartFlagDto>[] = [
@@ -418,23 +521,27 @@ function Flags({ items, ask }: { items?: ChartFlagDto[]; ask: Ask }) {
       cell: (f) => (
         <button type="button" onClick={() => open(f)} className="group block min-h-10 max-w-full min-w-0 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
           <span className="block max-w-[40vw] truncate font-medium text-ink group-hover:text-violet sm:max-w-[220px]">{f.brand.name}</span>
-          <span className="block max-w-[40vw] truncate text-[11.5px] text-ink-3 sm:max-w-[220px]">{f.detectorLabel}</span>
+          <span className="block max-w-[40vw] truncate text-[11.5px] text-ink-3 sm:max-w-[220px]">
+            {f.detectorLabel}
+            <span className="lg:hidden">{f.hold.holding ? ", holding the brand" : ""}</span>
+          </span>
         </button>
       ),
     },
     { key: "severity", header: "Severity", sortValue: (f) => ({ high: 0, medium: 1, low: 2 })[f.severity], cell: (f) => <StatusBadge tone={severityTone[f.severity]}>{f.severity.charAt(0).toUpperCase() + f.severity.slice(1)}</StatusBadge> },
     { key: "window", header: "Window", hideBelow: "lg", cell: (f) => <span className="whitespace-nowrap text-ink-2">{windowWords(f)}</span> },
     { key: "excluded", header: "Excluded", align: "right", hideBelow: "md", sortValue: (f) => f.excludedEvents, cell: (f) => <span className="tabular text-ink">{n(f.excludedEvents)}</span> },
-    { key: "auto", header: "Auto-action", hideBelow: "lg", cell: (f) => <span className="whitespace-nowrap text-ink-2">{autoAction[f.autoAction]}</span> },
+    { key: "auto", header: "Auto-action", hideBelow: "lg", cell: (f) => <span className="whitespace-nowrap text-ink-2">{autoWords(f)}</span> },
     { key: "status", header: "Status", hideBelow: "sm", cell: (f) => <StatusBadge tone={flagStatus[f.status]?.tone ?? "neutral"}>{flagStatus[f.status]?.label ?? f.status}</StatusBadge> },
   ]
   const rowActions: RowAction<ChartFlagDto>[] = [
     { label: "Open flag", icon: EyeIcon, onSelect: open },
-    { label: "Clear flag", icon: CheckIcon, separatorBefore: true, hidden: (f) => f.status !== "open", disabled: () => !!r, disabledReason: () => r, onSelect: (f) => void d.clear(f) },
-    { label: "Confirm flag", icon: XCircleIcon, hidden: (f) => f.status !== "open", disabled: () => !!r, disabledReason: () => r, onSelect: (f) => void d.confirm(f) },
+    { label: "Clear flag", icon: CheckIcon, separatorBefore: true, hidden: (f) => !decidable(f), disabled: () => !!r, disabledReason: () => r, onSelect: (f) => void d.clear(f) },
+    { label: "Confirm flag", icon: XCircleIcon, hidden: (f) => !decidable(f), disabled: () => !!r, disabledReason: () => r, onSelect: (f) => void d.confirm(f) },
   ]
   return (
-    <>
+    <div className="grid gap-3">
+      <Holds holds={holds} onOpen={(id) => writeParams({ case: id })} />
       <DataTable
         label="Chart flags"
         rows={items ?? []}
@@ -447,8 +554,25 @@ function Flags({ items, ask }: { items?: ChartFlagDto[]; ask: Ask }) {
         minWidth={300}
       />
       <FlagSheet id={items?.some((f) => f.id === caseId) ? caseId : null} d={d} onOpenChange={(o) => !o && writeParams({ case: null, flag: null })} />
-    </>
+      {missing ? (
+        <DetailSheet open onOpenChange={(o) => !o && writeParams({ case: null, flag: null })} title="Flag not found">
+          <NotInQueue what="flag" href="/admin/charts?tab=flags" queue="the flags" />
+        </DetailSheet>
+      ) : null}
+    </div>
   )
+}
+
+/** The auto-action in words, with whether the hold still applies (a decided flag holds nothing). */
+function autoWords(f: ChartFlagDto) {
+  if (f.hold.holding) return f.hold.others.length ? `Holding, with ${f.hold.others.length} other ${plural(f.hold.others.length, "flag", "flags")}` : "Holding the brand"
+  if (f.autoAction === "held_from_charts") {
+    const on = f.decidedAt ? ` ${formatDate(f.decidedAt)}` : ""
+    if (f.status === "cleared") return `Was holding, cleared${on}`
+    if (f.status === "confirmed") return `Was holding, confirmed${on}`
+    return "Held until decided; no longer holding"
+  }
+  return autoAction[f.autoAction]
 }
 
 function FlagSheet({ id, d, onOpenChange }: { id: string | null; d: ReturnType<typeof flagDecisions>; onOpenChange: (o: boolean) => void }) {
@@ -460,7 +584,7 @@ function FlagSheet({ id, d, onOpenChange }: { id: string | null; d: ReturnType<t
   if (!shown) return null
   const r = reason("charts.review")
   const actions: TrustAction[] = []
-  if (f?.status === "open") {
+  if (f && decidable(f)) {
     actions.push({ key: "confirm", label: "Confirm", icon: XCircleIcon, variant: "secondary", onSelect: () => void d.confirm(f), disabledReason: r })
     actions.push({ key: "clear", label: "Clear flag", icon: CheckIcon, variant: "secondary", onSelect: () => void d.clear(f), disabledReason: r })
   }
@@ -499,9 +623,12 @@ function FlagSheet({ id, d, onOpenChange }: { id: string | null; d: ReturnType<t
               { label: "Brand", value: f.brand.name },
               { label: "Raised", value: relDays(f.createdAt, now) },
               { label: "Excluded signals", value: <span className="tabular">{n(f.excludedEvents)}</span> },
-              { label: "Auto-action", value: autoAction[f.autoAction] },
+              { label: "Auto-action", value: autoWords(f) },
             ]}
           />
+          <DetailSection className={sheetTrack} title="Hold on the boards">
+            <HoldNote f={f} />
+          </DetailSection>
           <DetailSection className={sheetTrack} title="Evidence" aside={<span className="text-[11px] text-ink-3">Counts and ratios only</span>}>
             {f.evidence.length ? (
               <blockquote className="grid gap-1 rounded-[10px] border-l-2 border-violet/60 bg-white/[0.02] px-3 py-2.5 text-[13px] text-ink-2">
@@ -545,9 +672,56 @@ function FlagSheet({ id, d, onOpenChange }: { id: string | null; d: ReturnType<t
   )
 }
 
-function Freezes({ items, ask }: { items?: FreezeDto[]; ask: Ask }) {
+/** Which flags hold this brand, what deciding this one does, and the ring caveat (C's request). */
+function HoldNote({ f }: { f: ChartFlagDto }) {
+  const lines: React.ReactNode[] = []
+  if (f.hold.holding) {
+    lines.push(
+      f.hold.others.length ? (
+        <>
+          This flag holds {f.brand.name} off every public board, and so {plural(f.hold.others.length, "does", "do")} its open{" "}
+          {listWords(f.hold.others.map((o) => lc(o.detectorLabel)))} {plural(f.hold.others.length, "flag", "flags")}.{" "}
+          {f.brand.name} returns only when {allOf(f.hold.others.length + 1)} cleared or confirmed.
+        </>
+      ) : (
+        <>This is the only open flag holding {f.brand.name}. Clearing or confirming it re-lists {f.brand.name} at the next recompute.</>
+      ),
+    )
+    lines.push(<>Clear: the signals it excluded count again. Confirm: they stay excluded and {f.brand.name} ranks on its genuine signals only.</>)
+  } else if (f.status === "open") {
+    lines.push(<>This {f.severity}-severity flag doesn&apos;t hold {f.brand.name} from the boards{f.autoAction === "excluded_signals" ? "; its signals are excluded while it's open" : "; it's listed for review only"}.</>)
+  } else if (f.status === "frozen") {
+    lines.push(
+      f.freeze?.status === "active" ? (
+        <>An earlier build marked this flag frozen when the freeze on {f.brand.name} was approved. The freeze keeps {f.brand.name} off every board; clear or confirm this flag once it ends.</>
+      ) : (
+        <>An earlier build marked this flag frozen when a freeze was approved, and no freeze is in force now, so it doesn&apos;t hold {f.brand.name}. Nobody has cleared or confirmed it: do that to close it.</>
+      ),
+    )
+  } else {
+    const when = f.decidedAt ? ` on ${formatDate(f.decidedAt)}` : ""
+    lines.push(<>{f.status === "cleared" ? "Cleared" : "Confirmed"}{when}, so this flag no longer holds {f.brand.name}.{f.hold.others.length ? ` Its open ${listWords(f.hold.others.map((o) => lc(o.detectorLabel)))} ${plural(f.hold.others.length, "flag still holds", "flags still hold")} it.` : ""}</>)
+  }
+  if (f.freeze?.status === "active" && f.hold.holding)
+    lines.push(<>A Charts freeze is in force too{f.freeze.until ? ` until ${formatDate(f.freeze.until)}` : ""}. When it ends, {f.brand.name} stays off the boards until its open flags are cleared or confirmed.</>)
+  if (f.detector === "coordinated_ring")
+    lines.push(
+      <>
+        A coordinated ring holds every brand it followed{f.ringPeers.length ? <> ({listWords(f.ringPeers.map((b) => b.name))} {plural(f.ringPeers.length, "is", "are")} flagged and held the same way)</> : null}. A ring can follow a brand that had no part in it, so check each brand&apos;s evidence before you confirm.
+      </>,
+    )
+  return (
+    <div className="grid gap-1.5 text-[12.5px] leading-snug text-ink-2">
+      {lines.map((l, i) => (
+        <p key={i}>{l}</p>
+      ))}
+    </div>
+  )
+}
+
+function Freezes({ items, holds, ask }: { items?: FreezeDto[]; holds?: ChartHoldDto[]; ask: Ask }) {
   const { reason, admin } = useAdminSession()
-  const d = flagDecisions(ask, admin?.id)
+  const d = flagDecisions(ask, admin?.id, holds)
   const r = reason("charts.freeze")
   const columns: Column<FreezeDto>[] = [
     { key: "brand", header: "Brand", cell: (z) => <span className="block max-w-[40vw] truncate font-medium text-ink sm:max-w-[220px]">{z.brand.name}</span> },

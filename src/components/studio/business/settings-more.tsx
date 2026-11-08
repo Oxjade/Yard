@@ -39,7 +39,7 @@ export function ShippingSection() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line-soft bg-surface/40 px-3 py-3">
         <p className="flex items-center gap-2 text-sm text-ink-2">
           <Truck className="size-4 shrink-0 text-ink-3" aria-hidden />
-          Product pages, the bag and checkout use those settings.
+          Product pages, the cart and checkout use those settings.
         </p>
         <Button asChild variant="secondary" size="sm">
           <Link href="/studio/shipping">Open Shipping &amp; fulfilment</Link>

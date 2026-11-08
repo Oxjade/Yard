@@ -4,8 +4,7 @@ import { endBrandSessions, endSessionsForUser } from "../auth/session"
 import { db } from "../db"
 import { auditLog, brandLocations, brands, locationEvents, socialPosts, users } from "../db/schema"
 import { notFound, rule } from "../http/errors"
-import { notify } from "../notify"
-import { assertState, audit, publishCountsAfterCommit, tryFeature, type DecisionCtx } from "./shared"
+import { assertState, audit, publishCountsAfterCommit, tryFeature, notify, type DecisionCtx } from "./shared"
 import { refreshMedia } from "./content"
 
 /**

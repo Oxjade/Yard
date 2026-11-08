@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm"
 import { publicEvents, publicPlaces } from "../around"
 import { activeRestriction, brandListed, type Actor } from "../auth/dal"
 import { db } from "../db"
@@ -71,8 +71,13 @@ async function partyConversation(actor: Actor, conversationId: string) {
   return null
 }
 
-/** Messages the side can see: delivered ones, its own held ones, and removed ones as placeholders. */
-const visibleTo = (side: "customer" | "brand") => or(eq(messages.status, "sent"), eq(messages.status, "removed"), and(eq(messages.status, "held"), eq(messages.senderSide, side)))
+/**
+ * Messages the side can see: delivered ones, its own held ones, and removed ones as placeholders.
+ * A held message Yard removed never reached the other side, so it is a placeholder only on its
+ * sender's side (the inbox's visibleTo, src/server/inbox/dto.ts).
+ */
+const visibleTo = (side: "customer" | "brand") =>
+  or(eq(messages.status, "sent"), and(eq(messages.status, "removed"), or(isNull(messages.heldReason), eq(messages.senderSide, side))), and(eq(messages.status, "held"), eq(messages.senderSide, side)))
 
 async function freezeMessages(rows: (typeof messages.$inferSelect)[], ctx: { customerName: string; brandName: string; reportedId?: string }) {
   const d = await db()

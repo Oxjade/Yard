@@ -62,6 +62,22 @@ async function inboxEvidence(mediaId: string) {
   return !!held
 }
 
+/**
+ * An inbox attachment the other side of the conversation may open: it is on a message that was
+ * delivered (status `sent`). Before its message is sent, while it's held for review, or once Yard
+ * removed it, only the uploader's side has it (and admins with evidence, below).
+ */
+async function onSentMessage(mediaId: string) {
+  const d = await db()
+  const [row] = await d
+    .select({ id: messages.id })
+    .from(messageAttachments)
+    .innerJoin(messages, eq(messages.id, messageAttachments.messageId))
+    .where(and(eq(messageAttachments.mediaId, mediaId), eq(messages.status, "sent")))
+    .limit(1)
+  return !!row
+}
+
 /** Decides access for a private (or removed) file. Returns the actor that may read it, or null. */
 async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Actor | null> {
   if (!as) return null
@@ -71,7 +87,9 @@ async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Acto
     if (!s) return null
     if (m.createdBy === s.userId && m.ownerKind === "user") return s
     const c = await conversationOf(m)
-    return c && c.customerId === s.userId ? s : null
+    if (!c || c.customerId !== s.userId) return null
+    // The brand's attachment reaches the shopper only once its message was delivered.
+    return m.purpose !== "inbox_attachment" || (await onSentMessage(m.id)) ? s : null
   }
   if (as === "brand") {
     if (m.moderationStatus === "removed") return null
@@ -79,7 +97,9 @@ async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Acto
     if (!b) return null
     if (m.brandId && m.brandId === b.brandId) return b
     const c = await conversationOf(m)
-    return c && c.brandId === b.brandId ? b : null
+    if (!c || c.brandId !== b.brandId) return null
+    // The shopper's attachment reaches the brand only once its message was delivered.
+    return m.purpose !== "inbox_attachment" || (await onSentMessage(m.id)) ? b : null
   }
   // Admin: same-origin requests only, so a cross-site <img> can neither read nor write an audit row.
   if (req.headers.get("sec-fetch-site") !== "same-origin") return null

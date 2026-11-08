@@ -8,6 +8,7 @@ import { products } from "@/lib/data/products"
 import { formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import type { Brand } from "@/lib/data/types"
+import { RankBadge } from "@/components/charts/entry/rank-badge"
 import { BrandMark } from "./brand-mark"
 import { FollowButton } from "./follow-button"
 import { SponsoredTag } from "./sponsored-tag"
@@ -84,6 +85,8 @@ export function BrandCard({
               {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
             </Link>
             <p className="mt-0.5 truncate text-xs text-ink-2">{place}</p>
+            {/* Its best weekly chart position, when it has one (§7.4); text only, since the card's name is the link. */}
+            <RankBadge brandId={brand.id} variant="meta" asLink={false} className="mt-1 text-xs" />
           </div>
           <FollowButton brandId={brand.id} brandName={brand.name} size="xs" />
         </div>

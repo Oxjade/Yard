@@ -351,7 +351,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
       <AnimatePresence>
         {inView || sheetOpen ? (
           <motion.div
-            className="pointer-events-none fixed inset-x-0 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+4.75rem)] z-30 flex justify-center lg:hidden"
+            className="pointer-events-none fixed inset-x-0 bottom-(--tabbar-clear) z-30 flex justify-center lg:hidden"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}

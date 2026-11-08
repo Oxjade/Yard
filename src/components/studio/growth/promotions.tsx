@@ -408,7 +408,7 @@ function PromotionDialog({
       else if (existing.some((p) => p.id !== promotion?.id && p.code === code)) e.code = "You already have a promotion with this code."
       if (form.title.length > 80) e.title = "Keep the note to 80 characters or fewer."
     } else {
-      if (!form.title.trim()) e.title = "Name the sale. Shoppers see it on the product and in the bag."
+      if (!form.title.trim()) e.title = "Name the sale. Shoppers see it on the product and in the cart."
       else if (form.title.length > 40) e.title = "Keep the name to 40 characters or fewer."
     }
     const v = Number(form.value)
@@ -507,7 +507,7 @@ function PromotionDialog({
                 </Field>
               </div>
             ) : (
-              <Field id="promo-title" label="Sale name" error={errors.title} hint="Shown on the product and in the bag.">
+              <Field id="promo-title" label="Sale name" error={errors.title} hint="Shown on the product and in the cart.">
                 <Input {...control("promo-title", errors.title, true)} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Danfo week" maxLength={50} className={inputClass} />
               </Field>
             )}
