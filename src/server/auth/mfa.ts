@@ -7,7 +7,7 @@ import { adminMfa, mfaRecoveryCodes } from "../db/schema/identity"
 import { HttpError, badRequest, forbidden, notFound } from "../http/errors"
 import { newId } from "../ids"
 import { open, seal, sha256hex } from "../security/crypto"
-import { openSession, userById, type RequestMeta } from "./identity"
+import { AUTH_EMAIL_TEMPLATES, openSession, sendAuthEmail, userById, type RequestMeta } from "./identity"
 import { limitPerUser } from "./limits"
 import { endSessionsForUser } from "./session"
 import { consumeToken, failChallenge, peekToken } from "./tokens"
@@ -195,7 +195,7 @@ export async function regenerateRecoveryCodes(admin: { userId: string; name: str
 export async function resetAdminMfa(actor: { userId: string; name: string; role: string }, targetUserId: string, reason: string, meta: RequestMeta) {
   if (actor.role !== "owner") throw forbidden("Only an owner can reset another admin's two-step verification.")
   if (actor.userId === targetUserId) throw new HttpError(422, "rule", "You can't reset your own two-step verification. Use a recovery code.")
-  return withTx(async () => {
+  return withTx(async (tx) => {
     const d = await db()
     const [m] = await d.select().from(adminMembers).where(eq(adminMembers.userId, targetUserId)).limit(1)
     const target = await userById(targetUserId)
@@ -205,7 +205,7 @@ export async function resetAdminMfa(actor: { userId: string; name: string; role:
     await d.update(adminMembers).set({ mfa: false }).where(eq(adminMembers.userId, targetUserId))
     const ended = await endSessionsForUser(targetUserId, ["admin"], "mfa_reset")
     await writeAudit({ actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role }, action: "admin.mfa_reset", target: target.name, subjectType: "user", subjectId: targetUserId, reason, ipHash: meta.ipHash, meta: { endedSessions: ended } })
-    // No email yet: ENGAGEMENT has no "two-step verification was reset" template (see hand-off).
+    await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.mfaReset, target.email, { name: target.name }, `mfa-reset:${targetUserId}:${Date.now()}`)
     return { ok: true as const }
   })
 }

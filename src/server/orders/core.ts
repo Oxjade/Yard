@@ -42,34 +42,43 @@ export function assertAmbientTx(fn: string) {
 
 const SHIPPED = new Set(["shipped", "in_transit", "out_for_delivery", "delivered"])
 
-/** What shipping's events say about fulfilment (pure; reads never write). */
-export function deriveFulfilment(state: Pick<OrderStateRow, "fulfilmentStatus" | "deliveredAt" | "cancelledAt">, order: Pick<OrderRefRow, "status">, events: { status: string; occurredAt: Date }[]) {
+export type ShipmentEventLite = { status: string; occurredAt: Date; /** When Yard recorded it (shipment_events.created_at). */ recordedAt?: Date }
+
+/**
+ * What shipping's events say about fulfilment (pure; reads never write).
+ * The return window (and with it the payout hold) runs from when Yard RECORDED the delivery, not
+ * from the `occurredAt` the brand typed: a brand can backdate a delivery to the moment of
+ * purchase, which would otherwise close the shopper's return window and release the money at
+ * once. `deliveredAt` stays the reported time, for display.
+ */
+export function deriveFulfilment(state: Pick<OrderStateRow, "fulfilmentStatus" | "deliveredAt" | "cancelledAt">, order: Pick<OrderRefRow, "status">, events: ShipmentEventLite[]) {
   if (state.cancelledAt || state.fulfilmentStatus === "cancelled") return { fulfilment: "cancelled" as const, deliveredAt: null, returnWindowEndsAt: null, shipped: false }
   const sorted = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
   const delivered = sorted.find((e) => e.status === "delivered")
   const returned = sorted.some((e) => e.status === "returned")
   const shipped = sorted.some((e) => SHIPPED.has(e.status))
   const deliveredAt = delivered?.occurredAt ?? state.deliveredAt ?? null
+  const windowFrom = delivered ? new Date(Math.max(delivered.occurredAt.getTime(), delivered.recordedAt?.getTime() ?? 0)) : deliveredAt
   let fulfilment: (typeof FULFILMENT_STATES)[number]
   if (returned) fulfilment = "returned_to_sender"
   else if (deliveredAt || order.status === "delivered") fulfilment = "delivered"
   else if (shipped || order.status === "shipped") fulfilment = "shipped"
   else if (order.status === "processing" || sorted.some((e) => e.status === "label_created")) fulfilment = "processing"
   else fulfilment = "unfulfilled"
-  return { fulfilment, deliveredAt, returnWindowEndsAt: deliveredAt ? new Date(deliveredAt.getTime() + RETURN_WINDOW_DAYS * DAY) : null, shipped: shipped || fulfilment === "delivered" }
+  return { fulfilment, deliveredAt, returnWindowEndsAt: windowFrom ? new Date(windowFrom.getTime() + RETURN_WINDOW_DAYS * DAY) : null, shipped: shipped || fulfilment === "delivered" }
 }
 
 export async function shipmentEventsFor(tx: Executor, orderRefIds: string[]) {
-  if (!orderRefIds.length) return new Map<string, { status: string; occurredAt: Date }[]>()
+  if (!orderRefIds.length) return new Map<string, ShipmentEventLite[]>()
   const rows = await tx
-    .select({ orderRefId: shipmentEvents.orderRefId, status: shipmentEvents.status, occurredAt: shipmentEvents.occurredAt })
+    .select({ orderRefId: shipmentEvents.orderRefId, status: shipmentEvents.status, occurredAt: shipmentEvents.occurredAt, recordedAt: shipmentEvents.createdAt })
     .from(shipmentEvents)
     .where(inArray(shipmentEvents.orderRefId, orderRefIds))
     .orderBy(asc(shipmentEvents.occurredAt))
-  const out = new Map<string, { status: string; occurredAt: Date }[]>()
+  const out = new Map<string, ShipmentEventLite[]>()
   for (const r of rows) {
     const list = out.get(r.orderRefId) ?? []
-    list.push({ status: r.status, occurredAt: r.occurredAt })
+    list.push({ status: r.status, occurredAt: r.occurredAt, recordedAt: r.recordedAt })
     out.set(r.orderRefId, list)
   }
   return out
@@ -158,7 +167,7 @@ export async function syncFulfilment(tx: Tx, order: OrderRefRow, state: OrderSta
   const f = deriveFulfilment(state, order, events)
   const patch: Partial<typeof orderStates.$inferInsert> = {}
   if (f.fulfilment !== state.fulfilmentStatus) patch.fulfilmentStatus = f.fulfilment
-  if ((f.deliveredAt?.getTime() ?? null) !== (state.deliveredAt?.getTime() ?? null)) {
+  if ((f.deliveredAt?.getTime() ?? null) !== (state.deliveredAt?.getTime() ?? null) || (f.deliveredAt && (f.returnWindowEndsAt?.getTime() ?? null) !== (state.returnWindowEndsAt?.getTime() ?? null))) {
     patch.deliveredAt = f.deliveredAt
     patch.returnWindowEndsAt = f.returnWindowEndsAt
   }

@@ -9,8 +9,8 @@ import { notFound } from "../http/errors"
 import { deliveryFor } from "../shipping/orders"
 import type { brandOrdersQuery, DisputeDto, OrderDetailDto, OrderLineDto, OrdersPageDto, OrderStatesDto, OrderSummaryDto, RefundDto, ReturnDto } from "./contracts"
 import { returnReasonLabels } from "./contracts"
-import { committedRefunds, deriveFulfilment, isOrderRefId, shipmentEventsFor, type OrderRefRow, type OrderStateRow } from "./core"
-import { disputesForOrder, type DisputeRow } from "./disputes"
+import { committedRefunds, deriveFulfilment, isOrderRefId, shipmentEventsFor, type OrderRefRow, type ShipmentEventLite, type OrderStateRow } from "./core"
+import { disputesForOrder, evidenceByBrand, type DisputeRow } from "./disputes"
 
 type Viewer = "shopper" | "brand" | "admin"
 const CAPTURED = new Set(["paid", "partially_refunded"])
@@ -21,7 +21,7 @@ type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: strin
 /** Payment state for an order with or without a v3 state row. */
 const paymentOf = (o: OrderRefRow, s: OrderStateRow | null) => s?.paymentStatus ?? (o.status === "refunded" ? "refunded" : o.paid ? "paid" : "pending")
 
-function statesOf(r: Row, events: { status: string; occurredAt: Date }[]): OrderStatesDto & { deliveredAt: Date | null; returnWindowEndsAt: Date | null; shipped: boolean } {
+function statesOf(r: Row, events: ShipmentEventLite[]): OrderStatesDto & { deliveredAt: Date | null; returnWindowEndsAt: Date | null; shipped: boolean } {
   const s = r.state
   const f = deriveFulfilment({ fulfilmentStatus: s?.fulfilmentStatus ?? (r.order.status === "cancelled" ? "cancelled" : "unfulfilled"), deliveredAt: s?.deliveredAt ?? null, cancelledAt: s?.cancelledAt ?? (r.order.status === "cancelled" ? r.order.createdAt : null) }, r.order, events)
   return {
@@ -129,20 +129,63 @@ function toReturnDto(r: typeof orderReturns.$inferSelect, lines: { orderLineId: 
 
 const toRefundDto = (r: typeof orderRefunds.$inferSelect): RefundDto => ({ id: r.id, kind: r.kind, status: r.status, amountMinor: r.amountMinor, currency: r.currency, reason: r.reason, createdAt: r.createdAt.toISOString(), settledAt: r.settledAt?.toISOString() ?? null, returnId: r.returnId })
 
-export const toDisputeDto = (d: DisputeRow, viewer: Viewer): DisputeDto & { adminNote?: string | null; provider?: string; providerDisputeId?: string; orderRefIds?: string[] } => ({
-  id: d.id,
-  status: d.status,
-  category: d.category,
-  amountMinor: d.amountMinor,
-  currency: d.currency,
-  evidenceDueAt: d.evidenceDueAt?.toISOString() ?? null,
-  brandEvidence: d.brandEvidence,
-  brandEvidenceAt: d.brandEvidenceAt?.toISOString() ?? null,
-  responseSubmittedAt: d.responseSubmittedAt?.toISOString() ?? null,
-  openedAt: d.openedAt.toISOString(),
-  resolvedAt: d.resolvedAt?.toISOString() ?? null,
-  ...(viewer === "admin" ? { adminNote: d.adminNote, provider: d.provider, providerDisputeId: d.providerDisputeId, orderRefIds: d.orderRefIds } : {}),
-})
+type DisputeView = DisputeDto & { adminNote?: string | null; provider?: string; providerDisputeId?: string; orderRefIds?: string[]; brandIds?: string[]; evidenceByBrand?: { brandId: string; evidence: string; at: string }[] }
+
+/**
+ * A dispute as a brand or Yard sees it. One provider dispute can cover several brands' orders
+ * (one transaction): a brand sees only its OWN evidence, and an amount no larger than its own
+ * order (never the whole transaction, which would reveal the other brands' totals). `brand.brandId`
+ * is required for brand viewers; without it no evidence is shown.
+ */
+export function toDisputeDto(d: DisputeRow, viewer: Viewer, brand?: { brandId: string; orderTotalMinor?: number }): DisputeView {
+  const { byBrand, unattributed } = evidenceByBrand(d)
+  const shared = d.brandIds.length > 1
+  let brandEvidence: string | null = null
+  let brandEvidenceAt: string | null = null
+  let amountMinor = d.amountMinor
+  if (viewer === "admin") {
+    const entries = Object.entries(byBrand)
+    if (!shared) {
+      brandEvidence = entries[0]?.[1].text ?? unattributed
+      brandEvidenceAt = d.brandEvidenceAt?.toISOString() ?? null
+    } else {
+      const parts = entries.map(([b, v]) => `[${b}] ${v.text}`)
+      if (unattributed) parts.push(`[unattributed] ${unattributed}`)
+      brandEvidence = parts.length ? parts.join("\n\n") : null
+      brandEvidenceAt = d.brandEvidenceAt?.toISOString() ?? null
+    }
+  } else if (brand) {
+    const own = byBrand[brand.brandId]
+    brandEvidence = own?.text ?? null
+    brandEvidenceAt = own ? (shared ? own.at : (d.brandEvidenceAt?.toISOString() ?? own.at)) : null
+    if (shared) amountMinor = brand.orderTotalMinor !== undefined ? Math.min(d.amountMinor, brand.orderTotalMinor) : 0
+  } else if (shared) {
+    amountMinor = 0
+  }
+  return {
+    id: d.id,
+    status: d.status,
+    category: d.category,
+    amountMinor,
+    currency: d.currency,
+    evidenceDueAt: d.evidenceDueAt?.toISOString() ?? null,
+    brandEvidence,
+    brandEvidenceAt,
+    responseSubmittedAt: d.responseSubmittedAt?.toISOString() ?? null,
+    openedAt: d.openedAt.toISOString(),
+    resolvedAt: d.resolvedAt?.toISOString() ?? null,
+    ...(viewer === "admin"
+      ? {
+          adminNote: d.adminNote,
+          provider: d.provider,
+          providerDisputeId: d.providerDisputeId,
+          orderRefIds: d.orderRefIds,
+          brandIds: d.brandIds,
+          evidenceByBrand: Object.entries(byBrand).map(([brandId, v]) => ({ brandId, evidence: v.text, at: v.at })),
+        }
+      : {}),
+  }
+}
 
 /**
  * One order as its shopper, its brand, or Yard sees it. Scoping is in the query (another
@@ -178,7 +221,8 @@ export async function orderDetail(viewer: Viewer, orderRefId: string, scope: { c
   const timeline = await d.select().from(orderEvents).where(eq(orderEvents.orderRefId, r.order.id)).orderBy(asc(orderEvents.at))
   const committed = r.state ? await committedRefunds(d, r.order.id) : 0
   const total = r.state?.totalMinor ?? r.order.totalMinor
-  const refundable = CAPTURED.has(st.payment) && r.state?.paymentId ? Math.max(0, total - committed) : 0
+  // Nothing can be refunded while a chargeback is open (the provider may take the money back too).
+  const refundable = CAPTURED.has(st.payment) && r.state?.paymentId && st.dispute !== "open" ? Math.max(0, total - committed) : 0
 
   const openReturn = returnRows.some((x) => x.status === "requested" || x.status === "approved")
   const unitsLeft = lines.some((l) => l.qty - l.returnedQty > 0)
@@ -202,7 +246,7 @@ export async function orderDetail(viewer: Viewer, orderRefId: string, scope: { c
     refundableMinor: refundable,
     returns: returnRows.map((x) => toReturnDto(x, rLines.filter((l) => l.returnId === x.id).map((l) => ({ orderLineId: l.orderLineId, variantId: l.variantId, title: l.title, qty: l.qty })))),
     refunds: refundRows.map(toRefundDto),
-    disputes: disputeRows.map((x) => toDisputeDto(x, viewer)),
+    disputes: disputeRows.map((x) => toDisputeDto(x, viewer, viewer === "brand" ? { brandId: r.order.brandId, orderTotalMinor: total } : undefined)),
     timeline: timeline.map((e) => ({ id: e.id, kind: e.kind, actorKind: e.actorKind, at: e.at.toISOString(), data: e.data })),
     actions,
     delivery,

@@ -2,8 +2,11 @@ import "server-only"
 import { and, eq, ilike, inArray, sql } from "drizzle-orm"
 import { db, withTx } from "../db"
 import { shipmentEvents } from "../db/schema"
-import { orderLines, orderStates } from "../db/schema/orders-v3"
-import { notFound } from "../http/errors"
+import { orderLines, orderRefunds, orderStates } from "../db/schema/orders-v3"
+import { notFound, rule } from "../http/errors"
+import { newId } from "../ids"
+import { restockLines } from "./cancel"
+import { addEvent, linesOf, lockOrder, setMerchantStatus, updateState } from "./core"
 import { completeDue, hourly, retryCancelledRefunds, syncFulfilmentDue } from "./jobs"
 import { expireStaleReturns } from "./returns"
 
@@ -59,7 +62,8 @@ export async function ageDelivery(orderId: string, days: number) {
   return withTx(async (tx) => {
     const ev = await tx
       .update(shipmentEvents)
-      .set({ occurredAt: sql`${shipmentEvents.occurredAt} - make_interval(secs => ${secs})` })
+      // Both the reported and the recorded time: the return window runs from the later of the two.
+      .set({ occurredAt: sql`${shipmentEvents.occurredAt} - make_interval(secs => ${secs})`, createdAt: sql`${shipmentEvents.createdAt} - make_interval(secs => ${secs})` })
       .where(and(eq(shipmentEvents.orderRefId, id), eq(shipmentEvents.status, "delivered")))
       .returning({ id: shipmentEvents.id })
     const st = await tx
@@ -71,5 +75,30 @@ export async function ageDelivery(orderId: string, days: number) {
       .where(eq(orderStates.orderRefId, id))
       .returning({ id: orderStates.orderRefId })
     return { events: ev.length, states: st.length }
+  })
+}
+
+/**
+ * The stub provider settles every refund at once, so a declined cancellation refund can't happen
+ * here. This puts a paid kit order in exactly the state cancelOrder leaves when the provider
+ * declines its refund: cancelled by the brand (with its restock choice applied), a 'failed'
+ * cancellation refund under the first key, payment still 'paid', nothing posted to the ledger.
+ */
+export async function declineCancelRefund(orderId: string, restock: boolean) {
+  const [id] = await taggedOrderIds([orderId])
+  return withTx(async (tx) => {
+    const locked = await lockOrder(tx, id)
+    if (!locked) throw notFound()
+    const { order, state } = locked
+    if (state.paymentStatus !== "paid" || state.fulfilmentStatus === "cancelled" || state.refundedMinor > 0) throw rule("Only a paid, uncancelled, unrefunded kit order.")
+    const now = new Date()
+    await updateState(tx, id, { fulfilmentStatus: "cancelled", cancelledAt: now, cancelledBy: "brand", cancelReason: "Kit: declined cancellation refund" })
+    await setMerchantStatus(tx, id, "cancelled")
+    await addEvent(tx, id, "order.cancelled", { kind: "brand", id: null }, { by: "brand", paid: true, restock })
+    if (restock) await restockLines(tx, order, await linesOf(tx, id), null, "Order cancelled")
+    const refundId = newId("orf")
+    await tx.insert(orderRefunds).values({ id: refundId, orderRefId: id, brandId: order.brandId, kind: "cancellation", status: "failed", amountMinor: state.totalMinor, currency: state.currency, reason: "Order cancelled before dispatch", idempotencyKey: `cancel:${id}`, requestedByKind: "brand", requestedBy: null, failureReason: "Kit: the provider declined the refund.", settledAt: now })
+    await addEvent(tx, id, "refund.failed", { kind: "provider", id: null }, { refundId, amountMinor: state.totalMinor })
+    return { refundId }
   })
 }

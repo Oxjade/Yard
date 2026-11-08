@@ -6,7 +6,7 @@ import { writeAudit } from "../audit"
 import type { Tx } from "../db"
 import { orderRefunds, type REFUND_KINDS } from "../db/schema/orders-v3"
 import { postRefund } from "../ledger"
-import { notFound, rule } from "../http/errors"
+import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { requestRefund } from "../payments"
@@ -39,6 +39,7 @@ export type IssueRefundInput = {
 }
 
 const CAPTURED = new Set(["paid", "partially_refunded"])
+export const DISPUTE_OPEN_REFUND = "This order's payment is disputed with the bank, so no refund can be sent until the dispute is settled. Yard's team is handling it."
 
 /**
  * The one way money goes back on an order (§ORDERS). Under the order's row lock:
@@ -56,8 +57,17 @@ export async function issueRefund(tx: Tx, input: IssueRefundInput): Promise<{ re
     .from(orderRefunds)
     .where(and(eq(orderRefunds.orderRefId, order.id), eq(orderRefunds.idempotencyKey, input.idempotencyKey)))
     .limit(1)
-  if (existing) return { refund: existing, duplicate: true }
+  if (existing) {
+    // Same key, different request from a person: they must not believe the new amount was applied.
+    // (System/provider replays recompute their amount from what is already refunded, so they keep plain replay.)
+    const person = input.actor.kind === "shopper" || input.actor.kind === "brand" || input.actor.kind === "admin"
+    if (person && (existing.amountMinor !== input.amountMinor || existing.kind !== input.kind)) throw conflict("That idempotency key was already used for a different refund. Use a new key for a new refund.")
+    return { refund: existing, duplicate: true }
+  }
 
+  // An open chargeback: the provider may take the full amount back, so sending a refund too would
+  // pay the shopper twice. Only the provider's own settlement of the dispute is recorded.
+  if (state.disputeStatus === "open" && !input.providerTaken) throw conflict(DISPUTE_OPEN_REFUND)
   if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw rule("A refund must be more than zero.")
   if (!CAPTURED.has(state.paymentStatus)) {
     throw rule(state.paymentStatus === "refunded" ? "This order has already been refunded in full." : "This order has no captured payment, so there is nothing to refund.")

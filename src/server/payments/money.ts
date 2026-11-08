@@ -9,6 +9,7 @@ import { log } from "../log"
 import { getOrderForMoney } from "../orders"
 import { applyTransferOutcome, refundOutcome } from "./events"
 import { getProvider, ProviderError } from "./providers"
+import { decideResend, refundNote } from "./refund-recovery"
 
 /* ---------- Refunds (PAYMENTS contract) ---------- */
 
@@ -76,26 +77,59 @@ export async function requestRefund(
   return { refundId, status: "pending" }
 }
 
-/** Sends a pending refund to the provider (outside a transaction). Safe to call repeatedly. */
+/**
+ * Sends a pending refund to the provider (outside a transaction). Safe to call repeatedly: the
+ * attempt is claimed atomically (one caller per attempt), and any attempt after the first asks the
+ * provider whether an earlier send already created the refund (Paystack's POST /refund has no
+ * idempotency key) before sending again; when the provider can't be asked, nothing is sent.
+ */
 export async function submitRefund(refundId: string) {
   const d = await db()
   const [rf] = await d.select().from(refunds).where(eq(refunds.id, refundId)).limit(1)
   if (!rf || rf.status !== "pending" || rf.providerRef) return
   const [pay] = await d.select().from(payments).where(eq(payments.id, rf.paymentId)).limit(1)
   if (!pay) return
-  await d.update(refunds).set({ attempts: sql`${refunds.attempts} + 1`, updatedAt: new Date() }).where(eq(refunds.id, rf.id))
-  try {
-    const r = await getProvider().refund({ transactionReference: pay.reference, amountMinor: rf.amountMinor, currency: rf.currency, note: rf.reason })
-    await withTx(async (tx) => {
+  // Claim this attempt: only the caller that moves attempts from the value it read goes on.
+  const [claimed] = await d
+    .update(refunds)
+    .set({ attempts: sql`${refunds.attempts} + 1`, updatedAt: new Date() })
+    .where(and(eq(refunds.id, rf.id), eq(refunds.status, "pending"), isNull(refunds.providerRef), eq(refunds.attempts, rf.attempts)))
+    .returning({ id: refunds.id })
+  if (!claimed) return
+  const provider = getProvider()
+
+  const settle = async (r: { providerRef: string; status: "pending" | "succeeded" | "failed" }) =>
+    withTx(async (tx) => {
       const [cur] = await tx.select().from(refunds).where(eq(refunds.id, rf.id)).limit(1)
       if (!cur || cur.status !== "pending") return
       await tx.update(refunds).set({ providerRef: r.providerRef || null, status: r.status, failureReason: null, updatedAt: new Date() }).where(eq(refunds.id, rf.id))
       if (r.status !== "pending") await refundOutcome(tx, rf.id, r.status, r.status === "failed" ? "The payment provider declined the refund." : undefined)
     })
+
+  // An earlier attempt's outcome is unknown: look before sending again.
+  const taken = await d.select({ ref: refunds.providerRef }).from(refunds).where(and(eq(refunds.paymentId, pay.id), ne(refunds.id, rf.id)))
+  const decision = await decideResend(rf, () => provider.listRefunds(pay.providerTxnId ?? pay.reference), {
+    transactionId: pay.providerTxnId,
+    takenRefs: new Set(taken.map((t) => t.ref).filter((x): x is string => !!x)),
+  })
+  if (decision.action === "wait") {
+    log.warn(`[yard] refund ${rf.id} not resent: ${decision.reason}`)
+    await d.update(refunds).set({ failureReason: decision.reason.slice(0, 300), updatedAt: new Date() }).where(eq(refunds.id, rf.id))
+    return
+  }
+  if (decision.action === "adopt") {
+    log.warn(`[yard] refund ${rf.id}: an earlier send reached the provider (${decision.providerRef}); not sending again`)
+    await settle({ providerRef: decision.providerRef, status: decision.status })
+    return
+  }
+
+  try {
+    const r = await provider.refund({ transactionReference: pay.reference, amountMinor: rf.amountMinor, currency: rf.currency, note: refundNote(rf.reason, rf.id) })
+    await settle(r)
   } catch (e) {
     const message = (e instanceof Error ? e.message : String(e)).slice(0, 300)
     const definitive = e instanceof ProviderError && e.definitive
-    log.warn(`[yard] refund ${rf.id} ${definitive ? "refused" : "not sent"}: ${message}`)
+    log.warn(`[yard] refund ${rf.id} ${definitive ? "refused" : "outcome unknown"}: ${message}`)
     if (definitive) {
       await withTx(async (tx) => {
         await tx.update(refunds).set({ status: "failed", failureReason: message, updatedAt: new Date() }).where(eq(refunds.id, rf.id))
@@ -107,7 +141,7 @@ export async function submitRefund(refundId: string) {
   }
 }
 
-/** Job: retries refunds that never reached the provider (up to 6 attempts). */
+/** Job: retries refunds with no provider reference (up to 6 attempts; each retry checks the provider for an earlier send first). */
 export async function retryRefunds() {
   const d = await db()
   const due = await d

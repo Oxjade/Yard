@@ -9,7 +9,7 @@ import { newId } from "../ids"
 import { restockLines } from "./cancel"
 import type { returnReceiveBody } from "./contracts"
 import { addEvent, announce, committedRefunds, emailCustomer, linesOf, orderUrl, lockOrder, setMerchantStatus, syncFulfilment, SYSTEM, updateState, type OrderActor } from "./core"
-import { issueRefund, money } from "./refunds"
+import { DISPUTE_OPEN_REFUND, issueRefund, money } from "./refunds"
 
 export type ReturnRow = typeof orderReturns.$inferSelect
 
@@ -169,6 +169,8 @@ export async function receiveReturn(tx: Tx, input: { orderRefId: string; returnI
   if (!r) throw notFound()
   if (r.status === "received") return { returnId: r.id, status: r.status, refundId: r.refundId }
   if (r.status !== "approved" && r.status !== "requested") throw conflict(r.status === "rejected" ? "This return was declined." : "This return is closed.")
+  // A refund during an open chargeback would pay the shopper twice (issueRefund refuses it too).
+  if (input.refund && state.disputeStatus === "open" && CAPTURED.has(state.paymentStatus)) throw conflict(DISPUTE_OPEN_REFUND)
 
   const rLines = await returnLinesOf(tx, r.id)
   const lines = await linesOf(tx, order.id)

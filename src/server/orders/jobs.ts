@@ -91,7 +91,9 @@ export async function completeDue(now = Date.now(), only?: string[]) {
       await withTx(async (tx) => {
         const locked = await lockOrder(tx, r.id)
         if (!locked || locked.state.completedAt) return
-        const { order, state } = locked
+        const { order } = locked
+        // The stored window may predate the rule that it runs from when the delivery was recorded: re-derive it first.
+        const state = locked.state.fulfilmentStatus === "cancelled" ? locked.state : (await syncFulfilment(tx, order, locked.state)).state
         if (state.disputeStatus === "open" || (await hasOpenReturn(tx, order.id)) || (await hasPendingRefund(tx, order.id))) return
         const cancelled = state.fulfilmentStatus === "cancelled"
         const captured = ["paid", "partially_refunded", "refunded"].includes(state.paymentStatus)

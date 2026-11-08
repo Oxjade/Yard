@@ -3,7 +3,7 @@ import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizz
 import { writeAudit } from "../audit"
 import { assertBrandMayPublish, type BrandActor } from "../auth/dal"
 import { db, withTx, type Executor } from "../db"
-import { mediaAssets } from "../db/schema"
+import { drops, mediaAssets } from "../db/schema"
 import {
   brandOnboardings,
   catalogCategories,
@@ -18,6 +18,7 @@ import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import type { CollectionBody, CollectionUpdateBody, ProductCreateBody, ProductPublishBody, ProductUpdateBody } from "./contracts"
 import { loadChildren, toStudioProduct } from "./dto"
+import { CATALOG_IMAGE_PURPOSES } from "../media/visibility"
 import { catalogChanged } from "./hooks"
 import { moveStock } from "./stock"
 
@@ -76,7 +77,7 @@ export async function assertBrandImages(d: Executor, brandId: string, mediaIds: 
   const rows = await d
     .select({ id: mediaAssets.id, width: mediaAssets.width, height: mediaAssets.height, mime: mediaAssets.mime, moderation: mediaAssets.moderationStatus })
     .from(mediaAssets)
-    .where(and(inArray(mediaAssets.id, ids), eq(mediaAssets.brandId, brandId), eq(mediaAssets.ownerKind, "brand")))
+    .where(and(inArray(mediaAssets.id, ids), eq(mediaAssets.brandId, brandId), eq(mediaAssets.ownerKind, "brand"), inArray(mediaAssets.purpose, [...CATALOG_IMAGE_PURPOSES])))
   const ok = new Map(rows.filter((r) => r.mime.startsWith("image/") && r.moderation !== "removed").map((r) => [r.id, { width: r.width, height: r.height }]))
   const fields: Record<string, string> = {}
   mediaIds.forEach((id, i) => {
@@ -84,6 +85,13 @@ export async function assertBrandImages(d: Executor, brandId: string, mediaIds: 
   })
   if (Object.keys(fields).length) throw badRequest(fields)
   return ok
+}
+
+/** A product may only be placed in one of its own brand's drops. */
+async function assertOwnDrop(d: Executor, brandId: string, dropId: string | null | undefined) {
+  if (dropId == null) return
+  const [row] = await d.select({ id: drops.id }).from(drops).where(and(eq(drops.id, dropId), eq(drops.brandId, brandId))).limit(1)
+  if (!row) throw badRequest({ dropId: "Choose one of your own drops." })
 }
 
 async function assertCategory(d: Executor, slug: string, subcategory: string | null | undefined) {
@@ -242,6 +250,7 @@ export async function createProduct(actor: BrandActor, body: ProductCreateBody, 
   return withTx(async (tx) => {
     await assertCategory(tx, body.categorySlug, body.subcategory)
     await assertSkusFree(tx, actor.brandId, body.variants)
+    await assertOwnDrop(tx, actor.brandId, body.dropId)
     const id = newId("p")
     const slug = await uniqueProductSlug(tx, body.slug ?? slugify(body.title), !!body.slug)
     const now = new Date()
@@ -308,7 +317,10 @@ export async function updateProduct(actor: BrandActor, productId: string, body: 
       patch.processingMin = body.processingDays ? Math.min(...body.processingDays) : null
       patch.processingMax = body.processingDays ? Math.max(...body.processingDays) : null
     }
-    if (body.dropId !== undefined) patch.dropId = body.dropId
+    if (body.dropId !== undefined && body.dropId !== p.dropId) {
+      await assertOwnDrop(tx, actor.brandId, body.dropId)
+      patch.dropId = body.dropId
+    }
 
     // Options and variants reconcile together: kept variants keep their stock and history;
     // dropped ones are archived (never deleted: holds and movements point at them).
@@ -493,7 +505,7 @@ export async function createCollection(actor: BrandActor, body: CollectionBody, 
       .values({ id, brandId: actor.brandId, handle, name: body.name.trim(), description: body.description, imageMediaId: body.imageMediaId ?? null, status: body.status, position: body.position ?? n })
       .returning()
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_created", target: c.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash })
-    catalogChanged({})
+    catalogChanged({ brands: [actor.brandId] })
     return { collection: collectionDto(c, []) }
   })
 }
@@ -512,7 +524,7 @@ export async function updateCollection(actor: BrandActor, id: string, body: Coll
     const [row] = await tx.update(catalogCollections).set(patch).where(eq(catalogCollections.id, id)).returning()
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_updated", target: row.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash, meta: { fields: Object.keys(body) } })
     const links = await collectionProductIds(tx, [id])
-    catalogChanged({ products: links.get(id) ?? [] })
+    catalogChanged({ products: links.get(id) ?? [], brands: [actor.brandId] })
     return { collection: collectionDto(row, links.get(id) ?? []) }
   })
 }
@@ -523,7 +535,7 @@ export async function deleteCollection(actor: BrandActor, id: string, ipHash: st
     const links = await collectionProductIds(tx, [id])
     await tx.delete(catalogCollections).where(eq(catalogCollections.id, id))
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_deleted", target: c.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash })
-    catalogChanged({ products: links.get(id) ?? [] })
+    catalogChanged({ products: links.get(id) ?? [], brands: [actor.brandId] })
     return { ok: true }
   })
 }

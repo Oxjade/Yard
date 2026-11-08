@@ -194,10 +194,6 @@ async function main() {
     check("B7 verification email queued to the normalised address with a /auth/verify link", !!ver && String(ver.vars.url).includes("/auth/verify?token="), mails)
     S.firstToken = ver ? tokenFromUrl(String(ver.vars.url)) : null
 
-    const again = await post("/api/auth/sign-up", { name: "Someone Else", email: S.email, password: PW2 })
-    check("B8 sign-up with an existing email → same answer (no enumeration)", again.status === 200 && again.json.status === "verify_email", sum(again))
-    const after = await outbox(S.email)
-    check("B9 existing account gets a sign-in link email instead of a second account", after.some((m) => m.template === "magic_link"), after.map((m) => m.template))
     const ins = await inspect(S.email)
     check("B10 one account, unverified, password stored as hash only", ins?.user?.kind === "shopper" && ins.user.demo === false && ins.credentials?.hasPassword === true && !ins.credentials.emailVerifiedAt, ins)
     S.userId = ins?.user?.id
@@ -244,6 +240,15 @@ async function main() {
     check("B27 shopper signing in as brand (no membership) → 403", asBrand.status === 403, sum(asBrand))
     const auths = (await inspect(S.email))?.sessionAuth ?? []
     check("B28 real sessions carry session_auth rows (email_verification + password)", auths.some((a) => a.method === "email_verification") && auths.some((a) => a.method === "password"), auths)
+
+    // A second sign-up for a VERIFIED account: same answer, a sign-in link, the password untouched.
+    // (A second sign-up for an UNVERIFIED account drops the first one's password: see P*.)
+    const again = await post("/api/auth/sign-up", { name: "Someone Else", email: S.email, password: PW2 })
+    check("B8 sign-up with an existing email → same answer (no enumeration)", again.status === 200 && again.json.status === "verify_email", sum(again))
+    const after = await outbox(S.email)
+    check("B9 existing account gets a sign-in link email instead of a second account", after.some((m) => m.template === "magic_link"), after.map((m) => m.template))
+    const ins2 = await inspect(S.email)
+    check("B29 verified account: still one account, its own password kept, the second sign-up's refused", ins2?.user?.id === S.userId && ins2.credentials?.hasPassword === true && (await post("/api/auth/sign-in", { email: S.email, password: PW2 })).status === 401 && (await post("/api/auth/sign-in", { email: S.email, password: PW })).json?.status === "signed_in", ins2)
   }
 
   // ===== Enumeration-safe email endpoints + per-email send limit ===============================
@@ -274,8 +279,12 @@ async function main() {
     check("D4 change with a wrong current password → 400 fields.currentPassword", wrongCur.status === 400 && fields(wrongCur).currentPassword, sum(wrongCur))
     const weak = await post("/api/auth/password/change?as=shopper", { currentPassword: PW, newPassword: "qwertyuiop" }, { jar: S.jar })
     check("D5 change to a guessable password → 400 fields.newPassword", weak.status === 400 && fields(weak).newPassword, sum(weak))
+    await post("/api/auth/magic-link", { email: S.email })
+    const preChangeMagic = await latestToken(S.email, "magic_link")
     const ok = await post("/api/auth/password/change?as=shopper", { currentPassword: PW, newPassword: PW2 }, { jar: S.jar })
     check("D6 password change → ok", ok.status === 200 && ok.json.ok === true, sum(ok))
+    const staleMagic = await post("/api/auth/magic-link/consume", { token: preChangeMagic ?? "x".repeat(43) })
+    check("D12 a sign-in link issued before the password change no longer works", !!preChangeMagic && staleMagic.status === 400, sum(staleMagic))
     check("D7 this session stays signed in", (await session(S.jar)).shopper?.id === S.userId)
     check("D8 the account's other session is ended", (await session(S.jar2)).shopper == null)
     const old = await post("/api/auth/sign-in", { email: S.email, password: PW })
@@ -344,6 +353,61 @@ async function main() {
     check("G4 magic link is single-use", reuse.status === 400, sum(reuse))
   }
 
+  // ===== Account pre-hijacking: a password set before the email was proven never survives ======
+  {
+    const ATTACKER_PW = "Attacker-chosen-pass-1"
+    const VICTIM_PW = "Victims-own-passphrase-4"
+    // 1) The victim signs up after an attacker pre-registered their address.
+    const V = { email: email("victim"), jar: new Jar("V") }
+    const a1 = await post("/api/auth/sign-up", { name: "Att", email: V.email, password: ATTACKER_PW })
+    const a2 = await post("/api/auth/sign-in", { email: V.email, password: ATTACKER_PW })
+    check("P1 attacker pre-registers the victim's email → verify_email (unverified)", a1.status === 200 && a2.json?.status === "verify_email", [a1, a2].map(sum))
+    const attackerVerify = await latestToken(V.email, "verification")
+    const v1 = await post("/api/auth/sign-up", { name: "Victim", email: V.email, password: VICTIM_PW })
+    const insV = await inspect(V.email)
+    check("P2 victim's sign-up drops the attacker's password (account stays unverified)", v1.status === 200 && insV?.credentials?.hasPassword === false && !insV.credentials.emailVerifiedAt, insV?.credentials)
+    const a3 = await post("/api/auth/sign-in", { email: V.email, password: ATTACKER_PW })
+    check("P3 the attacker's password no longer works, even before verification → 401", a3.status === 401, sum(a3))
+    const staleVerify = await post("/api/auth/verify-email/confirm", { token: attackerVerify ?? "x".repeat(43) })
+    check("P4 the verification link from the attacker's sign-up is void", !!attackerVerify && staleVerify.status === 400, sum(staleVerify))
+    const vTok = await latestToken(V.email, "magic_link")
+    const vIn = await post("/api/auth/magic-link/consume", { token: vTok ?? "x".repeat(43) }, { jar: V.jar })
+    check("P5 victim signs in with the emailed link", vIn.status === 200 && vIn.json.status === "signed_in", sum(vIn))
+    const a4 = await post("/api/auth/sign-in", { email: V.email, password: ATTACKER_PW })
+    check("P6 after verification the attacker's password still fails → 401", a4.status === 401, sum(a4))
+    const set1 = await post("/api/auth/password/change?as=shopper", { newPassword: VICTIM_PW }, { jar: V.jar })
+    const vSi = await post("/api/auth/sign-in", { email: V.email, password: VICTIM_PW })
+    check("P7 victim sets their own first password right after the link sign-in, and it signs in", set1.status === 200 && vSi.json?.status === "signed_in", [set1, vSi].map(sum))
+    cleanup.shoppers.push({ email: V.email, password: VICTIM_PW })
+
+    // 2) The victim never signs up, only uses a magic link: the first proof of email clears the password.
+    const W = { email: email("victim2"), jar: new Jar("W") }
+    await post("/api/auth/sign-up", { name: "Att", email: W.email, password: ATTACKER_PW })
+    await post("/api/auth/sign-in", { email: W.email, password: ATTACKER_PW }) // re-sends verification
+    const attackerVerify2 = await latestToken(W.email, "verification")
+    await post("/api/auth/magic-link", { email: W.email })
+    const wIn = await post("/api/auth/magic-link/consume", { token: (await latestToken(W.email, "magic_link")) ?? "x".repeat(43) }, { jar: W.jar })
+    const insW = await inspect(W.email)
+    check("P8 first magic-link sign-in verifies and drops the pre-set password", wIn.status === 200 && !!insW?.credentials?.emailVerifiedAt && insW.credentials.hasPassword === false, [sum(wIn), insW?.credentials])
+    const a5 = await post("/api/auth/sign-in", { email: W.email, password: ATTACKER_PW })
+    check("P9 the pre-set password can't sign in after the magic-link verification → 401", a5.status === 401, sum(a5))
+    const staleVerify2 = await post("/api/auth/verify-email/confirm", { token: attackerVerify2 ?? "x".repeat(43) })
+    check("P10 outstanding verification links are void after the first proof of email", !!attackerVerify2 && staleVerify2.status === 400, sum(staleVerify2))
+
+    // 3) A passwordless account can't get a first password from a stale session (no re-auth).
+    await dev({ op: "age-reauth", email: W.email, seconds: 600 })
+    const noRe = await post("/api/auth/password/change?as=shopper", { newPassword: "Planted-password-12345" }, { jar: W.jar })
+    check("P11 first password on a passwordless account with a stale re-auth → 403 fields.reauth=required", noRe.status === 403 && fields(noRe).reauth === "required", sum(noRe))
+    const insW2 = await inspect(W.email)
+    check("P12 …and no password was set", insW2?.credentials?.hasPassword === false, insW2?.credentials)
+    const W2 = new Jar("W2")
+    await post("/api/auth/magic-link", { email: W.email })
+    await post("/api/auth/magic-link/consume", { token: (await latestToken(W.email, "magic_link")) ?? "x".repeat(43) }, { jar: W2 })
+    const set2 = await post("/api/auth/password/change?as=shopper", { newPassword: VICTIM_PW }, { jar: W2 })
+    check("P13 with a fresh sign-in (re-auth ≤ 5 min) the first password is accepted", set2.status === 200 && set2.json.ok === true, sum(set2))
+    cleanup.shoppers.push({ email: W.email, password: VICTIM_PW })
+  }
+
   // ===== Demo sign-in still works, and only opens demo accounts ================================
   const demoShop = new Jar("demoShop")
   const demoAdmin = new Jar("demoAdmin")
@@ -369,6 +433,17 @@ async function main() {
     const del1 = await post("/api/auth/account/delete", { confirm: "DELETE" }, { jar: demoShop })
     check("H9 demo account deletion → 422 (demo accounts can't be deleted)", del1.status === 422, sum(del1))
     check("H10 demo shopper still signed in after the refused delete", (await session(demoShop)).shopper?.id === "u_ada")
+
+    // Demo accounts never get Google/Apple identities (refused before the provider is even asked).
+    const lk = await post("/api/auth/oauth/google/start", { mode: "link", actor: "shopper" }, { jar: demoShop })
+    check("H17 demo shopper can't start an OAuth link → 422 rule", lk.status === 422 && code(lk) === "rule", sum(lk))
+    const lkR = await post("/api/auth/oauth/apple/start", { mode: "reauth", actor: "shopper" }, { jar: demoShop })
+    check("H18 demo shopper can't start an OAuth re-auth → 422 rule", lkR.status === 422 && code(lkR) === "rule", sum(lkR))
+    const demoBrand = new Jar("demoBrand")
+    const db1 = await post("/api/auth/demo", { actor: "brand", account: "u_b_tobi" }, { jar: demoBrand })
+    const lkB = await post("/api/auth/oauth/google/start", { mode: "link", actor: "brand" }, { jar: demoBrand })
+    check("H19 demo brand owner can't start an OAuth link → 422 rule", db1.status === 200 && lkB.status === 422 && code(lkB) === "rule", [db1, lkB].map(sum))
+    await post("/api/auth/sign-out?actor=brand", undefined, { jar: demoBrand })
 
     const mk0 = await post("/api/auth/admins", { email: email("nope"), name: "Nope", role: "support" }, { jar: demoAdmin })
     check("H11 demo admin create-admin without re-auth → 403 reauth required", mk0.status === 403 && fields(mk0).reauth === "required", sum(mk0))

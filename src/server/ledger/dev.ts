@@ -11,11 +11,12 @@ import { openPayout, payoutAad } from "./vault"
 /**
  * Test-only helpers for the LEDGER acceptance kit (scripts/checks/v3-ledger.mjs). The route that
  * calls these answers 404 in production before anything runs. Every operation is limited to the
- * kit's brands (KIT_BRANDS: seeded brands no other kit sells from) and to rows the kit tagged
+ * kit's brands (KIT_BRANDS: seeded brands no other kit sells from; Orun Studio is the e2e kit's) and to rows the kit tagged
  * ("t_v3_ledger" in the payout account name, `tm_t_v3_ledger_` membership ids).
  */
-export const KIT_BRANDS = ["b_kumasi_thread", "b_signal_bloom"] as const
-const TAG_LIKE = "%t\\_v3\\_ledger%"
+export const KIT_BRANDS = ["b_kumasi_thread", "b_signal_bloom", "b_orun_studio"] as const
+/** Payout accounts the dev hooks may age: the ledger kit's and the end-to-end kit's (scripts/checks/v3-e2e.mjs, Orun Studio). */
+const ACCOUNT_TAG_LIKE = "%t\\_v3\\_%"
 const memberId = (brandId: string, userId: string) => `tm_t_v3_ledger_${userId}_${brandId}`.slice(0, 120)
 
 function kitBrand(brandId: string) {
@@ -29,7 +30,7 @@ export async function ageAccount(brandId: string, hours: number) {
     const rows = await tx
       .update(brandPayoutAccounts)
       .set({ changedAt: sql`${brandPayoutAccounts.changedAt} - make_interval(secs => ${Math.round(hours * 3600)})` })
-      .where(and(eq(brandPayoutAccounts.brandId, brandId), ilike(brandPayoutAccounts.accountName, TAG_LIKE)))
+      .where(and(eq(brandPayoutAccounts.brandId, brandId), ilike(brandPayoutAccounts.accountName, ACCOUNT_TAG_LIKE)))
       .returning({ brandId: brandPayoutAccounts.brandId })
     if (!rows.length) throw notFound("No kit payout account on that brand.")
     return { aged: rows.length }

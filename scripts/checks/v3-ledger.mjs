@@ -553,7 +553,7 @@ async function main() {
 
   /* ===== Payout requests ===== */
   const R = (b, who = BADM) => post("/api/studio/payouts", b, { who })
-  let P1, P2, P3, P4
+  let P1, P2, P3, P4, P5, P6
   {
     const v = [
       ["amount 0", { amountMinor: 0, idempotencyKey: key("v") }],
@@ -695,7 +695,6 @@ async function main() {
     batch = c.body?.batch
     check("batch create: two approved payouts → 201 open batch with their total", c.status === 201 && batch?.status === "open" && batch.payoutCount === 2 && batch.totalMinor === 11_500, brief(c).slice(0, 200))
     check("batch create: the same payouts can't go in a second batch (422)", (await B({ currency: CUR, payoutIds: [P1.id] })).status === 422)
-    check("reject: a batched payout can't be rejected (409)", (await post(`/api/admin/finance/payouts/${P1.id}/reject`, { reason: "too late now" }, { who: ADM1 })).status === 409)
     const g = await get(`/api/admin/finance/batches/${batch?.id}`, { who: ADM2 })
     check("batch read: batch + its payouts", g.status === 200 && g.body.batch.id === batch.id && g.body.payouts.length === 2, brief(g).slice(0, 120))
     check("batch read: unknown → 404; list includes it", (await get("/api/admin/finance/batches/pob_none", { who: ADM2 })).status === 404 && (await get("/api/admin/finance/batches", { who: ADM2 })).body?.batches?.some((b) => b.id === batch.id))
@@ -709,6 +708,7 @@ async function main() {
     check("batch run: initiatePayout called for each payout; stub transfers stay pending → processing", run.status === 200 && run.body.results?.length === 2 && run.body.results.every((r) => r.status === "processing"), brief(run).slice(0, 240))
     const p1 = (await get(`/api/admin/finance/payouts/${P1.id}`, { who: ADM1 })).body?.payout
     check("batch run: payout processing with a provider ref and sentAt; money still in payout hold", p1?.status === "processing" && !!p1.providerRef && !!p1.sentAt && delta(bb, ab).inPayout === 0 && delta(bb, ab).available === 0, { p1, d: delta(bb, ab) })
+    check("reject: a batched payout already sent (processing) can't be rejected (409)", (await post(`/api/admin/finance/payouts/${P1.id}/reject`, { reason: "too late now" }, { who: ADM1 })).status === 409)
     const g2 = await get(`/api/admin/finance/batches/${batch.id}`, { who: ADM1 })
     check("batch run: batch done once every payout is in flight", g2.body?.batch?.status === "done" && !!g2.body.batch.ranAt, g2.body?.batch)
     const rerun = await post(`/api/admin/finance/batches/${batch.id}/run`, {}, { who: ADM1 })
@@ -748,9 +748,72 @@ async function main() {
     check("transfer: an event for an unknown transfer is ignored (no posting)", unk.status === 200 && ["ignored", "processed"].includes(unk.body?.event?.status ?? unk.body?.result?.status), brief(unk).slice(0, 200))
   }
 
+  /* ===== Separation of duties and payout holds after approval / batching ===== */
+  {
+    await reauth(ADM1, "admin")
+    await reauth(ADM2, "admin")
+    const FUND = 10_000
+    const fund = await post("/api/admin/finance/adjustments", { brandId: K, currency: CUR, account: "brand_available", direction: "credit", amountMinor: FUND, reason: `${TAG} hold-flow funding`, idempotencyKey: key("adjhold") }, { who: ADM1 })
+    check("hold flow: funding adjustment (201)", fund.status === 201, brief(fund))
+
+    // A Finance admin who belongs to the brand can't move its money or change its finance settings.
+    const rules0 = (await get(`/api/admin/finance/brands/${K}`, { who: ADM1 })).body?.rules
+    const mem = await ledgerDev({ op: "member", brandId: K, userId: "adm_2", role: "viewer", on: true })
+    if (mem.status === 200) created.members.push("adm_2")
+    const b0 = await balances(OWNER)
+    const adjM = await post("/api/admin/finance/adjustments", { brandId: K, currency: CUR, account: "brand_available", direction: "credit", amountMinor: 50_000, reason: `${TAG} self credit`, idempotencyKey: key("adjself") }, { who: ADM2 })
+    const b1 = await balances(OWNER)
+    const setLift = await SET({ payoutsOnHold: false, holdReason: null }, ADM2)
+    const setTier = await SET({ tierOverride: "trusted" }, ADM2)
+    const setComm = await SET({ commissionBpsOverride: 0 }, ADM2)
+    await ledgerDev({ op: "member", brandId: K, userId: "adm_2", role: "viewer", on: false })
+    created.members = created.members.filter((m) => m !== "adm_2")
+    check("adjustment: an admin who belongs to the brand can't post one (422, nothing moves)", mem.status === 200 && adjM.status === 422 && b1.availableMinor === b0.availableMinor, `${brief(mem).slice(0, 80)} | ${brief(adjM)} | ${b0.availableMinor}→${b1.availableMinor}`)
+    check("brand settings: an admin who belongs to the brand can't change them (hold, tier, commission → 422)", setLift.status === 422 && setTier.status === 422 && setComm.status === 422, [setLift.status, setTier.status, setComm.status])
+    const gs = await get(`/api/admin/finance/brands/${K}`, { who: ADM1 })
+    check("brand settings: unchanged after the refused member edits", gs.status === 200 && gs.body.rules?.tier === rules0?.tier && gs.body.rules.commissionBps === rules0?.commissionBps && gs.body.rules.onHold === rules0?.onHold, { before: rules0, after: gs.body?.rules })
+
+    // Two payouts approved by two admins; one batched, then the brand is put on hold.
+    const A = (id, who) => post(`/api/admin/finance/payouts/${id}/approve`, {}, { who })
+    const q5 = await post("/api/studio/payouts", { amountMinor: 5_000, idempotencyKey: key("p5") }, { who: OWNER })
+    const q6 = await post("/api/studio/payouts", { amountMinor: 5_000, idempotencyKey: key("p6") }, { who: OWNER })
+    P5 = q5.body?.payout
+    P6 = q6.body?.payout
+    const ap = [await A(P5?.id, ADM1), await A(P5?.id, ADM2), await A(P6?.id, ADM1), await A(P6?.id, ADM2)]
+    check("hold flow: two payouts requested and approved by two admins", q5.status === 201 && q6.status === 201 && ap.every((r) => r.status === 200) && ap[1].body.payout.status === "approved" && ap[3].body.payout.status === "approved", [brief(q5).slice(0, 80), brief(q6).slice(0, 80), ...ap.map((r) => r.status)])
+    const B = (b) => post("/api/admin/finance/batches", b, { who: ADM2 })
+    const cb = await B({ currency: CUR, payoutIds: [P5.id] })
+    const hb = cb.body?.batch
+    const h = await SET({ payoutsOnHold: true, holdReason: `${TAG} account takeover` })
+    const cb6 = await B({ currency: CUR, payoutIds: [P6.id] })
+    check("hold: an approved payout of a held brand can't be batched (422)", cb.status === 201 && h.status === 200 && cb6.status === 422, [brief(cb).slice(0, 80), h.status, brief(cb6)])
+    const bh = await balances(OWNER)
+    const rh = await post(`/api/admin/finance/batches/${hb?.id}/run`, {}, { who: ADM2 })
+    const p5h = (await get(`/api/admin/finance/payouts/${P5.id}`, { who: ADM1 })).body?.payout
+    const ah = await balances(OWNER)
+    check("hold: running a batch doesn't send a held brand's payout (stays approved, no provider ref, money in hold)", rh.status === 200 && rh.body.results?.some((r) => r.payoutId === P5.id && r.status === "on_hold") && p5h?.status === "approved" && !p5h.providerRef && !p5h.sentAt && delta(bh, ah).inPayout === 0, { r: brief(rh).slice(0, 200), p5: p5h?.status, ref: p5h?.providerRef })
+    const gb = await get(`/api/admin/finance/batches/${hb?.id}`, { who: ADM1 })
+    check("hold: the batch is left partial, not done", gb.body?.batch?.status === "partial", gb.body?.batch)
+    const bj = await balances(OWNER)
+    const j5 = await post(`/api/admin/finance/payouts/${P5.id}/reject`, { reason: `${TAG} takeover, stop it` }, { who: ADM1 })
+    const aj = await balances(OWNER)
+    check("reject: a batched payout not yet sent can be rejected (200); hold → available (+5000)", j5.status === 200 && j5.body.payout.status === "rejected" && delta(bj, aj).available === 5_000 && delta(bj, aj).inPayout === -5_000, { s: brief(j5).slice(0, 160), d: delta(bj, aj) })
+    const rr = await post(`/api/admin/finance/batches/${hb?.id}/run`, {}, { who: ADM2 })
+    const gb2 = await get(`/api/admin/finance/batches/${hb?.id}`, { who: ADM1 })
+    check("hold: re-running the batch after the reject sends nothing; batch done", rr.status === 200 && (rr.body.results ?? []).length === 0 && gb2.body?.batch?.status === "done" && (await get(`/api/admin/finance/payouts/${P5.id}`, { who: ADM1 })).body?.payout?.status === "rejected", { r: brief(rr).slice(0, 160), b: gb2.body?.batch?.status })
+
+    // Lifting the hold lets the other payout go out.
+    const lift = await SET({ payoutsOnHold: false, holdReason: null })
+    const c6 = await B({ currency: CUR, payoutIds: [P6.id] })
+    const r6 = await post(`/api/admin/finance/batches/${c6.body?.batch?.id}/run`, {}, { who: ADM2 })
+    check("hold: once lifted, the payout batches (201) and is sent (processing)", lift.status === 200 && c6.status === 201 && r6.status === 200 && r6.body.results?.[0]?.payoutId === P6.id && r6.body.results[0].status === "processing", [lift.status, brief(c6).slice(0, 80), brief(r6).slice(0, 160)])
+    const s6 = await post("/api/webhooks/paystack/simulate", { event: "transfer.success", data: { reference: transferRef(P6.id), transfer_code: `TRF6_${RUN}` } }, { who: ADM1 })
+    check("hold flow: the sent payout settles paid", s6.status === 200 && (await get(`/api/admin/finance/payouts/${P6.id}`, { who: ADM1 })).body?.payout?.status === "paid", brief(s6).slice(0, 160))
+  }
+
   /* ===== Every kit transaction balances; money is conserved ===== */
   {
-    const mine = (e) => [Object.values(orders).map((o) => o.id), [P1, P2, P3, P4].map((p) => p?.id)].flat().includes(e.orderId ?? e.payoutId)
+    const mine = (e) => [Object.values(orders).map((o) => o.id), [P1, P2, P3, P4, P5, P6].map((p) => p?.id)].flat().includes(e.orderId ?? e.payoutId)
     const by = await txLines(ADM1, mine)
     check(`invariant: every one of this run's ${by.size} transactions has debits = credits`, by.size >= 15 && balanced(by), [...by.entries()].filter(([, ls]) => sumDir(ls, "debit") !== sumDir(ls, "credit")).map(([id]) => id))
     const s = (await get("/api/studio/payouts", { who: OWNER })).body

@@ -208,6 +208,10 @@ export async function submitOnboarding(actor: ShopperActor, body: { revision: nu
     }
     let brandId = row.brandId
     if (brandId) {
+      // A resubmission never lifts an admin's suspension or restriction: only an admin can.
+      const [current] = await tx.select({ reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, brandId)).for("update").limit(1)
+      if (current && (current.reviewStatus === "suspended" || current.reviewStatus === "restricted"))
+        throw rule("Your brand is on hold by Yard, so it can't be resubmitted. Contact Yard support.")
       await tx
         .update(brands)
         .set({ ...brandValues, reviewStatus: "pending_review" })
@@ -311,7 +315,7 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       reason: input.note ?? null,
       ipHash: input.ipHash ?? null,
     })
-    catalogChanged({})
+    catalogChanged({ brands: [row.brandId] })
     return { onboardingId: row.id, status: input.decision === "approve" ? "approved" : "rejected", brandId: row.brandId }
   })
 }

@@ -1,5 +1,5 @@
 import "server-only"
-import { and, desc, eq, inArray, lt } from "drizzle-orm"
+import { and, desc, eq, inArray, lt, ne } from "drizzle-orm"
 import { z } from "zod"
 import { safeId, safeLine } from "@/lib/api/contracts/common"
 import { SHIPPING_SERVICES } from "@/lib/api/contracts/enums"
@@ -8,7 +8,7 @@ import { checkDropLimit, releaseDropClaims } from "../drops"
 import { cartLinesOf } from "../cart"
 import { asCountry, asCurrency, groupByBrand, priceLines, quoteGroup } from "../cart/pricing"
 import { holdStock, releaseHold } from "../catalog"
-import { db, withTx, type Executor } from "../db"
+import { db, withTx, type Executor, type Tx } from "../db"
 import { checkouts, payments } from "../db/schema/payments"
 import { HttpError, badRequest, busy, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -224,6 +224,11 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
     throw new HttpError(409, "conflict", "Prices or delivery changed since you last looked. Check the new total and try again.", { expectedTotalMinor: String(totalMinor) })
   }
 
+  // One live checkout per shopper: earlier unpaid checkouts are replaced (below), so one account
+  // can't stack stock holds across many idempotency keys. A live payment page is asked first, so a
+  // checkout the shopper just paid is never replaced.
+  await settleLivePendingCheckouts(actor.userId)
+
   // 3. The money records, in one transaction.
   const cfg = paymentsConfig()
   const provider = getProvider()
@@ -249,6 +254,10 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
       .onConflictDoNothing()
       .returning()
     if (!row) return null // a concurrent request with the same key won
+
+    // Replace the shopper's other unpaid checkouts before holding stock: their holds and drop claims
+    // are released, so the shopper's holds never add up across checkouts.
+    await replacePendingCheckouts(tx, actor.userId, checkoutId)
 
     // Drop rules (ENGAGEMENT): checks access and per-customer limits, and claims the units for this checkout.
     const drop = await checkDropLimit(tx, { customerId: actor.userId, variantIds: lines.map((l) => l.variantId), lines: lines.map((l) => ({ variantId: l.variantId, qty: l.qty })), checkoutId })
@@ -292,6 +301,36 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
     return { status: 200, view: await ensureInitialized(actor, again) }
   }
   return { status: 201, view: await ensureInitialized(actor, created) }
+}
+
+const REPLACED = "Replaced by a newer checkout before payment"
+
+/** Verifies the shopper's pending checkouts that have a live payment page (outside a transaction). */
+async function settleLivePendingCheckouts(customerId: string) {
+  const d = await db()
+  const pending = await d.select({ id: checkouts.id }).from(checkouts).where(and(eq(checkouts.customerId, customerId), eq(checkouts.status, "pending_payment")))
+  for (const c of pending) {
+    const p = await latestPayment(d, c.id)
+    if (p?.provider === "paystack" && p.status === "initialized" && p.accessCode) await verifyPaymentReference(p.reference) // busy (503) when Paystack can't answer
+  }
+}
+
+/** In the new checkout's transaction: expires the shopper's other pending checkouts and frees their holds. */
+async function replacePendingCheckouts(tx: Tx, customerId: string, keepId: string) {
+  const others = await tx
+    .select()
+    .from(checkouts)
+    .where(and(eq(checkouts.customerId, customerId), eq(checkouts.status, "pending_payment"), ne(checkouts.id, keepId)))
+  for (const cur of others) {
+    await tx
+      .update(payments)
+      .set({ status: "abandoned", failureReason: REPLACED, updatedAt: new Date() })
+      .where(and(eq(payments.checkoutId, cur.id), inArray(payments.status, ["initialized"])))
+    await tx.update(checkouts).set({ status: "expired", failureReason: REPLACED, updatedAt: new Date() }).where(eq(checkouts.id, cur.id))
+    await releaseHold(tx, cur.holdKey)
+    await releaseDropClaims(tx, cur.id)
+    await markCheckoutPaymentFailed(tx, { checkoutId: cur.id, reason: "replaced by a newer checkout" })
+  }
 }
 
 async function findByKey(customerId: string, key: string) {

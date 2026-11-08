@@ -41,6 +41,12 @@ export async function eraseCustomerOrderPii(tx: Tx, customerId: string): Promise
   return { orders: states.length }
 }
 
+/** AUTH erasure hook (src/server/auth/erasure.ts): orders are kept for finance, personal fields go. */
+export async function eraseCustomerData(tx: Tx, userId: string): Promise<{ anonymised: number }> {
+  const r = await eraseCustomerOrderPii(tx, userId)
+  return { anonymised: r.orders }
+}
+
 /**
  * Scheduler jobs (src/server/schedulers.ts FeatureModule shape). The orchestrator registers
  * `orders: () => import("./orders")` and `every(13 * MIN, HOUR, () => runFeatureJob("orders", "hourly"))`.

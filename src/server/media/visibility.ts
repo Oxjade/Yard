@@ -10,7 +10,9 @@ import { mediaAssets } from "../db/schema"
  * least one of these references it:
  *  - a published, ok social post of a listed brand without an active social_disabled restriction;
  *  - a published, approved place of a listed brand;
- *  - a published, approved event of a listed brand, at a published, approved place.
+ *  - a published, approved event of a listed brand, at a published, approved place;
+ *  - a photo of a published, not moderation-hidden product, or the cover of a published
+ *    collection, of a listed brand (brand image uploads only: CATALOG_IMAGE_PURPOSES).
  * The referencing row must belong to the file's own brand (brand_id = media_assets.brand_id) and
  * the file's purpose must match the reference (post media: social_post or social_import; place
  * and event images: location_image), so a writer bug can never publish another tenant's file or
@@ -22,6 +24,14 @@ import { mediaAssets } from "../db/schema"
  * visibility, a place, an event, an account avatar, a message), otherwise the time it was first
  * seen unreferenced. The purge deletes post and place media 7 days after that.
  */
+/**
+ * Brand image uploads that CATALOG accepts as product and collection photos (there is no
+ * product_image purpose: the media purpose check constraint would need a migration). Inbox
+ * attachments never qualify.
+ */
+export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image"] as const
+const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
+
 const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)
 
 /** Any reference at all, whatever its visibility or moderation (what keeps a file from the purge). */
@@ -31,6 +41,8 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from location_events v where v.image ->> 'mediaId' = m.id)
   or exists (select 1 from social_accounts a where a.avatar_media_id = m.id)
   or exists (select 1 from message_attachments ma where ma.media_id = m.id)
+  or exists (select 1 from catalog_product_images ci where ci.media_id = m.id)
+  or exists (select 1 from catalog_collections cc where cc.image_media_id = m.id)
 )`)
 
 export async function refreshVisibility(mediaIds: string[]): Promise<void> {
@@ -59,6 +71,16 @@ export async function refreshVisibility(mediaIds: string[]): Promise<void> {
           and l.visibility = 'published' and l.moderation_status = 'approved'
           and v.brand_id = m.brand_id and m.purpose = 'location_image'
           and v.image ->> 'mediaId' = m.id)
+      or exists (
+        select 1 from catalog_product_images ci join catalog_products cp on cp.id = ci.product_id join brands b on b.id = cp.brand_id
+        where cp.status = 'published' and cp.moderation_status = 'ok' and ${listed("b")}
+          and cp.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
+          and ci.media_id = m.id)
+      or exists (
+        select 1 from catalog_collections cc join brands b on b.id = cc.brand_id
+        where cc.status = 'published' and ${listed("b")}
+          and cc.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
+          and cc.image_media_id = m.id)
     ) then 'public' else 'private' end,
     unreferenced_at = case when ${referencedAtAll} then null else coalesce(m.unreferenced_at, now()) end
     where m.id in (${sql.join(

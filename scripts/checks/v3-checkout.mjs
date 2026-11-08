@@ -15,7 +15,9 @@
 // SKUs, idempotency keys, provider-event references). Shoppers are fresh sign-ups owned by the run; the
 // product lives in the seeded brand Lagos Static and is archived at the end. Seeded rows are only read.
 import { readFileSync } from "node:fs"
-import { pathToFileURL } from "node:url"
+import { pathToFileURL, fileURLToPath } from "node:url"
+import { spawnSync } from "node:child_process"
+import path from "node:path"
 import { deflateSync, crc32 } from "node:zlib"
 
 let base = (process.env.YARD_BASE ?? "http://localhost:3000").replace(/\/$/, "")
@@ -635,6 +637,85 @@ async function main() {
       check("simulate: charge.success with the right amount → paid", ok.status === 200 && ok.body.result?.status === "processed" && v.body?.status === "paid", `${brief(ok)} → ${v.body?.status}`)
       created.s2paid = v.body
     }
+  }
+
+  /* ===== Event detail redacts card token + customer contact details ===== */
+  {
+    const authCode = `AUTH_${TAG}`
+    const piiEmail = `${TAG}_buyer@example.com`
+    const pii = await post(
+      "/api/webhooks/paystack/simulate",
+      {
+        event: "charge.success",
+        data: {
+          reference: `${TAG}_pii`,
+          id: `${TAG}_pii`,
+          status: "success",
+          amount: 100,
+          currency: "NGN",
+          authorization: { authorization_code: authCode, bin: "408408", last4: "4081", exp_month: "12", exp_year: "2030", card_type: "visa", bank: "TEST BANK", reusable: true, signature: `SIG_${TAG}` },
+          customer: { id: 1, email: piiEmail, phone: "+2348000000000", first_name: "Kit", last_name: "Buyer", customer_code: `CUS_${TAG}` },
+        },
+      },
+      { jar: ADM_OWNER },
+    )
+    check("redact: simulated charge with card + customer data is stored", pii.status === 200 && !!pii.body?.event?.id, brief(pii))
+    if (pii.body?.event?.id) {
+      for (const [who, jar] of [["trust & safety", ADM_TS], ["owner", ADM_OWNER]]) {
+        const d = await get(`/api/webhooks/paystack/events/${pii.body.event.id}`, { jar })
+        const text = JSON.stringify(d.body ?? {})
+        check(`redact: event detail for ${who} withholds the reusable authorization_code and card signature`, d.status === 200 && !text.includes(authCode) && !text.includes(`SIG_${TAG}`) && !text.includes("408408"), text.slice(0, 300))
+        check(`redact: event detail for ${who} withholds customer email / phone / names`, d.status === 200 && !text.includes(piiEmail) && !text.includes("+2348000000000") && !text.includes("Buyer"), text.slice(0, 300))
+        check(`redact: event detail for ${who} keeps the reference and card last4`, d.body?.event?.payload?.data?.reference === `${TAG}_pii` && d.body.event.payload.data.authorization?.last4 === "4081", text.slice(0, 300))
+      }
+    }
+  }
+
+  /* ===== One live checkout per shopper: new keys don't stack stock holds ===== */
+  {
+    await del("/api/cart", { jar: S2 })
+    const add = await post("/api/cart/lines", { variantId: V.S, qty: 2 }, { jar: S2 })
+    check("stack: S2 puts 2 × S in the cart", add.status === 201 || add.status === 200, brief(add))
+    const s0 = await studioVariant("S")
+    const k1 = await post("/api/checkout", body("stack1"), { jar: S2 })
+    check("stack: first checkout → 201 and holds 2", k1.status === 201 && (await studioVariant("S")).held === s0.held + 2, brief(k1))
+    const k2 = await post("/api/checkout", body("stack2"), { jar: S2 })
+    const s2 = await studioVariant("S")
+    check("stack: a second checkout with a new key → 201", k2.status === 201 && k2.body?.id !== k1.body?.id, brief(k2))
+    check("stack: the shopper's holds don't add up across checkouts (S held +2, not +4)", s2.held === s0.held + 2, `held ${s0.held} → ${s2.held}`)
+    const k3 = await post("/api/checkout", body("stack3"), { jar: S2 })
+    check("stack: a third key still holds only 2", k3.status === 201 && (await studioVariant("S")).held === s0.held + 2, brief(k3))
+    if (k1.status === 201) {
+      const old = await get(`/api/checkout/${k1.body.id}`, { jar: S2 })
+      check("stack: the replaced checkout is expired with a reason, its payment abandoned", old.body?.status === "expired" && /newer checkout/.test(old.body.failureReason ?? "") && old.body.payment?.status === "abandoned", brief(old).slice(0, 300))
+      const late = await post(`/api/checkout/${k1.body.id}/stub-pay`, { outcome: "success" }, { jar: S2 })
+      check("stack: the replaced checkout can't be paid back to life", late.status === 200 && late.body.status === "expired", brief(late))
+      const o = await get(`/api/orders/${k1.body.orderIds?.[0]}`, { jar: S2 })
+      check("stack: ORDERS marks the replaced checkout's order payment failed", (o.body?.order ?? o.body)?.states?.payment === "failed", brief(o).slice(0, 300))
+    }
+    const retry = await post("/api/checkout", body("stack3"), { jar: S2 })
+    check("stack: retrying the live checkout's key returns it (200) and replaces nothing", retry.status === 200 && retry.body.id === k3.body?.id && retry.body.status === "pending_payment", brief(retry))
+    if (k3.status === 201) await post(`/api/checkout/${k3.body.id}/stub-expire`, undefined, { jar: S2 })
+    check("stack: after expiry the holds are back to where they started", (await studioVariant("S")).held === s0.held)
+    await del("/api/cart", { jar: S2 })
+  }
+
+  /* ===== Refund resend safety (unit: Paystack has no idempotency key on POST /refund) ===== */
+  {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+    const tsx = path.join(root, "node_modules/.bin/tsx")
+    const r = spawnSync(tsx, ["--test", "src/server/payments/refund-recovery.test.ts"], { cwd: root, encoding: "utf8", timeout: 120_000 })
+    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`
+    const oks = [...out.matchAll(/^(not ok|ok) \d+ - (.+)$/gm)]
+    check("refund-retry: unit tests ran", r.status !== null && oks.length >= 8, out.slice(-400))
+    for (const m of oks) check(`refund-retry: ${m[2]}`, m[1] === "ok")
+    // Wiring: submitRefund decides (lookup) before it can POST /refund again, and claims each attempt.
+    const money = readFileSync(path.join(root, "src/server/payments/money.ts"), "utf8")
+    const fn = money.slice(money.indexOf("export async function submitRefund"), money.indexOf("export async function retryRefunds"))
+    check("refund-retry: submitRefund checks the provider before resending", fn.includes("decideResend(") && fn.indexOf("decideResend(") < fn.indexOf("provider.refund("))
+    check("refund-retry: submitRefund claims the attempt atomically (attempts compare-and-set)", /eq\(refunds\.attempts, rf\.attempts\)/.test(fn) && fn.indexOf("if (!claimed) return") > 0)
+    const events = readFileSync(path.join(root, "src/server/payments/events.ts"), "utf8")
+    check("refund-retry: refund.pending/processing webhooks record the provider reference", events.includes("refundEventChange(") && events.includes('change.kind === "ref"'))
   }
 
   /* ===== Refunds through ORDERS → PAYMENTS.requestRefund ===== */

@@ -43,6 +43,7 @@ export const AUTH_EMAIL_TEMPLATES = {
   magicLink: "magic_link", // vars: name, url, expiresMinutes
   brandInvite: "team_invite", // vars: brand, role, inviter, url, expiresDays
   accountDeleted: "account_deleted", // vars: name
+  mfaReset: "mfa_reset", // vars: name
 } as const
 
 /** Queues an auth email in the caller's transaction (dedupe keys make retries harmless). */
@@ -216,6 +217,11 @@ export async function signUp(input: { name: string; email: string; password: str
       // Demo accounts, admins and pending deletions get nothing. A real shopper account gets a
       // sign-in link instead (ENGAGEMENT's magic_link template), which is what they need anyway.
       if (!existing.demo && (existing.kind === "shopper" || existing.kind === "brand_staff") && existing.status !== "suspended" && !(await deletionPending(existing.id))) {
+        // Pre-hijack guard: an UNVERIFIED account's password was chosen by whoever signed up first,
+        // which may not be the owner of this address. A second sign-up for it drops that password,
+        // kills the old verification links and any sessions, so only the emailed link gets in.
+        const cred = await credentialsOf(existing.id)
+        if (!cred?.emailVerifiedAt) await supersedeUnverified(existing.id, "signup_superseded")
         const t = await issueToken(existing.id, "magic_link", { email: existing.email })
         await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.magicLink, existing.email, { name: existing.name, url: authLinks.magicLink(t.token), expiresMinutes: t.ttlMinutes }, `magic:${existing.id}:${t.expiresAt.getTime()}`)
       }
@@ -229,6 +235,17 @@ export async function signUp(input: { name: string; email: string; password: str
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.verifyEmail, email, { name: input.name.trim(), url: authLinks.verifyEmail(t.token), expiresMinutes: t.ttlMinutes }, `verify:${id}:${t.expiresAt.getTime()}`)
   })
   return { status: "verify_email" as const }
+}
+
+/**
+ * Pre-hijack guard (v3): strips what someone may have set up on an account before its email was
+ * proven. Drops the password (unless `keepPassword`), ends every session of the user and voids
+ * outstanding email tokens. Runs in the caller's transaction.
+ */
+async function supersedeUnverified(userId: string, reason: string, opts: { keepPassword?: boolean } = {}) {
+  if (!opts.keepPassword) await upsertCredentials(userId, { passwordHash: null, passwordUpdatedAt: null })
+  await voidTokens(userId, ["verify_email", "magic_link", "reset_password"])
+  await endSessionsForUser(userId, ["shopper", "brand", "admin"], reason)
 }
 
 /** Re-sends verification. Same answer whether or not the account exists or is already verified. */
@@ -258,6 +275,10 @@ export async function confirmEmailVerification(token: string, meta: RequestMeta)
     const user = await userById(row.userId)
     const tokenEmail = typeof (row.meta as { email?: unknown }).email === "string" ? ((row.meta as { email: string }).email) : null
     if (!user || user.demo || !tokenEmail || normalizeEmail(user.email) !== normalizeEmail(tokenEmail)) throw badRequest({ token: "This link is no longer valid. Ask for a new one." }, "This link is no longer valid.")
+    // First proof of the email: the password set at sign-up is kept (this link was sent for that
+    // sign-up, and a second sign-up for an unverified address drops it), but nothing else from
+    // before verification survives: other sessions end and other email links are voided.
+    if (!(await credentialsOf(user.id))?.emailVerifiedAt) await supersedeUnverified(user.id, "email_verified", { keepPassword: true })
     await upsertCredentials(user.id, { emailVerifiedAt: new Date() })
     if (user.status === "suspended" || (user.kind !== "shopper" && user.kind !== "brand_staff")) return { status: "verified" as const, signedIn: false as const }
     const out = await openSession({ actor: "shopper", user, brandId: null, method: "email_verification", meta })
@@ -395,6 +416,7 @@ export async function changePassword(input: { userId: string; sessionId: string;
       .from(sessions)
       .where(and(eq(sessions.userId, user.id), sql`${sessions.id} <> ${input.sessionId}`))
     for (const o of others) await endSession(o.id, "password_changed")
+    await voidTokens(user.id, ["reset_password", "magic_link"])
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.passwordChanged, user.email, { name: user.name }, `pw-changed:${user.id}:${now.getTime()}`)
     await writeAudit({ actor: { kind: "shopper", id: user.id, name: user.name }, action: "auth.password_changed", target: user.name, subjectType: "user", subjectId: user.id, ipHash: meta.ipHash, meta: { endedSessions: others.length } })
   })
@@ -427,6 +449,10 @@ export async function consumeMagicLink(token: string, meta: RequestMeta) {
     if (!user || user.demo || !tokenEmail || normalizeEmail(user.email) !== normalizeEmail(tokenEmail)) throw badRequest({ token: "This sign-in link is no longer valid." })
     if (await deletionPending(user.id)) throw badRequest({ token: "This sign-in link is no longer valid." })
     await assertEligible("shopper", user)
+    // First proof of the email by magic link: a password set before verification was not chosen
+    // through this inbox, so it goes, with every earlier session (pre-hijack guard). The owner can
+    // set a password afterwards from this fresh session.
+    if (!(await credentialsOf(user.id))?.emailVerifiedAt) await supersedeUnverified(user.id, "email_verified")
     await upsertCredentials(user.id, { emailVerifiedAt: new Date() })
     const out = await openSession({ actor: "shopper", user, brandId: null, method: "magic_link", meta })
     return { status: "signed_in" as const, actor: "shopper" as const, profile: out.profile }

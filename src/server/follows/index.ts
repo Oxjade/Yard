@@ -4,7 +4,7 @@ import { currencies, type CurrencyCode } from "@/config/markets"
 import { productById } from "@/lib/data/products"
 import { formatMoney } from "@/lib/money"
 import type { ShopperActor } from "../auth/dal"
-import { db, withTx } from "../db"
+import { db, withTx, type Executor } from "../db"
 import { brands, shopperFollows, shopperWishlist, users } from "../db/schema"
 import { backInStockRequests, productWatchState, searchProducts } from "../db/schema/engagement"
 import { enqueueEmail } from "../email"
@@ -354,4 +354,12 @@ export async function watchPrices() {
 export const jobs = {
   /** Hourly. */
   watchPrices,
+}
+
+/** AUTH erasure hook: back-in-stock watches go (AUTH itself deletes shopper_follows / shopper_wishlist / reminders). */
+export async function eraseCustomerData(tx: Executor, userId: string): Promise<{ erased: number }> {
+  const rows = await tx.delete(backInStockRequests).where(eq(backInStockRequests.userId, userId)).returning({ id: backInStockRequests.id })
+  await tx.delete(shopperFollows).where(eq(shopperFollows.userId, userId))
+  await tx.delete(shopperWishlist).where(eq(shopperWishlist.userId, userId))
+  return { erased: rows.length }
 }

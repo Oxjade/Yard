@@ -69,16 +69,19 @@ function pkce() {
 
 export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode; actor: OAuthActor; brandId?: string | null }, meta: RequestMeta) {
   await limitOauthStart(meta.ipHash)
-  const provider = getProvider(input.provider)
-  if (!provider.configured) throw notConfigured(`${providerLabel(input.provider)} sign-in isn't set up on this Yard yet.`)
   let userId: string | null = null
   let sessionId: string | null = null
   if (input.mode !== "signin") {
     const current = input.actor === "shopper" ? await getShopper() : await getBrandActor()
     if (!current) throw new HttpError(401, "unauthenticated", "Sign in first.")
+    // Demo accounts never get Google/Apple identities: a linked identity would open them through a
+    // real (non-demo) session that outlives the demo flags and passes re-auth in production.
+    if (current.demo) throw new HttpError(422, "rule", "Demo accounts can't use Google or Apple sign-in.")
     userId = current.userId
     sessionId = current.sessionId
   }
+  const provider = getProvider(input.provider)
+  if (!provider.configured) throw notConfigured(`${providerLabel(input.provider)} sign-in isn't set up on this Yard yet.`)
   const id = randomBytes(16).toString("base64url")
   const nonce = randomBytes(16).toString("base64url")
   const binding = randomBytes(32).toString("base64url")
@@ -162,6 +165,9 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile): Prom
     await d.update(oauthIdentities).set({ lastUsedAt: new Date(), email: p.email ?? known.email }).where(eq(oauthIdentities.id, known.id))
     const u = await userById(known.userId)
     if (!u || (await deletionPending(u.id))) return "error"
+    // Demo sign-in only ever opens DEMO accounts, and only through the demo route: an identity that
+    // got linked to a demo account must not open a real session on it.
+    if (u.demo) return "link_required"
     return u
   }
   if (!p.email) return "email_required"
@@ -217,6 +223,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     if (mode !== "signin") {
       const current = actor === "shopper" ? await getShopper() : await getBrandActor()
       if (!current || current.userId !== row.userId || current.sessionId !== row.sessionId) return done("invalid_state")
+      if (current.demo) return done("error") // defence in depth: start refuses demo sessions; never link or re-auth a demo account
       return await withTx(async () => {
         const known = await identityBySubject(provider, profile.subject)
         if (mode === "reauth") {

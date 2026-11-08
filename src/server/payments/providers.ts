@@ -2,6 +2,7 @@ import "server-only"
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { log } from "../log"
 import { paymentsConfig } from "./config"
+import type { ProviderRefund } from "./refund-recovery"
 
 /**
  * The payment provider interface (Paystack live, or the stub when PAYSTACK_SECRET_KEY is absent).
@@ -47,6 +48,8 @@ export interface PaymentProvider {
   initialize(input: InitInput): Promise<InitResult>
   verify(reference: string): Promise<ChargeState | null>
   refund(input: RefundInput): Promise<RefundResult>
+  /** Refunds the provider already holds for a transaction (Paystack GET /refund?transaction=…). Throws ProviderError when it can't tell. */
+  listRefunds(transaction: string): Promise<ProviderRefund[]>
   transfer(input: TransferInput): Promise<TransferResult>
   verifyTransfer(reference: string): Promise<TransferResult | null>
 }
@@ -135,6 +138,24 @@ function paystackProvider(secret: string): PaymentProvider {
       })
       return { providerRef: String(d.id ?? ""), status: mapRefundStatus(d.status) }
     },
+    async listRefunds(transaction) {
+      type Row = { id?: number | string; transaction?: number | string | { id?: number | string } | null; amount?: number; currency?: string; status?: string; merchant_note?: string | null; createdAt?: string; created_at?: string }
+      const rows = await paystack<Row[]>(secret, "GET", `/refund?transaction=${encodeURIComponent(transaction)}&perPage=100`)
+      if (!Array.isArray(rows)) throw new ProviderError("Paystack GET /refund: unexpected reply", false)
+      return rows.map((r) => {
+        const txn = r.transaction && typeof r.transaction === "object" ? r.transaction.id : r.transaction
+        const created = r.createdAt ?? r.created_at
+        return {
+          id: String(r.id ?? ""),
+          transactionId: txn != null ? String(txn) : null,
+          amountMinor: Number(r.amount ?? 0),
+          currency: String(r.currency ?? ""),
+          status: mapRefundStatus(r.status),
+          note: r.merchant_note ?? null,
+          createdAt: created ? new Date(created) : null,
+        }
+      }).filter((r) => r.id)
+    },
     async transfer(input) {
       const d = await paystack<{ transfer_code?: string; status?: string; reason?: string }>(secret, "POST", "/transfer", {
         source: "balance",
@@ -177,6 +198,9 @@ const stubProvider: PaymentProvider = {
   },
   async refund() {
     // Only reached for a live-provider payment while the keys are missing: nothing can be refunded.
+    throw new ProviderError("Payments aren't connected (PAYSTACK_SECRET_KEY is not set)", false)
+  },
+  async listRefunds() {
     throw new ProviderError("Payments aren't connected (PAYSTACK_SECRET_KEY is not set)", false)
   },
   async transfer(input) {

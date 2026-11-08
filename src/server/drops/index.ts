@@ -1,4 +1,7 @@
 import "server-only"
+import { eq } from "drizzle-orm"
+import type { Executor } from "../db"
+import { dropClaims, dropEntries } from "../db/schema/engagement"
 import { tick } from "./jobs"
 
 /**
@@ -17,4 +20,11 @@ export { default as dropsSeed } from "./seed"
 export const jobs = {
   /** Every minute: early access, reminders, draws, starts, winner windows, ends, claim expiry. */
   tick: async () => tick(),
+}
+
+/** AUTH erasure hook: the shopper's draw entries and drop claims go (an erased account can't buy). */
+export async function eraseCustomerData(tx: Executor, userId: string): Promise<{ erased: number }> {
+  const e = await tx.delete(dropEntries).where(eq(dropEntries.userId, userId)).returning({ id: dropEntries.id })
+  const c = await tx.delete(dropClaims).where(eq(dropClaims.userId, userId)).returning({ id: dropClaims.id })
+  return { erased: e.length + c.length }
 }

@@ -636,6 +636,13 @@ async function main() {
     check("dispute evidence: viewer 403, another brand 404", (await EV({ evidence: "Delivered with signature on file." }, VIEWER)).status === 403 && (await EV({ evidence: "Delivered with signature on file." }, MINJI)).status === 404)
     const ev = await EV({ evidence: "Delivered to the shopper; signature and tracking on file." }, KEMI)
     check("dispute evidence: fulfilment member submits → stored with time", ev.status === 200 && ev.body.dispute.brandEvidence?.startsWith("Delivered") && !!ev.body.dispute.brandEvidenceAt, brief(ev).slice(0, 200))
+    const gw = await post(`/api/studio/orders/${O.orderId}/refunds`, { amountMinor: T, reason: "goodwill during a chargeback", idempotencyKey: key("gwd") }, { who: TOBI })
+    check("dispute open: a brand goodwill refund → 409 (would pay the shopper twice)", gw.status === 409, brief(gw).slice(0, 200))
+    await post("/api/auth/reauth?as=admin", { demo: true }, { who: ADM_SUP })
+    const pr = await post(`/api/orders/admin/${O.orderId}/refunds`, { amountMinor: T, reason: "platform during a chargeback", idempotencyKey: key("prd") }, { who: ADM_SUP })
+    check("dispute open: an admin platform refund → 409", pr.status === 409, brief(pr).slice(0, 200))
+    const nd = await studioOrder(TOBI, O.orderId)
+    check("dispute open: no refund recorded, refundableMinor 0", nd?.refunds?.length === 0 && nd.refundableMinor === 0 && nd.states.payment === "paid", { refunds: nd?.refunds, refundable: nd?.refundableMinor })
     const PD = (b, who) => patch(`/api/orders/admin/disputes/${disp?.id}`, b, { who })
     check("admin dispute update: shipping.view-only admin → 403", (await PD({ adminNote: "looking" }, ADM_TS)).status === 403)
     check("admin dispute update: unknown field → 400", (await PD({ status: "won" }, ADM_SUP)).status === 400)
@@ -691,6 +698,29 @@ async function main() {
       const da = await studioOrder(TOBI, oA?.id)
       const db = await studioOrder(MINJI, oB?.id)
       check("two brands dispute: both orders flagged open, both brands see the same dispute", da?.states?.dispute === "open" && db?.states?.dispute === "open" && da.disputes[0]?.id === db.disputes[0]?.id, { a: da?.states, b: db?.states })
+      check(
+        "two brands dispute: each brand's amount is at most its own order (never the whole transaction)",
+        da?.disputes?.[0]?.amountMinor === oA?.totalMinor && db?.disputes?.[0]?.amountMinor === oB?.totalMinor,
+        { a: da?.disputes?.[0]?.amountMinor, b: db?.disputes?.[0]?.amountMinor, ta: oA?.totalMinor, tb: oB?.totalMinor },
+      )
+      const mdp = da?.disputes?.[0]?.id
+      const privA = `PRIVATE brand A note ${TAG}: tracking KIT123, shopper phone on file.`
+      const evA = await post(`/api/studio/orders/${oA?.id}/disputes/${mdp}/evidence`, { evidence: privA }, { who: TOBI })
+      check("two brands evidence: brand A submits on its own order → 200, sees its own text", evA.status === 200 && evA.body.dispute.brandEvidence === privA, brief(evA).slice(0, 200))
+      const vb = await studioOrder(MINJI, oB?.id)
+      check("two brands evidence: brand B can't read brand A's evidence on the shared dispute", vb?.disputes?.[0]?.id === mdp && vb.disputes[0].brandEvidence === null && vb.disputes[0].brandEvidenceAt === null && !JSON.stringify(vb).includes("PRIVATE brand A"), vb?.disputes?.[0])
+      const evB = await post(`/api/studio/orders/${oB?.id}/disputes/${mdp}/evidence`, { evidence: `Brand B account ${TAG}: delivered by courier.` }, { who: MINJI })
+      check("two brands evidence: brand B's submission → 200 with only its own text", evB.status === 200 && evB.body.dispute.brandEvidence?.startsWith("Brand B account") && !JSON.stringify(evB.body).includes("PRIVATE brand A"), brief(evB).slice(0, 200))
+      const va = await studioOrder(TOBI, oA?.id)
+      check("two brands evidence: brand B can't overwrite brand A's evidence", va?.disputes?.[0]?.brandEvidence === privA, va?.disputes?.[0])
+      check("two brands evidence: brand B can't submit on brand A's order (404)", (await post(`/api/studio/orders/${oA?.id}/disputes/${mdp}/evidence`, { evidence: "brand B overwrote it" }, { who: MINJI })).status === 404)
+      const al = await get("/api/orders/admin/disputes?limit=100", { who: ADM_TS })
+      const ad = al.body?.items?.find((x) => x.id === mdp)
+      check(
+        "two brands evidence: Yard sees each brand's evidence separately",
+        ad?.evidenceByBrand?.length === 2 && ad.evidenceByBrand.find((e) => e.brandId === "b_lagos_static")?.evidence === privA && ad.evidenceByBrand.find((e) => e.brandId === "b_null_form")?.evidence?.startsWith("Brand B account") && ad.brandEvidence?.includes(privA),
+        ad ?? brief(al).slice(0, 200),
+      )
       const half = Math.floor(gross / 2)
       await sim("charge.dispute.resolve", { id: dpId, status: "resolved", resolution: "merchant-accepted", currency: "NGN", refund_amount: half, transaction: { reference: payRef, amount: gross } })
       const la = await studioOrder(TOBI, oA?.id)
@@ -704,6 +734,59 @@ async function main() {
       )
       check("two brands dispute lost: payment states partially_refunded", la?.states?.payment === "partially_refunded" && lb?.states?.payment === "partially_refunded", { a: la?.states, b: lb?.states })
     }
+  }
+
+  /* ===== Receiving a return while a chargeback is open ===== */
+  {
+    const O = await buy(S1, [{ variantId: vM, qty: 1 }])
+    await ship(TOBI, O.orderId, ["shipped", "delivered"])
+    const r = await post(`/api/orders/${O.orderId}/returns`, { reason: "unwanted", idempotencyKey: key("rdp") }, { who: S1 })
+    const rid = r.body?.returnId
+    await post(`/api/studio/orders/${O.orderId}/returns/${rid}/decision`, { decision: "approve" }, { who: TOBI })
+    const payRef = O.checkout?.payment?.reference
+    const dpId = `${TAG}_dpr`
+    const sim = (event, data) => post("/api/webhooks/paystack/simulate", { event, data }, { who: ADM_OWNER })
+    await sim("charge.dispute.create", { id: dpId, status: "awaiting-merchant-feedback", currency: "NGN", transaction: { reference: payRef } })
+    const rec = await post(`/api/studio/orders/${O.orderId}/returns/${rid}/receive`, { idempotencyKey: key("rcvd") }, { who: KEMI })
+    const d = await studioOrder(TOBI, O.orderId)
+    check("dispute open: receiving a return with its refund → 409, no refund, return still approved", rec.status === 409 && d?.refunds?.length === 0 && d.states.return === "approved" && d.states.payment === "paid", { rec: brief(rec).slice(0, 160), refunds: d?.refunds, states: d?.states })
+    await sim("charge.dispute.resolve", { id: dpId, status: "resolved", resolution: "declined", currency: "NGN", transaction: { reference: payRef } })
+    const rec2 = await post(`/api/studio/orders/${O.orderId}/returns/${rid}/receive`, { idempotencyKey: key("rcvd") }, { who: KEMI })
+    check("dispute won: the return can then be received and refunded", rec2.status === 200 && rec2.body.order.refunds.length === 1 && rec2.body.order.refunds[0].status === "succeeded", brief(rec2).slice(0, 200))
+  }
+
+  /* ===== A backdated delivery doesn't shorten the return window ===== */
+  {
+    const O = await buy(S2, [{ variantId: vM, qty: 1 }])
+    const placedAt = (await studioOrder(TOBI, O.orderId))?.placedAt
+    await sleep(3000)
+    const before = Date.now()
+    const bd = await post(`/api/studio/orders/${O.orderId}/shipment`, { status: "delivered", occurredAt: placedAt }, { who: TOBI })
+    const d = await shopperOrder(S2, O.orderId)
+    const win = d?.actions?.returnWindowEndsAt ? Date.parse(d.actions.returnWindowEndsAt) : 0
+    check(
+      "backdated delivery: the return window runs 7 days from when Yard recorded it, not from the reported time",
+      bd.status === 201 && d?.states?.fulfilment === "delivered" && win >= before - 1000 + 7 * 86_400_000 && d.actions.canRequestReturn === true,
+      { s: brief(bd).slice(0, 120), placedAt, window: d?.actions?.returnWindowEndsAt, deliveredAt: d?.deliveredAt },
+    )
+    const early = await devJob("complete", [O.orderId], new Date(Date.parse(placedAt) + 7 * 86_400_000 + 1000).toISOString())
+    check("backdated delivery: the order doesn't complete (no payout) 7 days after the reported time", early.status === 200 && early.body.result.completed === 0 && (await shopperOrder(S2, O.orderId))?.completedAt === null, brief(early).slice(0, 200))
+  }
+
+  /* ===== A declined cancellation refund is retried; the brand's restock choice holds ===== */
+  {
+    const O = await buy(S3, [{ variantId: vM, qty: 2 }])
+    const s0 = await stockOf(vM)
+    const dc = await post("/api/orders/dev", { op: "decline-cancel-refund", orderId: O.orderId, restock: false })
+    const d0 = await studioOrder(TOBI, O.orderId)
+    check("declined cancel refund (dev): cancelled, refund failed, payment still paid", dc.status === 200 && d0?.states?.fulfilment === "cancelled" && d0.states.payment === "paid" && d0.refunds.length === 1 && d0.refunds[0].status === "failed", { s: brief(dc).slice(0, 160), states: d0?.states, refunds: d0?.refunds })
+    const j1 = await devJob("retry-cancelled", [O.orderId])
+    const d1 = await studioOrder(TOBI, O.orderId)
+    const ok = d1?.refunds?.filter((r) => r.kind === "cancellation" && r.status === "succeeded") ?? []
+    check("declined cancel refund: the sweep requests a NEW refund (not the failed duplicate) → payment refunded", j1.status === 200 && j1.body.result.refunded === 1 && ok.length === 1 && ok[0].amountMinor === d1.totalMinor && d1.states.payment === "refunded", { j: brief(j1).slice(0, 160), refunds: d1?.refunds, states: d1?.states })
+    check("cancel restock=false: the refund sweep doesn't put the units back", (await stockOf(vM)) === s0 && d1?.lines?.every((l) => l.restockedQty === 0), { now: await stockOf(vM), s0, lines: d1?.lines })
+    const j2 = await devJob("retry-cancelled", [O.orderId])
+    check("declined cancel refund: a second sweep counts nothing (nothing new sent)", j2.status === 200 && j2.body.result.refunded === 0 && (await studioOrder(TOBI, O.orderId))?.refunds?.length === 2, brief(j2).slice(0, 160))
   }
 
   /* ===== Dispute won ===== */

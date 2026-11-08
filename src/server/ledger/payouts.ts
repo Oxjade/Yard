@@ -209,16 +209,34 @@ export async function cancelPayout(actor: BrandActor, id: string, ipHash: string
 
 const adminAudit = (a: AdminActor) => ({ kind: "admin" as const, id: a.userId, name: a.name, role: a.role })
 
+/** Separation of duties: an admin who belongs to a brand can't act on that brand's money or finance settings. */
+async function assertNotBrandMember(tx: Tx, brandId: string, actor: AdminActor, message: string) {
+  const [member] = await tx
+    .select({ id: brandMembers.id })
+    .from(brandMembers)
+    .where(and(eq(brandMembers.brandId, brandId), eq(brandMembers.userId, actor.userId)))
+  if (member) throw rule(message)
+}
+
+/** Brand ids among `brandIds` whose payouts are on hold. Locks their settings rows (FOR SHARE) so a hold placed concurrently waits for, or is seen by, the caller. */
+async function heldBrands(tx: Tx, brandIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(brandIds)]
+  if (!ids.length) return new Set()
+  const rows = await tx
+    .select({ brandId: ledgerBrandSettings.brandId, payoutsOnHold: ledgerBrandSettings.payoutsOnHold })
+    .from(ledgerBrandSettings)
+    .where(inArray(ledgerBrandSettings.brandId, ids))
+    .for("share")
+  return new Set(rows.filter((r) => r.payoutsOnHold).map((r) => r.brandId))
+}
+
 export async function approvePayout(actor: AdminActor, id: string, note: string | null, ipHash: string | null) {
   assertAdminFinance(actor)
   await assertRecentReauth(actor)
   await withTx(async (tx) => {
     const p = await loadPayoutForUpdate(tx, id)
-    const [member] = await tx
-      .select({ id: brandMembers.id })
-      .from(brandMembers)
-      .where(and(eq(brandMembers.brandId, p.brandId), eq(brandMembers.userId, actor.userId)))
-    if (member || p.requestedBy === actor.userId) throw rule("You can't approve a payout for a brand you belong to.")
+    if (p.requestedBy === actor.userId) throw rule("You can't approve a payout for a brand you belong to.")
+    await assertNotBrandMember(tx, p.brandId, actor, "You can't approve a payout for a brand you belong to.")
     const prior = await tx.select().from(payoutApprovals).where(eq(payoutApprovals.payoutId, p.id))
     if (prior.some((a) => a.adminId === actor.userId)) throw rule("A different admin must give the second approval.")
     let step: 1 | 2
@@ -256,7 +274,9 @@ export async function rejectPayout(actor: AdminActor, id: string, reason: string
   await assertRecentReauth(actor)
   await withTx(async (tx) => {
     const p = await loadPayoutForUpdate(tx, id)
-    if (!OPEN_FOR_REJECT.includes(p.status) || p.batchId) throw conflict("This payout can no longer be rejected.")
+    // A batched payout that hasn't been claimed for sending (still 'approved') can be rejected: the
+    // batch run only sends 'approved' rows, and the payout row lock serialises this with the claim.
+    if (!OPEN_FOR_REJECT.includes(p.status)) throw conflict("This payout can no longer be rejected.")
     await releaseHold(tx, p, "payout_rejected", { kind: "admin", id: actor.userId })
     const now = new Date()
     await tx.update(payouts).set({ status: "rejected", rejectedBy: actor.userId, rejectReason: reason, closedAt: now, updatedAt: now }).where(eq(payouts.id, p.id))
@@ -281,13 +301,17 @@ export async function createBatch(actor: AdminActor, input: { currency: string; 
   return withTx(async (tx) => {
     const where = [eq(payouts.status, "approved"), eq(payouts.currency, input.currency), isNull(payouts.batchId)]
     if (input.payoutIds?.length) where.push(inArray(payouts.id, input.payoutIds))
-    const rows = await tx
+    let rows = await tx
       .select()
       .from(payouts)
       .where(and(...where))
       .for("update")
     if (!rows.length) throw rule("There are no approved payouts to batch.")
     if (input.payoutIds?.length && rows.length !== new Set(input.payoutIds).size) throw rule("Some payouts aren't approved, are in another currency, or are already in a batch.")
+    const held = await heldBrands(tx, rows.map((r) => r.brandId))
+    if (input.payoutIds?.length && rows.some((r) => held.has(r.brandId))) throw rule("Some payouts belong to a brand whose payouts are on hold.")
+    rows = rows.filter((r) => !held.has(r.brandId))
+    if (!rows.length) throw rule("There are no approved payouts to batch.")
     const id = newId("pob")
     const total = rows.reduce((s, r) => s + r.amountMinor, 0)
     await tx.insert(payoutBatches).values({ id, currency: input.currency, status: "open", payoutCount: rows.length, totalMinor: total, createdBy: actor.userId })
@@ -324,20 +348,26 @@ export async function runBatch(actor: AdminActor, batchId: string, ipHash: strin
     const [batch] = await tx.select().from(payoutBatches).where(eq(payoutBatches.id, batchId)).for("update")
     if (!batch) throw notFound("We couldn't find that batch.")
     if (batch.status === "done") throw conflict("This batch has already been sent.")
-    const rows = await tx
+    const approved = await tx
       .select()
       .from(payouts)
       .where(and(eq(payouts.batchId, batchId), eq(payouts.status, "approved")))
       .for("update")
+    // A brand put on hold after approval or batching must not be paid: leave its payouts 'approved'
+    // (rejectable, or sent by a later run once the hold is lifted).
+    const held = await heldBrands(tx, approved.map((r) => r.brandId))
+    const rows = approved.filter((r) => !held.has(r.brandId))
+    const skipped = approved.filter((r) => held.has(r.brandId))
     const now = new Date()
     for (const r of rows) await tx.update(payouts).set({ status: "sending", attempts: r.attempts + 1, updatedAt: now }).where(eq(payouts.id, r.id))
+    for (const r of skipped) await tx.update(payouts).set({ lastError: "payouts_on_hold", updatedAt: now }).where(eq(payouts.id, r.id))
     await tx.update(payoutBatches).set({ status: "running", ranBy: actor.userId, ranAt: now }).where(eq(payoutBatches.id, batchId))
-    await writeAudit({ actor: adminAudit(actor), action: "payout_batch.run", subjectType: "payout_batch", subjectId: batchId, ipHash, meta: { count: rows.length, currency: batch.currency } })
-    return rows.map((r) => ({ ...r, attempts: r.attempts + 1 }))
+    await writeAudit({ actor: adminAudit(actor), action: "payout_batch.run", subjectType: "payout_batch", subjectId: batchId, ipHash, meta: { count: rows.length, heldCount: skipped.length, currency: batch.currency } })
+    return { rows: rows.map((r) => ({ ...r, attempts: r.attempts + 1 })), skipped: skipped.map((r) => r.id) }
   })
 
-  const results: { payoutId: string; status: string }[] = []
-  for (const p of claimed) {
+  const results: { payoutId: string; status: string }[] = claimed.skipped.map((payoutId) => ({ payoutId, status: "on_hold" }))
+  for (const p of claimed.rows) {
     if (p.recipientProvider === "stub" && process.env.PAYSTACK_SECRET_KEY) {
       // A stub recipient can never be paid by the live provider: send it back for a real account.
       await withTx(async (tx) => {
@@ -508,6 +538,7 @@ export async function updateBrandFinanceSettings(
   return withTx(async (tx) => {
     const [brand] = await tx.select({ id: brands.id }).from(brands).where(eq(brands.id, brandId))
     if (!brand) throw notFound("We couldn't find that brand.")
+    await assertNotBrandMember(tx, brandId, actor, "You can't change finance settings for a brand you belong to.")
     const [cur] = await tx.select().from(ledgerBrandSettings).where(eq(ledgerBrandSettings.brandId, brandId))
     const next = {
       brandId,
@@ -552,6 +583,7 @@ export async function postAdjustment(
   return withTx(async (tx) => {
     const [brand] = await tx.select({ id: brands.id }).from(brands).where(eq(brands.id, input.brandId))
     if (!brand) throw notFound("We couldn't find that brand.")
+    await assertNotBrandMember(tx, input.brandId, actor, "You can't post an adjustment for a brand you belong to.")
     const brandAcct = brandAccount(input.brandId, input.account, input.currency)
     const platform = platformAccount("platform_adjustments", input.currency)
     const res = await post(tx, {

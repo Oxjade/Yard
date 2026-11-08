@@ -149,7 +149,7 @@ export const storefrontConfig = z.strictObject({
   typePreset: z.enum(["condensed", "grotesk", "expanded"]),
   intro: safeText({ max: 600 }).default(""),
   announcement: z
-    .strictObject({ text: safeLine({ max: 140 }).min(1), href: z.string().max(300).regex(/^\/[\w\-./?=&%#]*$/, { error: "Use a link inside Yard, starting with /." }).optional() })
+    .strictObject({ text: safeLine({ max: 140 }).min(1), href: z.string().max(300).regex(/^\/(?![/\\])[\w\-./?=&%#]*$/, { error: "Use a link inside Yard, starting with /." }).optional() })
     .nullable()
     .optional(),
   coverMediaId: safeId().nullable().optional(),

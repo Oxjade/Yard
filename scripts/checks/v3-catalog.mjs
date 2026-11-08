@@ -305,6 +305,27 @@ async function main() {
   check("studio: opening stock lands on on_hand; variant price override kept", vS?.onHand === 5 && vS.held === 0 && vM?.onHand === 0 && vM.priceMinor === 27_000 && vS.priceMinor === 25_000)
   check("studio: tags are normalised and de-duplicated", JSON.stringify(P.tags) === JSON.stringify(["kit", "test"]), JSON.stringify(P.tags))
   check("studio: a generated slug from the title", /^t-v3-catalog-/.test(P.slug), P.slug)
+  {
+    // Drops: a product may only join one of its own brand's drops (security fix: dropId was stored unchecked).
+    const foreignDrop = await post("/api/studio/catalog/products", { ...minimal, title: `${TAG} Drop B`, variants: [{ sku: `${TAG}-DB` }], dropId: "d_ls_third_mainland" }, { cookie: B.cookie })
+    if (foreignDrop.body?.product) created.products.push(foreignDrop.body.product.id)
+    check("studio: create rejects another brand's drop (400)", foreignDrop.status === 400 && !!foreignDrop.body?.error?.fields?.dropId, brief(foreignDrop).slice(0, 160))
+    const ghostDrop = await post("/api/studio/catalog/products", { ...minimal, title: `${TAG} Drop X`, variants: [{ sku: `${TAG}-DX` }], dropId: `d_${TAG}_none` }, { cookie: A.cookie })
+    if (ghostDrop.body?.product) created.products.push(ghostDrop.body.product.id)
+    check("studio: create rejects a drop that doesn't exist (400)", ghostDrop.status === 400, brief(ghostDrop).slice(0, 160))
+    const ownDrop = await post("/api/studio/catalog/products", { ...minimal, title: `${TAG} Drop A`, variants: [{ sku: `${TAG}-DA` }], dropId: "d_ls_third_mainland" }, { cookie: A.cookie })
+    if (ownDrop.body?.product) created.products.push(ownDrop.body.product.id)
+    check("studio: create accepts the brand's own drop (201)", ownDrop.status === 201 && ownDrop.body.product.dropId === "d_ls_third_mainland", brief(ownDrop).slice(0, 160))
+    if (ownDrop.body?.product) {
+      const bProd = await post("/api/studio/catalog/products", { ...minimal, title: `${TAG} Drop B2`, variants: [{ sku: `${TAG}-DB2` }] }, { cookie: B.cookie })
+      if (bProd.body?.product) created.products.push(bProd.body.product.id)
+      const pb = bProd.body?.product
+      const steal = pb ? await patch(`/api/studio/catalog/products/${pb.id}`, { dropId: "d_ls_third_mainland", expectedVersion: pb.version }, { cookie: B.cookie }) : bProd
+      check("studio: update rejects another brand's drop (400)", steal.status === 400 && !!steal.body?.error?.fields?.dropId, brief(steal).slice(0, 160))
+      const clear = pb ? await patch(`/api/studio/catalog/products/${pb.id}`, { dropId: null, expectedVersion: pb.version }, { cookie: B.cookie }) : bProd
+      check("studio: update may clear dropId", clear.status === 200, brief(clear).slice(0, 160))
+    }
+  }
   const dupSku = await post("/api/studio/catalog/products", { ...minimal, variants: [{ sku: `${TAG}-S` }] }, { cookie: A.cookie })
   check("studio: a SKU already used in the brand is 400", dupSku.status === 400 && /sku/.test(JSON.stringify(dupSku.body?.error?.fields ?? {})), brief(dupSku).slice(0, 160))
   const takenSlug = await post("/api/studio/catalog/products", { ...minimal, title: `${TAG} Slug`, slug: P.slug, variants: [{ sku: `${TAG}-SL` }] }, { cookie: A.cookie })
@@ -815,6 +836,51 @@ async function main() {
     }
   }
 
+  /* ===== A suspended brand can't lift its suspension by resubmitting its application ===== */
+  {
+    const email2 = `${TAG}_susp@example.com`
+    const password2 = `Kit-${RUN}-susp-9`
+    let S2 = null
+    try {
+      S2 = await signUpShopper(email2, password2)
+    } catch (e) {
+      check("setup: second sign-up for the suspension check", false, String(e.message))
+    }
+    if (S2) {
+      const st = (name, data, revision) => put(`/api/studio/onboarding/steps/${name}`, { data, revision }, { cookie: S2 })
+      const all = [
+        ["brand", { name: `Kit S ${RUN}`, handle: `${HTAG}-s`, category: "fashion", description: "A test brand made by the catalog acceptance kit (suspension)." }],
+        ["account", { name: "Catalog Kit S" }],
+        ["storefront", { coverPath: "/media/fashion/campaign-woman-night-bulb-lights-07.jpg", accent: "acid", typePreset: "grotesk", template: "minimal" }],
+        ["business", { country: "NG", city: "Lagos", currency: "NGN", sellerType: "individual", contactEmail: email2, phone: "+234 800 000 0000" }],
+        ["payments", { method: "bank", holder: "Catalog Kit", bankName: "Kit Bank", accountLast4: "1234", delivery: ["domestic"], processingMin: 1, processingMax: 3, returnsDays: 14 }],
+        ["product", { name: `${TAG} Susp`, description: "The first product from onboarding, made by the kit.", priceMinor: 15_000, images: [{ path: "/media/fashion/campaign-woman-night-bulb-lights-07.jpg", alt: "" }], sizes: [{ label: "S", stock: 1 }] }],
+      ]
+      let rv = 0
+      let ok = true
+      for (const [name, data] of all) {
+        const r = await st(name, data, rv)
+        if (r.status === 200) rv = r.body.onboarding.revision
+        else ok = check(`setup: suspension check saves step ${name}`, false, brief(r).slice(0, 160))
+      }
+      const sub = ok ? await post("/api/studio/onboarding/submit", { revision: rv }, { cookie: S2 }) : null
+      const O2 = sub?.body?.onboarding
+      const rej = O2?.brandId ? await post("/api/studio/catalog/dev/admin", { action: "review", onboardingId: O2.id, decision: "reject", note: `${TAG} rejected` }, { cookie: ADMIN.cookie }) : null
+      const sus = rej?.status === 200 ? await post("/api/admin/decisions/set-brand-status", { id: O2.brandId, status: "suspended", reason: `${TAG} suspension check` }, { cookie: ADMIN.cookie }) : null
+      const signIn = () => post("/api/auth/sign-in", { email: email2, password: password2, actor: "brand", brandId: O2.brandId })
+      const before = sus?.status === 200 ? await signIn() : null
+      check("setup: a rejected, then suspended brand can't sign in to Studio (403)", before?.status === 403, sus ? brief(sus).slice(0, 160) : rej ? brief(rej).slice(0, 160) : sub ? brief(sub).slice(0, 160) : "steps failed")
+      if (before?.status === 403) {
+        const g = (await get("/api/studio/onboarding", { cookie: S2 })).body?.onboarding
+        const ed = await st("account", { name: "Catalog Kit S again" }, g?.revision ?? 0)
+        const re = await post("/api/studio/onboarding/submit", { revision: ed.body?.onboarding?.revision ?? 0 }, { cookie: S2 })
+        check("onboarding: a suspended brand's resubmission is refused (422)", re.status === 422, brief(re).slice(0, 160))
+        const after = await signIn()
+        check("onboarding: the suspension still holds after a resubmission attempt (brand sign-in 403)", after.status === 403, brief(after).slice(0, 160))
+      }
+    }
+  }
+
   /* ===== Storefront draft / publish / versions / restore (on the run's own brand) ===== */
   if (C3) {
     const C = C3
@@ -835,6 +901,10 @@ async function main() {
     check("storefront: duplicate section ids are 400", dupIds.status === 400)
     const badLink = await put("/api/studio/storefront/draft", { config: { ...cfg1, announcement: { text: "hi", href: "https://evil.example" } }, baseRevision: rev0 }, { cookie: C })
     check("storefront: an announcement link outside Yard is 400", badLink.status === 400)
+    for (const href of ["//evil.example/login", "/\\evil.example", "///evil.example"]) {
+      const r = await put("/api/studio/storefront/draft", { config: { ...cfg1, announcement: { text: "hi", href } }, baseRevision: rev0 }, { cookie: C })
+      check(`storefront: a protocol-relative announcement link (${href}) is 400`, r.status === 400, brief(r).slice(0, 160))
+    }
     const stale = await put("/api/studio/storefront/draft", { config: cfg1, baseRevision: rev0 + 5 }, { cookie: C })
     check("storefront: saving with a stale baseRevision is 409", stale.status === 409)
     const s1 = await put("/api/studio/storefront/draft", { config: cfg1, baseRevision: rev0 }, { cookie: C })

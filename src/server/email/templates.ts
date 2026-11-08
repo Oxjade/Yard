@@ -52,6 +52,11 @@ export const templates = {
     required: [],
     build: (x) => ({ subject: "Your Yard account was deleted", heading: "Account deleted", paragraphs: [hello(x), "Your Yard account has been deleted and your personal data is being erased. Order records we must keep by law are kept without your profile."] }),
   },
+  mfa_reset: {
+    category: "account",
+    required: [],
+    build: (x) => ({ subject: "Your Yard two-step verification was reset", heading: "Two-step verification reset", paragraphs: [hello(x), "An owner admin reset two-step verification on your Yard admin account, and your admin sessions were signed out. You'll set up an authenticator app again the next time you sign in.", "If you didn't ask for this, contact the Yard owner team now."] }),
+  },
   order_confirmation: {
     category: "orders",
     required: ["reference", "url"],

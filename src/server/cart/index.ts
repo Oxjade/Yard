@@ -220,3 +220,9 @@ export async function purgeStaleCarts() {
     .returning({ id: carts.id })
   return { carts: rows.length }
 }
+
+/** AUTH erasure hook (src/server/auth/erasure.ts): the shopper's server cart goes (lines cascade). */
+export async function eraseCustomerData(tx: Executor, userId: string): Promise<{ erased: number }> {
+  const rows = await tx.delete(carts).where(eq(carts.customerId, userId)).returning({ id: carts.id })
+  return { erased: rows.length }
+}

@@ -329,7 +329,8 @@ type Times = Pick<DropRow, "access" | "startsAt" | "endsAt" | "earlyAccessAt" | 
 
 /** Normalises defaults and checks the time rules; `forSchedule` also requires the future. */
 function checkTimes(t: Times, forSchedule: boolean, now = new Date()): Times {
-  const out: Times = { ...t }
+  // Only the time fields: callers spread the result into an update, and scheduleDrop passes the whole row.
+  const out: Times = { access: t.access, startsAt: t.startsAt, endsAt: t.endsAt, earlyAccessAt: t.earlyAccessAt, entryOpensAt: t.entryOpensAt, entryClosesAt: t.entryClosesAt }
   const f: Record<string, string> = {}
   if (out.endsAt <= out.startsAt) f.endsAt = "End the drop after it starts."
   else if (out.endsAt.getTime() - out.startsAt.getTime() > MAX_DURATION_MS) f.endsAt = "A drop can run for 30 days at most."

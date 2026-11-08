@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import { removePurchased } from "../cart"
 import { commitHold, releaseHold } from "../catalog"
@@ -12,6 +12,7 @@ import { log } from "../log"
 import { getOrderForMoney, handleDisputeEvent, handleRefundOutcome, markCheckoutPaid, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
 import { chargeStateFromPaystack } from "./providers"
+import { refundEventChange, refundIdFromNote } from "./refund-recovery"
 
 /**
  * Provider events: stored raw first (own transaction, so nothing is lost when processing fails),
@@ -217,6 +218,8 @@ export async function applyCharge(tx: Tx, charge: Charge): Promise<{ status: "pr
 async function applyRefundEvent(tx: Tx, type: string, data: Record<string, unknown>): Promise<{ status: "processed" | "ignored"; note?: string }> {
   const providerRef = str(data.id)
   let [rf] = providerRef ? await tx.select().from(refunds).where(eq(refunds.providerRef, providerRef)).limit(1) : []
+  const noteId = refundIdFromNote(data.merchant_note)
+  if (!rf && noteId) [rf] = await tx.select().from(refunds).where(and(eq(refunds.id, noteId), isNull(refunds.providerRef))).limit(1)
   if (!rf) {
     // Fallback: the oldest unmatched refund of that amount on the transaction.
     const txnRef = str(data.transaction_reference) || str((data.transaction as Record<string, unknown> | undefined)?.reference)
@@ -225,15 +228,21 @@ async function applyRefundEvent(tx: Tx, type: string, data: Record<string, unkno
       ;[rf] = await tx
         .select()
         .from(refunds)
-        .where(and(eq(refunds.paymentId, pay.id), eq(refunds.amountMinor, Number(data.amount ?? -1)), inArray(refunds.status, ["pending"])))
+        .where(and(eq(refunds.paymentId, pay.id), eq(refunds.amountMinor, Number(data.amount ?? -1)), inArray(refunds.status, ["pending"]), isNull(refunds.providerRef)))
         .orderBy(asc(refunds.createdAt))
         .limit(1)
     }
   }
   if (!rf) return { status: "ignored", note: `unknown refund ${providerRef}` }
   const status = type === "refund.processed" ? "succeeded" : type === "refund.failed" ? "failed" : "pending"
-  if (rf.status === status) return { status: "processed", note: "no change" }
-  if (rf.status === "succeeded" || rf.status === "failed") return { status: "ignored", note: `refund already ${rf.status}` }
+  const change = refundEventChange(rf, status, providerRef)
+  if (change.kind === "ref") {
+    // In progress at the provider: keep its reference so the retry job never sends it again.
+    await tx.update(refunds).set({ providerRef: change.providerRef, failureReason: null, updatedAt: new Date() }).where(eq(refunds.id, rf.id))
+    return { status: "processed", note: "provider reference recorded" }
+  }
+  if (change.kind === "none") return { status: "processed", note: "no change" }
+  if (change.kind === "ignored") return { status: "ignored", note: `refund already ${rf.status}` }
   await tx
     .update(refunds)
     .set({ status, providerRef: rf.providerRef ?? (providerRef || null), failureReason: status === "failed" ? str(data.reason || data.merchant_note || "Refund failed").slice(0, 300) : null, updatedAt: new Date() })
@@ -347,6 +356,22 @@ export async function listEvents(q: { status?: string; type?: string; ref?: stri
   )
   const rows = await d.select().from(providerEvents).where(where).orderBy(desc(providerEvents.receivedAt)).limit(q.limit)
   return rows.map(toEventSummary)
+}
+
+/**
+ * A stored provider payload as admins may see it. Paystack charge data carries the card's reusable
+ * `authorization_code` (a token that can charge the card again), card details and the customer's
+ * contact details; none of that is needed to read an event, so it is withheld for every role.
+ * Card brand, last 4 digits and bank stay, so a payment can still be recognised.
+ */
+const REDACT_KEYS = new Set(["authorization_code", "signature", "bin", "exp_month", "exp_year", "account_name", "email", "customer_email", "phone", "first_name", "last_name", "international_format_phone", "receiver_bank_account_number", "account_number"])
+export function redactProviderPayload(v: unknown, depth = 0): unknown {
+  if (depth > 12) return "[redacted]"
+  if (Array.isArray(v)) return v.map((x) => redactProviderPayload(x, depth + 1))
+  if (!v || typeof v !== "object") return v
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = REDACT_KEYS.has(k.toLowerCase()) && x !== null && x !== "" ? "[redacted]" : redactProviderPayload(x, depth + 1)
+  return out
 }
 
 export async function getEvent(id: string) {

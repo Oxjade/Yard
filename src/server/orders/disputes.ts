@@ -4,7 +4,7 @@ import { writeAudit } from "../audit"
 import type { Executor, Tx } from "../db"
 import { orderRefs } from "../db/schema"
 import { orderDisputes, orderStates, type DISPUTE_STATES } from "../db/schema/orders-v3"
-import { conflict, notFound } from "../http/errors"
+import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { publish } from "../realtime/bus"
@@ -165,6 +165,9 @@ export async function handleDisputeEvent(tx: Tx, evt: unknown): Promise<{ disput
   } else {
     // A late "remind" never reopens a resolved dispute.
     const next = terminal(prev.status) && !terminal(status) ? prev.status : status
+    const brandIds = orders.length ? [...new Set(orders.map((o) => o.brandId))] : prev.brandIds
+    // The brands covered can change as orders are matched: keep each brand's evidence its own.
+    const brandEvidence = brandIds.join() === prev.brandIds.join() ? prev.brandEvidence : encodeEvidence(brandIds, evidenceByBrand(prev).byBrand)
     ;[row] = await tx
       .update(orderDisputes)
       .set({
@@ -172,7 +175,8 @@ export async function handleDisputeEvent(tx: Tx, evt: unknown): Promise<{ disput
         evidenceDueAt: e.evidenceDueAt ?? prev.evidenceDueAt,
         category: e.category ?? prev.category,
         orderRefIds: orders.length ? orders.map((o) => o.orderRefId) : prev.orderRefIds,
-        brandIds: orders.length ? [...new Set(orders.map((o) => o.brandId))] : prev.brandIds,
+        brandIds,
+        brandEvidence,
         lastProviderEventId: e.providerEventId ?? prev.lastProviderEventId,
         resolvedAt: terminal(next) ? (prev.resolvedAt ?? now) : null,
         updatedAt: now,
@@ -223,6 +227,47 @@ async function recordDisputeLoss(tx: Tx, row: DisputeRow, orders: { orderRefId: 
   }
 }
 
+/* ---------- Per-brand evidence ---------- */
+
+/**
+ * One provider dispute can cover orders from several brands (one Paystack transaction paid for
+ * them all), but each brand's evidence is its own: brands never read or replace each other's.
+ * Storage, in the single `brand_evidence` column (no migration needed):
+ *  - a dispute covering one brand: the plain text, as before;
+ *  - a dispute covering several brands: MULTI_PREFIX + JSON `{ [brandId]: { text, at } }`.
+ * Plain text on a multi-brand dispute (written before per-brand storage) has no known author, so
+ * no brand is shown it; Yard's admins still see it.
+ */
+const MULTI_PREFIX = "yard:evidence-by-brand:v1:"
+/** The column's check constraint (order_disputes_evidence_len_ck). */
+const EVIDENCE_COLUMN_MAX = 4000
+export type BrandEvidence = { text: string; at: string }
+
+export function evidenceByBrand(d: Pick<DisputeRow, "brandEvidence" | "brandEvidenceAt" | "brandIds">): { byBrand: Record<string, BrandEvidence>; unattributed: string | null } {
+  const raw = d.brandEvidence
+  if (!raw) return { byBrand: {}, unattributed: null }
+  if (raw.startsWith(MULTI_PREFIX)) {
+    try {
+      const parsed = JSON.parse(raw.slice(MULTI_PREFIX.length)) as Record<string, BrandEvidence>
+      const byBrand: Record<string, BrandEvidence> = {}
+      for (const [b, v] of Object.entries(parsed ?? {})) if (v && typeof v.text === "string" && typeof v.at === "string") byBrand[b] = { text: v.text, at: v.at }
+      return { byBrand, unattributed: null }
+    } catch {
+      return { byBrand: {}, unattributed: null }
+    }
+  }
+  if (d.brandIds.length === 1) return { byBrand: { [d.brandIds[0]]: { text: raw, at: (d.brandEvidenceAt ?? new Date(0)).toISOString() } }, unattributed: null }
+  return { byBrand: {}, unattributed: raw }
+}
+
+/** The column value for these brands' evidence (plain text when the dispute covers one brand). */
+function encodeEvidence(brandIds: string[], byBrand: Record<string, BrandEvidence>): string | null {
+  const entries = Object.entries(byBrand).filter(([b]) => brandIds.includes(b))
+  if (!entries.length) return null
+  if (brandIds.length === 1) return entries[0][1].text
+  return MULTI_PREFIX + JSON.stringify(Object.fromEntries(entries))
+}
+
 /* ---------- Brand and admin access ---------- */
 
 export async function disputesForOrder(tx: Executor, orderRefId: string) {
@@ -240,12 +285,20 @@ export async function submitBrandEvidence(tx: Tx, input: { orderRefId: string; d
   const [d] = await tx.select().from(orderDisputes).where(eq(orderDisputes.id, input.disputeId)).for("update").limit(1)
   if (!d || !d.orderRefIds.includes(order.id)) throw notFound()
   if (d.status === "won" || d.status === "lost" || d.status === "closed") throw conflict("This dispute has been resolved.")
+  if (!d.brandIds.includes(order.brandId)) throw notFound()
   const now = new Date()
-  const [row] = await tx.update(orderDisputes).set({ brandEvidence: input.evidence.trim(), brandEvidenceAt: now, updatedAt: now }).where(eq(orderDisputes.id, d.id)).returning()
+  // Only this brand's entry changes; other brands' evidence on a shared dispute is kept as is.
+  const { byBrand } = evidenceByBrand(d)
+  byBrand[order.brandId] = { text: input.evidence.trim(), at: now.toISOString() }
+  const encoded = encodeEvidence(d.brandIds, byBrand)
+  if (encoded && encoded.length > EVIDENCE_COLUMN_MAX) {
+    throw rule("This payment covers orders from several brands, so the evidence they share has to be shorter. Keep yours to the key facts (tracking, delivery proof).")
+  }
+  const [row] = await tx.update(orderDisputes).set({ brandEvidence: encoded, brandEvidenceAt: now, updatedAt: now }).where(eq(orderDisputes.id, d.id)).returning()
   await addEvent(tx, order.id, "dispute.evidence_added", input.actor, { disputeId: d.id })
   await writeAudit({ actor: { kind: "brand", id: input.actor.id, name: input.actor.name, role: input.actor.role }, action: "order.dispute_evidence", target: `Order ${order.reference}`, subjectType: "order_dispute", subjectId: d.id, brandId: order.brandId, ipHash: input.ipHash ?? null, meta: { orderId: order.id } })
   await publish(channels.admin, "orders.dispute", { disputeId: d.id, status: d.status })
-  return row
+  return { row, orderTotalMinor: order.totalMinor }
 }
 
 export async function listDisputes(tx: Executor, q: { status?: DisputeState; limit: number }) {

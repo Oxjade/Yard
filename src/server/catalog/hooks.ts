@@ -1,7 +1,8 @@
 import "server-only"
 import { inArray } from "drizzle-orm"
 import { afterCommit, db } from "../db"
-import { catalogVariants } from "../db/schema/catalog"
+import { catalogProducts, catalogVariants } from "../db/schema/catalog"
+import { refreshBrandMediaVisibility } from "../media/visibility"
 import { invalidateMemo } from "../cache"
 import { log } from "../log"
 
@@ -17,6 +18,8 @@ type Change = {
   restocked?: string[]
   /** Also reindex the products of `variants` (sales and restocks change a product's availability). */
   reindexVariants?: boolean
+  /** Brands whose product/collection photos may have changed visibility (products' brands are added automatically). */
+  brands?: string[]
 }
 
 type SearchModule = { reindexProduct?: (productId: string) => Promise<unknown> }
@@ -32,6 +35,15 @@ async function loadSearch(): Promise<SearchModule | null> {
 export function catalogChanged(change: Change) {
   afterCommit(async () => {
     invalidateMemo("catalog:")
+    // Uploaded product and collection photos are public only while a published product or
+    // collection of a listed brand shows them (media/visibility.ts). One brand's media is small.
+    const brandIds = new Set(change.brands ?? [])
+    if (change.products?.length) {
+      const d = await db()
+      const rows = await d.select({ brandId: catalogProducts.brandId }).from(catalogProducts).where(inArray(catalogProducts.id, change.products))
+      for (const r of rows) brandIds.add(r.brandId)
+    }
+    for (const b of brandIds) await refreshBrandMediaVisibility(b).catch((e: unknown) => log.error(`[yard] catalog: media visibility for ${b} failed`, e))
     const ids = new Set(change.products ?? [])
     if (change.reindexVariants && change.variants?.length) {
       const d = await db()

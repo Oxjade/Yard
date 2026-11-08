@@ -10,7 +10,7 @@ import { toDisputeDto } from "@/server/orders/views"
 export const POST = route(
   { auth: "brand", permission: "orders.fulfil", body: disputeEvidenceBody, maxBody: 16 * 1024, rate: { key: "studio.dispute_evidence", limit: 20, windowSec: 60 } },
   async ({ actor, params, body, ipHash }) => {
-    const row = await withTx((tx) => submitBrandEvidence(tx, { orderRefId: pathId(params.id), disputeId: pathId(params.disputeId), brandId: actor.brandId, actor: orderActor(actor), evidence: body.evidence, ipHash }))
-    return { dispute: toDisputeDto(row, "brand") }
+    const { row, orderTotalMinor } = await withTx((tx) => submitBrandEvidence(tx, { orderRefId: pathId(params.id), disputeId: pathId(params.disputeId), brandId: actor.brandId, actor: orderActor(actor), evidence: body.evidence, ipHash }))
+    return { dispute: toDisputeDto(row, "brand", { brandId: actor.brandId, orderTotalMinor }) }
   },
 )
