@@ -87,7 +87,8 @@ export async function listDemoAccounts(actor: ActorKind): Promise<DemoAccountDto
 export async function eligibleAccount(actor: ActorKind, account: string, brandId?: string) {
   const d = await db()
   const user = await d.query.users.findFirst({ where: (u, { eq }) => eq(u.id, account) })
-  if (!user) throw notFound("There's no demo account with that id.")
+  // v3: demo sign-in only ever opens DEMO accounts; a real account (demo = false) needs its password.
+  if (!user || !user.demo) throw notFound("There's no demo account with that id.")
   if (actor === "shopper") {
     if (user.kind !== "shopper" && user.kind !== "brand_staff") throw notFound("There's no demo shopper with that id.")
     if (user.status === "suspended") throw suspended()

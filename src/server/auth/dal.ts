@@ -16,6 +16,7 @@ import {
   type TeamRole,
 } from "@/lib/permissions"
 import { loadSession, type SessionRow } from "./session"
+import { sessionAuthOf } from "./session-auth"
 
 /**
  * The Data Access Layer (§2.2). Every getter re-reads the session close to the data; each is
@@ -178,6 +179,9 @@ export function assertBrandMayPublish(actor: BrandActor) {
 export const getAdmin = cache(async (): Promise<AdminActor | null> => {
   const s = await loadSession("admin")
   if (!s) return null
+  // v3: a real (non-demo) admin session must have passed TOTP (it is only ever created after it).
+  const how = await sessionAuthOf(s.id)
+  if (how && how.method !== "demo" && !how.mfaAt) return null
   const d = await db()
   const [u, m] = await Promise.all([userOf(s), d.query.adminMembers.findFirst({ where: (am, { eq }) => eq(am.userId, s.userId) })])
   if (!u || u.status === "suspended" || !m) return null

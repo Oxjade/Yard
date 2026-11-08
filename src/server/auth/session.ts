@@ -12,6 +12,7 @@ import { channels } from "../realtime/channels"
 import { hmacB64url, safeEqual, sha256hex } from "../security/crypto"
 import { keys } from "../security/keys"
 import { yard } from "../state"
+import { isRealSession, realSessionIds } from "./session-auth"
 
 /**
  * Server sessions (§2.1). One cookie per actor kind, so one browser can be shopper, brand member
@@ -95,9 +96,10 @@ async function rowByToken(actor: ActorKind, token: string) {
 }
 
 /**
- * Every session in this build is a password-less demo session (§2.3), so a session of an actor
- * kind whose demo sign-in is off is no session at all: turning YARD_DEMO_AUTH or YARD_DEMO_ADMIN
- * off ends the sessions it allowed, at the next request (here) and at boot (purgeDisabledSessions).
+ * Whether DEMO sessions of this actor kind may exist. Turning YARD_DEMO_AUTH or YARD_DEMO_ADMIN
+ * off ends the demo sessions it allowed, at the next request (loadSession) and at boot
+ * (purgeDisabledSessions). v3: sessions created by a real sign-in carry a session_auth row and
+ * are not affected (see session-auth.ts).
  */
 export function sessionsAllowed(actor: ActorKind) {
   return getEnv().demoAuth[actor]
@@ -113,7 +115,8 @@ export async function loadSession(actor: ActorKind): Promise<SessionRow | null> 
   if (!token) return null
   const row = await rowByToken(actor, token)
   if (!row) return null
-  if (!sessionsAllowed(actor)) {
+  // v3: only DEMO sessions depend on the demo flags; a password/OAuth session (session_auth) stays.
+  if (!sessionsAllowed(actor) && !(await isRealSession(row.id))) {
     await endDisabledSessions([row])
     return null
   }
@@ -268,7 +271,7 @@ export async function sessionById(id: string) {
   const d = await db()
   const row = await d.query.sessions.findFirst({ where: (s, { eq }) => eq(s.id, id) })
   if (!row) return null
-  if (!sessionsAllowed(row.actor as ActorKind)) return null
+  if (!sessionsAllowed(row.actor as ActorKind) && !(await isRealSession(row.id))) return null
   const now = Date.now()
   if (row.idleExpiresAt.getTime() <= now || row.absoluteExpiresAt.getTime() <= now) return null
   return row
@@ -322,8 +325,10 @@ export async function purgeDisabledSessions() {
   const off = (["shopper", "brand", "admin"] as const).filter((a) => !sessionsAllowed(a))
   if (!off.length) return 0
   const d = await db()
-  const rows = await d.select().from(sessions).where(inArray(sessions.actor, off))
-  return endDisabledSessions(rows)
+  const all = await d.select().from(sessions).where(inArray(sessions.actor, off))
+  // v3: real sign-ins are not demo sessions and survive the demo flags being off.
+  const real = await realSessionIds(all.map((r) => r.id))
+  return endDisabledSessions(all.filter((r) => !real.has(r.id)))
 }
 
 export function logSessionProblem(e: unknown) {
