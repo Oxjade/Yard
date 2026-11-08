@@ -111,7 +111,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={cn("relative rounded-full px-3 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150", !solid && "text-float", active ? "text-ink" : "text-ink/70 hover:text-ink")}
+                  className={cn("relative rounded-full px-2 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150 2xl:px-3", !solid && "text-float", active ? "text-ink" : "text-ink/70 hover:text-ink")}
                 >
                   {item.label}
                   {active ? <motion.span layoutId="nav-dot" className="absolute bottom-0 left-1/2 size-1 -translate-x-1/2 rounded-full bg-purple shadow-[0_0_0_2px_rgba(8,8,8,0.6)]" transition={{ type: "spring", stiffness: 500, damping: 40 }} /> : null}

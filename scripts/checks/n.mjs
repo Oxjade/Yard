@@ -10,12 +10,12 @@ export default async function n({ base }) {
   const root = process.cwd()
   const src = (p) => readFileSync(path.join(root, p), "utf8")
 
-  // §7.1: the six header links, in the owner's order.
+  // §7.1: the header links, in the owner's order (Shop and Categories kept, as the owner asked on 8 Nov).
   const site = src("src/config/site.ts")
   const nav = [...site.slice(site.indexOf("marketNav"), site.indexOf("browseLinks")).matchAll(/label: "([^"]+)"/g)].map((m) => m[1])
-  add(nav.join(",") === "Discover,Brands,Charts,Around,Drops,Following", "header links: Discover, Brands, Charts, Around, Drops, Following", nav.join(", "))
+  add(nav.join(",") === "Discover,Brands,Shop,Categories,Charts,Around,Drops,Following", "header links: Discover, Brands, Shop, Categories, Charts, Around, Drops, Following", nav.join(", "))
   const browse = [...site.slice(site.indexOf("browseLinks")).matchAll(/label: "([^"]+)"/g)].map((m) => m[1])
-  add(browse.join(",") === "Charts,Around,Drops,Brands,Shop,Categories", "Explore opens on Browse: Charts first", browse.join(", "))
+  add(browse.join(",") === "Shop,Charts,Around,Drops,Brands,Categories", "Explore opens on Browse: Shop first, then Charts", browse.join(", "))
 
   // §7.2: clearance tokens, used instead of magic offsets.
   const css = src("src/app/globals.css")

@@ -17,12 +17,14 @@ export const site = {
 export type NavItem = { href: string; label: string }
 
 /**
- * The desktop header's links (§7.1, the owner's list). Shop and Categories live in the search
- * overlay's Browse row, the footer and Discover instead, so the header fits at 1024 px.
+ * The desktop header's links (§7.1). Shop and Categories stay in the header, as the owner asked;
+ * they are also first in the search overlay's Browse row and in the footer.
  */
 export const marketNav: NavItem[] = [
   { href: "/", label: "Discover" },
   { href: "/brands", label: "Brands" },
+  { href: "/shop", label: "Shop" },
+  { href: "/categories", label: "Categories" },
   { href: "/charts", label: "Charts" },
   { href: "/around", label: "Around" },
   { href: "/drops", label: "Drops" },
@@ -34,10 +36,10 @@ export const marketNav: NavItem[] = [
  * opens on, so Charts and Drops are two taps from anywhere.
  */
 export const browseLinks: NavItem[] = [
+  { href: "/shop", label: "Shop" },
   { href: "/charts", label: "Charts" },
   { href: "/around", label: "Around" },
   { href: "/drops", label: "Drops" },
   { href: "/brands", label: "Brands" },
-  { href: "/shop", label: "Shop" },
   { href: "/categories", label: "Categories" },
 ]
