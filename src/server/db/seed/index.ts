@@ -25,11 +25,13 @@ import social from "./social"
 import inbox from "./inbox"
 import safety from "./safety"
 import charts from "./charts"
+import catalog from "../../catalog/seed"
+import dropsSeed from "../../drops/seed"
 
 export type { SeedContext, SeedModule } from "./types"
 
 /** The run order (§1.5). `around` runs before `shipping` (Lagos Static's pickup point). */
-export const seedModules: SeedModule[] = [people, brands, orders, around, shipping, delivery, social, inbox, safety, charts]
+export const seedModules: SeedModule[] = [people, brands, catalog, dropsSeed, orders, around, shipping, delivery, social, inbox, safety, charts]
 
 const SEED_DAY_KEY = "seed:day"
 

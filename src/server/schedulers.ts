@@ -23,6 +23,15 @@ const features: Record<string, () => Promise<FeatureModule>> = {
   social: () => import("./social"),
   shipping: () => import("./shipping"),
   media: () => import("./media"),
+  auth: () => import("./auth"),
+  catalog: () => import("./catalog"),
+  payments: () => import("./payments"),
+  orders: () => import("./orders"),
+  ledger: () => import("./ledger"),
+  email: () => import("./email"),
+  drops: () => import("./drops"),
+  follows: () => import("./follows"),
+  search: () => import("./search"),
 }
 
 /** F1's own hourly purge: event log > 24 h, expired sessions and OAuth states, expired buckets. */
@@ -93,6 +102,30 @@ export function startSchedulers() {
     await runFeatureJob("social", "syncDue")
   })
   every(11 * MIN, HOUR, () => runFeatureJob("shipping", "checkLate"))
+  // Backend v3. All local database work and in-process timers: no paid service is called
+  // unless a live provider key (Paystack, email) is configured.
+  every(17 * MIN, HOUR, async () => {
+    await runFeatureJob("auth", "processErasures")
+    await runFeatureJob("auth", "purgeAuthState")
+  })
+  every(1 * MIN, MIN, async () => {
+    await runFeatureJob("catalog", "publishScheduled")
+    await runFeatureJob("catalog", "sweepExpiredHolds")
+  })
+  every(4 * MIN, 5 * MIN, () => runFeatureJob("payments", "expireCheckouts"))
+  every(6 * MIN, 15 * MIN, () => runFeatureJob("payments", "retryRefunds"))
+  every(8 * MIN, 30 * MIN, () => runFeatureJob("payments", "reconcileTransfers"))
+  every(untilUtcMidnight() + 10 * MIN, untilUtcMidnight, () => runFeatureJob("payments", "purgeStaleCarts"))
+  every(13 * MIN, HOUR, () => runFeatureJob("orders", "hourly"))
+  every(untilUtcMidnight() + 30 * MIN, untilUtcMidnight, async () => {
+    await runFeatureJob("ledger", "releaseReserves")
+    await runFeatureJob("ledger", "reconcileDaily")
+  })
+  every(1 * MIN, MIN, () => runFeatureJob("email", "deliver"))
+  every(1 * MIN, MIN, () => runFeatureJob("drops", "tick"))
+  every(19 * MIN, HOUR, () => runFeatureJob("follows", "watchPrices"))
+  every(2 * MIN, 10 * MIN, () => runFeatureJob("search", "ensureIndex"))
+  every(untilUtcMidnight() + 20 * MIN, untilUtcMidnight, () => runFeatureJob("search", "reindex"))
 }
 
 /** For the selftest and db-check: run one job now. */
