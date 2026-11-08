@@ -249,7 +249,7 @@ async function watchersOf(userIds: string[]): Promise<Map<string, Watcher>> {
 }
 
 /** Tells one user about a price drop or restock: in-app (if their preference allows) and email (enqueueEmail applies preferences). */
-async function tell(w: Watcher, kind: "price_drop" | "back_in_stock", p: { productId: string; title: string; slug: string | null; brandName: string | null; price?: string; was?: string; variant?: string | null }, dedupe: string, inApp: boolean) {
+async function tell(w: Watcher, kind: "price_drop" | "back_in_stock", p: { productId: string; title: string; slug: string | null; brandName: string | null; price?: string; was?: string; variant?: string | null; image?: string | null }, dedupe: string, inApp: boolean) {
   const href = p.slug ? `/products/${p.slug}` : "/wishlist"
   if (inApp) {
     await notifyEngagement(
@@ -264,7 +264,7 @@ async function tell(w: Watcher, kind: "price_drop" | "back_in_stock", p: { produ
     template: kind,
     to: w.email,
     dedupeKey: `${kind}:${dedupe}:${w.userId}`,
-    vars: kind === "price_drop" ? { name: w.name, product: p.title, brand: p.brandName ?? "", price: p.price ?? "", was: p.was ?? "", url: href } : { name: w.name, product: p.title, brand: p.brandName ?? "", variant: p.variant ?? "", url: href },
+    vars: { ...(kind === "price_drop" ? { name: w.name, product: p.title, brand: p.brandName ?? "", price: p.price ?? "", was: p.was ?? "", url: href } : { name: w.name, product: p.title, brand: p.brandName ?? "", variant: p.variant ?? "", url: href }), ...(p.image ? { image: p.image } : {}) },
   })
 }
 
@@ -310,7 +310,7 @@ export async function watchPrices() {
         const ws = await watchersOf(holders.map((h) => h.userId))
         const prefs = await getPreferencesMany([...ws.keys()])
         const ix = indexed.get(productId)
-        const meta = { productId, title: ix?.title ?? now.title, slug: ix?.slug ?? sampleProductDoc(productId)?.slug ?? null, brandName: ix?.brandName ?? null }
+        const meta = { productId, title: ix?.title ?? now.title, slug: ix?.slug ?? sampleProductDoc(productId)?.slug ?? null, brandName: ix?.brandName ?? null, image: ix?.image ?? null }
         for (const w of ws.values()) {
           const pr = prefs.get(w.userId)!
           if (dropped) await tell(w, "price_drop", { ...meta, price: money(now.min, now.currency), was: money(prev!.minPriceMinor, prev!.currency) }, `${productId}:${now.min}`, pr.inApp[inAppPref("wishlist.price_drop")!])
@@ -343,7 +343,7 @@ export async function watchPrices() {
           .returning({ id: backInStockRequests.id })
         if (!claimed || !w) return
         const row = ix.get(r.productId)
-        await tell(w, "back_in_stock", { productId: r.productId, title: row?.title ?? v.title, slug: row?.slug ?? sampleProductDoc(r.productId)?.slug ?? null, brandName: row?.brandName ?? null, variant: v.variantLabel }, `variant:${r.id}`, prefs.get(w.userId)!.inApp.back_in_stock)
+        await tell(w, "back_in_stock", { productId: r.productId, title: row?.title ?? v.title, slug: row?.slug ?? sampleProductDoc(r.productId)?.slug ?? null, brandName: row?.brandName ?? null, variant: v.variantLabel, image: row?.image ?? v.imagePath ?? null }, `variant:${r.id}`, prefs.get(w.userId)!.inApp.back_in_stock)
         variantRestocks++
       })
     }

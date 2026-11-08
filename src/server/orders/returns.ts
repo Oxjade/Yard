@@ -10,6 +10,7 @@ import { restockLines } from "./cancel"
 import type { returnReceiveBody } from "./contracts"
 import { addEvent, announce, committedRefunds, emailCustomer, linesOf, orderUrl, lockOrder, setMerchantStatus, syncFulfilment, SYSTEM, updateState, type OrderActor } from "./core"
 import { DISPUTE_OPEN_REFUND, issueRefund, money } from "./refunds"
+import { emailBrandOwners } from "./brand-email"
 
 export type ReturnRow = typeof orderReturns.$inferSelect
 
@@ -98,6 +99,8 @@ export async function requestReturn(
   await updateState(tx, order.id, { returnStatus: "requested" })
   await setMerchantStatus(tx, order.id, "refund_requested")
   await addEvent(tx, order.id, "return.requested", input.actor, { returnId: id, reason: input.reason, units: picked.reduce((s, p) => s + p.qty, 0) })
+  await emailCustomer(tx, order.customerId, "return_update", { reference: order.reference, status: "requested", url: orderUrl(order.id) }, `return-requested:${id}`)
+  await emailBrandOwners(tx, order.brandId, "return_requested", { reference: order.reference, reason: input.reason, units: picked.reduce((s, p) => s + p.qty, 0), ...(input.note.trim() ? { note: input.note.trim().slice(0, 300) } : {}), url: `/studio/orders/${order.id}` }, `return-requested-brand:${id}`)
   await announce(order, "return")
   return { returnId: id, duplicate: false }
 }
@@ -248,6 +251,7 @@ export async function expireStaleReturns(now = Date.now(), only?: string[]) {
       await updateState(tx, s.orderRefId, { returnStatus: "expired" })
       await restoreMerchantStatus(tx, s.orderRefId, locked.state.fulfilmentStatus)
       await addEvent(tx, s.orderRefId, "return.expired", SYSTEM, { returnId: s.id })
+      await emailCustomer(tx, locked.order.customerId, "return_update", { reference: locked.order.reference, status: "expired", url: orderUrl(locked.order.id) }, `return-expired:${s.id}`)
       await announce(locked.order, "return")
       expired++
     })

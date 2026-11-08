@@ -7,6 +7,7 @@ import { enqueueEmail } from "../email"
 import { inAppPref, notifyEngagement, type EngagementTemplate } from "../email/inapp"
 import { getPreferencesMany } from "../email/preferences"
 import { log } from "../log"
+import { mediaSrc } from "../media"
 import { closeEntries, expireWindows, runDraw, type DrawOutcome } from "./draw"
 import { sweepExpiredClaims } from "./limits"
 
@@ -49,6 +50,8 @@ function when(at: Date, timeZone: string) {
  */
 async function fanout(drop: DropRow, userIds: string[], n: { template: EngagementTemplate; key: string; vars: Record<string, string | number>; email?: { template: string; vars: Record<string, string | number> } }) {
   const href = `/drops/${drop.slug}`
+  // The drop's image for the email hero: a /media path as is, a media id as its Yard URL.
+  const image = drop.image ? (drop.image.startsWith("/") ? drop.image : mediaSrc(drop.image)) : null
   for (let i = 0; i < userIds.length; i += CHUNK) {
     const batch = await people(userIds.slice(i, i + CHUNK))
     const prefs = await getPreferencesMany(batch.map((p) => p.id))
@@ -56,7 +59,7 @@ async function fanout(drop: DropRow, userIds: string[], n: { template: Engagemen
     await withTx(async (tx) => {
       for (const p of batch) {
         if (!pref || prefs.get(p.id)?.inApp[pref] !== false) await notifyEngagement({ kind: "shopper", id: p.id }, { key: `${n.key}:${drop.id}`, template: n.template, vars: n.vars, href })
-        if (n.email) await enqueueEmail(tx, { template: n.email.template, to: p.email, vars: { name: p.name, url: href, ...n.email.vars }, dedupeKey: `${n.key}:${drop.id}:${p.id}` })
+        if (n.email) await enqueueEmail(tx, { template: n.email.template, to: p.email, vars: { name: p.name, url: href, ...(image ? { image } : {}), ...n.email.vars }, dedupeKey: `${n.key}:${drop.id}:${p.id}` })
       }
     })
   }
@@ -87,7 +90,9 @@ export async function announceDraw(out: NonNullable<DrawOutcome>) {
   for (const w of out.winners) byEnd.set(w.windowEndsAt.getTime(), [...(byEnd.get(w.windowEndsAt.getTime()) ?? []), w.userId])
   for (const [end, ids] of byEnd) {
     const until = when(new Date(end), b.timeZone).replace(/^on /, "")
-    await fanout(drop, ids, { template: "drop.draw_won", key: "drop_won", vars: { drop: drop.name, until }, email: { template: "drop_draw_won", vars: { drop: drop.name, until } } })
+    // Drawn before release: the window opens at release, so the email says when.
+    const opens: Record<string, string> = drop.startsAt.getTime() > Date.now() ? { opens: when(drop.startsAt, b.timeZone).replace(/^on /, "") } : {}
+    await fanout(drop, ids, { template: "drop.draw_won", key: "drop_won", vars: { drop: drop.name, until }, email: { template: "drop_draw_won", vars: { drop: drop.name, until, ...opens } } })
   }
   await fanout(drop, out.waitlisted, { template: "drop.draw_lost", key: "drop_lost", vars: { drop: drop.name }, email: { template: "drop_draw_lost", vars: { drop: drop.name } } })
   await withTx(() => notifyEngagement({ kind: "brand", id: drop.brandId }, { key: `drop_drawn:${drop.id}`, template: "drop.draw_closed_for_brand", vars: { drop: drop.name, winners: out.winners.length, entries: out.entries }, href: "/studio" }))

@@ -296,7 +296,7 @@ export async function indexedProducts(productIds: string[]) {
   if (!productIds.length) return []
   const d = await db()
   return d
-    .select({ productId: searchProducts.productId, brandId: searchProducts.brandId, brandName: searchProducts.brandName, title: searchProducts.title, slug: searchProducts.slug, variantIds: searchProducts.variantIds, visible: searchProducts.visible, priceMinor: searchProducts.priceMinor, currency: searchProducts.currency, available: searchProducts.available })
+    .select({ productId: searchProducts.productId, brandId: searchProducts.brandId, brandName: searchProducts.brandName, title: searchProducts.title, slug: searchProducts.slug, variantIds: searchProducts.variantIds, visible: searchProducts.visible, priceMinor: searchProducts.priceMinor, currency: searchProducts.currency, available: searchProducts.available, image: searchProducts.image })
     .from(searchProducts)
     .where(inArray(searchProducts.productId, productIds))
 }

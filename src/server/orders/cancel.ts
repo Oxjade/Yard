@@ -6,8 +6,8 @@ import type { Tx } from "../db"
 import { orderEvents, orderLines, orderRefunds } from "../db/schema/orders-v3"
 import { conflict, notFound, rule } from "../http/errors"
 import { log } from "../log"
-import { addEvent, announce, committedRefunds, deriveFulfilment, linesOf, lockOrder, setMerchantStatus, shipmentEventsFor, SYSTEM, updateState, type OrderActor, type OrderLineRow, type OrderRefRow } from "./core"
-import { issueRefund } from "./refunds"
+import { addEvent, announce, brandName, committedRefunds, deriveFulfilment, emailCustomer, linesOf, lockOrder, orderUrl, setMerchantStatus, shipmentEventsFor, SYSTEM, updateState, type OrderActor, type OrderLineRow, type OrderRefRow } from "./core"
+import { issueRefund, money } from "./refunds"
 
 const CANCELLABLE_MERCHANT = new Set(["pending_payment", "paid", "processing"])
 const CAPTURED = new Set(["paid", "partially_refunded"])
@@ -67,6 +67,7 @@ export async function cancelOrder(tx: Tx, input: CancelInput) {
   await addEvent(tx, order.id, "order.cancelled", input.actor, { by, paid: CAPTURED.has(state.paymentStatus), restock: input.restock })
 
   let refundId: string | null = null
+  let refundMinor = 0
   if (CAPTURED.has(state.paymentStatus)) {
     const remaining = state.totalMinor - (await committedRefunds(tx, order.id))
     if (remaining > 0) {
@@ -74,6 +75,7 @@ export async function cancelOrder(tx: Tx, input: CancelInput) {
       if (k) {
         const r = await issueRefund(tx, { orderRefId: order.id, amountMinor: remaining, reason: "Order cancelled before dispatch", kind: "cancellation", idempotencyKey: k, actor: input.actor })
         refundId = r.refund.id
+        refundMinor = remaining
       }
     }
     if (input.restock) await restockLines(tx, order, await linesOf(tx, order.id), null, "Order cancelled")
@@ -91,6 +93,7 @@ export async function cancelOrder(tx: Tx, input: CancelInput) {
       meta: { paid: CAPTURED.has(state.paymentStatus), refundId, restock: input.restock },
     })
   }
+  await emailCustomer(tx, order.customerId, "order_cancelled", { reference: order.reference, brand: await brandName(tx, order.brandId), by, reason: input.reason.slice(0, 200), charged: CAPTURED.has(state.paymentStatus) ? 1 : 0, ...(refundId && refundMinor > 0 ? { amount: money(refundMinor, state.currency) } : {}), url: orderUrl(order.id) }, `order-cancelled:${order.id}`)
   await announce(order, "cancelled")
   return { orderId: order.id, alreadyCancelled: false, refundId }
 }

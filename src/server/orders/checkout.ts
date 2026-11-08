@@ -13,6 +13,7 @@ import { log } from "../log"
 import { computeEstimate, estimateValues } from "../shipping/orders"
 import { addEvent, announce, assertAmbientTx, brandName, customerEmail, orderUrl, setMerchantStatus, updateState } from "./core"
 import { refundCancelledPaidOrder } from "./cancel"
+import { receiptItemsJson } from "./receipt-email"
 import { money } from "./refunds"
 
 /* ---------- Contract input shapes (as written in the v3 brief) ---------- */
@@ -181,7 +182,7 @@ export async function markCheckoutPaid(tx: Tx, input: { checkoutId: string; paym
       await enqueueEmail(tx, {
         template: "order_confirmation",
         to: who.email,
-        vars: { name: who.name, url: newlyPaid.length === 1 ? orderUrl(newlyPaid[0].id) : orderUrl(), reference: newlyPaid[0].reference.replace(/-\d+$/, ""), orders: newlyPaid.length, brands: brands.join(", "), total: money(total, newlyPaid[0].currency), totalMinor: total, currency: newlyPaid[0].currency },
+        vars: { name: who.name, url: newlyPaid.length === 1 ? orderUrl(newlyPaid[0].id) : orderUrl(), reference: newlyPaid[0].reference.replace(/-\d+$/, ""), orders: newlyPaid.length, brands: brands.join(", "), total: money(total, newlyPaid[0].currency), totalMinor: total, currency: newlyPaid[0].currency, items: await receiptItemsJson(tx, newlyPaid, states.find((st) => st.orderRefId === newlyPaid[0].id)?.shipTo) },
         dedupeKey: `order-confirmation:${input.checkoutId}`,
       })
     }
