@@ -57,7 +57,7 @@ export type PayoutAccountDto = {
   cooldownUntil: string | null
 }
 
-export type StatementEntryDto = { id: string; at: string; kind: string; memo: string | null; account: string; direction: "debit" | "credit"; amountMinor: number; signedMinor: number; currency: string; orderId: string | null; payoutId: string | null; refundId: string | null }
+export type StatementEntryDto = { id: string; transactionId: string; at: string; kind: string; memo: string | null; account: string; direction: "debit" | "credit"; amountMinor: number; signedMinor: number; currency: string; orderId: string | null; payoutId: string | null; refundId: string | null }
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
 
@@ -188,12 +188,15 @@ export async function brandPayoutSummary(brandId: string, brandCurrency: string)
 }
 
 /** The journal lines on one owner's accounts (a brand's statement, or the platform's), newest first. */
-export async function statement(filter: { ownerKind: "brand" | "platform"; ownerId: string; currency?: string; accountKind?: string; before?: Date; limit?: number }): Promise<StatementEntryDto[]> {
+export async function statement(filter: { ownerKind: "brand" | "platform"; ownerId: string; currency?: string; accountKind?: string; before?: Date | string; limit?: number }): Promise<StatementEntryDto[]> {
   const d = await db()
   const where: SQL[] = [eq(ledgerAccounts.ownerKind, filter.ownerKind), eq(ledgerAccounts.ownerId, filter.ownerId)]
   if (filter.currency) where.push(eq(ledgerAccounts.currency, filter.currency))
   if (filter.accountKind) where.push(eq(ledgerAccounts.kind, filter.accountKind))
-  if (filter.before) where.push(lt(ledgerEntries.createdAt, filter.before))
+  // Every line of one transaction shares its timestamp, so the cursor is an entry id compared on
+  // (created_at, id), the same order the page is sorted in. A Date cursor is kept for callers that pass a time.
+  if (typeof filter.before === "string") where.push(sql`(${ledgerEntries.createdAt}, ${ledgerEntries.id}) < (select e2.created_at, e2.id from ledger_entries e2 where e2.id = ${filter.before})`)
+  else if (filter.before) where.push(lt(ledgerEntries.createdAt, filter.before))
   const rows = await d
     .select({ e: ledgerEntries, a: ledgerAccounts, t: ledgerTransactions })
     .from(ledgerEntries)
@@ -204,6 +207,7 @@ export async function statement(filter: { ownerKind: "brand" | "platform"; owner
     .limit(Math.min(filter.limit ?? 50, 200))
   return rows.map(({ e, a, t }) => ({
     id: e.id,
+    transactionId: e.transactionId,
     at: e.createdAt.toISOString(),
     kind: t.kind,
     memo: t.memo,

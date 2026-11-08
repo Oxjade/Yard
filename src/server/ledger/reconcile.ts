@@ -102,12 +102,14 @@ export async function runReconciliation(opts: { triggeredBy?: string; now?: Date
           }
           return m
         }
+        // Transfers the provider reports failed / reversed after a success (CHECKOUT marks a reversed transfer 'failed').
+        const providerUnpaidTransfers = new Set(providerEvents.filter((e) => e.kind === "transfer" && (e.status === "failed" || e.status === "reversed")).map((e) => e.ref))
         const providerCharges = sumBy("charge")
         const providerRefunds = sumBy("refund")
         const providerTransfers = sumBy("transfer")
 
         // What the ledger moved through provider_clearing, by business id.
-        const clearing = async (kind: "payment_captured" | "refund" | "payout_paid", col: AnyPgColumn, ids?: string[], window?: { from: Date; to: Date }) => {
+        const clearing = async (kind: "payment_captured" | "refund" | "payout_paid" | "payout_reversed", col: AnyPgColumn, ids?: string[], window?: { from: Date; to: Date }) => {
           const conds = [eq(ledgerTransactions.kind, kind), eq(ledgerAccounts.kind, "provider_clearing")]
           if (ids) conds.push(inArray(col, ids.length ? ids : ["__none__"]))
           if (window) conds.push(gte(ledgerTransactions.createdAt, window.from), lt(ledgerTransactions.createdAt, window.to))
@@ -133,9 +135,14 @@ export async function runReconciliation(opts: { triggeredBy?: string; now?: Date
           }
           // Ledger → provider: every posting in the window has a provider event (any time in the fetched range).
           const posted = await clearing(kind, col, undefined, { from, to: settledTo })
+          // A paid payout the bank later returned: the ledger reversed it (payout_reversed), the provider says failed. Settled both sides.
+          const reversed = label === "transfer" && posted.size ? await clearing("payout_reversed", ledgerTransactions.payoutId, [...posted.keys()]) : new Map<string, { amount: number; currency: string }>()
           for (const [ref, l] of posted) {
             checked++
-            if (!provider.has(ref)) items.push({ kind: "missing_at_provider", ref, currency: l.currency, ledgerMinor: l.amount, facts: { event: label } })
+            if (provider.has(ref)) continue
+            const rev = reversed.get(ref)
+            if (rev && rev.amount === l.amount && providerUnpaidTransfers.has(ref)) continue
+            items.push({ kind: "missing_at_provider", ref, currency: l.currency, ledgerMinor: l.amount, facts: { event: label } })
           }
         }
         await compare("charge", providerCharges, "payment_captured", ledgerTransactions.paymentId)

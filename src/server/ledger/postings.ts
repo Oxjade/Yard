@@ -1,5 +1,5 @@
 import "server-only"
-import { and, count, eq, gt, isNull, lte } from "drizzle-orm"
+import { and, count, eq, gt, inArray, isNull, lte } from "drizzle-orm"
 import { withTx, type Executor, type Tx } from "../db"
 import { brands } from "../db/schema"
 import { ledgerBrandSettings, ledgerOrderMoney, ledgerTransactions } from "../db/schema/ledger"
@@ -188,12 +188,13 @@ export async function postOrderCompleted(tx: Tx, input: { orderId: string; brand
 }
 
 /** Job: releases reserves whose hold period has passed (reserve → available), 200 orders per run, one transaction each. */
-export async function releaseDueReserves(now = new Date()): Promise<{ released: number }> {
+export async function releaseDueReserves(now = new Date(), only?: string[]): Promise<{ released: number }> {
+  if (only && !only.length) return { released: 0 }
   const due = await withTx(async (tx) =>
     tx
       .select({ orderId: ledgerOrderMoney.orderId })
       .from(ledgerOrderMoney)
-      .where(and(gt(ledgerOrderMoney.reserveMinor, 0), isNull(ledgerOrderMoney.reserveReleasedAt), lte(ledgerOrderMoney.reserveReleaseAt, now)))
+      .where(and(gt(ledgerOrderMoney.reserveMinor, 0), isNull(ledgerOrderMoney.reserveReleasedAt), lte(ledgerOrderMoney.reserveReleaseAt, now), only ? inArray(ledgerOrderMoney.orderId, only) : undefined))
       .limit(200),
   )
   let released = 0

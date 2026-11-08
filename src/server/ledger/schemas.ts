@@ -6,6 +6,10 @@ const currency = z.string().regex(/^[A-Z]{3}$/, { error: "Use a 3-letter currenc
 const minor = z.number().int({ error: "Use a whole amount in minor units." }).positive({ error: "Use an amount above zero." }).max(Number.MAX_SAFE_INTEGER)
 const idemKey = z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, { error: "Send an idempotency key (8–80 letters, digits, - or _)." })
 const before = z.iso.datetime({ error: "Use an ISO timestamp." }).transform((s) => new Date(s)).optional()
+/** Journal paging: the `nextBefore` a previous page returned (an entry id: exact even when lines share a timestamp), or an ISO time. */
+const entryCursor = z
+  .union([z.string().regex(/^len_[A-Za-z0-9_-]{4,40}$/), z.iso.datetime().transform((s) => new Date(s))], { error: "Use the nextBefore cursor or an ISO timestamp." })
+  .optional()
 const limit = z.coerce.number().int().min(1).max(200).optional()
 
 export const requestPayoutBody = z.strictObject({ amountMinor: minor, currency: currency.optional(), idempotencyKey: idemKey })
@@ -19,7 +23,7 @@ export const payoutAccountBody = z.strictObject({
   accountNumber: z.string().regex(/^[0-9]{6,20}$/, { error: "Use the account number, digits only." }),
 })
 
-export const statementQuery = z.strictObject({ currency: currency.optional(), account: z.enum(["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold"]).optional(), before, limit })
+export const statementQuery = z.strictObject({ currency: currency.optional(), account: z.enum(["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold"]).optional(), before: entryCursor, limit })
 
 export const adminPayoutsQuery = z.strictObject({
   status: z.array(z.enum(["requested", "awaiting_second_approval", "approved", "sending", "processing", "paid", "failed", "rejected", "cancelled"])).optional(),
@@ -44,7 +48,7 @@ export const ledgerQuery = z.strictObject({
   brandId: safeId().optional(),
   currency: currency.optional(),
   account: z.enum(["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold", "platform_commission", "platform_adjustments", "provider_clearing"]).optional(),
-  before: z.iso.datetime().transform((s) => new Date(s)).optional(),
+  before: entryCursor,
   limit,
 })
 

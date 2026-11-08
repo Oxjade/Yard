@@ -15,5 +15,5 @@ export const GET = route({ auth: "admin", permission: "any_admin", query: ledger
     before: query.before,
     limit: query.limit,
   })
-  return { entries, nextBefore: entries.length ? entries[entries.length - 1].at : null }
+  return { entries, nextBefore: entries.length ? entries[entries.length - 1].id : null }
 })
