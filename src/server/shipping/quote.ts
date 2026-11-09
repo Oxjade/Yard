@@ -2,7 +2,6 @@ import "server-only"
 import { countries, countryCodes, currencies, type CountryCode, type CurrencyCode } from "@/config/markets"
 import type { EstimateResponse, QuoteGroupDto, QuoteOptionDto } from "@/lib/api/contracts/shipping"
 import { cities, fold } from "@/lib/around/gazetteer"
-import { brandById } from "@/lib/data/brands"
 import { productById } from "@/lib/data/products"
 import type { Product } from "@/lib/data/types"
 import { countryTimeZone, zonedTimeToUtc } from "@/lib/data/zones"
@@ -11,6 +10,7 @@ import { dateIn, isBusinessDay, localHHMM, makeCalendar, WEEKDAYS } from "@/lib/
 import { estimateDelivery, groupHandling } from "@/lib/shipping/estimate"
 import type { Calendar } from "@/lib/shipping/types"
 import { brandListed } from "../auth/dal"
+import { publicProduct } from "../catalog/public"
 import { badRequest, notConfigured, notFound } from "../http/errors"
 import { hmacB64url, safeEqual } from "../security/crypto"
 import { keys } from "../security/keys"
@@ -50,12 +50,12 @@ export async function calendarsFor(s: BrandShipping, dest: string): Promise<{ H:
 export type PricedLine = { product: Product; variantId: string; qty: number }
 
 /** The lines' static products (one brand), checked: field paths match the request body. */
-export function resolveLines(lines: { productId: string; variantId?: string; qty: number }[], field: string): { brandId: string; lines: PricedLine[] } {
+export function resolveLines(lines: { productId: string; variantId?: string; qty: number }[], field: string, live?: Map<string, Product>): { brandId: string; lines: PricedLine[] } {
   const fields: Record<string, string> = {}
   const out: PricedLine[] = []
   const brandIds = new Set<string>()
   lines.forEach((l, j) => {
-    const p = productById.get(l.productId)
+    const p = productById.get(l.productId) ?? live?.get(l.productId)
     if (!p || p.status === "draft" || p.status === "archived") {
       fields[`${field}.${j}.productId`] = "That piece isn't on Yard."
       return
@@ -171,9 +171,21 @@ const brandDto = (s: BrandShipping) => ({
 
 /* ---------- GET /api/shipping/estimate ---------- */
 
+/**
+ * A product only the live catalogue knows (made in Studio): the fields the estimate reads, from
+ * the public read, so its page gets the same delivery estimate as a sample piece. Null when it
+ * isn't public.
+ */
+async function liveProduct(slugOrId: string): Promise<Product | null> {
+  const live = await publicProduct(slugOrId).catch(() => null)
+  if (!live) return null
+  const l = live.product
+  return { id: l.id, brandId: l.brandId, price: l.priceMinor, currency: l.currency, processingDays: l.processingDays ?? undefined, dropId: l.dropId ?? undefined, status: "published", variants: l.variants.map((v) => ({ id: v.id })) } as unknown as Product
+}
+
 export async function productEstimate(q: { product: string; to: string; city?: string; qty?: number; cur?: string; release?: string }): Promise<EstimateResponse> {
-  const p = productById.get(q.product)
-  if (!p || p.status === "draft" || p.status === "archived" || !brandById.has(p.brandId)) throw notFound()
+  const p = productById.get(q.product) ?? (await liveProduct(q.product))
+  if (!p || p.status === "draft" || p.status === "archived") throw notFound()
   if (!isCountry(q.to)) throw badRequest({ to: "Choose one of Yard's markets." })
   const currency: CurrencyCode = q.cur && isCurrency(q.cur) ? q.cur : (countries[q.to].currency as CurrencyCode)
   const now = Date.now()
@@ -245,8 +257,14 @@ export async function quoteGroups(body: { to: string; city?: string; currency: s
   const now = Date.now()
   const exp = now + QUOTE_TTL_MS
   const seen = new Set<string>()
+  // Pieces only the live catalogue knows (made in Studio) are read from it, so their bag and checkout get quotes too.
+  const live = new Map<string, Product>()
+  for (const id of [...new Set(body.groups.flatMap((g) => g.lines.map((l) => l.productId)).filter((id) => !productById.has(id)))].slice(0, 100)) {
+    const p = await liveProduct(id)
+    if (p) live.set(id, p)
+  }
   const resolved = body.groups.map((g, i) => {
-    const r = resolveLines(g.lines, `groups.${i}.lines`)
+    const r = resolveLines(g.lines, `groups.${i}.lines`, live)
     // The brand comes from the lines; a brandId that disagrees is refused, not trusted.
     if (r.brandId !== g.brandId) throw badRequest({ [`groups.${i}.brandId`]: "These pieces belong to another brand." })
     if (seen.has(r.brandId)) throw badRequest({ [`groups.${i}.brandId`]: "This brand is already in another group." })

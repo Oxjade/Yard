@@ -259,7 +259,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             </span>
           </div>
 
-          <h1 className="mt-6 font-display text-display-lg text-balance text-ink lg:text-display-md">{product.name}</h1>
+          <h1 className="mt-6 font-display text-display-lg text-balance break-words text-ink lg:text-display-md">{product.name}</h1>
 
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
             <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} size="lg" />

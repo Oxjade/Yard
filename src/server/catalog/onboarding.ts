@@ -9,6 +9,7 @@ import { brandMembers, brands, mediaAssets } from "../db/schema"
 import { brandOnboardings, catalogCategories, catalogImages, catalogOptions, catalogProducts, catalogVariants, ONBOARDING_STEPS, storefrontDrafts } from "../db/schema/catalog"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
+import { createStarterShipping } from "../shipping/profile"
 import { onboardingStepSchemas, type OnboardingStep } from "./contracts"
 import { catalogChanged } from "./hooks"
 import { moveStock } from "./stock"
@@ -263,7 +264,7 @@ export async function submitOnboarding(actor: ShopperActor, body: { revision: nu
       await tx.insert(catalogOptions).values({ id: newId("po"), productId, name: "Size", values: product.sizes.map((s) => ({ value: s.label })), position: 0 })
       for (const [position, s] of product.sizes.entries()) {
         const variantId = newId("pv")
-        await tx.insert(catalogVariants).values({ id: variantId, productId, brandId, sku: `${brand.handle}-${slugify(product.name).slice(0, 20)}-${slugify(s.label)}`.toUpperCase(), options: { Size: s.label }, position })
+        await tx.insert(catalogVariants).values({ id: variantId, productId, brandId, sku: onboardingSku(brand.handle, product.name, s.label), options: { Size: s.label }, position })
         if (s.stock > 0) await moveStock(tx, { variantId, brandId, delta: s.stock, reason: "adjustment", note: "Opening stock (onboarding)", actor: { kind: "shopper", id: actor.userId } })
       }
       if (product.images.length)
@@ -288,6 +289,12 @@ export async function listSubmittedOnboardings(limit = 50) {
   return { onboardings: rows.map(dto) }
 }
 
+/** A first-product SKU within Studio's 40-character limit (a longer one would block every later save in the editor); the size stays whole. */
+function onboardingSku(handle: string, name: string, size: string) {
+  const tail = `-${slugify(size)}`
+  return `${`${handle}-${slugify(name).slice(0, 20)}`.slice(0, 40 - tail.length).replace(/-+$/, "")}${tail}`.toUpperCase()
+}
+
 /**
  * Admin decision on a submitted application (for the admin area's route; brands.restrict
  * permission suggested). Approve: the brand becomes verified, so its products and storefront can
@@ -304,7 +311,12 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       .update(brandOnboardings)
       .set({ status: input.decision === "approve" ? "approved" : "rejected", reviewedAt: now, reviewedBy: actor.userId, reviewNote: input.note?.slice(0, 1000) ?? null, updatedAt: now, revision: row.revision + 1 })
       .where(eq(brandOnboardings.id, row.id))
-    if (input.decision === "approve") await tx.update(brands).set({ reviewStatus: "verified" }).where(eq(brands.id, row.brandId))
+    if (input.decision === "approve") {
+      const [brand] = await tx.update(brands).set({ reviewStatus: "verified" }).where(eq(brands.id, row.brandId)).returning({ id: brands.id, country: brands.country, city: brands.city, currency: brands.currency })
+      // Approved brands can sell at once: they start with shipping from their application (editable in Studio).
+      const payments = (row.data as { payments?: { processingMin?: number; processingMax?: number; delivery?: string[] } }).payments
+      if (brand) await createStarterShipping(brand, { handling: [payments?.processingMin ?? 1, payments?.processingMax ?? 3], delivery: payments?.delivery ?? ["domestic"] })
+    }
     await writeAudit({
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },
       action: input.decision === "approve" ? "onboarding.approved" : "onboarding.rejected",

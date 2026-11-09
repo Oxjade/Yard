@@ -296,12 +296,18 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   // browser's sample brand, so it never flips from one brand to another (or its storefront link).
   const checking = session.status === "loading"
   const sessionBrand = member ? brandById.get(member.brand.id) : undefined
-  const workspaceBrand = sessionBrand ?? brand
+  // A brand that joined through onboarding isn't in the sample map: the header shows its own name,
+  // mark and storefront, never the sample brand's.
+  const workspaceBrand = useMemo(
+    () => sessionBrand ?? (member ? { ...brand, id: member.brand.id, name: member.brand.name, handle: member.brand.handle, mark: { text: member.brand.name.slice(0, 2).toUpperCase(), style: "condensed" as const } } : brand),
+    [sessionBrand, member, brand],
+  )
   const mismatch = !!sessionBrand && sessionBrand.id !== brand.id
   const demoOn = !!session.demoAuth?.brand
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
-  const notShipped = orders.filter((o) => o.status === "paid" || o.status === "processing").length
+  // The browser's sample orders belong to the sample brand; a brand that isn't in the sample gets no count from them.
+  const notShipped = member && !sessionBrand ? 0 : orders.filter((o) => o.status === "paid" || o.status === "processing").length
   // A real brand's card reads the ledger, the same summary the Payouts page uses. The demo brand
   // keeps the browser sample, so both never disagree on screen.
   const liveBrand = member && !member.demo ? member.brand.id : null
@@ -396,7 +402,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
           { label: "Notifications", href: "/studio/notifications", icon: BellIcon },
           ...(demoOn ? [{ label: "Switch demo account…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
           // Signing out never depends on the demo flag: whoever holds a session can always end it.
-          ...(member ? [{ label: "Sign out of demo account", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
+          ...(member ? [{ label: member.demo ? "Sign out of demo account" : "Sign out", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
           { label: "Back to the marketplace", href: "/", icon: SignOutIcon, separated: true },
         ],
       }}
@@ -428,7 +434,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       }
       account={
         member
-          ? { initials: initialsOf(member.name), name: member.name, caption: `${teamRoleLabels[member.role]}, demo account` }
+          ? { initials: initialsOf(member.name), name: member.name, caption: member.demo ? `${teamRoleLabels[member.role]}, demo account` : teamRoleLabels[member.role] }
           : checking
             ? { initials: "", name: "Brand Studio", caption: "Checking your session" }
             : session.status === "error"

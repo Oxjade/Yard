@@ -1,15 +1,18 @@
 import "server-only"
 import { and, asc, eq, inArray } from "drizzle-orm"
-import { countries, countryCodes, type CountryCode } from "@/config/markets"
+import { countries, countryCodes, freeShippingThresholdUsd, shippingRatesUsd, type CountryCode, type CurrencyCode, type ShippingZone } from "@/config/markets"
 import type { HolidayDto, HolidayRefDto, ShippingProfileBody, StudioShippingDto } from "@/lib/api/contracts/shipping"
 import { countryTimeZone } from "@/lib/data/zones"
+import { convert } from "@/lib/money"
 import { dateIn, isDate, daysBetween } from "@/lib/shipping/calendar"
+import { defaultExpressTransit } from "@/lib/shipping/estimate"
 import type { BrandActor } from "../auth/dal"
 import { assertOwned } from "../auth/owned"
 import { writeAudit } from "../audit"
 import { invalidateMemo, memo } from "../cache"
 import { afterCommit, db, inTransaction, withTx } from "../db"
 import { brandLocations, brands, holidays, shippingClosures, shippingMethods, shippingProfiles, shippingRates, shippingZones } from "../db/schema"
+import { round2 } from "../db/seed/shipping"
 import { badRequest, notFound } from "../http/errors"
 import { newId } from "../ids"
 import { carrierProviders, getProvider, type PickupPoint, type ZoneWithMethods } from "./providers"
@@ -144,6 +147,54 @@ export async function studioShipping(actor: BrandActor): Promise<StudioShippingD
     provider: { id: provider.id, label: provider.label, kind: provider.kind },
     carriers: carrierProviders().map((c) => ({ id: c.id, label: c.label, configured: c.isConfigured() })),
   }
+}
+
+/* ---------- A new brand's starting setup ---------- */
+
+/**
+ * The shipping a brand starts with when Yard approves its application, so its products can be
+ * quoted and bought at once and Studio's Shipping page (and the product editor, which read the
+ * profile) open: origin and handling from the application, Domestic / Regional (when the market
+ * has neighbours) / International zones with standard and express at the platform's rates in the
+ * brand's currency (standard free over the platform threshold), the same shape the seeded brands
+ * have. The zones the applicant chose to deliver to start on; the rest start off. Nothing is
+ * written when the brand already has a profile. Runs inside the caller's transaction.
+ */
+export async function createStarterShipping(brand: { id: string; country: string; city: string; currency: string }, opts: { handling: [number, number]; delivery: string[] }) {
+  const d = await db()
+  const origin = (isCountry(brand.country) ? brand.country : "NG") as CountryCode
+  const cur = brand.currency as CurrencyCode
+  const [inserted] = await d
+    .insert(shippingProfiles)
+    .values({ brandId: brand.id, originCountry: origin, originCity: brand.city, timeZone: countryTimeZone[origin], handlingMin: opts.handling[0], handlingMax: opts.handling[1], cutoffLocal: "14:00", workdays: 31, providerId: "manual", currency: cur, localPickup: false, pickupLocationId: null, updatedBy: null, updatedAt: new Date() })
+    .onConflictDoNothing()
+    .returning({ brandId: shippingProfiles.brandId })
+  if (!inserted) return
+  const regional = countryCodes.filter((c) => c !== origin && countries[c].region === countries[origin].region)
+  const zones: { key: ShippingZone; name: string; countries: string[] }[] = [
+    { key: "domestic", name: "Domestic", countries: [origin] },
+    ...(regional.length ? [{ key: "regional" as const, name: "Regional", countries: regional }] : []),
+    { key: "international", name: "International", countries: ["*"] },
+  ]
+  // At least one zone ships (pickup alone needs a published store, which a new brand doesn't have).
+  const wanted = new Set(opts.delivery.filter((z) => zones.some((x) => x.key === z)))
+  if (!wanted.size) wanted.add("domestic")
+  const threshold = round2(convert(freeShippingThresholdUsd, "USD", cur), cur)
+  for (const [i, z] of zones.entries()) {
+    const zoneId = newId("sz")
+    await d.insert(shippingZones).values({ id: zoneId, brandId: brand.id, name: z.name, kind: z.key, countries: z.countries, enabled: wanted.has(z.key), position: i })
+    const rate = shippingRatesUsd[z.key]
+    const methods = [
+      { service: "standard", label: "Standard", transit: rate.days, rates: [[0, round2(convert(rate.standard, "USD", cur), cur)], [threshold, 0]] },
+      { service: "express", label: "Express", transit: defaultExpressTransit(rate.days), rates: [[0, round2(convert(rate.express, "USD", cur), cur)]] },
+    ]
+    for (const [k, m] of methods.entries()) {
+      const methodId = newId("sm")
+      await d.insert(shippingMethods).values({ id: methodId, zoneId, brandId: brand.id, service: m.service, label: m.label, enabled: true, transitMin: m.transit[0], transitMax: m.transit[1], carrierLabel: null, position: k })
+      await d.insert(shippingRates).values(m.rates.map(([min, amount]) => ({ id: newId("sr"), methodId, minSubtotalMinor: min, amountMinor: amount, currency: cur })))
+    }
+  }
+  afterCommit(() => invalidateShippingCache(brand.id))
 }
 
 /* ---------- Studio: save (PUT replaces every row) ---------- */
