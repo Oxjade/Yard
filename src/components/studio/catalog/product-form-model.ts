@@ -16,6 +16,8 @@ export type FormVariant = {
   reserved: number
   /** On-hand units when the form opened, so a change can be logged as an adjustment. */
   originalStock?: number
+  /** Live server price override in minor units, kept when the form saves. */
+  priceOverrideMinor?: number | null
 }
 
 export type ProductForm = {
@@ -62,7 +64,7 @@ export function fromProduct(p: Product, brand: Brand): ProductForm {
     sizes: sizeOpt ? [...sizeOpt.values] : [],
     hasColours: !!colourOpt,
     colours: colourOpt ? colourOpt.values.map((c) => ({ key: colourKey(), name: c.name, hex: c.hex })) : [],
-    variants: p.variants.map((v) => ({ key: optionsKey(v.options), id: v.id, options: v.options, sku: v.sku, skuAuto: false, stock: String(v.stock), reserved: v.reserved, originalStock: v.stock })),
+    variants: p.variants.map((v) => ({ key: optionsKey(v.options), id: v.id, options: v.options, sku: v.sku, skuAuto: false, stock: String(v.stock), reserved: v.reserved, originalStock: v.stock, priceOverrideMinor: v.priceOverrideMinor })),
     collectionIds: [...p.collectionIds],
     processingMin: String(days[0]),
     processingMax: String(days[1]),

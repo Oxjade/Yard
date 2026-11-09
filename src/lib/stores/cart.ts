@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import { toast } from "sonner"
 import { ApiError, api } from "@/lib/api/client"
 import { variantById } from "@/lib/data/products"
+import { loadLiveProducts } from "@/lib/api/live-catalog"
 
 export type CartLine = {
   productId: string
@@ -109,6 +110,8 @@ export const useCart = create<CartState>()(
           const qty = Math.max(0, Math.min(quantity, MAX_QTY_PER_LINE - (existing?.quantity ?? 0)))
           if (!existing && qty <= 0) return
           if (qty > 0) await api("/api/cart/lines", { body: { variantId, qty } })
+          // A piece only the live catalogue knows: load it so the bag, its count and checkout can show it.
+          if (!variantById.has(variantId)) await loadLiveProducts([productId]).catch(() => 0)
           const lines = existing
             ? get().lines.map((l) => (l.variantId === variantId ? { ...l, quantity: Math.min(MAX_QTY_PER_LINE, l.quantity + qty) } : l))
             : [...get().lines, { productId, variantId, quantity: qty, addedAt: Date.now() }]
@@ -165,20 +168,28 @@ export const useCart = create<CartState>()(
             }
             const remote = await api<ServerCart>("/api/cart", { query: { currency: "USD" } })
             if (mine !== generation) return
+            // Pieces only the live catalogue knows (created in Studio): load them so the bag can show them.
+            const missing = remote.lines.filter((line) => line.productId && !variantById.has(line.variantId)).map((line) => line.productId!)
+            const loaded = missing.length ? await loadLiveProducts(missing).catch(() => 0) : 0
+            if (mine !== generation) return
             const previous = new Map(get().lines.map((line) => [line.variantId, line]))
             const over: string[] = []
             const lines = remote.lines.flatMap((line) => {
               const hit = variantById.get(line.variantId)
-              if (!hit || (line.productId && hit.product.id !== line.productId)) return []
+              if (hit && line.productId && hit.product.id !== line.productId) return []
+              // A line the server holds stays in the bag even if its product couldn't be loaded, so it can be removed.
+              const productId = hit?.product.id ?? line.productId
+              if (!productId) return []
               if (line.qty > MAX_QTY_PER_LINE) over.push(line.variantId)
-              return [{ productId: hit.product.id, variantId: line.variantId, quantity: Math.min(MAX_QTY_PER_LINE, line.qty), addedAt: previous.get(line.variantId)?.addedAt ?? Date.now() }]
+              return [{ productId, variantId: line.variantId, quantity: Math.min(MAX_QTY_PER_LINE, line.qty), addedAt: previous.get(line.variantId)?.addedAt ?? Date.now() }]
             })
             // A merge of two carts can pass the bag's cap: bring the server line down to what the bag shows.
             await Promise.all(over.map((variantId) => api(`/api/cart/lines/${encodeURIComponent(variantId)}`, { method: "PATCH", body: { qty: MAX_QTY_PER_LINE } }).catch(() => undefined)))
             if (mine !== generation) return
             const onServer = new Set(lines.map((l) => l.variantId))
             const unavailable = get().unavailable.filter((l) => !onServer.has(l.variantId))
-            if (!sameLines(get().lines, lines)) set({ lines })
+            // Newly loaded products change how the same lines render, so publish them even when unchanged.
+            if (loaded || !sameLines(get().lines, lines)) set({ lines })
             if (unavailable.length !== get().unavailable.length) set({ unavailable })
           } catch {
             // Keep the persisted cart visible when the server is temporarily unreachable.

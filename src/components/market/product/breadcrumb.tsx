@@ -1,12 +1,13 @@
 import Link from "next/link"
-import type { Brand, Category, Product } from "@/lib/data/types"
+import type { Product } from "@/lib/data/types"
+import { brandHref } from "@/lib/api/catalog-products"
 
 /** Shop / Category / Brand, then the product itself on wider screens. */
-export function ProductBreadcrumb({ product, category, brand }: { product: Product; category: Category; brand: Brand }) {
+export function ProductBreadcrumb({ product, category, brand }: { product: Product; category: Pick<{ slug: string; name: string }, "slug" | "name">; brand: Pick<{ handle: string; name: string }, "handle" | "name"> }) {
   const crumbs = [
     { href: "/shop", label: "Shop" },
     { href: `/categories/${category.slug}`, label: category.name },
-    { href: `/brands/${brand.handle}`, label: brand.name },
+    { href: brandHref(brand.handle), label: brand.name },
   ]
   return (
     <nav aria-label="Breadcrumb">

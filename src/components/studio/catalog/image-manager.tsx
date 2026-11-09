@@ -63,18 +63,23 @@ function compress(file: File, max = 1100, quality = 0.8) {
 
 const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files")
 
+export type UploadedImage = Pick<ImageAsset, "src" | "width" | "height"> & { mediaId: string }
+
 export function ImageManager({
   images,
   onChange,
   error,
   productName,
   library,
+  upload,
 }: {
   images: FormImage[]
   onChange: (update: (prev: FormImage[]) => FormImage[]) => void
   error?: string
   productName: string
   library: ImageAsset[]
+  /** Live server upload: replaces the browser-only compressed copy. */
+  upload?: (file: File) => Promise<UploadedImage>
 }) {
   const input = useRef<HTMLInputElement>(null)
   const objectUrls = useRef(new Set<string>())
@@ -112,13 +117,14 @@ export function ImageManager({
     })
     onChange((prev) => [...prev, ...pending.map((p) => p.item)])
     for (const { file, item } of pending) {
-      compress(file)
+      const work = upload ? upload(file) : compress(file)
+      work
         .then((out) => {
           onChange((prev) => prev.map((im) => (im.key === item.key ? { ...im, ...out, processing: false } : im)))
         })
-        .catch(() => {
+        .catch((cause) => {
           onChange((prev) => prev.filter((im) => im.key !== item.key))
-          setUploadError(`We couldn't read ${file.name}. Try a JPG or PNG.`)
+          setUploadError(cause instanceof Error ? cause.message : `We couldn't upload ${file.name}. Try again.`)
         })
         .finally(() => {
           URL.revokeObjectURL(item.src)
@@ -217,7 +223,7 @@ export function ImageManager({
                 overKey === im.key && dragKey !== im.key && "ring-2 ring-violet",
               )}
             >
-              <Image src={im.src} alt={im.alt || `${name}, photo ${i + 1}`} fill sizes={i === 0 ? "(min-width: 1024px) 360px, 50vw" : "(min-width: 1024px) 170px, (min-width: 640px) 25vw, 50vw"} loading={i === 0 ? "eager" : undefined} className="pointer-events-none object-cover" />
+              <Image src={im.src} alt={im.alt || `${name}, photo ${i + 1}`} fill sizes={i === 0 ? "(min-width: 1024px) 360px, 50vw" : "(min-width: 1024px) 170px, (min-width: 640px) 25vw, 50vw"} loading={i === 0 ? "eager" : undefined} unoptimized={im.src.startsWith("/api/")} className="pointer-events-none object-cover" />
               {im.processing ? (
                 <span className="absolute inset-0 flex items-center justify-center bg-obsidian/50">
                   <Loader2 className="size-5 animate-spin text-ink" aria-label="Preparing photo" />
@@ -257,7 +263,7 @@ export function ImageManager({
           >
             <Upload className="size-5" />
             <span className="text-xs text-ink">Add photos</span>
-            <span className="text-[11px] text-ink-3">{images.length === 0 ? "Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. Kept in this browser until media storage is connected." : "or drop them here"}</span>
+            <span className="text-[11px] text-ink-3">{images.length === 0 ? `Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. ${upload ? "Uploaded to your brand media." : "Kept in this browser until media storage is connected."}` : "or drop them here"}</span>
           </button>
         ) : null}
       </div>
@@ -287,7 +293,7 @@ export function ImageManager({
         taken={new Set(images.map((im) => im.src))}
         slots={left}
         onAdd={(list) => {
-          onChange((prev) => [...prev, ...toFormImages(list.map((im) => ({ ...im, alt: "" })))].slice(0, MAX_IMAGES))
+          onChange((prev) => [...prev, ...toFormImages(list.map((im) => ({ ...im, alt: "", imageId: undefined })))].slice(0, MAX_IMAGES))
           setUploadError(null)
         }}
       />
@@ -347,7 +353,7 @@ function PhotoLibrary({
                     onClick={() => toggle(im.src)}
                     className={cn("relative block aspect-[4/5] w-full overflow-hidden rounded-md bg-surface outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed", used && "opacity-35")}
                   >
-                    <Image src={im.src} alt="" fill sizes="(min-width: 640px) 150px, 30vw" className="object-cover" />
+                    <Image src={im.src} alt="" fill sizes="(min-width: 640px) 150px, 30vw" unoptimized={im.src.startsWith("/api/")} className="object-cover" />
                     {on ? <span aria-hidden className="absolute inset-0 rounded-md border-2 border-purple" /> : null}
                     {on ? <span className="absolute top-1.5 right-1.5 inline-flex size-5 items-center justify-center rounded-full bg-purple text-[11px] text-ink tabular">{order + 1}</span> : null}
                     {used ? <span className="glass absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[10px] text-ink"><Check className="size-3" /> Added</span> : null}

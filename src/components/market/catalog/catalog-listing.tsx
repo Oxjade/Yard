@@ -8,11 +8,14 @@ import { AnimatePresence, motion, useInView } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { countries } from "@/config/markets"
+import { ProductCardSkeleton } from "@/components/feedback/skeletons"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { loadPublicCatalog } from "@/lib/api/catalog-products"
+import { registerLiveProducts } from "@/lib/api/live-catalog"
 import { brandByHandle, categories, categoryBySlug, searchProducts, type ProductSort } from "@/lib/data"
 import { duration, ease, spring } from "@/lib/motion"
 import { useSession } from "@/lib/stores/session"
-import type { CategorySlug } from "@/lib/data/types"
+import type { CategorySlug, Product } from "@/lib/data/types"
 import { CatalogGrid } from "./catalog-grid"
 import { CatalogSearch } from "./catalog-search"
 import {
@@ -42,12 +45,54 @@ const NO_PANEL_FILTERS = { brands: [], min: undefined, max: undefined, sizes: []
  * browser, so changes are written with history.replaceState (which Next keeps in sync with
  * useSearchParams) rather than a router navigation: no server round trip per click.
  */
-export function CatalogListing({ category }: { category?: CategorySlug }) {
+export function CatalogListing({ category, initialProducts, initialComplete = false }: { category?: CategorySlug; initialProducts?: Product[]; initialComplete?: boolean }) {
   const scope: CatalogScope = useMemo(() => ({ category }), [category])
   const pathname = usePathname()
   const params = useSearchParams()
-  const state = useMemo(() => parseCatalogParams(params, scope), [params, scope])
-  const listing = useMemo(() => buildListing(state), [state])
+  // The server renders the first page (initialProducts), so the HTML has products; the rest of the
+  // catalogue loads in the browser unless that page was already all of it.
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(() => initialProducts ?? [])
+  const [catalogLoaded, setCatalogLoaded] = useState(!!initialProducts)
+  /** The whole catalogue is in (counts and facets are final). */
+  const [catalogComplete, setCatalogComplete] = useState(!!initialProducts && initialComplete)
+  const [catalogError, setCatalogError] = useState(false)
+  /** The browser's load has finished (or wasn't needed), so an empty result is final. */
+  const [catalogSettled, setCatalogSettled] = useState(!!initialProducts && initialComplete)
+  const [reloadKey, setReloadKey] = useState(0)
+  const knownBrandHandles = useMemo(() => [...new Set(catalogProducts.flatMap((p) => (p.brandSummary ? [p.brandSummary.handle] : [])))], [catalogProducts])
+  const state = useMemo(() => parseCatalogParams(params, scope, knownBrandHandles), [params, scope, knownBrandHandles])
+  const listing = useMemo(() => buildListing(state, catalogProducts), [state, catalogProducts])
+
+  useEffect(() => {
+    if (initialProducts) registerLiveProducts(initialProducts)
+  }, [initialProducts])
+
+  useEffect(() => {
+    if (catalogComplete) return
+    let active = true
+    loadPublicCatalog()
+      .then((products) => {
+        if (!active) return
+        // Quick add from the grid can then show a live-only piece in the bag without another fetch.
+        registerLiveProducts(products)
+        setCatalogProducts(products)
+        setCatalogComplete(true)
+      })
+      .catch(() => {
+        // With the server's first page on screen, keep showing it rather than an error.
+        if (active && !initialProducts) setCatalogError(true)
+      })
+      .finally(() => {
+        if (!active) return
+        setCatalogLoaded(true)
+        setCatalogSettled(true)
+      })
+    return () => {
+      active = false
+    }
+    // catalogComplete only stops a reload once everything is in; reloadKey retries.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey])
 
   const idBase = useId()
   const hydrated = useHydrated()
@@ -92,7 +137,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   )
 
   const patch = (p: FilterPatch) => apply({ ...state, ...p })
-  const onSearch = useCallback((q: string) => apply({ ...parseCatalogParams(new URLSearchParams(window.location.search), scope), q }), [apply, scope])
+  const onSearch = useCallback((q: string) => apply({ ...parseCatalogParams(new URLSearchParams(window.location.search), scope, knownBrandHandles), q }), [apply, knownBrandHandles, scope])
   const clearAll = () => apply({ ...emptyState(scope), sort: state.sort })
   const clearPanel = () => patch(NO_PANEL_FILTERS)
 
@@ -139,7 +184,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   if (state.q) chips.push({ key: "q", label: `“${state.q}”`, without: { q: "" } })
   if (state.category && !scope.category) chips.push({ key: "category", label: categoryBySlug.get(state.category)!.name, without: { category: undefined, sub: undefined } })
   if (state.sub) chips.push({ key: "sub", label: state.sub, without: { sub: undefined } })
-  for (const h of state.brands) chips.push({ key: `b-${h}`, label: brandByHandle.get(h)!.name, without: { brands: state.brands.filter((x) => x !== h) } })
+  for (const h of state.brands) chips.push({ key: `b-${h}`, label: brandByHandle.get(h)?.name ?? catalogProducts.find((p) => p.brandSummary?.handle === h)?.brandSummary?.name ?? h, without: { brands: state.brands.filter((x) => x !== h) } })
   if (state.min !== undefined || state.max !== undefined) chips.push({ key: "price", label: priceLabel(state.min, state.max, currency), without: { min: undefined, max: undefined } })
   for (const s of state.sizes) chips.push({ key: `s-${s}`, label: sizeChipLabel(s), without: { sizes: state.sizes.filter((x) => x !== s) } })
   if (state.inStock) chips.push({ key: "stock", label: "In stock", without: { inStock: false } })
@@ -147,7 +192,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
 
   const shown = listing.shown
   const progress = listing.total ? shown / listing.total : 0
-  const empty = listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name) : null
+  const empty = catalogLoaded && catalogSettled && listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name, catalogProducts) : null
 
   return (
     <div ref={rootRef}>
@@ -157,6 +202,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
           value={state.q}
           onCommit={onSearch}
           state={state}
+          products={catalogProducts}
           label={cat ? `Search ${cat.name}` : "Search the shop"}
           placeholder={cat ? `Search ${cat.name.toLowerCase()}` : "Search pieces, brands and materials"}
           className="md:max-w-xl"
@@ -215,7 +261,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
                 </button>
               ) : null}
             </div>
-            <FilterControls state={state} onChange={patch} currency={currency} />
+            <FilterControls state={state} onChange={patch} currency={currency} products={catalogProducts} />
           </div>
         </aside>
 
@@ -223,7 +269,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
           {/* Toolbar */}
           <div ref={resultsRef} className="flex scroll-mt-28 items-center justify-between gap-3">
             <h2 ref={resultsHeadingRef} id={`${idBase}-results`} tabIndex={-1} className="scroll-mt-28 rounded-sm text-sm font-normal text-ink-2 outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-4 focus-visible:ring-offset-obsidian" aria-live="polite">
-              <span className="tabular text-ink">{listing.total}</span> {listing.total === 1 ? "piece" : "pieces"}
+              <span className="tabular text-ink">{catalogComplete ? listing.total : "…"}</span> {listing.total === 1 ? "piece" : "pieces"}
               {listing.total ? (
                 <span className="hidden sm:inline">
                   {" "}
@@ -286,7 +332,29 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
             animate={{ opacity: 1 }}
             transition={{ duration: duration.page, ease: ease.out }}
           >
-            {listing.total ? (
+            {!catalogLoaded || (!listing.total && !catalogSettled) ? (
+              <div role="status" aria-label="Loading pieces" aria-busy="true" className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <ProductCardSkeleton key={i} />
+                ))}
+              </div>
+            ) : catalogError ? (
+              <div role="alert" className="rounded-md border border-line-soft px-4 py-10 text-center">
+                <p className="text-sm text-ink-2">The shop catalogue couldn’t be loaded.</p>
+                <Button
+                  variant="secondary"
+                  className="mt-4"
+                  onClick={() => {
+                    setCatalogLoaded(false)
+                    setCatalogSettled(false)
+                    setCatalogError(false)
+                    setReloadKey((key) => key + 1)
+                  }}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : listing.total ? (
               <CatalogGrid cycles={listing.cycles} revealFrom={revealFrom} />
             ) : empty ? (
               <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center md:py-20">
@@ -383,6 +451,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
           setSheetOpen(false)
         }}
         currency={currency}
+        products={catalogProducts}
       />
     </div>
   )
@@ -398,9 +467,9 @@ const pieces = (n: number) => `${n} ${n === 1 ? "piece" : "pieces"}`
  * that matches elsewhere widens to all of them (or, on a category page, opens the whole shop);
  * otherwise the search, or everything, is cleared.
  */
-function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string): EmptyAdvice {
+function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string, products?: Product[]): EmptyAdvice {
   if (panelCount) {
-    const without = filterProducts({ ...state, ...NO_PANEL_FILTERS }).length
+    const without = filterProducts({ ...state, ...NO_PANEL_FILTERS }, undefined, products).length
     if (without > 0) {
       const priced = state.min !== undefined || state.max !== undefined
       return {
@@ -413,7 +482,7 @@ function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: numb
   if (state.q && !panelCount) {
     const narrowed = Boolean(state.sub || (state.category && !scope.category))
     if (narrowed) {
-      const wider = filterProducts({ ...state, category: scope.category, sub: undefined }).length
+      const wider = filterProducts({ ...state, category: scope.category, sub: undefined }, undefined, products).length
       if (wider > 0) {
         const narrowedTo = state.sub ?? categoryBySlug.get(state.category!)!.name
         return {
@@ -424,7 +493,7 @@ function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: numb
       }
     }
     if (scope.category && categoryName) {
-      const elsewhere = searchProducts({ q: state.q }).length
+      const elsewhere = products ? filterProducts({ ...state, category: undefined, sub: undefined }, undefined, products).length : searchProducts({ q: state.q }).length
       if (elsewhere > 0) {
         return {
           title: `No ${categoryName.toLowerCase()} matches “${state.q}”`,

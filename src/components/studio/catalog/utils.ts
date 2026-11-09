@@ -123,7 +123,7 @@ export function brandPhotos(brand: Brand, products: Product[], collections: Coll
   const seen = new Set<string>()
   const out: ImageAsset[] = []
   const add = (im: ImageAsset | undefined) => {
-    if (!im || seen.has(im.src) || im.src.startsWith("blob:")) return
+    if (!im || !im.src || seen.has(im.src) || im.src.startsWith("blob:")) return
     seen.add(im.src)
     out.push(im)
   }

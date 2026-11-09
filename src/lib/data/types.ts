@@ -11,6 +11,10 @@ export type ImageAsset = {
   alt: string
   width: number
   height: number
+  /** The catalogue image row, when this asset is one (live server photos only). */
+  imageId?: string
+  /** The uploaded media behind the asset, when it has one (live server photos only). */
+  mediaId?: string
 }
 
 export type CategorySlug =
@@ -138,12 +142,16 @@ export type Variant = {
   options: Record<string, string>
   stock: number
   reserved: number
+  /** Live server price override in minor units, when the variant has its own price. */
+  priceOverrideMinor?: number | null
 }
 
 export type Product = {
   id: string
   slug: string
   brandId: string
+  /** Live catalogue identity for brands that aren't in the local sample directory. */
+  brandSummary?: Pick<Brand, "id" | "handle" | "name" | "verified" | "city" | "country">
   name: string
   description: string
   details: string[]

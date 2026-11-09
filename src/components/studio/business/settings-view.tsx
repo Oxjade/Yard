@@ -12,6 +12,13 @@ import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { countries, type CountryCode } from "@/config/markets"
+import { Bone } from "@/components/feedback/skeletons"
+import { api, ApiError } from "@/lib/api/client"
+import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
+import { errorMessage } from "@/lib/api/errors"
+import { useApi } from "@/lib/api/use-api"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { toast } from "sonner"
 import { categories } from "@/lib/data/catalog"
 import type { CategorySlug } from "@/lib/data/types"
 import { useAsyncAction } from "@/hooks/use-async-action"
@@ -20,7 +27,7 @@ import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "./model"
 import { FeesPanel, ReturnsSection, ShippingSection, TeamSection } from "./settings-more"
-import { settingsDescription, accountNumberError, accountNumberLabel, banksFor, checkHandle, countryOptions, currencyOptions, providerLabel, providersFor, scheduleLabel } from "./settings-model"
+import { settingsDescription, accountNumberError, accountNumberLabel, bankCodeFor, banksFor, checkHandle, countryOptions, currencyOptions, providerLabel, providersFor, scheduleLabel } from "./settings-model"
 import { SaveRow } from "./settings-parts"
 import { useFocusReturn } from "./shared"
 import { SettingsSectionsSkeleton } from "./skeletons"
@@ -311,9 +318,13 @@ function PayoutsSection() {
   const onFile = accountOnFile()
   const mismatch = a.country !== profile.country
   const save = useAsyncAction((next: PayoutSchedule) => saveSchedule(next))
+  // A real brand's account lives on the server (the ledger pays into it); the demo brand keeps the browser sample.
+  const member = useServerSession((s) => s.brand)
+  const live = !!member && !member.demo
 
   return (
     <Panel id="payouts" title="Payouts" description="Where your earnings go and how often. We never see or store the full account number in Studio.">
+      {live && member ? <LivePayoutAccount brandId={member.brand.id} role={member.role} fallbackCountry={profile.country} /> : <>
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-md border border-line-soft bg-surface/60 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
         <span className="inline-flex size-9 items-center justify-center rounded-full border border-line"><Landmark className="size-4 text-ink-2" aria-hidden /></span>
         <div className="min-w-0">
@@ -349,6 +360,7 @@ function PayoutsSection() {
           </motion.div>
         )}
       </AnimatePresence>
+      </>}
 
       <form
         noValidate
@@ -376,7 +388,94 @@ function PayoutsSection() {
   )
 }
 
-function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => void }) {
+const needsReauth = (e: unknown) => e instanceof ApiError && e.status === 403 && e.fields?.reauth === "required"
+
+function countryFor(currency: string | undefined, fallback: CountryCode): CountryCode {
+  if (!currency || countries[fallback].currency === currency) return fallback
+  const hit = (Object.keys(countries) as CountryCode[]).find((c) => countries[c].currency === currency)
+  return hit ?? fallback
+}
+
+type LiveAccountSave = { currency: string; onSaved: () => Promise<unknown> }
+
+/** A real brand's payout account: read from and saved to the ledger (PUT /api/studio/payouts/account). */
+function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string; role: string; fallbackCountry: CountryCode }) {
+  const financeView = role === "owner" || role === "admin" || role === "finance"
+  const owner = role === "owner"
+  // The same cache entry as the Payouts page and the sidebar card, so a save here updates both.
+  const summary = useApi<PayoutSummaryDto>(financeView ? `studio.payouts:${brandId}` : null, () => api<PayoutSummaryDto>("/api/studio/payouts"), { revalidateOnFocus: true })
+  const [changing, setChanging] = useState(false)
+
+  if (!financeView) return <p className="text-sm text-ink-2">Only the owner, admins and finance can see where payouts go.</p>
+  if (!summary.data) {
+    return summary.error ? (
+      <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger/5 px-3 py-2.5 text-sm text-danger">
+        <span>{errorMessage(summary.error, "Couldn't load your payout account.")}</span>
+        <Button type="button" size="sm" variant="secondary" onClick={() => void summary.revalidate()}>Try again</Button>
+      </div>
+    ) : (
+      <span aria-hidden className="grid gap-1.5 rounded-md border border-line-soft p-3">
+        <Bone className="h-3.5 w-56" />
+        <Bone className="h-3 w-40" />
+      </span>
+    )
+  }
+
+  const a = summary.data.account
+  const country = a && a.country in countries ? (a.country as CountryCode) : countryFor(summary.data.currency, fallbackCountry)
+  const cooldownUntil = summary.data.rules.cooldownUntil
+
+  return (
+    <>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-md border border-line-soft bg-surface/60 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+        <span className="inline-flex size-9 items-center justify-center rounded-full border border-line"><Landmark className="size-4 text-ink-2" aria-hidden /></span>
+        <div className="min-w-0">
+          {a ? (
+            <>
+              <p className="text-sm text-ink">
+                {a.bankName} <span className="tabular">•••• {a.accountLast4}</span>
+              </p>
+              <p className="mt-0.5 truncate text-xs text-ink-2">{a.accountName}, {a.country in countries ? countries[a.country as CountryCode].name : a.country}, paid in {a.currency}</p>
+              {cooldownUntil ? <p className="mt-1 text-xs text-ink-3">Changed recently. Payout requests reopen after {new Date(cooldownUntil).toLocaleString("en-GB")}.</p> : null}
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-ink">No payout account yet</p>
+              <p className="mt-0.5 text-xs text-ink-2">Add the bank account your earnings should go to. Payout requests open once it&apos;s saved.</p>
+            </>
+          )}
+        </div>
+        {a ? (
+          a.recipientProvider === "stub" ? (
+            <StatusBadge tone="muted" className="col-start-2 w-fit sm:col-start-auto">Test account</StatusBadge>
+          ) : a.verified ? (
+            <span className="col-start-2 inline-flex items-center gap-1.5 text-xs text-ink-2 sm:col-start-auto"><ShieldCheck className="size-3.5 text-violet" aria-hidden /> Verified</span>
+          ) : (
+            <StatusBadge tone="attention" className="col-start-2 w-fit sm:col-start-auto">Pending verification</StatusBadge>
+          )
+        ) : null}
+      </div>
+
+      <AnimatePresence initial={false} mode="wait">
+        {changing ? (
+          <motion.div key="form" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
+            <AccountForm country={country} onDone={() => setChanging(false)} live={{ currency: countries[country].currency, onSaved: () => summary.revalidate() }} />
+          </motion.div>
+        ) : owner ? (
+          <motion.div key="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: duration.hover }} className="mt-3">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setChanging(true)}>
+              {a ? "Change payout account" : "Add an account"}
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.p key="note" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-3 text-xs text-ink-3">Only the brand owner can add or change the payout account.</motion.p>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
+function AccountForm({ country, onDone, live }: { country: CountryCode; onDone: () => void; live?: LiveAccountSave }) {
   const saveAccount = useBrandSettings((s) => s.saveAccount)
   const onFile = accountOnFile()
   const providers = providersFor(country)
@@ -387,6 +486,10 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
   const [holder, setHolder] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // Live: the server asks for the password again before a bank change (403 with fields.reauth).
+  const [reauth, setReauth] = useState(false)
+  const [password, setPassword] = useState("")
+  const [liveError, setLiveError] = useState<string | null>(null)
   // Escape returns to Review change; after saving, the form closes and the payouts section takes focus.
   const confirmFocus = useFocusReturn(() => document.querySelector<HTMLElement>("#payouts button"))
 
@@ -411,9 +514,33 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
 
   // The panel above shows the new account as pending once it's saved: that is the confirmation.
   const change = useAsyncAction(
-    () => saveAccount({ provider, country, bankName: bank.trim(), accountName: holder.trim().toUpperCase(), last4: clean.slice(-4).toUpperCase() }),
+    async () => {
+      if (!live) return saveAccount({ provider, country, bankName: bank.trim(), accountName: holder.trim().toUpperCase(), last4: clean.slice(-4).toUpperCase() })
+      if (reauth && !password) throw new Error("password")
+      setLiveError(null)
+      if (reauth) await api("/api/auth/reauth", { query: { as: "brand" }, body: { password } })
+      await api("/api/studio/payouts/account", {
+        method: "PUT",
+        body: { country, currency: live.currency, bankCode: bankCodeFor(country, bank.trim()), bankName: bank.trim(), accountName: holder.trim(), accountNumber: clean },
+      })
+      await live.onSaved()
+    },
     {
+      errorToast: !live,
+      onError: (cause) => {
+        if (!live) return
+        if (cause instanceof Error && cause.message === "password") {
+          setLiveError("Enter your Studio password to confirm.")
+          document.getElementById("account-password")?.focus()
+        } else if (needsReauth(cause)) {
+          setReauth(true)
+          setPassword("")
+          setLiveError("Confirm it's you: enter your Studio password, then save again.")
+          window.setTimeout(() => document.getElementById("account-password")?.focus(), 0)
+        } else setLiveError(errorMessage(cause, "The account wasn't saved. Check your connection and try again."))
+      },
       onSuccess: () => {
+        if (live) toast.success("Payout account saved", { description: "Payout requests pause for 24 hours after a change, which protects you if someone else made it." })
         setConfirming(false)
         onDone()
       },
@@ -424,10 +551,10 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
     <form noValidate onSubmit={submit} className="mt-4 grid gap-4 rounded-md border border-line-soft p-4">
       <div>
         <p className="text-sm text-ink">New payout account in {countries[country].name}</p>
-        <p className="mt-0.5 text-xs text-ink-2">{providers.length > 1 ? "Paid out through a local payment provider to your bank account." : "Paid out by bank transfer to an account in your name or your company's."}</p>
+        <p className="mt-0.5 text-xs text-ink-2">{live ? `Paid out in ${live.currency} by bank transfer to an account in your name or your company's.` : providers.length > 1 ? "Paid out through a local payment provider to your bank account." : "Paid out by bank transfer to an account in your name or your company's."}</p>
       </div>
 
-      {providers.length > 1 ? (
+      {providers.length > 1 && !live ? (
         <fieldset className="grid gap-1.5">
           <legend className="mb-1.5 text-[13px] font-medium text-ink">Provider</legend>
           <Segmented<PayoutProvider> id="account-provider" label="Provider" value={provider} onChange={setProvider} options={providers.map((p) => ({ value: p, label: providerLabel[p] }))} className="sm:w-fit" />
@@ -464,23 +591,42 @@ function AccountForm({ country, onDone }: { country: CountryCode; onDone: () => 
         <Button type="submit" size="sm" variant="secondary">Review change</Button>
       </div>
 
-      <Dialog open={confirming} onOpenChange={setConfirming}>
+      <Dialog
+        open={confirming}
+        onOpenChange={(o) => {
+          if (change.pending) return
+          setConfirming(o)
+          if (!o) setLiveError(null)
+        }}
+      >
         <DialogContent className="sm:max-w-[440px]" {...confirmFocus}>
           <DialogHeader>
-            <DialogTitle>Change your payout account?</DialogTitle>
+            <DialogTitle>{live ? "Save this payout account?" : "Change your payout account?"}</DialogTitle>
+            {live ? (
+              <DialogDescription>
+                The payment provider checks the account with your bank, then payouts go to it. Payout requests pause for 24 hours after a change, which protects you if someone else made it.
+              </DialogDescription>
+            ) : (
             <DialogDescription>
               The new account is saved here in Settings as pending. Once the backend is connected, {providerLabel[provider]} confirms the name and payouts move to it, after a 48-hour pause that protects you if someone else made the change. Until then payouts keep going to {onFile.bankName} <span className="tabular">•••• {onFile.last4}</span>.
             </DialogDescription>
+            )}
           </DialogHeader>
           <dl className="grid gap-2 rounded-lg border border-white/10 p-3 text-sm">
-            <div className="flex justify-between gap-4"><dt className="text-ink-2">Provider</dt><dd className="text-ink">{providerLabel[provider]}</dd></div>
+            {live ? null : <div className="flex justify-between gap-4"><dt className="text-ink-2">Provider</dt><dd className="text-ink">{providerLabel[provider]}</dd></div>}
             <div className="flex justify-between gap-4"><dt className="text-ink-2">Bank</dt><dd className="text-right text-ink">{bank}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-2">Account</dt><dd className="text-ink tabular">•••• {clean.slice(-4).toUpperCase()}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-ink-2">Name</dt><dd className="text-right text-ink">{holder.trim().toUpperCase()}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-ink-2">Name</dt><dd className="text-right text-ink">{live ? holder.trim() : holder.trim().toUpperCase()}</dd></div>
           </dl>
+          {live && reauth ? (
+            <Field id="account-password" label="Your password">
+              <Input {...control("account-password")} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} autoComplete="current-password" />
+            </Field>
+          ) : null}
+          {liveError ? <p role="alert" className="text-sm text-danger">{liveError}</p> : null}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setConfirming(false)} disabled={change.pending}>Back</Button>
-            <Button type="button" variant="primary" onClick={() => void change.run()} loading={change.pending}>Save as pending</Button>
+            <Button type="button" variant="primary" onClick={() => void change.run()} loading={change.pending}>{live ? "Save account" : "Save as pending"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

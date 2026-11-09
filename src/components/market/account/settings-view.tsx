@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { BellRingingIcon as BellRing, CheckIcon as Check, SignOutIcon as LogOut } from "@phosphor-icons/react"
@@ -14,9 +14,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { countries, currencies } from "@/config/markets"
+import { api } from "@/lib/api/client"
 import { site } from "@/config/site"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession, type NotificationPrefs } from "@/lib/stores/session"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { ReadReceiptsSetting } from "@/components/inbox/read-receipts-setting"
 import { InterestEditor } from "./interest-editor"
 import { YouNav } from "./you-nav"
@@ -176,6 +178,7 @@ function AccountForm() {
 /** Account, notifications, region, interests and sign-out. */
 export function SettingsView() {
   const router = useRouter()
+  const shopperId = useServerSession((s) => s.shopper?.id ?? null)
   const prefs = useSession((s) => s.notifications)
   const setNotifications = useSession((s) => s.setNotifications)
   const signOut = useSession((s) => s.signOut)
@@ -186,10 +189,48 @@ export function SettingsView() {
   const anyChannel = prefs.email || prefs.push
   const [lastChange, setLastChange] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!shopperId) return
+    let active = true
+    void api<{ preferences: { email: Record<string, boolean>; inApp: Record<string, boolean> } }>("/api/notifications/preferences?as=shopper")
+      .then(({ preferences }) => {
+        if (!active) return
+        setNotifications({
+          newProducts: preferences.inApp.brand_news,
+          drops: preferences.inApp.drops,
+          collections: preferences.inApp.brand_news,
+          promotions: preferences.inApp.price_drops,
+          // Email reads on while any topic still sends email; a topic switched off doesn't turn the whole channel off.
+          email: Object.values(preferences.email).some(Boolean),
+        })
+      })
+      .catch(() => {
+        if (active) toast.error("Notification settings couldn’t be loaded.")
+      })
+    return () => {
+      active = false
+    }
+  }, [shopperId, setNotifications])
+
   // Each switch saves at once (the session store persists); the note under the list says so.
   function change(key: keyof NotificationPrefs, label: string, value: boolean) {
-    setNotifications({ [key]: value })
-    setLastChange(`${label} ${value ? "on" : "off"}. Saved.`)
+    // Signed in, New products and Collections are one server topic (brand_news), so they switch together.
+    const shared = !!shopperId && (key === "newProducts" || key === "collections")
+    setNotifications(shared ? { newProducts: value, collections: value } : { [key]: value })
+    setLastChange(shared ? `New products and collections ${value ? "on" : "off"}. Saved.` : `${label} ${value ? "on" : "off"}. Saved.`)
+    if (!shopperId) return
+
+    const category = key === "drops" ? "drops" : key === "promotions" ? "price_drops" : key === "newProducts" || key === "collections" ? "brand_news" : null
+    // A topic writes its email flag only while Email is on: switching a topic on must not restart
+    // email (or lift an unsubscribe) the shopper turned off.
+    const topicPatch = category ? { inApp: { [category]: value }, ...(prefs.email ? { email: { [category]: value } } : {}) } : null
+    // Email on sends the topics that are on; off stops them all.
+    const emailPatch =
+      key === "email"
+        ? { email: value ? { drops: prefs.drops, price_drops: prefs.promotions, back_in_stock: true, brand_news: prefs.newProducts || prefs.collections } : { drops: false, price_drops: false, back_in_stock: false, brand_news: false } }
+        : null
+    const patch = topicPatch ?? emailPatch
+    if (patch) void api("/api/notifications/preferences?as=shopper", { method: "PATCH", body: patch }).catch(() => toast.error("Notification settings weren’t saved. Try again."))
   }
 
   return (

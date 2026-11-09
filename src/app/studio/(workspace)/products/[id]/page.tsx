@@ -17,8 +17,8 @@ export const instant = false
  */
 export const ensureStatic = "navigation"
 
-/** Products created in this browser get ids like p_<slug>; they live in the local Studio store. */
-const LOCAL_PRODUCT_ID = /^p_[a-z0-9_]+$/
+/** Local ids are p_<slug>; live catalogue ids are p_<base36 timestamp><base64url random>. */
+const PRODUCT_ID = /^p_[A-Za-z0-9_-]+$/
 
 export function generateStaticParams() {
   return products.filter((p) => p.brandId === STUDIO_BRAND_ID).map((p) => ({ id: p.id }))
@@ -31,7 +31,9 @@ export async function generateMetadata({ params }: PageProps<"/studio/products/[
 
 export default async function EditProductPage({ params }: PageProps<"/studio/products/[id]">) {
   const { id } = await params
-  const shipped = productById.get(id)
-  if (shipped ? shipped.brandId !== STUDIO_BRAND_ID : !LOCAL_PRODUCT_ID.test(id)) notFound()
+  // Only the id's shape is checked here. Whether the product is this brand's is the editor's call:
+  // a live brand's DB products can reuse sample ids, and both editors show their own "not in your
+  // catalogue" state.
+  if (!PRODUCT_ID.test(id)) notFound()
   return <ProductEditorRoute id={id} />
 }

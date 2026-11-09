@@ -58,6 +58,8 @@ export function ServerOrderDetail({ id }: { id: string }) {
   const [returnLines, setReturnLines] = useState<Record<string, number>>({})
   const [returnBusy, setReturnBusy] = useState(false)
   const [returnError, setReturnError] = useState<string | null>(null)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -121,6 +123,23 @@ export function ServerOrderDetail({ id }: { id: string }) {
     }
   }
 
+  async function cancelOrder() {
+    if (!order?.actions.canCancel || cancelBusy) return
+    if (!window.confirm("Cancel this order? This can’t be undone.")) return
+    setCancelBusy(true)
+    setCancelError(null)
+    try {
+      const response = await api<{ order: OrderDetailDto }>(`/api/orders/${encodeURIComponent(id)}/cancel`, {
+        body: { reason: "Cancelled by the shopper", idempotencyKey: `cancel_${crypto.randomUUID()}` },
+      })
+      setOrder(response.order)
+    } catch (cause) {
+      setCancelError(cause instanceof ApiError ? cause.message : "Couldn't cancel this order.")
+    } finally {
+      setCancelBusy(false)
+    }
+  }
+
   return (
     <>
       <Link href="/you/orders" className="text-sm text-ink-2 transition-colors hover:text-ink">← All orders</Link>
@@ -157,6 +176,12 @@ export function ServerOrderDetail({ id }: { id: string }) {
               <div className="mt-2 flex justify-between gap-4 border-t border-line-soft pt-3 text-base"><dt>Total</dt><dd className="tabular">{formatOrderMoney(order.totalMinor, order.currency as CurrencyCode)}</dd></div>
             </dl>
             <p className="mt-3 text-xs leading-relaxed text-ink-3">{order.states.payment === "failed" ? "Payment didn’t go through; nothing was charged." : order.states.payment === "pending" ? "Payment confirmation is pending." : `Payment status: ${order.states.payment.replace(/_/g, " ")}.`}</p>
+            {order.actions.canCancel ? (
+              <div className="mt-5 border-t border-line-soft pt-4">
+                {cancelError ? <p role="alert" className="mb-3 text-sm text-danger">{cancelError}</p> : null}
+                <Button variant="secondary" onClick={cancelOrder} loading={cancelBusy} disabled={cancelBusy} className="w-full">Cancel order</Button>
+              </div>
+            ) : null}
           </section>
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Delivery address">
             <h2 className="text-base font-medium text-ink">Ship to</h2>

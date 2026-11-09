@@ -59,6 +59,22 @@ export const banksFor: Partial<Record<CountryCode, string[]>> = {
   KE: ["Co-operative Bank", "Equity Bank", "KCB Bank", "NCBA", "Stanbic Bank Kenya"],
 }
 
+/**
+ * Paystack bank codes for the Nigerian banks above (the NUBAN/CBN codes). Other countries send a
+ * code made from the bank's name: the test recipient accepts it, and a live provider rejects it
+ * with "couldn't confirm this account" rather than paying anyone else.
+ */
+const bankCodes: Partial<Record<CountryCode, Record<string, string>>> = {
+  NG: { "Access Bank": "044", "First Bank": "011", GTBank: "058", Kuda: "50211", Moniepoint: "50515", OPay: "999992", "Providus Bank": "101", "Stanbic IBTC": "221", UBA: "033", "Wema Bank": "035", "Zenith Bank": "057" },
+}
+
+export function bankCodeFor(country: CountryCode, bankName: string) {
+  const known = bankCodes[country]?.[bankName]
+  if (known) return known
+  const code = bankName.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "")
+  return code.length >= 2 ? code : `${code}XX`.slice(0, 2)
+}
+
 export function accountNumberError(raw: string, country: CountryCode) {
   const v = raw.replace(/\s/g, "")
   if (!v) return "Enter the account number."

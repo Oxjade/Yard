@@ -6,8 +6,12 @@ import { ProductView } from "@/components/market/product/product-view"
 import { Rail } from "@/components/market/rail"
 import { SectionHeader } from "@/components/market/section-header"
 import { ViewBeacon } from "@/components/signals/view-beacon"
-import { brandById, categoryBySlug, drops, getProduct, products, productsOf, similarProducts } from "@/lib/data"
+import { brandHref, catalogBrand, toCatalogProduct } from "@/lib/api/catalog-products"
+import { brandById, categories, categoryBySlug, drops, products } from "@/lib/data"
+import type { Brand } from "@/lib/data/types"
 import { initialDropPhase } from "@/lib/drops"
+import { listPublicProducts, publicProduct } from "@/server/catalog/public"
+import { HttpError } from "@/server/http/errors"
 
 /**
  * The slug is checked before anything renders so an unknown product answers with a real 404.
@@ -15,46 +19,53 @@ import { initialDropPhase } from "@/lib/drops"
  * The page is ad-free: both rails below the buy box are organic.
  */
 export const instant = false
-/**
- * The whole route is static output, so an address that wasn't prerendered waits for its own
- * render (where the check runs before anything is sent) instead of being served the shared
- * fallback shell with a 200 first.
- */
-export const ensureStatic = "navigation"
+// No ensureStatic: the product and its rails are read live from the catalogue (connection()),
+// which 'navigation' forbids; the layout's blocking 404 check covers unknown slugs.
 
 export function generateStaticParams() {
   return products.filter((p) => p.status === "published").map((p) => ({ slug: p.slug }))
 }
 
-const findProduct = (slug: string) => {
-  const product = getProduct(slug)
-  return product && product.status === "published" ? product : undefined
+async function findProduct(slug: string) {
+  try {
+    const result = await publicProduct(slug)
+    const product = toCatalogProduct(result.product)
+    return { product, brandSummary: product.brandSummary! }
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) return null
+    throw error
+  }
 }
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const { slug } = await params
-  const product = findProduct(slug)
-  if (!product) return { title: "Product not found" }
-  const brand = brandById.get(product.brandId)!
+  const result = await findProduct(slug)
+  if (!result) return { title: "Product not found" }
+  const { product, brandSummary } = result
   return {
-    title: `${product.name} by ${brand.name}`,
+    title: `${product.name} by ${brandSummary.name}`,
     description: product.description,
-    openGraph: { images: [{ url: product.images[0].src, alt: product.images[0].alt }] },
+    ...(product.images[0] ? { openGraph: { images: [{ url: product.images[0].src, alt: product.images[0].alt }] } } : {}),
   }
 }
 
 export default async function ProductPage({ params }: PageProps<"/products/[slug]">) {
   const { slug } = await params
-  const product = findProduct(slug)
-  if (!product) notFound()
+  const result = await findProduct(slug)
+  if (!result) notFound()
+  const { product } = result
 
-  const brand = brandById.get(product.brandId)!
-  const category = categoryBySlug.get(product.category)!
+  const brand: Brand = catalogBrand(product, brandById.get(product.brandId))
+  const category = categoryBySlug.get(product.category) ?? { slug: product.category, name: categories.find((c) => c.slug === product.category)?.name ?? product.category }
   const productDrop = product.dropId ? drops.find((d) => d.id === product.dropId) : undefined
   // Only a release that hasn't ended is worth a module; the client re-checks the phase on its own clock.
   const drop = productDrop && ["upcoming", "live"].includes(initialDropPhase(productDrop)) ? productDrop : null
-  const moreFromBrand = productsOf(brand.id).filter((p) => p.id !== product.id).slice(0, 8)
-  const similar = similarProducts(product, 8)
+  const [brandResults, categoryResults] = await Promise.all([
+    listPublicProducts({ brand: product.brandId, sort: "new", limit: 9, offset: 0 }),
+    listPublicProducts({ category: product.category, sort: "new", limit: 24, offset: 0 }),
+  ])
+  const moreFromBrand = brandResults.products.filter((p) => p.id !== product.id).slice(0, 8).map(toCatalogProduct)
+  const similar = categoryResults.products.filter((p) => p.id !== product.id && p.brandId !== product.brandId).slice(0, 8).map(toCatalogProduct)
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
@@ -65,7 +76,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
         {moreFromBrand.length ? (
           <section aria-labelledby="more-from-title" className="mt-24 md:mt-32">
             <div id="more-from-title">
-              <SectionHeader title={`More from ${brand.name}`} description={brand.tagline} href={`/brands/${brand.handle}`} action="Visit storefront" />
+              <SectionHeader title={`More from ${brand.name}`} description={brand.tagline ?? `Independent pieces from ${brand.name}.`} href={brandHref(brand.handle)} action={brandHref(brand.handle).startsWith("/brands/") ? "Visit storefront" : "See all pieces"} />
             </div>
             <Rail label={`More from ${brand.name}`}>
               {moreFromBrand.map((p) => (

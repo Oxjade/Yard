@@ -5,6 +5,7 @@ import { ClockCounterClockwiseIcon as Recent, MagnifyingGlassIcon as Search, XIc
 import { AnimatePresence, motion } from "motion/react"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import type { Product } from "@/lib/data/types"
 import { searchSuggestions, type CatalogState } from "./catalog-state"
 
 /* ---------- recent searches (this browser only) ---------- */
@@ -58,6 +59,7 @@ export function CatalogSearch({
   placeholder,
   label,
   className,
+  products,
 }: {
   value: string
   onCommit: (q: string) => void
@@ -68,6 +70,7 @@ export function CatalogSearch({
   placeholder: string
   label: string
   className?: string
+  products?: Product[]
 }) {
   const recentKey = recentKeyProp === undefined ? (state ? RECENT_KEY : null) : recentKeyProp
   const id = useId()
@@ -99,7 +102,7 @@ export function CatalogSearch({
   }, [draft, committed, onCommit])
 
   const typed = draft.trim()
-  const suggestions = useMemo(() => (state && typed.length >= 2 ? searchSuggestions(typed, state) : []), [typed, state])
+  const suggestions = useMemo(() => (state && typed.length >= 2 ? searchSuggestions(typed, state, 6, products) : []), [typed, state, products])
   /** Nothing to offer at all: a plain search field, not a combobox. */
   const plain = !state && !recentKey
   const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null

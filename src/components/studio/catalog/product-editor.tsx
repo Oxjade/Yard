@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { ApiError, api } from "@/lib/api/client"
+import type { StudioProductCreateBody, StudioProductDto, StudioProductResponse, StudioProductStatusAction } from "@/lib/api/contracts/catalog"
 import type { StudioShippingDto } from "@/lib/api/contracts/shipping"
 import { getStudioShipping, STUDIO_SHIPPING_KEY } from "@/lib/api/shipping"
+import { apiUpload } from "@/lib/api/upload"
 import { useApi } from "@/lib/api/use-api"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { useRouter } from "next/navigation"
@@ -25,16 +28,17 @@ import { duration, ease } from "@/lib/motion"
 import { currencies } from "@/config/markets"
 import { site } from "@/config/site"
 import { products as seedProducts } from "@/lib/data"
-import { brandById } from "@/lib/data/brands"
+import { brandById, STUDIO_BRAND_ID } from "@/lib/data/brands"
 import { categories, categoryBySlug } from "@/lib/data/catalog"
-import type { Brand, CategorySlug, Product, Variant } from "@/lib/data/types"
+import type { Brand, CategorySlug, Collection, Drop, Product, Variant } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { useSettingsReady } from "@/components/studio/business/settings-store"
 import { ConfirmDialog, control, Field, inputClass, Panel, Segmented, selectClass } from "./fields"
-import { ImageManager, type FormImage } from "./image-manager"
+import { ImageManager, type FormImage, type UploadedImage } from "./image-manager"
 import { OptionsBuilder } from "./options-builder"
+import { fromStudioCollection, fromStudioProduct, loadStudioCollections, loadStudioProductDtos, studioCollectionsKey } from "./live"
 import { CatalogueNote, Thumb } from "./parts"
 import {
   buildImages,
@@ -59,6 +63,7 @@ import { autoSku, brandPhotos, formatDate, formatDateTime, MAX_TAGS, parseMoney,
 
 /** Products deleted from their own page, so the page doesn't flash "not found" while it navigates away. */
 const deletedHere = new Set<string>()
+const NO_DROPS: Drop[] = []
 
 /** Loads the product once saved data is in, then hands it to the editor. No id = a new product. */
 export function ProductEditorRoute({ id }: { id?: string }) {
@@ -69,7 +74,10 @@ export function ProductEditorRoute({ id }: { id?: string }) {
   const ready = catalogReady && settingsReady
   const brandId = useStudio((s) => s.brandId)
   const product = useStudio((s) => (id ? s.products.find((p) => p.id === id) : undefined))
+  const liveMember = useServerSession((s) => (s.brand && !s.brand.demo ? s.brand.brand : null))
   const brand = brandById.get(brandId)!
+
+  if (liveMember) return <LiveProductEditorRoute id={id} member={liveMember} />
 
   if (!ready) return <ProductEditorSkeleton />
   if (id && !product) {
@@ -92,6 +100,119 @@ export function ProductEditorRoute({ id }: { id?: string }) {
     )
   }
   return <ProductEditor key={id ?? "new"} product={product} brand={brand} />
+}
+
+type LiveMember = { id: string; handle: string; name: string }
+
+/** A Brand for the form from the live session and shipping profile; sample copy only fills the rest. */
+function liveBrand(base: Brand, member: LiveMember, shipping?: StudioShippingDto): Brand {
+  const text = member.name
+    .split(/\s+/)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 3)
+    .toUpperCase()
+  return {
+    ...base,
+    id: member.id,
+    handle: member.handle,
+    name: member.name,
+    mark: { text: text || "ST", style: "grotesk" },
+    cover: { src: "", alt: "", width: 1200, height: 1500 },
+    country: (shipping?.brand.country ?? base.country) as Brand["country"],
+    city: shipping?.profile.originCity ?? base.city,
+    currency: (shipping?.brand.currency ?? base.currency) as Brand["currency"],
+    processingDays: shipping ? [shipping.profile.handlingMin, shipping.profile.handlingMax] : base.processingDays,
+    shipsFrom: (shipping?.brand.country ?? base.shipsFrom) as Brand["country"],
+  }
+}
+
+function LiveProductEditorRoute({ id, member }: { id?: string; member: LiveMember }) {
+  const settingsReady = useSettingsReady()
+  const productsQuery = useApi(`studio.catalog:${member.id}`, loadStudioProductDtos, { keepPrevious: false })
+  const collectionsQuery = useApi(studioCollectionsKey(member.id), loadStudioCollections, { keepPrevious: false })
+  const shippingQuery = useApi<StudioShippingDto>(`${STUDIO_SHIPPING_KEY}:${member.id}`, () => getStudioShipping(), { revalidateOnFocus: false })
+  const productQuery = useApi<StudioProductResponse>(
+    id ? `studio.catalog.product:${member.id}:${id}` : null,
+    () => api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(id!)}`),
+    { keepPrevious: false },
+  )
+  const ready = settingsReady && !productsQuery.isLoading && !collectionsQuery.isLoading && !shippingQuery.isLoading && (!id || !productQuery.isLoading)
+  const failure = productQuery.error ?? shippingQuery.error ?? productsQuery.error ?? collectionsQuery.error
+  const base = brandById.get(STUDIO_BRAND_ID)!
+  const brand = useMemo(() => liveBrand(base, member, shippingQuery.data), [base, member, shippingQuery.data])
+
+  if (!ready) return <ProductEditorSkeleton />
+  if (failure) {
+    return (
+      <div className="grid gap-6">
+        <BackLink />
+        <div className="grid max-w-xl gap-3 rounded-lg border border-line bg-surface p-5">
+          <h1 className="text-lg text-ink">This product couldn&apos;t be loaded</h1>
+          <p className="text-sm text-ink-2">{failure instanceof ApiError ? failure.message : "Check your connection and try again."}</p>
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void productQuery.revalidate()
+                void productsQuery.revalidate()
+                void collectionsQuery.revalidate()
+                void shippingQuery.revalidate()
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  if (id && !productQuery.data) {
+    return (
+      <div className="grid gap-6">
+        <BackLink />
+        <EmptyState
+          icon={PackageX}
+          title="This product isn't in your catalogue"
+          body="It may have been archived in another tab, or it belongs to another brand."
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/studio/products">Back to products</Link>
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
+
+  const products = (productsQuery.data ?? []).map(fromStudioProduct)
+  const collections = (collectionsQuery.data ?? []).map((dto) => fromStudioCollection(dto, member.id))
+  return (
+    <ProductEditor
+      key={id ?? "new"}
+      product={productQuery.data ? fromStudioProduct(productQuery.data.product) : undefined}
+      brand={brand}
+      server={{
+        dto: productQuery.data?.product,
+        allProducts: products,
+        collections,
+        onSaved: (dto) => {
+          productQuery.mutate({ product: dto })
+          void productsQuery.revalidate()
+        },
+        reload: () => {
+          void productQuery.revalidate()
+          void productsQuery.revalidate()
+        },
+        upload: async (file) => {
+          const media = await apiUpload(file, { purpose: "social_post", as: "brand" }).promise
+          return { src: media.src, width: media.width ?? 1200, height: media.height ?? 1500, mediaId: media.id }
+        },
+      }}
+    />
+  )
 }
 
 /**
@@ -130,13 +251,27 @@ function createdDescription(status: Product["status"], publishAt: string | null)
   return "Saved as a draft. Only you can see it."
 }
 
-function ProductEditor({ product, brand: profile }: { product?: Product; brand: Brand }) {
+type ServerEditor = {
+  dto?: StudioProductDto
+  allProducts: Product[]
+  collections: Collection[]
+  onSaved: (dto: StudioProductDto) => void
+  /** Refetches the product from the server (after a version conflict). */
+  reload: () => void
+  upload: (file: File) => Promise<UploadedImage>
+}
+
+function ProductEditor({ product, brand: profile, server }: { product?: Product; brand: Brand; server?: ServerEditor }) {
   const brand = useSettingsBrand(profile)
   const router = useRouter()
-  const allProducts = useStudio((s) => s.products)
-  const orders = useStudio((s) => s.orders)
-  const studioDrops = useStudio((s) => s.drops)
-  const collections = useBrandCollections(brand.id)
+  const localProducts = useStudio((s) => s.products)
+  const localOrders = useStudio((s) => s.orders)
+  const localDrops = useStudio((s) => s.drops)
+  const localCollections = useBrandCollections(brand.id)
+  const allProducts = server?.allProducts ?? localProducts
+  const orders = server ? [] : localOrders
+  const studioDrops = server ? NO_DROPS : localDrops
+  const collections = server?.collections ?? localCollections
 
   const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, brand) : emptyForm(brand)))
   const [form, setForm] = useState<ProductForm>(baseline)
@@ -154,7 +289,7 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
   const isNew = !product
   const dirty = useMemo(() => snapshot(form) !== snapshot(baseline), [form, baseline])
   const processing = form.images.some((im) => im.processing)
-  const hasOrders = !!product && orders.some((o) => o.lines.some((l) => l.productId === product.id))
+  const hasOrders = !server && !!product && orders.some((o) => o.lines.some((l) => l.productId === product.id))
 
   /** Variants as the product had them when the form opened: restored if an option comes back. */
   const pool = useMemo(() => new Map(baseline.variants.filter((v) => v.id).map((v) => [v.key, v])), [baseline])
@@ -164,7 +299,11 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
   const errors: Errors = useMemo(() => (checkedAt === null ? {} : validate(form, { brand, otherSkus, original, now: checkedAt })), [checkedAt, form, brand, otherSkus, original])
   const errorList = useMemo(() => errorTargets(form).filter((t) => errors[t.key]), [errors, form])
 
-  const library = useMemo(() => brandPhotos(brand, allProducts, collections, studioDrops), [brand, allProducts, collections, studioDrops])
+  // Live, a photo can only be attached by its upload (mediaId): sample, seeded and placeholder images can't be saved.
+  const library = useMemo(() => {
+    const photos = brandPhotos(brand, allProducts, collections, studioDrops)
+    return server ? photos.filter((im) => im.mediaId) : photos
+  }, [brand, allProducts, collections, studioDrops, server])
   const tagSuggestions = useMemo(() => [...new Set(allProducts.flatMap((p) => p.tags))].sort(), [allProducts])
   const category = form.category ? categoryBySlug.get(form.category) : undefined
 
@@ -185,17 +324,29 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
   const leaving = useRef(false)
   const created = useRef(false)
   const synced = useRef(product)
+  /*
+   * The server version the form's baseline came from. A save sends this, not the latest fetched
+   * version, so a refetch on focus while the form has edits can't silently overwrite someone else's change.
+   */
+  const serverVersion = server?.dto?.version
+  const baseVersion = useRef(serverVersion)
+  /** Set by "Reload" after a conflict: the next product from the server replaces the form, edits included. */
+  const forceSync = useRef(false)
   useEffect(() => {
     live.current = { dirty, saving, baseline }
   })
   useEffect(() => {
     if (!product || product === synced.current) return
     synced.current = product
-    if (live.current.dirty || live.current.saving) return
+    if (!forceSync.current && (live.current.dirty || live.current.saving)) return
+    forceSync.current = false
+    baseVersion.current = serverVersion
     const fresh = fromProduct(product, brand)
+    stash.current.clear()
     setBaseline(fresh)
     setForm(fresh)
-  }, [product, brand])
+    setCheckedAt(null)
+  }, [product, brand, serverVersion])
   useEffect(
     () => () => {
       if (!created.current && !leaving.current) return
@@ -279,7 +430,123 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
 
   /* ---------- actions ---------- */
 
+  /** The catalogue write, then stock counts, then the publication status (which needs a fresh version). */
+  async function commitLive() {
+    setSaving(true)
+    const dto = server?.dto
+    if (server && product && !dto) throw new Error("This product needs to be reloaded before it can be saved.")
+    const name = form.name.trim()
+    const alts = buildImages(form.images, name, brand)
+    const images = form.images.map((im, index) => {
+      if (im.imageId) return { id: im.imageId, alt: alts[index].alt }
+      if (im.mediaId) return { mediaId: im.mediaId, alt: alts[index].alt }
+      throw new Error("One or more photos didn't finish uploading. Remove them and add them again.")
+    })
+    const publishAt = form.status === "scheduled" ? new Date(form.publishAt).toISOString() : null
+    const body: StudioProductCreateBody = {
+      title: name,
+      description: form.description.trim(),
+      details: product?.details ?? [],
+      categorySlug: form.category,
+      subcategory: form.subcategory || null,
+      tags: form.tags,
+      badges: product?.badges ?? ["new"],
+      priceMinor: parseMoney(form.price, currency)!,
+      compareAtMinor: form.compareAt.trim() ? parseMoney(form.compareAt, currency) : null,
+      processingDays: [Number(form.processingMin), Number(form.processingMax)],
+      dropId: product?.dropId ?? null,
+      options: buildOptions(form).map((option) =>
+        option.name === "Size"
+          ? { name: option.name, values: option.values.map((value) => ({ value })) }
+          : { name: option.name, values: option.values.map((value) => ({ value: value.name, hex: value.hex })) },
+      ),
+      variants: form.variants.map((v) =>
+        v.id
+          ? { id: v.id, sku: v.sku.trim().toUpperCase(), options: v.options, priceMinor: v.priceOverrideMinor ?? null }
+          : { sku: v.sku.trim().toUpperCase(), options: v.options, priceMinor: null, initialStock: Number(v.stock) },
+      ),
+      images,
+      collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
+    }
+
+    const warnings: string[] = []
+    let saved: StudioProductDto
+    if (product && dto) {
+      const result = await api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(product.id)}`, {
+        method: "PATCH",
+        body: { ...body, expectedVersion: baseVersion.current ?? dto.version },
+      })
+      saved = result.product
+      let stockChanged = false
+      for (const v of form.variants) {
+        if (!v.id || v.originalStock === undefined) continue
+        // A change from the count the form opened with: sales since then are kept.
+        const delta = Number(v.stock) - v.originalStock
+        if (delta === 0) continue
+        try {
+          await api(`/api/studio/catalog/variants/${encodeURIComponent(v.id)}/stock`, {
+            body: { mode: "adjust", qty: delta, reason: "adjustment", note: "Edited on the product page" },
+          })
+          stockChanged = true
+        } catch (cause) {
+          warnings.push(cause instanceof ApiError ? cause.message : `Stock for ${v.sku} didn't update.`)
+        }
+      }
+      // The PATCH snapshot predates the stock writes: read the product again so the form shows the new counts.
+      if (stockChanged) {
+        try {
+          saved = (await api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(product.id)}`)).product
+        } catch {
+          // Keep the PATCH snapshot; the product refetches on the next focus.
+        }
+      }
+    } else {
+      const result = await api<StudioProductResponse>("/api/studio/catalog/products", { body })
+      saved = result.product
+    }
+
+    // A new go-live time for a product that stays scheduled also goes through the status endpoint.
+    const reschedule = form.status === "scheduled" && saved.status === "scheduled" && form.publishAt !== baseline.publishAt
+    if (form.status !== "archived" && (form.status !== saved.status || reschedule)) {
+      const action: StudioProductStatusAction = form.status === "published" ? "publish" : form.status === "scheduled" ? "schedule" : "unpublish"
+      try {
+        const result = await api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(saved.id)}/status`, {
+          body: { action, ...(action === "schedule" && publishAt ? { publishAt } : {}), expectedVersion: saved.version },
+        })
+        saved = result.product
+      } catch (cause) {
+        warnings.push(cause instanceof ApiError ? cause.message : "The publication status didn't change.")
+      }
+    }
+
+    server?.onSaved(saved)
+    if (warnings.length) {
+      toast.warning(warnings.length === 1 ? warnings[0] : "Product saved, but some changes didn't apply.", {
+        description: warnings.length === 1 ? undefined : warnings.join(" "),
+      })
+    }
+
+    if (isNew) {
+      toast.success("Product created", { description: createdDescription(saved.status as Product["status"], saved.publishAt) })
+      setCheckedAt(null)
+      created.current = true
+      router.replace(`/studio/products/${saved.id}`)
+      return
+    }
+
+    const freshProduct = fromStudioProduct(saved)
+    const reset = fromProduct(freshProduct, brand)
+    synced.current = freshProduct
+    baseVersion.current = saved.version
+    stash.current.clear()
+    setBaseline(reset)
+    setForm(reset)
+    setCheckedAt(null)
+    setSaving(false)
+  }
+
   function commit(now: number) {
+    if (server) return commitLive()
     setSaving(true)
 
     const store = useStudio.getState()
@@ -362,9 +629,41 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
   }
 
   const saveAction = useAsyncAction((now: number) => commit(now), {
-    error: "Your product couldn't be saved. This browser's storage may be full: remove a large photo, then save again.",
-    onError: () => setSaving(false),
+    error: server
+      ? "Your product couldn't be saved. Check your connection and try again."
+      : "Your product couldn't be saved. This browser's storage may be full: remove a large photo, then save again.",
+    // Live, the toast carries the server's reason (onError), not the generic connection message.
+    errorToast: !server,
+    onError: (cause) => {
+      setSaving(false)
+      if (server) liveSaveFailed(cause)
+    },
   })
+
+  function liveSaveFailed(cause: unknown) {
+    if (cause instanceof ApiError && cause.status === 409) {
+      toast.error("Someone else changed this product", {
+        description: "Reload to see their changes. Your unsaved edits on this page will be replaced.",
+        duration: Infinity,
+        action: {
+          label: "Reload",
+          onClick: () => {
+            forceSync.current = true
+            server?.reload()
+          },
+        },
+      })
+      return
+    }
+    if (cause instanceof ApiError) {
+      const fields = cause.fields ? Object.values(cause.fields).filter(Boolean) : []
+      toast.error("Your product couldn't be saved", { description: [cause.message, ...fields].join(" ") })
+      return
+    }
+    // The editor's own checks (photos still uploading, a stale product) throw plain Errors with user copy.
+    const own = cause instanceof Error && !(cause instanceof TypeError) ? cause.message : null
+    toast.error("Your product couldn't be saved", { description: own ?? "Check your connection and try again." })
+  }
 
   /** Validates first: a failed check keeps every value, lists what to fix and focuses the first field. */
   function save() {
@@ -400,14 +699,47 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
     return previous
   }
 
+  /** Archive/restore on the server: the rest of the form and any unsaved edits stay as they are. */
+  async function liveStatus(action: "archive" | "restore") {
+    if (!server?.dto || !product) return
+    setSaving(true)
+    try {
+      const result = await api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(product.id)}/status`, {
+        body: { action, expectedVersion: server.dto.version },
+      })
+      server.onSaved(result.product)
+      const status = result.product.status as Product["status"]
+      setForm((f) => ({ ...f, status }))
+      setBaseline((b) => ({ ...b, status }))
+      setArchivedFrom(null)
+      toast.success(action === "archive" ? "Product archived" : "Product restored", {
+        description: action === "archive" ? "Find it in the Archived tab." : "It's back as a draft.",
+      })
+    } catch (cause) {
+      toast.error(action === "archive" ? "This product couldn't be archived" : "This product couldn't be restored", {
+        description: cause instanceof ApiError ? cause.message : "Try again in a moment.",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   /** Shown in place: the badge turns Archived and the banner appears, with focus on its restore button. */
   function archive() {
+    if (server) {
+      void liveStatus("archive")
+      return
+    }
     const previous = setStoredStatus("archived")
     if (previous.length) setArchivedFrom(previous)
   }
 
   /** Back to the status it had, if it was archived on this page; otherwise to a draft. */
   function restore() {
+    if (server) {
+      void liveStatus("restore")
+      return
+    }
     if (archivedFrom?.length) {
       const was = archivedFrom[0].status
       restoreProductStatuses(archivedFrom)
@@ -421,6 +753,10 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
 
   function remove() {
     if (!product) return
+    if (server) {
+      void liveStatus("archive")
+      return
+    }
     if (hasOrders) {
       archive()
       return
@@ -441,7 +777,7 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
   /** Nothing publishes on a timer until the backend exists, so say plainly when a set time has passed. */
   const pastDue = !!now && product?.status === "scheduled" && !!product.publishAt && form.publishAt === baseline.publishAt && Date.parse(product.publishAt) <= now
   const busy = saving || saveAction.pending
-  const restoreTo = archivedFrom?.[0]?.status
+  const restoreTo = server ? "draft" : archivedFrom?.[0]?.status
   const restoreLabel = restoreTo && restoreTo !== "draft" && restoreTo !== "archived" ? `Restore as ${productStatusMeta[restoreTo].label.toLowerCase()}` : "Restore as draft"
   const toRestore = () => document.getElementById("pf-restore")
 
@@ -551,7 +887,7 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
             </div>
           </Panel>
 
-          <ImageManager images={form.images} onChange={setImages} error={errors.photos} productName={form.name} library={library} />
+          <ImageManager images={form.images} onChange={setImages} error={errors.photos} productName={form.name} library={library} upload={server?.upload} />
 
           <Panel title="Pricing" description={`In ${currency}. Shoppers see prices converted to their own currency.`}>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -605,7 +941,9 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
 
         <div className="grid min-w-0 gap-6">
           <Panel title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>
-            {archived ? <CatalogueNote /> : (
+            {archived ? (
+              server ? <CatalogueNote>Restore this product to make changes to how it&apos;s published.</CatalogueNote> : <CatalogueNote />
+            ) : (
               <div className="grid gap-3">
                 <Segmented
                   id="pf-status"
@@ -625,14 +963,14 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
                       id="pf-publish-at"
                       label="Go-live time"
                       error={errors.publishAt}
-                      hint={pastDue ? "This time has passed and the product isn't live. Publish it now or pick a new time." : "In your local time. Nothing publishes automatically in this build yet: publish it yourself at that time."}
+                      hint={pastDue ? "This time has passed and the product isn't live. Publish it now or pick a new time." : server ? "In your local time. The product goes live automatically at this time." : "In your local time. Nothing publishes automatically in this build yet: publish it yourself at that time."}
                       className="pt-1"
                     >
                       <Input {...control("pf-publish-at", errors.publishAt, true)} type="datetime-local" value={form.publishAt} onChange={(e) => patch({ publishAt: e.target.value })} className={cn(inputClass, "[color-scheme:dark]")} />
                     </Field>
                   </motion.div>
                 ) : null}
-                <CatalogueNote className="pt-1" />
+                <CatalogueNote className="pt-1">{server ? "Published products reach shoppers in the marketplace." : undefined}</CatalogueNote>
               </div>
             )}
           </Panel>
@@ -698,12 +1036,12 @@ function ProductEditor({ product, brand: profile }: { product?: Product; brand: 
           </Panel>
 
           {!isNew ? (
-            <Panel title="Remove product" description={archived ? "Delete removes it for good." : "Archive to set it aside and keep its history. Delete removes it for good."}>
+            <Panel title="Remove product" description={server ? "Archive to set it aside. Orders and stock history stay, and you can restore it later." : archived ? "Delete removes it for good." : "Archive to set it aside and keep its history. Delete removes it for good."}>
               <div className="flex flex-wrap gap-2">
                 {archived ? null : (
                   <Button type="button" size="sm" variant="secondary" className="h-10 md:h-8" onClick={() => setDialog("archive")}><Archive /> Archive</Button>
                 )}
-                <Button type="button" size="sm" variant="destructive" className="h-10 md:h-8" onClick={() => setDialog("delete")}><Trash2 /> Delete</Button>
+                {server ? null : <Button type="button" size="sm" variant="destructive" className="h-10 md:h-8" onClick={() => setDialog("delete")}><Trash2 /> Delete</Button>}
               </div>
             </Panel>
           ) : null}

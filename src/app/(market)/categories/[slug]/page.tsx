@@ -63,9 +63,7 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
           </Link>
           <h1 className="mt-3 font-display text-display-lg text-ink">{category.name}</h1>
           <p className="mt-4 max-w-md text-pretty text-[0.9375rem] leading-relaxed text-ink/80">{category.description}</p>
-          <p className="mt-3 text-sm text-ink-2 tabular">
-            {inCategory.length} {inCategory.length === 1 ? "piece" : "pieces"} from {perBrand.size} {perBrand.size === 1 ? "brand" : "brands"}
-          </p>
+          {/* No piece count here: the listing below reads the live catalogue and shows its own count. */}
         </div>
       </header>
 

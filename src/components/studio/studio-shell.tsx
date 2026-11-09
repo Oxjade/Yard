@@ -37,6 +37,7 @@ import {
   WalletIcon,
 } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
+import { currencies, type CurrencyCode } from "@/config/markets"
 import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
 import { Bone } from "@/components/feedback/skeletons"
 import { WorkspaceNote } from "@/components/session/workspace-note"
@@ -45,6 +46,8 @@ import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/co
 import { orderStatusMeta, productStatusMeta } from "@/components/dashboard/status-badge"
 import { CommandItem } from "@/components/ui/command"
 import { buildCustomers } from "@/components/studio/business/model"
+import { api } from "@/lib/api/client"
+import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
 import { brandById } from "@/lib/data/brands"
 import { listStudioLocations, STUDIO_LOCATIONS_KEY } from "@/lib/api/around"
 import { listStudioConversations } from "@/lib/api/inbox"
@@ -53,7 +56,7 @@ import { useApi } from "@/lib/api/use-api"
 import { kindLabel } from "@/lib/around/labels"
 import { teamRoleLabels, type BrandPermission } from "@/lib/permissions"
 import { useUnread } from "@/lib/realtime/unread"
-import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
+import { useRealtimeEvent, useRealtimeEventName } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
@@ -299,10 +302,26 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
   const notShipped = orders.filter((o) => o.status === "paid" || o.status === "processing").length
-  // The same derivation as the Payouts page (src/lib/payouts.ts), so the figures always agree.
-  const available = useMemo(() => payoutBalances(orders, payouts, brandId, brand.currency).available, [orders, payouts, brandId, brand.currency])
-  const ready = studioReady && adminReady
-  const amount = formatMoney(available, brand.currency)
+  // A real brand's card reads the ledger, the same summary the Payouts page uses. The demo brand
+  // keeps the browser sample, so both never disagree on screen.
+  const liveBrand = member && !member.demo ? member.brand.id : null
+  // Only owners, admins and finance can read payouts (the server's finance view roles); other team
+  // roles get no payout card rather than a request that always answers 403.
+  const financeView = !!member && (member.role === "owner" || member.role === "admin" || member.role === "finance")
+  const livePayouts = useApi<PayoutSummaryDto>(liveBrand && financeView ? `studio.payouts:${liveBrand}` : null, () => api<PayoutSummaryDto>("/api/studio/payouts"), { revalidateOnFocus: true })
+  useRealtimeEventName("payout.updated", () => {
+    if (liveBrand && financeView) void livePayouts.revalidate()
+  })
+  // Only the balance in the payout currency counts: another currency's figure would show under the wrong label.
+  const liveBalance = livePayouts.data?.balances.find((b) => b.currency === livePayouts.data?.currency)
+  const demoAvailable = useMemo(() => payoutBalances(orders, payouts, brandId, brand.currency).available, [orders, payouts, brandId, brand.currency])
+  const available = liveBrand ? Math.max(0, liveBalance?.availableMinor ?? 0) : demoAvailable
+  const currency = livePayouts.data?.currency
+  const cur: CurrencyCode = currency && currency in currencies ? (currency as CurrencyCode) : brand.currency
+  const ready = liveBrand ? !!livePayouts.data : studioReady && adminReady
+  // A failed read resolves the card (no endless placeholder); the Payouts page shows the error and a retry.
+  const payoutsFailed = !!liveBrand && !livePayouts.data && !!livePayouts.error
+  const amount = formatMoney(available, cur)
 
   // Live counts for the signed-in brand: unread conversations (the realtime provider keeps the
   // Studio unread store current) and social accounts that need reconnecting. Unknown or zero
@@ -381,16 +400,32 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
           { label: "Back to the marketplace", href: "/", icon: SignOutIcon, separated: true },
         ],
       }}
-      status={{
-        icon: WalletIcon,
-        label: "Available to pay out",
-        value: ready ? amount : null,
-        action: available > 0 ? "Request payout" : "View payouts",
-        href: "/studio/payouts",
-        attention: false,
-        dot: available > 0,
-        summary: `Available to pay out: ${amount}`,
-      }}
+      status={
+        liveBrand && !financeView
+          ? undefined
+          : payoutsFailed
+            ? {
+                icon: WalletIcon,
+                label: "Available to pay out",
+                value: "Unavailable",
+                quiet: true,
+                action: "View payouts",
+                href: "/studio/payouts",
+                attention: false,
+                dot: false,
+                summary: "Available to pay out: couldn't load",
+              }
+            : {
+                icon: WalletIcon,
+                label: "Available to pay out",
+                value: ready ? amount : null,
+                action: available > 0 ? "Request payout" : "View payouts",
+                href: "/studio/payouts",
+                attention: false,
+                dot: available > 0,
+                summary: `Available to pay out: ${amount}`,
+              }
+      }
       account={
         member
           ? { initials: initialsOf(member.name), name: member.name, caption: `${teamRoleLabels[member.role]}, demo account` }

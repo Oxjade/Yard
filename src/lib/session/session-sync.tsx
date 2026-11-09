@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api, ApiError } from "@/lib/api/client"
 import type { DemoSignInResult, ShopperProfile } from "@/lib/api/contracts/session"
 import { DEMO_SHOPPER, useSession } from "@/lib/stores/session"
+import { clearAccountSaves, syncSavedWithServer, useSaved } from "@/lib/stores/saved"
 import { afterIdentityChange } from "./identity"
 import { getServerSessionState, useServerSession } from "./use-server-session"
 
@@ -47,6 +48,28 @@ export function SessionSync() {
   const signedOutAt = useSession((s) => s.signedOutAt)
   const pending = useSession((s) => s.serverPending)
   const restoring = useRef(false)
+  const savedSyncFor = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (server.status !== "ready") return
+    const shopperId = server.shopper?.id
+    if (!shopperId) {
+      savedSyncFor.current = null
+      // Signed out (here, in another tab, or the session ended): drop the account's saves, as the bag
+      // does. Not while a local user remains: the demo shopper's session is being renewed (below), or
+      // the stale local identity is about to be cleared, which runs this again.
+      if (user) return
+      if (useSaved.persist.hasHydrated()) clearAccountSaves()
+      else void Promise.resolve(useSaved.persist.rehydrate()).then(clearAccountSaves)
+      return
+    }
+    if (savedSyncFor.current === shopperId) return
+    savedSyncFor.current = shopperId
+    void syncSavedWithServer(shopperId).catch(() => {
+      if (savedSyncFor.current === shopperId) savedSyncFor.current = null
+      toast.error("Your saved pieces and followed brands couldn’t be synced.")
+    })
+  }, [server.status, server.shopper?.id, user])
 
   // Sign-in, sign-out and profile edits in another tab of this browser.
   useEffect(() => {

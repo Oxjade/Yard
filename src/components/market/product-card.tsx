@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { brandHref } from "@/lib/api/catalog-products"
 import Link from "next/link"
 import { brandById } from "@/lib/data/brands"
 import { productStock } from "@/lib/data/products"
@@ -47,7 +48,7 @@ export function ProductCard({
    */
   addBlocked?: AddBlocked | false
 }) {
-  const brand = brandById.get(product.brandId) ?? { name: "Your brand", handle: "" }
+  const brand = brandById.get(product.brandId) ?? product.brandSummary ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
   const soldOut = productStock(product) === 0
   const href = `/products/${product.slug}`
@@ -127,7 +128,7 @@ export function ProductCard({
           <div className="min-w-0">
             {brand.handle ? (
               <Link
-                href={`/brands/${brand.handle}`}
+                href={brandHref(brand.handle)}
                 className="relative z-10 block text-xs text-ink-2 transition-colors after:absolute after:inset-x-0 after:-top-5 after:-bottom-1 hover:text-violet lg:after:hidden"
               >
                 <span className="block truncate">{brand.name}</span>

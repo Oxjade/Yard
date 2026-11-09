@@ -6,6 +6,7 @@ import type { CurrencyCode } from "@/config/markets"
 import { filterProducts, panelFilterCount, type CatalogState } from "./catalog-state"
 import { FilterControls, type FilterPatch } from "./filter-controls"
 import { PhoneSheet } from "./phone-sheet"
+import type { Product } from "@/lib/data/types"
 
 /**
  * The phone filter sheet. It edits a draft: "Show N pieces" applies it, closing (drag down,
@@ -21,6 +22,7 @@ export function FilterSheet({
   onApply,
   onClear,
   currency,
+  products,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -29,8 +31,9 @@ export function FilterSheet({
   onApply: () => void
   onClear: () => void
   currency: CurrencyCode
+  products?: Product[]
 }) {
-  const count = useMemo(() => filterProducts(draft).length, [draft])
+  const count = useMemo(() => filterProducts(draft, undefined, products).length, [draft, products])
   const active = panelFilterCount(draft)
   const [priceValid, setPriceValid] = useState(true)
   // Bumped by "Clear filters" so a typed (not yet valid) range empties too.
@@ -76,6 +79,7 @@ export function FilterSheet({
         priceMode="live"
         onPriceValidityChange={setPriceValid}
         resetKey={clears}
+        products={products}
       />
     </PhoneSheet>
   )

@@ -15,6 +15,7 @@ import { countries } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { productStock } from "@/lib/data/products"
+import { brandHref } from "@/lib/api/catalog-products"
 import { duration, ease, spring } from "@/lib/motion"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
@@ -235,11 +236,11 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
               that line runs under the Message and Follow buttons too and its badges don't break
               mid-phrase in a narrow buy box. */}
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
-            <Link href={`/brands/${brand.handle}`} aria-hidden tabIndex={-1} className="row-span-2 shrink-0">
+            <Link href={brandHref(brand.handle)} aria-hidden tabIndex={-1} className="row-span-2 shrink-0">
               <BrandMark brand={brand} size="md" />
             </Link>
             {/* 40px tap targets on phones and tablets without moving the row (negative margins); compact beside the desktop buy box. */}
-            <Link href={`/brands/${brand.handle}`} className="col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 self-end text-sm font-medium text-ink transition-colors hover:text-violet max-lg:min-h-10 max-lg:self-center">
+            <Link href={brandHref(brand.handle)} className="col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 self-end text-sm font-medium text-ink transition-colors hover:text-violet max-lg:min-h-10 max-lg:self-center">
               <span className="truncate">{brand.name}</span>
               {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
             </Link>
