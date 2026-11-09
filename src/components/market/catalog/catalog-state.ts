@@ -83,7 +83,7 @@ function amount(value: string | null) {
 }
 
 /** Reads the URL. Anything unknown or malformed is ignored rather than breaking the page. */
-export function parseCatalogParams(params: ParamsLike, scope: CatalogScope): CatalogState {
+export function parseCatalogParams(params: ParamsLike, scope: CatalogScope, knownBrandHandles: string[] = []): CatalogState {
   const rawCategory = params.get("category") as CategorySlug | null
   const category = scope.category ?? (rawCategory && categoryBySlug.has(rawCategory) ? rawCategory : undefined)
   const rawSub = params.get("sub")
@@ -98,7 +98,7 @@ export function parseCatalogParams(params: ParamsLike, scope: CatalogScope): Cat
     q: (params.get("q") ?? "").trim().slice(0, 80),
     category,
     sub,
-    brands: [...new Set(list(params.get("brands")).filter((h) => brandByHandle.has(h)))],
+    brands: [...new Set(list(params.get("brands")).filter((h) => brandByHandle.has(h) || knownBrandHandles.includes(h)))],
     min,
     max,
     sizes: [...new Set(list(params.get("size")).filter((s) => knownSizes.has(s)))],
@@ -148,8 +148,9 @@ export function panelFilterCount(state: CatalogState) {
 type Facet = "brands" | "price" | "sizes" | "country" | "stock"
 
 /** Runs the catalogue query, optionally ignoring one facet so its own counts stay useful. */
-export function filterProducts(state: CatalogState, omit?: Facet) {
-  let results = searchProducts({
+export function filterProducts(state: CatalogState, omit?: Facet, source?: Product[]) {
+  if (!source) {
+    let results = searchProducts({
     q: state.q || undefined,
     category: state.category,
     subcategory: state.sub,
@@ -158,7 +159,33 @@ export function filterProducts(state: CatalogState, omit?: Facet) {
     maxPrice: omit === "price" ? undefined : state.max,
     inStock: omit === "stock" ? undefined : state.inStock,
     country: omit === "country" ? undefined : state.country,
-    sort: state.sort,
+      sort: state.sort,
+    })
+    if (state.sizes.length && omit !== "sizes") {
+      results = results.filter((p) => p.variants.some((v) => state.sizes.includes(v.options.Size) && availableStock(v) > 0))
+    }
+    return results
+  }
+
+  const q = state.q.toLowerCase()
+  let results = source.filter((p) => {
+    const brand = p.brandSummary ?? brandById.get(p.brandId)
+    if (q && ![p.name, p.description, p.subcategory, p.category, brand?.name, ...p.tags].join(" ").toLowerCase().includes(q)) return false
+    if (state.category && p.category !== state.category) return false
+    if (state.sub && p.subcategory !== state.sub) return false
+    if (omit !== "brands" && state.brands.length && !state.brands.includes(brand?.handle ?? "")) return false
+    const usd = priceUsd(p)
+    if (omit !== "price" && state.min !== undefined && usd < state.min) return false
+    if (omit !== "price" && state.max !== undefined && usd > state.max) return false
+    if (omit !== "stock" && state.inStock && productStock(p) <= 0) return false
+    if (omit !== "country" && state.country && brand?.country !== state.country) return false
+    return true
+  })
+  results = [...results].sort((a, b) => {
+    if (state.sort === "newest") return b.createdAt.localeCompare(a.createdAt)
+    if (state.sort === "price-asc") return priceUsd(a) - priceUsd(b)
+    if (state.sort === "price-desc") return priceUsd(b) - priceUsd(a)
+    return b.stats.trend - a.stats.trend
   })
   // Size is filtered here until the data layer takes it: a size counts only while it is in stock.
   if (state.sizes.length && omit !== "sizes") {
@@ -167,24 +194,29 @@ export function filterProducts(state: CatalogState, omit?: Facet) {
   return results
 }
 
-export function computeFacets(state: CatalogState) {
+export function computeFacets(state: CatalogState, source?: Product[]) {
   const byBrand = new Map<string, number>()
-  for (const p of filterProducts(state, "brands")) {
-    const h = brandById.get(p.brandId)!.handle
+  const facetBrands = new Map<string, Pick<Brand, "id" | "handle" | "name" | "mark">>()
+  for (const p of filterProducts(state, "brands", source)) {
+    const fullBrand = brandById.get(p.brandId)
+    const details = p.brandSummary ?? fullBrand
+    if (!details) continue
+    const h = details.handle
+    facetBrands.set(h, { ...details, mark: fullBrand?.mark ?? { text: details.name.slice(0, 2).toUpperCase(), style: "condensed" } })
     byBrand.set(h, (byBrand.get(h) ?? 0) + 1)
   }
   // Order brands by their size within the search/category scope, so ticking other filters
   // changes the counts but never reshuffles the list under the shopper's finger.
   const scopeSize = new Map<string, number>()
-  for (const p of filterProducts({ ...state, brands: [], min: undefined, max: undefined, sizes: [], inStock: false, country: undefined })) {
+  for (const p of filterProducts({ ...state, brands: [], min: undefined, max: undefined, sizes: [], inStock: false, country: undefined }, undefined, source)) {
     scopeSize.set(p.brandId, (scopeSize.get(p.brandId) ?? 0) + 1)
   }
-  const brandFacet = brands
+  const brandFacet = [...facetBrands.values()]
     .filter((b) => byBrand.has(b.handle) || state.brands.includes(b.handle))
     .map((b) => ({ brand: b, count: byBrand.get(b.handle) ?? 0 }))
     .sort((a, b) => (scopeSize.get(b.brand.id) ?? 0) - (scopeSize.get(a.brand.id) ?? 0) || a.brand.name.localeCompare(b.brand.name))
 
-  const forPrice = filterProducts(state, "price")
+  const forPrice = filterProducts(state, "price", source)
   const priceFacet = priceBands.map((band) => ({
     ...band,
     count: forPrice.filter((p) => {
@@ -194,7 +226,7 @@ export function computeFacets(state: CatalogState) {
   }))
 
   const bySize = new Map<string, number>()
-  for (const p of filterProducts(state, "sizes")) {
+  for (const p of filterProducts(state, "sizes", source)) {
     const inStock = new Set(p.variants.filter((v) => v.options.Size && availableStock(v) > 0).map((v) => v.options.Size))
     for (const s of inStock) bySize.set(s, (bySize.get(s) ?? 0) + 1)
   }
@@ -203,16 +235,16 @@ export function computeFacets(state: CatalogState) {
     .filter((g) => g.values.length > 0)
 
   const byCountry = new Map<CountryCode, number>()
-  for (const p of filterProducts(state, "country")) {
-    const c = brandById.get(p.brandId)!.country
-    byCountry.set(c, (byCountry.get(c) ?? 0) + 1)
+  for (const p of filterProducts(state, "country", source)) {
+    const c = p.brandSummary?.country ?? brandById.get(p.brandId)?.country
+    if (c) byCountry.set(c, (byCountry.get(c) ?? 0) + 1)
   }
   const countryFacet = [...byCountry.entries()]
     .concat(state.country && !byCountry.has(state.country) ? [[state.country, 0] as [CountryCode, number]] : [])
     .map(([code, count]) => ({ code, name: countries[code].name, count }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  const inStockCount = filterProducts({ ...state, inStock: true }, undefined).length
+  const inStockCount = filterProducts({ ...state, inStock: true }, undefined, source).length
 
   return { brandFacet, priceFacet, sizeFacet, countryFacet, inStockCount }
 }
@@ -257,7 +289,7 @@ const MID_WORD_FALLBACK = 1
  * ("neck" in "Turtleneck") is offered only when no term or word starts with the text, and only
  * from three letters.
  */
-export function searchSuggestions(typed: string, state: CatalogState, limit = 6): SearchSuggestion[] {
+export function searchSuggestions(typed: string, state: CatalogState, limit = 6, source?: Product[]): SearchSuggestion[] {
   const t = typed.trim().toLowerCase()
   if (t.length < 2) return []
   const rank = (term: string) => {
@@ -267,14 +299,17 @@ export function searchSuggestions(typed: string, state: CatalogState, limit = 6)
     return 2
   }
   const out: SearchSuggestion[] = []
-  const candidates = vocabulary
+  const terms = source
+    ? [...new Set(source.flatMap((p) => [p.name, p.subcategory, ...p.tags, p.brandSummary?.name ?? ""]).filter((term) => term.trim().length > 1))]
+    : vocabulary
+  const candidates = terms
     .filter((term) => term.toLowerCase().includes(t) && term.toLowerCase() !== t)
     .sort((a, b) => rank(a) - rank(b) || a.length - b.length || a.localeCompare(b))
   let wordStart = 0
   for (const term of candidates) {
     const r = rank(term)
     if (r === 2 && (t.length < 3 || wordStart >= MID_WORD_FALLBACK)) break
-    const count = filterProducts({ ...state, q: term }).length
+    const count = filterProducts({ ...state, q: term }, undefined, source).length
     if (count > 0) {
       out.push({ term, count })
       if (r < 2) wordStart++
@@ -370,9 +405,9 @@ function planCycles(merged: ListingEntry[], editorial: boolean): ListingCycle[] 
  * does a search for a brand's own name. Editorial spotlights are for browsing; a search stays a
  * clean grid.
  */
-export function buildListing(state: CatalogState) {
-  const results = filterProducts(state)
-  const paidAllowed = state.sort === "trending" && !(state.q && isNavigationalSearch(state.q))
+export function buildListing(state: CatalogState, source?: Product[]) {
+  const results = filterProducts(state, undefined, source)
+  const paidAllowed = !source && state.sort === "trending" && !(state.q && isNavigationalSearch(state.q))
   const candidates = paidAllowed ? sponsoredProducts(state.category) : []
   const placed: Product[] = []
   for (const p of candidates) {
@@ -390,7 +425,7 @@ export function buildListing(state: CatalogState) {
     placed,
     SPONSORED_SLOTS,
   )
-  const all = planCycles(merged, !state.q)
+  const all = planCycles(merged, !source && !state.q)
   const pages = Math.max(1, all.length)
   const page = Math.min(state.page, pages)
   const cycles = all.slice(0, page)

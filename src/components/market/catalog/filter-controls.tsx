@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { convert, formatMoney, toMajor } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import type { Product } from "@/lib/data/types"
 import { Chip, ChipRadioGroup } from "./chip"
 import { computeFacets, priceBands, sortOptions, type CatalogState } from "./catalog-state"
 
@@ -51,6 +52,7 @@ export function FilterControls({
   onPriceValidityChange,
   resetKey,
   className,
+  products,
 }: {
   state: CatalogState
   onChange: (patch: FilterPatch) => void
@@ -61,8 +63,9 @@ export function FilterControls({
   /** Changing it empties the typed price range, even when the draft's min and max did not change. */
   resetKey?: number
   className?: string
+  products?: Product[]
 }) {
-  const facets = useMemo(() => computeFacets(state), [state])
+  const facets = useMemo(() => computeFacets(state, products), [state, products])
   const [allBrands, setAllBrands] = useState(false)
   const id = useId()
   const brandRows = allBrands ? facets.brandFacet : facets.brandFacet.slice(0, 6)

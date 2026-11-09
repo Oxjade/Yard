@@ -47,7 +47,7 @@ export function ProductCard({
    */
   addBlocked?: AddBlocked | false
 }) {
-  const brand = brandById.get(product.brandId) ?? { name: "Your brand", handle: "" }
+  const brand = brandById.get(product.brandId) ?? product.brandSummary ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
   const soldOut = productStock(product) === 0
   const href = `/products/${product.slug}`

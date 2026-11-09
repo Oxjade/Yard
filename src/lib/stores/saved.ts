@@ -2,6 +2,8 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
+import { toast } from "sonner"
+import { api } from "@/lib/api/client"
 import { reportSignal } from "@/components/signals/report-signal"
 
 type SavedState = {
@@ -26,20 +28,26 @@ export const useSaved = create<SavedState>()(
       following: [],
       notify: [],
       recentlyViewed: [],
-      // Each toggle also tells the server (§1.11, §6.3): fire and forget, only with a shopper session.
-      // The server keeps its own state and counts real changes only.
       toggleWishlist: (id) => {
         const next = toggle(get().wishlist, id)
         set({ wishlist: next })
         const on = next.includes(id)
-        reportSignal({ kind: on ? "wishlist_add" : "wishlist_remove", productId: id })
+        void api(on ? "/api/wishlist" : `/api/wishlist/${encodeURIComponent(id)}`, on ? { body: { productId: id } } : { method: "DELETE" }).catch(() => {
+          const current = get().wishlist
+          if (current.includes(id) === on) set({ wishlist: toggle(current, id) })
+          toast.error("Your wishlist change couldn’t be saved. Try again.")
+        })
         return on
       },
       toggleFollow: (id) => {
         const next = toggle(get().following, id)
         set({ following: next })
         const on = next.includes(id)
-        reportSignal({ kind: on ? "follow" : "unfollow", brandId: id })
+        void api(on ? "/api/follows" : `/api/follows/${encodeURIComponent(id)}`, on ? { body: { brandId: id } } : { method: "DELETE" }).catch(() => {
+          const current = get().following
+          if (current.includes(id) === on) set({ following: toggle(current, id) })
+          toast.error("Your follow change couldn’t be saved. Try again.")
+        })
         return on
       },
       toggleNotify: (id) => {
@@ -59,3 +67,14 @@ export const useSaved = create<SavedState>()(
     },
   ),
 )
+
+/** Merge browser saves after sign-in, then replace local lists with the account's authoritative state. */
+export async function syncSavedWithServer() {
+  const { wishlist, following } = useSaved.getState()
+  await api("/api/wishlist/merge", { body: { productIds: wishlist, brandIds: following } })
+  const [saved, follows] = await Promise.all([
+    api<{ items: { productId: string }[] }>("/api/wishlist"),
+    api<{ items: { brandId: string }[] }>("/api/follows"),
+  ])
+  useSaved.setState({ wishlist: saved.items.map((item) => item.productId), following: follows.items.map((item) => item.brandId) })
+}

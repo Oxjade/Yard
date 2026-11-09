@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
-import { getProduct } from "@/lib/data"
+import { HttpError } from "@/server/http/errors"
+import { publicProduct } from "@/server/catalog/public"
 
 /**
  * Checks the slug before anything streams, so an unknown or unpublished product still answers
@@ -10,7 +11,11 @@ export const instant = false
 
 export default async function ProductLayout({ children, params }: LayoutProps<"/products/[slug]">) {
   const { slug } = await params
-  const product = getProduct(slug)
-  if (!product || product.status !== "published") notFound()
+  try {
+    await publicProduct(slug)
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) notFound()
+    throw error
+  }
   return children
 }

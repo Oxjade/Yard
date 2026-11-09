@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api, ApiError } from "@/lib/api/client"
 import type { DemoSignInResult, ShopperProfile } from "@/lib/api/contracts/session"
 import { DEMO_SHOPPER, useSession } from "@/lib/stores/session"
+import { syncSavedWithServer } from "@/lib/stores/saved"
 import { afterIdentityChange } from "./identity"
 import { getServerSessionState, useServerSession } from "./use-server-session"
 
@@ -47,6 +48,17 @@ export function SessionSync() {
   const signedOutAt = useSession((s) => s.signedOutAt)
   const pending = useSession((s) => s.serverPending)
   const restoring = useRef(false)
+  const savedSyncFor = useRef<string | null>(null)
+
+  useEffect(() => {
+    const shopperId = server.shopper?.id
+    if (server.status !== "ready" || !shopperId || savedSyncFor.current === shopperId) return
+    savedSyncFor.current = shopperId
+    void syncSavedWithServer().catch(() => {
+      if (savedSyncFor.current === shopperId) savedSyncFor.current = null
+      toast.error("Your saved pieces and followed brands couldn’t be synced.")
+    })
+  }, [server.status, server.shopper?.id])
 
   // Sign-in, sign-out and profile edits in another tab of this browser.
   useEffect(() => {

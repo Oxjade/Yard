@@ -144,6 +144,8 @@ export type Product = {
   id: string
   slug: string
   brandId: string
+  /** Live catalogue identity for brands that aren't in the local sample directory. */
+  brandSummary?: Pick<Brand, "id" | "handle" | "name" | "verified" | "city" | "country">
   name: string
   description: string
   details: string[]
