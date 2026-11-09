@@ -5,8 +5,12 @@ import { db, type Executor } from "../db"
 import { brands, orderGroups, orderRefs } from "../db/schema"
 import type { OrderRefItem } from "../db/schema/orders"
 import { orderEvents, orderLines, orderRefunds, orderReturnLines, orderReturns, orderStates } from "../db/schema/orders-v3"
+import { catalogImages, catalogVariants } from "../db/schema/catalog"
+import { users } from "../db/schema/people"
 import { notFound } from "../http/errors"
 import { deliveryFor } from "../shipping/orders"
+import { mediaSrc } from "../media/dto"
+import { variantLabelOf } from "../catalog/dto"
 import type { brandOrdersQuery, DisputeDto, OrderDetailDto, OrderLineDto, OrdersPageDto, OrderStatesDto, OrderSummaryDto, RefundDto, ReturnDto } from "./contracts"
 import { returnReasonLabels } from "./contracts"
 import { committedRefunds, deriveFulfilment, isOrderRefId, shipmentEventsFor, type OrderRefRow, type ShipmentEventLite, type OrderStateRow } from "./core"
@@ -16,7 +20,7 @@ type Viewer = "shopper" | "brand" | "admin"
 const CAPTURED = new Set(["paid", "partially_refunded"])
 const CANCELLABLE_MERCHANT = new Set(["pending_payment", "paid", "processing"])
 
-type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: string; name: string; handle: string } | null; groupReference: string | null }
+type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: string; name: string; handle: string } | null; customerName: string | null; groupReference: string | null }
 
 /** Payment state for an order with or without a v3 state row. */
 const paymentOf = (o: OrderRefRow, s: OrderStateRow | null) => s?.paymentStatus ?? (o.status === "refunded" ? "refunded" : o.paid ? "paid" : "pending")
@@ -44,6 +48,8 @@ function summaryOf(r: Row, states: OrderStatesDto): OrderSummaryDto {
     groupReference: r.groupReference ?? r.order.reference.replace(/-\d+$/, ""),
     checkoutId: r.state?.checkoutId ?? null,
     brand: r.brand ?? { id: r.order.brandId, name: "The brand", handle: "" },
+    customerName: r.customerName ?? "Customer",
+    shipToPreview: { city: r.order.shipToCity, country: r.order.shipToCountry },
     placedAt: r.order.placedAt.toISOString(),
     currency: r.order.currency,
     subtotalMinor: r.order.subtotalMinor,
@@ -51,6 +57,7 @@ function summaryOf(r: Row, states: OrderStatesDto): OrderSummaryDto {
     totalMinor: r.order.totalMinor,
     refundedMinor: r.state?.refundedMinor ?? 0,
     itemCount: items.reduce((s, i) => s + (i.qty || 0), 0),
+    previewItems: items.slice(0, 3).map((i) => ({ productId: i.productId, variantId: i.variantId, name: i.name, qty: i.qty, unitMinor: i.unitMinor })),
     states: { merchant: states.merchant, payment: states.payment, fulfilment: states.fulfilment, return: states.return, dispute: states.dispute },
     service: r.order.service,
   }
@@ -58,15 +65,27 @@ function summaryOf(r: Row, states: OrderStatesDto): OrderSummaryDto {
 
 async function selectRows(tx: Executor, where: SQL | undefined, limit: number) {
   const rows = await tx
-    .select({ order: orderRefs, state: orderStates, brand: { id: brands.id, name: brands.name, handle: brands.handle }, groupReference: orderGroups.reference })
+    .select({ order: orderRefs, state: orderStates, brand: { id: brands.id, name: brands.name, handle: brands.handle }, customerName: users.name, groupReference: orderGroups.reference })
     .from(orderRefs)
     .leftJoin(orderStates, eq(orderStates.orderRefId, orderRefs.id))
     .leftJoin(brands, eq(brands.id, orderRefs.brandId))
+    .leftJoin(users, eq(users.id, orderRefs.customerId))
     .leftJoin(orderGroups, eq(orderGroups.id, orderRefs.groupId))
     .where(where)
     .orderBy(desc(orderRefs.placedAt), desc(orderRefs.id))
     .limit(limit)
   return rows as Row[]
+}
+
+function beforeOrderCursor(cursor: string): SQL {
+  const separator = cursor.indexOf("|")
+  const placedAt = new Date(separator === -1 ? cursor : cursor.slice(0, separator))
+  if (separator === -1) return lt(orderRefs.placedAt, placedAt)
+  const id = cursor.slice(separator + 1)
+  return or(
+    lt(orderRefs.placedAt, placedAt),
+    and(eq(orderRefs.placedAt, placedAt), lt(orderRefs.id, id)),
+  )!
 }
 
 async function page(tx: Executor, where: SQL | undefined, limit: number): Promise<OrdersPageDto<OrderSummaryDto>> {
@@ -75,14 +94,15 @@ async function page(tx: Executor, where: SQL | undefined, limit: number): Promis
   const slice = rows.slice(0, limit)
   const events = await shipmentEventsFor(tx, slice.map((r) => r.order.id))
   const items = slice.map((r) => summaryOf(r, statesOf(r, events.get(r.order.id) ?? [])))
-  return { items, nextCursor: more ? slice[slice.length - 1].order.placedAt.toISOString() : null }
+  const last = slice[slice.length - 1]?.order
+  return { items, nextCursor: more && last ? `${last.placedAt.toISOString()}|${last.id}` : null }
 }
 
 /** The shopper's own orders, newest first, from any device (server-side, by account). */
 export async function shopperOrders(customerId: string, q: { before?: string; limit: number }) {
   const d = await db()
   const conds = [eq(orderRefs.customerId, customerId)]
-  if (q.before) conds.push(lt(orderRefs.placedAt, new Date(q.before)))
+  if (q.before) conds.push(beforeOrderCursor(q.before))
   return page(d, and(...conds), q.limit)
 }
 
@@ -99,7 +119,7 @@ const paymentSql = sql<string>`coalesce(${orderStates.paymentStatus}, case when 
 export async function brandOrders(brandId: string, q: z.output<typeof brandOrdersQuery>) {
   const d = await db()
   const conds: SQL[] = [eq(orderRefs.brandId, brandId)]
-  if (q.before) conds.push(lt(orderRefs.placedAt, new Date(q.before)))
+  if (q.before) conds.push(beforeOrderCursor(q.before))
   if (q.payment) conds.push(sql`${paymentSql} = ${q.payment}`)
   if (q.fulfilment) conds.push(sql`${fulfilmentSql} = ${q.fulfilment}`)
   if (q.returns === "open") conds.push(or(inArray(orderStates.returnStatus, ["requested", "approved"]), eq(orderRefs.status, "refund_requested"))!)
@@ -204,9 +224,32 @@ export async function orderDetail(viewer: Viewer, orderRefId: string, scope: { c
   const st = statesOf(r, events)
 
   const lineRows = await d.select().from(orderLines).where(eq(orderLines.orderRefId, r.order.id)).orderBy(asc(orderLines.position))
-  const lines: OrderLineDto[] = lineRows.length
+  type RawOrderLine = Omit<OrderLineDto, "variantLabel" | "image">
+  const rawLines: RawOrderLine[] = lineRows.length
     ? lineRows.map((l) => ({ id: l.id, variantId: l.variantId, productId: l.productId, title: l.title, qty: l.qty, unitMinor: l.unitMinor, returnedQty: l.returnedQty, restockedQty: l.restockedQty }))
     : ((r.order.items ?? []) as OrderRefItem[]).map((i, n) => ({ id: `item-${n}`, variantId: i.variantId, productId: i.productId, title: i.name, qty: i.qty, unitMinor: i.unitMinor, returnedQty: 0, restockedQty: 0 }))
+  const productIds = [...new Set(rawLines.map((line) => line.productId))]
+  const variantIds = [...new Set(rawLines.map((line) => line.variantId))]
+  const [images, variants] = await Promise.all([
+    productIds.length ? d.select().from(catalogImages).where(inArray(catalogImages.productId, productIds)).orderBy(asc(catalogImages.position)) : Promise.resolve([]),
+    variantIds.length ? d.select().from(catalogVariants).where(inArray(catalogVariants.id, variantIds)) : Promise.resolve([]),
+  ])
+  const imageByProduct = new Map<string, (typeof images)[number]>()
+  for (const image of images) if (!imageByProduct.has(image.productId)) imageByProduct.set(image.productId, image)
+  const variantById = new Map(variants.map((variant) => [variant.id, variant]))
+  const lines: OrderLineDto[] = rawLines.map((line) => {
+    const image = imageByProduct.get(line.productId)
+    return {
+      ...line,
+      variantLabel: variantLabelOf(variantById.get(line.variantId)?.options),
+      image: {
+        src: image?.mediaId ? mediaSrc(image.mediaId) : image?.path ?? "/media/missing.svg",
+        alt: image?.alt || line.title,
+        width: image?.width ?? 1200,
+        height: image?.height ?? 1500,
+      },
+    }
+  })
 
   const returnRows = await d.select().from(orderReturns).where(eq(orderReturns.orderRefId, r.order.id)).orderBy(desc(orderReturns.requestedAt))
   const rLines = returnRows.length

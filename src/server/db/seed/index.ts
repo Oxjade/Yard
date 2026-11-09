@@ -115,6 +115,10 @@ async function record(m: SeedModule) {
  * A failing or waiting module is logged and skipped, so a wave-2 seed can't break boot.
  */
 export async function runSeeds(root: Root) {
+  if (!getEnv().seedDemo) {
+    log.info("[yard] sample seeds disabled; production starts with an empty catalogue")
+    return
+  }
   const versions = await runTx(root, () => recordedVersions())
   const ctx = await runTx(root, () => context())
   for (const m of seedModules) {

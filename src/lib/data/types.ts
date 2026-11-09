@@ -342,7 +342,7 @@ export type DeliverySnapshot = {
  * so live checkouts read "Not charged"; nothing ever implies money moved.
  */
 export type PaymentSnapshot = {
-  status: "not_charged" | "pending" | "authorized" | "captured" | "refunded"
+  status: "not_charged" | "pending" | "authorized" | "captured" | "failed" | "refunded"
   /** The method the shopper chose, as words ("Card", "Bank transfer"), never card numbers. */
   method?: string
   note?: string

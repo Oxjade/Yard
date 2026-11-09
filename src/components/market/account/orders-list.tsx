@@ -18,6 +18,8 @@ import { checkoutPayment, isSampleCheckout, OrderStatusBadge, SampleChip, Tracki
 import { orderEstimate } from "@/components/market/delivery/browser-estimate"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { formatDayShort, formatShortRange } from "@/lib/shipping/format"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { ServerOrdersList } from "./server-orders-list"
 
 /** "Est. 11–16 Nov" or "Delivered 12 Nov": an estimate, labelled as one (§6.5). Read after hydration. */
 function DeliveryChip({ order }: { order: MerchantOrder }) {
@@ -132,6 +134,7 @@ function subscribeHash(onChange: () => void) {
 
 /** Order history: one card per checkout, one row per brand order inside it. */
 export function OrdersList() {
+  const shopper = useServerSession((state) => state.shopper)
   const groups = useOrders((s) => s.groups)
   const orders = useOrders((s) => s.orders)
   const [filter, setFilter] = useState<Filter>("all")
@@ -139,6 +142,7 @@ export function OrdersList() {
   // mark it, and move focus to its heading.
   const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "")
   const target = hash.startsWith("#g-") ? hash.slice(3) : null
+
   useEffect(() => {
     const el = target ? document.getElementById(`g-${target}`) : null
     if (!el) return
@@ -156,6 +160,8 @@ export function OrdersList() {
   const isOpen = (r: (typeof rows)[number]) => r.orders.some((o) => openStatuses.has(o.status))
   const visible = rows.filter((r) => (filter === "all" ? true : filter === "open" ? isOpen(r) : !isOpen(r)))
   const onTheWay = orders.filter((o) => o.status === "shipped").length
+
+  if (shopper && !shopper.demo) return <ServerOrdersList key={shopper.id} shopperId={shopper.id} />
 
   return (
     <>

@@ -66,7 +66,8 @@ export function ConfirmationView() {
   const single = orders.length === 1
   // Orders are created unpaid and only the payment provider may mark them paid, so the
   // heading and labels follow the orders' real status instead of assuming success.
-  const awaitingPayment = orders.some((o) => o.status === "pending_payment")
+  const paymentFailed = group.payment?.status === "failed" || orders.some((o) => o.paymentStatus === "failed")
+  const awaitingPayment = !paymentFailed && orders.some((o) => o.status === "pending_payment")
   const allPaid = orders.every((o) => o.status === "paid")
   const sample = isSampleCheckout(group.id)
 
@@ -78,10 +79,12 @@ export function ConfirmationView() {
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[minmax(0,1fr)_28rem] lg:gap-16">
         <section aria-labelledby="confirmed-title" className="lg:pt-6 print:hidden">
           <h1 id="confirmed-title" className="font-display text-display-lg text-ink">
-            {awaitingPayment ? "Order placed" : "Order confirmed"}
+            {paymentFailed ? "Payment wasn’t completed" : awaitingPayment ? "Order placed" : "Order confirmed"}
           </h1>
           <p className="mt-4 max-w-2xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">
-            {awaitingPayment
+            {paymentFailed
+              ? "The payment provider couldn’t complete this payment. No payment was taken, and the order won’t be prepared. You can try placing it again."
+              : awaitingPayment
               ? single
                 ? `Your order with ${brandsOf[0].name} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
                 : `Your checkout created ${orders.length} orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it.`
@@ -90,8 +93,12 @@ export function ConfirmationView() {
                 : `Here is where ${single ? "the order" : `each of the ${orders.length} brand orders`} from this checkout stands.`}
           </p>
           <p className="mt-3 max-w-2xl text-xs leading-relaxed text-ink-3">
-            {awaitingPayment
-              ? "No payment provider is connected in this development build, so nothing was charged and these orders stay awaiting payment confirmation. "
+            {paymentFailed
+              ? "The checkout is closed. Start a new checkout to try another payment method. "
+              : awaitingPayment && group.payment?.status === "not_charged"
+              ? "Payments aren’t connected in this environment, so nothing was charged and these orders stay awaiting payment confirmation. "
+              : awaitingPayment
+                ? "The payment provider is still confirming the result. We’ll update your order when it responds. "
               : sample
                 ? "This is sample order history for the demo account. It shows how a paid checkout reads; no payment was taken. "
                 : ""}

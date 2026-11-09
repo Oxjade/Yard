@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { api } from "@/lib/api/client"
 import { availableStock, variantLabel } from "@/lib/data/products"
 import type { Product, Variant } from "@/lib/data/types"
 import { useStudio, type InventoryEvent } from "@/lib/stores/studio"
@@ -44,19 +45,18 @@ const direction: Record<AdjustReason, 1 | -1 | 0> = { received: 1, return: 1, da
  * Opened from a row's Adjust button or its menu, so focus goes back there on close, or to
  * `returnFocus` when the row has left the filtered list.
  */
-export function AdjustStockDialog({ target, onOpenChange, returnFocus }: { target: { product: Product; variant: Variant } | null; onOpenChange: (open: boolean) => void; returnFocus?: () => HTMLElement | null }) {
+export function AdjustStockDialog({ target, onOpenChange, returnFocus, onStockUpdated }: { target: { product: Product; variant: Variant } | null; onOpenChange: (open: boolean) => void; returnFocus?: () => HTMLElement | null; onStockUpdated?: () => void }) {
   const onCloseAutoFocus = useReturnFocus(!!target, returnFocus)
   return (
     <Dialog open={!!target} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[460px]" onCloseAutoFocus={onCloseAutoFocus}>
-        {target ? <AdjustForm key={target.variant.id} product={target.product} variant={target.variant} onDone={() => onOpenChange(false)} /> : null}
+        {target ? <AdjustForm key={target.variant.id} product={target.product} variant={target.variant} onDone={() => onOpenChange(false)} onStockUpdated={onStockUpdated} /> : null}
       </DialogContent>
     </Dialog>
   )
 }
 
-function AdjustForm({ product, variant, onDone }: { product: Product; variant: Variant; onDone: () => void }) {
-  const adjustStock = useStudio((s) => s.adjustStock)
+function AdjustForm({ product, variant, onDone, onStockUpdated }: { product: Product; variant: Variant; onDone: () => void; onStockUpdated?: () => void }) {
   const log = useStudio((s) => s.inventoryLog)
   const [reason, setReason] = useState<AdjustReason>("received")
   const [delta, setDelta] = useState("+1")
@@ -103,10 +103,34 @@ function AdjustForm({ product, variant, onDone }: { product: Product; variant: V
 
   // One adjustment per submit: a second press while it runs is ignored, so stock never moves twice.
   const apply = useAsyncAction(
-    (change: number) => {
-      adjustStock(product.id, variant.id, change, reason, note.trim() || undefined)
+    async (change: number) => {
+      const reasonMap: Record<AdjustReason, "adjustment" | "restock" | "return"> = {
+        received: "restock",
+        adjustment: "adjustment",
+        damaged: "adjustment",
+        return: "return",
+      }
+      const stock = await api<{ variantId: string; onHand: number; held: number; available: number }>(`/api/studio/catalog/variants/${encodeURIComponent(variant.id)}/stock`, {
+        body: { mode: "adjust", qty: change, reason: reasonMap[reason], ...(note.trim() ? { note: note.trim() } : {}) },
+      })
+      const movements = await api<{ movements: { id: string; delta: number; reason: string; note: string | null; at: string }[] }>(`/api/studio/catalog/variants/${encodeURIComponent(variant.id)}/movements`, { query: { limit: 20 } }).catch(() => null)
+      const inventoryReason = (value: string): InventoryEvent["reason"] => value === "restock" ? "received" : value === "return" ? "return" : value === "sale" ? "sale" : value === "set" || value === "correction" ? "adjustment" : "adjustment"
+      const state = useStudio.getState()
+      useStudio.setState({
+        products: state.products.map((item) => item.id !== product.id ? item : {
+          ...item,
+          variants: item.variants.map((currentVariant) => currentVariant.id === variant.id ? { ...currentVariant, stock: stock.onHand, reserved: stock.held } : currentVariant),
+        }),
+        ...(movements ? {
+          inventoryLog: [
+            ...movements.movements.map((movement) => ({ id: movement.id, at: movement.at, productId: product.id, variantId: variant.id, delta: movement.delta, reason: inventoryReason(movement.reason), note: movement.note ?? undefined })),
+            ...state.inventoryLog.filter((event) => event.variantId !== variant.id),
+          ],
+        } : {}),
+      })
       touchProducts([product.id])
-      return Math.max(0, variant.stock + change - variant.reserved)
+      onStockUpdated?.()
+      return stock.available
     },
     {
       error: "The stock count couldn't be saved. Check your connection, then try again.",

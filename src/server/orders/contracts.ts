@@ -11,6 +11,12 @@ import { DISPUTE_STATES, RETURN_REASONS } from "../db/schema/orders-v3"
 const idemKey = z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, { error: "Send an idempotency key of 8–80 letters, digits, - or _." })
 const qty = z.number().int().min(1).max(999)
 const minor = z.number().int().min(1).max(1_000_000_000_000)
+const orderCursor = z.string().max(120).refine((value) => {
+  const separator = value.indexOf("|")
+  const timestamp = separator === -1 ? value : value.slice(0, separator)
+  const id = separator === -1 ? null : value.slice(separator + 1)
+  return isoDateTime.safeParse(timestamp).success && (id === null || safeId().safeParse(id).success)
+}, { error: "That order cursor isn't valid." })
 
 export const returnReasonLabels: Record<(typeof RETURN_REASONS)[number], string> = {
   too_small: "Too small",
@@ -25,8 +31,8 @@ export const returnReasonLabels: Record<(typeof RETURN_REASONS)[number], string>
 /* ---------- Shopper ---------- */
 
 export const ordersListQuery = z.object({
-  /** ISO time: orders placed before this (the previous page's nextCursor). */
-  before: isoDateTime.optional(),
+  /** Keyset cursor for the previous page; timestamp-only values remain accepted for older clients. */
+  before: orderCursor.optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 })
 
@@ -54,7 +60,7 @@ export const returnRequestBody = z
 /* ---------- Brand (Studio) ---------- */
 
 export const brandOrdersQuery = z.object({
-  before: isoDateTime.optional(),
+  before: orderCursor.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   payment: z.enum(["pending", "paid", "failed", "partially_refunded", "refunded"]).optional(),
   fulfilment: z.enum(["unfulfilled", "processing", "shipped", "delivered", "returned_to_sender", "cancelled"]).optional(),
@@ -130,7 +136,7 @@ export const adminReturnDecisionBody = z
 
 export type MoneyDto = { amountMinor: number; currency: string }
 
-export type OrderLineDto = { id: string; variantId: string; productId: string; title: string; qty: number; unitMinor: number; returnedQty: number; restockedQty: number }
+export type OrderLineDto = { id: string; variantId: string; productId: string; title: string; qty: number; unitMinor: number; returnedQty: number; restockedQty: number; variantLabel: string; image: { src: string; alt: string; width: number; height: number } }
 
 export type OrderStatesDto = {
   merchant: string
@@ -179,6 +185,8 @@ export type OrderSummaryDto = {
   groupReference: string
   checkoutId: string | null
   brand: { id: string; name: string; handle: string }
+  customerName: string
+  shipToPreview: { city: string | null; country: string }
   placedAt: string
   currency: string
   subtotalMinor: number
@@ -186,6 +194,7 @@ export type OrderSummaryDto = {
   totalMinor: number
   refundedMinor: number
   itemCount: number
+  previewItems: { productId: string; variantId: string; name: string; qty: number; unitMinor: number }[]
   states: OrderStatesDto
   service: string
 }

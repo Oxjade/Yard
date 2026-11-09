@@ -138,14 +138,13 @@ refuses to start ("Another Yard server (pid N) …").
 | `npm test` | Unit tests beside the pure modules (`*.test.ts`, run with tsx) |
 | `npm run start:demo` | A **local demo** of the production build on port 3001 with demo sign-in on (generated production secrets in `<dataDir>/production/demo-secrets.json`). It listens on 127.0.0.1 only; `YARD_DEMO_HOST=0.0.0.0` exposes it to your network, which lets anyone there sign in without a password. Not a deployment |
 
-**Accounts.** There are no passwords or identity providers in this build. Every surface signs
-in with demo accounts and says so: the marketplace always signs in as the demo shopper Ada
-Nwosu (this browser's bag, orders and saves aren't per-account); Brand Studio and the Control
-Center have a "Switch demo account…" picker in the workspace menu. In production demo sign-in
-is off unless `YARD_DEMO_AUTH=1` (and `YARD_DEMO_ADMIN=1` for admins); when it's on, the server
-logs a warning at start and every page shows a banner. Turning a flag off ends the sessions it
-allowed: the next start signs them out, and any request with one reads as signed out. A real
-deployment needs a real identity provider first.
+**Accounts and demo data.** Shopper email/password accounts, email verification, password reset,
+magic links, configured Google/Apple sign-in, brand invitations and admin MFA use server sessions.
+Demo accounts remain available in development. Production demo sign-in and sample seeding are
+off by default; enable both `YARD_DEMO_AUTH=1` and `YARD_SEED_DEMO=1` only for an isolated demo
+deployment (add `YARD_DEMO_ADMIN=1` only when demo admin access is also intended). Demo sign-in
+logs a warning, and disabling its flag ends the sessions it allowed. Production should use a
+fresh data directory; the seed guard does not delete sample records from an existing database.
 
 **Shared networks.** `npm run dev` listens on every interface, and its demo sign-in has no
 passwords. On a network you don't control, run `npx next dev -H 127.0.0.1` instead. Even on

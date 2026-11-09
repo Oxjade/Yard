@@ -30,7 +30,7 @@ if (!existsSync(file)) {
 const secrets = JSON.parse(readFileSync(file, "utf8"))
 const port = process.env.PORT ?? "3001"
 const host = process.env.YARD_DEMO_HOST?.trim() || "127.0.0.1"
-const env = { ...process.env, ...secrets, NODE_ENV: "production", YARD_DEMO_AUTH: "1", YARD_PUBLIC_URL: process.env.YARD_PUBLIC_URL ?? `http://localhost:${port}` }
+const env = { ...process.env, ...secrets, NODE_ENV: "production", YARD_DEMO_AUTH: "1", YARD_SEED_DEMO: "1", YARD_PUBLIC_URL: process.env.YARD_PUBLIC_URL ?? `http://localhost:${port}` }
 
 if (!process.argv.includes("--no-build")) {
   const b = spawnSync("npx", ["next", "build"], { stdio: "inherit", env })

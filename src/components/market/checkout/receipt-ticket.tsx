@@ -56,8 +56,9 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
   const hydrated = useHydrated()
   const payment = checkoutPayment(orders)
   const paid = payment.status === "Confirmed"
-  const line = sample ? receiptLine.sample : paid ? receiptLine.paid : receiptLine.awaiting
   const snap = group.payment as ReceiptPayment | undefined
+  const paymentFailed = !sample && snap?.status === "failed"
+  const line = sample ? receiptLine.sample : paymentFailed ? "Payment wasn’t completed — nothing was charged." : paid ? receiptLine.paid : receiptLine.awaiting
   const notCharged = !sample && !paid
   return (
     <motion.section
@@ -71,7 +72,7 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
       <div className={cn("rounded-t-[10px] bg-ink px-6 pt-8 pb-6 text-center print:bg-white", notchBelow)}>
         <ConfettiIcon weight="duotone" className="mx-auto size-10 text-purple" aria-hidden />
         <h2 id="receipt-title" className="mt-3 font-display text-[2rem] leading-none text-obsidian">
-          Thank you!
+          {paymentFailed ? "Payment update" : "Thank you!"}
         </h2>
         <p className="mx-auto mt-3 max-w-[18rem] text-sm leading-relaxed text-[#4a4a4a]">{line}</p>
       </div>
@@ -109,7 +110,7 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
                 <p className="truncate text-[13px] text-[#4a4a4a] tabular">{methodLine(snap)}</p>
               </div>
               {notCharged ? (
-                <span className="shrink-0 rounded-full border border-obsidian/15 px-2.5 py-1 text-[11px] font-medium text-[#4a4a4a]">Not charged</span>
+                <span className="shrink-0 rounded-full border border-obsidian/15 px-2.5 py-1 text-[11px] font-medium text-[#4a4a4a]">{paymentFailed ? "Payment failed" : "Not charged"}</span>
               ) : sample ? (
                 <span className="shrink-0 rounded-[3px] border border-obsidian/15 px-1.5 py-0.5 text-[10px] text-[#4a4a4a]">Sample</span>
               ) : null}

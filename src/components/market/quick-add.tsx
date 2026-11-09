@@ -151,9 +151,9 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   // A local add completes at once; the check shows for a moment and repeat presses meanwhile
   // are ignored, as on the product page. The "Added to cart" bubble (BagPop) confirms it.
   const adding = useAsyncAction(
-    (variantId: string) => {
+    async (variantId: string) => {
       const before = useCart.getState().lines.find((l) => l.variantId === variantId)?.quantity ?? 0
-      add(product.id, variantId, 1)
+      await add(product.id, variantId, 1)
       return before >= MAX_QTY_PER_LINE ? ("in-cart" as const) : ("added" as const)
     },
     { successFlashMs: 1500, onSuccess: setResult },

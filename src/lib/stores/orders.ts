@@ -5,9 +5,9 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
 import { site } from "@/config/site"
 import { ApiError, api } from "@/lib/api/client"
+import type { CheckoutOrderSummary, CheckoutOrdersPage, CheckoutStartResponse, StartCheckoutRequest } from "@/lib/api/contracts/checkout"
 import type { DemoSignInResult } from "@/lib/api/contracts/session"
-import type { QuoteGroupDto, RegisterOrderBody, RegisterResponse } from "@/lib/api/contracts/shipping"
-import { registerOrders } from "@/lib/api/shipping"
+import type { QuoteGroupDto } from "@/lib/api/contracts/shipping"
 import { brandById } from "@/lib/data/brands"
 import { convert, formatMoney } from "@/lib/money"
 import { priceCart, type ShippingService } from "@/lib/cart"
@@ -15,21 +15,18 @@ import { afterIdentityChange } from "@/lib/session/identity"
 import { DEMO_SHOPPER } from "./session"
 import { customerCheckoutGroups, customerOrders, sampleReturnRequest } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
-import type { CheckoutGroup, MerchantOrder, ReturnDecision } from "@/lib/data/types"
+import type { CheckoutGroup, DeliverySnapshot, MerchantOrder, MerchantOrderStatus, PaymentStatus, ReturnDecision } from "@/lib/data/types"
 import { returnRefund } from "@/lib/payouts"
-import type { CartLine } from "./cart"
+import { useCart, type CartLine } from "./cart"
+import { useSession } from "./session"
 import { useAdmin } from "./admin"
 import { currentReferences, renameTimeline } from "./old-name"
 import { refreshSampleOrder } from "./sample-refresh"
 import { useStudio } from "./studio"
 
 /**
- * The shopper's orders. `placeCheckout` registers the checkout with the server first
- * (POST /api/orders/register, §6.5): the server re-checks every brand's shipping quote and mints
- * the group id, order ids and references, which the local orders then use. Only after that are
- * the orders created in this browser. Orders are created unpaid ("pending_payment") and only a
- * verified provider webhook may mark them paid; there is no provider in this build, so they stay
- * unpaid. The checkout's idempotency key makes a retry return the same server group.
+ * Shopper order presentation is persisted locally, but placement, stock holds, payment state and
+ * order identity come from the server checkout. The idempotency key makes retries safe.
  */
 
 export type CheckoutInput = {
@@ -61,26 +58,38 @@ export class CheckoutError extends Error {
   }
 }
 
-/** Restores the demo shopper session (as SessionSync does) when the server lost it. */
+/** Restores the shared demo session when its server cookie expires. */
 async function restoreShopperSession() {
   await api<DemoSignInResult>("/api/auth/demo", { body: { actor: "shopper", account: DEMO_SHOPPER } })
   await afterIdentityChange("market")
 }
 
-/** Registers the checkout; on 401 restores the session once and retries once (§6.5). */
-async function register(body: RegisterOrderBody): Promise<RegisterResponse> {
+/** Makes a shopper API request; only demo identities may recover by restoring the demo session. */
+async function shopperRequest<T>(request: () => Promise<T>): Promise<T> {
   try {
-    return await registerOrders(body)
+    return await request()
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
   }
+  if (useSession.getState().user?.id !== DEMO_SHOPPER) throw new CheckoutError("signin", "Your session ended. Sign in again to continue with your order.")
   try {
     await restoreShopperSession()
-    return await registerOrders(body)
+    return await request()
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 401 || e.code === "suspended" || e.status === 404)) throw new CheckoutError("signin", "Sign in again to place your order. Nothing was placed.")
+    if (e instanceof ApiError && (e.status === 401 || e.code === "suspended" || e.status === 404)) throw new CheckoutError("signin", "Sign in again to continue with your order.")
     throw e
   }
+}
+
+function merchantStatus(value: string): MerchantOrderStatus {
+  const statuses: MerchantOrderStatus[] = ["pending_payment", "paid", "processing", "shipped", "delivered", "cancelled", "refund_requested", "refunded"]
+  return statuses.includes(value as MerchantOrderStatus) ? value as MerchantOrderStatus : "pending_payment"
+}
+
+function paymentStatus(value: string): PaymentStatus {
+  if (value === "paid") return "captured"
+  const statuses: PaymentStatus[] = ["pending", "authorized", "captured", "failed", "refunded", "partially_refunded"]
+  return statuses.includes(value as PaymentStatus) ? value as PaymentStatus : "pending"
 }
 
 const methodWord: Record<CheckoutInput["paymentMethod"], string> = { card: "Card", bank_transfer: "Bank transfer", ussd: "USSD", mobile_money: "Mobile money" }
@@ -91,7 +100,8 @@ type OrdersState = {
   orders: MerchantOrder[]
   processedKeys: Record<string, string>
   /** Throws CheckoutError (or an ApiError) when nothing was placed. */
-  placeCheckout: (input: CheckoutInput) => Promise<{ groupId: string; duplicate: boolean }>
+  placeCheckout: (input: CheckoutInput) => Promise<{ groupId: string; duplicate: boolean; authorizationUrl: string | null }>
+  verifyCheckout: (checkoutId: string) => Promise<void>
   /**
    * A return request on a delivered order. It lands on the brand's order in Studio and in the
    * admin refund queue (in the backend phase: one row both read). Returns false when the order
@@ -110,68 +120,120 @@ export const useOrders = create<OrdersState>()(
       processedKeys: {},
       placeCheckout: async (input) => {
         const existing = get().processedKeys[input.idempotencyKey]
-        if (existing) return { groupId: existing, duplicate: true }
+        if (existing) return { groupId: existing, duplicate: true, authorizationUrl: null }
         const bag = priceCart(input.lines, input.shipTo, input.currency, input.quotes, (b) => input.shipping[b])
         const blocked = bag.groups.find((g) => !g.quote || !g.option)
         if (blocked) throw new CheckoutError("blocked", blocked.reason ? `${blocked.reason.replace(/\.$/, "")} for ${blocked.brand.name}. Nothing was placed.` : `Shipping for ${blocked.brand.name} isn't ready. Nothing was placed.`)
-        const body: RegisterOrderBody = {
+        const body: StartCheckoutRequest = {
           idempotencyKey: input.idempotencyKey,
           currency: input.currency,
-          shipTo: { country: input.shipTo, ...(input.shipToCity ? { city: input.shipToCity } : {}) },
-          groups: bag.groups.map((g) => ({ lines: g.lines.map((l) => ({ productId: l.product.id, variantId: l.variant.id, qty: l.line.quantity })), service: g.option!.service, quoteToken: g.quote!.quoteToken })),
+          shipTo: {
+            name: input.contact.name.trim(),
+            line1: input.address.line1,
+            city: input.address.city,
+            country: input.address.country,
+            ...(input.address.postcode ? { postalCode: input.address.postcode } : {}),
+            ...(input.contact.phone ? { phone: input.contact.phone } : {}),
+          },
+          shipping: bag.groups.map((g) => ({ brandId: g.brand.id, service: g.option!.service })),
+          expectedTotalMinor: bag.total ?? undefined,
         }
-        let res: RegisterResponse
+        let checkout: CheckoutStartResponse
+        let orderPage: CheckoutOrdersPage
         try {
-          res = await register(body)
+          checkout = await shopperRequest(() => api<CheckoutStartResponse>("/api/checkout", { body }))
+          orderPage = await shopperRequest(() => api<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkout.id)}`))
         } catch (e) {
           if (e instanceof CheckoutError) throw e
           if (e instanceof ApiError && e.status === 409) throw new CheckoutError("changed", e.message)
           if (e instanceof ApiError && e.status === 0) throw new CheckoutError("network", "Couldn't reach Yard. Nothing was placed.")
           throw new CheckoutError("other", e instanceof ApiError && e.message ? `${e.message.replace(/\.$/, "")}. Nothing was placed.` : "Your order wasn't placed. Nothing was charged. Try again.")
         }
-        // A retry in another tab may already have created this group here.
-        if (get().groups.some((x) => x.id === res.groupId)) {
-          set({ processedKeys: { ...get().processedKeys, [input.idempotencyKey]: res.groupId } })
-          return { groupId: res.groupId, duplicate: true }
-        }
-        const at = res.placedAt
-        const orders: MerchantOrder[] = res.orders.map((r) => {
-          const g = bag.groups.find((x) => x.brand.id === r.brandId)!
+        if (!orderPage.items.length) throw new CheckoutError("other", "Yard started checkout but couldn't load its orders. Retry to recover this checkout.")
+        const customerId = useSession.getState().user?.id ?? DEMO_SHOPPER
+        const orders: MerchantOrder[] = orderPage.items.map((summary: CheckoutOrderSummary) => {
+          const g = bag.groups.find((x) => x.brand.id === summary.brand.id)
+          if (!g) throw new CheckoutError("other", "The server returned an order for a brand that isn't in this cart.")
+          const service = (["standard", "express", "pickup"] as string[]).includes(summary.service) ? summary.service as ShippingService : g.option!.service
+          const estimate = g.quote?.options.find((o) => o.service === service)?.estimate
+          const delivery: DeliverySnapshot | undefined = estimate ? {
+            basis: estimate.basis,
+            dispatchFrom: estimate.dispatchFrom,
+            shipBy: estimate.shipBy,
+            arrivalFrom: estimate.arrivalFrom,
+            arrivalTo: estimate.arrivalTo,
+            deliveredOn: estimate.deliveredOn,
+            late: estimate.late,
+            guaranteed: false,
+            service,
+            source: "server",
+            computedAt: checkout.createdAt,
+          } : undefined
           return {
-            id: r.id,
-            reference: r.reference,
-            groupId: res.groupId,
-            brandId: r.brandId,
-            customerId: res.customerId,
-            // Never "paid" until the payment provider confirms it server-side.
-            status: "pending_payment",
-            paymentStatus: "pending",
-            currency: input.currency,
+            id: summary.id,
+            reference: summary.reference,
+            groupId: checkout.id,
+            brandId: summary.brand.id,
+            customerId,
+            status: merchantStatus(summary.states.merchant),
+            paymentStatus: paymentStatus(summary.states.payment),
+            currency: summary.currency as CurrencyCode,
             lines: g.lines.map((l) => ({ productId: l.product.id, variantId: l.variant.id, name: l.product.name, variantLabel: variantLabel(l.variant.options), image: l.product.images[0], quantity: l.line.quantity, unitPrice: l.unit })),
-            subtotal: r.subtotal,
-            shipping: r.shipping,
+            subtotal: summary.subtotalMinor,
+            shipping: summary.shippingMinor,
             tax: 0,
-            total: r.total,
-            commission: Math.round(r.subtotal * 0.05),
-            placedAt: at,
+            total: summary.totalMinor,
+            commission: Math.round(summary.subtotalMinor * 0.05),
+            placedAt: summary.placedAt,
             shippingAddress: { name: input.contact.name, line1: input.address.line1, city: input.address.city, country: input.address.country, postcode: input.address.postcode, phone: input.contact.phone },
-            shippingMethod: serviceLabel(r.service, g.option?.pickup?.area),
-            delivery: { ...r.delivery, service: r.service },
+            shippingMethod: serviceLabel(service, g.option?.pickup?.area),
+            delivery,
             timeline: [
-              { at, label: "Order placed" },
-              { at, label: "Waiting for the payment provider to confirm. No provider is connected in this development build, so this order stays unpaid." },
+              { at: summary.placedAt, label: "Order placed" },
+              { at: summary.placedAt, label: checkout.payment?.stub ? "Payments are not connected in this environment. Nothing was charged." : "Waiting for the payment provider to confirm." },
             ],
           }
         })
-        // Words only: the method, the summary the shopper saw ("Visa ending 4242") and the name on it.
-        const payment = { status: "not_charged" as const, method: methodWord[input.paymentMethod], note: input.payment.label, label: input.payment.label, holder: input.payment.holder, cardBrand: input.payment.cardBrand, last4: input.payment.last4 }
-        const group: CheckoutGroup = { id: res.groupId, reference: res.reference, customerId: res.customerId, placedAt: at, currency: input.currency, orderIds: orders.map((o) => o.id), total: orders.reduce((s, o) => s + o.total, 0), payment }
-        set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: res.groupId } })
+        const payment = {
+          status: checkout.status === "paid" ? "captured" as const : checkout.status === "failed" || checkout.status === "expired" ? "failed" as const : checkout.payment?.stub ? "not_charged" as const : "pending" as const,
+          method: methodWord[input.paymentMethod],
+          note: checkout.failureReason ?? checkout.payment?.message ?? undefined,
+        }
+        const group: CheckoutGroup = {
+          id: checkout.id,
+          reference: checkout.reference ?? orderPage.items[0].groupReference,
+          customerId,
+          placedAt: checkout.createdAt,
+          currency: checkout.currency as CurrencyCode,
+          orderIds: checkout.orderIds,
+          total: checkout.totalMinor,
+          payment,
+        }
+        set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: checkout.id } })
         // The merchant sees their order immediately (the server holds the same order_ref).
         const studio = useStudio.getState()
         const mine = orders.filter((o) => o.brandId === studio.brandId)
         if (mine.length) useStudio.setState({ orders: [...mine, ...studio.orders] })
-        return { groupId: res.groupId, duplicate: res.duplicate }
+        return { groupId: checkout.id, duplicate: false, authorizationUrl: checkout.payment?.authorizationUrl ?? null }
+      },
+      verifyCheckout: async (checkoutId) => {
+        const checkout = await shopperRequest(() => api<CheckoutStartResponse>(`/api/checkout/${encodeURIComponent(checkoutId)}/verify`, { method: "POST" }))
+        const page = await shopperRequest(() => api<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkoutId)}`))
+        const current = get()
+        const updates = new Map(page.items.map((summary) => [summary.id, summary]))
+        const orders = current.orders.map((order) => {
+          const summary = updates.get(order.id)
+          if (!summary) return order
+          return { ...order, status: merchantStatus(summary.states.merchant), paymentStatus: paymentStatus(summary.states.payment), subtotal: summary.subtotalMinor, shipping: summary.shippingMinor, total: summary.totalMinor }
+        })
+        const groups = current.groups.map((group) => group.id === checkoutId ? {
+          ...group,
+          reference: checkout.reference ?? group.reference,
+          total: checkout.totalMinor,
+          payment: { ...group.payment, status: checkout.status === "paid" ? "captured" as const : checkout.status === "failed" || checkout.status === "expired" ? "failed" as const : checkout.payment?.stub ? "not_charged" as const : "pending" as const, note: checkout.failureReason ?? checkout.payment?.message ?? group.payment?.note },
+        } : group)
+        set({ groups, orders })
+        await useCart.getState().syncFromServer()
       },
       requestReturn: (orderId, request) => {
         const o = get().orders.find((x) => x.id === orderId)

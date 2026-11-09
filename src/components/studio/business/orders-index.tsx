@@ -19,7 +19,9 @@ import { cn } from "@/lib/utils"
 import { conditionalOrderTabs, ordersDescription, countryName, emptyOrderTab, formatDateTime, itemCount, orderMatchesTab, orderTabs, paymentView, plural, relativeDay, shopperName, type OrderTab } from "./model"
 import { TrackingDialog } from "./order-dialogs"
 import { useShipmentQueue } from "@/components/studio/shipping/shipment-sync"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { PhoneSort, phoneCell, useStudioReady } from "./shared"
+import { ServerOrdersIndex } from "./server-orders-index"
 
 /** "Today" and "3 days ago" read lower case mid-sentence; dates keep their capital month. */
 const lowerRelative = (s: string) => (/^(Today|Yesterday|\d+ days ago)$/.test(s) ? s.toLowerCase() : s)
@@ -51,6 +53,14 @@ function toCsv(rows: MerchantOrder[], currency: string) {
 }
 
 export function OrdersIndex() {
+  const brand = useServerSession((state) => state.brand)
+  if (brand && !brand.demo) {
+    return <ServerOrdersIndex key={brand.brand.id} brandId={brand.brand.id} brandName={brand.brand.name} canFulfil={brand.permissions.includes("orders.fulfil")} />
+  }
+  return <DemoOrdersIndex />
+}
+
+function DemoOrdersIndex() {
   const ready = useStudioReady()
   const router = useRouter()
   const brandId = useStudio((s) => s.brandId)

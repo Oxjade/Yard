@@ -15,13 +15,21 @@ import { useNotificationEvents } from "@/lib/notification-events"
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Stores skip hydration so server HTML and the first client render agree.
-    void useCart.persist.rehydrate()
-    void useSaved.persist.rehydrate()
-    void useSession.persist.rehydrate()
-    void useStudio.persist.rehydrate()
-    void useOrders.persist.rehydrate()
-    void useAdmin.persist.rehydrate()
-    void useNotifications.persist.rehydrate()
+    let active = true
+    void Promise.all([
+      useCart.persist.rehydrate(),
+      useSaved.persist.rehydrate(),
+      useSession.persist.rehydrate(),
+      useStudio.persist.rehydrate(),
+      useOrders.persist.rehydrate(),
+      useAdmin.persist.rehydrate(),
+      useNotifications.persist.rehydrate(),
+    ]).then(() => {
+      if (active) return useCart.getState().syncFromServer()
+    })
+    return () => {
+      active = false
+    }
   }, [])
   useNotificationEvents()
 

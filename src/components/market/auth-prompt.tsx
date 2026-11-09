@@ -1,13 +1,15 @@
 "use client"
 
-import { useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { bagButton } from "@/components/market/bag-drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { DEMO_SHOPPER, useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { site } from "@/config/site"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
@@ -20,8 +22,8 @@ const copy: Record<AuthIntent, { title: string; body: string }> = {
   report: { title: "Sign in to report", body: "Reports go to Yard's trust and safety team." },
 }
 
-/** The demo note under every sign-in form (§2.3). */
-export const DEMO_SIGN_IN_NOTE = "Demo build: there are no real accounts yet. You'll be signed in as the demo shopper Ada Nwosu."
+/** The demo note shown only when the server allows demo sign-in. */
+export const DEMO_SIGN_IN_NOTE = "Demo sign-in uses the shared shopper account; email sign-in creates or opens your own account."
 
 export function GoogleMark() {
   return (
@@ -57,7 +59,13 @@ export function useDemoSignIn() {
 
 const EMAIL = /^\S+@\S+\.\S+$/
 
-type AuthErrors = { email?: string; password?: string }
+type AuthErrors = { name?: string; email?: string; password?: string }
+
+type AuthMode = "signin" | "signup"
+
+function nameError(name: string) {
+  if (!name.trim()) return "Enter your name."
+}
 
 function emailError(email: string) {
   if (!email.trim()) return "Enter your email address."
@@ -66,7 +74,7 @@ function emailError(email: string) {
 
 function passwordError(password: string) {
   if (!password) return "Enter your password."
-  if (password.length < 8) return "Use at least 8 characters for your password."
+  if (password.length < 10) return "Use at least 10 characters for your password."
 }
 
 /**
@@ -77,24 +85,38 @@ function passwordError(password: string) {
  */
 export function AuthForm({ onDone }: { onDone?: () => void }) {
   const signInDemo = useSession((s) => s.signInDemo)
-  const [busy, setBusy] = useState<SessionUser["provider"] | null>(null)
+  const signInWithPassword = useSession((s) => s.signInWithPassword)
+  const demoEnabled = useServerSession((s) => s.demoAuth?.shopper === true)
+  const [oauthProviders, setOauthProviders] = useState<{ google: boolean; apple: boolean; magicLink: boolean }>({ google: false, apple: false, magicLink: false })
+  const [busy, setBusy] = useState<"demo" | "email" | "signup" | "forgot" | "magic" | "google" | "apple" | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [mode, setMode] = useState<AuthMode>("signin")
+  const [signupSent, setSignupSent] = useState(false)
+  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [errors, setErrors] = useState<AuthErrors>({})
+  const nameRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const uid = useId()
   const ids = { email: `${uid}-email`, emailError: `${uid}-email-error`, password: `${uid}-password`, passwordError: `${uid}-password-error` }
 
-  // Every method signs in on the server as the demo shopper; the profile comes from the server,
-  // so a typed email no longer renames the account (§2.3).
-  async function go(provider: SessionUser["provider"]) {
+  useEffect(() => {
+    let active = true
+    void api<{ google: boolean; apple: boolean; magicLink: boolean }>("/api/auth/providers").then((providers) => {
+      if (active) setOauthProviders({ google: providers.google, apple: providers.apple, magicLink: providers.magicLink })
+    }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  async function handleDemoSignIn() {
     if (busy) return
-    setBusy(provider)
+    setBusy("demo")
     setFailure(null)
     try {
-      await signInDemo(provider)
+      await signInDemo("email")
       onDone?.()
     } catch (e) {
       setFailure(errorMessage(e, "Couldn't sign in. Check your connection and try again."))
@@ -103,29 +125,116 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     }
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
-    const next: AuthErrors = { email: emailError(email), password: passwordError(password) }
+    const next: AuthErrors = {
+      ...(mode === "signup" ? { name: nameError(name) } : {}),
+      email: emailError(email),
+      password: passwordError(password),
+    }
     setErrors(next)
-    if (next.email || next.password) {
-      window.requestAnimationFrame(() => (next.email ? emailRef : passwordRef).current?.focus())
+    if (next.name || next.email || next.password) {
+      window.requestAnimationFrame(() => (next.name ? nameRef : next.email ? emailRef : passwordRef).current?.focus())
       return
     }
-    void go("email")
+    if (busy) return
+    setBusy(mode === "signup" ? "signup" : "email")
+    setFailure(null)
+    setNotice(null)
+    try {
+      if (mode === "signup") {
+        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
+        setSignupSent(true)
+        return
+      }
+      const result = await signInWithPassword(email.trim(), password)
+      if (result.status === "verify_email") {
+        setFailure("Check your email for a verification link, then sign in again.")
+        return
+      }
+      onDone?.()
+    } catch (e) {
+      setFailure(errorMessage(e, "Couldn't sign in. Check your email and password, then try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function requestPasswordReset() {
+    const invalidEmail = emailError(email)
+    if (invalidEmail) {
+      setErrors((current) => ({ ...current, email: invalidEmail }))
+      window.requestAnimationFrame(() => emailRef.current?.focus())
+      return
+    }
+    if (busy) return
+    setBusy("forgot")
+    setFailure(null)
+    setNotice(null)
+    try {
+      await api<{ ok: true }>("/api/auth/password/forgot", { body: { email: email.trim() } })
+      setNotice("If an account exists for that address, a password reset link has been sent.")
+    } catch (e) {
+      setFailure(errorMessage(e, "Couldn't request a reset link. Try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function requestMagicLink() {
+    const invalidEmail = emailError(email)
+    if (invalidEmail) {
+      setErrors((current) => ({ ...current, email: invalidEmail }))
+      window.requestAnimationFrame(() => emailRef.current?.focus())
+      return
+    }
+    if (busy) return
+    setBusy("magic")
+    setFailure(null)
+    setNotice(null)
+    try {
+      await api<{ ok: true }>("/api/auth/magic-link", { body: { email: email.trim() } })
+      setNotice("If an account exists for that address, a sign-in link has been sent.")
+    } catch (e) {
+      setFailure(errorMessage(e, "Couldn't request a sign-in link. Try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function startOAuth(provider: "google" | "apple") {
+    if (busy) return
+    setBusy(provider)
+    setFailure(null)
+    try {
+      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "signin", actor: "shopper" } })
+      window.location.assign(url)
+    } catch (e) {
+      setFailure(errorMessage(e, `Couldn't start ${provider} sign-in. Try again.`))
+      setBusy(null)
+    }
   }
 
   return (
     <div className="grid gap-3">
-      <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy && busy !== "google"} onClick={() => void go("google")}>
-        <GoogleMark /> Continue with Google
-      </Button>
-      <Button variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy && busy !== "apple"} onClick={() => void go("apple")}>
-        <AppleMark /> Continue with Apple
-      </Button>
-      <div className="my-1 flex items-center gap-3 text-xs text-ink-3">
-        <span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" />
-      </div>
+      {demoEnabled ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "demo"} disabled={!!busy && busy !== "demo"} onClick={() => void handleDemoSignIn()}>Continue as demo shopper</Button> : null}
+      {mode === "signin" && oauthProviders.google ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy && busy !== "google"} onClick={() => void startOAuth("google")}><GoogleMark /> Continue with Google</Button> : null}
+      {mode === "signin" && oauthProviders.apple ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy && busy !== "apple"} onClick={() => void startOAuth("apple")}><AppleMark /> Continue with Apple</Button> : null}
+      {demoEnabled || (mode === "signin" && (oauthProviders.google || oauthProviders.apple)) ? <div className="my-1 flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
+      {signupSent ? (
+        <p role="status" className="rounded-md border border-line-soft bg-card px-4 py-3 text-sm leading-relaxed text-ink-2">
+          We sent a verification link to {email.trim()}. Open it to finish creating your account.
+        </p>
+      ) : null}
+      {!signupSent ? (
       <form onSubmit={submit} className="grid gap-3" noValidate>
+        {mode === "signup" ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${uid}-name`}>Name</Label>
+            <Input ref={nameRef} id={`${uid}-name`} autoComplete="name" required value={name} onChange={(e) => { setName(e.target.value); if (errors.name && !nameError(e.target.value)) setErrors((x) => ({ ...x, name: undefined })) }} aria-invalid={!!errors.name} className="h-11" />
+            {errors.name ? <p className="text-xs text-danger">{errors.name}</p> : null}
+          </div>
+        ) : null}
         <div className="grid gap-1.5">
           <Label htmlFor={ids.email}>Email</Label>
           <Input
@@ -145,6 +254,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
           />
           {errors.email ? <p id={ids.emailError} className="text-xs text-danger">{errors.email}</p> : null}
         </div>
+        {mode === "signin" && oauthProviders.magicLink ? <button type="button" className="justify-self-start text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => void requestMagicLink()}>{busy === "magic" ? "Sending sign-in link…" : "Email me a sign-in link"}</button> : null}
         <div className="grid gap-1.5">
           <Label htmlFor={ids.password}>Password</Label>
           <Input
@@ -164,14 +274,20 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
           />
           {errors.password ? <p id={ids.passwordError} className="text-xs text-danger">{errors.password}</p> : null}
         </div>
-        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"} disabled={!!busy && busy !== "email"}>Continue</Button>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "signup" || busy === "email"} disabled={!!busy}>{mode === "signup" ? "Create account" : "Sign in"}</Button>
+        {mode === "signin" ? <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => void requestPasswordReset()}>{busy === "forgot" ? "Sending reset link…" : "Forgot password?"}</button> : null}
         {failure ? (
           <p role="alert" className="text-xs text-danger">
             {failure}
           </p>
         ) : null}
-        <p className="text-xs leading-relaxed text-ink-3">{DEMO_SIGN_IN_NOTE}</p>
+        {notice ? <p role="status" className="text-xs leading-relaxed text-ink-2">{notice}</p> : null}
+        {demoEnabled ? <p className="text-xs leading-relaxed text-ink-3">{DEMO_SIGN_IN_NOTE}</p> : null}
+        <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" onClick={() => { setMode((current) => current === "signin" ? "signup" : "signin"); setFailure(null); setErrors({}) }}>
+          {mode === "signup" ? "I already have an account" : "Create an account"}
+        </button>
       </form>
+      ) : null}
     </div>
   )
 }
@@ -180,6 +296,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
 export function AuthPrompt() {
   const prompt = useSession((s) => s.authPrompt)
   const dismiss = useSession((s) => s.dismissAuthPrompt)
+  const demoEnabled = useServerSession((s) => s.demoAuth?.shopper === true)
   // Kept through the closing animation, so the title doesn't change as the dialog fades.
   const [intent, setIntent] = useState<AuthIntent>(prompt?.intent ?? "account")
   if (prompt && prompt.intent !== intent) setIntent(prompt.intent)
@@ -196,7 +313,7 @@ export function AuthPrompt() {
           <DialogDescription className="text-ink-2">{copy[intent].body}</DialogDescription>
         </DialogHeader>
         <AuthForm />
-        <p className="text-center text-xs text-ink-3">Every option signs in to the same demo account.</p>
+        {demoEnabled ? <p className="text-center text-xs text-ink-3">Demo sign-in uses the same shared shopper account.</p> : null}
       </DialogContent>
     </Dialog>
   )

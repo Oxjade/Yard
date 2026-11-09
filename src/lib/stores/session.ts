@@ -12,10 +12,9 @@ import { afterIdentityChange } from "@/lib/session/identity"
 /**
  * The marketplace session in this browser. Guests can browse everything; following, saving and
  * buying ask them to sign in first (blueprint §8.1). In v2 the identity itself lives on the
- * server (a demo shopper session, §2.3): signing in calls POST /api/auth/demo as the demo shopper
- * Ada Nwosu and the local user is set from the server's profile; signing out ends the server
- * session first and only then the local one. SessionSync keeps the two in step, and other tabs
- * follow through the persisted state.
+ * server: password sign-in or demo sign-in opens the server session, and the local user is set
+ * from its profile; signing out ends the server session first. SessionSync keeps the two in step,
+ * and other tabs follow through the persisted state.
  */
 
 export type SessionUser = {
@@ -24,6 +23,10 @@ export type SessionUser = {
   email: string
   provider: "google" | "apple" | "email"
 }
+
+export type PasswordSignInResult =
+  | { status: "signed_in"; actor: "shopper"; profile: ShopperProfile }
+  | { status: "verify_email" }
 
 export type NotificationPrefs = {
   newProducts: boolean
@@ -59,6 +62,7 @@ type SessionState = {
    */
   signedOutAt: string | null
   signIn: (user: SessionUser) => void
+  signInWithPassword: (email: string, password: string) => Promise<PasswordSignInResult>
   /**
    * Signs in on the server as the demo shopper (Ada) and then locally from the server's profile,
    * finishing any pending prompt action. `keepProfile` keeps the local name and email instead
@@ -108,6 +112,19 @@ export const useSession = create<SessionState>()(
         const pending = get().authPrompt?.then
         set({ user, authPrompt: null, signedOutAt: null })
         pending?.()
+      },
+      signInWithPassword: async (email, password) => {
+        set({ serverPending: true })
+        try {
+          const result = await api<PasswordSignInResult>("/api/auth/sign-in", { body: { actor: "shopper", email, password } })
+          if (result.status === "signed_in") {
+            await afterIdentityChange("market")
+            get().signIn({ id: result.profile.id, name: result.profile.name, email: result.profile.email, provider: "email" })
+          }
+          return result
+        } finally {
+          set({ serverPending: false })
+        }
       },
       signInDemo: async (provider, opts) => {
         set({ serverPending: true })

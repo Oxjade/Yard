@@ -21,6 +21,8 @@ import { ReturnDialog } from "./return-dialog"
 import { OrderDelivery } from "@/components/market/delivery/order-delivery"
 import { businessDays } from "@/lib/shipping/format"
 import { YouNav } from "./you-nav"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { ServerOrderDetail } from "./server-order-detail"
 
 function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
@@ -36,11 +38,14 @@ const methodLabel = (m: string) => m.replace(/\s+—\s+/g, ", ")
 
 /** One brand's order: progress, items, delivery, tracking and returns. */
 export function OrderDetail({ id }: { id: string }) {
+  const shopper = useServerSession((state) => state.shopper)
   const order = useOrders((s) => s.orders.find((o) => o.id === id))
   const group = useOrders((s) => s.groups.find((g) => g.orderIds.includes(id)))
   const requestReturn = useOrders((s) => s.requestReturn)
   const [returnOpen, setReturnOpen] = useState(false)
   const returnOpener = useRef<HTMLButtonElement | null>(null)
+
+  if (shopper && !shopper.demo) return <ServerOrderDetail key={`${shopper.id}:${id}`} id={id} />
 
   if (!order) {
     return (

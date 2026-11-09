@@ -12,7 +12,11 @@ import { InfoTip } from "@/components/feedback/info-tip"
 import { ListSkeleton } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
 import { availableStock, variantLabel } from "@/lib/data/products"
-import type { Product, Variant } from "@/lib/data/types"
+import type { CategorySlug, Product, ProductOption, Variant } from "@/lib/data/types"
+import { api } from "@/lib/api/client"
+import type { StudioProductDto, StudioProductsPage } from "@/lib/api/contracts/catalog"
+import { useApi } from "@/lib/api/use-api"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { PhoneSort } from "@/components/studio/business/shared"
@@ -28,6 +32,53 @@ type Filter = "all" | "low" | "out"
 type Row = { id: string; product: Product; variant: Variant; label: string; hex?: string; available: number; sold: number; level: StockLevel }
 
 const levelRank: Record<StockLevel, number> = { out: 0, low: 1, in: 2 }
+
+function fromStudioProduct(dto: StudioProductDto): Product {
+  const options: ProductOption[] = []
+  for (const option of dto.options) {
+    if (option.name === "Size") options.push({ name: "Size", values: option.values.map((value) => value.value) })
+    if (option.name === "Colour") options.push({ name: "Colour", values: option.values.map((value) => ({ name: value.value, hex: value.hex ?? "#777777" })) })
+  }
+  const statuses: Product["status"][] = ["draft", "published", "scheduled", "archived"]
+  const badges: Product["badges"] = dto.badges.filter((badge): badge is Product["badges"][number] => ["new", "limited", "restock", "exclusive", "last-pieces"].includes(badge))
+  return {
+    id: dto.id,
+    slug: dto.slug,
+    brandId: dto.brandId,
+    name: dto.title,
+    description: dto.description,
+    details: dto.details,
+    category: dto.category as CategorySlug,
+    subcategory: dto.subcategory ?? "",
+    tags: dto.tags,
+    price: dto.priceMinor,
+    ...(dto.compareAtMinor != null ? { compareAt: dto.compareAtMinor } : {}),
+    currency: dto.currency as Product["currency"],
+    images: dto.images.map((image) => ({ src: image.src, alt: image.alt, width: image.width ?? 1200, height: image.height ?? 1500 })),
+    options,
+    variants: dto.variants.map((variant) => ({ id: variant.id, sku: variant.sku, options: variant.options, stock: variant.onHand, reserved: variant.held })),
+    badges,
+    status: statuses.includes(dto.status as Product["status"]) ? dto.status as Product["status"] : "draft",
+    createdAt: dto.createdAt,
+    updatedAt: dto.updatedAt,
+    ...(dto.publishAt ? { publishAt: dto.publishAt } : {}),
+    ...(dto.processingDays ? { processingDays: dto.processingDays } : {}),
+    collectionIds: dto.collectionIds,
+    ...(dto.dropId ? { dropId: dto.dropId } : {}),
+    stats: { views7d: 0, wishlists: 0, sales30d: 0, trend: 0 },
+  }
+}
+
+async function loadStudioProducts() {
+  const products: StudioProductDto[] = []
+  let offset = 0
+  for (;;) {
+    const page = await api<StudioProductsPage>("/api/studio/catalog/products", { query: { status: "all", limit: 100, offset } })
+    products.push(...page.products)
+    if (page.nextOffset == null) return products.map(fromStudioProduct)
+    offset = page.nextOffset
+  }
+}
 
 type Sort = "product" | "available" | "sold"
 
@@ -50,9 +101,14 @@ function Changing({ value, className }: { value: number; className?: string }) {
 }
 
 export function InventoryView() {
-  const ready = useCatalogReady()
+  const localReady = useCatalogReady()
+  const member = useServerSession((state) => state.brand)
+  const liveBrand = member && !member.demo ? member.brand.id : null
+  const liveProducts = useApi(liveBrand ? `studio.inventory:${liveBrand}` : null, loadStudioProducts, { revalidateOnFocus: true, keepPrevious: false })
+  const ready = localReady && (!liveBrand || (!!liveProducts.data && !liveProducts.error))
   const router = useRouter()
-  const products = useStudio((s) => s.products)
+  const localProducts = useStudio((s) => s.products)
+  const products = useMemo(() => liveBrand ? liveProducts.data ?? [] : localProducts, [liveBrand, liveProducts.data, localProducts])
   const log = useStudio((s) => s.inventoryLog)
   const [filter, setFilter] = useState<Filter>("all")
   const [target, setTarget] = useState<{ productId: string; variantId: string } | null>(null)
@@ -303,7 +359,7 @@ export function InventoryView() {
         )}
       </section>
 
-      <AdjustStockDialog target={live && liveVariant ? { product: live, variant: liveVariant } : null} onOpenChange={(o) => !o && setTarget(null)} returnFocus={selectedTabFor("stock-list")} />
+      <AdjustStockDialog target={live && liveVariant ? { product: live, variant: liveVariant } : null} onOpenChange={(o) => !o && setTarget(null)} returnFocus={selectedTabFor("stock-list")} onStockUpdated={() => liveBrand && void liveProducts.revalidate()} />
     </div>
   )
 }

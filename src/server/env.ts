@@ -28,6 +28,8 @@ export type Env = {
   encryptionKey: Buffer
   encryptionKeyPrevious: Buffer | null
   demoAuth: { shopper: boolean; brand: boolean; admin: boolean; production: boolean }
+  /** Sample accounts and marketplace fixtures are seeded only in dev/test or an explicit demo deployment. */
+  seedDemo: boolean
   trustedProxyHops: number
   sandboxEnabled: boolean
   resetDb: boolean
@@ -46,6 +48,7 @@ const raw = z.object({
   YARD_ENCRYPTION_KEY_PREVIOUS: z.string().optional(),
   YARD_DEMO_AUTH: z.string().optional(),
   YARD_DEMO_ADMIN: z.string().optional(),
+  YARD_SEED_DEMO: z.string().optional(),
   YARD_TRUSTED_PROXY_HOPS: z.string().optional(),
   YARD_SOCIAL_SANDBOX: z.string().optional(),
   YARD_RESET_DB: z.string().optional(),
@@ -59,6 +62,7 @@ const raw = z.object({
 })
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined)
+const on = (v: string | undefined) => blank(v) === "1"
 
 /** `~/.yard/<repo folder>-<first 8 hex of sha256(absolute repo path)>` (§1.1). */
 export function defaultDataDir(repoRoot = process.cwd()) {
@@ -99,6 +103,9 @@ function parse(): Env {
   const dev = nodeEnv !== "production"
   const building = isBuildPhase()
   const problems: string[] = []
+  const seedDemo = dev || on(e.YARD_SEED_DEMO)
+  if (!dev && on(e.YARD_DEMO_AUTH) && !seedDemo) problems.push("YARD_DEMO_AUTH=1 requires YARD_SEED_DEMO=1 so demo accounts and fixtures exist")
+  if (!dev && on(e.YARD_SEED_DEMO) && !on(e.YARD_DEMO_AUTH)) problems.push("YARD_SEED_DEMO=1 requires YARD_DEMO_AUTH=1; do not seed demo data into a production environment")
 
   const dataDir = path.resolve(/*turbopackIgnore: true*/ blank(e.YARD_DATA_DIR) ?? defaultDataDir())
   const envDir = path.join(dataDir, nodeEnv)
@@ -173,7 +180,6 @@ function parse(): Env {
     }
   }
 
-  const on = (v: string | undefined) => blank(v) === "1"
   const demoAuth = {
     shopper: dev || on(e.YARD_DEMO_AUTH),
     brand: dev || on(e.YARD_DEMO_AUTH),
@@ -193,6 +199,7 @@ function parse(): Env {
     encryptionKey,
     encryptionKeyPrevious,
     demoAuth,
+    seedDemo,
     trustedProxyHops,
     sandboxEnabled: dev && blank(e.YARD_SOCIAL_SANDBOX) !== "0",
     resetDb: dev && on(e.YARD_RESET_DB),

@@ -15,6 +15,7 @@ import { afterIdentityChange } from "@/lib/session/identity"
 import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
 import { DemoAccountPicker } from "./demo-account-picker"
+import { ServerActorSignIn } from "./server-actor-sign-in"
 
 type Props = {
   surface: "studio" | "admin" | "market"
@@ -35,7 +36,7 @@ const wrapButton = "h-auto min-h-10 w-full whitespace-normal py-2 text-center sm
 
 /**
  * Gates a server-backed page on the surface's session (§2.3): a skeleton while the session
- * loads, a sign-in invitation when signed out (demo accounts; no passwords in this build), the
+ * loads, a real or demo sign-in invitation when signed out, the
  * role reason when the permission is missing, and the page otherwise. Server endpoints check
  * everything again; this only decides what to render.
  */
@@ -84,7 +85,7 @@ export function SessionGate({ surface, feature, permission, children }: Props) {
         <EmptyState
           icon={SignInIcon}
           title={`Sign in to use ${feature}`}
-          body="Demo build: you'll be signed in as the demo shopper Ada Nwosu."
+            body={s.demoAuth?.shopper ? "Demo build: you can continue as the shared demo shopper, or sign in with your own account." : "Sign in or create an account to follow brands, save pieces and track your orders."}
           action={
             <Button variant="primary" onClick={() => requireAuth("account")}>
               Sign in
@@ -105,7 +106,7 @@ export function SessionGate({ surface, feature, permission, children }: Props) {
         <EmptyState
           icon={SignInIcon}
           title={`Sign in to ${where} to use ${feature}`}
-          body={demoOn ? "Demo build: there are no real accounts yet. Choose a demo account to continue." : "Demo sign-in is off on this server, and this build has no other way to sign in."}
+          body={demoOn ? "Sign in with your account, or continue with a demo account." : "Sign in with the account invited to this workspace."}
           action={
             demoOn ? (
               <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
@@ -119,6 +120,9 @@ export function SessionGate({ surface, feature, permission, children }: Props) {
             ) : undefined
           }
         />
+        <div className="mt-6 max-w-xl">
+          <ServerActorSignIn surface={surface} />
+        </div>
         {demoOn ? <DemoAccountPicker surface={surface} open={picker} onOpenChange={setPicker} /> : null}
       </>
     )

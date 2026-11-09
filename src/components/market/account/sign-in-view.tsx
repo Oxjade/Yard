@@ -7,6 +7,7 @@ import { AuthForm } from "@/components/market/auth-prompt"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSession } from "@/lib/stores/session"
+import { useServerSession } from "@/lib/session/use-server-session"
 import type { ImageAsset } from "@/lib/data/types"
 import { AuthPanel } from "./auth-panel"
 import { safeNext } from "./format"
@@ -21,6 +22,7 @@ export function SignInView({ image, caption }: { image: ImageAsset; caption?: st
   const params = useSearchParams()
   const hydrated = useHydrated()
   const user = useSession((s) => s.user)
+  const serverShopper = useServerSession((s) => s.shopper)
   const signOut = useSession((s) => s.signOut)
   const [leaving, setLeaving] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -37,10 +39,9 @@ export function SignInView({ image, caption }: { image: ImageAsset; caption?: st
 
   if (user && !leaving) {
     return (
-      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}. This is the demo shopper account.`} image={image} caption={caption} joinNote={false}>
+      <AuthPanel title="You're signed in" body={`Signed in as ${user.name}, ${user.email}.${serverShopper?.demo ? " This is the shared demo shopper account." : ""}`} image={image} caption={caption} joinNote={false}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Button variant="primary" size="lg" onClick={() => router.push(target)}>Continue</Button>
-          {/* The marketplace has one demo shopper (Ada), so there's no other account to switch to (§2.3). */}
           <Button
             variant="secondary"
             size="lg"

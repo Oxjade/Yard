@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { BellIcon as Bell, HeartIcon as Heart, PackageIcon as Package } from "@phosphor-icons/react"
 import { AuthForm } from "@/components/market/auth-prompt"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
 import type { ImageAsset } from "@/lib/data/types"
 import { safeNext } from "./format"
@@ -46,6 +47,7 @@ export function AuthPanel({
 }: Invite & { next?: string; eyebrow?: string; /** The "continuing creates your account" note; off once signed in. */ joinNote?: boolean; children?: React.ReactNode }) {
   const afterSignIn = useAfterSignIn(next)
 
+  const demoEnabled = useServerSession((state) => state.demoAuth?.shopper === true)
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       <figure className="relative aspect-[16/10] overflow-hidden rounded-lg bg-card sm:aspect-[16/9] lg:aspect-auto lg:min-h-[640px]">
@@ -60,9 +62,9 @@ export function AuthPanel({
         <div className="mt-8 max-w-md">
           {children ?? <AuthForm onDone={afterSignIn} />}
         </div>
-        {joinNote ? (
+        {joinNote && demoEnabled ? (
           <p className="mt-4 max-w-md text-xs leading-relaxed text-ink-3">
-            Every option signs in to the same demo account. You choose which updates reach you, and how, in Settings.
+            Demo sign-in uses the same shared shopper account. You choose which updates reach you, and how, in Settings.
           </p>
         ) : null}
         <ul className="mt-10 grid max-w-md gap-3 border-t border-line-soft pt-6">

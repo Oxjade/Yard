@@ -35,9 +35,9 @@ async function rereadPersisted() {
  *  - server shopper, no local user → adopt the server profile (without replaying a prompt's
  *    action), unless this browser signed out (the persisted `signedOutAt`);
  *  - server shopper with another id → the server wins;
- *  - local user, no server session → restore the demo session as Ada, after re-reading the
- *    persisted state so a tab never revives a user another tab signed out. A suspended account
- *    or demo sign-in being off signs out locally with a toast.
+ *  - demo local user, no server session → restore the demo session as Ada after re-reading the
+ *    persisted state, so a tab never revives a user another tab signed out;
+ *  - real local user, no server session → clear the stale local identity and ask them to sign in.
  * Other tabs follow at once: a `storage` event on the persisted key re-reads it here.
  */
 export function SessionSync() {
@@ -73,6 +73,11 @@ export function SessionSync() {
         await rereadPersisted()
         const local = useSession.getState()
         if (!local.user || local.serverPending || getServerSessionState().shopper) return
+        if (local.user.id !== DEMO_SHOPPER) {
+          useSession.setState({ user: null, signedOutAt: new Date().toISOString() })
+          toast("Your session ended. Sign in again to continue.")
+          return
+        }
         const r = await api<DemoSignInResult>("/api/auth/demo", { body: { actor: "shopper", account: DEMO_SHOPPER } })
         await afterIdentityChange("market")
         const p = r.profile as ShopperProfile

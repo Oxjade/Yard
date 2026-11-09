@@ -83,9 +83,15 @@ export function CheckoutFlow() {
     [],
   )
 
-  function onPlaced(groupId: string) {
-    placedRef.current = true
+  function onPlaced(groupId: string, authorizationUrl: string | null) {
     clearCheckoutDraft()
+    if (authorizationUrl) {
+      placedRef.current = true
+      setPlaced(true)
+      window.location.assign(authorizationUrl)
+      return
+    }
+    placedRef.current = true
     // Settle this page (placed, bag emptied) in one commit before navigating, so nothing
     // here updates while the confirmation route renders in the navigation's transition.
     flushSync(() => {
@@ -138,7 +144,7 @@ const slide = {
 
 const nextLabel = ["Continue to delivery", "Continue to shipping", "Continue to payment", "Review order"]
 
-function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; userEmail: string; onPlaced: (groupId: string) => void }) {
+function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; userEmail: string; onPlaced: (groupId: string, authorizationUrl: string | null) => void }) {
   const lines = useCart((s) => s.lines)
   const currency = useSession((s) => s.currency)
   const country = useSession((s) => s.shipTo)
@@ -318,9 +324,9 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           useSession.setState({ authPrompt: { intent: "checkout" } })
         }
       },
-      onSuccess: ({ groupId }) => {
+      onSuccess: ({ groupId, authorizationUrl }) => {
         doneRef.current = true
-        onPlaced(groupId)
+        onPlaced(groupId, authorizationUrl)
       },
     },
   )

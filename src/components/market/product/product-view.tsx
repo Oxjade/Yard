@@ -105,8 +105,8 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   }, [product.id])
 
   const adding = useAsyncAction(
-    (variantId: string, quantity: number) => {
-      add(product.id, variantId, quantity)
+    async (variantId: string, quantity: number) => {
+      await add(product.id, variantId, quantity)
       sel.setQuantity(1)
       return true
     },

@@ -327,6 +327,7 @@ async function main() {
     const p1 = await get("/api/orders?limit=1", { who: S1 })
     const p2 = p1.body?.nextCursor ? await get(`/api/orders?limit=1&before=${encodeURIComponent(p1.body.nextCursor)}`, { who: S1 }) : null
     check("shopper list: limit + before cursor pages without repeats", p1.body?.items?.length === 1 && !!p2 && p2.status === 200 && p2.body.items.length === 1 && p2.body.items[0].id !== p1.body.items[0].id, `${brief(p1).slice(0, 100)} | ${brief(p2).slice(0, 100)}`)
+    check("shopper list: next cursor includes the order-ID tie-breaker", typeof p1.body?.nextCursor === "string" && p1.body.nextCursor.includes("|"), p1.body?.nextCursor)
     check("shopper list: limit=0 is 400, before=garbage is 400", (await get("/api/orders?limit=0", { who: S1 })).status === 400 && (await get("/api/orders?before=yesterday", { who: S1 })).status === 400)
 
     const rc = await get(`/api/orders/checkouts/${O1.checkout.id}`, { who: S1 })
@@ -335,6 +336,9 @@ async function main() {
 
     const sl = await get("/api/studio/orders?limit=100", { who: TOBI })
     check("studio list: the brand sees the order", sl.status === 200 && sl.body.items.some((o) => o.id === O1.orderId), brief(sl).slice(0, 120))
+    const sp1 = await get("/api/studio/orders?limit=1", { who: TOBI })
+    const sp2 = sp1.body?.nextCursor ? await get(`/api/studio/orders?limit=1&before=${encodeURIComponent(sp1.body.nextCursor)}`, { who: TOBI }) : null
+    check("studio list: stable keyset cursor pages without repeats", typeof sp1.body?.nextCursor === "string" && sp1.body.nextCursor.includes("|") && !!sp2 && sp2.status === 200 && sp2.body.items.length === 1 && sp2.body.items[0].id !== sp1.body.items[0].id, `${brief(sp1).slice(0, 100)} | ${brief(sp2).slice(0, 100)}`)
     check("studio list: filters payment=paid and q=reference find it", (await get(`/api/studio/orders?payment=paid&q=${encodeURIComponent(d.reference)}`, { who: TOBI })).body?.items?.some((o) => o.id === O1.orderId))
     check("studio list: filter payment=refunded excludes it; bad filter is 400", !(await get(`/api/studio/orders?payment=refunded&q=${encodeURIComponent(d.reference)}`, { who: TOBI })).body?.items?.some((o) => o.id === O1.orderId) && (await get(`/api/studio/orders?payment=bogus`, { who: TOBI })).status === 400)
     check("studio tenancy: another brand's list never contains it", !(await get(`/api/studio/orders?limit=100&q=${encodeURIComponent(d.reference)}`, { who: MINJI })).body?.items?.some((o) => o.id === O1.orderId))
