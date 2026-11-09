@@ -169,7 +169,8 @@ export function refundRequest(o: MerchantOrder): RefundRequestView {
 
 /* ---------- Fulfilment ---------- */
 
-export const carriersFor = (country: CountryCode) => {
+/** The carriers offered for a ship-from country (the general list alone when it isn't known). */
+export const carriersFor = (country: CountryCode | null) => {
   const local: Partial<Record<CountryCode, string[]>> = {
     NG: ["GIG Logistics", "Kwik Delivery", "DHL Express"],
     GH: ["Ghana Post EMS", "DHL Express"],
@@ -179,7 +180,7 @@ export const carriersFor = (country: CountryCode) => {
     KR: ["CJ Logistics", "DHL Express"],
     JP: ["Yamato Transport", "DHL Express"],
   }
-  const list = [...(local[country] ?? []), "DHL Express", "UPS", "FedEx", "Aramex"]
+  const list = [...((country && local[country]) || []), "DHL Express", "UPS", "FedEx", "Aramex"]
   return [...new Set(list)]
 }
 

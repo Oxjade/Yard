@@ -24,7 +24,7 @@ import { useStudioDelivery } from "./use-studio-delivery"
  * problem with Respond. It needs a brand session; the rest of the order page keeps working from
  * this browser's data without one.
  */
-export function OrderDeliveryCard({ order, brand }: { order: MerchantOrder; brand: Brand }) {
+export function OrderDeliveryCard({ order, brand }: { order: MerchantOrder; brand: Pick<Brand, "id" | "name"> }) {
   const s = useStudioDelivery(order.id)
   const d = s.data
   const uid = useId()

@@ -22,7 +22,8 @@
 //    the link is printed here instead: hand it to the new owner privately.
 //
 // The package.json entry runs this file with `node --conditions=react-server --import tsx` so the
-// TypeScript server modules (and their `server-only` marker) load outside Next.
+// TypeScript server modules (and their `server-only` marker) load outside Next. tsx is a regular
+// dependency (not a dev one) so this works on a production install (`npm ci --omit=dev`).
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs, parseEnv } from "node:util"

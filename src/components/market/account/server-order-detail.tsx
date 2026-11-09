@@ -133,7 +133,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
         <OrderStatusBadge status={status} />
       </header>
       <YouNav className="mt-8" />
-      <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-labelledby="server-order-items">
           <h2 id="server-order-items" className="text-base font-medium text-ink">Items ({order.itemCount})</h2>
           <ul className="mt-4 divide-y divide-line-soft">
@@ -148,7 +148,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
             ))}
           </ul>
         </section>
-        <aside className="grid content-start gap-6">
+        <aside className="grid grid-cols-[minmax(0,1fr)] content-start gap-6">
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Order summary">
             <h2 className="text-base font-medium text-ink">Summary</h2>
             <dl className="mt-4 grid gap-2 text-sm">

@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import type { Brand, MerchantOrder } from "@/lib/data/types"
+import type { CountryCode } from "@/config/markets"
+import type { MerchantOrder } from "@/lib/data/types"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { formatMoney } from "@/lib/money"
 import { returnRefund } from "@/lib/payouts"
@@ -54,7 +55,11 @@ const shopperSees = (id: string) => useOrders.getState().orders.some((x) => x.id
 
 const OTHER = "__other"
 
-export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogProps & { brand: Brand }) {
+/**
+ * `server`: the order is Yard's server record (a real brand's Studio). Tracking then goes to the
+ * server only, never to this browser's demo store, and a failure keeps the dialog open to retry.
+ */
+export function TrackingDialog({ open, onOpenChange, order: o, brand, server = false }: DialogProps & { brand: { country: CountryCode | null }; server?: boolean }) {
   const setTracking = useStudio((s) => s.setTracking)
   const carriers = carriersFor(brand.country)
   const initialCarrier = () => (o.tracking ? (carriers.includes(o.tracking.carrier) ? o.tracking.carrier : OTHER) : "")
@@ -83,6 +88,12 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
   const save = useAsyncAction(
     async (carrierName: string, clean: string) => {
       const title = editing ? "Tracking updated" : `#${o.reference} marked as shipped`
+      if (server) {
+        const { result: r, message } = await syncShipment(o.id, { status: editing ? "in_transit" : "shipped", carrier: carrierName, trackingNumber: clean, note: editing ? "Tracking updated" : undefined }, !!getServerSessionState().brand, { queue: false })
+        if (r === "refused") throw new RefusedError(message ?? "This order can't take tracking now.")
+        if (r !== "sent") throw new Error(r)
+        return { title, description: `${carrierName}, ${clean}. ${syncMessage(r)}`, warn: false }
+      }
       setTracking(o.id, carrierName, clean)
       // Then Yard's server, so the shopper's estimate and notification follow (§6.5).
       const signedIn = !!getServerSessionState().brand
@@ -91,6 +102,19 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
       return { title, description: `${carrierName}, ${clean}. ${seen}`, warn: r === "signed_out" || r === "queued" || r === "refused" }
     },
     {
+      errorToast: !server,
+      onError: (e) => {
+        if (!server) return
+        toast.error(
+          e instanceof RefusedError
+            ? e.message
+            : e instanceof Error && e.message === "not_on_server"
+              ? "Yard's server doesn't hold this order for your brand. Nothing was sent."
+              : e instanceof Error && e.message === "signed_out"
+                ? "Sign in to Brand Studio to add tracking. Nothing was sent."
+                : "Tracking wasn't saved. Check your connection and try again.",
+        )
+      },
       onSuccess: (r) => {
         if (r.warn) toast.warning(r.title, { description: r.description })
         else toast.success(r.title, { description: r.description })
@@ -112,7 +136,7 @@ export function TrackingDialog({ open, onOpenChange, order: o, brand }: DialogPr
       return
     }
     const clean = number.trim().toUpperCase()
-    const now = current(o.id)?.tracking
+    const now = server ? o.tracking : current(o.id)?.tracking
     // Nothing changed: no timeline entry, the dialog just closes.
     if (now && now.carrier === carrierName && now.number === clean) {
       onOpenChange(false)

@@ -84,7 +84,8 @@ export function YouOverview() {
   // A real shopper's orders come from the server; the local store holds only demo and sample history.
   const server = useServerOrderSummaries()
   const serverGroups = server ? serverCheckoutGroups(server.items).slice(0, 2) : []
-  const onTheWay = server === undefined ? orders.filter((o) => o.status === "shipped").length : (server?.items ?? []).filter((o) => o.states.merchant === "shipped").length
+  // Every shipped order, counted by the server; while unknown (loading, failed) the sentence is left out.
+  const onTheWay = server === undefined ? orders.filter((o) => o.status === "shipped").length : (server?.counts?.shipped ?? 0)
   const hasRecent = server === undefined ? recentGroups.length > 0 : serverGroups.length > 0
 
   const brandsText = plural(followedBrands.length, "brand", "brands")
@@ -220,6 +221,8 @@ export function YouOverview() {
           </div>
           {server === null ? (
             <div className="h-32 animate-pulse rounded-lg border border-line-soft bg-card" aria-hidden />
+          ) : server?.failed ? (
+            <InlineEmpty icon={Package} title="Couldn’t load your orders" body="Check your connection and reload the page. Your orders are safe either way." href="/you/orders" action="Open your orders" />
           ) : server ? (
             serverGroups.length ? (
               <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">

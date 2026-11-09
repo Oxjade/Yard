@@ -98,12 +98,28 @@ async function page(tx: Executor, where: SQL | undefined, limit: number): Promis
   return { items, nextCursor: more && last ? `${last.placedAt.toISOString()}|${last.id}` : null }
 }
 
-/** The shopper's own orders, newest first, from any device (server-side, by account). */
+/**
+ * The shopper's own orders, newest first, from any device (server-side, by account). The first
+ * page (no `before`) also carries `counts` over all of them: checkouts (grouped the way the
+ * client groups summaries: checkout id, else the group's reference) and orders shipped now.
+ */
 export async function shopperOrders(customerId: string, q: { before?: string; limit: number }) {
   const d = await db()
   const conds = [eq(orderRefs.customerId, customerId)]
-  if (q.before) conds.push(beforeOrderCursor(q.before))
-  return page(d, and(...conds), q.limit)
+  if (q.before) return page(d, and(...conds, beforeOrderCursor(q.before)), q.limit)
+  const [result, [counts]] = await Promise.all([
+    page(d, and(...conds), q.limit),
+    d
+      .select({
+        checkouts: sql<number>`count(distinct coalesce(${orderStates.checkoutId}, ${orderGroups.reference}, regexp_replace(${orderRefs.reference}, '-[0-9]+$', '')))`.mapWith(Number),
+        shipped: sql<number>`count(*) filter (where ${orderRefs.status} = 'shipped')`.mapWith(Number),
+      })
+      .from(orderRefs)
+      .leftJoin(orderStates, eq(orderStates.orderRefId, orderRefs.id))
+      .leftJoin(orderGroups, eq(orderGroups.id, orderRefs.groupId))
+      .where(and(...conds)),
+  ])
+  return { ...result, counts: { checkouts: counts?.checkouts ?? 0, shipped: counts?.shipped ?? 0 } }
 }
 
 /** SQL view of fulfilment for filters (stored state lags shipping's events until the next write or job). */

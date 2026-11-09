@@ -18,6 +18,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { adminLinks, useNotifications, type AppNotification } from "@/lib/stores/notifications"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
+import { DEMO_SHOPPER } from "@/lib/stores/session"
 import { PLACED_ORDER_ID } from "@/lib/shipping/order-ids"
 import { useStudio, type InventoryEvent } from "@/lib/stores/studio"
 
@@ -234,7 +235,9 @@ export function useNotificationEvents() {
       // Customer + merchant: checkout created orders.
       unsubs.push(
         useOrders.subscribe((s, prev) => {
-          const added = s.groups.filter((g) => !prev.groups.some((p) => p.id === g.id))
+          // Only the checkouts this browser keeps (the demo shopper's): a real account's orders
+          // are notified by the server to that account, and a local copy would outlive its sign-out.
+          const added = s.groups.filter((g) => g.customerId === DEMO_SHOPPER && !prev.groups.some((p) => p.id === g.id))
           for (const g of added) {
             const orders = s.orders.filter((o) => o.groupId === g.id)
             push({ eventKey: `c:placed:${g.id}`, audience: "customer", category: "order_confirmed", title: `Order ${g.reference} placed`, body: `${orders.length} brand order${orders.length > 1 ? "s" : ""}. Awaiting payment confirmation from the provider.`, href: "/you/orders", at: g.placedAt })
@@ -245,7 +248,7 @@ export function useNotificationEvents() {
           // Customer, merchant, admin: a return request on a delivered order.
           for (const o of s.orders) {
             const before = prev.orders.find((x) => x.id === o.id)
-            if (!o.returnRequest || before?.returnRequest) continue
+            if (o.customerId !== DEMO_SHOPPER || !o.returnRequest || before?.returnRequest) continue
             const brand = brandById.get(o.brandId)
             const r = o.returnRequest
             push({ eventKey: `c:return:${o.id}`, audience: "customer", category: "refund", title: `Return requested for #${o.reference}`, body: `${brand?.name ?? "The brand"} will reply with return instructions.`, href: `/you/orders/${o.id}`, at: r.at })
@@ -255,7 +258,7 @@ export function useNotificationEvents() {
           // Customer: the brand or the platform decided their return request.
           for (const o of s.orders) {
             const d = o.returnRequest?.decision
-            if (!d || prev.orders.find((x) => x.id === o.id)?.returnRequest?.decision) continue
+            if (o.customerId !== DEMO_SHOPPER || !d || prev.orders.find((x) => x.id === o.id)?.returnRequest?.decision) continue
             const c = returnDecisionCopy(o)
             if (c) push({ eventKey: decisionKey("c", o), audience: "customer", category: "refund", ...c, href: `/you/orders/${o.id}`, at: d.at })
           }

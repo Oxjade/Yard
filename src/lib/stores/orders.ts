@@ -412,7 +412,8 @@ export const useOrders = create<OrdersState>()(
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       // Only the demo shopper's checkouts are written here (see the note at the top).
-      partialize: (s) => ({ groups: s.groups.filter((g) => persistable(g.customerId)), orders: s.orders.filter((o) => persistable(o.customerId)), processedKeys: s.processedKeys }),
+      // A real account's checkout ids stay in memory only, like its orders (not left for the next sign-in).
+      partialize: (s) => ({ groups: s.groups.filter((g) => persistable(g.customerId)), orders: s.orders.filter((o) => persistable(o.customerId)), processedKeys: Object.fromEntries(Object.entries(s.processedKeys).filter(([, id]) => s.groups.some((g) => g.id === id && persistable(g.customerId)))) }),
       version: 2,
       // v1: decisions saved on an order's timeline before the platform was renamed read its
       // current name ("approved by Yard").

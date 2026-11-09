@@ -15,18 +15,18 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { site } from "@/config/site"
-import type { CountryCode, CurrencyCode } from "@/config/markets"
+import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { ApiError, api } from "@/lib/api/client"
 import type { OrderDetailDto } from "@/lib/api/contracts/orders"
-import type { DeliveryDto } from "@/lib/api/contracts/shipping"
+import type { DeliveryDto, StudioShippingDto } from "@/lib/api/contracts/shipping"
 import { isNotFound } from "@/lib/api/errors"
+import { getStudioShipping, STUDIO_SHIPPING_KEY } from "@/lib/api/shipping"
 import { useApi } from "@/lib/api/use-api"
-import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
-import type { Brand, MerchantOrder, MerchantOrderStatus, PaymentStatus } from "@/lib/data/types"
+import type { MerchantOrder, MerchantOrderStatus, PaymentStatus } from "@/lib/data/types"
+import { countryTimeZone } from "@/lib/data/zones"
 import { formatMoney } from "@/lib/money"
 import { useRealtimeEventName } from "@/lib/realtime/use-realtime"
 import { useServerSession } from "@/lib/session/use-server-session"
-import { brandZone } from "@/components/studio/growth/utils"
 import { COMMISSION_RATE, formatDateYear, paymentView, plural } from "./model"
 import { CustomerPanel, FulfilmentPanel, ItemsPanel, TimelinePanel, placedIn } from "./order-detail"
 import { ReportDelayDialog, TrackingDialog } from "./order-dialogs"
@@ -95,7 +95,7 @@ function eventLabel(e: StudioOrderDto["timeline"][number], d: StudioOrderDto) {
 }
 
 /** The server record in the shape the Studio order panels read, so a real order looks like a sample one. */
-function toMerchantOrder(d: StudioOrderDto, origin: CountryCode): MerchantOrder {
+function toMerchantOrder(d: StudioOrderDto, origin: CountryCode | null): MerchantOrder {
   const ship = d.shipTo ?? {}
   const str = (k: string) => (typeof ship[k] === "string" && ship[k] ? (ship[k] as string) : undefined)
   const country = (str("country") ?? d.shipToPreview.country) as CountryCode
@@ -118,7 +118,7 @@ function toMerchantOrder(d: StudioOrderDto, origin: CountryCode): MerchantOrder 
     commission: 0,
     placedAt: d.placedAt,
     shippingAddress: { name: str("name") ?? d.customerName, line1: [str("line1"), str("line2")].filter(Boolean).join(", "), city: str("city") ?? d.shipToPreview.city ?? "", country, postcode: str("postcode"), phone: str("phone") },
-    shippingMethod: `${serviceLabel[d.service] ?? d.service}${country && country !== origin ? " — international" : ""}`,
+    shippingMethod: `${serviceLabel[d.service] ?? d.service}${country && origin && country !== origin ? " — international" : ""}`,
     tracking: withTracking ? { carrier: withTracking.carrier!, number: withTracking.trackingNumber! } : undefined,
     timeline: d.timeline.map((e) => ({ at: e.at, label: eventLabel(e, d) })),
     cancelReason: d.cancelReason ?? undefined,
@@ -130,16 +130,37 @@ function toMerchantOrder(d: StudioOrderDto, origin: CountryCode): MerchantOrder 
   return o
 }
 
-/** The brand as the order panels read it: the seeded profile when there is one, else the session's name on a default profile. */
-function brandFor(d: StudioOrderDto): Brand {
-  const known = brandById.get(d.brand.id)
-  if (known) return known
-  return { ...brandById.get(STUDIO_BRAND_ID)!, id: d.brand.id, name: d.brand.name, handle: d.brand.handle, currency: d.currency as CurrencyCode }
+/** Where this brand ships from, from its own shipping profile on the server (never a demo brand's). */
+type Origin = { country: CountryCode | null; tz: string }
+
+const validZone = (tz: string | null | undefined) => {
+  if (!tz) return null
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz })
+    return tz
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The ship-from country and time zone: the shipping profile's origin, else the brand's country.
+ * Without a profile (not set up yet, or it couldn't load) there's no country (no "international"
+ * label, the general carrier list) and times read in this browser's zone.
+ */
+function originFor(s: StudioShippingDto | undefined): Origin {
+  const code = s?.profile.originCountry || s?.brand.country
+  const country = code && code in countries ? (code as CountryCode) : null
+  const tz = validZone(s?.profile.timeZone) ?? (country ? countryTimeZone[country] : null) ?? validZone(Intl.DateTimeFormat().resolvedOptions().timeZone) ?? "UTC"
+  return { country, tz }
 }
 
 type DialogKind = "tracking" | "cancel" | "delay" | "refund" | null
 
 export function ServerOrderDetail({ id }: { id: string }) {
+  const brandId = useServerSession((s) => s.brand?.brand.id ?? null)
+  // The brand's own shipping profile: its origin country and time zone (any member may read it).
+  const shipping = useApi<StudioShippingDto>(brandId ? `${STUDIO_SHIPPING_KEY}:${brandId}` : null, () => getStudioShipping(), { revalidateOnFocus: false })
   const q = useApi<{ order: StudioOrderDto }>(`studio.order:${id}`, () => api<{ order: StudioOrderDto }>(`/api/studio/orders/${encodeURIComponent(id)}`), { revalidateOnFocus: true })
   // Shipments, refunds, returns and disputes from anywhere (another member, the shopper, Yard) arrive live.
   useRealtimeEventName("order.updated", (p) => {
@@ -149,7 +170,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
     if ((p as { orderId?: string } | null)?.orderId === id) void q.revalidate()
   })
 
-  if (!q.data) {
+  if (!q.data || (!shipping.data && !shipping.error)) {
     if (q.error && isNotFound(q.error)) {
       return (
         <div className="grid gap-6">
@@ -173,14 +194,13 @@ export function ServerOrderDetail({ id }: { id: string }) {
     }
     return <OrderDetailSkeleton />
   }
-  return <ServerOrderView dto={q.data.order} onChanged={(order) => (order ? q.mutate({ order }) : void q.revalidate())} />
+  return <ServerOrderView dto={q.data.order} origin={originFor(shipping.data)} onChanged={(order) => (order ? q.mutate({ order }) : void q.revalidate())} />
 }
 
-function ServerOrderView({ dto: d, onChanged }: { dto: StudioOrderDto; onChanged: (order: StudioOrderDto | null) => void }) {
+function ServerOrderView({ dto: d, origin, onChanged }: { dto: StudioOrderDto; origin: Origin; onChanged: (order: StudioOrderDto | null) => void }) {
   const member = useServerSession((s) => s.brand)
-  const brand = brandFor(d)
-  const o = toMerchantOrder(d, brand.shipsFrom)
-  const tz = brandZone(brand).tz
+  const o = toMerchantOrder(d, origin.country)
+  const tz = origin.tz
   const [dialog, setDialog] = useState<DialogKind>(null)
   const [returnAction, setReturnAction] = useState<{ id: string; mode: ReturnMode; open: boolean } | null>(null)
   const canFulfil = !!member?.permissions.includes("orders.fulfil")
@@ -299,7 +319,7 @@ function ServerOrderView({ dto: d, onChanged }: { dto: StudioOrderDto; onChanged
             <ReturnPanel key={r.id} order={d} ret={r} canFulfil={canFulfil} onAction={openReturn} />
           ))}
           <FulfilmentPanel order={o} live canCancel={canFulfil && d.actions.canCancel} onCancel={() => act(() => setDialog("cancel"))} />
-          <OrderDeliveryCard order={o} brand={brand} />
+          <OrderDeliveryCard order={o} brand={d.brand} />
           <ItemsPanel order={o} cur={o.currency} />
         </div>
         <aside className="grid min-w-0 gap-6 xl:col-start-2 xl:row-span-2 xl:row-start-1" aria-label="Customer and payout">
@@ -311,7 +331,7 @@ function ServerOrderView({ dto: d, onChanged }: { dto: StudioOrderDto; onChanged
         </div>
       </div>
 
-      <TrackingDialog open={dialog === "tracking"} onOpenChange={(v) => { setDialog(v ? "tracking" : null); if (!v) refresh() }} order={o} brand={brand} />
+      <TrackingDialog open={dialog === "tracking"} onOpenChange={(v) => { setDialog(v ? "tracking" : null); if (!v) refresh() }} order={o} brand={{ country: origin.country }} server />
       <ReportDelayDialog open={dialog === "delay"} onOpenChange={(v) => { setDialog(v ? "delay" : null); if (!v) refresh() }} order={o} />
       <ServerCancelDialog open={dialog === "cancel"} onOpenChange={(v) => setDialog(v ? "cancel" : null)} order={d} onDone={onChanged as (x: OrderDetailDto | null) => void} />
       <ServerRefundDialog open={dialog === "refund"} onOpenChange={(v) => setDialog(v ? "refund" : null)} order={d} onDone={onChanged as (x: OrderDetailDto | null) => void} />

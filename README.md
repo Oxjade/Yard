@@ -177,7 +177,9 @@ npm run admin:create -- --email you@example.com --name "Your Name"
 Run it with the same environment as the server (`YARD_DATA_DIR`, `YARD_PUBLIC_URL`, the secrets
 and any `EMAIL_*` settings; like `next start` it reads `.env.production.local`, `.env.local`,
 `.env.production` and `.env`, and `NODE_ENV` defaults to `production`). It opens the database
-through the server's own modules (dev dependency `tsx`), creates an `owner` admin, queues a
+through the server's own TypeScript modules from the source tree, loaded with `tsx` (a regular
+dependency, so it works on a production install with `npm ci --omit=dev`; run it from the
+deployment's checkout, where `src/` is), creates an `owner` admin, queues a
 72-hour "set your password" email and prints the link itself when no email provider is
 configured (or with `--print-link`): hand it over privately. The owner sets a password, signs
 in at `/admin` and enrols two-step verification. The script refuses while a server holds the

@@ -14,7 +14,7 @@ import { countries } from "@/config/markets"
 import { ApiError } from "@/lib/api/client"
 import { brandById } from "@/lib/data/brands"
 import { CheckoutError, loadServerCheckout, useOrders, type ServerCheckout } from "@/lib/stores/orders"
-import { useSession } from "@/lib/stores/session"
+import { DEMO_SHOPPER, useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import type { CheckoutGroup, MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
 import { orderEstimate } from "@/components/market/delivery/browser-estimate"
@@ -35,8 +35,8 @@ const MAX_POLL_MS = 30_000
 
 /**
  * The confirmation for one checkout group: its reference, then one card per brand order. It reads
- * this browser's copy when it holds one for the signed-in shopper (the demo shopper's history, or a
- * checkout placed in this visit), else the server's (another browser or device, cleared storage, a
+ * this browser's copy when it holds one (the demo shopper's history and demo checkouts, shown to any
+ * visitor; or the signed-in shopper's checkout placed in this visit), else the server's (another browser or device, cleared storage, a
  * return from the payment page). While the provider is still confirming, it re-reads the checkout.
  */
 export function ConfirmationView() {
@@ -49,8 +49,9 @@ export function ConfirmationView() {
   const [remote, setRemote] = useState<{ id: string; data: ServerCheckout } | null>(null)
   const [remoteError, setRemoteError] = useState<{ id: string; status: number } | null>(null)
 
-  // Only the shopper it belongs to sees a checkout kept in this browser.
-  const localGroup = groupId && user ? groups.find((g) => g.id === groupId && g.customerId === user.id) : undefined
+  // A checkout kept in this browser shows to the shopper it belongs to. The demo shopper's (its
+  // sample history and demo checkouts) is public demo data, so it shows to any visitor, as before.
+  const localGroup = groupId ? groups.find((g) => g.id === groupId && (g.customerId === DEMO_SHOPPER || (!!user && g.customerId === user.id))) : undefined
   const localOrders = localGroup ? localGroup.orderIds.map((id) => allOrders.find((o) => o.id === id)).filter((o): o is MerchantOrder => !!o) : []
   const local = localGroup && localOrders.length ? { group: localGroup, orders: localOrders } : null
   const fromServer = !local && remote?.id === groupId ? remote.data : null
@@ -125,7 +126,7 @@ export function ConfirmationView() {
     )
   }
 
-  return <Confirmation group={shown.group} orders={shown.orders} holder={fromServer ? (fromServer.holder ?? undefined) : user?.name} />
+  return <Confirmation group={shown.group} orders={shown.orders} holder={fromServer ? (fromServer.holder ?? undefined) : user && user.id === shown.group.customerId ? user.name : undefined} />
 }
 
 function Confirmation({ group, orders, holder }: { group: CheckoutGroup; orders: MerchantOrder[]; holder?: string }) {

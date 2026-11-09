@@ -832,10 +832,14 @@ async function main() {
     check("limits: early access lets a follower (from before it opened) check out (201)", s1.status === 201, brief(s1))
     const det = await get(`/api/drops/${D.ea.id}`, { jar: S1.jar })
     check("drops: early-access detail: phase early_access, me.earlyAccess, allowance used by the open checkout", det.body?.drop?.phase === "early_access" && det.body.me?.earlyAccess === true && det.body.me.claimed === 1 && det.body.me.canBuy === false, JSON.stringify(det.body?.me))
+    // One live checkout per shopper (CHECKOUT): a second checkout replaces the open one, releasing
+    // its claim first, so the allowance is never counted twice across unpaid checkouts.
     const second = await checkout(S1, [[V.XL, 1]])
-    check("limits: a second checkout over the limit while the first is open is 422", second.status === 422 && /limited to 1/.test(second.body?.error?.message ?? ""), brief(second))
-    if (s1.body?.id) {
-      const f = await post(`/api/checkout/${s1.body.id}/stub-pay`, { outcome: "failed" }, { jar: S1.jar })
+    const firstAfter = s1.body?.id ? await get(`/api/checkout/${s1.body.id}`, { jar: S1.jar }) : null
+    const detAfter = await get(`/api/drops/${D.ea.id}`, { jar: S1.jar })
+    check("limits: a second checkout replaces the open one (201; first expired; still 1 claimed)", second.status === 201 && firstAfter?.body?.status === "expired" && detAfter.body?.me?.claimed === 1, { second: brief(second), first: firstAfter?.body?.status, me: detAfter.body?.me })
+    if (second.body?.id) {
+      const f = await post(`/api/checkout/${second.body.id}/stub-pay`, { outcome: "failed" }, { jar: S1.jar })
       check("limits: a failed payment releases the claim (allowance back)", f.status === 200 && (await get(`/api/drops/${D.ea.id}`, { jar: S1.jar })).body?.me?.claimed === 0, brief(f))
     }
   }
@@ -870,11 +874,12 @@ async function main() {
     check("limits: 3 units across two variants of a limit-2 drop is 422", over.status === 422 && /limited to 2/.test(over.body?.error?.message ?? ""), brief(over))
     const c1 = await checkout(S1, [[V.S, 1]])
     check("limits: 1 unit checks out (201)", c1.status === 201, brief(c1))
+    // Paid first: an open checkout would be replaced by the next one (one live checkout per shopper).
+    if (c1.body?.id) await post(`/api/checkout/${c1.body.id}/stub-pay`, { outcome: "success" }, { jar: S1.jar })
     const c2 = await checkout(S1, [[V.M, 2]])
-    check("limits: 2 more while 1 is held by an open checkout is 422 ('you can add 1 more')", c2.status === 422 && /add 1 more/.test(c2.body?.error?.message ?? ""), brief(c2))
+    check("limits: 2 more after 1 paid is 422 ('you can add 1 more')", c2.status === 422 && /add 1 more/.test(c2.body?.error?.message ?? ""), brief(c2))
     const c3 = await checkout(S1, [[V.M, 1]])
     check("limits: exactly up to the limit with a second checkout (201)", c3.status === 201, brief(c3))
-    if (c1.body?.id) await post(`/api/checkout/${c1.body.id}/stub-pay`, { outcome: "success" }, { jar: S1.jar })
     if (c3.body?.id) await post(`/api/checkout/${c3.body.id}/stub-pay`, { outcome: "success" }, { jar: S1.jar })
     const det = await get(`/api/drops/${D.fc.id}`, { jar: S1.jar })
     check("drops: after two paid checkouts the shopper has used the allowance", det.body?.me?.claimed === 2 && det.body.me.remainingAllowance === 0 && det.body.me.canBuy === false && /limit of 2/.test(det.body.me.reason ?? ""), JSON.stringify(det.body?.me))

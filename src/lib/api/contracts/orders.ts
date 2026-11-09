@@ -18,7 +18,12 @@ export type OrderSummaryDto = {
   service: string
 }
 
-export type OrdersPageDto = { items: OrderSummaryDto[]; nextCursor: string | null }
+export type OrdersPageDto = {
+  items: OrderSummaryDto[]
+  nextCursor: string | null
+  /** GET /api/orders, first page only: totals over all the shopper's orders (checkouts, orders shipped now). */
+  counts?: { checkouts: number; shipped: number }
+}
 
 export type OrderDetailDto = OrderSummaryDto & {
   lines: { id: string; variantId: string; productId: string; title: string; qty: number; unitMinor: number; returnedQty: number; restockedQty: number; variantLabel: string; image: { src: string; alt: string; width: number; height: number } }[]

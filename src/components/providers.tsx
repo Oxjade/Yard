@@ -40,21 +40,49 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // session): reload the bag from the server cart and keep only the orders the new shopper may see.
   // On sign-out or a switch the previous shopper's lines leave the bag at once; their server cart
   // stays theirs. A sign-in keeps the lines on screen while the merged cart loads.
+  //
+  // The demo shopper's cookie renews by a moment without a server shopper while this browser still
+  // holds the demo user (SessionSync then signs the demo in again): the bag is left as it is for
+  // that moment, so it doesn't empty and refill. It's cleared as usual if the local user goes too
+  // (a real sign-out, another tab, a failed renewal) or a different shopper signs in instead.
   useEffect(() => {
     const shopperOf = () => {
       const s = getServerSessionState()
       return s.status === "ready" ? (s.shopper?.id ?? null) : undefined
     }
     let last = shopperOf()
-    return subscribeServerSession(() => {
+    let lastDemo = !!getServerSessionState().shopper?.demo
+    /** The demo shopper whose bag is held while its session renews. */
+    let held: string | null = null
+    const release = (reset: boolean) => {
+      held = null
+      void useCart.getState().syncFromServer({ reset })
+    }
+    const unsubscribeServer = subscribeServerSession(() => {
       const next = shopperOf()
       if (next === undefined || next === last) return
       const previous = last
+      const previousDemo = lastDemo
       last = next
+      lastDemo = !!getServerSessionState().shopper?.demo
       if (previous === undefined) return
       useOrders.getState().scopeTo(next)
+      const local = useSession.getState()
+      if (next === null && previous && previousDemo && local.user?.id === previous && !local.signedOutAt && !local.serverPending) {
+        held = previous
+        return
+      }
+      if (held) return release(next !== held)
       void useCart.getState().syncFromServer({ reset: previous !== null })
     })
+    // The local user leaving (or changing) while a demo bag is held: that was a sign-out after all.
+    const unsubscribeLocal = useSession.subscribe((state) => {
+      if (held && state.user?.id !== held && !getServerSessionState().shopper) release(true)
+    })
+    return () => {
+      unsubscribeServer()
+      unsubscribeLocal()
+    }
   }, [])
   useNotificationEvents()
 

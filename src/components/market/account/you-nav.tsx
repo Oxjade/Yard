@@ -10,7 +10,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { cn } from "@/lib/utils"
-import { serverCheckoutGroups, useServerOrderSummaries } from "./use-server-order-summaries"
+import { useServerOrderSummaries } from "./use-server-order-summaries"
 
 const items = [
   { href: "/you", label: "Overview", exact: true },
@@ -43,7 +43,8 @@ export function YouNav({ className }: { className?: string }) {
   const localOrders = useOrders((s) => s.groups.length)
   // A real shopper's orders live on the server; the local store holds only demo and sample history.
   const server = useServerOrderSummaries()
-  const orders = server === undefined ? localOrders : server ? serverCheckoutGroups(server.items).length : 0
+  // Every checkout, counted by the server (not just the first page); null while unknown.
+  const orders = server === undefined ? localOrders : server?.counts ? server.counts.checkouts : null
   // Unread conversations from the server (the realtime provider keeps it current); unknown or
   // signed out reads as no count, never 0.
   const signedIn = useServerSession((s) => !!s.shopper)
@@ -101,7 +102,9 @@ export function YouNav({ className }: { className?: string }) {
                 className={cn("relative flex h-11 items-center gap-2 px-3 text-sm transition-colors", active ? "text-ink" : "text-ink-2 hover:text-ink")}
               >
                 {item.label}
-                {count ? (
+                {"count" in item && item.count === "orders" && hydrated && orders === null && server === null ? (
+                  <span className="inline-block h-3 w-3 rounded-sm skeleton align-middle" aria-hidden />
+                ) : count ? (
                   <span className="tabular text-xs text-ink-3">
                     {count}
                     {item.href === "/inbox" ? <span className="sr-only"> unread</span> : null}
