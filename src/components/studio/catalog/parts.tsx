@@ -15,7 +15,7 @@ import { productLevel, variantLevel } from "./utils"
 export function Thumb({ image, size = 40, className, loading }: { image?: ImageAsset; size?: number; className?: string; loading?: "eager" | "lazy" }) {
   return (
     <span className={cn("relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface", className)} style={{ width: size, height: size }}>
-      {image ? <Image src={image.src} alt="" fill sizes={`${size}px`} loading={loading} className="object-cover" /> : <ImageOff className="size-4 text-ink-3" aria-hidden />}
+      {image ? <Image src={image.src} alt="" fill sizes={`${size}px`} loading={loading} unoptimized={image.src.startsWith("/api/")} className="object-cover" /> : <ImageOff className="size-4 text-ink-3" aria-hidden />}
     </span>
   )
 }

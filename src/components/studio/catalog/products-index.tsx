@@ -12,15 +12,19 @@ import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-ba
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNow } from "@/hooks/use-now"
+import { ApiError, api } from "@/lib/api/client"
+import type { StudioProductResponse, StudioProductStatusAction } from "@/lib/api/contracts/catalog"
+import { useApi } from "@/lib/api/use-api"
 import { products as seedProducts } from "@/lib/data"
-import { brandById } from "@/lib/data/brands"
 import { categoryBySlug } from "@/lib/data/catalog"
 import type { CategorySlug, Product, ProductStatus } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { PhoneSort } from "@/components/studio/business/shared"
 import { ConfirmDialog, selectedTabFor } from "./fields"
+import { duplicateProductBody, fromStudioProduct, loadStudioProductDtos } from "./live"
 import { productsCopy } from "./page-copy"
 import { CatalogueNote, ProductStock, Thumb } from "./parts"
 import { uniqueSlug } from "./product-form-model"
@@ -108,13 +112,18 @@ function duplicate(p: Product) {
 }
 
 export function ProductsIndex() {
-  const ready = useCatalogReady()
+  const localReady = useCatalogReady()
+  const member = useServerSession((state) => state.brand)
+  const liveBrand = member && !member.demo ? member.brand.id : null
+  const live = !!liveBrand
+  const liveProducts = useApi(liveBrand ? `studio.catalog:${liveBrand}` : null, loadStudioProductDtos, { revalidateOnFocus: true, keepPrevious: false })
+  const ready = live ? !liveProducts.isLoading : localReady
   const router = useRouter()
   const now = useNow(60_000)
-  const brandId = useStudio((s) => s.brandId)
-  const products = useStudio((s) => s.products)
+  const localProducts = useStudio((s) => s.products)
+  const products = useMemo(() => (live ? (liveProducts.data ?? []).map(fromStudioProduct) : localProducts), [live, liveProducts.data, localProducts])
+  const liveDtos = useMemo(() => new Map((liveProducts.data ?? []).map((product) => [product.id, product])), [liveProducts.data])
   const orders = useStudio((s) => s.orders)
-  const brand = brandById.get(brandId)!
 
   const [tab, setTab] = useState<Tab>("all")
   const [category, setCategory] = useState<CategorySlug | "all">("all")
@@ -123,6 +132,7 @@ export function ProductsIndex() {
   const [deleting, setDeleting] = useState<Product | null>(null)
 
   const ordered = useMemo(() => new Set(orders.flatMap((o) => o.lines.map((l) => l.productId))), [orders])
+  const loadError = live && liveProducts.error ? (liveProducts.error instanceof ApiError ? liveProducts.error.message : "Couldn't load this brand's catalogue.") : null
 
   const counts = useMemo(() => {
     const c: Record<Tab, number> = { all: products.length, draft: 0, published: 0, scheduled: 0, archived: 0 }
@@ -146,11 +156,42 @@ export function ProductsIndex() {
 
   /* ---------- actions ---------- */
 
+  async function runLiveStatus(list: Product[], action: StudioProductStatusAction) {
+    const targets = list.flatMap((product) => {
+      const dto = liveDtos.get(product.id)
+      return dto ? [{ product, dto }] : []
+    })
+    if (!targets.length) return { changed: 0, errors: ["That product isn't in this brand's catalogue anymore."] }
+    const results = await Promise.allSettled(
+      targets.map(({ dto }) =>
+        api<StudioProductResponse>(`/api/studio/catalog/products/${encodeURIComponent(dto.id)}/status`, {
+          method: "POST",
+          body: { action, expectedVersion: dto.version },
+        }),
+      ),
+    )
+    await liveProducts.revalidate()
+    const errors = results.flatMap((result, index) =>
+      result.status === "rejected" ? [`${targets[index].product.name}: ${result.reason instanceof ApiError ? result.reason.message : "couldn't update."}`] : [],
+    )
+    return { changed: results.length - errors.length, errors }
+  }
+
+  function reportStatus(action: "publish" | "archive" | "restore", result: { changed: number; errors: string[] }) {
+    const done = action === "publish" ? "Published" : action === "archive" ? "Archived" : "Restored"
+    if (result.changed) toast.success(`${done} ${plural(result.changed, "product")}`)
+    if (result.errors.length) toast.error(`Couldn't ${action} ${plural(result.errors.length, "product")}`, { description: result.errors.slice(0, 3).join(" ") })
+  }
+
   // Row menus disable these for rows they don't apply to, and the bulk bar passes only the
   // rows each one applies to, so there is always something to change.
-  function publish(list: Product[]) {
+  async function publish(list: Product[]) {
     const targets = list.filter((p) => p.status !== "published")
     if (!targets.length) return
+    if (live) {
+      reportStatus("publish", await runLiveStatus(targets, "publish"))
+      return
+    }
     const previous = setProductStatuses(targets.map((p) => p.id), "published")
     toast.success(`Published ${plural(previous.length, "product")}`, {
       action: { label: "Undo", onClick: () => restoreProductStatuses(previous) },
@@ -174,7 +215,13 @@ export function ProductsIndex() {
     })
   }
 
-  function archive(list: Product[]) {
+  async function archive(list: Product[]) {
+    if (live) {
+      const targets = list.filter((p) => p.status !== "archived")
+      if (!targets.length) return
+      reportStatus("archive", await runLiveStatus(targets, "archive"))
+      return
+    }
     const previous = setProductStatuses(list.map((p) => p.id), "archived")
     toast.success(`Archived ${plural(previous.length, "product")}`, {
       description: previous.length === 1 ? "Find it in the Archived tab." : "Find them in the Archived tab.",
@@ -182,7 +229,13 @@ export function ProductsIndex() {
     })
   }
 
-  function restore(list: Product[]) {
+  async function restore(list: Product[]) {
+    if (live) {
+      const targets = list.filter((p) => p.status === "archived")
+      if (!targets.length) return
+      reportStatus("restore", await runLiveStatus(targets, "restore"))
+      return
+    }
     const previous = setProductStatuses(list.filter((p) => p.status === "archived").map((p) => p.id), "draft")
     if (!previous.length) return
     toast.success(`Restored ${plural(previous.length, "product")} as ${previous.length === 1 ? "a draft" : "drafts"}`, {
@@ -190,7 +243,27 @@ export function ProductsIndex() {
     })
   }
 
-  function copy(p: Product) {
+  async function copy(p: Product) {
+    if (live) {
+      const dto = liveDtos.get(p.id)
+      if (!dto) {
+        toast.error("This product isn't in the catalogue anymore.")
+        return
+      }
+      try {
+        const titles = new Set(products.map((product) => product.name.toLowerCase()))
+        const skus = new Set(products.flatMap((product) => product.variants.map((variant) => variant.sku.toUpperCase())))
+        const result = await api<StudioProductResponse>("/api/studio/catalog/products", { body: duplicateProductBody(dto, titles, skus) })
+        await liveProducts.revalidate()
+        toast.success("Copy saved as a draft", {
+          description: `${result.product.title}. Photos and options are copied; stock starts at 0.`,
+          action: { label: "Open", onClick: () => router.push(`/studio/products/${result.product.id}`) },
+        })
+      } catch (cause) {
+        toast.error("Couldn't duplicate this product", { description: cause instanceof ApiError ? cause.message : "Try again in a moment." })
+      }
+      return
+    }
     const made = duplicate(p)
     toast.success("Copy saved as a draft", {
       description: `${made.name}. Photos and options are copied; stock starts at 0.`,
@@ -199,8 +272,12 @@ export function ProductsIndex() {
   }
 
   function remove(p: Product) {
+    if (live) {
+      void archive([p])
+      return
+    }
     if (ordered.has(p.id)) {
-      archive([p])
+      void archive([p])
       return
     }
     if (!useStudio.getState().removeProduct(p.id)) {
@@ -229,7 +306,7 @@ export function ProductsIndex() {
             </span>
             {/* Phones: status, price and stock ride under the name, since their columns are hidden. */}
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2 sm:hidden">
-              <span className="text-ink tabular">{formatMoney(p.price, brand.currency)}</span>
+              <span className="text-ink tabular">{formatMoney(p.price, p.currency)}</span>
               <ProductStock available={totalAvailable(p)} />
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-2 sm:hidden">
@@ -275,8 +352,8 @@ export function ProductsIndex() {
       sortValue: (p) => p.price,
       cell: (p) => (
         <span className="whitespace-nowrap">
-          <span className="text-ink">{formatMoney(p.price, brand.currency)}</span>
-          {p.compareAt ? <span className="block text-xs text-ink-3 line-through">{formatMoney(p.compareAt, brand.currency)}</span> : null}
+          <span className="text-ink">{formatMoney(p.price, p.currency)}</span>
+          {p.compareAt ? <span className="block text-xs text-ink-3 line-through">{formatMoney(p.compareAt, p.currency)}</span> : null}
         </span>
       ),
     },
@@ -292,11 +369,11 @@ export function ProductsIndex() {
   // An archived product offers Restore in place of Archive, in every tab.
   const rowActions: RowAction<Product>[] = [
     { label: "Edit", icon: Pencil, onSelect: (p) => router.push(`/studio/products/${p.id}`) },
-    { label: "Duplicate", icon: Copy, onSelect: copy },
-    { label: "Publish", icon: Send, onSelect: (p) => publish([p]), hidden: () => tab === "archived", disabled: (p) => p.status === "published", disabledReason: () => "Already published.", separatorBefore: true },
-    { label: "Restore as draft", icon: Restore, onSelect: (p) => restore([p]), hidden: (p) => p.status !== "archived" },
+    { label: "Duplicate", icon: Copy, onSelect: (p) => void copy(p) },
+    { label: "Publish", icon: Send, onSelect: (p) => void publish([p]), hidden: () => tab === "archived", disabled: (p) => p.status === "published", disabledReason: () => "Already published.", separatorBefore: true },
+    { label: "Restore as draft", icon: Restore, onSelect: (p) => void restore([p]), hidden: (p) => p.status !== "archived" },
     { label: "Archive", icon: Archive, onSelect: (p) => void askArchive([p]), hidden: (p) => p.status === "archived" },
-    { label: "Delete", icon: Trash, onSelect: setDeleting, destructive: true, separatorBefore: true },
+    { label: "Delete", icon: Trash, onSelect: setDeleting, destructive: true, hidden: () => live, separatorBefore: true },
   ]
 
   const notPublished = (p: Product) => p.status !== "published"
@@ -341,10 +418,15 @@ export function ProductsIndex() {
           </Button>
         }
       >
-        <CatalogueNote className="mt-3" />
+        <CatalogueNote className="mt-3">{live ? "Changes here are saved to this brand's live catalogue and reach shoppers straight away." : undefined}</CatalogueNote>
       </PageHeader>
 
-      {ready && products.length === 0 ? (
+      {loadError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 sm:flex-row sm:items-center">
+          <p className="min-w-0 flex-1 text-sm text-danger">{loadError}</p>
+          <Button size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => void liveProducts.revalidate()}>Try again</Button>
+        </div>
+      ) : ready && products.length === 0 ? (
         <EmptyState
           icon={Package}
           title="Add your first product"
@@ -402,7 +484,7 @@ export function ProductsIndex() {
         body={`${archiveCount === 1 ? "It moves" : "They move"} to the Archived tab and out of your inventory list. Orders and stock history stay, and you can restore ${archiveCount === 1 ? "it" : "them"} at any time.`}
         confirmLabel={archiveCount === 1 ? "Archive product" : `Archive ${plural(archiveCount, "product")}`}
         onConfirm={() => {
-          if (archiving) archive(archiving)
+          if (archiving) void archive(archiving)
           answerArchive(true)
         }}
         returnFocus={toSelectAll}

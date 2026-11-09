@@ -30,3 +30,49 @@ export type StudioProductDto = {
 }
 
 export type StudioProductsPage = { products: StudioProductDto[]; total: number; nextOffset: number | null }
+
+export type StudioProductStatusAction = "publish" | "schedule" | "unpublish" | "archive" | "restore"
+
+export type StudioProductStatusBody = {
+  action: StudioProductStatusAction
+  publishAt?: string
+  expectedVersion: number
+}
+
+export type StudioProductCreateBody = {
+  title: string
+  slug?: string
+  description?: string
+  details?: string[]
+  categorySlug: string
+  subcategory?: string | null
+  tags?: string[]
+  badges?: string[]
+  priceMinor: number
+  compareAtMinor?: number | null
+  processingDays?: [number, number] | null
+  dropId?: string | null
+  options?: { name: string; values: { value: string; hex?: string }[] }[]
+  variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number }[]
+  images?: { id?: string; mediaId?: string; alt?: string }[]
+  collectionIds?: string[]
+}
+
+export type StudioProductUpdateBody = Partial<StudioProductCreateBody> & { expectedVersion: number }
+
+export type StudioProductResponse = { product: StudioProductDto }
+export type StudioCollectionDto = {
+  id: string
+  handle: string
+  name: string
+  description: string
+  status: string
+  position: number
+  imageMediaId: string | null
+  imageSrc: string | null
+  productIds: string[]
+  updatedAt: string
+}
+
+export type StudioCollectionsResponse = { collections: StudioCollectionDto[] }
+export type StudioCollectionResponse = { collection: StudioCollectionDto }
