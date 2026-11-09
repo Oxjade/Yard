@@ -20,6 +20,8 @@ import { InterestEditor } from "./interest-editor"
 import { isSampleCheckout, OrderStatusBadge, SampleChip } from "./order-status"
 import { InboxSummaryCard } from "@/components/inbox/entry"
 import { YouNav } from "./you-nav"
+import { merchantStatusOf, serverCheckoutGroups, useServerOrderSummaries } from "./use-server-order-summaries"
+import type { CurrencyCode } from "@/config/markets"
 
 function greeting(hour: number) {
   if (hour < 5) return "Up late"
@@ -79,7 +81,11 @@ export function YouOverview() {
 
   const orderById = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders])
   const recentGroups = [...groups].sort((a, b) => b.placedAt.localeCompare(a.placedAt)).slice(0, 2)
-  const onTheWay = orders.filter((o) => o.status === "shipped").length
+  // A real shopper's orders come from the server; the local store holds only demo and sample history.
+  const server = useServerOrderSummaries()
+  const serverGroups = server ? serverCheckoutGroups(server.items).slice(0, 2) : []
+  const onTheWay = server === undefined ? orders.filter((o) => o.status === "shipped").length : (server?.items ?? []).filter((o) => o.states.merchant === "shipped").length
+  const hasRecent = server === undefined ? recentGroups.length > 0 : serverGroups.length > 0
 
   const brandsText = plural(followedBrands.length, "brand", "brands")
   const savedText = plural(saved.length, "piece", "pieces")
@@ -210,9 +216,44 @@ export function YouOverview() {
       <div className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-16 md:mt-32 lg:grid-cols-2 lg:gap-12">
         <section aria-labelledby="you-orders">
           <div id="you-orders">
-            <SectionHeader title="Recent orders" description="Each brand ships its own part of a checkout." href={recentGroups.length ? "/you/orders" : undefined} action="All orders" />
+            <SectionHeader title="Recent orders" description="Each brand ships its own part of a checkout." href={hasRecent ? "/you/orders" : undefined} action="All orders" />
           </div>
-          {recentGroups.length ? (
+          {server === null ? (
+            <div className="h-32 animate-pulse rounded-lg border border-line-soft bg-card" aria-hidden />
+          ) : server ? (
+            serverGroups.length ? (
+              <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
+                {serverGroups.map((g) => (
+                  <li key={g.id} className="rounded-lg border border-line-soft bg-card">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line-soft px-4 py-3">
+                      <p className="text-sm text-ink tabular">Checkout {g.reference}</p>
+                      <p className="text-xs text-ink-2">
+                        {formatDay(g.placedAt)}, <span className="tabular">{formatOrderMoney(g.totalMinor, g.currency as CurrencyCode)}</span>
+                      </p>
+                    </div>
+                    <ul className="divide-y divide-line-soft">
+                      {g.orders.map((o) => (
+                        <li key={o.id}>
+                          <Link href={`/you/orders/${encodeURIComponent(o.id)}`} className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-elevated">
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm text-ink">{o.brand.name}</span>
+                              <span className="block truncate text-xs text-ink-3">
+                                {o.previewItems[0]?.name}
+                                {o.itemCount > (o.previewItems[0]?.qty ?? 0) && o.previewItems[0] ? ` and ${o.itemCount - o.previewItems[0].qty} more` : ""}
+                              </span>
+                            </span>
+                            <OrderStatusBadge status={merchantStatusOf(o.states.merchant)} />
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <InlineEmpty icon={Package} title="No orders yet" body="Every brand's order and tracking shows up here." href="/shop" action="Start shopping" />
+            )
+          ) : recentGroups.length ? (
             <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
               {recentGroups.map((g) => {
                 const list = g.orderIds.map((id) => orderById.get(id)).filter((o): o is MerchantOrder => !!o)

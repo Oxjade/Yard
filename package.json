@@ -11,7 +11,8 @@
     "db:reset": "node scripts/db-reset.mjs",
     "db:check": "node scripts/db-check.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "start:demo": "node scripts/start-demo.mjs"
+    "start:demo": "node scripts/start-demo.mjs",
+    "admin:create": "node --conditions=react-server --import tsx scripts/create-admin.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.15",

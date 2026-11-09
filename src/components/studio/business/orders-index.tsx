@@ -55,7 +55,7 @@ function toCsv(rows: MerchantOrder[], currency: string) {
 export function OrdersIndex() {
   const brand = useServerSession((state) => state.brand)
   if (brand && !brand.demo) {
-    return <ServerOrdersIndex key={brand.brand.id} brandId={brand.brand.id} brandName={brand.brand.name} canFulfil={brand.permissions.includes("orders.fulfil")} />
+    return <ServerOrdersIndex key={brand.brand.id} brandId={brand.brand.id} brandName={brand.brand.name} brandHandle={brand.brand.handle} canFulfil={brand.permissions.includes("orders.fulfil")} />
   }
   return <DemoOrdersIndex />
 }

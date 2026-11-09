@@ -25,16 +25,24 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
   const [challengeMode, setChallengeMode] = useState<ChallengeMode | null>(null)
   const [authenticator, setAuthenticator] = useState<{ secret: string; otpauthUrl: string } | null>(null)
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const [useRecovery, setUseRecovery] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState("")
+  const [notice, setNotice] = useState<string | null>(null)
+  const [unverified, setUnverified] = useState(false)
+  const [sending, setSending] = useState<"forgot" | "verify" | null>(null)
 
   async function submitPassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy) return
     setBusy(true)
     setFailure(null)
+    setNotice(null)
+    setUnverified(false)
     try {
       const result = await api<SignInResponse>("/api/auth/sign-in", { body: { actor: surface === "studio" ? "brand" : "admin", email: email.trim(), password } })
       if (result.status === "verify_email") {
         setFailure("Verify your email before signing in. Check your inbox for the latest verification link.")
+        setUnverified(true)
       } else if (result.status === "signed_in") {
         await afterIdentityChange(surface)
       } else {
@@ -62,13 +70,35 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
         const result = await api<{ recoveryCodes: string[] }>("/api/auth/mfa/enrol/confirm", { body: { challenge, code: code.replace(/\s/g, "") } })
         setRecoveryCodes(result.recoveryCodes)
       } else {
-        await api("/api/auth/mfa/verify", { body: { challenge, code: code.replace(/\s/g, "") } })
+        await api("/api/auth/mfa/verify", { body: useRecovery ? { challenge, recoveryCode: recoveryCode.trim() } : { challenge, code: code.replace(/\s/g, "") } })
         await afterIdentityChange("admin")
       }
     } catch (error) {
       setFailure(errorMessage(error, "That code could not be verified. Try again."))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** Forgot password and resend verification: the same public routes the market sign-in uses. */
+  async function sendEmailLink(kind: "forgot" | "verify") {
+    if (busy || sending) return
+    const address = email.trim()
+    if (!address) {
+      setFailure("Enter your email address first.")
+      return
+    }
+    setSending(kind)
+    setFailure(null)
+    setNotice(null)
+    try {
+      await api<{ ok: true }>(kind === "forgot" ? "/api/auth/password/forgot" : "/api/auth/verify-email/request", { body: { email: address } })
+      setNotice(kind === "forgot" ? "If an account exists for that address, a password reset link has been sent." : "If that address still needs verifying, a new verification link has been sent.")
+      if (kind === "verify") setUnverified(false)
+    } catch (error) {
+      setFailure(errorMessage(error, kind === "forgot" ? "Couldn't request a reset link. Try again." : "Couldn't send a new verification link. Try again."))
+    } finally {
+      setSending(null)
     }
   }
 
@@ -90,15 +120,27 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
       <form onSubmit={submitCode} className="grid gap-4 rounded-lg border border-line-soft bg-card p-5">
         <div>
           <h2 className="text-base font-medium text-ink">{challengeMode === "enrol" ? "Set up two-factor authentication" : "Verify your sign-in"}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-ink-2">{challengeMode === "enrol" ? "Add this key to an authenticator app, then enter its six-digit code." : "Enter the six-digit code from your authenticator app."}</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">{challengeMode === "enrol" ? "Add this key to an authenticator app, then enter its six-digit code." : useRecovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication. Each code works once." : "Enter the six-digit code from your authenticator app."}</p>
         </div>
         {authenticator ? <p className="break-all rounded-md bg-obsidian px-3 py-2 font-mono text-xs text-ink" aria-label="Authenticator setup key">{authenticator.secret}</p> : null}
-        <div className="grid gap-1.5">
-          <Label htmlFor="admin-mfa-code">Authenticator code</Label>
-          <Input id="admin-mfa-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required value={code} onChange={(event) => setCode(event.target.value)} />
-        </div>
+        {challengeMode === "verify" && useRecovery ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor="admin-mfa-recovery">Recovery code</Label>
+            <Input id="admin-mfa-recovery" autoComplete="off" autoCapitalize="none" spellCheck={false} minLength={10} maxLength={20} required value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value)} className="font-mono" />
+          </div>
+        ) : (
+          <div className="grid gap-1.5">
+            <Label htmlFor="admin-mfa-code">Authenticator code</Label>
+            <Input id="admin-mfa-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required value={code} onChange={(event) => setCode(event.target.value)} />
+          </div>
+        )}
         {failure ? <p role="alert" className="text-sm text-danger">{failure}</p> : null}
         <Button type="submit" variant="primary" loading={busy} disabled={busy}>{challengeMode === "enrol" ? "Confirm authenticator" : "Verify and sign in"}</Button>
+        {challengeMode === "verify" ? (
+          <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={busy} onClick={() => { setUseRecovery((current) => !current); setFailure(null) }}>
+            {useRecovery ? "Use your authenticator app" : "Use a recovery code"}
+          </button>
+        ) : null}
       </form>
     )
   }
@@ -118,7 +160,16 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
         <Input id={`${surface}-password`} type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
       </div>
       {failure ? <p role="alert" className="text-sm text-danger">{failure}</p> : null}
-      <Button type="submit" variant="primary" loading={busy} disabled={busy}>Sign in</Button>
+      {notice ? <p role="status" className="text-sm leading-relaxed text-ink-2">{notice}</p> : null}
+      <Button type="submit" variant="primary" loading={busy} disabled={busy || !!sending}>Sign in</Button>
+      {unverified ? (
+        <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={busy || !!sending} onClick={() => void sendEmailLink("verify")}>
+          {sending === "verify" ? "Sending verification link…" : "Resend verification email"}
+        </button>
+      ) : null}
+      <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={busy || !!sending} onClick={() => void sendEmailLink("forgot")}>
+        {sending === "forgot" ? "Sending reset link…" : "Forgot password?"}
+      </button>
     </form>
   )
 }

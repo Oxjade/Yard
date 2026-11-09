@@ -35,6 +35,7 @@ export function BagDrawer() {
   const isOpen = useCart((s) => s.isOpen)
   const setOpen = useCart((s) => s.setOpen)
   const lines = useCart((s) => s.lines)
+  const unavailable = useCart((s) => s.unavailable.length)
   const currency = useSession((s) => s.currency)
   const shipTo = useSession((s) => s.shipTo)
   const shipToCity = useSession((s) => s.shipToCity)
@@ -89,6 +90,15 @@ export function BagDrawer() {
                     <X className="size-5" />
                   </DialogPrimitive.Close>
                 </header>
+                {/* Pieces the shop no longer sells; the cart page lists them with Remove. */}
+                {unavailable ? (
+                  <p className="mx-5 mb-3 text-xs text-ink-2">
+                    {unavailable === 1 ? "1 piece" : `${unavailable} pieces`} from your cart {unavailable === 1 ? "is" : "are"} no longer available.{" "}
+                    <Link href="/bag" onClick={close} className="text-violet underline-offset-2 hover:underline">
+                      See your cart
+                    </Link>
+                  </p>
+                ) : null}
 
                 {bag.groups.length === 0 ? (
                   <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 pb-16 text-center">

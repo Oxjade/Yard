@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api, ApiError } from "@/lib/api/client"
+import { fieldErrors } from "@/lib/api/errors"
 
 export function AuthPasswordReset() {
   const params = useSearchParams()
@@ -15,6 +16,7 @@ export function AuthPasswordReset() {
   const [confirm, setConfirm] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
   const [complete, setComplete] = useState(false)
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -33,18 +35,21 @@ export function AuthPasswordReset() {
     }
     setBusy(true)
     setError(null)
+    setPasswordError(null)
     try {
       await api<{ ok: true }>("/api/auth/password/reset", { body: { token, password } })
       setComplete(true)
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "This reset link could not be used. Request a new one and try again.")
+      const fields = fieldErrors(cause)
+      if (fields.password) setPasswordError(fields.password)
+      setError(fields.token ?? (fields.password ? null : cause instanceof ApiError ? cause.message : "This reset link could not be used. Request a new one and try again."))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+    <>
       <h1 className="font-display text-display-lg text-ink">Reset your password</h1>
       {complete ? (
         <div className="mt-6 max-w-lg">
@@ -55,7 +60,8 @@ export function AuthPasswordReset() {
         <form onSubmit={submit} className="mt-6 grid max-w-md gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="new-password">New password</Label>
-            <Input id="new-password" type="password" autoComplete="new-password" minLength={10} required value={password} onChange={(event) => setPassword(event.target.value)} />
+            <Input id="new-password" type="password" autoComplete="new-password" minLength={10} required value={password} onChange={(event) => { setPassword(event.target.value); setPasswordError(null) }} aria-invalid={!!passwordError} aria-describedby={passwordError ? "new-password-error" : undefined} />
+            {passwordError ? <p id="new-password-error" className="text-xs text-danger">{passwordError}</p> : null}
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="confirm-password">Confirm password</Label>
@@ -65,6 +71,6 @@ export function AuthPasswordReset() {
           <Button type="submit" variant="primary" loading={busy} disabled={busy}>Update password</Button>
         </form>
       )}
-    </div>
+    </>
   )
 }

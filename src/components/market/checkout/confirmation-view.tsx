@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -10,11 +11,12 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
+import { ApiError } from "@/lib/api/client"
 import { brandById } from "@/lib/data/brands"
-import { useOrders } from "@/lib/stores/orders"
+import { CheckoutError, loadServerCheckout, useOrders, type ServerCheckout } from "@/lib/stores/orders"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
-import type { MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
+import type { CheckoutGroup, MerchantOrder, MerchantOrderStatus } from "@/lib/data/types"
 import { orderEstimate } from "@/components/market/delivery/browser-estimate"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { formatRange } from "@/lib/shipping/format"
@@ -26,7 +28,17 @@ import { useStoresReady } from "./use-stores-ready"
 /** States in which a delivery estimate still means something. */
 const expecting = new Set<MerchantOrderStatus>(["pending_payment", "paid", "processing", "shipped"])
 
-/** The confirmation for one checkout group: its reference, then one card per brand order. */
+/** How long an open confirmation keeps asking for a pending payment's final answer, and how often (backoff). */
+const POLL_FOR_MS = 5 * 60_000
+const FIRST_POLL_MS = 5_000
+const MAX_POLL_MS = 30_000
+
+/**
+ * The confirmation for one checkout group: its reference, then one card per brand order. It reads
+ * this browser's copy when it holds one for the signed-in shopper (the demo shopper's history, or a
+ * checkout placed in this visit), else the server's (another browser or device, cleared storage, a
+ * return from the payment page). While the provider is still confirming, it re-reads the checkout.
+ */
 export function ConfirmationView() {
   const params = useSearchParams()
   const groupId = params.get("group")
@@ -34,13 +46,60 @@ export function ConfirmationView() {
   const groups = useOrders((s) => s.groups)
   const allOrders = useOrders((s) => s.orders)
   const user = useSession((s) => s.user)
+  const [remote, setRemote] = useState<{ id: string; data: ServerCheckout } | null>(null)
+  const [remoteError, setRemoteError] = useState<{ id: string; status: number } | null>(null)
 
-  if (!ready) return <ConfirmationSkeleton />
+  // Only the shopper it belongs to sees a checkout kept in this browser.
+  const localGroup = groupId && user ? groups.find((g) => g.id === groupId && g.customerId === user.id) : undefined
+  const localOrders = localGroup ? localGroup.orderIds.map((id) => allOrders.find((o) => o.id === id)).filter((o): o is MerchantOrder => !!o) : []
+  const local = localGroup && localOrders.length ? { group: localGroup, orders: localOrders } : null
+  const fromServer = !local && remote?.id === groupId ? remote.data : null
+  const needServer = ready && !!groupId && !local
 
-  const group = groupId ? groups.find((g) => g.id === groupId) : undefined
-  const orders = group ? group.orderIds.map((id) => allOrders.find((o) => o.id === id)).filter((o): o is MerchantOrder => !!o) : []
+  useEffect(() => {
+    if (!needServer || !groupId) return
+    let active = true
+    void loadServerCheckout(groupId).then(
+      (data) => { if (active) setRemote({ id: groupId, data }) },
+      (cause: unknown) => { if (active) setRemoteError({ id: groupId, status: cause instanceof CheckoutError && cause.kind === "signin" ? 401 : cause instanceof ApiError ? cause.status : 0 }) },
+    )
+    return () => { active = false }
+  }, [needServer, groupId])
 
-  if (!group || orders.length === 0) {
+  // A live payment still being confirmed: re-read the checkout with backoff until it's final.
+  const shown = local ?? fromServer
+  const pendingLive = !!shown && shown.group.payment?.status === "pending" && shown.orders.some((o) => o.status === "pending_payment")
+  const fromLocal = !!local
+  useEffect(() => {
+    if (!pendingLive || !groupId) return
+    let active = true
+    let timer = 0
+    const deadline = Date.now() + POLL_FOR_MS
+    const tick = (delay: number) => {
+      timer = window.setTimeout(async () => {
+        try {
+          if (fromLocal) await useOrders.getState().refreshCheckout(groupId)
+          else {
+            const data = await loadServerCheckout(groupId)
+            if (active) setRemote({ id: groupId, data })
+          }
+        } catch {
+          /* offline for a moment: the next look tries again */
+        }
+        if (active && Date.now() < deadline) tick(Math.min(delay * 2, MAX_POLL_MS))
+      }, delay)
+    }
+    tick(FIRST_POLL_MS)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [pendingLive, fromLocal, groupId])
+
+  if (!ready || (needServer && !fromServer && remoteError?.id !== groupId)) return <ConfirmationSkeleton />
+
+  if (!shown) {
+    const signedOut = !user || remoteError?.status === 401
     return (
       <>
         <h1 className="font-display text-display-lg text-ink">Order confirmation</h1>
@@ -49,20 +108,31 @@ export function ConfirmationView() {
             <PackageSearch className="size-6 text-ink-2" />
           </span>
           <div>
-            <p className="text-base text-ink">We can&apos;t find that checkout in this browser</p>
-            <p className="mt-1 max-w-sm text-sm text-ink-2">The link may be incomplete. In this development build orders are kept in the browser they were placed in, so a checkout from another browser or device won&apos;t show here.</p>
+            <p className="text-base text-ink">{signedOut ? "Sign in to see this checkout" : remoteError?.status === 0 ? "We couldn’t load this checkout" : "We can’t find that checkout"}</p>
+            <p className="mt-1 max-w-sm text-sm text-ink-2">
+              {signedOut
+                ? "A checkout shows only to the account that placed it. Sign in with that account to see its orders."
+                : remoteError?.status === 0
+                  ? "Check your connection and reload the page. Your orders are safe either way."
+                  : "The link may be incomplete, or the checkout belongs to another account. Every order you placed is in Your orders."}
+            </p>
           </div>
           <Button asChild variant="primary">
-            <Link href="/you/orders">See your orders</Link>
+            <Link href={signedOut ? "/sign-in" : "/you/orders"}>{signedOut ? "Sign in" : "See your orders"}</Link>
           </Button>
         </div>
       </>
     )
   }
 
-  const brandsOf = orders.map((o) => brandById.get(o.brandId)!)
-  const processing = brandsOf.flatMap((b) => b.processingDays)
-  const returns = brandsOf.map((b) => b.returnsDays)
+  return <Confirmation group={shown.group} orders={shown.orders} holder={fromServer ? (fromServer.holder ?? undefined) : user?.name} />
+}
+
+function Confirmation({ group, orders, holder }: { group: CheckoutGroup; orders: MerchantOrder[]; holder?: string }) {
+
+  const brandsOf = orders.map((o) => brandById.get(o.brandId)).filter((b) => b !== undefined)
+  const processing = brandsOf.length ? brandsOf.flatMap((b) => b.processingDays) : [1, 3]
+  const returns = brandsOf.length ? brandsOf.map((b) => b.returnsDays) : [14]
   const single = orders.length === 1
   // Orders are created unpaid and only the payment provider may mark them paid, so the
   // heading and labels follow the orders' real status instead of assuming success.
@@ -86,10 +156,10 @@ export function ConfirmationView() {
               ? "The payment provider couldn’t complete this payment. No payment was taken, and the order won’t be prepared. You can try placing it again."
               : awaitingPayment
               ? single
-                ? `Your order with ${brandsOf[0].name} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
+                ? `Your order${brandsOf[0] ? ` with ${brandsOf[0].name}` : ""} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
                 : `Your checkout created ${orders.length} orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it.`
               : allPaid
-                ? `Your payment went through and ${single ? `${brandsOf[0].name} is preparing your order.` : `${orders.length} brands are preparing their orders, each one shipping separately.`}`
+                ? `Your payment went through and ${single ? `${brandsOf[0]?.name ?? "the brand"} is preparing your order.` : `${orders.length} brands are preparing their orders, each one shipping separately.`}`
                 : `Here is where ${single ? "the order" : `each of the ${orders.length} brand orders`} from this checkout stands.`}
           </p>
           <p className="mt-3 max-w-2xl text-xs leading-relaxed text-ink-3">
@@ -106,16 +176,30 @@ export function ConfirmationView() {
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row print:hidden">
-            <Button asChild variant="primary" size="lg">
-              <Link href="/you/orders">Track in Your World</Link>
-            </Button>
-            <Button asChild variant="secondary" size="lg">
-              <Link href="/shop">Continue shopping</Link>
-            </Button>
+            {paymentFailed ? (
+              <>
+                {/* The cart holds what's left to buy (reloaded from the server); placing it again starts a new checkout. */}
+                <Button asChild variant="primary" size="lg">
+                  <Link href="/bag">Return to cart</Link>
+                </Button>
+                <Button asChild variant="secondary" size="lg">
+                  <Link href="/you/orders">See your orders</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild variant="primary" size="lg">
+                  <Link href="/you/orders">Track in Your World</Link>
+                </Button>
+                <Button asChild variant="secondary" size="lg">
+                  <Link href="/shop">Continue shopping</Link>
+                </Button>
+              </>
+            )}
           </div>
         </section>
 
-        <ReceiptTicket group={group} orders={orders} sample={sample} holder={user?.name} className="lg:mx-0 print:mx-auto print:break-inside-avoid" />
+        <ReceiptTicket group={group} orders={orders} sample={sample} holder={holder} className="lg:mx-0 print:mx-auto print:break-inside-avoid" />
       </div>
 
       <section aria-labelledby="orders-title" className="mt-24 md:mt-32 print:hidden">
@@ -132,44 +216,46 @@ export function ConfirmationView() {
         </div>
       </section>
 
-      <section aria-labelledby="next-title" className="mt-24 md:mt-32 print:hidden">
-        <div id="next-title">
-          <SectionHeader title="What happens next" description="Every brand runs its own studio, so each order moves at its own pace. You can follow all of them from Orders in Your World." href="/you/orders" action="Your orders" />
-        </div>
-        <ol className="grid gap-4 md:grid-cols-3">
-          {[
-            {
-              title: single ? "The brand packs your order" : "Each brand packs its order",
-              body: `${awaitingPayment ? "Once the payment is confirmed, pieces" : "Pieces"} are checked and packed in the brand's own studio, usually within ${Math.min(...processing)} to ${Math.max(...processing)} business days.`,
-            },
-            {
-              title: "Tracking for every parcel",
-              body: single ? "You get a tracking link as soon as the parcel ships." : "You get a tracking link as each parcel ships. They travel separately, so they may arrive on different days.",
-            },
-            {
-              title: "Returns, brand by brand",
-              body:
-                Math.min(...returns) === Math.max(...returns)
-                  ? `You have ${returns[0]} days after delivery to start a return, from Orders in Your World.`
-                  : `Each order has its own window, from ${Math.min(...returns)} to ${Math.max(...returns)} days after delivery. Start a return from Orders in Your World.`,
-            },
-          ].map((s, i) => (
-            <li key={s.title} className="rounded-lg border border-line-soft bg-card p-5">
-              <span className="font-display text-display-sm text-violet tabular" aria-hidden>
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <h3 className="mt-4 text-base text-ink">{s.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {paymentFailed ? null : (
+        <section aria-labelledby="next-title" className="mt-24 md:mt-32 print:hidden">
+          <div id="next-title">
+            <SectionHeader title="What happens next" description="Every brand runs its own studio, so each order moves at its own pace. You can follow all of them from Orders in Your World." href="/you/orders" action="Your orders" />
+          </div>
+          <ol className="grid gap-4 md:grid-cols-3">
+            {[
+              {
+                title: single ? "The brand packs your order" : "Each brand packs its order",
+                body: `${awaitingPayment ? "Once the payment is confirmed, pieces" : "Pieces"} are checked and packed in the brand's own studio, usually within ${Math.min(...processing)} to ${Math.max(...processing)} business days.`,
+              },
+              {
+                title: "Tracking for every parcel",
+                body: single ? "You get a tracking link as soon as the parcel ships." : "You get a tracking link as each parcel ships. They travel separately, so they may arrive on different days.",
+              },
+              {
+                title: "Returns, brand by brand",
+                body:
+                  Math.min(...returns) === Math.max(...returns)
+                    ? `You have ${returns[0]} days after delivery to start a return, from Orders in Your World.`
+                    : `Each order has its own window, from ${Math.min(...returns)} to ${Math.max(...returns)} days after delivery. Start a return from Orders in Your World.`,
+              },
+            ].map((s, i) => (
+              <li key={s.title} className="rounded-lg border border-line-soft bg-card p-5">
+                <span className="font-display text-display-sm text-violet tabular" aria-hidden>
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <h3 className="mt-4 text-base text-ink">{s.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{s.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </>
   )
 }
 
 function BrandOrderCard({ order }: { order: MerchantOrder }) {
-  const brand = brandById.get(order.brandId)!
+  const brand = brandById.get(order.brandId)
   const method = methodFromLabel(order.shippingMethod)
   const country = order.shippingAddress.country
   // The estimate the server returned with the order; an older order without one gets the same
@@ -177,16 +263,20 @@ function BrandOrderCard({ order }: { order: MerchantOrder }) {
   const hydrated = useHydrated()
   const estimate = hydrated ? orderEstimate(order) : null
   return (
-    <article aria-label={`${brand.name} order ${order.reference}`} className="flex flex-col rounded-lg border border-line-soft bg-card">
+    <article aria-label={`${brand?.name ?? "Brand"} order ${order.reference}`} className="flex flex-col rounded-lg border border-line-soft bg-card">
       <header className="border-b border-line-soft px-4 py-3.5 md:px-5">
         <div className="flex items-start justify-between gap-3">
-          <Link href={`/brands/${brand.handle}`} className="flex min-w-0 items-center gap-2.5">
-            <BrandMark brand={brand} size="sm" />
-            <div className="min-w-0">
-              <p className="truncate text-sm text-ink">{brand.name}</p>
-              <p className="truncate text-xs text-ink-2 tabular">Order {order.reference}</p>
-            </div>
-          </Link>
+          {brand ? (
+            <Link href={`/brands/${brand.handle}`} className="flex min-w-0 items-center gap-2.5">
+              <BrandMark brand={brand} size="sm" />
+              <div className="min-w-0">
+                <p className="truncate text-sm text-ink">{brand.name}</p>
+                <p className="truncate text-xs text-ink-2 tabular">Order {order.reference}</p>
+              </div>
+            </Link>
+          ) : (
+            <p className="min-w-0 truncate text-xs text-ink-2 tabular">Order {order.reference}</p>
+          )}
           <OrderStatusBadge order={order} className="shrink-0" />
         </div>
         <p className="mt-2.5 text-xs leading-relaxed text-ink-2">{orderStatusNote(order)}</p>

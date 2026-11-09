@@ -6,6 +6,7 @@ import type { CountryCode, CurrencyCode } from "@/config/markets"
 import { site } from "@/config/site"
 import { ApiError, api } from "@/lib/api/client"
 import type { CheckoutOrderSummary, CheckoutOrdersPage, CheckoutStartResponse, StartCheckoutRequest } from "@/lib/api/contracts/checkout"
+import type { OrderDetailDto } from "@/lib/api/contracts/orders"
 import type { DemoSignInResult } from "@/lib/api/contracts/session"
 import type { QuoteGroupDto } from "@/lib/api/contracts/shipping"
 import { brandById } from "@/lib/data/brands"
@@ -27,6 +28,11 @@ import { useStudio } from "./studio"
 /**
  * Shopper order presentation is persisted locally, but placement, stock holds, payment state and
  * order identity come from the server checkout. The idempotency key makes retries safe.
+ *
+ * Only the demo shopper's orders (and the sample history) are written to this browser's storage.
+ * A real account's checkouts, with their address and phone, stay in memory for the visit and are
+ * read back from the server (GET /api/checkout/{id}, /api/orders…) everywhere else; they are
+ * dropped whenever the signed-in shopper changes (scopeTo).
  */
 
 export type CheckoutInput = {
@@ -47,11 +53,16 @@ export type CheckoutInput = {
   payment: { label: string; holder?: string; cardBrand?: string; last4?: string }
 }
 
-/** Why a checkout wasn't placed. Nothing is created locally in any of these cases. */
+/**
+ * Why a checkout didn't finish here. Nothing is created locally in any of these cases. "started":
+ * the server created the checkout (`checkoutId`), but its orders couldn't be loaded; a retry with
+ * the same idempotency key picks the same checkout up.
+ */
 export class CheckoutError extends Error {
   constructor(
-    public kind: "signin" | "changed" | "network" | "blocked" | "other",
+    public kind: "signin" | "changed" | "network" | "blocked" | "started" | "other",
     message: string,
+    public checkoutId?: string,
   ) {
     super(message)
     this.name = "CheckoutError"
@@ -92,6 +103,90 @@ function paymentStatus(value: string): PaymentStatus {
   return statuses.includes(value as PaymentStatus) ? value as PaymentStatus : "pending"
 }
 
+/** True for checkouts kept in this browser's storage: the demo shopper's (and the sample history). */
+const persistable = (customerId: string) => customerId === DEMO_SHOPPER
+
+function paymentSnapshot(checkout: CheckoutStartResponse, previous?: CheckoutGroup["payment"]): NonNullable<CheckoutGroup["payment"]> {
+  return {
+    ...previous,
+    status: checkout.status === "paid" ? "captured" : checkout.status === "failed" || checkout.status === "expired" ? "failed" : checkout.payment?.stub ? "not_charged" : "pending",
+    note: checkout.failureReason ?? checkout.payment?.message ?? previous?.note ?? undefined,
+  }
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** GET with a couple of quick retries (network or server errors only). */
+async function getWithRetry<T>(path: string): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await shopperRequest(() => api<T>(path))
+    } catch (e) {
+      const transient = e instanceof ApiError && (e.status === 0 || e.status >= 500)
+      if (!transient || attempt >= 2) throw e
+      await wait(600 * 2 ** attempt)
+    }
+  }
+}
+
+/** A checkout as the server has it now, whether or not this browser placed it. */
+export type ServerCheckout = { checkout: CheckoutStartResponse; group: CheckoutGroup; orders: MerchantOrder[]; holder: string | null }
+
+/**
+ * Builds a checkout's confirmation from the server alone (another browser or device, cleared
+ * storage, or a real account whose orders aren't kept here): the checkout view, its orders and
+ * each order's lines. `verify` asks the payment provider first (the payment return page).
+ */
+export async function loadServerCheckout(checkoutId: string, opts: { verify?: boolean } = {}): Promise<ServerCheckout> {
+  const id = encodeURIComponent(checkoutId)
+  const checkout = opts.verify
+    ? await shopperRequest(() => api<CheckoutStartResponse>(`/api/checkout/${id}/verify`, { method: "POST" }))
+    : await getWithRetry<CheckoutStartResponse>(`/api/checkout/${id}`)
+  const page = await getWithRetry<CheckoutOrdersPage>(`/api/orders/checkouts/${id}`)
+  const details = await Promise.all(page.items.map((summary) => getWithRetry<{ order: OrderDetailDto }>(`/api/orders/${encodeURIComponent(summary.id)}`).then((r) => r.order)))
+  const customerId = useSession.getState().user?.id ?? ""
+  const orders: MerchantOrder[] = details.map((d) => {
+    const shipTo = (d.shipTo ?? {}) as Record<string, unknown>
+    const text = (v: unknown) => (typeof v === "string" ? v : "")
+    const service = (["standard", "express", "pickup"] as string[]).includes(d.service) ? d.service as ShippingService : "standard"
+    return {
+      id: d.id,
+      reference: d.reference,
+      groupId: checkout.id,
+      brandId: d.brand.id,
+      customerId,
+      status: merchantStatus(d.states.merchant),
+      paymentStatus: paymentStatus(d.states.payment),
+      currency: d.currency as CurrencyCode,
+      lines: d.lines.map((l) => ({ productId: l.productId, variantId: l.variantId, name: l.title, variantLabel: l.variantLabel, image: l.image, quantity: l.qty, unitPrice: l.unitMinor })),
+      subtotal: d.subtotalMinor,
+      shipping: d.shippingMinor,
+      tax: 0,
+      total: d.totalMinor,
+      commission: 0,
+      placedAt: d.placedAt,
+      // Only what the confirmation shows (city and country): the full address stays on the server.
+      shippingAddress: { name: d.customerName, line1: "", city: text(shipTo.city) || d.shipToPreview.city || "", country: (text(shipTo.country) || d.shipToPreview.country) as CountryCode },
+      shippingMethod: serviceLabel(service),
+      timeline: [],
+      paidAt: d.paidAt ?? undefined,
+      deliveredAt: d.deliveredAt ?? undefined,
+    }
+  })
+  const group: CheckoutGroup = {
+    id: checkout.id,
+    reference: checkout.reference ?? page.items[0]?.groupReference ?? checkout.id,
+    customerId,
+    placedAt: checkout.createdAt,
+    currency: checkout.currency as CurrencyCode,
+    orderIds: orders.map((o) => o.id),
+    total: checkout.totalMinor,
+    payment: paymentSnapshot(checkout),
+  }
+  useOrders.getState().applyServerCheckout(checkout, page.items)
+  return { checkout, group, orders, holder: details[0]?.customerName ?? null }
+}
+
 const methodWord: Record<CheckoutInput["paymentMethod"], string> = { card: "Card", bank_transfer: "Bank transfer", ussd: "USSD", mobile_money: "Mobile money" }
 const serviceLabel = (service: ShippingService, pickupArea?: string) => (service === "express" ? "Express" : service === "pickup" ? `Pickup${pickupArea ? `, ${pickupArea}` : ""}` : "Standard")
 
@@ -101,7 +196,18 @@ type OrdersState = {
   processedKeys: Record<string, string>
   /** Throws CheckoutError (or an ApiError) when nothing was placed. */
   placeCheckout: (input: CheckoutInput) => Promise<{ groupId: string; duplicate: boolean; authorizationUrl: string | null }>
-  verifyCheckout: (checkoutId: string) => Promise<void>
+  /** Asks the payment provider (POST …/verify), updates this browser's copy and returns the checkout. */
+  verifyCheckout: (checkoutId: string) => Promise<CheckoutStartResponse>
+  /** Re-reads the checkout (GET), updates this browser's copy and returns it. */
+  refreshCheckout: (checkoutId: string) => Promise<CheckoutStartResponse>
+  /** Brings this browser's copy of a checkout (when it holds one) in step with the server's. */
+  applyServerCheckout: (checkout: CheckoutStartResponse, summaries: CheckoutOrderSummary[]) => void
+  /**
+   * Keeps only what the shopper now signed in may see: the demo shopper's checkouts (kept in this
+   * browser) and the current account's from this visit. Others' are dropped here and from the
+   * Studio copy.
+   */
+  scopeTo: (shopperId: string | null) => void
   /**
    * A return request on a delivered order. It lands on the brand's order in Studio and in the
    * admin refund queue (in the backend phase: one row both read). Returns false when the order
@@ -142,14 +248,30 @@ export const useOrders = create<OrdersState>()(
         let orderPage: CheckoutOrdersPage
         try {
           checkout = await shopperRequest(() => api<CheckoutStartResponse>("/api/checkout", { body }))
-          orderPage = await shopperRequest(() => api<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkout.id)}`))
         } catch (e) {
           if (e instanceof CheckoutError) throw e
           if (e instanceof ApiError && e.status === 409) throw new CheckoutError("changed", e.message)
+          // The server's cart has brands this bag doesn't show (another device, an account merge).
+          if (e instanceof ApiError && e.status === 400 && Object.keys(e.fields ?? {}).some((k) => k.startsWith("shipping."))) {
+            throw new CheckoutError("changed", "Your cart changed since you last looked. Check it and place your order again.")
+          }
           if (e instanceof ApiError && e.status === 0) throw new CheckoutError("network", "Couldn't reach Yard. Nothing was placed.")
           throw new CheckoutError("other", e instanceof ApiError && e.message ? `${e.message.replace(/\.$/, "")}. Nothing was placed.` : "Your order wasn't placed. Nothing was charged. Try again.")
         }
-        if (!orderPage.items.length) throw new CheckoutError("other", "Yard started checkout but couldn't load its orders. Retry to recover this checkout.")
+        // From here the checkout exists on the server: never say "nothing was placed".
+        const started = "Your order was started, but Yard couldn't load it yet. Retry to pick up the same checkout: nothing is placed twice."
+        try {
+          orderPage = await getWithRetry<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkout.id)}`)
+        } catch (e) {
+          if (e instanceof CheckoutError && e.kind === "signin") throw e
+          throw new CheckoutError("started", started, checkout.id)
+        }
+        if (!orderPage.items.length) throw new CheckoutError("started", started, checkout.id)
+        // A retry that reached the same checkout (another tab already recorded it): keep one copy.
+        if (get().groups.some((g) => g.id === checkout.id)) {
+          set({ processedKeys: { ...get().processedKeys, [input.idempotencyKey]: checkout.id } })
+          return { groupId: checkout.id, duplicate: true, authorizationUrl: checkout.payment?.authorizationUrl ?? null }
+        }
         const customerId = useSession.getState().user?.id ?? DEMO_SHOPPER
         const orders: MerchantOrder[] = orderPage.items.map((summary: CheckoutOrderSummary) => {
           const g = bag.groups.find((x) => x.brand.id === summary.brand.id)
@@ -194,11 +316,7 @@ export const useOrders = create<OrdersState>()(
             ],
           }
         })
-        const payment = {
-          status: checkout.status === "paid" ? "captured" as const : checkout.status === "failed" || checkout.status === "expired" ? "failed" as const : checkout.payment?.stub ? "not_charged" as const : "pending" as const,
-          method: methodWord[input.paymentMethod],
-          note: checkout.failureReason ?? checkout.payment?.message ?? undefined,
-        }
+        const payment = { ...paymentSnapshot(checkout), method: methodWord[input.paymentMethod] }
         const group: CheckoutGroup = {
           id: checkout.id,
           reference: checkout.reference ?? orderPage.items[0].groupReference,
@@ -210,30 +328,54 @@ export const useOrders = create<OrdersState>()(
           payment,
         }
         set({ groups: [group, ...get().groups], orders: [...orders, ...get().orders], processedKeys: { ...get().processedKeys, [input.idempotencyKey]: checkout.id } })
-        // The merchant sees their order immediately (the server holds the same order_ref).
+        // The demo brand sees the demo shopper's order immediately (the server holds the same
+        // order_ref). A real account's order reaches Studio from the server only.
         const studio = useStudio.getState()
-        const mine = orders.filter((o) => o.brandId === studio.brandId)
+        const mine = persistable(customerId) ? orders.filter((o) => o.brandId === studio.brandId && !studio.orders.some((x) => x.id === o.id)) : []
         if (mine.length) useStudio.setState({ orders: [...mine, ...studio.orders] })
         return { groupId: checkout.id, duplicate: false, authorizationUrl: checkout.payment?.authorizationUrl ?? null }
       },
       verifyCheckout: async (checkoutId) => {
         const checkout = await shopperRequest(() => api<CheckoutStartResponse>(`/api/checkout/${encodeURIComponent(checkoutId)}/verify`, { method: "POST" }))
-        const page = await shopperRequest(() => api<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkoutId)}`))
+        const page = await getWithRetry<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkoutId)}`)
+        get().applyServerCheckout(checkout, page.items)
+        await useCart.getState().syncFromServer()
+        return checkout
+      },
+      refreshCheckout: async (checkoutId) => {
+        const checkout = await getWithRetry<CheckoutStartResponse>(`/api/checkout/${encodeURIComponent(checkoutId)}`)
+        if (get().groups.some((g) => g.id === checkoutId)) {
+          const page = await getWithRetry<CheckoutOrdersPage>(`/api/orders/checkouts/${encodeURIComponent(checkoutId)}`)
+          get().applyServerCheckout(checkout, page.items)
+        }
+        return checkout
+      },
+      applyServerCheckout: (checkout, summaries) => {
         const current = get()
-        const updates = new Map(page.items.map((summary) => [summary.id, summary]))
+        if (!current.groups.some((g) => g.id === checkout.id)) return
+        const updates = new Map(summaries.map((summary) => [summary.id, summary]))
         const orders = current.orders.map((order) => {
           const summary = updates.get(order.id)
           if (!summary) return order
           return { ...order, status: merchantStatus(summary.states.merchant), paymentStatus: paymentStatus(summary.states.payment), subtotal: summary.subtotalMinor, shipping: summary.shippingMinor, total: summary.totalMinor }
         })
-        const groups = current.groups.map((group) => group.id === checkoutId ? {
+        const groups = current.groups.map((group) => group.id === checkout.id ? {
           ...group,
           reference: checkout.reference ?? group.reference,
           total: checkout.totalMinor,
-          payment: { ...group.payment, status: checkout.status === "paid" ? "captured" as const : checkout.status === "failed" || checkout.status === "expired" ? "failed" as const : checkout.payment?.stub ? "not_charged" as const : "pending" as const, note: checkout.failureReason ?? checkout.payment?.message ?? group.payment?.note },
+          payment: paymentSnapshot(checkout, group.payment),
         } : group)
         set({ groups, orders })
-        await useCart.getState().syncFromServer()
+      },
+      scopeTo: (shopperId) => {
+        const current = get()
+        const keep = (customerId: string) => persistable(customerId) || (!!shopperId && customerId === shopperId)
+        const dropped = new Set(current.orders.filter((o) => !keep(o.customerId)).map((o) => o.id))
+        const groups = current.groups.filter((g) => keep(g.customerId))
+        if (dropped.size || groups.length !== current.groups.length) set({ groups, orders: current.orders.filter((o) => !dropped.has(o.id)) })
+        // Copies pushed to the demo brand's Studio by earlier builds.
+        const studio = useStudio.getState()
+        if (dropped.size && studio.orders.some((o) => dropped.has(o.id))) useStudio.setState({ orders: studio.orders.filter((o) => !dropped.has(o.id)) })
       },
       requestReturn: (orderId, request) => {
         const o = get().orders.find((x) => x.id === orderId)
@@ -269,6 +411,8 @@ export const useOrders = create<OrdersState>()(
       name: "nocturne-orders",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
+      // Only the demo shopper's checkouts are written here (see the note at the top).
+      partialize: (s) => ({ groups: s.groups.filter((g) => persistable(g.customerId)), orders: s.orders.filter((o) => persistable(o.customerId)), processedKeys: s.processedKeys }),
       version: 2,
       // v1: decisions saved on an order's timeline before the platform was renamed read its
       // current name ("approved by Yard").

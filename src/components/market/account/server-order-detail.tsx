@@ -4,12 +4,14 @@ import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { shippingMethodLabel, type ShippingMethod } from "@/components/market/checkout/shipping"
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { ApiError, api } from "@/lib/api/client"
 import type { OrderDetailDto } from "@/lib/api/contracts/orders"
 import type { MerchantOrderStatus } from "@/lib/data/types"
 import { formatDay, formatOrderMoney } from "./format"
 import { OrderStatusBadge } from "./order-status"
+import { AccountSkeleton } from "./skeletons"
 import { YouNav } from "./you-nav"
 
 function statusOf(value: string): MerchantOrderStatus {
@@ -17,19 +19,34 @@ function statusOf(value: string): MerchantOrderStatus {
   return statuses.includes(value as MerchantOrderStatus) ? value as MerchantOrderStatus : "pending_payment"
 }
 
-function eventLabel(kind: string) {
-  const labels: Record<string, string> = {
-    "order.placed": "Order placed",
-    "payment.captured": "Payment confirmed",
-    "payment.failed": "Payment failed",
-    "fulfilment.processing": "Order being prepared",
-    "fulfilment.shipped": "Order shipped",
-    "fulfilment.delivered": "Order delivered",
-    "return.requested": "Return requested",
-    "refund.succeeded": "Refund issued",
+/**
+ * Shopper copy for the order events the ORDERS module records (src/server/orders, addEvent).
+ * Kinds missing here are internal (disputes, provider refund retries, settlement, fulfilment
+ * syncs that another event already covers) and stay off the shopper's timeline.
+ */
+function eventLabel(event: OrderDetailDto["timeline"][number]): string | null {
+  switch (event.kind) {
+    case "order.placed": return "Order placed"
+    case "payment.captured": return "Payment confirmed"
+    case "payment.failed": return "Payment didn’t go through"
+    case "fulfilment.processing": return "Order being prepared"
+    case "fulfilment.shipped": return "Order shipped"
+    case "fulfilment.delivered": return "Order delivered"
+    case "fulfilment.returned_to_sender": return "Returned to the brand"
+    case "order.cancelled": return event.data.by === "shopper" ? "You cancelled this order" : "Order cancelled"
+    case "return.requested": return "Return requested"
+    case "return.cancelled": return "Return request withdrawn"
+    case "return.approved": return "Return approved"
+    case "return.rejected": return "Return declined"
+    case "return.received": return "Return received by the brand"
+    case "return.expired": return "Return request expired"
+    case "refund.requested": return "Refund started"
+    case "refund.succeeded": return "Refund issued"
+    default: return null
   }
-  return labels[kind] ?? kind.replace(/[._]/g, " ")
 }
+
+const serviceLabel = (service: string) => shippingMethodLabel[service as ShippingMethod] ?? "Standard"
 
 export function ServerOrderDetail({ id }: { id: string }) {
   const [order, setOrder] = useState<OrderDetailDto | null>(null)
@@ -55,16 +72,28 @@ export function ServerOrderDetail({ id }: { id: string }) {
     return () => { active = false }
   }, [id])
 
-  if (loading) return <div role="status" className="mx-auto max-w-page px-4 pt-28 text-sm text-ink-2">Loading your order…</div>
+  // The page already provides the container (gutters and top padding), so every state renders bare, as OrderDetail does.
+  if (loading) return <AccountSkeleton variant="detail" />
   if (error || !order) {
-    return <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32"><h1 className="font-display text-display-lg text-ink">Order unavailable</h1><p role="alert" className="mt-4 text-sm text-ink-2">{error ?? "We couldn’t find this order."}</p><Button asChild variant="primary" className="mt-6"><Link href="/you/orders">Back to orders</Link></Button></div>
+    return (
+      <>
+        <Link href="/you/orders" className="text-sm text-ink-2 transition-colors hover:text-ink">← All orders</Link>
+        <h1 className="mt-6 font-display text-display-lg text-ink">Order unavailable</h1>
+        <p role="alert" className="mt-4 text-sm text-ink-2">{error ?? "We couldn’t find this order."}</p>
+        <Button asChild variant="primary" className="mt-6"><Link href="/you/orders">Back to orders</Link></Button>
+      </>
+    )
   }
 
   const shipTo = order.shipTo ?? {}
   const country = typeof shipTo.country === "string" ? shipTo.country : ""
   const countryName = countries[country as CountryCode]?.name ?? country
-  const address = [shipTo.line1, shipTo.line2, [shipTo.city, shipTo.region, shipTo.postcode].filter((part) => typeof part === "string" && part).join(", "), countryName].filter((part) => typeof part === "string" && part).join("\n")
+  const address = [shipTo.line1, shipTo.line2, [shipTo.city, shipTo.region, shipTo.postalCode || shipTo.postcode].filter((part) => typeof part === "string" && part).join(", "), countryName].filter((part) => typeof part === "string" && part).join("\n")
   const status = statusOf(order.states.merchant)
+  const timeline = order.timeline.flatMap((event) => {
+    const label = eventLabel(event)
+    return label ? [{ ...event, label }] : []
+  })
   const activeReturn = order.returns.find((item) => item.status === "requested" || item.status === "approved")
 
   async function submitReturn(event: React.FormEvent<HTMLFormElement>) {
@@ -93,7 +122,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+    <>
       <Link href="/you/orders" className="text-sm text-ink-2 transition-colors hover:text-ink">← All orders</Link>
       <header className="mt-6 flex flex-wrap items-end justify-between gap-5">
         <div>
@@ -132,7 +161,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Delivery address">
             <h2 className="text-base font-medium text-ink">Ship to</h2>
             <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-ink-2">{[shipTo.name, address, shipTo.phone].filter((part) => typeof part === "string" && part).join("\n") || "Address unavailable"}</p>
-            <p className="mt-3 text-xs text-ink-3">Shipping service: {order.service}</p>
+            <p className="mt-3 text-xs text-ink-3">Shipping service: {serviceLabel(order.service)}</p>
           </section>
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Returns">
             <h2 className="text-base font-medium text-ink">Returns</h2>
@@ -162,10 +191,10 @@ export function ServerOrderDetail({ id }: { id: string }) {
           </section>
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Order timeline">
             <h2 className="text-base font-medium text-ink">Timeline</h2>
-            <ol className="mt-4 grid gap-4 border-l border-line pl-4">{order.timeline.map((event) => <li key={event.id}><p className="text-sm text-ink">{eventLabel(event.kind)}</p><p className="mt-0.5 text-xs text-ink-3">{formatDay(event.at, { year: true })}</p></li>)}</ol>
+            <ol className="mt-4 grid gap-4 border-l border-line pl-4">{timeline.map((event) => <li key={event.id}><p className="text-sm text-ink">{event.label}</p><p className="mt-0.5 text-xs text-ink-3">{formatDay(event.at, { year: true })}</p></li>)}</ol>
           </section>
         </aside>
       </div>
-    </div>
+    </>
   )
 }

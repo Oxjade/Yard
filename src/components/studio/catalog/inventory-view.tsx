@@ -13,7 +13,7 @@ import { ListSkeleton } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
 import { availableStock, variantLabel } from "@/lib/data/products"
 import type { CategorySlug, Product, ProductOption, Variant } from "@/lib/data/types"
-import { api } from "@/lib/api/client"
+import { ApiError, api } from "@/lib/api/client"
 import type { StudioProductDto, StudioProductsPage } from "@/lib/api/contracts/catalog"
 import { useApi } from "@/lib/api/use-api"
 import { useServerSession } from "@/lib/session/use-server-session"
@@ -106,6 +106,8 @@ export function InventoryView() {
   const liveBrand = member && !member.demo ? member.brand.id : null
   const liveProducts = useApi(liveBrand ? `studio.inventory:${liveBrand}` : null, loadStudioProducts, { revalidateOnFocus: true, keepPrevious: false })
   const ready = localReady && (!liveBrand || (!!liveProducts.data && !liveProducts.error))
+  // A real brand's products failed to load: say so with a Retry instead of skeletons that never resolve.
+  const loadError = liveBrand && liveProducts.error && !liveProducts.isValidating ? (liveProducts.error instanceof ApiError ? liveProducts.error.message : "Couldn't load your products.") : null
   const router = useRouter()
   const localProducts = useStudio((s) => s.products)
   const products = useMemo(() => liveBrand ? liveProducts.data ?? [] : localProducts, [liveBrand, liveProducts.data, localProducts])
@@ -243,8 +245,14 @@ export function InventoryView() {
         }
       >
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <SampleDataNote />
-          <CatalogueNote>{inventoryCopy.note}</CatalogueNote>
+          {liveBrand ? (
+            <CatalogueNote>Stock counts save to {member?.brand.name ?? "your brand"} on Yard, and the marketplace shows what&apos;s available straight away.</CatalogueNote>
+          ) : (
+            <>
+              <SampleDataNote />
+              <CatalogueNote>{inventoryCopy.note}</CatalogueNote>
+            </>
+          )}
         </div>
       </PageHeader>
 
@@ -266,6 +274,13 @@ export function InventoryView() {
         ) : null}
       </AnimatePresence>
 
+      {loadError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+          <span>{loadError} Check your connection and try again.</span>
+          <Button size="sm" variant="secondary" onClick={() => void liveProducts.revalidate()}>Retry</Button>
+        </div>
+      ) : null}
+
       <div className="grid gap-4">
         <StatusTabs
           id="inventory-filter"
@@ -279,25 +294,25 @@ export function InventoryView() {
             { value: "out", label: "Out of stock", count: ready ? counts.out : undefined },
           ]}
         />
-        <section id="stock-list" aria-label="Stock by variant" aria-busy={!ready}>
+        <section id="stock-list" aria-label="Stock by variant" aria-busy={!ready && !loadError}>
           <DataTable
             label="Stock by variant"
             rows={ready ? filtered : []}
             columns={columns}
             getId={(r) => r.id}
-            loading={!ready}
+            loading={!ready && !loadError}
             search={{ placeholder: "Search product, size or SKU", text: (r) => [r.product.name, r.label, r.variant.sku].join(" ") }}
             toolbar={
               <>
                 <PhoneSort value={sort} onChange={setSort} options={sortOptions} />
                 <p className="flex items-center gap-1 text-xs text-ink-3 sm:ml-auto">
                   Available is on hand minus reserved
-                  <InfoTip label="How available is counted">Units on hand minus units reserved for open orders. Archived products aren&apos;t listed. Sold in 30 days is sample data.</InfoTip>
+                  <InfoTip label="How available is counted">Units on hand minus units reserved for open orders. Archived products aren&apos;t listed.{liveBrand ? "" : " Sold in 30 days is sample data."}</InfoTip>
                 </p>
               </>
             }
             rowActions={rowActions}
-            empty={empty}
+            empty={loadError ? { title: "Stock didn't load", body: "Retry above to see your variants." } : empty}
             density="dense"
             minWidth={340}
           />
@@ -320,7 +335,7 @@ export function InventoryView() {
             </button>
           ) : null}
         </div>
-        {!ready ? (
+        {!ready && !loadError ? (
           <ListSkeleton rows={3} />
         ) : history.length === 0 ? (
           <EmptyState icon={History} title={historyFor ? "No changes for this variant yet" : "No stock changes yet"} body="When you adjust stock here or change a count on a product page, it's recorded with the reason." className="py-10" />

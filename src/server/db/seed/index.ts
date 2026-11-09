@@ -25,13 +25,29 @@ import social from "./social"
 import inbox from "./inbox"
 import safety from "./safety"
 import charts from "./charts"
+import reference from "./reference"
 import catalog from "../../catalog/seed"
 import dropsSeed from "../../drops/seed"
+import { catalogProducts } from "../schema/catalog"
 
 export type { SeedContext, SeedModule } from "./types"
 
-/** The run order (§1.5). `around` runs before `shipping` (Lagos Static's pickup point). */
-export const seedModules: SeedModule[] = [people, brands, catalog, dropsSeed, orders, around, shipping, delivery, social, inbox, safety, charts]
+/**
+ * Reference data the platform needs in every environment, production included: the category
+ * taxonomy and the holiday calendar. Always seeded, whatever YARD_SEED_DEMO says.
+ */
+export const referenceModules: SeedModule[] = [reference]
+
+/**
+ * Demo fixtures: sample people, brands, the sample catalogue, drops, orders, places, shipping
+ * profiles, delivery, social posts, inbox, safety reports and the charts ring. Seeded only when
+ * seedDemo (development, test, or YARD_SEED_DEMO=1 on an isolated demo deployment).
+ * The run order (§1.5): `around` runs before `shipping` (Lagos Static's pickup point).
+ */
+export const demoModules: SeedModule[] = [people, brands, catalog, dropsSeed, orders, around, shipping, delivery, social, inbox, safety, charts]
+
+/** Every module, in run order: reference data first, then the demo fixtures. */
+export const seedModules: SeedModule[] = [...referenceModules, ...demoModules]
 
 const SEED_DAY_KEY = "seed:day"
 
@@ -115,13 +131,11 @@ async function record(m: SeedModule) {
  * A failing or waiting module is logged and skipped, so a wave-2 seed can't break boot.
  */
 export async function runSeeds(root: Root) {
-  if (!getEnv().seedDemo) {
-    log.info("[yard] sample seeds disabled; production starts with an empty catalogue")
-    return
-  }
+  const env = getEnv()
+  const modules = env.seedDemo ? seedModules : referenceModules
   const versions = await runTx(root, () => recordedVersions())
   const ctx = await runTx(root, () => context())
-  for (const m of seedModules) {
+  for (const m of modules) {
     if (m.version <= 0 || (versions[m.key] ?? 0) >= m.version) continue
     const started = Date.now()
     try {
@@ -140,6 +154,34 @@ export async function runSeeds(root: Root) {
       log.error(`[yard] ${m.key} failed; it will retry at the next boot or reseed`, e)
     }
   }
+  if (!env.seedDemo) await warnEmptyCatalogue(root)
+}
+
+/**
+ * Demo seeding off (production only: development and test always seed the demo fixtures), so
+ * only reference data was seeded. The public storefront still renders the built-in sample
+ * catalogue (src/lib/data) while cart and checkout price against the server catalogue, so an
+ * empty server catalogue means every add-to-cart fails. Say so loudly at every boot.
+ */
+async function warnEmptyCatalogue(root: Root) {
+  try {
+    const [row] = await runTx(root, async () => (await db()).select({ n: sql<number>`count(*)::int` }).from(catalogProducts))
+    if ((row?.n ?? 0) > 0) return
+  } catch (e) {
+    log.error("[yard] could not count catalogue products", e)
+    return
+  }
+  const lines = [
+    "[yard] ************************************************************************************",
+    "[yard] WARNING: demo seeding is off (YARD_SEED_DEMO) and the server catalogue is EMPTY.",
+    "[yard] Categories and the holiday calendar were seeded; no sample brands, products or admins.",
+    "[yard] The public shop still renders the built-in SAMPLE catalogue (src/lib/data), but cart",
+    "[yard] and checkout use the server catalogue, so every add-to-cart will fail (404).",
+    "[yard] Do not open this deployment to shoppers until the storefront reads /api/catalog and",
+    "[yard] brands have listed products. Create the first owner admin: npm run admin:create (README).",
+    "[yard] ************************************************************************************",
+  ]
+  log.warn(lines.join("\n"))
 }
 
 /** POST /api/dev/reseed: re-runs one module now, ignoring its recorded version (§1.5). */
@@ -160,5 +202,6 @@ export async function reseedModule(key: string) {
 /** For GET /api/dev/selftest and db-check: the order, each module's version and what's recorded. */
 export async function seedStatus() {
   const versions = await recordedVersions()
-  return seedModules.map((m) => ({ key: m.key, version: m.version, recorded: versions[m.key] ?? null, requires: m.requires ?? [] }))
+  const demo = new Set(demoModules)
+  return seedModules.map((m) => ({ key: m.key, version: m.version, recorded: versions[m.key] ?? null, requires: m.requires ?? [], demo: demo.has(m) }))
 }

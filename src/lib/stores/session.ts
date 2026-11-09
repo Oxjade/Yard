@@ -8,6 +8,7 @@ import { api } from "@/lib/api/client"
 import type { DemoSignInResult, ShopperProfile } from "@/lib/api/contracts/session"
 import type { Aesthetic, CategorySlug } from "@/lib/data/types"
 import { afterIdentityChange } from "@/lib/session/identity"
+import { useCart } from "./cart"
 
 /**
  * The marketplace session in this browser. Guests can browse everything; following, saving and
@@ -157,6 +158,9 @@ export const useSession = create<SessionState>()(
           return false
         }
         set({ user: null, signedOutAt: new Date().toISOString(), authPrompt: null })
+        // The bag empties with the account (the shopper's server cart is kept for their next
+        // sign-in); Providers then loads this browser's guest cart once the session store follows.
+        void useCart.getState().syncFromServer({ reset: true })
         try {
           await afterIdentityChange("market")
         } finally {

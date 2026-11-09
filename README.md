@@ -136,6 +136,7 @@ refuses to start ("Another Yard server (pid N) …").
 | `npm run db:reset` | Deletes the development database and uploads (refuses while a dev server holds the lock); the next `npm run dev` reseeds |
 | `npm run db:generate` | `drizzle-kit generate` after a schema change in `src/server/db/schema/*.ts`. Migrations run in-process at boot; never run `drizzle-kit push`, `migrate` or `studio` against the data directory. A schema change needs a dev restart |
 | `npm test` | Unit tests beside the pure modules (`*.test.ts`, run with tsx) |
+| `npm run admin:create -- --email … --name "…"` | One-time bootstrap of the **first real owner admin** on a deployment (see below). Refuses once a real owner exists |
 | `npm run start:demo` | A **local demo** of the production build on port 3001 with demo sign-in on (generated production secrets in `<dataDir>/production/demo-secrets.json`). It listens on 127.0.0.1 only; `YARD_DEMO_HOST=0.0.0.0` exposes it to your network, which lets anyone there sign in without a password. Not a deployment |
 
 **Accounts and demo data.** Shopper email/password accounts, email verification, password reset,
@@ -145,6 +146,43 @@ off by default; enable both `YARD_DEMO_AUTH=1` and `YARD_SEED_DEMO=1` only for a
 deployment (add `YARD_DEMO_ADMIN=1` only when demo admin access is also intended). Demo sign-in
 logs a warning, and disabling its flag ends the sessions it allowed. Production should use a
 fresh data directory; the seed guard does not delete sample records from an existing database.
+
+**What a production database contains.** Seeding has two parts. *Reference data* is seeded in
+every environment, production included: the category taxonomy (Studio product create and brand
+onboarding check against it) and the public-holiday calendar that delivery estimates read.
+*Demo fixtures* (sample people, brands, the sample catalogue, drops, orders, places, shipping
+profiles, delivery, social posts, inbox, safety reports and charts) are seeded only in
+development/test or with `YARD_SEED_DEMO=1`. So a production database starts with categories and
+holidays but **no brands, no products and no admins**.
+
+> **Not launch-ready: the public shop is still the built-in sample catalogue.** The storefront
+> pages (home, shop, categories, brands, product pages, quick-add) render the static sample
+> products in `src/lib/data`, while the cart and checkout price against the **server** catalogue
+> (`/api/cart/lines`). With demo seeding off, the server catalogue is empty, so every sample
+> product is shown but **every add-to-cart fails** ("That piece isn't available"). The server
+> logs a loud warning at every boot while the catalogue is empty. Before a real launch the
+> storefront must be moved to the server catalogue (`/api/catalog/*`) and brands must list their
+> own products. Until then, run production only as an isolated demo (`YARD_DEMO_AUTH=1` and
+> `YARD_SEED_DEMO=1`), or don't open it to shoppers.
+
+**The first admin.** Seeded admins are demo accounts and never get a password, and only an owner
+admin can add admins (Admin → Team), so the first real owner is created once from the command
+line, on the server machine:
+
+```
+# stop the server first: PGlite allows one process per data directory
+npm run admin:create -- --email you@example.com --name "Your Name"
+```
+
+Run it with the same environment as the server (`YARD_DATA_DIR`, `YARD_PUBLIC_URL`, the secrets
+and any `EMAIL_*` settings; like `next start` it reads `.env.production.local`, `.env.local`,
+`.env.production` and `.env`, and `NODE_ENV` defaults to `production`). It opens the database
+through the server's own modules (dev dependency `tsx`), creates an `owner` admin, queues a
+72-hour "set your password" email and prints the link itself when no email provider is
+configured (or with `--print-link`): hand it over privately. The owner sets a password, signs
+in at `/admin` and enrols two-step verification. The script refuses while a server holds the
+lock, refuses any role other than `owner`, and refuses once any real (non-demo) owner exists;
+every later admin is added by an owner from the Control Center.
 
 **Shared networks.** `npm run dev` listens on every interface, and its demo sign-in has no
 passwords. On a network you don't control, run `npx next dev -H 127.0.0.1` instead. Even on
@@ -166,8 +204,9 @@ rebinding) can't pass the CSRF check.
 
 ## Environment variables
 
-`.env.example` is safe to copy to `.env.local` as it is: demo sign-in stays off in production
-and development secrets are generated for you. Never expose secrets to the browser: only
+`.env.example` is safe to copy to `.env.local` as it is: demo sign-in and demo seeding stay off
+in production and development secrets are generated for you. In production `YARD_DEMO_AUTH=1`
+and `YARD_SEED_DEMO=1` go together: either one without the other stops the server at boot. Never expose secrets to the browser: only
 variables prefixed `NEXT_PUBLIC_` reach client code, and none of the secrets use that prefix.
 The old backend-phase placeholders at the end of the file aren't read by the embedded server.
 

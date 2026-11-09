@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api, ApiError } from "@/lib/api/client"
+import { fieldErrors } from "@/lib/api/errors"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { useServerSession } from "@/lib/session/use-server-session"
 
@@ -23,6 +24,7 @@ export function AuthInvite() {
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [errors, setErrors] = useState<{ name?: string; password?: string }>({})
   const current = invite?.token === token ? invite : null
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export function AuthInvite() {
     if (!token) return () => { active = false }
     void api<InvitePreview>("/api/auth/invites/preview", { body: { token } })
       .then((preview) => { if (active) setInvite({ token, preview }) })
-      .catch((cause: unknown) => { if (active) setInvite({ token, error: cause instanceof ApiError ? cause.message : "This invitation could not be loaded." }) })
+      .catch((cause: unknown) => { if (active) setInvite({ token, error: fieldErrors(cause).token ?? (cause instanceof ApiError ? cause.message : "This invitation could not be loaded.") }) })
     return () => { active = false }
   }, [token])
 
@@ -38,11 +40,13 @@ export function AuthInvite() {
     event.preventDefault()
     if (!token || !current?.preview) return
     if (!current.preview.hasAccount && password.length < 10) {
-      setFailure("Use at least 10 characters for your password.")
+      setFailure(null)
+      setErrors({ password: "Use at least 10 characters for your password." })
       return
     }
     setBusy(true)
     setFailure(null)
+    setErrors({})
     try {
       await api("/api/auth/invites/accept", {
         body: { token, ...(!current.preview.hasAccount ? { name: name.trim(), password } : {}) },
@@ -50,14 +54,16 @@ export function AuthInvite() {
       await afterIdentityChange("studio")
       router.replace("/studio")
     } catch (cause) {
-      setFailure(cause instanceof ApiError ? cause.message : "This invitation could not be accepted. Try again.")
+      const fields = fieldErrors(cause)
+      setErrors({ name: fields.name, password: fields.password })
+      setFailure(fields.token ?? (fields.name || fields.password ? null : cause instanceof ApiError ? cause.message : "This invitation could not be accepted. Try again."))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+    <>
       <h1 className="font-display text-display-lg text-ink">Join a brand team</h1>
       {current?.error || (!token ? "This invitation is missing its token." : null) ? (
         <p role="alert" className="mt-5 max-w-xl text-sm leading-relaxed text-danger">{current?.error ?? "This invitation is missing its token."}</p>
@@ -77,11 +83,13 @@ export function AuthInvite() {
                 <>
                   <div className="grid gap-1.5">
                     <Label htmlFor="invite-name">Your name</Label>
-                    <Input id="invite-name" autoComplete="name" required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
+                    <Input id="invite-name" autoComplete="name" required maxLength={80} value={name} onChange={(event) => { setName(event.target.value); setErrors((current) => ({ ...current, name: undefined })) }} aria-invalid={!!errors.name} aria-describedby={errors.name ? "invite-name-error" : undefined} />
+                    {errors.name ? <p id="invite-name-error" className="text-xs text-danger">{errors.name}</p> : null}
                   </div>
                   <div className="grid gap-1.5">
                     <Label htmlFor="invite-password">Create a password</Label>
-                    <Input id="invite-password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(event) => setPassword(event.target.value)} />
+                    <Input id="invite-password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(event) => { setPassword(event.target.value); setErrors((current) => ({ ...current, password: undefined })) }} aria-invalid={!!errors.password} aria-describedby={errors.password ? "invite-password-error" : undefined} />
+                    {errors.password ? <p id="invite-password-error" className="text-xs text-danger">{errors.password}</p> : null}
                   </div>
                 </>
               ) : null}
@@ -91,6 +99,6 @@ export function AuthInvite() {
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }

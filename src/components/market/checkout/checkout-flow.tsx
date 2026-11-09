@@ -62,6 +62,8 @@ export function CheckoutFlow() {
   const clear = useCart((s) => s.clear)
   const user = useSession((s) => s.user)
   const [placed, setPlaced] = useState(false)
+  /** Set while the browser leaves for the payment provider's page. */
+  const [paying, setPaying] = useState(false)
   const placedRef = useRef(false)
   // Counted like the bag and the header: a saved line whose piece has left the catalogue isn't
   // listed anywhere, so a bag holding only those is empty and goes back to /bag too.
@@ -79,6 +81,7 @@ export function CheckoutFlow() {
     () => () => {
       placedRef.current = false
       setPlaced(false)
+      setPaying(false)
     },
     [],
   )
@@ -88,6 +91,7 @@ export function CheckoutFlow() {
     if (authorizationUrl) {
       placedRef.current = true
       setPlaced(true)
+      setPaying(true)
       window.location.assign(authorizationUrl)
       return
     }
@@ -126,7 +130,7 @@ export function CheckoutFlow() {
       <CheckoutTitle />
       <div role="status" className="mt-10 flex items-center gap-3 rounded-lg border border-line-soft bg-card px-5 py-6 text-sm text-ink-2">
         <Loader2 className="size-4 animate-spin text-violet" aria-hidden />
-        Order placed. Opening your confirmation.
+        {paying ? "Taking you to secure payment…" : "Order placed. Opening your confirmation."}
       </div>
     </>
   )
@@ -152,6 +156,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const setShipTo = useSession((s) => s.setShipTo)
   const placeCheckout = useOrders((s) => s.placeCheckout)
   const removeLine = useCart((s) => s.remove)
+  const syncCart = useCart((s) => s.syncFromServer)
   const reduceMotion = useReducedMotion()
 
   // The draft survives a reload in this tab (sessionStorage). Card number, expiry and
@@ -202,6 +207,12 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const isValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const shownErrors = attempted[step] ? stepErrors[step] : Object.fromEntries(Object.entries(stepErrors[step]).filter(([id]) => touched[id]))
   const cardCleared = !!saved && saved.furthest >= 3 && saved.payment.method === "card" && !payment.cardNumber
+
+  // The review shows what the server will charge for: reload the bag from the server cart first
+  // (another device or an account merge may have changed it since the checkout opened).
+  useEffect(() => {
+    if (step === REVIEW) void syncCart()
+  }, [step, syncCart])
 
   const doneRef = useRef(false)
   useEffect(() => {
@@ -318,7 +329,9 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
       onError: (e) => {
         const message = e instanceof CheckoutError ? e.message : "Your order wasn't placed. Nothing was charged. Try again."
         setPlaceError(message)
-        if (e instanceof CheckoutError && e.kind === "changed") quote.retry()
+        // The server's cart differs from this bag: reload the bag, then the delivery quote for it,
+        // so the next Place order sends the total the server will charge.
+        if (e instanceof CheckoutError && e.kind === "changed") void syncCart().then(() => quote.retry())
         if (e instanceof CheckoutError && e.kind === "signin") {
           toast.error(message)
           useSession.setState({ authPrompt: { intent: "checkout" } })

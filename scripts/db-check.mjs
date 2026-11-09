@@ -111,7 +111,7 @@ try {
   const st = await (await fetch(`${base}/api/dev/selftest`, { headers: { cookie } })).json()
   out(st.lockPid === st.pid ? "PASS" : "FAIL", "the server holds the lock", `server pid ${st.pid}, lock pid ${st.lockPid}`)
   out(st.migrations.journal === st.migrations.applied ? "PASS" : "FAIL", "migrations applied", `${st.migrations.applied}/${st.migrations.journal}`)
-  const expected = ["seed:people", "seed:brands", "seed:orders", "seed:around", "seed:shipping", "seed:delivery", "seed:social", "seed:inbox", "seed:safety", "seed:charts"]
+  const expected = ["seed:reference", "seed:people", "seed:brands", "seed:catalog", "seed:drops", "seed:orders", "seed:around", "seed:shipping", "seed:delivery", "seed:social", "seed:inbox", "seed:safety", "seed:charts"]
   out(JSON.stringify(st.seeds.map((x) => x.key)) === JSON.stringify(expected) ? "PASS" : "FAIL", "seed order", st.seeds.map((x) => x.key.replace("seed:", "")).join(" → "))
   for (const x of st.seeds) {
     if (x.version === 0) console.log(`     ${x.key.padEnd(14)} stub (version 0; its cluster replaces it)`)

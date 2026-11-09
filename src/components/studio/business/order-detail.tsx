@@ -34,8 +34,20 @@ import { Thumb } from "@/components/studio/catalog/parts"
 import { brandZone, formatInZone, formatTimeInZone, zoneAbbr } from "@/components/studio/growth/utils"
 import { BackLink, DefinitionList, useStudioReady } from "./shared"
 import { OrderDetailSkeleton } from "./skeletons"
+import { ServerOrderDetail } from "./server-order-detail"
 
+/**
+ * A real (non-demo) brand member reads the order from Yard's server (GET /api/studio/orders/{id});
+ * demo sessions and signed-out visitors keep the sample orders in this browser's Studio store.
+ */
 export function OrderDetail({ id }: { id: string }) {
+  const member = useServerSession((s) => s.brand)
+  const sessionLoading = useServerSession((s) => s.status === "loading")
+  if (member && !member.demo) return <ServerOrderDetail key={`${member.brand.id}:${id}`} id={id} />
+  return <DemoOrderDetail id={id} sessionLoading={sessionLoading} />
+}
+
+function DemoOrderDetail({ id, sessionLoading }: { id: string; sessionLoading: boolean }) {
   const studioReady = useStudioReady()
   const settingsReady = useSettingsReady()
   const ready = studioReady && settingsReady
@@ -43,7 +55,8 @@ export function OrderDetail({ id }: { id: string }) {
   const brandId = useStudio((s) => s.brandId)
   const brand = brandById.get(brandId)!
 
-  if (!ready) return <OrderDetailSkeleton />
+  // An order not in this browser may be a real brand's server order: wait for the session to answer.
+  if (!ready || (!order && sessionLoading)) return <OrderDetailSkeleton />
 
   if (!order) {
     return (
@@ -68,7 +81,7 @@ type DialogKind = "tracking" | "cancel" | "approve" | "decline" | "delay" | null
 const seededIds = new Set(studioSeedOrders.map((o) => o.id))
 
 /** "3 Nov 2026 at 13:00 WAT": an instant in the brand's time zone, as Drops and Promotions show times. */
-function placedIn(iso: string, tz: string) {
+export function placedIn(iso: string, tz: string) {
   const ms = Date.parse(iso)
   const day = new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short", year: "numeric" }).format(ms)
   return `${day} at ${formatTimeInZone(ms, tz)} ${zoneAbbr(tz, ms)}`
@@ -265,7 +278,7 @@ function OrderView({ order: o, brand }: { order: MerchantOrder; brand: Brand }) 
 
 /* ---------- Fulfilment ---------- */
 
-function CopyNumber({ value }: { value: string }) {
+export function CopyNumber({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <button
@@ -287,16 +300,22 @@ function CopyNumber({ value }: { value: string }) {
   )
 }
 
-function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCancel: () => void }) {
+/**
+ * `live`: the order is Yard's server record (a real brand), so payments and refunds are real and
+ * the server's `canCancel` decides whether Cancel shows.
+ */
+export function FulfilmentPanel({ order: o, onCancel, live = false, canCancel }: { order: MerchantOrder; onCancel: () => void; live?: boolean; canCancel?: boolean }) {
   const idx = stepIndex(o.status)
+  const [mountedAt] = useState(() => Date.now())
   // Yard's ship-by date (business days, the brand's handling time and closures) when Studio has it;
   // else the same rule here with the processing time saved in this browser.
   const processingDays = useBrandSettings((s) => s.shipping.processingDays)
   const server = useStudioDelivery(o.id).data?.estimate
   const due = server?.shipBy ? noonUtc(server.shipBy) : shipBy(o, processingDays)
   const late = server?.basis === "late" || server?.basis === "exception"
-  const daysLeft = late ? -1 : Math.ceil((due - DEMO_NOW) / DAY_MS)
+  const daysLeft = late ? -1 : Math.ceil((due - (live ? mountedAt : DEMO_NOW)) / DAY_MS)
   const open = o.status === "paid" || o.status === "processing"
+  const showCancel = canCancel ?? open
   const cancelReason = o.status === "cancelled" ? (o.cancelReason ? `You cancelled it: ${o.cancelReason.replace(/\.$/, "")}.` : [...o.timeline].reverse().find((t) => /cancel/i.test(t.label))?.label) : null
 
   const copy: Record<string, string> = {
@@ -304,11 +323,12 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
     processing: "You're packing this order. Add the carrier and tracking number when it leaves the studio.",
     shipped: "On its way. Mark it delivered once the carrier confirms, or the customer confirms receipt.",
     delivered: o.paymentStatus === "partially_refunded" ? (o.refund ? "Delivered, with a partial refund approved for the returned items. Your payout for the rest follows once the returns window closes." : "Delivered, with part of the order refunded. Your payout for the rest follows once the returns window closes.") : "Delivered. The returns window is open; your payout follows once it closes.",
-    refund_requested: "Delivered, and the customer has asked for a refund. Decide on the request above.",
-    refunded: o.refund ? "Refund approved and recorded. It's sent to the customer once a payment provider is connected." : "Refunded to the customer.",
-    cancelled: o.paymentStatus === "pending" ? "Cancelled before it was paid." : "Cancelled before shipping. The customer is owed a full refund.",
+    refund_requested: live ? "A return is under way. Follow it in the Return panel above." : "Delivered, and the customer has asked for a refund. Decide on the request above.",
+    refunded: o.refund && !live ? "Refund approved and recorded. It's sent to the customer once a payment provider is connected." : "Refunded to the customer.",
+    cancelled: o.paymentStatus === "pending" ? "Cancelled before it was paid." : live ? "Cancelled before shipping. The customer's payment is refunded in full." : "Cancelled before shipping. The customer is owed a full refund.",
     pending_payment: "Waiting for the payment provider to confirm payment. Don't ship until it's paid.",
   }
+  if (live && o.paymentStatus === "partially_refunded" && o.status === "delivered") copy.delivered = "Delivered, with part of the order refunded. Your payout for the rest follows once the returns window closes."
 
   return (
     <Panel
@@ -328,7 +348,7 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
       {o.status === "pending_payment" ? (
         <p className="flex items-start gap-2 rounded-md border border-line-soft bg-surface/60 px-3 py-2.5 text-sm text-ink-2">
           <Hourglass className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
-          No payment provider is connected in this development build, so this order stays unpaid. Don&apos;t pack or ship it.
+          {live ? "The payment provider hasn't confirmed payment yet. Don't pack or ship it until it shows Paid." : "No payment provider is connected in this development build, so this order stays unpaid. Don't pack or ship it."}
         </p>
       ) : idx >= 0 ? (
         <ol className="grid grid-cols-4 gap-1.5" aria-label="Fulfilment progress">
@@ -367,9 +387,9 @@ function FulfilmentPanel({ order: o, onCancel }: { order: MerchantOrder; onCance
         ) : null}
       </AnimatePresence>
 
-      {open || o.status === "shipped" ? (
+      {showCancel || o.status === "shipped" ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line-soft pt-4">
-          {open ? (
+          {showCancel ? (
             <>
               <p className="text-xs text-ink-3">{o.paymentStatus === "pending" ? "You can cancel until it ships. It isn't paid, so nothing is refunded." : "You can cancel until it ships; the customer is owed a full refund."}</p>
               <Button size="sm" variant="ghost" className="-mx-2 text-danger hover:bg-danger/10 hover:text-danger sm:mx-0" onClick={onCancel}>
@@ -467,7 +487,7 @@ function ReturnOutcome({ order: o, cur, brandName }: { order: MerchantOrder; cur
 /** Whether the payment provider has taken the customer's money (captured, possibly refunded since). */
 const moneyTaken = (o: MerchantOrder) => o.paymentStatus === "captured" || o.paymentStatus === "partially_refunded" || o.paymentStatus === "refunded"
 
-function ItemsPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
+export function ItemsPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["currency"] }) {
   return (
     <section aria-labelledby="items-title" className="overflow-hidden rounded-lg border border-line-soft bg-card">
       <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-5">
@@ -503,7 +523,8 @@ function ItemsPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curre
 
 /* ---------- Customer ---------- */
 
-function CustomerPanel({ order: o }: { order: MerchantOrder }) {
+/** `customerName`: the name Yard's server gives (a real brand's orders); the sample orders look it up. */
+export function CustomerPanel({ order: o, customerName }: { order: MerchantOrder; customerName?: string }) {
   const a = o.shippingAddress
   return (
     <Panel
@@ -532,9 +553,11 @@ function CustomerPanel({ order: o }: { order: MerchantOrder }) {
           { label: "Shipping", value: o.shippingMethod.replace(" — ", ", ") },
         ]}
       />
-      <Link href={`/studio/customers?customer=${o.customerId}`} className="mt-4 inline-block text-xs text-violet hover:underline">
-        {shopperName(o.customerId)}&apos;s orders with you
-      </Link>
+      {customerName === undefined ? (
+        <Link href={`/studio/customers?customer=${o.customerId}`} className="mt-4 inline-block text-xs text-violet hover:underline">
+          {shopperName(o.customerId)}&apos;s orders with you
+        </Link>
+      ) : null}
     </Panel>
   )
 }
@@ -579,7 +602,7 @@ function PayoutPanel({ order: o, cur }: { order: MerchantOrder; cur: Brand["curr
 
 /* ---------- Timeline ---------- */
 
-function TimelinePanel({ order: o, tz }: { order: MerchantOrder; tz: string }) {
+export function TimelinePanel({ order: o, tz }: { order: MerchantOrder; tz: string }) {
   const entries = o.timeline.map((t, i) => ({ ...t, i })).reverse()
   return (
     <Panel title="Timeline" className="min-w-0" description="Every change to this order, newest first. Entries can't be edited.">

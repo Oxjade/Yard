@@ -1,10 +1,16 @@
 import { Suspense } from "react"
 import type { Metadata } from "next"
 import { AuthEmailCompletion } from "@/components/market/account/auth-email-completion"
-import { AccountSkeleton } from "@/components/market/account/skeletons"
+import { AuthPageSkeleton } from "../_components/auth-page-skeleton"
 
 export const metadata: Metadata = { title: "Sign-in link", robots: { index: false } }
 
 export default function MagicLinkPage() {
-  return <Suspense fallback={<AccountSkeleton variant="split" />}><AuthEmailCompletion mode="magic" /></Suspense>
+  return (
+    <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+      <Suspense fallback={<AuthPageSkeleton />}>
+        <AuthEmailCompletion mode="magic" />
+      </Suspense>
+    </div>
+  )
 }

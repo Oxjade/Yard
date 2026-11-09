@@ -10,6 +10,7 @@ import type { OrdersPageDto, OrderSummaryDto } from "@/lib/api/contracts/orders"
 import type { CurrencyCode } from "@/config/markets"
 import type { MerchantOrderStatus } from "@/lib/data/types"
 import { formatDay, formatOrderMoney } from "./format"
+import { AccountSkeleton } from "./skeletons"
 import { YouNav } from "./you-nav"
 
 type Filter = "all" | "open" | "closed"
@@ -82,6 +83,7 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
   const [filter, setFilter] = useState<Filter>("all")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -95,7 +97,18 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
       if (active) setError(cause instanceof ApiError ? cause.message : "Couldn't load your orders.")
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [shopperId])
+  }, [shopperId, attempt])
+
+  function retry() {
+    setError(null)
+    // A failed "Load older" keeps what's already shown and tries that page again.
+    if (items.length) {
+      void loadOlder()
+      return
+    }
+    setLoading(true)
+    setAttempt((n) => n + 1)
+  }
 
   async function loadOlder() {
     if (!nextCursor || loading) return
@@ -116,6 +129,9 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
   const isOpen = (group: Group) => group.orders.some((order) => openStatuses.has(merchantStatus(order.states.merchant)))
   const visible = groups.filter((group) => filter === "all" || (filter === "open" ? isOpen(group) : !isOpen(group)))
 
+  // The page already provides the container; the first load shows the list skeleton its loading.tsx uses.
+  if (loading && items.length === 0 && !error) return <AccountSkeleton variant="list" />
+
   return (
     <>
       <header>
@@ -124,8 +140,7 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
         <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">Orders from every brand you’ve checked out with, updated from your account.</p>
       </header>
       <YouNav className="mt-8" />
-      {error ? <div role="alert" className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line-soft bg-card px-4 py-4 text-sm text-ink-2"><span>{error}</span><Button variant="secondary" onClick={() => window.location.reload()}>Retry</Button></div> : null}
-      {loading && items.length === 0 ? <div role="status" className="mt-8 grid gap-4" aria-busy="true"><div className="h-28 animate-pulse rounded-lg border border-line-soft bg-card" /><div className="h-36 animate-pulse rounded-lg border border-line-soft bg-card" /></div> : null}
+      {error ? <div role="alert" className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line-soft bg-card px-4 py-4 text-sm text-ink-2"><span>{error}</span><Button variant="secondary" onClick={retry}>Retry</Button></div> : null}
       {!loading && !error && groups.length === 0 ? (
         <div className="mt-16 rounded-lg border border-line-soft bg-card px-6 py-16 text-center">
           <p className="text-base text-ink">No orders yet</p>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { BankIcon, CheckIcon, ConfettiIcon, CopyIcon, CreditCardIcon, DeviceMobileIcon } from "@phosphor-icons/react"
+import { BankIcon, CheckIcon, ConfettiIcon, CopyIcon, CreditCardIcon, DeviceMobileIcon, WarningCircleIcon } from "@phosphor-icons/react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { checkoutPayment, customerOrderStatus } from "@/components/market/account/order-status"
@@ -68,9 +68,13 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
       transition={spring.snappy}
       className={cn("mx-auto w-full min-w-0 max-w-md text-obsidian [filter:drop-shadow(0_1px_0_rgba(0,0,0,0.6))] print:[filter:none]", className)}
     >
-      {/* Top: confetti, thanks and the state's sentence. */}
+      {/* Top: confetti (a plain mark when the payment failed), thanks and the state's sentence. */}
       <div className={cn("rounded-t-[10px] bg-ink px-6 pt-8 pb-6 text-center print:bg-white", notchBelow)}>
-        <ConfettiIcon weight="duotone" className="mx-auto size-10 text-purple" aria-hidden />
+        {paymentFailed ? (
+          <WarningCircleIcon weight="duotone" className="mx-auto size-10 text-[#4a4a4a]" aria-hidden />
+        ) : (
+          <ConfettiIcon weight="duotone" className="mx-auto size-10 text-purple" aria-hidden />
+        )}
         <h2 id="receipt-title" className="mt-3 font-display text-[2rem] leading-none text-obsidian">
           {paymentFailed ? "Payment update" : "Thank you!"}
         </h2>

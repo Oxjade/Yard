@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api } from "@/lib/api/client"
-import { errorMessage } from "@/lib/api/errors"
+import { errorMessage, fieldErrors } from "@/lib/api/errors"
 import { DEMO_SHOPPER, useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { site } from "@/config/site"
@@ -154,7 +154,17 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
       }
       onDone?.()
     } catch (e) {
-      setFailure(errorMessage(e, "Couldn't sign in. Check your email and password, then try again."))
+      // The server's own field messages (a password that's too easy to guess, say) go under
+      // their fields, like the client checks; the summary line only repeats a non-field error.
+      const fields = fieldErrors(e)
+      const fromServer: AuthErrors = { name: mode === "signup" ? fields.name : undefined, email: fields.email, password: fields.password }
+      if (fromServer.name || fromServer.email || fromServer.password) {
+        setErrors(fromServer)
+        window.requestAnimationFrame(() => (fromServer.name ? nameRef : fromServer.email ? emailRef : passwordRef).current?.focus())
+        setFailure(null)
+      } else {
+        setFailure(errorMessage(e, "Couldn't sign in. Check your email and password, then try again."))
+      }
     } finally {
       setBusy(null)
     }

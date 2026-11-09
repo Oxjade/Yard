@@ -10,6 +10,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { cn } from "@/lib/utils"
+import { serverCheckoutGroups, useServerOrderSummaries } from "./use-server-order-summaries"
 
 const items = [
   { href: "/you", label: "Overview", exact: true },
@@ -39,7 +40,10 @@ export function YouNav({ className }: { className?: string }) {
   const hydrated = useHydrated()
   const following = useSaved((s) => s.following.length)
   const wishlist = useSaved((s) => s.wishlist.length)
-  const orders = useOrders((s) => s.groups.length)
+  const localOrders = useOrders((s) => s.groups.length)
+  // A real shopper's orders live on the server; the local store holds only demo and sample history.
+  const server = useServerOrderSummaries()
+  const orders = server === undefined ? localOrders : server ? serverCheckoutGroups(server.items).length : 0
   // Unread conversations from the server (the realtime provider keeps it current); unknown or
   // signed out reads as no count, never 0.
   const signedIn = useServerSession((s) => !!s.shopper)

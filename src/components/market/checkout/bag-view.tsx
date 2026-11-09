@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { PackageIcon as Package, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
@@ -16,7 +17,7 @@ import { useShippingQuote } from "@/components/market/delivery/use-shipping-quot
 import { Bone } from "@/components/feedback/skeletons"
 import { countries } from "@/config/markets"
 import { priceCart } from "@/lib/cart"
-import { productById, productStock } from "@/lib/data/products"
+import { productById, productStock, variantById, variantLabel } from "@/lib/data/products"
 import { duration, ease } from "@/lib/motion"
 import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
@@ -197,6 +198,8 @@ export function BagView() {
         </div>
       )}
 
+      {ready ? <UnavailableLines /> : null}
+
       <AnimatePresence>
         {hasLines && summaryAhead ? (
           <motion.div
@@ -230,5 +233,56 @@ export function BagView() {
         </section>
       ) : null}
     </>
+  )
+}
+
+/**
+ * Lines this browser's bag held that the server cart refused when the bag moved onto it (sold
+ * out, or no longer sold). They stay listed, marked, until the shopper removes them, instead of
+ * vanishing; they are never part of checkout.
+ */
+function UnavailableLines() {
+  const unavailable = useCart((s) => s.unavailable)
+  const dismiss = useCart((s) => s.dismissUnavailable)
+  if (!unavailable.length) return null
+  return (
+    <section aria-labelledby="unavailable-title" className="mt-10 rounded-lg border border-line-soft bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-line-soft px-4 py-3.5 md:px-5">
+        <h2 id="unavailable-title" className="text-sm text-ink">
+          No longer available
+        </h2>
+        {unavailable.length > 1 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={() => dismiss()}>
+            Remove all
+          </Button>
+        ) : null}
+      </div>
+      <ul className="divide-y divide-line-soft px-4 md:px-5">
+        {unavailable.map((l) => {
+          const hit = variantById.get(l.variantId)
+          const product = hit?.product ?? productById.get(l.productId)
+          const name = product?.name ?? "A piece from your cart"
+          return (
+            <li key={l.variantId} className="flex items-center gap-3 py-3">
+              {product ? (
+                <div className="relative h-16 w-13 shrink-0 overflow-hidden rounded-md bg-surface opacity-60">
+                  <Image src={product.images[0].src} alt="" fill sizes="52px" className="object-cover grayscale" />
+                </div>
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-ink">{name}</p>
+                {hit ? <p className="truncate text-xs text-ink-2">{variantLabel(hit.variant.options)}</p> : null}
+                <p className="text-xs text-ink-3">
+                  {l.reason.replace(/\.$/, "")}. It isn&apos;t in your cart any more{l.quantity > 1 ? ` (${l.quantity} pieces)` : ""}.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => dismiss(l.variantId)} aria-label={`Remove ${name}`}>
+                Remove
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

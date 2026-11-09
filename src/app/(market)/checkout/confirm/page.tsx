@@ -10,8 +10,11 @@ export const metadata: Metadata = {
 
 export default function CheckoutPaymentReturnPage() {
   return (
-    <Suspense fallback={<ConfirmationSkeleton />}>
-      <PaymentReturn />
-    </Suspense>
+    <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+      {/* Reads ?checkout= on the client, so it streams behind the skeleton. */}
+      <Suspense fallback={<ConfirmationSkeleton />}>
+        <PaymentReturn />
+      </Suspense>
+    </div>
   )
 }
