@@ -13,7 +13,7 @@ import type { AuditEntry, BrandApplication } from "@/lib/data/admin"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
-import { brandActions, brandAllowed, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
+import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
 import { ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
@@ -75,7 +75,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
       actions={
         <TrustActionBar
           note={`${app.status === "pending_review" ? `${age === 0 ? "Submitted today. " : `In the queue for ${plural(age, "day")}. `}` : ""}${onServer(app) ? "Enforced on Yard's server." : "Sample application in this browser only."} Every decision needs a reason and is recorded in the audit log.`}
-          actions={brandAllowed[app.status].map((key) => ({ key, label: brandActions[key].label, icon: brandActions[key].icon, variant: brandActions[key].button, disabledReason: blockFor(app), onSelect: () => onDecide(key, app) }))}
+          actions={allowedBrandActions(app).map((key) => ({ key, label: brandActions[key].label, icon: brandActions[key].icon, variant: brandActions[key].button, disabledReason: blockFor(app), onSelect: () => onDecide(key, app) }))}
         />
       }
     >

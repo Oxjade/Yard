@@ -50,6 +50,7 @@ export type BrandApplication = {
   notes: string
   products: number
   brandId?: string
+  onboardingId?: string
 }
 
 export const brandApplications: BrandApplication[] = [

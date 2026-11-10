@@ -6,19 +6,25 @@ import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
-import { Panel } from "@/components/admin/ui/panel"
+import { Panel, PanelError } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useNow } from "@/hooks/use-now"
+import { adminKeys, listOnboardingApplications } from "@/lib/api/admin"
+import { errorMessage } from "@/lib/api/errors"
+import { useApi } from "@/lib/api/use-api"
 import type { BrandApplication, BrandReviewStatus } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
+import { canAdmin } from "@/lib/permissions"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useAdmin } from "@/lib/stores/admin"
 import { Initials } from "./bits"
 import { BrandDetail } from "./brand-detail"
-import { brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
+import { allowedBrandActions, brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
 import { useDecision } from "./decision"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
+import { fromOnboardingApplication } from "./onboarding"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 
@@ -39,7 +45,15 @@ export function BrandsView() {
   const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
-  const applications = useAdmin((s) => s.applications)
+  const localApplications = useAdmin((s) => s.applications)
+  const admin = useServerSession((s) => s.admin)
+  const canReviewApplications = !!admin && canAdmin(admin.role, "brands.restrict")
+  const onboarding = useApi(canReviewApplications ? adminKeys.onboardings : null, listOnboardingApplications, { refreshInterval: 60_000 })
+  const applications = useMemo(() => {
+    const live = onboarding.data?.onboardings.map(fromOnboardingApplication) ?? []
+    const liveBrands = new Set(live.flatMap((a) => (a.brandId ? [a.brandId] : [])))
+    return [...live, ...localApplications.filter((a) => !a.brandId || !liveBrands.has(a.brandId))]
+  }, [onboarding.data, localApplications])
   const blockFor = useBrandStatusBlock()
   const { reinstateTo } = useMirrorServerStatuses("brand", useMemo(() => applications.flatMap((a) => (a.brandId ? [a.brandId] : [])), [applications]))
   const linkedTab = useSearchParam("tab")
@@ -130,9 +144,24 @@ export function BrandsView() {
   const allowedHere = brandAllowed[tab]
   const rowActions: RowAction<BrandApplication>[] = [
     { label: "Open review", icon: EyeIcon, onSelect: open },
-    ...allowedHere.map((key, i) => ({ label: brandActions[key].label, icon: brandActions[key].icon, destructive: brandActions[key].destructive, separatorBefore: i === 0, disabled: (a: BrandApplication) => !!blockFor(a), disabledReason: (a: BrandApplication) => blockFor(a), onSelect: (a: BrandApplication) => decide(key, [a]) })),
+    ...allowedHere.map((key, i) => ({
+      label: brandActions[key].label,
+      icon: brandActions[key].icon,
+      destructive: brandActions[key].destructive,
+      separatorBefore: i === 0,
+      hidden: (a: BrandApplication) => !allowedBrandActions(a).includes(key),
+      disabled: (a: BrandApplication) => !!blockFor(a),
+      disabledReason: (a: BrandApplication) => blockFor(a),
+      onSelect: (a: BrandApplication) => decide(key, [a]),
+    })),
   ]
-  const bulkActions: BulkAction<BrandApplication>[] = allowedHere.map((key) => ({ label: brandActions[key].verb, destructive: brandActions[key].destructive, appliesTo: (a: BrandApplication) => !blockFor(a), disabledReason: "Sign in with a demo admin account that can restrict brands. Yard enforces brand status on the server.", onSelect: (list) => decide(key, list.filter((a) => !blockFor(a))) }))
+  const bulkActions: BulkAction<BrandApplication>[] = allowedHere.map((key) => ({
+    label: brandActions[key].verb,
+    destructive: brandActions[key].destructive,
+    appliesTo: (a: BrandApplication) => allowedBrandActions(a).includes(key) && !blockFor(a),
+    disabledReason: "Sign in with a demo admin account that can restrict brands. Yard enforces brand status on the server.",
+    onSelect: (list) => decide(key, list.filter((a) => allowedBrandActions(a).includes(key) && !blockFor(a))),
+  }))
   const current = TABS.find((t) => t.value === tab)!
 
   return (
@@ -175,13 +204,18 @@ export function BrandsView() {
           />
         </PanelRail>
         <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
+          {onboarding.error ? (
+            <div className="pb-3">
+              <PanelError message={errorMessage(onboarding.error)} onRetry={() => void onboarding.revalidate()} />
+            </div>
+          ) : null}
           <DataTable
             key={tab}
             label={`${current.label} brands`}
             rows={rows}
             columns={columns}
             getId={(a) => a.id}
-            loading={!ready}
+            loading={!ready || (canReviewApplications && onboarding.isLoading)}
             search={{ placeholder: "Search brands, handles or countries", text: (a) => [a.brandName, a.handle, countryName(a.country), categoryName(a.category)].join(" ") }}
             rowActions={rowActions}
             bulkActions={phone ? undefined : bulkActions}

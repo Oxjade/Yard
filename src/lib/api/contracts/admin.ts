@@ -1,3 +1,4 @@
+import type { CurrencyCode } from "@/config/markets"
 import { z } from "zod"
 import { auditEntryDto, CONTROL_CHARS, isoDate } from "./common"
 import { COMPLAINT_KINDS, HOLIDAY_KINDS, MESSAGE_STATUSES, REPORTER_KINDS, RESTRICTION_KINDS } from "./enums"
@@ -519,6 +520,48 @@ export type DecisionResult<T = unknown> = { item: T; audit: z.infer<typeof audit
 /** Older names kept for importers of the F1 draft. */
 export const setUserStatusBody = decisionBodies["set-user-status"]
 export const setBrandStatusBody = decisionBodies["set-brand-status"]
+
+/* ── Catalog onboarding and product moderation ─────────────────────── */
+
+export type OnboardingApplicationDto = {
+  id: string
+  status: "draft" | "submitted" | "approved" | "rejected"
+  currentStep: string
+  completedSteps: string[]
+  data: {
+    brand?: { name?: string; handle?: string; category?: string; description?: string }
+    business?: { country?: string; city?: string; sellerType?: string; legalName?: string }
+    product?: { name?: string; priceMinor?: number; sizes?: { label: string; stock: number }[] }
+    payments?: { method?: string; bankName?: string; accountLast4?: string; processingMin?: number; processingMax?: number }
+  }
+  revision: number
+  brandId: string | null
+  submittedAt: string | null
+  reviewedAt: string | null
+  reviewNote: string | null
+  updatedAt: string
+}
+
+export type AdminCatalogProductDto = {
+  id: string
+  title: string
+  slug: string
+  brandId: string
+  brandName: string
+  brandHandle: string
+  category: string
+  subcategory: string | null
+  priceMinor: number
+  currency: CurrencyCode
+  status: string
+  moderationStatus: string
+  moderationReason: string | null
+  imageSrc: string | null
+  updatedAt: string
+}
+
+export type AdminCatalogProductsDto = { products: AdminCatalogProductDto[]; total: number }
+export type OnboardingApplicationsDto = { onboardings: OnboardingApplicationDto[] }
 
 /* ── Labels shared by the server DTOs and the admin UI ─────────────── */
 

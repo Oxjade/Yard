@@ -306,6 +306,11 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
     if (!row) throw notFound("That application doesn't exist.")
     if (row.status !== "submitted" || !row.brandId) throw rule("Only submitted applications can be reviewed.")
     if (input.decision === "reject" && !input.note?.trim()) throw badRequest({ note: "Tell the brand what to change." })
+    if (input.decision === "approve") {
+      const [brand] = await tx.select({ reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, row.brandId)).for("update").limit(1)
+      if (brand && (brand.reviewStatus === "suspended" || brand.reviewStatus === "restricted"))
+        throw rule(`Yard has ${brand.reviewStatus === "suspended" ? "suspended" : "restricted"} this brand, so its application can't be approved. Reinstate the brand from Brands first.`)
+    }
     const now = new Date()
     await tx
       .update(brandOnboardings)

@@ -1,6 +1,7 @@
 import { api } from "./client"
 import type {
   AbuseListDto,
+  AdminCatalogProductsDto,
   AuditListResult,
   ChartFlagDetailDto,
   ChartFlagsDto,
@@ -19,6 +20,7 @@ import type {
   MessageCaseDto,
   MessageListDto,
   MessageTab,
+  OnboardingApplicationsDto,
   QueueCountsDto,
   RestrictionDto,
   SponsoredRowDto,
@@ -31,6 +33,8 @@ import type {
 
 export const adminKeys = {
   counts: "admin:counts",
+  onboardings: "admin:catalog:onboardings",
+  catalogProducts: "admin:catalog:products",
   messages: (tab: MessageTab) => `admin:messages:${tab}`,
   content: (tab: ContentTab) => `admin:content:${tab}`,
   chartsOverview: "admin:charts:overview",
@@ -61,6 +65,12 @@ export const listAbuse = (user?: string) => api<AbuseListDto>("/api/admin/abuse"
 export const listRestrictions = (subject?: string) => api<{ items: RestrictionDto[] }>("/api/admin/restrictions", { query: { subject } })
 export const listAudit = (q: { subjectType?: string; subjectId?: string; actorKind?: string; cursor?: string; limit?: number } = {}) => api<AuditListResult>("/api/admin/audit", { query: q })
 export const getStatuses = (kind: "user" | "brand", ids: string[]) => api<{ statuses: Record<string, string>; reinstateTo?: Record<string, "pending_review" | "verified"> }>("/api/admin/statuses", { query: { kind, ids: ids.join(",") } })
+export const listOnboardingApplications = () => api<OnboardingApplicationsDto>("/api/admin/catalog/onboardings", { query: { limit: 200 } })
+export const reviewOnboardingApplication = (id: string, body: { decision: "approve" | "reject"; note?: string }) =>
+  api<{ onboardingId: string; status: "approved" | "rejected"; brandId: string }>(`/api/admin/catalog/onboardings/${encodeURIComponent(id)}/review`, { body })
+export const listAdminCatalogProducts = () => api<AdminCatalogProductsDto>("/api/admin/catalog/products", { query: { limit: 200 } })
+export const moderateProduct = (id: string, body: { hidden: boolean; reason: string }) =>
+  api<{ productId: string; moderationStatus: "hidden" | "ok" }>(`/api/admin/catalog/products/${encodeURIComponent(id)}/moderation`, { body })
 
 /** POST /api/admin/decisions/{action}. Throws ApiError (403 forbidden, 409 conflict, …) for the dialog to show. */
 export function decide<K extends DecisionKey, T = unknown>(action: K, body: DecisionBody<K>) {

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { errorMessage } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
 const MIN_REASON = 8
@@ -81,9 +82,10 @@ export function ReasonDialog({
   const id = useId()
   const [reason, setReason] = useState("")
   const [attempted, setAttempted] = useState(false)
+  const [failure, setFailure] = useState<unknown>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   // A failure shows only the dialog's own message, next to the reason (no toast as well).
-  const action = useAsyncAction((r: string) => onConfirm(r), { error: FAILED, errorToast: false, onSuccess: () => onOpenChange(false) })
+  const action = useAsyncAction((r: string) => onConfirm(r), { error: FAILED, errorToast: false, onSuccess: () => onOpenChange(false), onError: setFailure })
   const { pending } = action
   const failed = !!action.error
 
@@ -94,6 +96,7 @@ export function ReasonDialog({
     if (open) {
       setReason("")
       setAttempted(false)
+      setFailure(null)
       action.reset()
     }
   }
@@ -205,7 +208,7 @@ export function ReasonDialog({
               <p id={`${id}-help`} className="text-xs text-ink-3">Recorded with your name and the time. It can&apos;t be edited later.</p>
             )}
             {failed ? (
-              <p id={`${id}-failed`} role="alert" className="text-xs text-danger">{FAILED} Your reason is still here: try again.</p>
+              <p id={`${id}-failed`} role="alert" className="text-xs text-danger">{errorMessage(failure, FAILED)} Your reason is still here: try again.</p>
             ) : null}
           </div>
           <DialogFooter>

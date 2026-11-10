@@ -9,14 +9,14 @@ import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useNow } from "@/hooks/use-now"
-import { productById, products } from "@/lib/data"
+import { productById } from "@/lib/data"
 import type { ModerationItem } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { Thumb } from "./bits"
 import { useDecision } from "./decision"
 import { formatDateTime, relDays } from "./format"
-import { ListingsTable, useRestrictedListings } from "./listings-table"
+import { ListingsTable, useAdminListings } from "./listings-table"
 import { moderationReasonMeta } from "./meta"
 import { modActions, modAllowed, modDecision, type ModActionKey } from "./moderation-actions"
 import { ModerationDetail } from "./moderation-detail"
@@ -42,7 +42,9 @@ export function ModerationView() {
   const phone = usePhone()
   const qid = useId()
   const moderation = useAdmin((s) => s.moderation)
-  const restricted = useRestrictedListings()
+  const listings = useAdminListings()
+  const restrictedCount = listings.data?.products.filter((p) => p.moderationStatus === "hidden").length ?? 0
+  const listingTotal = listings.data?.total ?? 0
   const linkedTab = useSearchParam("tab")
   const caseId = useSearchParam("case")
   const viewing = caseId ? moderation.find((m) => m.id === caseId) : undefined
@@ -124,7 +126,7 @@ export function ModerationView() {
       <AdminPageHead
         title="Moderation"
         description="Work through reports and automated flags, and restrict any listing on the marketplace."
-        note="Decisions are recorded here and in the audit log with your reason. The marketplace reads the sample catalogue in this build, so a listing changes there once moderation comes from the backend."
+        note="Decisions are recorded here and in the audit log with your reason. Hiding a listing removes it from the marketplace, search and the brand's storefront at once."
       />
 
       <InPageLinks>
@@ -139,7 +141,7 @@ export function ModerationView() {
             <StatCard surface="admin" icon={SealWarningIcon} label="Counterfeit or IP" value={unresolved} format={n} hint={ready ? `${n(ipOpen)} open, ${n(ipEscalated)} with legal` : "Open or escalated"} href={ipOldest ? `/admin/products?case=${ipOldest.id}` : "/admin/products?tab=removed#moderation-queue"} hrefLabel={ipOldest ? "Open the oldest counterfeit or IP case" : "Show removed listings"} ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={restricted.size} format={n} hint={`Of ${n(products.length)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={restrictedCount} format={n} hint={`Of ${n(listingTotal)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>

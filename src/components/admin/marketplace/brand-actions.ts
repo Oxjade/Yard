@@ -1,9 +1,9 @@
 "use client"
 
 import { toast } from "sonner"
-import { ProhibitIcon, CheckIcon, ArrowCounterClockwiseIcon, ShieldWarningIcon, ShieldCheckIcon } from "@phosphor-icons/react"
+import { ProhibitIcon, CheckIcon, ArrowCounterClockwiseIcon, ShieldWarningIcon, ShieldCheckIcon, XCircleIcon } from "@phosphor-icons/react"
 import { pushAudit } from "@/components/admin/trust/shared"
-import { decide } from "@/lib/api/admin"
+import { decide, reviewOnboardingApplication } from "@/lib/api/admin"
 import { errorMessage } from "@/lib/api/errors"
 import { revalidatePrefix } from "@/lib/api/use-api"
 import { STUDIO_BRAND_ID } from "@/lib/data/brands"
@@ -16,7 +16,7 @@ import { kycMeta } from "./meta"
 import { audienceLine, notifyBrandDecision } from "./notify"
 import { NO_ADMIN_SESSION } from "./user-actions"
 
-export type BrandActionKey = "approve" | "verify" | "restrict" | "suspend" | "reinstate"
+export type BrandActionKey = "approve" | "reject" | "verify" | "restrict" | "suspend" | "reinstate"
 
 type Def = {
   label: string
@@ -48,6 +48,17 @@ export const brandActions: Record<BrandActionKey, Def> = {
     confirm: "Approve",
     done: "approved",
     warn: (a) => (a.kyc !== "verified" ? `The identity check is ${kycMeta[a.kyc].label.toLowerCase()}, so approving lets the brand sell before KYC is complete.` : null),
+  },
+  reject: {
+    label: "Reject",
+    verb: "Reject",
+    to: "pending_review",
+    icon: XCircleIcon,
+    button: "destructive",
+    destructive: true,
+    means: "Rejected applications go back to the applicant, who can edit and resubmit.",
+    confirm: "Reject",
+    done: "rejected",
   },
   verify: {
     label: "Verify",
@@ -101,10 +112,16 @@ const unverifiedKyc = (a: BrandApplication) => (a.kyc !== "verified" ? `The iden
 
 /** Only the transitions a brand's current status allows. */
 export const brandAllowed: Record<BrandReviewStatus, BrandActionKey[]> = {
-  pending_review: ["approve", "restrict", "suspend"],
+  pending_review: ["approve", "reject", "restrict", "suspend"],
   verified: ["restrict", "suspend"],
   restricted: ["reinstate", "verify", "suspend"],
   suspended: ["reinstate"],
+}
+
+/** A submitted Studio application is reviewed, not restricted, until it has been approved or rejected. */
+export function allowedBrandActions(a: BrandApplication): BrandActionKey[] {
+  if (a.onboardingId) return ["approve", "reject"]
+  return brandAllowed[a.status]
 }
 
 const plural = (n: number) => `${n} ${n === 1 ? "brand" : "brands"}`
@@ -137,6 +154,7 @@ export function mirrorBrandStatus(appId: string, status: BrandReviewStatus) {
 /** What Yard's server really does for a brand with a server record (set-brand-status, §8.2). Nothing else is implied. */
 const serverMeans: Record<BrandActionKey, string> = {
   approve: "Yard marks the brand verified: its posts and places can show on the marketplace, it can rank on Yard Charts and shoppers can message it.",
+  reject: "Yard returns the application to the applicant, who can edit and resubmit.",
   verify: "Yard lifts the restriction: its team can publish and reply again, and its posts, places and chart entries come back to the marketplace at the next refresh.",
   restrict: "Yard pauses its team's publishing and replies, takes its posts, places and chart entries off the marketplace and stops shoppers messaging it until it's verified again.",
   suspend: "Yard signs its team out of Studio, takes its posts, places and chart entries off the marketplace and stops shoppers messaging it.",
@@ -151,7 +169,7 @@ const SAMPLE_PAGES = "The storefront, products, checkout and payouts are sample 
  */
 export function brandDecision(key: BrandActionKey, list: BrandApplication[], { announce = true, reinstateTo = {} }: { announce?: boolean; reinstateTo?: Record<string, "pending_review" | "verified"> } = {}): Decision | null {
   const def = brandActions[key]
-  const apps = list.filter((a) => brandAllowed[a.status].includes(key))
+  const apps = list.filter((a) => allowedBrandActions(a).includes(key))
   if (!apps.length) return null
   const one = apps.length === 1 ? apps[0] : null
   const skipped = list.length - apps.length
@@ -159,7 +177,13 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
   // it from the audit log (review when it isn't on record), so it never verifies a brand by default.
   const backTo = (a: BrandApplication): BrandReviewStatus => (onServer(a) ? (reinstateTo[a.brandId!] ?? "pending_review") : def.to)
   const reinstating = key === "reinstate"
-  const warnings = apps.map((a) => (reinstating ? (backTo(a) === "verified" ? unverifiedKyc(a) : null) : def.warn?.(a))).filter(Boolean) as string[]
+  const onboarding = apps.filter((a) => a.onboardingId)
+  const server = apps.filter((a) => onServer(a) && !a.onboardingId)
+  const local = apps.filter((a) => !onServer(a) && !a.onboardingId)
+  const warnings = apps
+    .filter((a) => !a.onboardingId)
+    .map((a) => (reinstating ? (backTo(a) === "verified" ? unverifiedKyc(a) : null) : def.warn?.(a)))
+    .filter(Boolean) as string[]
   const restoreLine = reinstating
     ? one
       ? backTo(one) === "verified"
@@ -167,12 +191,16 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
         : `${one.brandName} goes back to review (pending), the status it had before or, when that isn't on record, the safe default. Approve it separately once it passes.`
       : "Each brand goes back to the status it had before: Verified only if it was verified, otherwise review."
     : null
+  const onboardingLine = onboarding.length
+    ? key === "approve"
+      ? "Approving verifies the brand on Yard's server, so its team can open Studio. Its first product stays a draft until they publish it."
+      : "Rejecting returns the application to the applicant, who can edit and resubmit. They see your reason."
+    : null
   const studioApp = apps.find((a) => a.brandId === STUDIO_BRAND_ID)
-  const server = apps.filter(onServer)
-  const local = apps.filter((a) => !onServer(a))
   return {
     title: one ? `${def.verb} ${one.brandName}?` : `${def.verb} ${plural(apps.length)}?`,
     description: [
+      onboardingLine,
       // Sample applications only: the policy wording. A server brand hears only what Yard really does.
       local.length ? def.means : null,
       restoreLine,
@@ -185,33 +213,41 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
     ]
       .filter(Boolean)
       .join(" "),
-    confirmLabel: one ? `${def.confirm} brand` : `${def.confirm} ${plural(apps.length)}`,
+    confirmLabel: one ? `${def.confirm} ${one.onboardingId ? "application" : "brand"}` : `${def.confirm} ${plural(apps.length)}`,
     destructive: def.destructive,
+    fieldLabel: key === "reject" && onboarding.length && !server.length && !local.length ? "Reason, shown to the applicant" : undefined,
+    presets: key === "reject" ? ["The details don't match the business registration.", "The first product needs clearer photos.", "The brand name or handle breaks Yard's rules."] : undefined,
     run: async (reason) => {
-      let done = 0
-      let failure: unknown = null
-      for (const a of server) {
-        try {
+      const set = useAdmin.getState().setApplicationStatus
+      const steps: (() => Promise<void>)[] = [
+        ...onboarding.map((a) => async () => {
+          await reviewOnboardingApplication(a.onboardingId!, { decision: key === "approve" ? "approve" : "reject", note: reason })
+        }),
+        ...server.map((a) => async () => {
           const r = await decide<"set-brand-status", { status: BrandReviewStatus }>("set-brand-status", { id: a.brandId!, status: reinstating ? "reinstate" : def.to, reason })
           pushAudit(r.audit)
           mirrorBrandStatus(a.id, r.item.status)
           // The server notifies the brand on restriction and suspension; the other outcomes are told here as before.
-          if (key !== "restrict" && key !== "suspend") notifyBrandDecision(a, key, reason)
+          if (key !== "reject" && key !== "restrict" && key !== "suspend") notifyBrandDecision(a, key, reason)
+        }),
+        ...local.map((a) => async () => {
+          set(a.id, def.to, reason)
+          if (key !== "reject") notifyBrandDecision(a, key, reason)
+        }),
+      ]
+      let done = 0
+      let failure: unknown = null
+      for (const step of steps) {
+        if (failure) break
+        try {
+          await step()
           done++
         } catch (e) {
           failure = e
-          break
         }
       }
-      if (server.length) revalidatePrefix("admin:")
+      if (apps.length) revalidatePrefix("admin:")
       if (failure && !done) throw failure
-      const set = useAdmin.getState().setApplicationStatus
-      if (!failure)
-        for (const a of local) {
-          set(a.id, def.to, reason)
-          notifyBrandDecision(a, key, reason)
-          done++
-        }
       if (failure) toast.error(`${plural(done)} ${def.done}; the rest didn't go through`, { description: errorMessage(failure) })
       else if (announce) toast.success(one ? `${one.brandName} ${def.done}` : `${plural(done)} ${def.done}`, { description: "Recorded in the audit log with your reason." })
     },
