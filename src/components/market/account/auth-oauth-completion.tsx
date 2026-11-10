@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { afterIdentityChange } from "@/lib/session/identity"
+import { clearOnboardingAuthReturn, takeOnboardingAuthReturn } from "@/lib/session/auth-return"
 import { refreshServerSession, getServerSessionState } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
 
@@ -31,6 +32,7 @@ export function AuthOAuthCompletion() {
   const actor = params.get("actor") === "brand" ? "brand" : "shopper"
   const result = params.get("result") ?? "error"
   const [completion, setCompletion] = useState<Completion | null>(null)
+  const [continueTo, setContinueTo] = useState("/you/orders")
   const current = completion?.result === result ? completion : null
 
   useEffect(() => {
@@ -49,12 +51,19 @@ export function AuthOAuthCompletion() {
             return
           }
           const shopper = session.shopper
-          if (result === "signed_in" && actor === "shopper" && shopper) useSession.getState().signIn({ id: shopper.id, name: shopper.name, email: shopper.email, provider: provider === "apple" ? "apple" : "google" })
+          if (result === "signed_in" && actor === "shopper" && shopper) {
+            useSession.getState().signIn({ id: shopper.id, name: shopper.name, email: shopper.email, provider: provider === "apple" ? "apple" : "google" })
+            setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
+          } else {
+            clearOnboardingAuthReturn()
+          }
           if (active) setCompletion({ result, success: true, message: result === "signed_in" ? "Your account is connected." : result === "linked" ? "The provider is linked to your account." : "Your identity was confirmed." })
           return
         }
+        clearOnboardingAuthReturn()
         if (active) setCompletion({ result, success: false, message: messages.get(result) ?? "Sign-in could not be completed." })
       } catch {
+        clearOnboardingAuthReturn()
         if (active) setCompletion({ result, success: false, message: "Yard couldn’t refresh your sign-in. Check your connection, then try again." })
       }
     })()
@@ -67,7 +76,7 @@ export function AuthOAuthCompletion() {
       <p className={current && !current.success ? "mt-5 max-w-xl text-sm leading-relaxed text-danger" : "mt-5 max-w-xl text-sm leading-relaxed text-ink-2"} role={current && !current.success ? "alert" : "status"}>
         {current?.message ?? `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`}
       </p>
-      {current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? "/you/orders" : "/studio"}>Continue</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
+      {current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>Continue</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
     </>
   )
 }

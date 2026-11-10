@@ -1,15 +1,18 @@
 "use client"
 
-import { useState } from "react"
-import { toast } from "sonner"
+import { useEffect, useState } from "react"
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
 import { AppleMark, GoogleMark, useDemoSignIn } from "@/components/market/auth-prompt"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { api } from "@/lib/api/client"
+import { errorMessage, fieldErrors } from "@/lib/api/errors"
+import { afterIdentityChange } from "@/lib/session/identity"
+import { setOnboardingAuthReturn, clearOnboardingAuthReturn } from "@/lib/session/auth-return"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useSession, type SessionUser } from "@/lib/stores/session"
-import { errorMessage } from "@/lib/api/errors"
 import { control, Field, inputClass, Panel } from "@/components/studio/growth/form"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
 import { useOnboarding } from "../store"
@@ -17,19 +20,49 @@ import { isEmail } from "../validation"
 
 const providerLabel: Record<SessionUser["provider"], string> = { google: "Google", apple: "Apple", email: "email" }
 
+type AuthMode = "signup" | "signin"
+type ProviderStatus = { google: boolean; apple: boolean; demo: { shopper: boolean } }
+type AuthResponse =
+  | { status: "signed_in"; actor: "shopper"; profile: { id: string; name: string; email: string } }
+  | { status: "verify_email" }
+  | { status: "mfa_required" | "mfa_enrol_required"; challenge: string; expiresAt: string }
+
+const emptyProviders: ProviderStatus = { google: false, apple: false, demo: { shopper: false } }
+
 export function AccountStep({ onNext }: StepProps) {
   const hydrated = useHydrated()
   const user = useSession((s) => s.user)
   const signOut = useSession((s) => s.signOut)
+  const serverSession = useServerSession()
   const demoSignIn = useDemoSignIn()
   const account = useOnboarding((s) => s.data.account)
   const update = useOnboarding((s) => s.update)
 
+  const [providers, setProviders] = useState(emptyProviders)
+  const [mode, setMode] = useState<AuthMode>("signup")
   const [name, setName] = useState(account.name)
   const [email, setEmail] = useState(account.email)
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [busy, setBusy] = useState<"email" | "google" | "apple" | "demo" | "resend" | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [serverErrors, setServerErrors] = useState<{ name?: string; email?: string; password?: string }>({})
   const signedIn = hydrated ? user : null
+  const demoSession = serverSession.shopper?.demo === true
+
+  useEffect(() => {
+    let active = true
+    void api<ProviderStatus>("/api/auth/providers")
+      .then((status) => {
+        if (active) setProviders(status)
+      })
+      .catch(() => {
+        if (active) setProviders(emptyProviders)
+      })
+    return () => { active = false }
+  }, [])
 
   function adopt(u: SessionUser) {
     update("account", { name: u.name, email: u.email, provider: u.provider })
@@ -38,12 +71,91 @@ export function AccountStep({ onNext }: StepProps) {
   }
 
   async function social(provider: "google" | "apple") {
+    if (busy) return
+    setBusy(provider)
+    setFailure(null)
+    setOnboardingAuthReturn()
     try {
-      const signedIn = await demoSignIn(provider)
+      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "signin", actor: "shopper" } })
+      window.location.assign(url)
+    } catch (error) {
+      clearOnboardingAuthReturn()
+      setFailure(errorMessage(error, `Couldn't start ${provider} sign-in. Try again.`))
+      setBusy(null)
+    }
+  }
+
+  async function authenticate() {
+    if (busy) return
+    setBusy("email")
+    setFailure(null)
+    setNotice(null)
+    setNeedsVerification(false)
+    setServerErrors({})
+    try {
+      if (mode === "signup") {
+        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
+        setOnboardingAuthReturn()
+        setNeedsVerification(true)
+        setNotice(`Check your inbox for a verification link sent to ${email.trim()}.`)
+        return
+      }
+
+      const result = await api<AuthResponse>("/api/auth/sign-in", { body: { actor: "shopper", email: email.trim(), password } })
+      if (result.status === "verify_email") {
+        setOnboardingAuthReturn()
+        setNeedsVerification(true)
+        setNotice("Verify your email using the link in your inbox, then return to finish setup.")
+        return
+      }
+      if (result.status !== "signed_in") {
+        setFailure("This account requires administrator verification and can't start a brand application.")
+        return
+      }
+
+      await afterIdentityChange("market")
+      const signedIn: SessionUser = { ...result.profile, provider: "email" }
+      useSession.getState().signIn(signedIn)
+      clearOnboardingAuthReturn()
       adopt(signedIn)
       onNext()
     } catch (error) {
-      toast.error(errorMessage(error))
+      const fields = fieldErrors(error)
+      const nextErrors = { name: fields.name, email: fields.email, password: fields.password }
+      setServerErrors(nextErrors)
+      setFailure(Object.values(nextErrors).some(Boolean) ? null : errorMessage(error, "Couldn't continue. Check your details and try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function resendVerification() {
+    if (busy) return
+    setBusy("resend")
+    setFailure(null)
+    setNotice(null)
+    try {
+      await api<{ ok: true }>("/api/auth/verify-email/request", { body: { email: email.trim() } })
+      setNotice("If this account still needs verification, a fresh link has been sent.")
+    } catch (error) {
+      setFailure(errorMessage(error, "Couldn't send a new verification link. Try again."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function signInDemo() {
+    if (busy) return
+    setBusy("demo")
+    setFailure(null)
+    try {
+      const demoUser = await demoSignIn("email", name.trim() || "Ada Nwosu", email.trim() || "ada@example.com")
+      adopt(demoUser)
+      onNext()
+    } catch (error) {
+      setFailure(errorMessage(error))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -52,26 +164,20 @@ export function AccountStep({ onNext }: StepProps) {
       signedIn
         ? {}
         : {
-            name: name.trim().length < 2 ? "Enter your full name." : undefined,
+            name: mode === "signup" && name.trim().length < 2 ? "Enter your full name." : undefined,
             email: isEmail(email) ? undefined : "Enter a valid email address.",
-            password: password.length < 8 ? "Use at least 8 characters for your password." : undefined,
+            password: mode === "signup" && password.length < 10 ? "Use at least 10 characters for your password." : !password ? "Enter your password." : undefined,
           },
-    async () => {
+    () => {
       if (signedIn) {
         adopt(signedIn)
-      } else {
-        try {
-          const created = await demoSignIn("email", name.trim(), email.trim())
-          adopt(created)
-        } catch (error) {
-          toast.error(errorMessage(error))
-          return
-        }
+        onNext()
+        return
       }
-      onNext()
+      void authenticate()
     },
   )
-  const e = form.errors
+  const e = { ...form.errors, ...serverErrors }
 
   if (signedIn) {
     return (
@@ -83,9 +189,8 @@ export function AccountStep({ onNext }: StepProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink">{signedIn.name}</p>
-              {/* The email may truncate; how they signed in (a demo account) always shows in full. */}
               <p className="truncate text-xs text-ink-2">{signedIn.email}</p>
-              <p className="text-xs text-ink-3">{`Demo ${signedIn.provider === "email" ? "email" : providerLabel[signedIn.provider]} account on this device`}</p>
+              <p className="text-xs text-ink-3">{demoSession ? `Demo ${providerLabel[signedIn.provider]} account on this device` : `${providerLabel[signedIn.provider]} account`}</p>
             </div>
           </div>
           <Button
@@ -96,6 +201,7 @@ export function AccountStep({ onNext }: StepProps) {
             onClick={async () => {
               if (!(await signOut())) return
               update("account", { name: "", email: "", provider: null })
+              setMode("signup")
             }}
           >
             Use a different account
@@ -107,33 +213,29 @@ export function AccountStep({ onNext }: StepProps) {
 
   return (
     <StepForm formRef={form.formRef} onSubmit={form.onSubmit} errors={e}>
-      <Panel title="Sign up" description="Continue with Google or Apple, or use your email. Demo build: there are no real accounts. The name and email you enter stay on this device, and the marketplace uses Yard's demo shopper session.">
+      <Panel title={mode === "signup" ? "Sign up" : "Sign in"} description="Use one Yard account for your brand and shopping.">
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => social("google")}>
-            <GoogleMark /> Continue with Google
-          </Button>
-          <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => social("apple")}>
-            <AppleMark /> Continue with Apple
-          </Button>
+          {providers.google ? <Button type="button" variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy} onClick={() => void social("google")}><GoogleMark /> Continue with Google</Button> : null}
+          {providers.apple ? <Button type="button" variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy} onClick={() => void social("apple")}><AppleMark /> Continue with Apple</Button> : null}
         </div>
         <div className="my-5 flex items-center gap-3 text-xs text-ink-3">
           <span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" />
         </div>
         <div className="grid gap-4">
-          <Field id="ob-name" label="Full name" error={e.name}>
-            <Input {...control("ob-name", e.name)} autoComplete="name" value={name} onChange={(ev) => setName(ev.target.value)} className={inputClass} />
-          </Field>
+          {mode === "signup" ? <Field id="ob-name" label="Full name" error={e.name}>
+            <Input {...control("ob-name", e.name)} autoComplete="name" value={name} onChange={(ev) => { setName(ev.target.value); setServerErrors((current) => ({ ...current, name: undefined })) }} className={inputClass} />
+          </Field> : null}
           <Field id="ob-email" label="Email" error={e.email}>
-            <Input {...control("ob-email", e.email)} type="email" autoComplete="email" inputMode="email" value={email} onChange={(ev) => setEmail(ev.target.value)} className={inputClass} />
+            <Input {...control("ob-email", e.email)} type="email" autoComplete="email" inputMode="email" value={email} onChange={(ev) => { setEmail(ev.target.value); setServerErrors((current) => ({ ...current, email: undefined })) }} className={inputClass} />
           </Field>
-          <Field id="ob-password" label="Password" error={e.password} hint="At least 8 characters.">
+          <Field id="ob-password" label="Password" error={e.password} hint={mode === "signup" ? "At least 10 characters." : undefined}>
             <InputGroup className={inputClass}>
               <InputGroupInput
                 {...control("ob-password", e.password, true)}
                 type={showPassword ? "text" : "password"}
-                autoComplete="new-password"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
                 value={password}
-                onChange={(ev) => setPassword(ev.target.value)}
+                onChange={(ev) => { setPassword(ev.target.value); setServerErrors((current) => ({ ...current, password: undefined })) }}
               />
               <InputGroupAddon align="inline-end">
                 <InputGroupButton size="icon-xs" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((v) => !v)}>
@@ -143,7 +245,14 @@ export function AccountStep({ onNext }: StepProps) {
             </InputGroup>
           </Field>
         </div>
-        <p className="mt-4 text-xs text-ink-3">By continuing you agree to the seller terms and the privacy policy.</p>
+        {mode === "signup" ? <p className="mt-4 text-xs text-ink-3">By continuing you agree to the seller terms and the privacy policy.</p> : null}
+        {providers.demo.shopper ? <Button type="button" variant="secondary" size="lg" className="mt-4 w-full" loading={busy === "demo"} disabled={!!busy} onClick={() => void signInDemo()}>Continue as demo shopper</Button> : null}
+        {needsVerification ? <button type="button" className="mt-3 justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => void resendVerification()}>{busy === "resend" ? "Sending verification link…" : "Resend verification email"}</button> : null}
+        {failure ? <p role="alert" className="mt-3 text-sm text-danger">{failure}</p> : null}
+        {notice ? <p role="status" className="mt-3 text-sm text-ink-2">{notice}</p> : null}
+        <button type="button" className="mt-4 justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => { setMode((current) => current === "signup" ? "signin" : "signup"); setFailure(null); setNotice(null); setNeedsVerification(false); setServerErrors({}) }}>
+          {mode === "signup" ? "I already have an account" : "Create an account"}
+        </button>
       </Panel>
     </StepForm>
   )

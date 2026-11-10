@@ -77,7 +77,7 @@ function dto(row: typeof brandOnboardings.$inferSelect) {
     brandId: row.brandId,
     submittedAt: row.submittedAt?.toISOString() ?? null,
     reviewedAt: row.reviewedAt?.toISOString() ?? null,
-    reviewNote: row.status === "rejected" ? row.reviewNote : null,
+    reviewNote: row.status === "submitted" || row.status === "approved" ? null : row.reviewNote,
     updatedAt: row.updatedAt.toISOString(),
   }
 }
