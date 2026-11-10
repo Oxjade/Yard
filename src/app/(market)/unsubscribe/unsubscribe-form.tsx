@@ -12,6 +12,9 @@ type RequestState = { token: string; preview?: Preview; done?: boolean; error?: 
 
 /** A bad, expired or used link fails the same way every time; only rate limits and outages are worth retrying. */
 const finalError = (cause: unknown) => cause instanceof ApiError && cause.status >= 400 && cause.status < 500 && cause.status !== 408 && cause.status !== 429
+/** A malformed (e.g. truncated) token fails schema validation, whose generic "highlighted fields" message has no field to point at here. */
+const linkError = (cause: unknown, fallback: string) =>
+  cause instanceof ApiError && cause.fields?.token ? (cause.fields.token.startsWith("This unsubscribe link") ? cause.fields.token : "This unsubscribe link isn't valid. Open the complete link from your email.") : errorMessage(cause, fallback)
 
 export function UnsubscribeForm() {
   const searchParams = useSearchParams()
@@ -27,7 +30,7 @@ export function UnsubscribeForm() {
     void api<Preview>("/api/notifications/preferences/unsubscribe", { query: { token }, signal: controller.signal })
       .then((preview) => setState({ token, preview }))
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setState({ token, error: errorMessage(cause, "This unsubscribe link couldn't be checked."), final: finalError(cause) })
+        if (!controller.signal.aborted) setState({ token, error: linkError(cause, "This unsubscribe link couldn't be checked."), final: finalError(cause) })
       })
     return () => controller.abort()
   }, [token, retry])
@@ -40,7 +43,7 @@ export function UnsubscribeForm() {
       setState({ token, preview: { category: "", label: result.label }, done: true })
       router.replace("/unsubscribe", { scroll: false })
     } catch (cause) {
-      setState({ token, error: errorMessage(cause, "You couldn't be unsubscribed just now. Try again."), final: finalError(cause) })
+      setState({ token, error: linkError(cause, "You couldn't be unsubscribed just now. Try again."), final: finalError(cause) })
     } finally {
       setSubmitting(false)
     }
