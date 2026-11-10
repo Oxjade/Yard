@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Textarea } from "@/components/ui/textarea"
+import { errorMessage } from "@/lib/api/errors"
 import { currencies } from "@/config/markets"
 import { site } from "@/config/site"
 import { formatMoney, formatNumber } from "@/lib/money"
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { control, Field, FieldMessage, inputClass, Panel, Segmented } from "@/components/studio/growth/form"
 import { ImagePicker } from "../image-picker"
 import { useFocusReturn } from "@/components/studio/business/shared"
-import { readImage } from "../image-utils"
+import { uploadOnboardingImage } from "../remote"
 import { sampleProductPhotos, sizeSystems, suggestedSizeSystem } from "../options"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
 import { useOnboarding, type ImageRef, type SizeSystem } from "../store"
@@ -63,12 +64,12 @@ export function ProductStep({ onNext }: StepProps) {
     if (!take.length) return
     setReading(take.length)
     try {
-      const read = await Promise.all(take.map((f) => readImage(f, { max: 1200, quality: 0.8 })))
+      const uploaded = await Promise.all(take.map(uploadOnboardingImage))
       const current = useOnboarding.getState().data.product
       const name = current.name.trim() || "Product"
-      update("product", { images: [...current.images, ...read.map((src, i) => ({ src, alt: `${name}, photo ${current.images.length + i + 1}`, source: "upload" as const }))].slice(0, MAX_PHOTOS) })
-    } catch {
-      setUploadError("We couldn't read one of those images. Try JPG or PNG files.")
+      update("product", { images: [...current.images, ...uploaded.map((image, i) => ({ ...image, alt: `${name}, photo ${current.images.length + i + 1}` }))].slice(0, MAX_PHOTOS) })
+    } catch (error) {
+      setUploadError(errorMessage(error, "We couldn't upload one of those images. Try JPG or PNG files."))
     } finally {
       setReading(0)
     }

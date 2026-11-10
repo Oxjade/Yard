@@ -92,14 +92,25 @@ export async function getOnboarding(actor: ShopperActor) {
   return { onboarding: row ? dto(row) : null, steps: ONBOARDING_STEPS }
 }
 
+/** Discards only an unsubmitted draft that has not created a brand. */
+export async function discardOnboarding(actor: ShopperActor) {
+  return withTx(async (tx) => {
+    const [row] = await tx.select().from(brandOnboardings).where(eq(brandOnboardings.userId, actor.userId)).orderBy(desc(brandOnboardings.createdAt)).for("update").limit(1)
+    if (!row) return { discarded: false }
+    if (row.status !== "draft" || row.brandId) throw rule("Only an unfinished application can be cleared. You can edit a rejected application or manage an approved brand in Studio.")
+    await tx.delete(brandOnboardings).where(eq(brandOnboardings.id, row.id))
+    return { discarded: true }
+  })
+}
+
 /** The applicant's own image uploads (they have no brand yet). */
 async function assertOwnImages(d: Executor, userId: string, ids: string[], field: string) {
   if (!ids.length) return
   const rows = await d
-    .select({ id: mediaAssets.id, mime: mediaAssets.mime, moderation: mediaAssets.moderationStatus })
+    .select({ id: mediaAssets.id, mime: mediaAssets.mime, moderation: mediaAssets.moderationStatus, purpose: mediaAssets.purpose })
     .from(mediaAssets)
     .where(and(inArray(mediaAssets.id, ids), eq(mediaAssets.ownerKind, "user"), eq(mediaAssets.ownerId, userId)))
-  const ok = new Set(rows.filter((r) => r.mime.startsWith("image/") && r.moderation !== "removed").map((r) => r.id))
+  const ok = new Set(rows.filter((r) => r.mime.startsWith("image/") && r.moderation !== "removed" && r.purpose === "onboarding_image").map((r) => r.id))
   const fields: Record<string, string> = {}
   ids.forEach((id, i) => {
     if (!ok.has(id)) fields[`${field}.${i}`] = "That photo isn't one of your uploads."
@@ -290,7 +301,7 @@ export async function listSubmittedOnboardings(limit = 50) {
 }
 
 /** A first-product SKU within Studio's 40-character limit (a longer one would block every later save in the editor); the size stays whole. */
-function onboardingSku(handle: string, name: string, size: string) {
+export function onboardingSku(handle: string, name: string, size: string) {
   const tail = `-${slugify(size)}`
   return `${`${handle}-${slugify(name).slice(0, 20)}`.slice(0, 40 - tail.length).replace(/-+$/, "")}${tail}`.toUpperCase()
 }
@@ -318,6 +329,14 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       .where(eq(brandOnboardings.id, row.id))
     if (input.decision === "approve") {
       const [brand] = await tx.update(brands).set({ reviewStatus: "verified" }).where(eq(brands.id, row.brandId)).returning({ id: brands.id, country: brands.country, city: brands.city, currency: brands.currency })
+      const data = row.data as { brand?: { logoMediaId?: string | null }; storefront?: { coverMediaId?: string | null }; product?: { images?: { mediaId?: string }[] } }
+      const mediaIds = [...new Set([data.storefront?.coverMediaId, ...(data.product?.images ?? []).map((image) => image.mediaId)].filter((id): id is string => !!id))]
+      if (mediaIds.length) {
+        await tx
+          .update(mediaAssets)
+          .set({ ownerKind: "brand", ownerId: row.brandId, brandId: row.brandId })
+          .where(and(inArray(mediaAssets.id, mediaIds), eq(mediaAssets.ownerKind, "user"), eq(mediaAssets.ownerId, row.userId), eq(mediaAssets.purpose, "onboarding_image")))
+      }
       // Approved brands can sell at once: they start with shipping from their application (editable in Studio).
       const payments = (row.data as { payments?: { processingMin?: number; processingMax?: number; delivery?: string[] } }).payments
       if (brand) await createStarterShipping(brand, { handling: [payments?.processingMin ?? 1, payments?.processingMax ?? 3], delivery: payments?.delivery ?? ["domestic"] })

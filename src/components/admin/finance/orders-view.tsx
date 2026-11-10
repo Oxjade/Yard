@@ -24,7 +24,9 @@ import { buildOrderRows, groupState, isPaidOrder, type OrderRow } from "./derive
 import { amountIn, daysUntil, formatWhen, relDays, usd, usdCompact } from "./format"
 import { fulfilMeta, groupMeta, payMeta, type FulfilState } from "./meta"
 import { OrderDetail } from "./order-detail"
+import { OrdersLiveView } from "./orders-live-view"
 import { downloadCsv, InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./table"
+import { useServerSession } from "@/lib/session/use-server-session"
 
 
 type StatusFilter = "all" | FulfilState | "awaiting_payment" | "refund_requested" | "refunded" | "failed" | "disputed"
@@ -74,6 +76,12 @@ function exportOrders(rows: OrderRow[]) {
 }
 
 export function OrdersView() {
+  const admin = useServerSession((session) => session.admin)
+  if (admin && !admin.demo) return <OrdersLiveView />
+  return <DemoOrdersView />
+}
+
+function DemoOrdersView() {
   const router = useRouter()
   const ready = useAdminReady()
   const phone = usePhone()

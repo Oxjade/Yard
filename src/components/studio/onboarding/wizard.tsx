@@ -4,23 +4,21 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { AnimatePresence, motion } from "motion/react"
 import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, EyeIcon as Eye, ArrowCounterClockwiseIcon as RotateCcw, XIcon as X } from "@phosphor-icons/react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { countries } from "@/config/markets"
 import { site } from "@/config/site"
 import { useAsyncAction } from "@/hooks/use-async-action"
-import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
-import { categories } from "@/lib/data/catalog"
-import { useAdmin } from "@/lib/stores/admin"
-import { useNotifications } from "@/lib/stores/notifications"
+import { errorMessage, ApiError } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 import { useFocusReturn } from "@/components/studio/business/shared"
 import { STEP_FORM_ID } from "./step-form"
 import { StorefrontPreview } from "./storefront-preview"
-import { STEPS, useOnboarding, useOnboardingHydrated } from "./store"
+import { discardOnboarding as discardOnboardingRequest } from "./remote"
+import { reloadOnboarding, saveOnboardingProgress, STEPS, submitOnboardingProgress, useOnboarding, useOnboardingHydrated } from "./store"
 import { stepComplete } from "./validation"
 import { AccountStep } from "./steps/account"
 import { BrandStep } from "./steps/brand"
@@ -37,37 +35,6 @@ const variants = {
   enter: (dir: number) => ({ opacity: 0, x: dir * 28 }),
   center: { opacity: 1, x: 0 },
   exit: (dir: number) => ({ opacity: 0, x: dir * -28 }),
-}
-
-/**
- * Publishing sends the brand to the platform's review queue: an application in the Admin
- * Control Center and a notification for the admin team (in the backend phase: one server
- * action). The eventKey is stable, so publishing twice never notifies twice.
- */
-function submitApplication() {
-  const { brand, business, product } = useOnboarding.getState().data
-  const at = new Date().toISOString()
-  const id = `app_onb_${brand.handle}`
-  const country = business.country ?? "NG"
-  const category = brand.category ?? "streetwear"
-  const categoryName = categories.find((c) => c.slug === category)?.name ?? category
-  const products = product.name.trim() ? 1 : 0
-  const admin = useAdmin.getState()
-  useAdmin.setState({
-    applications: [
-      { id, brandName: brand.name.trim(), handle: brand.handle, country, category, submittedAt: at, status: "pending_review", kyc: "not_started", risk: "low", notes: `Submitted from Brand Studio onboarding. ${products} product drafted. Identity checks start before the first payout.`, products },
-      ...admin.applications.filter((a) => a.id !== id),
-    ],
-  })
-  useNotifications.getState().push({
-    eventKey: `a:app:${id}`,
-    audience: "admin",
-    category: "merchant_application",
-    title: `New brand application: ${brand.name.trim()}`,
-    body: `${categoryName} brand from ${countries[country].name}, ${products} product drafted.`,
-    href: "/admin/brands",
-    at,
-  })
 }
 
 function minutesLeft(step: number) {
@@ -98,27 +65,43 @@ function useWide() {
 export function OnboardingWizard() {
   const hydrated = useOnboardingHydrated()
   const publishedAt = useOnboarding((s) => s.publishedAt)
+  const loadError = useOnboarding((s) => s.loadError)
   if (!hydrated) return <WizardSkeleton />
+  if (loadError) return <OnboardingLoadError message={loadError} onRetry={() => void reloadOnboarding()} />
   if (publishedAt) return <Published />
   return <Wizard />
+}
+
+function showOnboardingError(error: unknown) {
+  if (error instanceof ApiError && error.status === 409) {
+    toast.error(error.message, { action: { label: "Reload", onClick: () => void reloadOnboarding() } })
+    return
+  }
+  const details = error instanceof ApiError && error.fields ? Object.values(error.fields).join(" ") : undefined
+  toast.error(errorMessage(error), details ? { description: details } : undefined)
 }
 
 function Wizard() {
   const step = useOnboarding((s) => s.step)
   const maxReached = useOnboarding((s) => s.maxReached)
   const data = useOnboarding((s) => s.data)
+  const canStartOver = useOnboarding((s) => s.status === "draft")
   const next = useOnboarding((s) => s.next)
   const back = useOnboarding((s) => s.back)
-  const markPublished = useOnboarding((s) => s.markPublished)
   const anything = maxReached > 0 || !!data.account.email
   const wide = useWide()
 
-  // Publishing is local today and completes at once; the Published screen is the confirmation.
-  const publish = useAsyncAction(() => {
-    submitApplication()
-    markPublished()
+  const save = useAsyncAction(async () => {
+    const saved = await saveOnboardingProgress(STEPS[step].id)
+    if (saved) next()
+    else toast.message("Your latest edit is not saved yet", { description: "Try Continue again to include it." })
+  }, { errorToast: false, onError: showOnboardingError })
+  const publish = useAsyncAction(() => submitOnboardingProgress(), {
+    success: "Application submitted",
+    errorToast: false,
+    onError: showOnboardingError,
   })
-  const publishing = publish.pending
+  const publishing = publish.pending || save.pending
   const [previewOpen, setPreviewOpen] = useState(false)
   const previewFocus = useFocusReturn()
   const [resumed, setResumed] = useState(() => step > 0)
@@ -141,8 +124,8 @@ function Wizard() {
   const showPreview = !isPublish
 
   function onNext() {
-    if (!isPublish) return next()
-    void publish.run()
+    if (isPublish) void publish.run()
+    else void save.run()
   }
 
   return (
@@ -182,7 +165,7 @@ function Wizard() {
                           </Button>
                         ) : null}
                         {/* The step list holds Start over from xl; below that it lives here. */}
-                        {anything ? <StartOver size="sm" className="xl:hidden" /> : null}
+                        {anything && canStartOver ? <StartOver size="sm" className="xl:hidden" /> : null}
                       </>
                     ) : null
                   }
@@ -257,6 +240,7 @@ function WizardFooter({ step, publishing, onBack }: { step: number; publishing: 
 function StepNav({ step, maxReached, className }: { step: number; maxReached: number; className?: string }) {
   const goTo = useOnboarding((s) => s.goTo)
   const data = useOnboarding((s) => s.data)
+  const canStartOver = useOnboarding((s) => s.status === "draft")
   const done = stepComplete(data)
   const anything = maxReached > 0 || !!data.account.email
   return (
@@ -296,7 +280,7 @@ function StepNav({ step, maxReached, className }: { step: number; maxReached: nu
           })}
         </ol>
         <p className="mt-4 px-2.5 text-xs text-ink-3">About 5 minutes in total. You can leave and come back.</p>
-        {anything ? <StartOver size="xs" className="mt-2 ml-0.5" /> : null}
+        {anything && canStartOver ? <StartOver size="xs" className="mt-2 ml-0.5" /> : null}
       </nav>
     </div>
   )
@@ -305,6 +289,11 @@ function StepNav({ step, maxReached, className }: { step: number; maxReached: nu
 function StartOver({ className, variant = "ghost", size = "xs", label = "Start over" }: { className?: string; variant?: "ghost" | "secondary"; size?: "xs" | "sm" | "default"; label?: string }) {
   const reset = useOnboarding((s) => s.reset)
   const [open, setOpen] = useState(false)
+  const discard = useAsyncAction(async () => {
+    await discardOnboardingRequest()
+    reset()
+    setOpen(false)
+  }, { errorToast: false, onError: showOnboardingError })
   // After clearing, step 1's first field takes focus (the button that opened this is gone).
   const focus = useFocusReturn(() => document.querySelector<HTMLElement>(`#${STEP_FORM_ID} input, #${STEP_FORM_ID} button`))
   return (
@@ -316,20 +305,17 @@ function StartOver({ className, variant = "ghost", size = "xs", label = "Start o
         <DialogContent className="sm:max-w-[420px]" {...focus}>
           <DialogHeader>
             <DialogTitle>Start over?</DialogTitle>
-            <DialogDescription>This clears everything you’ve entered on this device, including uploaded photos. You stay signed in.</DialogDescription>
+            <DialogDescription>This clears your saved draft and uploaded photos. You stay signed in.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="secondary">Keep my progress</Button>
+              <Button type="button" variant="secondary" disabled={discard.pending}>Keep my progress</Button>
             </DialogClose>
             <Button
               type="button"
               variant="destructive"
-              onClick={() => {
-                // Step 1 reappears empty, which is the confirmation.
-                reset()
-                setOpen(false)
-              }}
+              loading={discard.pending}
+              onClick={() => void discard.run()}
             >
               Clear and start over
             </Button>
@@ -355,7 +341,6 @@ function ResumeNote({ step, onDismiss }: { step: number; onDismiss: () => void }
 function Published() {
   const brand = useOnboarding((s) => s.data.brand)
   const name = brand.name || "Your brand"
-  const sample = brandById.get(STUDIO_BRAND_ID)!.name
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-16 md:py-24">
       <section aria-labelledby="ob-submitted-title" className="rounded-lg border border-line-soft bg-card p-6 text-center md:p-8">
@@ -364,16 +349,24 @@ function Published() {
         </span>
         <h1 id="ob-submitted-title" className="mt-5 text-lg font-medium text-ink">Your storefront is submitted for review</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-2">
-          {name} is with the platform team. Once it&apos;s approved and your store is connected, it goes live at <span className="text-ink">/brands/{brand.handle}</span>. Everything you set up is saved on this device.
+          {name} is with the Yard team. Once it&apos;s approved, your store can go live at <span className="text-ink">/brands/{brand.handle}</span>. Your application is saved to your account.
         </p>
-        <p className="mx-auto mt-3 max-w-md text-xs text-ink-3">Brand Studio shows the sample brand {sample} in this build, so {name} doesn&apos;t appear there yet.</p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Button asChild variant="primary">
             <Link href="/studio">Go to Brand Studio</Link>
           </Button>
-          <StartOver variant="secondary" size="default" label="Set up another brand" />
         </div>
       </section>
+    </div>
+  )
+}
+
+function OnboardingLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="mx-auto grid min-h-[50vh] w-full max-w-xl content-center gap-3 px-4 py-12">
+      <h1 className="text-base font-medium text-ink">Your saved progress could not load</h1>
+      <p role="alert" className="text-sm text-ink-2">{message}</p>
+      <Button type="button" variant="secondary" className="w-fit" onClick={onRetry}>Retry</Button>
     </div>
   )
 }

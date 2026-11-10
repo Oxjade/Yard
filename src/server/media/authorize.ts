@@ -5,6 +5,8 @@ import { badRequest, forbidden, notFound, restricted } from "../http/errors"
 import { brandCanInteract, shopperCanInteract } from "../inbox/interact"
 import { canBrand } from "@/lib/permissions"
 import type { UploadPurpose } from "@/lib/api/contracts/uploads"
+import { brandOnboardings } from "../db/schema/catalog"
+import { desc, eq } from "drizzle-orm"
 
 /**
  * Upload authorisation from the query string alone (§5.4 step 1), so nothing is read from the
@@ -38,9 +40,20 @@ async function assertNotRestricted(subjectKind: "user" | "brand", id: string, ki
 }
 
 export async function authorizeShopperUpload(actor: ShopperActor, q: Query): Promise<UploadTarget> {
-  if (q.purpose !== "inbox_attachment") throw forbidden("Shoppers can only attach photos to messages.")
-  if (!!q.conversationId === !!q.brandId) throw badRequest({ conversationId: "Name the conversation, or the brand for a new conversation." })
   await assertNotRestricted("user", actor.userId, "uploads", "you")
+  if (q.purpose === "onboarding_image") {
+    const d = await db()
+    const [application] = await d
+      .select({ status: brandOnboardings.status })
+      .from(brandOnboardings)
+      .where(eq(brandOnboardings.userId, actor.userId))
+      .orderBy(desc(brandOnboardings.createdAt))
+      .limit(1)
+    if (!application || !["draft", "rejected"].includes(application.status)) throw forbidden("Onboarding photos are available only while your application can be edited.")
+    return { purpose: q.purpose, ownerKind: "user", ownerId: actor.userId, brandId: null, conversationId: null, targetBrandId: null }
+  }
+  if (q.purpose !== "inbox_attachment") throw forbidden("Shoppers can only attach photos to messages or upload onboarding images.")
+  if (!!q.conversationId === !!q.brandId) throw badRequest({ conversationId: "Name the conversation, or the brand for a new conversation." })
   const d = await db()
   let brandId: string
   let conversationId: string | null = null

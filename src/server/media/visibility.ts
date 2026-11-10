@@ -29,7 +29,7 @@ import { mediaAssets } from "../db/schema"
  * product_image purpose: the media purpose check constraint would need a migration). Inbox
  * attachments never qualify.
  */
-export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image"] as const
+export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
 const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)
@@ -43,6 +43,16 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from message_attachments ma where ma.media_id = m.id)
   or exists (select 1 from catalog_product_images ci where ci.media_id = m.id)
   or exists (select 1 from catalog_collections cc where cc.image_media_id = m.id)
+  or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
+  or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
+  or exists (
+    select 1 from brand_onboardings o
+    where o.data -> 'brand' ->> 'logoMediaId' = m.id
+      or o.data -> 'storefront' ->> 'coverMediaId' = m.id
+      or exists (
+        select 1 from jsonb_array_elements(coalesce(o.data -> 'product' -> 'images', '[]'::jsonb)) e
+        where e ->> 'mediaId' = m.id)
+  )
 )`)
 
 export async function refreshVisibility(mediaIds: string[]): Promise<void> {
@@ -81,6 +91,11 @@ export async function refreshVisibility(mediaIds: string[]): Promise<void> {
         where cc.status = 'published' and ${listed("b")}
           and cc.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
           and cc.image_media_id = m.id)
+      or exists (
+        select 1 from catalog_storefront_versions sv join brands b on b.id = sv.brand_id
+        where ${listed("b")} and sv.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
+          and sv.version = (select max(current.version) from catalog_storefront_versions current where current.brand_id = sv.brand_id)
+          and sv.config ->> 'coverMediaId' = m.id)
     ) then 'public' else 'private' end,
     unreferenced_at = case when ${referencedAtAll} then null else coalesce(m.unreferenced_at, now()) end
     where m.id in (${sql.join(

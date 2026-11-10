@@ -1,5 +1,6 @@
 import { site } from "@/config/site"
 import type { CurrencyCode } from "@/config/markets"
+import { formatMoney } from "@/lib/money"
 import { payoutAmountIn, type Payout } from "@/lib/data/admin"
 import type { MerchantOrder } from "@/lib/data/types"
 
@@ -14,6 +15,28 @@ export const PAYOUT_HOLD_DAYS = 7
 /** The prototype's fixed "today", so the hold window is stable between server and client. */
 export const PAYOUT_TODAY = new Date("2026-11-05T12:00:00Z").getTime()
 export const COMMISSION_RATE = site.commissionRate
+
+export function payoutBlockedReason(input: {
+  hasSummary: boolean
+  failed: boolean
+  onHold: boolean
+  holdReason: string | null
+  hasAccount: boolean
+  cooldownUntil: string | null
+  otherCurrency: string | null
+  availableMinor: number
+  minimumMinor: number
+  currency: CurrencyCode
+}): string | null {
+  if (!input.hasSummary) return input.failed ? "Your payouts couldn't be loaded. Try again above." : "Loading your payouts…"
+  if (input.onHold) return input.holdReason ?? "Payouts are on hold for this brand. Contact Yard support."
+  if (!input.hasAccount) return "Add a payout account in Settings before requesting a payout."
+  if (input.cooldownUntil) return `Your payout account changed recently. You can request a payout after ${new Date(input.cooldownUntil).toLocaleString("en-GB")}.`
+  if (input.otherCurrency) return `Your earnings are in ${input.otherCurrency}, but your payout account receives ${input.currency}. Contact Yard support to pay them out.`
+  if (input.availableMinor <= 0) return `Nothing is available yet. Sales become available after delivery and the ${PAYOUT_HOLD_DAYS}-day returns window.`
+  if (input.minimumMinor && input.availableMinor < input.minimumMinor) return `You can request a payout once ${formatMoney(input.minimumMinor, input.currency)} is available. You have ${formatMoney(input.availableMinor, input.currency)} now.`
+  return null
+}
 
 /* ---------- Refunds ---------- */
 

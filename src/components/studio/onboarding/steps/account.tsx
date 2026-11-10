@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +9,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { AppleMark, GoogleMark, useDemoSignIn } from "@/components/market/auth-prompt"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSession, type SessionUser } from "@/lib/stores/session"
+import { errorMessage } from "@/lib/api/errors"
 import { control, Field, inputClass, Panel } from "@/components/studio/growth/form"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
 import { useOnboarding } from "../store"
@@ -35,12 +37,14 @@ export function AccountStep({ onNext }: StepProps) {
     if (!business.contactEmail) update("business", { contactEmail: u.email })
   }
 
-  function social(provider: "google" | "apple") {
-    demoSignIn(provider)
-    const u = useSession.getState().user
-    if (!u) return
-    adopt(u)
-    onNext()
+  async function social(provider: "google" | "apple") {
+    try {
+      const signedIn = await demoSignIn(provider)
+      adopt(signedIn)
+      onNext()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
   }
 
   const form = useStepForm(
@@ -52,13 +56,17 @@ export function AccountStep({ onNext }: StepProps) {
             email: isEmail(email) ? undefined : "Enter a valid email address.",
             password: password.length < 8 ? "Use at least 8 characters for your password." : undefined,
           },
-    () => {
+    async () => {
       if (signedIn) {
         adopt(signedIn)
       } else {
-        demoSignIn("email", name.trim(), email.trim())
-        const u = useSession.getState().user
-        if (u) adopt(u)
+        try {
+          const created = await demoSignIn("email", name.trim(), email.trim())
+          adopt(created)
+        } catch (error) {
+          toast.error(errorMessage(error))
+          return
+        }
       }
       onNext()
     },

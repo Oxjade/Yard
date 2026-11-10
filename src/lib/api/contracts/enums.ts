@@ -15,7 +15,7 @@ export const SOCIAL_PROVIDERS = ["instagram", "tiktok"] as const
 export const SOCIAL_MODES = ["live", "sandbox"] as const
 
 export const MEDIA_OWNER_KINDS = ["brand", "user", "system"] as const
-export const MEDIA_PURPOSES = ["social_post", "inbox_attachment", "location_image", "social_import", "sample"] as const
+export const MEDIA_PURPOSES = ["social_post", "inbox_attachment", "location_image", "social_import", "sample", "onboarding_image"] as const
 export const MEDIA_MIMES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"] as const
 export const MEDIA_VISIBILITIES = ["private", "public"] as const
 export const MEDIA_MODERATION = ["ok", "pending", "removed"] as const

@@ -16,10 +16,12 @@ import { disputeStage } from "./derive"
 import { DisputesTab } from "./disputes-tab"
 import { dueLabel, plural, usd, usdShort } from "./format"
 import { PayoutsTab } from "./payouts-tab"
+import { FinanceLiveView } from "./finance-live-view"
 import { ReconciliationTab, type AdjustmentPrefill } from "./reconciliation-tab"
 import { RefundsTab } from "./refunds-tab"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams } from "./table"
 import { TransactionsTab } from "./transactions-tab"
+import { useServerSession } from "@/lib/session/use-server-session"
 
 type TabKey = "transactions" | "payouts" | "refunds" | "disputes" | "reconciliation" | "adjustments" | "commission"
 const KEYS: TabKey[] = ["transactions", "payouts", "refunds", "disputes", "reconciliation", "adjustments", "commission"]
@@ -28,6 +30,12 @@ const isTab = (v: string | null): v is TabKey => !!v && (KEYS as string[]).inclu
 const n = (v: number) => formatNumber(Math.round(v))
 
 export function FinanceView() {
+  const admin = useServerSession((session) => session.admin)
+  if (admin && !admin.demo) return <FinanceLiveView />
+  return <DemoFinanceView />
+}
+
+function DemoFinanceView() {
   const ready = useAdminReady()
   const qid = useId()
   const payouts = useAdmin((s) => s.payouts)

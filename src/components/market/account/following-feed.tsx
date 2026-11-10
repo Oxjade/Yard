@@ -71,7 +71,7 @@ function FeedBody({ item, brand }: { item: FeedItem; brand: Brand }) {
   if (item.kind === "products" && item.products.length === 1) {
     const p = item.products[0]
     return (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)] sm:gap-6">
+      <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)] sm:gap-6">
         <ProductCard product={p} variant="compact" sizes="(min-width: 640px) 240px, 45vw" />
         <div className="min-w-0 sm:pt-1">
           <p className="text-xs text-violet">New in {p.subcategory.toLowerCase()}</p>
@@ -88,7 +88,7 @@ function FeedBody({ item, brand }: { item: FeedItem; brand: Brand }) {
     const shown = item.products.slice(0, 4)
     return (
       <>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4">
+        <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4">
           {shown.map((p) => (
             <ProductCard key={p.id} product={p} variant="compact" sizes="(min-width: 768px) 18vw, 45vw" />
           ))}

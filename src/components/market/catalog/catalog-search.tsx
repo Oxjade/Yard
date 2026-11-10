@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { ClockCounterClockwiseIcon as Recent, MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import type { Product } from "@/lib/data/types"
-import { searchSuggestions, type CatalogState } from "./catalog-state"
+import type { CatalogState } from "./catalog-state"
 
 /* ---------- recent searches (this browser only) ---------- */
 
@@ -59,7 +61,6 @@ export function CatalogSearch({
   placeholder,
   label,
   className,
-  products,
 }: {
   value: string
   onCommit: (q: string) => void
@@ -83,6 +84,8 @@ export function CatalogSearch({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const [recent, setRecent] = useState<string[]>([])
+  const [remote, setRemote] = useState<{ term: string; options: Option[] } | null>(null)
+  const [remoteError, setRemoteError] = useState<{ term: string; message: string } | null>(null)
   if (value !== synced) {
     setSynced(value)
     if (value !== committed) {
@@ -102,10 +105,40 @@ export function CatalogSearch({
   }, [draft, committed, onCommit])
 
   const typed = draft.trim()
-  const suggestions = useMemo(() => (state && typed.length >= 2 ? searchSuggestions(typed, state, 6, products) : []), [typed, state, products])
+  useEffect(() => {
+    if (!state || typed.length < 2) return
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      void api<{ products: { title: string }[]; brands: { name: string }[] }>("/api/search/suggest", { query: { q: typed }, signal: controller.signal })
+        .then((result) => {
+          const seen = new Set<string>()
+          const options = [...result.products.map((item) => item.title), ...result.brands.map((brand) => brand.name)]
+            .filter((term) => {
+              const normalized = term.trim().toLowerCase()
+              if (!normalized || normalized === typed.toLowerCase() || seen.has(normalized)) return false
+              seen.add(normalized)
+              return true
+            })
+            .slice(0, 6)
+            .map((term) => ({ term }))
+          setRemote({ term: typed, options })
+          setRemoteError(null)
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setRemoteError({ term: typed, message: errorMessage(error, "Search suggestions couldn't be loaded.") })
+        })
+    }, 140)
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [state, typed])
+
+  const suggestions = state && typed.length >= 2 && remote?.term === typed ? remote.options : []
+  const suggestionError = remoteError?.term === typed ? remoteError.message : null
   /** Nothing to offer at all: a plain search field, not a combobox. */
   const plain = !state && !recentKey
-  const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null
+  const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length || suggestionError ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null
   const options: Option[] = mode === "suggest" ? suggestions : mode === "recent" ? recent.map((term) => ({ term })) : []
   const expanded = open && options.length > 0
   const activeIndex = expanded && active < options.length ? active : -1
@@ -275,6 +308,7 @@ export function CatalogSearch({
               ) : null}
             </div>
             <ul id={listId} role="listbox" aria-label={mode === "recent" ? "Recent searches" : "Suggestions"}>
+              {suggestionError ? <li role="status" className="min-h-10 px-2.5 py-2 text-sm text-danger">{suggestionError}</li> : null}
               {options.map((o, i) => (
                 <li
                   key={o.term}

@@ -1,30 +1,53 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { motion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Wordmark } from "@/components/market/market-header"
+import { ApiError, errorMessage } from "@/lib/api/errors"
+import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
-import { STEPS, useOnboarding, useOnboardingHydrated } from "./store"
+import { reloadOnboarding, saveOnboardingProgress, STEPS, useOnboarding, useOnboardingHydrated } from "./store"
 
 /** The onboarding's only chrome: wordmark, progress and a way out that keeps your place. */
 export function OnboardingTopBar() {
   const router = useRouter()
   const hydrated = useOnboardingHydrated()
+  const user = useSession((s) => s.user)
   const step = useOnboarding((s) => s.step)
   const publishedAt = useOnboarding((s) => s.publishedAt)
-  const markSaved = useOnboarding((s) => s.markSaved)
+  const [saving, setSaving] = useState(false)
   const current = hydrated ? step : 0
   const total = STEPS.length
 
-  function finishLater() {
-    markSaved()
-    toast.success("Progress saved", {
-      description: `Everything is kept on this device. Pick up at step ${current + 1}, ${STEPS[current].label.toLowerCase()}, whenever you're ready.`,
-      action: { label: "Resume", onClick: () => router.push("/studio/onboarding") },
-    })
-    router.push("/studio")
+  async function finishLater() {
+    if (saving || !user) return
+    setSaving(true)
+    try {
+      if (STEPS[current].id !== "publish") {
+        const saved = await saveOnboardingProgress(STEPS[current].id)
+        if (!saved) {
+          toast.message("Your latest edit is not saved yet", { description: "Return to this step and save it before leaving." })
+          return
+        }
+      }
+      toast.success("Progress saved", {
+        description: `Your application is saved to your account. Pick up at step ${current + 1}, ${STEPS[current].label.toLowerCase()}, whenever you're ready.`,
+        action: { label: "Resume", onClick: () => router.push("/studio/onboarding") },
+      })
+      router.push("/studio")
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error(error.message, { action: { label: "Reload", onClick: () => void reloadOnboarding() } })
+      } else {
+        const details = error instanceof ApiError && error.fields ? Object.values(error.fields).join(" ") : undefined
+        toast.error(errorMessage(error), details ? { description: details } : undefined)
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -34,9 +57,9 @@ export function OnboardingTopBar() {
         <span className="hidden h-4 w-px bg-line sm:block" aria-hidden />
         <span className="hidden text-sm text-ink-2 sm:block">Brand setup</span>
         {/* The step counter lives in the page header; the bar below shows progress. Once published, the page's own action takes over. */}
-        {publishedAt ? null : (
-          <Button type="button" size="sm" variant="secondary" className="ml-auto" onClick={finishLater}>
-            Save and finish later
+        {publishedAt || !user ? null : (
+          <Button type="button" size="sm" variant="secondary" className="ml-auto" onClick={() => void finishLater()} disabled={saving || !hydrated}>
+            {saving ? "Saving…" : "Save and finish later"}
           </Button>
         )}
       </div>

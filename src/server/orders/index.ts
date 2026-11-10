@@ -24,7 +24,7 @@ export { handleRefundOutcome, issueRefund } from "./refunds"
 export { cancelOrder } from "./cancel"
 export { markProcessing } from "./fulfilment"
 export { requestReturn, cancelReturn, decideReturn, receiveReturn } from "./returns"
-export { orderDetail, shopperOrders, brandOrders, checkoutOrders } from "./views"
+export { orderDetail, shopperOrders, brandOrders, adminOrders, checkoutOrders } from "./views"
 export { RETURN_WINDOW_DAYS } from "./core"
 
 /**

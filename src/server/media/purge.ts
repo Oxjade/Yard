@@ -19,7 +19,7 @@ import { referencedAtAll } from "./visibility"
 const orphan = sql`(
   (m.purpose = 'inbox_attachment' and m.attached_at is null and m.created_at < now() - interval '24 hours'
      and not exists (select 1 from message_attachments ma where ma.media_id = m.id))
-  or (m.purpose in ('social_post', 'social_import', 'location_image')
+  or (m.purpose in ('social_post', 'social_import', 'location_image', 'onboarding_image')
      and coalesce(m.unreferenced_at, m.created_at) < now() - interval '7 days' and not ${referencedAtAll})
 )`
 
