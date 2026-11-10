@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api } from "@/lib/api/client"
 import { errorMessage, fieldErrors } from "@/lib/api/errors"
-import { DEMO_SHOPPER, useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
+import { useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { site } from "@/config/site"
 
@@ -41,20 +41,10 @@ export function AppleMark() {
   )
 }
 
-/**
- * Synchronous local sign-in for callers that need the user at once (Studio onboarding's account
- * step). It also starts the server demo session (the shopper Ada, the only one this browser can
- * hold) but keeps the name and email the person typed: the server never silently renames them.
- */
+/** Signs in to the server's demo shopper while keeping the name and email entered in onboarding. */
 export function useDemoSignIn() {
-  const signIn = useSession((s) => s.signIn)
-  return (provider: SessionUser["provider"], name = "Ada Nwosu", email = "ada@example.com") => {
-    signIn({ id: DEMO_SHOPPER, name, email, provider })
-    void useSession
-      .getState()
-      .signInDemo(provider, { keepProfile: { name, email } })
-      .catch(() => {})
-  }
+  return (provider: SessionUser["provider"], name = "Ada Nwosu", email = "ada@example.com") =>
+    useSession.getState().signInDemo(provider, { keepProfile: { name, email } })
 }
 
 const EMAIL = /^\S+@\S+\.\S+$/

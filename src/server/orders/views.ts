@@ -122,6 +122,11 @@ export async function shopperOrders(customerId: string, q: { before?: string; li
   return { ...result, counts: { checkouts: counts?.checkouts ?? 0, shipped: counts?.shipped ?? 0 } }
 }
 
+/** Platform order queue, newest first. The admin receives order summaries only; detail is fetched on demand. */
+export async function adminOrders(q: { before?: string; limit: number }) {
+  return page(await db(), q.before ? beforeOrderCursor(q.before) : undefined, q.limit)
+}
+
 /** SQL view of fulfilment for filters (stored state lags shipping's events until the next write or job). */
 const fulfilmentSql = sql<string>`case
   when ${orderStates.fulfilmentStatus} = 'cancelled' or ${orderRefs.status} = 'cancelled' then 'cancelled'

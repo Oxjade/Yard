@@ -105,5 +105,5 @@ export async function syncSavedWithServer(shopperId: string) {
 
 /** Signed out: the account's wishlist and follows leave with it (they stay on the server for the next sign-in). */
 export function clearAccountSaves() {
-  if (useSaved.getState().owner) useSaved.setState({ wishlist: [], following: [], owner: null, unmerged: false })
+  if (useSaved.getState().owner) useSaved.setState({ wishlist: [], following: [], recentlyViewed: [], owner: null, unmerged: false })
 }

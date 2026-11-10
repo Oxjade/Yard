@@ -12,7 +12,8 @@
     "db:check": "node scripts/db-check.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "start:demo": "node scripts/start-demo.mjs",
-    "admin:create": "node --conditions=react-server --import tsx scripts/create-admin.mjs"
+    "admin:create": "node --conditions=react-server --import tsx scripts/create-admin.mjs",
+    "maintenance:approved-brand-setup": "node --conditions=react-server --import tsx scripts/fix-approved-brand-setup.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.15",

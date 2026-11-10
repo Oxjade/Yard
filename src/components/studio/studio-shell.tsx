@@ -60,7 +60,7 @@ import { useRealtimeEvent, useRealtimeEventName } from "@/lib/realtime/use-realt
 import { useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
-import { payoutBalances } from "@/lib/payouts"
+import { payoutBalances, payoutBlockedReason } from "@/lib/payouts"
 import { useAdmin } from "@/lib/stores/admin"
 import { useStudio } from "@/lib/stores/studio"
 
@@ -327,6 +327,19 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   const ready = liveBrand ? !!livePayouts.data : studioReady && adminReady
   // A failed read resolves the card (no endless placeholder); the Payouts page shows the error and a retry.
   const payoutsFailed = !!liveBrand && !livePayouts.data && !!livePayouts.error
+  const otherCurrencyEarnings = liveBrand && !liveBalance ? (livePayouts.data?.balances.find((b) => b.availableMinor > 0 || b.pendingMinor > 0)?.currency ?? null) : null
+  const payoutReason = liveBrand && financeView ? payoutBlockedReason({
+    hasSummary: !!livePayouts.data,
+    failed: !!livePayouts.error,
+    onHold: livePayouts.data?.rules.onHold ?? false,
+    holdReason: livePayouts.data?.rules.holdReason ?? null,
+    hasAccount: !!livePayouts.data?.account,
+    cooldownUntil: livePayouts.data?.rules.cooldownUntil ?? null,
+    otherCurrency: otherCurrencyEarnings,
+    availableMinor: liveBalance?.availableMinor ?? 0,
+    minimumMinor: livePayouts.data?.rules.minPayoutMinor ?? 0,
+    currency: cur,
+  }) : null
   const amount = formatMoney(available, cur)
 
   // Live counts for the signed-in brand: unread conversations (the realtime provider keeps the
@@ -425,11 +438,11 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
                 icon: WalletIcon,
                 label: "Available to pay out",
                 value: ready ? amount : null,
-                action: available > 0 ? "Request payout" : "View payouts",
+                action: available > 0 && !payoutReason ? "Request payout" : "View payouts",
                 href: "/studio/payouts",
                 attention: false,
-                dot: available > 0,
-                summary: `Available to pay out: ${amount}`,
+                dot: available > 0 && !payoutReason,
+                summary: payoutReason ? `${payoutReason} Available to pay out: ${amount}` : `Available to pay out: ${amount}`,
               }
       }
       account={

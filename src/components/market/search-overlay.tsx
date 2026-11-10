@@ -11,16 +11,22 @@ import { chooseArea } from "@/components/around/around-store"
 import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
 import { browseLinks } from "@/config/site"
 import { CHART_SLUGS, chartLabels } from "@/lib/api/contracts/charts"
+import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import { fold, searchAreas } from "@/lib/around/gazetteer"
-import { categories, searchBrands, searchProducts } from "@/lib/data"
-import { brandById } from "@/lib/data/brands"
+import { categories } from "@/lib/data"
 import { create } from "zustand"
+import { useSession } from "@/lib/stores/session"
 import { BrandMark } from "./brand-mark"
 import { Price } from "./price"
 
 export const useSearchOverlay = create<{ open: boolean; setOpen: (o: boolean) => void }>((set) => ({ open: false, setOpen: (open) => set({ open }) }))
 
 const suggestions = ["hoodie", "silver", "sneakers", "ceramics", "fragrance", "kente"]
+type SearchResponse = {
+  items: { productId: string; brandId: string; brandName: string; slug: string | null; title: string; image: string | null; display: { amount: number; currency: string } }[]
+  brands: { brandId: string; handle: string; name: string; city: string; country: string }[]
+}
 
 /** Boards whose name matches the query ("trend" → Trending); "chart" or "charts" lists them all. */
 function matchCharts(term: string) {
@@ -45,6 +51,9 @@ export function SearchOverlay() {
   const open = useSearchOverlay((s) => s.open)
   const setOpen = useSearchOverlay((s) => s.setOpen)
   const [q, setQ] = useState("")
+  const currency = useSession((s) => s.currency)
+  const [remote, setRemote] = useState<{ term: string; data: SearchResponse } | null>(null)
+  const [remoteError, setRemoteError] = useState<{ term: string; message: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focus = useFocusReturn(searchOpener)
 
@@ -59,17 +68,38 @@ export function SearchOverlay() {
     return () => window.removeEventListener("keydown", onKey)
   }, [setOpen])
 
+  useEffect(() => {
+    const term = q.trim()
+    if (term.length < 2) return
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      void api<SearchResponse>("/api/search", { query: { q: term, currency, limit: 6 }, signal: controller.signal })
+        .then((data) => {
+          setRemote({ term, data })
+          setRemoteError(null)
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setRemoteError({ term, message: errorMessage(error, "Search couldn't be loaded.") })
+        })
+    }, 180)
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [q, currency])
+
   const results = useMemo(() => {
     const term = q.trim()
     if (term.length < 2) return null
+    const data = remote?.term === term ? remote.data : null
     return {
-      products: searchProducts({ q: term }).slice(0, 6),
-      brands: searchBrands({ q: term }).slice(0, 4),
+      products: data?.items ?? [],
+      brands: data?.brands ?? [],
       categories: categories.filter((c) => c.name.toLowerCase().includes(term.toLowerCase())).slice(0, 3),
       cities: searchAreas(term, 4),
       charts: matchCharts(term).slice(0, 7),
     }
-  }, [q])
+  }, [q, remote])
 
   const close = () => setOpen(false)
   function submit(e: React.FormEvent) {
@@ -79,7 +109,10 @@ export function SearchOverlay() {
     router.push(`/shop?q=${encodeURIComponent(q.trim())}`)
   }
 
-  const empty = results && !results.products.length && !results.brands.length && !results.categories.length && !results.cities.length && !results.charts.length
+  const term = q.trim()
+  const loading = term.length >= 2 && remote?.term !== term && remoteError?.term !== term
+  const error = remoteError?.term === term ? remoteError.message : null
+  const empty = results && !loading && !error && !results.products.length && !results.brands.length && !results.categories.length && !results.cities.length && !results.charts.length
   const chip = "inline-flex h-10 items-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-ink transition-colors hover:border-white/25 hover:bg-white/6 focus-visible:outline-2 focus-visible:outline-violet"
 
   return (
@@ -159,6 +192,10 @@ export function SearchOverlay() {
                         </div>
                       </div>
                     </div>
+                  ) : loading ? (
+                    <p role="status" className="py-8 text-center text-sm text-ink-2">Searching the marketplace…</p>
+                  ) : error ? (
+                    <p role="alert" className="py-8 text-center text-sm text-danger">{error}</p>
                   ) : empty ? (
                     <p className="py-8 text-center text-sm text-ink-2">Nothing matches “{q}”. Try a brand name, a city or a material.</p>
                   ) : (
@@ -170,7 +207,7 @@ export function SearchOverlay() {
                             {results.brands.map((b) => (
                               <li key={b.id}>
                                 <Link href={`/brands/${b.handle}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
-                                  <BrandMark brand={b} size="sm" />
+                                  <BrandMark brand={{ name: b.name, mark: { text: b.name.slice(0, 2).toUpperCase(), style: "condensed" } }} size="sm" />
                                   <span className="text-sm text-ink">{b.name}</span>
                                   <span className="text-xs text-ink-2">{b.city}</span>
                                 </Link>
@@ -184,16 +221,16 @@ export function SearchOverlay() {
                           <p className="mb-2 text-xs text-ink-3">Products</p>
                           <ul className="grid gap-1 sm:grid-cols-2">
                             {results.products.map((p) => (
-                              <li key={p.id}>
-                                <Link href={`/products/${p.slug}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
+                              <li key={p.productId}>
+                                <Link href={p.slug ? `/products/${p.slug}` : `/shop?q=${encodeURIComponent(q.trim())}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
                                   <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface">
-                                    <Image src={p.images[0].src} alt="" fill sizes="48px" className="object-cover" />
+                                    {p.image ? <Image src={p.image} alt="" fill sizes="48px" className="object-cover" /> : null}
                                   </span>
                                   <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm text-ink">{p.name}</span>
-                                    <span className="block truncate text-xs text-ink-2">{brandById.get(p.brandId)?.name}</span>
+                                    <span className="block truncate text-sm text-ink">{p.title}</span>
+                                    <span className="block truncate text-xs text-ink-2">{p.brandName}</span>
                                   </span>
-                                  <Price amount={p.price} currency={p.currency} className="text-xs" />
+                                  <Price amount={p.display.amount} currency={p.display.currency} className="text-xs" />
                                 </Link>
                               </li>
                             ))}

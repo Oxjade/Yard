@@ -2,17 +2,16 @@
 
 import { useEffect, useSyncExternalStore } from "react"
 import { create } from "zustand"
-import { persist, createJSONStorage, type StateStorage } from "zustand/middleware"
-import { toast } from "sonner"
 import type { CountryCode, CurrencyCode } from "@/config/markets"
 import type { BrandMark, CategorySlug, StorefrontAccent, StorefrontTemplate, StorefrontTypePreset } from "@/lib/data/types"
-import type { SessionUser } from "@/lib/stores/session"
+import { useSession, type SessionUser } from "@/lib/stores/session"
+import { errorMessage } from "@/lib/api/errors"
+import { getOnboarding, onboardingDataFromServer, saveOnboardingStep as saveOnboardingStepRequest, submitOnboarding as submitOnboardingRequest, type OnboardingDto, type OnboardingStatus } from "./remote"
 
 /**
- * Merchant onboarding progress, kept on this device so "Save and finish later" works.
+ * Merchant onboarding progress, loaded and saved against the signed-in shopper's application.
  * Passwords and full account numbers are never stored: the account step signs in through
- * the session, and the payout step keeps only the last four digits. In the backend phase
- * each step becomes a server action that writes the brand, storefront draft and product.
+ * the session, and the payout step keeps only the last four digits.
  */
 
 export type StepId = "account" | "brand" | "storefront" | "business" | "product" | "payments" | "publish"
@@ -27,7 +26,7 @@ export const STEPS: { id: StepId; label: string; title: string; description: str
   { id: "publish", label: "Submit", title: "Review and submit", description: "Check your storefront, then submit it for review. The platform team reviews new brands before they appear in the marketplace.", minutes: 0.5 },
 ]
 
-export type ImageRef = { src: string; alt: string; source: "library" | "upload" }
+export type ImageRef = { src: string; alt: string; source: "library" | "upload"; mediaId?: string }
 export type SizeSystem = "apparel" | "shoes" | "one" | "custom"
 export type DeliveryId = "domestic" | "regional" | "international" | "pickup"
 export type PayoutMethodId = "bank" | "mobile"
@@ -88,6 +87,15 @@ type OnboardingState = {
   data: OnboardingData
   savedAt: string | null
   publishedAt: string | null
+  onboardingId: string | null
+  revision: number
+  status: OnboardingStatus
+  reviewNote: string | null
+  submittedAt: string | null
+  dirtySteps: StepId[]
+  loadState: "loading" | "ready" | "error"
+  loadedUserId: string | null
+  loadError: string | null
   goTo: (step: number) => void
   next: () => void
   back: () => void
@@ -100,86 +108,153 @@ type OnboardingState = {
 const last = STEPS.length - 1
 const stamp = () => new Date().toISOString()
 
-let warnedQuota = false
-/** localStorage that never throws: photos can exceed the quota, so say so once instead of failing. */
-const safeStorage: StateStorage = {
-  getItem: (name) => {
-    try {
-      return localStorage.getItem(name)
-    } catch {
-      return null
-    }
-  },
-  setItem: (name, value) => {
-    try {
-      localStorage.setItem(name, value)
-    } catch {
-      if (!warnedQuota) {
-        warnedQuota = true
-        toast.error("This device is out of space for photos", { description: "Your progress is kept while this tab stays open. Remove a photo or two so it can be saved for later." })
-      }
-    }
-  },
-  removeItem: (name) => {
-    try {
-      localStorage.removeItem(name)
-    } catch {
-      /* storage unavailable */
-    }
-  },
+const initialState = {
+  step: 0,
+  maxReached: 0,
+  data: emptyData,
+  savedAt: null,
+  publishedAt: null,
+  onboardingId: null,
+  revision: 0,
+  status: "draft" as const,
+  reviewNote: null,
+  submittedAt: null,
+  dirtySteps: [] as StepId[],
+  loadState: "loading" as const,
+  loadedUserId: null,
+  loadError: null,
 }
 
-export const useOnboarding = create<OnboardingState>()(
-  persist(
-    (set, get) => ({
-      step: 0,
-      maxReached: 0,
-      data: emptyData,
-      savedAt: null,
-      publishedAt: null,
-      goTo: (step) => set({ step: Math.max(0, Math.min(last, step, get().maxReached)) }),
-      next: () => {
-        const step = Math.min(last, get().step + 1)
-        set({ step, maxReached: Math.max(get().maxReached, step), savedAt: stamp() })
-      },
-      back: () => set({ step: Math.max(0, get().step - 1) }),
-      update: (key, patch) => set({ data: { ...get().data, [key]: { ...get().data[key], ...patch } }, savedAt: stamp() }),
-      markSaved: () => set({ savedAt: stamp() }),
-      markPublished: () => set({ publishedAt: stamp() }),
-      reset: () => set({ step: 0, maxReached: 0, data: emptyData, savedAt: null, publishedAt: null }),
-    }),
-    {
-      name: "nocturne-studio-onboarding",
-      storage: createJSONStorage(() => safeStorage),
-      partialize: ({ step, maxReached, data, savedAt, publishedAt }) => ({ step, maxReached, data, savedAt, publishedAt }),
-      // Merge saved data over the defaults so fields added later are never undefined.
-      merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<OnboardingState>
-        const data = { ...emptyData } as OnboardingData
-        for (const key of Object.keys(emptyData) as (keyof OnboardingData)[]) {
-          data[key] = { ...emptyData[key], ...(p.data?.[key] ?? {}) } as never
-        }
-        return { ...current, ...p, data }
-      },
-      skipHydration: true,
-      version: 1,
-    },
-  ),
-)
+export const useOnboarding = create<OnboardingState>()((set, get) => ({
+  ...initialState,
+  goTo: (step) => set({ step: Math.max(0, Math.min(last, step, get().maxReached)) }),
+  next: () => {
+    const step = Math.min(last, get().step + 1)
+    set({ step, maxReached: Math.max(get().maxReached, step) })
+  },
+  back: () => set({ step: Math.max(0, get().step - 1) }),
+  update: (key, patch) => set({ data: { ...get().data, [key]: { ...get().data[key], ...patch } }, dirtySteps: [...new Set([...get().dirtySteps, key])], savedAt: stamp() }),
+  markSaved: () => set({ savedAt: stamp() }),
+  markPublished: () => set({ publishedAt: stamp(), status: "submitted" }),
+  reset: () => set({ ...initialState, loadState: "ready", loadedUserId: get().loadedUserId }),
+}))
 
-let rehydrateStarted = false
+const loads = new Map<string, Promise<void>>()
+const loadKey = (userId: string | null) => userId ?? "guest"
 
-/** Loads saved progress after mount, so the server HTML and first client render agree. */
+function applyDto(dto: OnboardingDto, user: SessionUser) {
+  const step = Math.max(0, STEPS.findIndex((item) => item.id === dto.currentStep))
+  const completed = dto.completedSteps.map((id) => STEPS.findIndex((item) => item.id === id)).filter((index) => index >= 0)
+  const published = dto.status === "submitted" || dto.status === "approved"
+  useOnboarding.setState({
+    data: onboardingDataFromServer(dto.data, user, dto.status === "approved" ? "brand" : "shopper"),
+    step,
+    maxReached: Math.min(last, Math.max(step, ...completed, 0)),
+    savedAt: dto.updatedAt,
+    publishedAt: published ? dto.submittedAt ?? dto.updatedAt : null,
+    onboardingId: dto.id,
+    revision: dto.revision,
+    status: dto.status,
+    reviewNote: dto.reviewNote,
+    submittedAt: dto.submittedAt,
+    dirtySteps: [],
+    loadState: "ready",
+    loadedUserId: user.id,
+    loadError: null,
+  })
+}
+
+export function ensureOnboardingLoaded(userId: string | null = useSession.getState().user?.id ?? null, force = false): Promise<void> {
+  const key = loadKey(userId)
+  const state = useOnboarding.getState()
+  if (!force && state.loadedUserId === userId && state.loadState === "ready") return Promise.resolve()
+  const active = loads.get(key)
+  if (active && !force) return active
+  useOnboarding.setState({ loadState: "loading", loadedUserId: userId, loadError: null })
+
+  const pending = Promise.resolve().then(async () => {
+    try {
+      const user = useSession.getState().user
+      if (!userId) {
+        if (useSession.getState().user) return
+        useOnboarding.setState({ ...initialState, loadState: "ready", loadedUserId: null })
+        return
+      }
+      if (!user || user.id !== userId) return
+      const response = await getOnboarding()
+      if (loads.get(key) !== pending || useSession.getState().user?.id !== userId) return
+      const dto = response.onboarding
+      if (dto) applyDto(dto, user)
+      else useOnboarding.setState({ ...initialState, data: { ...emptyData, account: { name: user.name, email: user.email, provider: user.provider } }, loadState: "ready", loadedUserId: userId })
+    } catch (error) {
+      if (loads.get(key) !== pending || useSession.getState().user?.id !== userId) return
+      useOnboarding.setState({ loadState: "error", loadedUserId: userId, loadError: errorMessage(error) })
+    } finally {
+      if (loads.get(key) === pending) loads.delete(key)
+    }
+  })
+  loads.set(key, pending)
+  return pending
+}
+
+export function reloadOnboarding() {
+  return ensureOnboardingLoaded(useSession.getState().user?.id ?? null, true)
+}
+
+function applySavedDto(dto: OnboardingDto) {
+  useOnboarding.setState({
+    onboardingId: dto.id,
+    revision: dto.revision,
+    status: dto.status,
+    reviewNote: dto.reviewNote,
+    submittedAt: dto.submittedAt,
+    savedAt: dto.updatedAt,
+  })
+}
+
+export async function saveOnboardingProgress(step: StepId): Promise<boolean> {
+  if (step === "publish") return true
+  const user = useSession.getState().user
+  if (!user) throw new Error("Sign in before saving your brand application.")
+  await ensureOnboardingLoaded(user.id)
+  const state = useOnboarding.getState()
+  if (state.loadedUserId !== user.id || state.loadState !== "ready") throw new Error(state.loadError ?? "Your application is still loading. Try again.")
+  const savedData = JSON.stringify(state.data[step])
+  const response = await saveOnboardingStepRequest(step, state.data, state.revision)
+  if (useSession.getState().user?.id !== user.id) throw new Error("Your account changed before the application was saved. Reload to continue.")
+  applySavedDto(response.onboarding)
+  const current = useOnboarding.getState()
+  const unchanged = JSON.stringify(current.data[step]) === savedData
+  if (unchanged) useOnboarding.setState({ dirtySteps: current.dirtySteps.filter((id) => id !== step) })
+  return unchanged
+}
+
+export async function submitOnboardingProgress() {
+  const user = useSession.getState().user
+  if (!user) throw new Error("Sign in before submitting your brand application.")
+  await ensureOnboardingLoaded(user.id)
+  const dirty = useOnboarding.getState().dirtySteps
+  for (const step of STEPS.map((item) => item.id).filter((id): id is Exclude<StepId, "publish"> => id !== "publish" && dirty.includes(id))) {
+    if (!(await saveOnboardingProgress(step))) throw new Error("This step changed while it was saving. Submit again to include your latest edits.")
+  }
+  const response = await submitOnboardingRequest(useOnboarding.getState().revision)
+  applySavedDto(response.onboarding)
+  useOnboarding.setState({ publishedAt: response.onboarding.submittedAt ?? stamp(), status: response.onboarding.status })
+}
+
+/** Loads saved progress after mount, so server HTML and the first client render agree. */
 export function useOnboardingHydrated() {
-  const hydrated = useSyncExternalStore(
-    (cb) => useOnboarding.persist.onFinishHydration(cb),
-    () => useOnboarding.persist.hasHydrated(),
+  const userId = useSession((state) => state.user?.id ?? null)
+  const ready = useSyncExternalStore(
+    (notify) => useOnboarding.subscribe(() => notify()),
+    () => {
+      const state = useOnboarding.getState()
+      return state.loadedUserId === userId && state.loadState !== "loading"
+    },
     () => false,
   )
   useEffect(() => {
-    if (rehydrateStarted) return
-    rehydrateStarted = true
-    void useOnboarding.persist.rehydrate()
-  }, [])
-  return hydrated
+    void ensureOnboardingLoaded(userId)
+  }, [userId])
+  return ready
 }

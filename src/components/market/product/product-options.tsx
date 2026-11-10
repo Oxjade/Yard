@@ -95,12 +95,12 @@ export function SizeGrid({
           <RadioGroupPrimitive.Item
             key={s}
             value={s}
-            disabled={out || disabled}
+            disabled={disabled}
             aria-label={out ? `${s}, sold out` : s}
             className={cn(
               "relative isolate flex aspect-square max-h-16 min-h-11 items-center justify-center rounded-md border text-sm tabular transition-[border-color,color,transform,scale] duration-150 active:scale-[0.96] active:duration-100",
               checked ? "border-purple text-ink" : invalid ? "border-danger/50 text-ink hover:border-danger/80" : "border-line text-ink hover:border-ink-2/60",
-              out && "cursor-not-allowed border-line-soft text-ink-3 line-through decoration-ink-3 hover:border-line-soft",
+              out && "border-line-soft text-ink-3 line-through decoration-ink-3 hover:border-ink-2/60",
               disabled && !out && "cursor-not-allowed text-ink-2 hover:border-line",
             )}
           >

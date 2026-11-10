@@ -20,6 +20,7 @@ import { duration, ease, spring } from "@/lib/motion"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import type { Brand, Drop, Product } from "@/lib/data/types"
+import { BackInStockButton } from "../back-in-stock-button"
 import { BrandMark } from "../brand-mark"
 import { FollowButton } from "../follow-button"
 import { NotifyButton } from "../notify-button"
@@ -185,7 +186,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           : `Your cart already holds the most you can buy at once (${MAX_QTY_PER_LINE}).`
       : action === "ready" && inBag > 0
         ? `${inBag} already in your cart.`
-        : action === "sold-out" && (productSoldOut || !sel.sizes.length)
+        : action === "sold-out" && !sel.variant
           ? `Sold out for now. Save it to keep it in your wishlist, or see more from ${brand.name} below.`
           : null
 
@@ -316,6 +317,8 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             <div className="mt-3 flex gap-2">
               {action === "locked" && activeDrop ? (
                 <NotifyButton drop={activeDrop} variant="primary" size="lg" className="h-14 flex-1 text-base" />
+              ) : action === "sold-out" && sel.variant && sel.stock === 0 ? (
+                <BackInStockButton variantId={sel.variant.id} className="min-w-0 flex-1" />
               ) : (
                 <Button
                   type="button"

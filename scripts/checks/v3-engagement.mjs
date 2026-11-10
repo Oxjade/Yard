@@ -487,6 +487,18 @@ async function main() {
     check("back-in-stock: malformed variant id is 400", (await post("/api/wishlist/back-in-stock", { variantId: "a b" }, { jar: S1.jar })).status === 400)
     const inStock = await post("/api/wishlist/back-in-stock", { variantId: V.S }, { jar: S1.jar })
     check("back-in-stock: an in-stock variant is 409", inStock.status === 409, brief(inStock))
+    const hidden = await post(`/api/admin/catalog/products/${P.id}/moderation`, { hidden: true, reason: `${TAG} back-in-stock visibility check` }, { jar: ADMIN })
+    let hiddenWatch = null
+    let restored = null
+    if (hidden.status === 200) {
+      try {
+        hiddenWatch = await post("/api/wishlist/back-in-stock", { variantId: V.XL }, { jar: S1.jar })
+      } finally {
+        restored = await post(`/api/admin/catalog/products/${P.id}/moderation`, { hidden: false, reason: `${TAG} restore visibility check` }, { jar: ADMIN })
+      }
+    }
+    check("back-in-stock: hidden product variants cannot be watched", hidden.status === 200 && hiddenWatch?.status === 404, `${brief(hidden)}; ${hiddenWatch ? brief(hiddenWatch) : "watch not attempted"}`)
+    check("back-in-stock: restore product after hidden-variant check", restored?.status === 200, restored ? brief(restored) : "restore not attempted")
     const b = await post("/api/wishlist/back-in-stock", { variantId: V.XS }, { jar: S1.jar })
     check("back-in-stock: watch a sold-out variant → 201", b.status === 201 && b.body.watching === true && b.body.productId === P.id, brief(b))
     const b2 = await post("/api/wishlist/back-in-stock", { variantId: V.XS }, { jar: S1.jar })

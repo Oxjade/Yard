@@ -14,7 +14,7 @@ import { badRequest, conflict, notFound } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { indexedProducts } from "../search"
-import { sampleProductDoc, sellableVariants } from "../search/catalog-port"
+import { hasLiveCatalog, sampleProductDoc, sellableVariants } from "../search/catalog-port"
 import { hmacHex } from "../security/crypto"
 import { keys } from "../security/keys"
 import { accountAgeDays, ingestSignal, type SignalActor, type SignalVerdict } from "../signals"
@@ -198,19 +198,22 @@ export async function mergeSaved(shopper: ShopperActor, input: { brandIds: strin
 
 /** The product a variant belongs to and its live availability (CATALOG), falling back to the index. */
 async function variantInfo(variantId: string): Promise<{ productId: string; brandId: string; available: number | null; label: string | null; title: string | null } | null> {
-  const [live] = await sellableVariants([variantId]).catch(() => [])
-  if (live) return { productId: live.productId, brandId: live.brandId, available: live.available, label: live.variantLabel, title: live.title }
+  if (await hasLiveCatalog()) {
+    const [live] = await sellableVariants([variantId])
+    return live ? { productId: live.productId, brandId: live.brandId, available: live.available, label: live.variantLabel, title: live.title } : null
+  }
+  for (const p of productById.values()) {
+    if (!sampleProductDoc(p.id)?.visible) continue
+    const v = p.variants.find((x) => x.id === variantId)
+    if (v) return { productId: p.id, brandId: p.brandId, available: Math.max(0, v.stock - v.reserved), label: Object.values(v.options).join(" / "), title: p.name }
+  }
   const d = await db()
   const [row] = await d
     .select({ productId: searchProducts.productId, brandId: searchProducts.brandId, title: searchProducts.title })
     .from(searchProducts)
-    .where(sql`${searchProducts.variantIds} @> array[${variantId}]::text[]`)
+    .where(and(eq(searchProducts.visible, true), sql`${searchProducts.variantIds} @> array[${variantId}]::text[]`))
     .limit(1)
   if (row) return { ...row, available: null, label: null }
-  for (const p of productById.values()) {
-    const v = p.variants.find((x) => x.id === variantId)
-    if (v) return { productId: p.id, brandId: p.brandId, available: Math.max(0, v.stock - v.reserved), label: Object.values(v.options).join(" / "), title: p.name }
-  }
   return null
 }
 
@@ -218,10 +221,21 @@ export async function requestBackInStock(userId: string, variantId: string) {
   const info = await variantInfo(variantId)
   if (!info) throw notFound("We couldn't find that size or colour.")
   if (info.available != null && info.available > 0) throw conflict("This one is in stock now.")
-  const d = await db()
-  const [pending] = await d.select({ n: count() }).from(backInStockRequests).where(and(eq(backInStockRequests.userId, userId), isNull(backInStockRequests.notifiedAt)))
-  if ((pending?.n ?? 0) >= 100) throw badRequest({ variantId: "You're watching 100 pieces already. Remove one first." })
   await withTx(async (tx) => {
+    const [account] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update").limit(1)
+    if (!account) throw notFound()
+    const [existing] = await tx
+      .select({ notifiedAt: backInStockRequests.notifiedAt })
+      .from(backInStockRequests)
+      .where(and(eq(backInStockRequests.userId, userId), eq(backInStockRequests.variantId, variantId)))
+      .for("update")
+      .limit(1)
+    if (existing && existing.notifiedAt === null) return
+    const [pending] = await tx
+      .select({ n: count() })
+      .from(backInStockRequests)
+      .where(and(eq(backInStockRequests.userId, userId), isNull(backInStockRequests.notifiedAt)))
+    if ((pending?.n ?? 0) >= 100) throw badRequest({ variantId: "You're watching 100 pieces already. Remove one first." })
     await tx
       .insert(backInStockRequests)
       .values({ id: newId("bis"), userId, productId: info.productId, variantId })

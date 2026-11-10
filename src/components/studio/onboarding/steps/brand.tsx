@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Image from "next/image"
 import { CheckIcon as Check, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,13 @@ import { BrandMark } from "@/components/market/brand-mark"
 import { categories } from "@/lib/data/catalog"
 import type { BrandMark as BrandMarkType } from "@/lib/data/types"
 import { cn } from "@/lib/utils"
+import { errorMessage } from "@/lib/api/errors"
 import { ChoiceCard, ChoiceGroup, control, Field, FieldMessage, inputClass, Panel, Segmented } from "@/components/studio/growth/form"
 import { ImagePicker } from "../image-picker"
-import { readImage } from "../image-utils"
 import { handleMessage, handleStatus, handleSuggestions, initials, slugify, type HandleStatus } from "../options"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
 import { BrandLogo } from "../storefront-preview"
+import { checkOnboardingHandle, uploadOnboardingImage } from "../remote"
 import { useOnboarding } from "../store"
 import { validateBrand } from "../validation"
 
@@ -26,14 +27,6 @@ const markStyles: { id: BrandMarkType["style"]; label: string }[] = [
   { id: "grotesk", label: "Grotesk" },
 ]
 
-/**
- * Availability, checked as the merchant types. In this build the check runs against the brands
- * the app knows about and answers at once; the backend check will be a request per keystroke pause.
- */
-function handleCheck(handle: string): HandleStatus | "checking" {
-  return handleStatus(handle)
-}
-
 export function BrandStep({ onNext }: StepProps) {
   const brand = useOnboarding((s) => s.data.brand)
   const city = useOnboarding((s) => s.data.business.city)
@@ -41,10 +34,34 @@ export function BrandStep({ onNext }: StepProps) {
   const set = (patch: Partial<typeof brand>) => update("brand", patch)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
+  const [retryCheck, setRetryCheck] = useState(0)
+  const [serverCheck, setServerCheck] = useState<{ handle: string; status: HandleStatus | "error" }>({ handle: "", status: "error" })
 
-  const form = useStepForm(() => validateBrand(useOnboarding.getState().data.brand), onNext)
+  const localStatus = handleStatus(brand.handle)
+  const needsServerCheck = localStatus === "available" || localStatus === "taken"
+  const check = needsServerCheck ? (serverCheck.handle === brand.handle ? serverCheck.status : "checking") : localStatus
+
+  useEffect(() => {
+    if (!needsServerCheck) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void checkOnboardingHandle(brand.handle, controller.signal)
+        .then((result) => setServerCheck({ handle: brand.handle, status: result.status as HandleStatus }))
+        .catch(() => {
+          if (!controller.signal.aborted) setServerCheck({ handle: brand.handle, status: "error" })
+        })
+    }, 300)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [brand.handle, needsServerCheck, retryCheck])
+
+  const form = useStepForm(() => {
+    const errors = validateBrand(useOnboarding.getState().data.brand)
+    return { ...errors, handle: check === "available" ? undefined : check === "checking" ? "Wait for the availability check to finish." : check === "error" ? "Check handle availability before continuing." : handleMessage[check] }
+  }, onNext)
   const e = form.errors
-  const check = handleCheck(brand.handle)
   const suggestions = check === "taken" || check === "reserved" ? handleSuggestions(brand.handle, city) : []
 
   function onName(name: string) {
@@ -59,10 +76,10 @@ export function BrandStep({ onNext }: StepProps) {
     setUploadError(null)
     setReading(true)
     try {
-      const src = await readImage(files[0], { max: 512, type: "image/webp", quality: 0.9 })
-      set({ logo: { src, alt: `${brand.name.trim() || "Brand"} logo`, source: "upload" }, logoMode: "upload" })
-    } catch {
-      setUploadError("We couldn't read that image. Try a PNG or JPG.")
+      const image = await uploadOnboardingImage(files[0])
+      set({ logo: { ...image, alt: `${brand.name.trim() || "Brand"} logo` }, logoMode: "upload" })
+    } catch (error) {
+      setUploadError(errorMessage(error, "We couldn't upload that image. Try a PNG or JPG."))
     } finally {
       setReading(false)
     }
@@ -101,6 +118,8 @@ export function BrandStep({ onNext }: StepProps) {
                 <span className="text-ink-3">Checking availability</span>
               ) : check === "available" ? (
                 <span className="text-violet">Available. Your storefront will live at /brands/{brand.handle}.</span>
+              ) : check === "error" ? (
+                <span className="text-danger">We couldn&apos;t check that handle. <button type="button" className="underline underline-offset-2" onClick={() => setRetryCheck((value) => value + 1)}>Try again</button></span>
               ) : check === "empty" ? (
                 e.handle ? <span className="text-danger">{e.handle}</span> : <span className="text-ink-3">Lowercase letters, numbers and hyphens, 3 to 30 characters.</span>
               ) : (

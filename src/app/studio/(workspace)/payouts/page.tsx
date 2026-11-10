@@ -37,7 +37,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { useNotifications } from "@/lib/stores/notifications"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { PAYOUT_HOLD_DAYS, payoutBalances } from "@/lib/payouts"
+import { PAYOUT_HOLD_DAYS, payoutBalances, payoutBlockedReason } from "@/lib/payouts"
 
 const HOLD_DAYS = PAYOUT_HOLD_DAYS
 
@@ -208,23 +208,18 @@ export default function StudioPayoutsPage() {
           : null
 
   const blockedReason = live
-    ? !summary.data
-      ? summary.error
-        ? "Your payouts couldn't be loaded. Try again above."
-        : "Loading your payouts…"
-      : rules?.onHold
-      ? rules.holdReason ?? "Payouts are on hold for this brand. Contact Yard support."
-      : !liveAccount
-        ? "Add a payout account in Settings before requesting a payout."
-        : rules?.cooldownUntil
-          ? `Your payout account changed recently. You can request a payout after ${new Date(rules.cooldownUntil).toLocaleString("en-GB")}.`
-          : otherCurrencyEarnings
-            ? `Your earnings are in ${otherCurrencyEarnings}, but your payout account receives ${cur}. Contact Yard support to pay them out.`
-            : availableMinor <= 0
-              ? `Nothing is available yet. Sales become available after delivery and the ${HOLD_DAYS}-day returns window.`
-              : minPayoutMinor && availableMinor < minPayoutMinor
-                ? `You can request a payout once ${formatMoney(minPayoutMinor, cur)} is available. You have ${formatMoney(availableMinor, cur)} now.`
-                : null
+    ? payoutBlockedReason({
+        hasSummary: !!summary.data,
+        failed: !!summary.error,
+        onHold: rules?.onHold ?? false,
+        holdReason: rules?.holdReason ?? null,
+        hasAccount: !!liveAccount,
+        cooldownUntil: rules?.cooldownUntil ?? null,
+        otherCurrency: otherCurrencyEarnings,
+        availableMinor,
+        minimumMinor: minPayoutMinor,
+        currency: cur,
+      })
     : availableMinor <= 0
       ? demoBalances.inReview + demoBalances.processing > 0
         ? `Your available balance is already requested. New earnings become available ${HOLD_DAYS} days after delivery.`
