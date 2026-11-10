@@ -114,6 +114,17 @@ export const disputeEvidenceBody = z
 
 export const adminDisputesQuery = z.object({
   status: z.enum(DISPUTE_STATES).optional(),
+  before: orderCursor.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+})
+
+const exceptionCursor = z.string().max(120).refine((value) => {
+  const [timestamp, kind, id, extra] = value.split("|")
+  return extra === undefined && isoDateTime.safeParse(timestamp).success && ["refund", "return"].includes(kind) && safeId().safeParse(id).success
+}, { error: "That exception cursor isn't valid." })
+
+export const adminOrderExceptionsQuery = z.object({
+  cursor: exceptionCursor.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
 

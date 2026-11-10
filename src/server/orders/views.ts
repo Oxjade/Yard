@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, ilike, inArray, lt, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
 import type { z } from "zod"
 import { db, type Executor } from "../db"
 import { brands, orderGroups, orderRefs } from "../db/schema"
@@ -125,6 +125,68 @@ export async function shopperOrders(customerId: string, q: { before?: string; li
 /** Platform order queue, newest first. The admin receives order summaries only; detail is fetched on demand. */
 export async function adminOrders(q: { before?: string; limit: number }) {
   return page(await db(), q.before ? beforeOrderCursor(q.before) : undefined, q.limit)
+}
+
+/** Oldest unresolved return requests and refunds needing attention, merged into one server-paged queue. */
+export async function adminOrderExceptions(q: { cursor?: string; limit: number }) {
+  const d = await db()
+  const cursor = q.cursor ? (() => {
+    const [at, kind, id] = q.cursor!.split("|")
+    return { at: new Date(at), kind: kind as "refund" | "return", id }
+  })() : null
+  const after = (at: SQLWrapper, kind: "refund" | "return", id: SQLWrapper) => {
+    if (!cursor) return undefined
+    const typeOrder = kind.localeCompare(cursor.kind)
+    if (typeOrder > 0) return or(gt(at, cursor.at), eq(at, cursor.at))
+    if (typeOrder < 0) return gt(at, cursor.at)
+    return or(gt(at, cursor.at), and(eq(at, cursor.at), gt(id, cursor.id)))
+  }
+  const pageSize = q.limit + 1
+  const [returns, refunds] = await Promise.all([
+    d.select({
+      id: orderReturns.id,
+      createdAt: orderReturns.requestedAt,
+      status: orderReturns.status,
+      reason: orderReturns.reason,
+      note: orderReturns.note,
+      orderId: orderRefs.id,
+      orderReference: orderRefs.reference,
+      brandId: brands.id,
+      brandName: brands.name,
+      currency: orderRefs.currency,
+    }).from(orderReturns)
+      .innerJoin(orderRefs, eq(orderRefs.id, orderReturns.orderRefId))
+      .innerJoin(brands, eq(brands.id, orderReturns.brandId))
+      .where(and(eq(orderReturns.status, "requested"), after(orderReturns.requestedAt, "return", orderReturns.id)))
+      .orderBy(asc(orderReturns.requestedAt), asc(orderReturns.id))
+      .limit(pageSize),
+    d.select({
+      id: orderRefunds.id,
+      createdAt: orderRefunds.createdAt,
+      status: orderRefunds.status,
+      reason: orderRefunds.reason,
+      failureReason: orderRefunds.failureReason,
+      amountMinor: orderRefunds.amountMinor,
+      currency: orderRefunds.currency,
+      orderId: orderRefs.id,
+      orderReference: orderRefs.reference,
+      brandId: brands.id,
+      brandName: brands.name,
+    }).from(orderRefunds)
+      .innerJoin(orderRefs, eq(orderRefs.id, orderRefunds.orderRefId))
+      .innerJoin(brands, eq(brands.id, orderRefunds.brandId))
+      .where(and(inArray(orderRefunds.status, ["pending", "failed"]), after(orderRefunds.createdAt, "refund", orderRefunds.id)))
+      .orderBy(asc(orderRefunds.createdAt), asc(orderRefunds.id))
+      .limit(pageSize),
+  ])
+  const items = [
+    ...returns.map((item) => ({ ...item, kind: "return" as const, createdAt: item.createdAt.toISOString(), amountMinor: null, failureReason: null })),
+    ...refunds.map((item) => ({ ...item, kind: "refund" as const, createdAt: item.createdAt.toISOString(), note: null })),
+  ].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id))
+  const hasMore = items.length > q.limit
+  const pageItems = items.slice(0, q.limit)
+  const last = pageItems[pageItems.length - 1]
+  return { items: pageItems, nextCursor: hasMore && last ? `${last.createdAt}|${last.kind}|${last.id}` : null }
 }
 
 /** SQL view of fulfilment for filters (stored state lags shipping's events until the next write or job). */
