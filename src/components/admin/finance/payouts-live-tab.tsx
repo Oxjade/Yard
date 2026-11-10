@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
@@ -15,6 +14,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
 import { formatMoney } from "@/lib/money"
 import { useServerSession } from "@/lib/session/use-server-session"
+import { actionError, ActionErrorNote, ReauthCodeField, useReauth, type ActionError } from "./reauth"
 
 type Payout = {
   id: string
@@ -67,29 +67,57 @@ const tone: Record<string, "muted" | "info" | "attention" | "success" | "danger"
 const currencyOf = (value: string): CurrencyCode => (value in currencies ? (value as CurrencyCode) : "USD")
 const amountOf = (payout: Payout) => formatMoney(payout.amountMinor, currencyOf(payout.currency))
 const dateTime = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })
-const needsReauth = (error: unknown) => error instanceof ApiError && error.status === 403 && error.fields?.reauth === "required"
+const PAGE = 200
+/** The statuses the overview's payout queue counts. */
+const openStatuses = ["requested", "awaiting_second_approval", "approved", "sending", "processing", "failed"]
 
-export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolean }) {
+/**
+ * Admin › Finance › Payouts. The status filter runs on the server and older payouts page in with
+ * "Load older", so a payout waiting longest for approval is never cut off by the page size. Counts
+ * for open statuses come from the overview's payout queue (`queue`), which covers every payout.
+ */
+export function PayoutsLiveTab({ focus, queue }: { focus?: string | null; ready: boolean; queue?: { status: string; n: number }[] }) {
   const adminId = useServerSession((session) => session.admin?.id)
   const [filter, setFilter] = useState("all")
   const [selectedId, setSelectedId] = useState<string | null>(focus ?? null)
   const [decision, setDecision] = useState<Decision | null>(null)
   const [reason, setReason] = useState("")
-  const [authCode, setAuthCode] = useState("")
-  const [reauthRequired, setReauthRequired] = useState(false)
+  const reauth = useReauth()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ActionError | null>(null)
 
-  const list = useApi<PayoutsResponse>("admin.finance.payouts", () => api<PayoutsResponse>("/api/admin/finance/payouts", { query: { limit: 200 } }), { keepPrevious: false })
+  const status = filter === "all" ? undefined : filter
+  const list = useApi<PayoutsResponse>(`admin.finance.payouts:${filter}`, () => api<PayoutsResponse>("/api/admin/finance/payouts", { query: { limit: PAGE, status } }), { keepPrevious: false })
   const detail = useApi<PayoutDetailResponse>(selectedId ? `admin.finance.payout:${selectedId}` : null, () => api<PayoutDetailResponse>(`/api/admin/finance/payouts/${selectedId}`), { keepPrevious: false })
-  const allRows = list.data?.payouts ?? []
-  const rows = allRows.filter((payout) => filter === "all" || payout.status === filter)
+  // Older pages belong to the first page they were loaded under; a revalidation starts paging again.
+  const [older, setOlder] = useState<{ base: PayoutsResponse; payouts: Payout[]; cursor: string | null } | null>(null)
+  const [moreBusy, setMoreBusy] = useState(false)
+  const first = list.data
+  const extra = older && older.base === first ? older : null
+  const rows = first ? (extra ? [...first.payouts, ...extra.payouts] : first.payouts) : []
+  const cursor = extra ? extra.cursor : first && first.payouts.length >= PAGE ? first.nextBefore : null
+  const countOf = (value: string) => queue?.filter((row) => row.status === value).reduce((sum, row) => sum + row.n, 0)
+
+  async function loadOlder() {
+    if (!first || !cursor || moreBusy) return
+    setMoreBusy(true)
+    try {
+      const page = await api<PayoutsResponse>("/api/admin/finance/payouts", { query: { limit: PAGE, status, before: cursor } })
+      const seen = new Set([...first.payouts, ...(extra?.payouts ?? [])].map((payout) => payout.id))
+      setOlder({ base: first, payouts: [...(extra?.payouts ?? []), ...page.payouts.filter((payout) => !seen.has(payout.id))], cursor: page.payouts.length >= PAGE ? page.nextBefore : null })
+    } catch (cause) { toast.error(errorMessage(cause, "Couldn't load older payouts.")) } finally { setMoreBusy(false) }
+  }
+
+  async function reload() {
+    setError(null)
+    setDecision(null)
+    await Promise.all([list.revalidate(), detail.revalidate()])
+  }
 
   function beginDecision(payout: Payout, kind: Decision["kind"]) {
     setDecision({ payout, kind })
     setReason("")
-    setAuthCode("")
-    setReauthRequired(false)
+    reauth.reset()
     setError(null)
   }
 
@@ -99,9 +127,7 @@ export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolea
     setBusy(true)
     setError(null)
     try {
-      if (reauthRequired) {
-        await api("/api/auth/reauth", { method: "POST", query: { as: "admin" }, body: { code: authCode } })
-      }
+      if (!(await reauth.verify())) return
       const { payout, kind } = decision
       await api(`/api/admin/finance/payouts/${payout.id}/${kind}`, {
         method: "POST",
@@ -109,11 +135,13 @@ export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolea
       })
       await Promise.all([list.revalidate(), detail.revalidate()])
       setDecision(null)
-      setReauthRequired(false)
       toast.success(kind === "approve" ? "Approval recorded" : "Payout rejected", { description: `${amountOf(payout)} for ${payout.brandName ?? payout.brandId}.` })
     } catch (cause) {
-      if (needsReauth(cause)) setReauthRequired(true)
-      else setError(errorMessage(cause, "The payout decision couldn't be saved."))
+      if (!reauth.catches(cause)) {
+        setError(actionError(cause, "The payout decision couldn't be saved."))
+        // The payout moved on under us (another admin decided it): show its current state.
+        if (cause instanceof ApiError && (cause.status === 409 || cause.status === 422)) void Promise.all([list.revalidate(), detail.revalidate()])
+      }
     } finally {
       setBusy(false)
     }
@@ -183,15 +211,10 @@ export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolea
               <Label htmlFor="payout-decision-reason">{decision.kind === "approve" ? "Note (optional)" : "Reason"}</Label>
               <Textarea id="payout-decision-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} required={decision.kind === "reject"} rows={3} />
             </div>
-            {reauthRequired ? (
-              <div className="grid max-w-sm gap-1.5">
-                <Label htmlFor="payout-auth-code">Authenticator code</Label>
-                <Input id="payout-auth-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" value={authCode} onChange={(event) => setAuthCode(event.target.value)} required />
-              </div>
-            ) : null}
-            {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
+            <ReauthCodeField reauth={reauth} id="payout-auth-code" className="max-w-sm" />
+            <ActionErrorNote error={error} onReload={() => void reload()} />
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" loading={busy} disabled={busy || (reauthRequired && !authCode.trim()) || (decision.kind === "reject" && reason.trim().length < 3)}>{reauthRequired ? "Verify and retry" : decision.kind === "approve" ? "Record approval" : "Reject payout"}</Button>
+              <Button type="submit" loading={busy} disabled={busy || reauth.waiting || (decision.kind === "reject" && reason.trim().length < 3)}>{reauth.required ? "Verify and retry" : decision.kind === "approve" ? "Record approval" : "Reject payout"}</Button>
               <Button type="button" variant="ghost" disabled={busy} onClick={() => setDecision(null)}>Cancel</Button>
             </div>
           </form>
@@ -219,12 +242,12 @@ export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolea
         </Panel>
       ) : null}
 
-      <Panel title="Payouts" description={list.data ? `${rows.length} of ${allRows.length} payouts. Each payout requires approvals from two different admins.` : "Brand payout requests and their approval history."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">
+      <Panel title="Payouts" description={list.data ? `${rows.length} ${filter === "all" ? "" : `${statusLabel[filter]?.toLowerCase() ?? filter} `}payouts loaded${cursor ? ", newest first" : ""}. Each payout requires approvals from two different admins.` : "Brand payout requests and their approval history."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Label htmlFor="payout-status-filter" className="sr-only">Payout status</Label>
           <select id="payout-status-filter" className="h-10 rounded-md border border-white/10 bg-obsidian px-3 text-sm text-ink" value={filter} onChange={(event) => setFilter(event.target.value)}>
-            <option value="all">All statuses ({allRows.length})</option>
-            {statuses.map((status) => <option key={status} value={status}>{statusLabel[status]} ({allRows.filter((payout) => payout.status === status).length})</option>)}
+            <option value="all">All statuses</option>
+            {statuses.map((value) => { const n = countOf(value); return <option key={value} value={value}>{statusLabel[value]}{n !== undefined && openStatuses.includes(value) ? ` (${n})` : ""}</option> })}
           </select>
           {list.error ? <Button type="button" size="sm" variant="secondary" onClick={() => void list.revalidate()}>Retry</Button> : null}
           {list.error ? <p role="alert" className="w-full text-sm text-danger">{errorMessage(list.error, "Couldn't load payouts.")}</p> : null}
@@ -241,6 +264,7 @@ export function PayoutsLiveTab({ focus }: { focus?: string | null; ready: boolea
           initialPageSize={25}
           minWidth={360}
         />
+        {cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={moreBusy} disabled={moreBusy} onClick={() => void loadOlder()}>Load older payouts</Button></div> : null}
       </Panel>
     </div>
   )

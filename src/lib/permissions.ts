@@ -128,6 +128,10 @@ export function canAdmin(role: AdminRole, permission: AdminPermission | "any_adm
   return permission === "any_admin" || (adminRolePermissions[role] ?? []).includes(permission)
 }
 
+/** Admin roles that can see Admin › Finance and approve / run payouts. The ledger's access checks read this too. */
+export const ADMIN_FINANCE_ROLES = ["owner", "finance"] as const satisfies readonly AdminRole[]
+export const canAdminFinance = (role: AdminRole) => (ADMIN_FINANCE_ROLES as readonly AdminRole[]).includes(role)
+
 /** Brand and admin permission names are disjoint, so the permission says which table to read. */
 export function can(role: TeamRole | AdminRole, permission: BrandPermission | AdminPermission) {
   if (isBrandPermission(permission)) return role in brandRolePermissions && canBrand(role as TeamRole, permission)

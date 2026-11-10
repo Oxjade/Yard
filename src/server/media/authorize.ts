@@ -92,6 +92,9 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
     return { ...base, purpose: "inbox_attachment", conversationId: c.id }
   }
   if (q.conversationId) throw badRequest({ conversationId: "Only inbox attachments belong to a conversation." })
+  // Onboarding photos belong to the applicant (shopper scope); the brand gets them through the
+  // ownership transfer at approval, never by uploading them itself.
+  if (q.purpose === "onboarding_image") throw forbidden("Onboarding photos are uploaded by the applicant, not by a brand.")
   if (q.purpose === "social_post" && !canBrand(actor.role, "content.publish")) throw forbidden()
   if (q.purpose === "location_image" && !canBrand(actor.role, "locations.manage")) throw forbidden()
   assertBrandMayPublish(actor)

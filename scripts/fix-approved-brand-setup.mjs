@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Run with the same NODE_ENV and YARD_DATA_DIR as Yard. NODE_ENV defaults to production.
 // Stop Yard first: PGlite permits one process per data directory.
+// Opening the database brings it up to THIS checkout's schema (pending migrations and seeds run first,
+// as when Yard boots), even on a dry run. Run it from the checkout you are about to deploy.
 
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
@@ -15,7 +17,7 @@ try {
   process.exit(2)
 }
 if (args.help) {
-  console.log(`${usage}\nWithout --apply, this only reports changes. --apply commits the listed changes in one transaction.\nRun with Yard's NODE_ENV and YARD_DATA_DIR; NODE_ENV defaults to production.`)
+  console.log(`${usage}\nWithout --apply, this only reports the brand changes. --apply commits them in one transaction, with an audit entry per brand.\nEither way, opening the database first applies this checkout's pending migrations and seeds (as Yard's boot does), so run it from the checkout you are about to deploy.\nRun with Yard's NODE_ENV and YARD_DATA_DIR; NODE_ENV defaults to production.`)
   process.exit(0)
 }
 
@@ -34,7 +36,7 @@ globalThis.__yard = { ...(globalThis.__yard ?? {}), schedulers: true }
 
 let root
 try {
-  const [{ getDb }, { db, withTx }, schema, { and, asc, desc, eq, isNotNull, lte }, { createStarterShipping }, { onboardingSku }, markets] = await Promise.all([
+  const [{ getDb }, { db, withTx }, schema, { and, asc, desc, eq, isNotNull, lte }, { createStarterShipping }, { onboardingSku }, markets, { writeAudit }] = await Promise.all([
     import("@/server/db/client"),
     import("@/server/db"),
     import("@/server/db/schema"),
@@ -42,6 +44,7 @@ try {
     import("@/server/shipping/profile"),
     import("@/server/catalog/onboarding"),
     import("@/config/markets"),
+    import("@/server/audit"),
   ])
   const { brands, brandOnboardings, catalogProducts, catalogVariants, shippingProfiles, shippingZones } = schema
   root = await getDb()
@@ -55,7 +58,9 @@ try {
     })
     .from(brandOnboardings)
     .innerJoin(brands, eq(brands.id, brandOnboardings.brandId))
-    .where(and(eq(brandOnboardings.status, "approved"), eq(brands.reviewStatus, "verified"), isNotNull(brandOnboardings.reviewedAt)))
+    // Approval alone qualifies (as in reviewOnboarding): a brand restricted or suspended since then
+    // still needs its profile for when it is reinstated, which doesn't create one.
+    .where(and(eq(brandOnboardings.status, "approved"), isNotNull(brandOnboardings.reviewedAt)))
     .orderBy(desc(brandOnboardings.reviewedAt))
 
   const latestApplication = new Map()
@@ -129,10 +134,11 @@ try {
 
   console.log(`Mode: ${args.apply ? "APPLY" : "DRY RUN"}`)
   console.log(`Starter shipping profiles to create: ${shippingPlans.length}`)
-  for (const plan of shippingPlans) console.log(`  ${plan.brand.handle} (${plan.brand.id})`)
+  const standing = (brand) => (brand.reviewStatus === "verified" ? "" : `, currently ${brand.reviewStatus}`)
+  for (const plan of shippingPlans) console.log(`  ${plan.brand.handle} (${plan.brand.id}${standing(plan.brand)})`)
   console.log(`Onboarding SKU groups to shorten: ${skuPlans.length}`)
   for (const plan of skuPlans) {
-    console.log(`  ${plan.brand.handle} / ${plan.product.id}`)
+    console.log(`  ${plan.brand.handle} / ${plan.product.id}${standing(plan.brand) ? ` (${standing(plan.brand).slice(2)})` : ""}`)
     for (const variant of plan.variants) console.log(`    ${variant.sku} -> ${variant.nextSku}`)
   }
   for (const skip of [...profileSkips, ...skuSkips]) console.log(`SKIP ${skip}`)
@@ -140,6 +146,25 @@ try {
   if (args.apply && (shippingPlans.length || skuPlans.length)) {
     await withTx(async (tx) => {
       for (const plan of shippingPlans) await createStarterShipping(plan.brand, plan.options)
+      // One audit entry per brand, so a merchant's audit trail explains the new profile and SKUs.
+      const changedBrands = new Map()
+      for (const plan of shippingPlans) changedBrands.set(plan.brand.id, { brand: plan.brand, starterShipping: { handling: plan.options.handling, delivery: plan.options.delivery }, skus: [] })
+      for (const plan of skuPlans) {
+        const entry = changedBrands.get(plan.brand.id) ?? { brand: plan.brand, starterShipping: null, skus: [] }
+        for (const variant of plan.variants) entry.skus.push({ variantId: variant.id, from: variant.sku, to: variant.nextSku })
+        changedBrands.set(plan.brand.id, entry)
+      }
+      for (const { brand, starterShipping, skus } of changedBrands.values()) {
+        await writeAudit({
+          actor: { kind: "system", name: "Maintenance script" },
+          action: "maintenance.approved_brand_setup",
+          target: brand.handle,
+          subjectType: "brand",
+          subjectId: brand.id,
+          brandId: brand.id,
+          meta: { starterShipping, skus },
+        })
+      }
       for (const plan of skuPlans) {
         for (const variant of plan.variants) {
           await tx.update(catalogVariants).set({ sku: `__tmp_${crypto.randomUUID().replaceAll("-", "")}` }).where(eq(catalogVariants.id, variant.id))

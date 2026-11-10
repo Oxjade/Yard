@@ -15,7 +15,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
-import { ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
+import { AdminImg, ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
 import { ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, daysSince, formatDate, plural, relDays } from "./format"
@@ -169,7 +169,14 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
 
 /** What a submitted Studio application says, as the applicant wrote it: brand, business, first product and payout. */
 function ApplicationSection({ data }: { data: NonNullable<BrandApplication["application"]> }) {
-  const { brand, business, product, payments } = data
+  const { brand, storefront, business, product, payments } = data
+  // The applicant's own uploads are private until approval: read them as admin (brands.restrict, audited).
+  const mediaSrc = (id: string) => `/api/media/${encodeURIComponent(id)}?as=admin`
+  const photos = [
+    ...(brand?.logoMediaId ? [{ key: "logo", src: mediaSrc(brand.logoMediaId), alt: "Logo" }] : []),
+    ...(storefront?.coverMediaId || storefront?.coverPath ? [{ key: "cover", src: storefront.coverMediaId ? mediaSrc(storefront.coverMediaId) : storefront.coverPath!, alt: "Storefront cover" }] : []),
+    ...(product?.images ?? []).map((image, i) => ({ key: `product-${i}`, src: "mediaId" in image ? mediaSrc(image.mediaId) : image.path, alt: image.alt || `First product, photo ${i + 1}` })),
+  ]
   const sizes = product?.sizes?.map((x) => `${x.label} (${x.stock})`).join(", ")
   const rows: { label: string; value: string | null | undefined }[] = [
     { label: "About the brand", value: brand?.description },
@@ -189,6 +196,16 @@ function ApplicationSection({ data }: { data: NonNullable<BrandApplication["appl
             <dd className={cn("text-[13px] break-words", r.value ? "text-ink-2" : "text-ink-3")}>{r.value || "Not given"}</dd>
           </div>
         ))}
+        <div className="grid gap-1.5 px-3 py-2.5">
+          <dt className="text-[11px] text-ink-3">Photos</dt>
+          <dd className={cn("text-[13px]", photos.length ? "flex flex-wrap gap-2" : "text-ink-3")}>
+            {photos.length
+              ? photos.map((p) => (
+                  <AdminImg key={p.key} src={p.src} alt={p.alt} className="size-16 rounded-md border border-white/8" />
+                ))
+              : "Not given"}
+          </dd>
+        </div>
       </dl>
     </DetailSection>
   )

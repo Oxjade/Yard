@@ -13,6 +13,13 @@ async function applyIdentityChange(surface: SessionSurface) {
   resetApiCache()
   const recipient = recipientFor(surface, getServerSessionState())
   useNotifications.getState().purgeServerItems(audienceOf[surface], recipient)
+  // The old Studio onboarding draft (contact and payout details) that earlier builds kept in this
+  // browser; it lives on the server now (studio/onboarding/store.ts clears it too).
+  try {
+    window.localStorage.removeItem("nocturne-studio-onboarding")
+  } catch {
+    /* storage blocked: nothing was kept there either */
+  }
 }
 
 /**

@@ -46,7 +46,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
   or exists (
-    select 1 from brand_onboardings o
+    select 1 from catalog_brand_onboardings o
     where o.data -> 'brand' ->> 'logoMediaId' = m.id
       or o.data -> 'storefront' ->> 'coverMediaId' = m.id
       or exists (

@@ -120,7 +120,7 @@ export function ProductStep({ onNext }: StepProps) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {product.images.map((im, i) => (
             <div key={`${im.src.slice(-24)}-${i}`} className="relative aspect-[4/5] overflow-hidden rounded-lg bg-surface">
-              <Image src={im.src} alt={im.alt} fill sizes="(min-width: 640px) 140px, 45vw" loading={i === 0 ? "eager" : undefined} className="object-cover" />
+              <Image src={im.src} alt={im.alt} fill sizes="(min-width: 640px) 140px, 45vw" unoptimized={im.src.startsWith("/api/")} loading={i === 0 ? "eager" : undefined} className="object-cover" />
               {i === 0 ? <span className="glass absolute top-2 left-2 rounded-[4px] px-1.5 py-0.5 text-[10px] text-ink">Cover</span> : null}
               <div className="absolute right-2 bottom-2 flex gap-1">
                 {i > 0 ? (

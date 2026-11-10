@@ -85,7 +85,8 @@ function Wizard() {
   const step = useOnboarding((s) => s.step)
   const maxReached = useOnboarding((s) => s.maxReached)
   const data = useOnboarding((s) => s.data)
-  const canStartOver = useOnboarding((s) => s.status === "draft")
+  // A draft that already created a brand (rejected, then edited) can't be cleared: the server refuses.
+  const canStartOver = useOnboarding((s) => s.status === "draft" && !s.brandId)
   const next = useOnboarding((s) => s.next)
   const back = useOnboarding((s) => s.back)
   const anything = maxReached > 0 || !!data.account.email
@@ -93,7 +94,10 @@ function Wizard() {
 
   const save = useAsyncAction(async () => {
     const saved = await saveOnboardingProgress(STEPS[step].id)
-    if (saved) next()
+    // Signing in on the account step loads the saved application, which moves to its first
+    // unfinished step; stay there rather than skipping one.
+    if (saved && useOnboarding.getState().step === step) next()
+    else if (saved) return
     else toast.message("Your latest edit is not saved yet", { description: "Try Continue again to include it." })
   }, { errorToast: false, onError: showOnboardingError })
   const publish = useAsyncAction(() => submitOnboardingProgress(), {
@@ -240,7 +244,8 @@ function WizardFooter({ step, publishing, onBack }: { step: number; publishing: 
 function StepNav({ step, maxReached, className }: { step: number; maxReached: number; className?: string }) {
   const goTo = useOnboarding((s) => s.goTo)
   const data = useOnboarding((s) => s.data)
-  const canStartOver = useOnboarding((s) => s.status === "draft")
+  // A draft that already created a brand (rejected, then edited) can't be cleared: the server refuses.
+  const canStartOver = useOnboarding((s) => s.status === "draft" && !s.brandId)
   const done = stepComplete(data)
   const anything = maxReached > 0 || !!data.account.email
   return (
@@ -340,6 +345,7 @@ function ResumeNote({ step, onDismiss }: { step: number; onDismiss: () => void }
 
 function Published() {
   const brand = useOnboarding((s) => s.data.brand)
+  const approved = useOnboarding((s) => s.status === "approved")
   const name = brand.name || "Your brand"
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-16 md:py-24">
@@ -347,9 +353,17 @@ function Published() {
         <span className="mx-auto inline-flex size-14 items-center justify-center rounded-full border border-violet/40 bg-purple/15">
           <Check weight="bold" className="size-6 text-violet" aria-hidden />
         </span>
-        <h1 id="ob-submitted-title" className="mt-5 text-lg font-medium text-ink">Your storefront is submitted for review</h1>
+        <h1 id="ob-submitted-title" className="mt-5 text-lg font-medium text-ink">{approved ? "Your brand is approved" : "Your storefront is submitted for review"}</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-2">
-          {name} is with the Yard team. Once it&apos;s approved, your store can go live at <span className="text-ink">/brands/{brand.handle}</span>. Your application is saved to your account.
+          {approved ? (
+            <>
+              {name} is approved. Publish your storefront and products from Brand Studio to go live at <span className="text-ink">/brands/{brand.handle}</span>.
+            </>
+          ) : (
+            <>
+              {name} is with the Yard team. Once it&apos;s approved, your store can go live at <span className="text-ink">/brands/{brand.handle}</span>. Your application is saved to your account.
+            </>
+          )}
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Button asChild variant="primary">

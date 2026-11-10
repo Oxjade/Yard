@@ -51,6 +51,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 import { useBrandApplications } from "@/components/admin/marketplace/onboarding"
+import { useLiveMoney } from "@/components/admin/finance/live-counts"
 
 const usd = (n: number) => formatMoney(Math.round(n), "USD", { compact: true })
 const usdFull = (n: number) => formatMoney(Math.round(n), "USD")
@@ -94,14 +95,23 @@ function platformDaily(paid: OrderRow[], days: number, anchor: string) {
   })
 }
 
+/** Stable empty lists, for a real admin, in place of the sample payouts and refunds. */
+const noPayouts: ReturnType<typeof useAdmin.getState>["payouts"] = []
+const noRefunds: Refund[] = []
+
 /* ── Command strip: who, when, and what needs a decision ─────────────── */
 
 function CommandStrip() {
   const hydrated = useHydrated()
   const now = useNow(60_000)
   const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
-  const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
-  const payouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
+  const sampleRefunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
+  const samplePayouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
+  // A real admin's payouts come from the finance service (Owner and Finance roles); the sample
+  // payouts and refunds never count for them, and the live Finance page has no Refunds tab.
+  const money = useLiveMoney()
+  const payouts = money.live ? (money.payoutsToDecide ?? 0) : samplePayouts
+  const refunds = money.live ? 0 : sampleRefunds
   const campaigns = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   const moderation = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
   // The greeting follows the viewer's clock; the date is the Control Center's today (anchorDay), the
@@ -111,8 +121,8 @@ function CommandStrip() {
   const chips = [
     { href: "/admin/brands", label: "Brands to review", count: pendingBrands, icon: BadgeCheck },
     // Awaiting approval and held (a held one needs a release): the Finance Payouts tab's count.
-    { href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote },
-    { href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw },
+    ...(!money.live || money.finance ? [{ href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote }] : []),
+    ...(money.live ? [] : [{ href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw }]),
     { href: "/admin/advertising", label: "Campaigns in review", count: campaigns, icon: Megaphone },
     { href: "/admin/products", label: "Listings flagged", count: moderation, icon: Flag },
   ]
@@ -195,11 +205,17 @@ function DecisionQueue({ className }: { className?: string }) {
   const panelRef = useRef<HTMLDivElement>(null)
   // The button that opened the dialog, so focus can go back to it (see restoreFocus).
   const opener = useRef<HTMLElement | null>(null)
-  const [tab, setTab] = useState<QueueTab>("payouts")
+  const [chosenTab, setTab] = useState<QueueTab>("payouts")
+  // A real admin decides payouts in Finance on the server, so the sample payout and refund queues
+  // (and their approve buttons, which only change this browser's store) aren't offered to them.
+  const { live } = useLiveMoney()
+  const tab: QueueTab = live && (chosenTab === "payouts" || chosenTab === "refunds") ? "brands" : chosenTab
   const [confirm, setConfirm] = useState<null | { kind: "payout-approve" | "payout-release" | "refund-approve"; id: string; title: string; description: string; label: string }>(null)
   const { applications } = useBrandApplications()
-  const payouts = useAdmin((s) => s.payouts)
-  const refunds = useAdmin((s) => s.refunds)
+  const storePayouts = useAdmin((s) => s.payouts)
+  const storeRefunds = useAdmin((s) => s.refunds)
+  const payouts = live ? noPayouts : storePayouts
+  const refunds = live ? noRefunds : storeRefunds
   const campaigns = useAdmin((s) => s.campaigns)
   const moderation = useAdmin((s) => s.moderation)
   // The v2 queues (§8.3) come from Yard's server, for an admin whose role can view each.
@@ -326,8 +342,12 @@ function DecisionQueue({ className }: { className?: string }) {
           idBase={qid}
           panelId={`${qid}-panel`}
           options={[
-            { value: "payouts", label: "Payouts", count: count("payouts") },
-            { value: "refunds", label: "Refunds", count: count("refunds") },
+            ...(live
+              ? []
+              : [
+                  { value: "payouts" as QueueTab, label: "Payouts", count: count("payouts") },
+                  { value: "refunds" as QueueTab, label: "Refunds", count: count("refunds") },
+                ]),
             { value: "brands", label: "Brands", count: count("brands") },
             { value: "campaigns", label: "Campaigns", count: count("campaigns") },
             { value: "moderation", label: "Moderation", count: count("moderation") },
@@ -464,8 +484,12 @@ function AuditTrail({ className }: { className?: string }) {
 function AdminInsight({ className }: { className?: string }) {
   const hydrated = useHydrated()
   const audit = useAdmin((s) => s.audit)
-  const payouts = useAdmin((s) => s.payouts)
-  const refunds = useAdmin((s) => s.refunds)
+  // Sample payouts and refunds never stand for a real admin's queue (see useLiveMoney).
+  const { live } = useLiveMoney()
+  const storePayouts = useAdmin((s) => s.payouts)
+  const storeRefunds = useAdmin((s) => s.refunds)
+  const payouts = live ? noPayouts : storePayouts
+  const refunds = live ? noRefunds : storeRefunds
   const moderation = useAdmin((s) => s.moderation)
   const { applications } = useBrandApplications()
   const campaigns = useAdmin((s) => s.campaigns)

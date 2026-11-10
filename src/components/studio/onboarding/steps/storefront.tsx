@@ -83,7 +83,7 @@ export function StorefrontStep({ onNext }: StepProps) {
             {covers.map((c, i) => (
               <ChoiceCard key={c.src} value={c.src} aria-label={c.source === "upload" ? "Your uploaded cover" : `Library photo ${i + 1}: ${c.alt}`} className="overflow-hidden border-transparent p-0">
                 <span className="relative block aspect-[4/3]">
-                  <Image src={c.src} alt="" fill sizes="(min-width: 640px) 140px, 22vw" className="object-cover" />
+                  <Image src={c.src} alt="" fill sizes="(min-width: 640px) 140px, 22vw" unoptimized={c.src.startsWith("/api/")} className="object-cover" />
                   {c.source === "upload" ? <span className="glass absolute bottom-1.5 left-1.5 rounded-[4px] px-1.5 py-0.5 text-[10px] text-ink">Yours</span> : null}
                 </span>
               </ChoiceCard>

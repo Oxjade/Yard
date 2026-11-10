@@ -244,6 +244,17 @@ export async function requestBackInStock(userId: string, variantId: string) {
   return { variantId, productId: info.productId, watching: true }
 }
 
+/** Whether the shopper is waiting on this size/colour (any product, saved or not). */
+export async function backInStockStatus(userId: string, variantId: string) {
+  const d = await db()
+  const [row] = await d
+    .select({ id: backInStockRequests.id })
+    .from(backInStockRequests)
+    .where(and(eq(backInStockRequests.userId, userId), eq(backInStockRequests.variantId, variantId), isNull(backInStockRequests.notifiedAt)))
+    .limit(1)
+  return { variantId, watching: !!row }
+}
+
 export async function cancelBackInStock(userId: string, variantId: string) {
   await withTx(async (tx) => tx.delete(backInStockRequests).where(and(eq(backInStockRequests.userId, userId), eq(backInStockRequests.variantId, variantId))))
   return { variantId, watching: false }

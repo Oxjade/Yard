@@ -96,6 +96,8 @@ export function SizeGrid({
             key={s}
             value={s}
             disabled={disabled}
+            // Sold-out sizes stay choosable (for Notify me); the size prompt skips them.
+            data-out={out || undefined}
             aria-label={out ? `${s}, sold out` : s}
             className={cn(
               "relative isolate flex aspect-square max-h-16 min-h-11 items-center justify-center rounded-md border text-sm tabular transition-[border-color,color,transform,scale] duration-150 active:scale-[0.96] active:duration-100",

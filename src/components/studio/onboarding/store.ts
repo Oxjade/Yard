@@ -6,6 +6,7 @@ import type { CountryCode, CurrencyCode } from "@/config/markets"
 import type { BrandMark, CategorySlug, StorefrontAccent, StorefrontTemplate, StorefrontTypePreset } from "@/lib/data/types"
 import { useSession, type SessionUser } from "@/lib/stores/session"
 import { errorMessage } from "@/lib/api/errors"
+import { stepComplete } from "./validation"
 import { getOnboarding, onboardingDataFromServer, saveOnboardingStep as saveOnboardingStepRequest, submitOnboarding as submitOnboardingRequest, type OnboardingDto, type OnboardingStatus } from "./remote"
 
 /**
@@ -88,6 +89,8 @@ type OnboardingState = {
   savedAt: string | null
   publishedAt: string | null
   onboardingId: string | null
+  /** Set once the application has created a brand (submitted, approved, or rejected and being edited). */
+  brandId: string | null
   revision: number
   status: OnboardingStatus
   reviewNote: string | null
@@ -115,6 +118,7 @@ const initialState = {
   savedAt: null,
   publishedAt: null,
   onboardingId: null,
+  brandId: null,
   revision: 0,
   status: "draft" as const,
   reviewNote: null,
@@ -139,6 +143,21 @@ export const useOnboarding = create<OnboardingState>()((set, get) => ({
   reset: () => set({ ...initialState, loadState: "ready", loadedUserId: get().loadedUserId }),
 }))
 
+/**
+ * The wizard used to keep its whole draft (contact details, payout last 4, photos) in this browser.
+ * It lives on the server now, so the old copy is removed wherever the onboarding loads (and on
+ * every sign-in or sign-out, in session/identity.ts).
+ */
+export const LEGACY_ONBOARDING_KEY = "nocturne-studio-onboarding"
+export function clearLegacyOnboardingDraft() {
+  try {
+    window.localStorage.removeItem(LEGACY_ONBOARDING_KEY)
+  } catch {
+    /* storage blocked: nothing was kept there either */
+  }
+}
+if (typeof window !== "undefined") clearLegacyOnboardingDraft()
+
 const loads = new Map<string, Promise<void>>()
 const loadKey = (userId: string | null) => userId ?? "guest"
 
@@ -153,6 +172,7 @@ function applyDto(dto: OnboardingDto, user: SessionUser) {
     savedAt: dto.updatedAt,
     publishedAt: published ? dto.submittedAt ?? dto.updatedAt : null,
     onboardingId: dto.id,
+    brandId: dto.brandId,
     revision: dto.revision,
     status: dto.status,
     reviewNote: dto.reviewNote,
@@ -204,6 +224,7 @@ export function reloadOnboarding() {
 function applySavedDto(dto: OnboardingDto) {
   useOnboarding.setState({
     onboardingId: dto.id,
+    brandId: dto.brandId,
     revision: dto.revision,
     status: dto.status,
     reviewNote: dto.reviewNote,
@@ -229,14 +250,28 @@ export async function saveOnboardingProgress(step: StepId): Promise<boolean> {
   return unchanged
 }
 
+/**
+ * Saves every step with unsaved edits, in wizard order. Steps reached through the step list are
+ * never saved on the way, so this is what keeps their edits. `skipIncomplete` leaves out a step
+ * that isn't filled in yet (the server would refuse it), for "Save and finish later". Resolves
+ * false when a step changed again while it was saving.
+ */
+export async function saveAllOnboardingProgress({ skipIncomplete = false }: { skipIncomplete?: boolean } = {}): Promise<boolean> {
+  const user = useSession.getState().user
+  if (!user) throw new Error("Sign in before saving your brand application.")
+  await ensureOnboardingLoaded(user.id)
+  const { dirtySteps: dirty, data } = useOnboarding.getState()
+  const complete = stepComplete(data)
+  for (const step of STEPS.map((item) => item.id).filter((id) => id !== "publish" && dirty.includes(id) && (!skipIncomplete || complete[id]))) {
+    if (!(await saveOnboardingProgress(step))) return false
+  }
+  return true
+}
+
 export async function submitOnboardingProgress() {
   const user = useSession.getState().user
   if (!user) throw new Error("Sign in before submitting your brand application.")
-  await ensureOnboardingLoaded(user.id)
-  const dirty = useOnboarding.getState().dirtySteps
-  for (const step of STEPS.map((item) => item.id).filter((id): id is Exclude<StepId, "publish"> => id !== "publish" && dirty.includes(id))) {
-    if (!(await saveOnboardingProgress(step))) throw new Error("This step changed while it was saving. Submit again to include your latest edits.")
-  }
+  if (!(await saveAllOnboardingProgress())) throw new Error("This step changed while it was saving. Submit again to include your latest edits.")
   const response = await submitOnboardingRequest(useOnboarding.getState().revision)
   applySavedDto(response.onboarding)
   useOnboarding.setState({ publishedAt: response.onboarding.submittedAt ?? stamp(), status: response.onboarding.status })

@@ -1,13 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { api } from "@/lib/api/client"
+import { ApiError, api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 
 type Preview = { category: string; label: string }
-type RequestState = { token: string; preview?: Preview; done?: boolean; error?: string }
+type RequestState = { token: string; preview?: Preview; done?: boolean; error?: string; final?: boolean }
+
+/** A bad, expired or used link fails the same way every time; only rate limits and outages are worth retrying. */
+const finalError = (cause: unknown) => cause instanceof ApiError && cause.status >= 400 && cause.status < 500 && cause.status !== 408 && cause.status !== 429
 
 export function UnsubscribeForm() {
   const searchParams = useSearchParams()
@@ -23,7 +27,7 @@ export function UnsubscribeForm() {
     void api<Preview>("/api/notifications/preferences/unsubscribe", { query: { token }, signal: controller.signal })
       .then((preview) => setState({ token, preview }))
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setState({ token, error: errorMessage(cause, "This unsubscribe link couldn't be checked.") })
+        if (!controller.signal.aborted) setState({ token, error: errorMessage(cause, "This unsubscribe link couldn't be checked."), final: finalError(cause) })
       })
     return () => controller.abort()
   }, [token, retry])
@@ -36,7 +40,7 @@ export function UnsubscribeForm() {
       setState({ token, preview: { category: "", label: result.label }, done: true })
       router.replace("/unsubscribe", { scroll: false })
     } catch (cause) {
-      setState({ token, error: errorMessage(cause, "You couldn't be unsubscribed just now. Try again.") })
+      setState({ token, error: errorMessage(cause, "You couldn't be unsubscribed just now. Try again."), final: finalError(cause) })
     } finally {
       setSubmitting(false)
     }
@@ -52,7 +56,28 @@ export function UnsubscribeForm() {
   const current = state?.token === token ? state : null
   if (!current) return <p role="status" className="border-t border-line pt-4 text-sm text-ink-2">Checking this link…</p>
   if (current.error) {
-    return <div className="grid gap-3 border-t border-line pt-4"><p role="alert" className="text-sm text-danger">{current.error}</p><div><Button type="button" variant="secondary" onClick={() => setRetry((value) => value + 1)}>Try again</Button></div></div>
+    return (
+      <div className="grid gap-3 border-t border-line pt-4">
+        <p role="alert" className="text-sm text-danger">
+          {current.error}
+        </p>
+        {current.final ? (
+          <p className="text-sm leading-relaxed text-ink-2">
+            You can still choose which emails you get in{" "}
+            <Link href="/you/settings#set-notify" className="text-violet hover:underline">
+              Settings, Notifications
+            </Link>
+            .
+          </p>
+        ) : (
+          <div>
+            <Button type="button" variant="secondary" onClick={() => setRetry((value) => value + 1)}>
+              Try again
+            </Button>
+          </div>
+        )}
+      </div>
+    )
   }
   if (!current.preview) return null
 

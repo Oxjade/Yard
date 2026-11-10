@@ -9,7 +9,7 @@ import { Wordmark } from "@/components/market/market-header"
 import { ApiError, errorMessage } from "@/lib/api/errors"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
-import { reloadOnboarding, saveOnboardingProgress, STEPS, useOnboarding, useOnboardingHydrated } from "./store"
+import { reloadOnboarding, saveAllOnboardingProgress, STEPS, useOnboarding, useOnboardingHydrated } from "./store"
 
 /** The onboarding's only chrome: wordmark, progress and a way out that keeps your place. */
 export function OnboardingTopBar() {
@@ -26,12 +26,12 @@ export function OnboardingTopBar() {
     if (saving || !user) return
     setSaving(true)
     try {
-      if (STEPS[current].id !== "publish") {
-        const saved = await saveOnboardingProgress(STEPS[current].id)
-        if (!saved) {
-          toast.message("Your latest edit is not saved yet", { description: "Return to this step and save it before leaving." })
-          return
-        }
+      // Every step with unsaved edits, not only this one: steps opened from the step list aren't saved on the way.
+      // A step that isn't filled in yet can't be saved (the server would refuse it), so it's left out.
+      const saved = await saveAllOnboardingProgress({ skipIncomplete: true })
+      if (!saved) {
+        toast.message("Your latest edit is not saved yet", { description: "Return to this step and save it before leaving." })
+        return
       }
       toast.success("Progress saved", {
         description: `Your application is saved to your account. Pick up at step ${current + 1}, ${STEPS[current].label.toLowerCase()}, whenever you're ready.`,

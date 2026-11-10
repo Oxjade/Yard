@@ -7,18 +7,18 @@ import { cn } from "@/lib/utils"
 
 /**
  * The title block of a Control Center index page, in the Overview's type: the sample-data
- * marker, an expanded heading, one line on what the page is for, and an optional quiet note
+ * marker (left out on `live` pages that read the server), an expanded heading, one line on what the page is for, and an optional quiet note
  * (what a decision here does and doesn't do in this build). No panel around it, so the
  * headline figures below are the first surface.
  */
-export function AdminPageHead({ title, description, note, actions, className }: { title: string; description: string; note?: React.ReactNode; actions?: React.ReactNode; className?: string }) {
+export function AdminPageHead({ title, description, note, actions, className, live = false }: { title: string; description: string; note?: React.ReactNode; actions?: React.ReactNode; className?: string; /** The page reads the server, not sample data: no sample marker. */ live?: boolean }) {
   // Unique per page: a route kept for back and forward stays in the document, hidden.
   const id = useId()
   return (
     <RevealItem as="section" aria-labelledby={id} className={cn("flex flex-col gap-4 px-1 pt-1 pb-2 @2xl:flex-row @2xl:items-end @2xl:justify-between", className)}>
       <div className="min-w-0">
-        <SampleDataNote />
-        <h1 id={id} className="font-label mt-4 text-[clamp(1.5rem,2.6vw,2rem)] leading-tight text-ink">{title}</h1>
+        {live ? null : <SampleDataNote />}
+        <h1 id={id} className={cn("font-label text-[clamp(1.5rem,2.6vw,2rem)] leading-tight text-ink", !live && "mt-4")}>{title}</h1>
         <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-ink-2">{description}</p>
         {note ? <div className="mt-3 max-w-3xl text-[12px] leading-relaxed text-ink-3">{note}</div> : null}
       </div>

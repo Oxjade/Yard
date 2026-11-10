@@ -329,8 +329,19 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       .where(eq(brandOnboardings.id, row.id))
     if (input.decision === "approve") {
       const [brand] = await tx.update(brands).set({ reviewStatus: "verified" }).where(eq(brands.id, row.brandId)).returning({ id: brands.id, country: brands.country, city: brands.city, currency: brands.currency })
-      const data = row.data as { brand?: { logoMediaId?: string | null }; storefront?: { coverMediaId?: string | null }; product?: { images?: { mediaId?: string }[] } }
-      const mediaIds = [...new Set([data.storefront?.coverMediaId, ...(data.product?.images ?? []).map((image) => image.mediaId)].filter((id): id is string => !!id))]
+      const data = row.data as { storefront?: { coverMediaId?: string | null }; product?: { images?: { mediaId?: string }[] } }
+      // What the brand actually uses, not only what the latest application names: a resubmission keeps
+      // the first product created earlier, so its photos can be older uploads than data.product.images.
+      const productImages = await tx.select({ mediaId: catalogImages.mediaId }).from(catalogImages).where(eq(catalogImages.brandId, row.brandId))
+      const [draft] = await tx.select({ config: storefrontDrafts.config }).from(storefrontDrafts).where(eq(storefrontDrafts.brandId, row.brandId)).limit(1)
+      const draftCover = typeof draft?.config.coverMediaId === "string" ? draft.config.coverMediaId : null
+      const mediaIds = [
+        ...new Set(
+          [data.storefront?.coverMediaId, draftCover, ...(data.product?.images ?? []).map((image) => image.mediaId), ...productImages.map((image) => image.mediaId)].filter(
+            (id): id is string => !!id,
+          ),
+        ),
+      ]
       if (mediaIds.length) {
         await tx
           .update(mediaAssets)

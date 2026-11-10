@@ -146,7 +146,8 @@ export async function publishStorefront(actor: BrandActor, body: { draftRevision
     await tx.insert(storefrontVersions).values({ id: newId("sfv"), brandId: actor.brandId, version, config: draft.config, note: body.note ?? null, publishedBy: actor.userId })
     await tx.update(storefrontDrafts).set({ baseVersion: version }).where(eq(storefrontDrafts.brandId, actor.brandId))
     await writeAudit({ actor: auditActor(actor), action: "storefront.published", target: `${actor.brand.name} storefront v${version}`, subjectType: "storefront", subjectId: actor.brandId, brandId: actor.brandId, ipHash, meta: { version, draftRevision: draft.revision } })
-    catalogChanged({})
+    // The brand: the published cover (config.coverMediaId) becomes public, a replaced one private.
+    catalogChanged({ brands: [actor.brandId] })
     return { version, publishedAt: new Date().toISOString() }
   })
 }

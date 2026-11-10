@@ -529,9 +529,10 @@ export type OnboardingApplicationDto = {
   currentStep: string
   completedSteps: string[]
   data: {
-    brand?: { name?: string; handle?: string; category?: string; description?: string }
+    brand?: { name?: string; handle?: string; category?: string; description?: string; logoMediaId?: string | null }
+    storefront?: { coverMediaId?: string | null; coverPath?: string }
     business?: { country?: string; city?: string; currency?: CurrencyCode; sellerType?: string; legalName?: string }
-    product?: { name?: string; priceMinor?: number; sizes?: { label: string; stock: number }[] }
+    product?: { name?: string; priceMinor?: number; sizes?: { label: string; stock: number }[]; images?: ({ mediaId: string; alt?: string } | { path: string; alt?: string })[] }
     payments?: { method?: string; bankName?: string; accountLast4?: string; processingMin?: number; processingMax?: number }
   }
   revision: number

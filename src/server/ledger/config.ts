@@ -39,4 +39,4 @@ export const FINANCE_VIEW_ROLES = ["owner", "admin", "finance"] as const
 export const FINANCE_REQUEST_ROLES = ["owner", "admin", "finance"] as const
 export const BANK_ACCOUNT_ROLES = ["owner"] as const
 /** Admin roles that can see Admin › Finance and approve / run payouts. */
-export const ADMIN_FINANCE_ROLES = ["owner", "finance"] as const
+export { ADMIN_FINANCE_ROLES } from "@/lib/permissions"

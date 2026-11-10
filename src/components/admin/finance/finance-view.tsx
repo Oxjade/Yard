@@ -22,6 +22,8 @@ import { RefundsTab } from "./refunds-tab"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams } from "./table"
 import { TransactionsTab } from "./transactions-tab"
 import { useServerSession } from "@/lib/session/use-server-session"
+import { adminRoleLabels, canAdminFinance } from "@/lib/permissions"
+import { LiveLoading, RoleNote, SessionFailed } from "./live-gate"
 
 type TabKey = "transactions" | "payouts" | "refunds" | "disputes" | "reconciliation" | "adjustments" | "commission"
 const KEYS: TabKey[] = ["transactions", "payouts", "refunds", "disputes", "reconciliation", "adjustments", "commission"]
@@ -30,8 +32,16 @@ const isTab = (v: string | null): v is TabKey => !!v && (KEYS as string[]).inclu
 const n = (v: number) => formatNumber(Math.round(v))
 
 export function FinanceView() {
+  const status = useServerSession((session) => session.status)
   const admin = useServerSession((session) => session.admin)
-  if (admin && !admin.demo) return <FinanceLiveView />
+  // Wait for the session: a real admin must never see the sample finance figures flash in first.
+  if (status === "loading") return <LiveLoading label="finance" />
+  if (status === "error" && !admin) return <SessionFailed title="Finance" />
+  if (admin && !admin.demo) {
+    // The finance service only answers the Owner and Finance roles (ADMIN_FINANCE_ROLES), so others get a note, not a 403 on every tab.
+    if (!canAdminFinance(admin.role)) return <RoleNote title="Finance" description="Live balances, payout controls and ledger activity from the finance service." message={`Finance needs the Owner or Finance role. Your role is ${adminRoleLabels[admin.role]}.`} />
+    return <FinanceLiveView />
+  }
   return <DemoFinanceView />
 }
 

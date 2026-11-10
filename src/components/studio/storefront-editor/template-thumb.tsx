@@ -10,7 +10,7 @@ function Bar({ className, style }: { className?: string; style?: React.CSSProper
 function Photo({ image, sizes, className }: { image: ImageAsset; sizes: string; className?: string }) {
   return (
     <span className={cn("absolute block overflow-hidden", className)}>
-      <Image src={image.src} alt="" fill sizes={sizes} className="object-cover" />
+      <Image src={image.src} alt="" fill sizes={sizes} unoptimized={image.src.startsWith("/api/")} className="object-cover" />
     </span>
   )
 }
@@ -49,7 +49,7 @@ export function TemplateThumb({
       {template === "minimal" ? (
         <>
           <span className="absolute top-[12%] right-[7%] bottom-[12%] w-[44%] overflow-hidden rounded-[3px]">
-            <Image src={cover.src} alt="" fill sizes={sizes} loading="eager" className="object-cover" />
+            <Image src={cover.src} alt="" fill sizes={sizes} loading="eager" unoptimized={cover.src.startsWith("/api/")} className="object-cover" />
           </span>
           <Bar className="top-[18%] left-[8%] size-[9%] rounded-[2px] border border-ink/30 bg-transparent" />
           <Bar className="top-[40%] left-[8%] h-[9%] w-[34%] bg-ink" />
@@ -81,7 +81,7 @@ export function TemplateThumb({
           <Bar className="top-[30%] right-[7%] h-[3.5%] w-[26%] bg-ink/45" />
           <span className="absolute top-[46%] bottom-[9%] left-[7%] w-[44%] rounded-[2px] border border-ink/15 bg-card p-[3%]">
             <span className="relative block h-full w-full overflow-hidden rounded-[1px]">
-              <Image src={cover.src} alt="" fill sizes={sizes} loading="eager" className="object-cover" />
+              <Image src={cover.src} alt="" fill sizes={sizes} loading="eager" unoptimized={cover.src.startsWith("/api/")} className="object-cover" />
             </span>
           </span>
           <span className="absolute top-[46%] bottom-[9%] left-[54%] w-[18%] rounded-[2px] border border-ink/15 bg-card" />

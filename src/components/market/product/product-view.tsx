@@ -115,10 +115,10 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
     { error: "That piece couldn't be added to your cart. Try again in a moment.", successFlashMs: 1200 },
   )
 
-  /** Move focus to the first size that can be chosen, and say why. */
+  /** Move focus to the first size in stock (sold-out ones can be chosen for Notify me), and say why. */
   function promptSize(grid: HTMLElement | null) {
     setSizePrompt(true)
-    const first = grid?.querySelector<HTMLButtonElement>('[role="radio"]:not(:disabled)')
+    const first = grid?.querySelector<HTMLButtonElement>('[role="radio"]:not(:disabled):not([data-out])') ?? grid?.querySelector<HTMLButtonElement>('[role="radio"]:not(:disabled)')
     if (!first) return
     first.focus({ preventScroll: true })
     const r = first.getBoundingClientRect()
@@ -432,6 +432,10 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={() => setSheetOpen(true)}>
                   Select a size
                 </Button>
+              ) : action === "sold-out" && sel.variant && sel.stock === 0 && sel.sizes.length ? (
+                <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={() => setSheetOpen(true)}>
+                  Notify me
+                </Button>
               ) : action === "limit" ? (
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={openBag}>
                   View cart
@@ -469,20 +473,24 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                 <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} />
                 <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
               </div>
-              <Button
-                type="button"
-                variant={addVariant}
-                size="xl"
-                className="w-full overflow-hidden"
-                loading={adding.pending}
-                disabled={addDisabled}
-                onClick={async () => {
-                  // The sheet closes on success; the "Added to cart" bubble confirms.
-                  if (await addToBag(sheetGridRef.current)) setSheetOpen(false)
-                }}
-              >
-                {addButtonContent}
-              </Button>
+              {action === "sold-out" && sel.variant && sel.stock === 0 ? (
+                <BackInStockButton variantId={sel.variant.id} />
+              ) : (
+                <Button
+                  type="button"
+                  variant={addVariant}
+                  size="xl"
+                  className="w-full overflow-hidden"
+                  loading={adding.pending}
+                  disabled={addDisabled}
+                  onClick={async () => {
+                    // The sheet closes on success; the "Added to cart" bubble confirms.
+                    if (await addToBag(sheetGridRef.current)) setSheetOpen(false)
+                  }}
+                >
+                  {addButtonContent}
+                </Button>
+              )}
             </>
           }
         >

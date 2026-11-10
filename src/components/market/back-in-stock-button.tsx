@@ -7,36 +7,41 @@ import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { useSession } from "@/lib/stores/session"
 
-type Wishlist = { items: { backInStockVariantIds: string[] }[] }
+type Watch = { variantId: string; watching: boolean }
 
 export function BackInStockButton({ variantId, className }: { variantId: string; className?: string }) {
   const user = useSession((state) => state.user)
   const requireAuth = useSession((state) => state.requireAuth)
-  const [watching, setWatching] = useState(false)
+  const [watch, setWatch] = useState<Watch | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
     const controller = new AbortController()
-    void api<Wishlist>("/api/wishlist", { signal: controller.signal })
-      .then(({ items }) => setWatching(items.some((item) => item.backInStockVariantIds.includes(variantId))))
+    // Its own lookup: a watch on a product that isn't saved doesn't appear in the wishlist.
+    void api<Watch>(`/api/wishlist/back-in-stock/${encodeURIComponent(variantId)}`, { signal: controller.signal })
+      .then((next) => {
+        setWatch(next)
+        setError(null)
+      })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setError(errorMessage(cause, "Your notification status couldn't be loaded."))
       })
     return () => controller.abort()
   }, [user, variantId])
 
-  const active = Boolean(user && watching)
+  // Another size's answer doesn't count while this one's loads.
+  const active = Boolean(user && watch?.variantId === variantId && watch.watching)
 
   async function toggle() {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      if (active) await api(`/api/wishlist/back-in-stock/${variantId}`, { method: "DELETE" })
+      if (active) await api(`/api/wishlist/back-in-stock/${encodeURIComponent(variantId)}`, { method: "DELETE" })
       else await api("/api/wishlist/back-in-stock", { body: { variantId } })
-      setWatching(!active)
+      setWatch({ variantId, watching: !active })
     } catch (cause) {
       setError(errorMessage(cause, "Your notification couldn't be updated."))
     } finally {

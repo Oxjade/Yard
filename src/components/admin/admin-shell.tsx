@@ -33,6 +33,7 @@ import {
   ProhibitIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
+import { useLiveMoney } from "@/components/admin/finance/live-counts"
 import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
 import { WorkspaceNote } from "@/components/session/workspace-note"
 import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/components/dashboard/shell/command-palette"
@@ -88,13 +89,18 @@ function AdminResults({ query, go }: { query: string; go: (href: string) => void
   // Live Studio applications too, as the Brands page lists them.
   const { applications } = useBrandApplications()
   const users = useAdmin((s) => s.users)
-  const payouts = useAdmin((s) => s.payouts)
+  const samplePayouts = useAdmin((s) => s.payouts)
   const clientOrders = useOrders((s) => s.orders)
   const groups = useOrders((s) => s.groups)
   const refunds = useAdmin((s) => s.refunds)
   const moderation = useAdmin((s) => s.moderation)
+  // A real admin's Orders and Finance read the server, which doesn't know the sample orders' and
+  // payouts' ids, so the palette leaves those out rather than open a record that isn't there.
+  const { live } = useLiveMoney()
+  const payouts = live ? [] : samplePayouts
   // The Orders page's own rows, so the palette finds what its search finds (checkout reference and email too).
-  const orders = useMemo(() => buildOrderRows(clientOrders, groups, refunds), [clientOrders, groups, refunds])
+  const sampleOrders = useMemo(() => buildOrderRows(clientOrders, groups, refunds), [clientOrders, groups, refunds])
+  const orders = live ? [] : sampleOrders
   if (!query) return null
 
   // An order found by its checkout reference or the customer's email says so in its detail line.
@@ -284,8 +290,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // The Brands queue as the page counts it: live Studio applications and sample ones.
   const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
   const openModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
-  const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
-  const payoutsToApprove = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
+  const sampleRefunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
+  const samplePayouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
+  // A real admin's Finance reads the server: its badge counts the server's payouts awaiting approval
+  // (for the Owner and Finance roles), never the sample store's.
+  const money = useLiveMoney()
+  const refunds = money.live ? 0 : sampleRefunds
+  const payoutsToApprove = money.live ? (money.payoutsToDecide ?? 0) : samplePayouts
   const inReview = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   // Counts appear once the store has loaded from this browser, so they never flash a stale figure.
   const n = (v: number) => (ready && v > 0 ? v : undefined)
@@ -318,7 +329,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       items: [
         { href: "/admin/brands", label: "Brands", icon: SealCheckIcon, badge: n(pendingBrands), badgeLabel: "to review", tone: "attention" },
         { href: "/admin/users", label: "Users", icon: UsersIcon, badge: q(c?.abuse), badgeLabel: "abuse alerts", tone: "attention" },
-        { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon },
+        // A real admin sees Orders with shipping.view, as GET /api/orders/admin checks; demo and signed-out keep it.
+        ...when(!money.live || sees("shipping.view"), { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon }),
         ...when(sees("shipping.view"), { href: "/admin/delivery", label: "Delivery", icon: TruckIcon, badge: q(c?.delivery), badgeLabel: "open issues", tone: "attention" }),
       ],
     },
@@ -334,7 +346,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     {
       label: "Money",
       items: [
-        { href: "/admin/finance", label: "Finance", icon: MoneyIcon, badge: n(refunds + payoutsToApprove), badgeLabel: "to decide", tone: "attention" },
+        // The finance service answers the Owner and Finance roles only (ADMIN_FINANCE_ROLES).
+        ...when(!money.live || money.finance, { href: "/admin/finance", label: "Finance", icon: MoneyIcon, badge: money.live ? q(payoutsToApprove) : n(refunds + payoutsToApprove), badgeLabel: "to decide", tone: "attention" }),
         { href: "/admin/advertising", label: "Advertising", icon: MegaphoneIcon, badge: n(inReview), badgeLabel: "in review", tone: "attention" },
       ],
     },

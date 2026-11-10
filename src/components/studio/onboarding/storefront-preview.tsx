@@ -20,7 +20,7 @@ export function BrandLogo({ brand, size = "md", className }: { brand: Onboarding
   if (brand.logoMode === "upload" && brand.logo) {
     return (
       <span className={cn("relative inline-flex shrink-0 overflow-hidden border border-white/12 bg-obsidian", logoSizes[size], className)}>
-        <Image src={brand.logo.src} alt={brand.logo.alt} fill sizes="96px" className="object-contain p-[8%]" />
+        <Image src={brand.logo.src} alt={brand.logo.alt} fill sizes="96px" unoptimized={brand.logo.src.startsWith("/api/")} className="object-contain p-[8%]" />
       </span>
     )
   }
@@ -43,7 +43,7 @@ function Cover({ cover, className, sizes, eager, imageClassName, label = true }:
   return (
     <div className={cn("overflow-hidden bg-surface", className)}>
       {cover ? (
-        <Image src={cover.src} alt={cover.alt} fill sizes={sizes} loading={eager ? "eager" : undefined} fetchPriority={eager ? "high" : undefined} className={cn("object-cover", imageClassName)} />
+        <Image src={cover.src} alt={cover.alt} fill sizes={sizes} unoptimized={cover.src.startsWith("/api/")} loading={eager ? "eager" : undefined} fetchPriority={eager ? "high" : undefined} className={cn("object-cover", imageClassName)} />
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-white/[0.03] text-ink-3">
           {label ? (
@@ -79,7 +79,7 @@ function ProductTile({ data, large }: { data: OnboardingData; large?: boolean })
   return (
     <div className="min-w-0">
       <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-surface">
-        {image ? <Image src={image.src} alt={image.alt} fill sizes={large ? "240px" : "160px"} className="object-cover" /> : null}
+        {image ? <Image src={image.src} alt={image.alt} fill sizes={large ? "240px" : "160px"} unoptimized={image.src.startsWith("/api/")} className="object-cover" /> : null}
       </div>
       <p className={cn("mt-1.5 truncate text-ink", large ? "text-sm" : "text-[11px]")}>{p.name.trim() || "Your first product"}</p>
       <p className={cn("text-ink-2 tabular", large ? "text-xs" : "text-[10px]")}>{price !== null ? formatMoney(price, currency) : "Price"}</p>
@@ -247,7 +247,7 @@ export function StorefrontPreview({ data, size = "panel", eager, className }: { 
             </Plate>
             <Plate caption={data.product.name.trim() || "First product"} number={2} large={large}>
               {data.product.images[0] ? (
-                <Image src={data.product.images[0].src} alt={data.product.images[0].alt} fill sizes={large ? "240px" : "120px"} className="object-cover" />
+                <Image src={data.product.images[0].src} alt={data.product.images[0].alt} fill sizes={large ? "240px" : "120px"} unoptimized={data.product.images[0].src.startsWith("/api/")} className="object-cover" />
               ) : (
                 <span className="absolute inset-0 rounded-[inherit] border border-dashed border-line" aria-hidden />
               )}

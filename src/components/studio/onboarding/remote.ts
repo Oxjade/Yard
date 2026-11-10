@@ -59,7 +59,6 @@ export function onboardingDataFromServer(raw: Record<string, unknown>, user: { n
   const business = object(raw.business)
   const product = object(raw.product)
   const payments = object(raw.payments)
-  const logo = typeof brand.logoMediaId === "string" ? { src: mediaUrl(brand.logoMediaId, "shopper"), mediaId: brand.logoMediaId, alt: `${text(brand.name) || "Brand"} logo`, source: "upload" as const } : null
   const cover = fromImage({ mediaId: storefront.coverMediaId, path: storefront.coverPath }, as)
   const images = Array.isArray(product.images) ? product.images.map((image) => fromImage(image, as)).filter((image): image is ImageRef => image !== null) : []
   const currency = text(business.currency) in currencies ? (text(business.currency) as keyof typeof currencies) : "USD"
@@ -76,8 +75,9 @@ export function onboardingDataFromServer(raw: Record<string, unknown>, user: { n
       handle: text(brand.handle),
       handleEdited: !!brand.handle,
       category: (text(brand.category) || null) as OnboardingData["brand"]["category"],
-      logoMode: logo ? "upload" : "mark",
-      logo,
+      // Brands have no logo field yet: the wizard uses the generated mark (an older draft's logo upload is dropped on its next save).
+      logoMode: "mark",
+      logo: null,
       markText: markText || text(brand.name).slice(0, 2).toUpperCase(),
       markEdited: !!markText,
       markStyle: (text(brand.markStyle) || "condensed") as OnboardingData["brand"]["markStyle"],
@@ -146,7 +146,17 @@ export function onboardingStepData(step: Exclude<StepId, "publish">, data: Onboa
         template: data.storefront.template,
       }
     case "business":
-      return { ...data.business, country: data.business.country, currency: data.business.currency }
+      // Only the server's fields: the step schema is strict, so a client-only flag (currencyEdited) would be refused.
+      return {
+        country: data.business.country,
+        city: data.business.city,
+        address: data.business.address,
+        currency: data.business.currency,
+        sellerType: data.business.sellerType,
+        legalName: data.business.legalName,
+        contactEmail: data.business.contactEmail,
+        phone: data.business.phone,
+      }
     case "product": {
       const currency = data.business.currency ?? "USD"
       const priceMinor = parsePrice(data.product.price, currency)

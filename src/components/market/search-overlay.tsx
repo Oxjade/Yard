@@ -15,6 +15,7 @@ import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { fold, searchAreas } from "@/lib/around/gazetteer"
 import { categories } from "@/lib/data"
+import { currencies, type CurrencyCode } from "@/config/markets"
 import { create } from "zustand"
 import { useSession } from "@/lib/stores/session"
 import { BrandMark } from "./brand-mark"
@@ -22,6 +23,7 @@ import { Price } from "./price"
 
 export const useSearchOverlay = create<{ open: boolean; setOpen: (o: boolean) => void }>((set) => ({ open: false, setOpen: (open) => set({ open }) }))
 
+const isCurrency = (c: string): c is CurrencyCode => c in currencies
 const suggestions = ["hoodie", "silver", "sneakers", "ceramics", "fragrance", "kente"]
 type SearchResponse = {
   items: { productId: string; brandId: string; brandName: string; slug: string | null; title: string; image: string | null; display: { amount: number; currency: string } }[]
@@ -54,6 +56,7 @@ export function SearchOverlay() {
   const currency = useSession((s) => s.currency)
   const [remote, setRemote] = useState<{ term: string; data: SearchResponse } | null>(null)
   const [remoteError, setRemoteError] = useState<{ term: string; message: string } | null>(null)
+  const [retry, setRetry] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const focus = useFocusReturn(searchOpener)
 
@@ -86,7 +89,7 @@ export function SearchOverlay() {
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [q, currency])
+  }, [q, currency, retry])
 
   const results = useMemo(() => {
     const term = q.trim()
@@ -192,20 +195,32 @@ export function SearchOverlay() {
                         </div>
                       </div>
                     </div>
-                  ) : loading ? (
-                    <p role="status" className="py-8 text-center text-sm text-ink-2">Searching the marketplace…</p>
-                  ) : error ? (
-                    <p role="alert" className="py-8 text-center text-sm text-danger">{error}</p>
                   ) : empty ? (
                     <p className="py-8 text-center text-sm text-ink-2">Nothing matches “{q}”. Try a brand name, a city or a material.</p>
                   ) : (
                     <div className="grid gap-5">
+                      {/* Cities, charts and categories match on the device, so they stay while brands and products load or fail. */}
+                      {loading ? (
+                        <p role="status" className="text-sm text-ink-2">
+                          Searching the marketplace…
+                        </p>
+                      ) : error ? (
+                        <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-danger">
+                          <span className="min-w-0">{error}</span>
+                          <button type="button" onClick={() => {
+                              setRemoteError(null)
+                              setRetry((n) => n + 1)
+                            }} className="inline-flex h-10 items-center rounded-md px-2 text-sm text-ink hover:bg-white/6 sm:h-8">
+                            Retry
+                          </button>
+                        </div>
+                      ) : null}
                       {results.brands.length ? (
                         <div>
                           <p className="mb-2 text-xs text-ink-3">Brands</p>
                           <ul className="grid gap-1">
                             {results.brands.map((b) => (
-                              <li key={b.id}>
+                              <li key={b.brandId}>
                                 <Link href={`/brands/${b.handle}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
                                   <BrandMark brand={{ name: b.name, mark: { text: b.name.slice(0, 2).toUpperCase(), style: "condensed" } }} size="sm" />
                                   <span className="text-sm text-ink">{b.name}</span>
@@ -230,7 +245,7 @@ export function SearchOverlay() {
                                     <span className="block truncate text-sm text-ink">{p.title}</span>
                                     <span className="block truncate text-xs text-ink-2">{p.brandName}</span>
                                   </span>
-                                  <Price amount={p.display.amount} currency={p.display.currency} className="text-xs" />
+                                  {isCurrency(p.display.currency) ? <Price amount={p.display.amount} currency={p.display.currency} className="text-xs" /> : null}
                                 </Link>
                               </li>
                             ))}

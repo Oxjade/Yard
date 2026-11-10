@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { ClockCounterClockwiseIcon as Recent, MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { duration, ease } from "@/lib/motion"
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import type { Product } from "@/lib/data/types"
-import type { CatalogState } from "./catalog-state"
+import { filterProducts, type CatalogState } from "./catalog-state"
 
 /* ---------- recent searches (this browser only) ---------- */
 
@@ -61,6 +61,7 @@ export function CatalogSearch({
   placeholder,
   label,
   className,
+  products,
 }: {
   value: string
   onCommit: (q: string) => void
@@ -71,6 +72,7 @@ export function CatalogSearch({
   placeholder: string
   label: string
   className?: string
+  /** The listing's catalogue: suggestions are kept only when they would list something here (category, filters), with that count. */
   products?: Product[]
 }) {
   const recentKey = recentKeyProp === undefined ? (state ? RECENT_KEY : null) : recentKeyProp
@@ -134,13 +136,21 @@ export function CatalogSearch({
     }
   }, [state, typed])
 
-  const suggestions = state && typed.length >= 2 && remote?.term === typed ? remote.options : []
+  // The suggest API is marketplace-wide: keep what this listing (its category and filters) would show, with how many.
+  const suggestions = useMemo(() => {
+    if (!state || typed.length < 2 || remote?.term !== typed) return []
+    if (!products) return remote.options
+    return remote.options.flatMap((o) => {
+      const count = filterProducts({ ...state, q: o.term }, undefined, products).length
+      return count ? [{ term: o.term, count }] : []
+    })
+  }, [state, typed, remote, products])
   const suggestionError = remoteError?.term === typed ? remoteError.message : null
   /** Nothing to offer at all: a plain search field, not a combobox. */
   const plain = !state && !recentKey
   const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length || suggestionError ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null
   const options: Option[] = mode === "suggest" ? suggestions : mode === "recent" ? recent.map((term) => ({ term })) : []
-  const expanded = open && options.length > 0
+  const expanded = open && (options.length > 0 || (mode === "suggest" && !!suggestionError))
   const activeIndex = expanded && active < options.length ? active : -1
 
   function remember(term: string) {
@@ -307,8 +317,12 @@ export function CatalogSearch({
                 </button>
               ) : null}
             </div>
+            {mode === "suggest" && suggestionError ? (
+              <p role="status" className="min-h-10 px-2.5 py-2 text-sm text-danger">
+                {suggestionError}
+              </p>
+            ) : null}
             <ul id={listId} role="listbox" aria-label={mode === "recent" ? "Recent searches" : "Suggestions"}>
-              {suggestionError ? <li role="status" className="min-h-10 px-2.5 py-2 text-sm text-danger">{suggestionError}</li> : null}
               {options.map((o, i) => (
                 <li
                   key={o.term}
