@@ -1,4 +1,5 @@
 import type { CurrencyCode } from "@/config/markets"
+import type { OnboardingApplicationDto } from "@/lib/api/contracts/admin"
 import { convert } from "@/lib/money"
 import { brands } from "./brands"
 import { campaigns } from "./ads"
@@ -51,6 +52,8 @@ export type BrandApplication = {
   products: number
   brandId?: string
   onboardingId?: string
+  /** What a submitted Studio application says (brand, business, first product, payout), for the review sheet. */
+  application?: OnboardingApplicationDto["data"]
 }
 
 export const brandApplications: BrandApplication[] = [

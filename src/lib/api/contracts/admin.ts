@@ -530,7 +530,7 @@ export type OnboardingApplicationDto = {
   completedSteps: string[]
   data: {
     brand?: { name?: string; handle?: string; category?: string; description?: string }
-    business?: { country?: string; city?: string; sellerType?: string; legalName?: string }
+    business?: { country?: string; city?: string; currency?: CurrencyCode; sellerType?: string; legalName?: string }
     product?: { name?: string; priceMinor?: number; sizes?: { label: string; stock: number }[] }
     payments?: { method?: string; bankName?: string; accountLast4?: string; processingMin?: number; processingMax?: number }
   }
@@ -560,7 +560,8 @@ export type AdminCatalogProductDto = {
   updatedAt: string
 }
 
-export type AdminCatalogProductsDto = { products: AdminCatalogProductDto[]; total: number }
+/** total and hidden count every non-archived product; matching counts the filter asked for; nextCursor pages on. */
+export type AdminCatalogProductsDto = { products: AdminCatalogProductDto[]; total: number; hidden: number; matching: number; nextCursor: string | null }
 export type OnboardingApplicationsDto = { onboardings: OnboardingApplicationDto[] }
 
 /* ── Labels shared by the server DTOs and the admin UI ─────────────── */

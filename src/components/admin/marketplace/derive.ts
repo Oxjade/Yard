@@ -24,10 +24,16 @@ export function verificationChecklist(a: BrandApplication): CheckItem[] {
           : { state: "missing" as const, detail: "No ID submitted yet." }),
   }
   const payoutMissing = /payout details missing/i.test(a.notes) || a.kyc === "not_started"
+  const last4 = a.application?.payments?.accountLast4
   const payout: CheckItem = {
     key: "payout",
     label: "Payout account",
-    ...(payoutMissing
+    // A Studio application names its account; nobody has checked it against the owner yet.
+    ...(a.application
+      ? last4
+        ? { state: "review" as const, detail: `Account ending ${last4} added, not yet matched to the owner.` }
+        : { state: "missing" as const, detail: "No bank account added." }
+      : payoutMissing
       ? { state: "missing" as const, detail: "No bank account added." }
       : a.kyc === "failed"
         ? { state: "failed" as const, detail: "Account name doesn't match the owner." }

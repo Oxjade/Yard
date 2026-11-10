@@ -9,22 +9,16 @@ import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel, PanelError } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { useNow } from "@/hooks/use-now"
-import { adminKeys, listOnboardingApplications } from "@/lib/api/admin"
 import { errorMessage } from "@/lib/api/errors"
-import { useApi } from "@/lib/api/use-api"
 import type { BrandApplication, BrandReviewStatus } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
-import { canAdmin } from "@/lib/permissions"
-import { useServerSession } from "@/lib/session/use-server-session"
-import { useAdmin } from "@/lib/stores/admin"
 import { Initials } from "./bits"
 import { BrandDetail } from "./brand-detail"
 import { allowedBrandActions, brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
-import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
 import { useDecision } from "./decision"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
-import { fromOnboardingApplication } from "./onboarding"
+import { useBrandApplications } from "./onboarding"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 
@@ -45,17 +39,8 @@ export function BrandsView() {
   const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
-  const localApplications = useAdmin((s) => s.applications)
-  const admin = useServerSession((s) => s.admin)
-  const canReviewApplications = !!admin && canAdmin(admin.role, "brands.restrict")
-  const onboarding = useApi(canReviewApplications ? adminKeys.onboardings : null, listOnboardingApplications, { refreshInterval: 60_000 })
-  const applications = useMemo(() => {
-    const live = onboarding.data?.onboardings.map(fromOnboardingApplication) ?? []
-    const liveBrands = new Set(live.flatMap((a) => (a.brandId ? [a.brandId] : [])))
-    return [...live, ...localApplications.filter((a) => !a.brandId || !liveBrands.has(a.brandId))]
-  }, [onboarding.data, localApplications])
+  const { applications, onboarding, canReviewApplications, reinstateTo } = useBrandApplications()
   const blockFor = useBrandStatusBlock()
-  const { reinstateTo } = useMirrorServerStatuses("brand", useMemo(() => applications.flatMap((a) => (a.brandId ? [a.brandId] : [])), [applications]))
   const linkedTab = useSearchParam("tab")
   const reviewId = useSearchParam("review")
 
@@ -141,7 +126,10 @@ export function BrandsView() {
     { key: "products", header: "Products", align: "right", hideBelow: "lg", sortValue: (a) => a.products, cell: (a) => <span className="text-ink">{a.products}</span> },
   ]
 
-  const allowedHere = brandAllowed[tab]
+  // The tab's transitions, plus Reject when a submitted Studio application is listed (it's the only row that can be rejected).
+  const canReject = rows.some((a) => allowedBrandActions(a).includes("reject"))
+  const allowedHere = canReject ? brandAllowed[tab].flatMap((k): BrandActionKey[] => (k === "approve" ? ["approve", "reject"] : [k])) : brandAllowed[tab]
+  if (canReject && !allowedHere.includes("reject")) allowedHere.push("reject")
   const rowActions: RowAction<BrandApplication>[] = [
     { label: "Open review", icon: EyeIcon, onSelect: open },
     ...allowedHere.map((key, i) => ({
@@ -227,7 +215,7 @@ export function BrandsView() {
       </Panel>
 
       <BrandDetail
-        id={reviewing?.id ?? null}
+        app={reviewing ?? null}
         open={!!reviewing}
         onDecide={(key, a) => decide(key, [a])}
         onOpenChange={(o) => {

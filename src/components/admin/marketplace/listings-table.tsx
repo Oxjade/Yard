@@ -1,18 +1,20 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowSquareOutIcon, ShieldCheckIcon, ShieldWarningIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, MagnifyingGlassIcon, ShieldCheckIcon, ShieldWarningIcon } from "@phosphor-icons/react"
 import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
-import { adminKeys, listAdminCatalogProducts, moderateProduct } from "@/lib/api/admin"
+import { Button } from "@/components/ui/button"
+import { useAsyncAction } from "@/hooks/use-async-action"
+import { adminKeys, listAdminCatalogProducts, moderateProduct, type AdminCatalogProductsFilter } from "@/lib/api/admin"
 import type { AdminCatalogProductDto } from "@/lib/api/contracts/admin"
 import { errorMessage } from "@/lib/api/errors"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
 import { categories } from "@/lib/data"
-import { formatMoney } from "@/lib/money"
+import { formatMoney, formatNumber } from "@/lib/money"
 import { canAdmin, needsRole } from "@/lib/permissions"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { Thumb } from "./bits"
@@ -25,27 +27,68 @@ import { NO_ADMIN_SESSION } from "./user-actions"
 
 const plural = (n: number) => `${n} ${n === 1 ? "listing" : "listings"}`
 
-/** Live catalogue rows for moderation, plus why this admin can't change them (if so). */
-export function useAdminListings() {
+/**
+ * The first page of live catalogue rows for moderation (server-filtered), plus why this admin
+ * can't change them (if so). `data.total` and `data.hidden` count the whole catalogue.
+ */
+export function useAdminListings(filter: AdminCatalogProductsFilter = {}) {
   const admin = useServerSession((s) => s.admin)
   const loading = useServerSession((s) => s.status === "loading")
   const blocked = loading ? "Checking your admin session." : !admin ? NO_ADMIN_SESSION : canAdmin(admin.role, "content.moderate") ? null : needsRole("content.moderate")
-  const q = useApi(blocked ? null : adminKeys.catalogProducts, listAdminCatalogProducts, { refreshInterval: 60_000 })
-  return { ...q, blocked, authLoading: loading }
+  const key = adminKeys.catalogProducts(filter)
+  const q = useApi(blocked ? null : key, () => listAdminCatalogProducts(filter), { refreshInterval: 60_000 })
+  return { ...q, key, blocked, authLoading: loading }
 }
+
+/** The search once it has stopped changing for `ms`, so typing doesn't fire a request per key. */
+function useDebounced(value: string, ms: number) {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(value), ms)
+    return () => window.clearTimeout(t)
+  }, [value, ms])
+  return settled
+}
+
+const STATES = [
+  { value: "restricted", label: "Restricted" },
+  { value: "live", label: "Not restricted" },
+]
 
 /** Every listing in the live catalogue, including hidden ones, so Trust and Safety can restrict any product. */
 export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | Promise<boolean>; loading: boolean }) {
   const router = useRouter()
   const phone = usePhone()
-  const q = useAdminListings()
-  const products = q.data?.products
-  // The category filter lives in the URL (?category=…) like the tab, so a reload keeps it.
+  // The filters live in the URL (?category=…&state=…) like the tab, so a reload keeps them. The
+  // server filters and pages, so a listing outside the newest page can still be found and lifted.
   const linkedCategory = useSearchParam("category")
   const category = linkedCategory && categories.some((c) => c.slug === linkedCategory) ? linkedCategory : "all"
   const setCategory = (v: string) => writeParams({ category: v === "all" ? null : v })
+  const linkedState = useSearchParam("state")
+  const state = STATES.some((o) => o.value === linkedState) ? linkedState! : "all"
+  const setState = (v: string) => writeParams({ state: v === "all" ? null : v })
+  const [search, setSearch] = useState("")
+  const term = useDebounced(search.trim(), 300)
+  const filter: AdminCatalogProductsFilter = { q: term || undefined, moderation: state === "restricted" ? "hidden" : state === "live" ? "ok" : undefined, category: category === "all" ? undefined : category }
+  const q = useAdminListings(filter)
 
-  const rows = useMemo(() => (products ?? []).filter((p) => category === "all" || p.category === category).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title)), [products, category])
+  // Further pages, loaded on request for this filter (undefined cursor = continue from the first page).
+  const [more, setMore] = useState<{ key: string; items: AdminCatalogProductDto[]; cursor: string | null | undefined }>({ key: "", items: [], cursor: undefined })
+  const moreHere = more.key === q.key ? more : { key: q.key, items: [] as AdminCatalogProductDto[], cursor: undefined }
+  const nextCursor = moreHere.cursor === undefined ? (q.data?.nextCursor ?? null) : moreHere.cursor
+  const loadMore = useAsyncAction(
+    async () => {
+      if (!nextCursor) return
+      const r = await listAdminCatalogProducts({ ...filter, cursor: nextCursor })
+      setMore({ key: q.key, items: [...moreHere.items, ...r.products], cursor: r.nextCursor })
+    },
+    { error: "Couldn't load more listings. Try again." },
+  )
+
+  const rows = useMemo(() => {
+    const seen = new Set<string>()
+    return [...(q.data?.products ?? []), ...moreHere.items].filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)))
+  }, [q.data, moreHere.items])
   const isRestricted = (p: AdminCatalogProductDto) => p.moderationStatus === "hidden"
   /** Whether restricting (lift false) or lifting (lift true) can change this listing. */
   const can = (lift: boolean) => (p: AdminCatalogProductDto) => isRestricted(p) === lift
@@ -70,7 +113,9 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
         let failure: unknown = null
         for (const p of items) {
           try {
-            await moderateProduct(p.id, { hidden: !lift, reason })
+            const r = await moderateProduct(p.id, { hidden: !lift, reason })
+            // Rows from later pages aren't refetched by the revalidation below, so they take the new state here.
+            setMore((m) => ({ ...m, items: m.items.map((x) => (x.id === r.productId ? { ...x, moderationStatus: r.moderationStatus } : x)) }))
             done++
           } catch (e) {
             failure = e
@@ -164,6 +209,7 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
   ]
 
   return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
     <DataTable
       label="All listings"
       rows={rows}
@@ -172,20 +218,63 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
       loading={loading || q.authLoading || q.isLoading}
       error={q.authLoading ? null : (q.blocked ?? (q.error ? errorMessage(q.error) : null))}
       onRetry={q.error ? () => void q.revalidate() : undefined}
-      search={{ placeholder: "Search products or brands", text: (p) => `${p.title} ${p.brandName} ${p.subcategory ?? ""}` }}
       toolbar={
-        <Filters
-          noun="listings"
-          results={rows.length}
-          onClear={() => setCategory("all")}
-          filters={[{ key: "category", label: "Category", value: category, onChange: setCategory, all: { value: "all", label: "All categories" }, options: categories.map((c) => ({ value: c.slug, label: c.name })), width: "w-[176px]" }]}
-        />
+        <>
+          {/* Searched on the server, so it covers the whole catalogue, not only the rows loaded. */}
+          <label className="relative min-w-56 flex-1 sm:max-w-xs">
+            <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search products or brands"
+              aria-label="Search products or brands"
+              className="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-ink-2/40 focus:border-violet focus:ring-2 focus:ring-violet/25"
+            />
+          </label>
+          <Filters
+            noun="listings"
+            results={q.data?.matching ?? rows.length}
+            onClear={() => writeParams({ category: null, state: null })}
+            filters={[
+              { key: "state", label: "Status", value: state, onChange: setState, all: { value: "all", label: "All statuses" }, options: STATES, width: "w-[160px]" },
+              { key: "category", label: "Category", value: category, onChange: setCategory, all: { value: "all", label: "All categories" }, options: categories.map((c) => ({ value: c.slug, label: c.name })), width: "w-[176px]" },
+            ]}
+          />
+        </>
       }
       rowActions={rowActions}
       bulkActions={phone ? undefined : bulkActions}
-      empty={{ title: "No listings in this category", body: "Choose another category, or show them all." }}
+      empty={
+        term || state !== "all" || category !== "all"
+          ? {
+              title: "No listings match",
+              body: "Try another search, status or category.",
+              action: (
+                <Button size="sm" variant="secondary" onClick={() => {
+                    setSearch("")
+                    writeParams({ category: null, state: null })
+                  }}>
+                  Clear search and filters
+                </Button>
+              ),
+            }
+          : { title: "No listings yet", body: "Products appear here once brands create them in Studio." }
+      }
       initialPageSize={25}
       minWidth={300}
     />
+    {q.data && !q.error ? (
+      <div className="grid justify-items-center gap-2">
+        {nextCursor ? <p className="text-center text-[12px] text-ink-3">Showing {formatNumber(rows.length)} of {formatNumber(q.data.matching)} {q.data.matching === 1 ? "listing" : "listings"}, newest edit first.</p> : null}
+        {nextCursor ? (
+          <Button size="sm" variant="secondary" className="h-10 sm:h-9" loading={loadMore.pending} onClick={() => void loadMore.run()}>
+            Load more listings
+          </Button>
+        ) : null}
+        {loadMore.error ? <p role="alert" className="text-center text-[12px] text-danger">{loadMore.error}</p> : null}
+      </div>
+    ) : null}
+    </div>
   )
 }

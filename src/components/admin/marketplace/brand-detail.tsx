@@ -10,6 +10,7 @@ import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
 import { STUDIO_BRAND_ID } from "@/lib/data/brands"
 import type { AuditEntry, BrandApplication } from "@/lib/data/admin"
+import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
@@ -36,12 +37,15 @@ function isAbout(e: AuditEntry, a: BrandApplication) {
   return e.target === a.brandName || e.target.startsWith(`${a.brandName},`) || e.target.startsWith(`${a.brandName} (`) || e.target.endsWith(`(${a.brandName})`)
 }
 
-export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void; onDecide: (key: BrandActionKey, a: BrandApplication) => void }) {
+/**
+ * The review sheet for one application. The page passes the record it resolved (a live Studio
+ * application or a sample one), so the sheet shows whatever the Brands table lists.
+ */
+export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { app: BrandApplication | null; open: boolean; onOpenChange: (o: boolean) => void; onDecide: (key: BrandActionKey, a: BrandApplication) => void }) {
   // Keep the last record while the sheet animates out.
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
-  const shown = useLast(id)
-  const app = useAdmin((s) => s.applications.find((a) => a.id === shown))
+  const app = useLast(current)
   const audit = useAdmin((s) => s.audit)
   const moderation = useAdmin((s) => s.moderation)
   const blockFor = useBrandStatusBlock()
@@ -87,6 +91,8 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
           { label: "Open cases", value: openCases ? <span className="text-acid tabular">{openCases}</span> : <span className="text-ink-2">None</span> },
         ]}
       />
+
+      {app.application ? <ApplicationSection data={app.application} /> : null}
 
       <DetailSection title="Verification" aside={<span className="text-[11px] text-ink-3 tabular">{done} of {checklist.length} complete</span>}>
         <ul className={cn("divide-y divide-white/[0.07]", insetClass)}>
@@ -136,7 +142,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
 
       <DetailSection title="Links">
         <ul className="grid gap-1.5">
-          {app.brandId ? (
+          {app.brandId && !app.onboardingId ? (
             <li>
               <LinkRow href={`/brands/${app.handle}`} label="View storefront" hint={`/brands/${app.handle}`} />
             </li>
@@ -150,7 +156,7 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
               hint={cases.length ? `${plural(cases.length, "case")} for this brand, ${openCases} open` : "No cases for this brand"}
             />
           </li>
-          {app.brandId ? (
+          {app.brandId && !app.onboardingId ? (
             <li>
               <LinkRow href={`/admin/finance?tab=payouts&focus=po_${app.handle}`} label="Payouts and ledger" hint="This brand's payout in Finance" />
             </li>
@@ -158,6 +164,33 @@ export function BrandDetail({ id, open, onOpenChange, onDecide }: { id: string |
         </ul>
       </DetailSection>
     </DetailSheet>
+  )
+}
+
+/** What a submitted Studio application says, as the applicant wrote it: brand, business, first product and payout. */
+function ApplicationSection({ data }: { data: NonNullable<BrandApplication["application"]> }) {
+  const { brand, business, product, payments } = data
+  const sizes = product?.sizes?.map((x) => `${x.label} (${x.stock})`).join(", ")
+  const rows: { label: string; value: string | null | undefined }[] = [
+    { label: "About the brand", value: brand?.description },
+    { label: "Seller", value: [business?.sellerType === "company" ? "Company" : business?.sellerType ? "Individual" : null, business?.legalName].filter(Boolean).join(", ") },
+    { label: "Based in", value: [business?.city, business?.country ? countryName(business.country) : null].filter(Boolean).join(", ") },
+    { label: "First product", value: product?.name ? `${product.name}${product.priceMinor != null && business?.currency ? `, ${formatMoney(product.priceMinor, business.currency)}` : ""}` : null },
+    { label: "Sizes and stock", value: sizes },
+    { label: "Payout", value: [payments?.bankName, payments?.accountLast4 ? `account ending ${payments.accountLast4}` : null].filter(Boolean).join(", ") || null },
+    { label: "Processing time", value: payments?.processingMin != null && payments.processingMax != null ? `${payments.processingMin} to ${plural(payments.processingMax, "day")}` : null },
+  ]
+  return (
+    <DetailSection title="Application">
+      <dl className={cn("divide-y divide-white/[0.07]", insetClass)}>
+        {rows.map((r) => (
+          <div key={r.label} className="grid gap-0.5 px-3 py-2.5">
+            <dt className="text-[11px] text-ink-3">{r.label}</dt>
+            <dd className={cn("text-[13px] break-words", r.value ? "text-ink-2" : "text-ink-3")}>{r.value || "Not given"}</dd>
+          </div>
+        ))}
+      </dl>
+    </DetailSection>
   )
 }
 

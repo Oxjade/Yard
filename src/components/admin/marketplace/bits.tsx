@@ -18,7 +18,7 @@ export function Initials({ name, round = false, size = "sm" }: { name: string; r
 export function Thumb({ src, size = "sm" }: { src?: string; size?: "sm" | "lg" }) {
   return (
     <span className={cn("relative shrink-0 overflow-hidden rounded-md border border-white/8 bg-white/[0.03]", size === "lg" ? "h-24 w-20" : "h-10 w-8")}>
-      {src ? <Image src={src} alt="" fill sizes={size === "lg" ? "80px" : "32px"} className="object-cover" /> : <ImageBrokenIcon className="absolute inset-0 m-auto size-3.5 text-ink-3" aria-hidden />}
+      {src ? <Image src={src} alt="" fill sizes={size === "lg" ? "80px" : "32px"} unoptimized={src.startsWith("/api/")} className="object-cover" /> : <ImageBrokenIcon className="absolute inset-0 m-auto size-3.5 text-ink-3" aria-hidden />}
     </span>
   )
 }

@@ -112,17 +112,26 @@ const unverifiedKyc = (a: BrandApplication) => (a.kyc !== "verified" ? `The iden
 
 /** Only the transitions a brand's current status allows. */
 export const brandAllowed: Record<BrandReviewStatus, BrandActionKey[]> = {
-  pending_review: ["approve", "reject", "restrict", "suspend"],
+  pending_review: ["approve", "restrict", "suspend"],
   verified: ["restrict", "suspend"],
   restricted: ["reinstate", "verify", "suspend"],
   suspended: ["reinstate"],
 }
 
-/** A submitted Studio application is reviewed, not restricted, until it has been approved or rejected. */
+/**
+ * A submitted Studio application is reviewed (approved or rejected), not restricted. Only such an
+ * application can be rejected: a sample or server brand has no rejection on record. When Yard has
+ * restricted or suspended the brand meanwhile, it can't be approved until it's reinstated, so the
+ * row offers what that status allows (Reinstate first) and Reject, not Approve.
+ */
 export function allowedBrandActions(a: BrandApplication): BrandActionKey[] {
-  if (a.onboardingId) return ["approve", "reject"]
-  return brandAllowed[a.status]
+  if (!a.onboardingId) return brandAllowed[a.status]
+  if (a.status === "pending_review") return ["approve", "reject"]
+  return [...brandAllowed[a.status].filter((k) => k === "reinstate" || k === "suspend"), "reject"]
 }
+
+/** The keys a submitted application's own review endpoint decides; every other action changes the brand's status. */
+const reviewsApplication = (key: BrandActionKey, a: BrandApplication) => !!a.onboardingId && (key === "approve" || key === "reject")
 
 const plural = (n: number) => `${n} ${n === 1 ? "brand" : "brands"}`
 
@@ -177,11 +186,11 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
   // it from the audit log (review when it isn't on record), so it never verifies a brand by default.
   const backTo = (a: BrandApplication): BrandReviewStatus => (onServer(a) ? (reinstateTo[a.brandId!] ?? "pending_review") : def.to)
   const reinstating = key === "reinstate"
-  const onboarding = apps.filter((a) => a.onboardingId)
-  const server = apps.filter((a) => onServer(a) && !a.onboardingId)
-  const local = apps.filter((a) => !onServer(a) && !a.onboardingId)
+  const onboarding = apps.filter((a) => reviewsApplication(key, a))
+  const server = apps.filter((a) => onServer(a) && !reviewsApplication(key, a))
+  const local = apps.filter((a) => !onServer(a) && !reviewsApplication(key, a))
   const warnings = apps
-    .filter((a) => !a.onboardingId)
+    .filter((a) => !reviewsApplication(key, a))
     .map((a) => (reinstating ? (backTo(a) === "verified" ? unverifiedKyc(a) : null) : def.warn?.(a)))
     .filter(Boolean) as string[]
   const restoreLine = reinstating
@@ -213,7 +222,7 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
     ]
       .filter(Boolean)
       .join(" "),
-    confirmLabel: one ? `${def.confirm} ${one.onboardingId ? "application" : "brand"}` : `${def.confirm} ${plural(apps.length)}`,
+    confirmLabel: one ? `${def.confirm} ${reviewsApplication(key, one) ? "application" : "brand"}` : `${def.confirm} ${plural(apps.length)}`,
     destructive: def.destructive,
     fieldLabel: key === "reject" && onboarding.length && !server.length && !local.length ? "Reason, shown to the applicant" : undefined,
     presets: key === "reject" ? ["The details don't match the business registration.", "The first product needs clearer photos.", "The brand name or handle breaks Yard's rules."] : undefined,

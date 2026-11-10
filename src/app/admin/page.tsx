@@ -50,6 +50,7 @@ import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
 import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
+import { useBrandApplications } from "@/components/admin/marketplace/onboarding"
 
 const usd = (n: number) => formatMoney(Math.round(n), "USD", { compact: true })
 const usdFull = (n: number) => formatMoney(Math.round(n), "USD")
@@ -98,7 +99,7 @@ function platformDaily(paid: OrderRow[], days: number, anchor: string) {
 function CommandStrip() {
   const hydrated = useHydrated()
   const now = useNow(60_000)
-  const pendingBrands = useAdmin((s) => s.applications.filter((a) => a.status === "pending_review").length)
+  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
   const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
   const payouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
   const campaigns = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
@@ -196,7 +197,7 @@ function DecisionQueue({ className }: { className?: string }) {
   const opener = useRef<HTMLElement | null>(null)
   const [tab, setTab] = useState<QueueTab>("payouts")
   const [confirm, setConfirm] = useState<null | { kind: "payout-approve" | "payout-release" | "refund-approve"; id: string; title: string; description: string; label: string }>(null)
-  const applications = useAdmin((s) => s.applications)
+  const { applications } = useBrandApplications()
   const payouts = useAdmin((s) => s.payouts)
   const refunds = useAdmin((s) => s.refunds)
   const campaigns = useAdmin((s) => s.campaigns)
@@ -466,7 +467,7 @@ function AdminInsight({ className }: { className?: string }) {
   const payouts = useAdmin((s) => s.payouts)
   const refunds = useAdmin((s) => s.refunds)
   const moderation = useAdmin((s) => s.moderation)
-  const applications = useAdmin((s) => s.applications)
+  const { applications } = useBrandApplications()
   const campaigns = useAdmin((s) => s.campaigns)
   const retried = failedJobs.filter((j) => audit.some((a) => a.action === RETRY_ACTION && a.target.includes(j.id))).length
   const replayed = new Set(webhookFailures.filter((w) => audit.some((a) => a.action === REPLAY_ACTION && a.target.includes(w.id))).map((w) => w.id))

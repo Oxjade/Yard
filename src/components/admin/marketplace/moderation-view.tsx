@@ -43,8 +43,10 @@ export function ModerationView() {
   const qid = useId()
   const moderation = useAdmin((s) => s.moderation)
   const listings = useAdminListings()
-  const restrictedCount = listings.data?.products.filter((p) => p.moderationStatus === "hidden").length ?? 0
+  // Both counts come from the server over the whole catalogue, not from the rows one page loaded.
+  const restrictedCount = listings.data?.hidden ?? 0
   const listingTotal = listings.data?.total ?? 0
+  const listingsHint = listings.blocked && !listings.authLoading ? "Unavailable for your role" : listings.error ? "Couldn't load listings" : `Of ${n(listingTotal)} listings`
   const linkedTab = useSearchParam("tab")
   const caseId = useSearchParam("case")
   const viewing = caseId ? moderation.find((m) => m.id === caseId) : undefined
@@ -141,7 +143,7 @@ export function ModerationView() {
             <StatCard surface="admin" icon={SealWarningIcon} label="Counterfeit or IP" value={unresolved} format={n} hint={ready ? `${n(ipOpen)} open, ${n(ipEscalated)} with legal` : "Open or escalated"} href={ipOldest ? `/admin/products?case=${ipOldest.id}` : "/admin/products?tab=removed#moderation-queue"} hrefLabel={ipOldest ? "Open the oldest counterfeit or IP case" : "Show removed listings"} ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={restrictedCount} format={n} hint={`Of ${n(listingTotal)} listings`} href="/admin/products?tab=listings#moderation-queue" hrefLabel="Show all listings" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={restrictedCount} format={listings.data ? n : () => "—"} hint={listingsHint} href={restrictedCount ? "/admin/products?tab=listings&state=restricted#moderation-queue" : "/admin/products?tab=listings#moderation-queue"} hrefLabel={restrictedCount ? "Show restricted listings" : "Show all listings"} ready={ready && (!!listings.data || (!!listings.blocked && !listings.authLoading) || !!listings.error)} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>

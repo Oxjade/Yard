@@ -53,6 +53,7 @@ import { useOrders } from "@/lib/stores/orders"
 import { site } from "@/config/site"
 import { YardLogo } from "@/components/brand/yard-logo"
 import { cn } from "@/lib/utils"
+import { useBrandApplications } from "@/components/admin/marketplace/onboarding"
 
 /** System status pill for the top bar: operational, or how many services are degraded. A static dot: nothing loops for attention. */
 function SystemStatus() {
@@ -84,7 +85,8 @@ const categoryName = new Map(categories.map((c) => [c.slug as string, c.name]))
  * ?order=, ?focus=), on the page you're on too.
  */
 function AdminResults({ query, go }: { query: string; go: (href: string) => void }) {
-  const applications = useAdmin((s) => s.applications)
+  // Live Studio applications too, as the Brands page lists them.
+  const { applications } = useBrandApplications()
   const users = useAdmin((s) => s.users)
   const payouts = useAdmin((s) => s.payouts)
   const clientOrders = useOrders((s) => s.orders)
@@ -279,7 +281,8 @@ const LEGACY_ADMIN_NOTE = "Legacy pages act as Kemi Ajayi in this browser."
 /** The internal Admin Control Center: a control room — dense, operational, data-first. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
-  const pendingBrands = useAdmin((s) => s.applications.filter((a) => a.status === "pending_review").length)
+  // The Brands queue as the page counts it: live Studio applications and sample ones.
+  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
   const openModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
   const refunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
   const payoutsToApprove = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)

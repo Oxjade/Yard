@@ -34,7 +34,7 @@ import type {
 export const adminKeys = {
   counts: "admin:counts",
   onboardings: "admin:catalog:onboardings",
-  catalogProducts: "admin:catalog:products",
+  catalogProducts: (f: AdminCatalogProductsFilter = {}) => `admin:catalog:products:${f.moderation ?? "all"}:${f.category ?? "all"}:${f.q ?? ""}`,
   messages: (tab: MessageTab) => `admin:messages:${tab}`,
   content: (tab: ContentTab) => `admin:content:${tab}`,
   chartsOverview: "admin:charts:overview",
@@ -68,7 +68,8 @@ export const getStatuses = (kind: "user" | "brand", ids: string[]) => api<{ stat
 export const listOnboardingApplications = () => api<OnboardingApplicationsDto>("/api/admin/catalog/onboardings", { query: { limit: 200 } })
 export const reviewOnboardingApplication = (id: string, body: { decision: "approve" | "reject"; note?: string }) =>
   api<{ onboardingId: string; status: "approved" | "rejected"; brandId: string }>(`/api/admin/catalog/onboardings/${encodeURIComponent(id)}/review`, { body })
-export const listAdminCatalogProducts = () => api<AdminCatalogProductsDto>("/api/admin/catalog/products", { query: { limit: 200 } })
+export type AdminCatalogProductsFilter = { q?: string; moderation?: "hidden" | "ok"; category?: string }
+export const listAdminCatalogProducts = (f: AdminCatalogProductsFilter & { cursor?: string } = {}) => api<AdminCatalogProductsDto>("/api/admin/catalog/products", { query: { limit: 100, ...f } })
 export const moderateProduct = (id: string, body: { hidden: boolean; reason: string }) =>
   api<{ productId: string; moderationStatus: "hidden" | "ok" }>(`/api/admin/catalog/products/${encodeURIComponent(id)}/moderation`, { body })
 

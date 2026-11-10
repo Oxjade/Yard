@@ -31,5 +31,5 @@ export function useMirrorServerStatuses(kind: "user" | "brand", ids: string[]) {
       })
   }, [statuses, kind])
   // For brands: what Reinstate would restore for each restricted or suspended one (the server reads it).
-  return { synced: !!statuses, error: q.error, reinstateTo: q.data?.reinstateTo ?? {} }
+  return { synced: !!statuses, error: q.error, statuses, reinstateTo: q.data?.reinstateTo ?? {} }
 }
