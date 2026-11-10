@@ -1,6 +1,6 @@
 "use client"
 
-import { currencies } from "@/config/markets"
+import { countries, currencies } from "@/config/markets"
 import { api } from "@/lib/api/client"
 import { apiUpload } from "@/lib/api/upload"
 import { readImageBlob } from "./image-utils"
@@ -61,7 +61,10 @@ export function onboardingDataFromServer(raw: Record<string, unknown>, user: { n
   const payments = object(raw.payments)
   const cover = fromImage({ mediaId: storefront.coverMediaId, path: storefront.coverPath }, as)
   const images = Array.isArray(product.images) ? product.images.map((image) => fromImage(image, as)).filter((image): image is ImageRef => image !== null) : []
-  const currency = text(business.currency) in currencies ? (text(business.currency) as keyof typeof currencies) : "USD"
+  // No saved currency yet (business step not reached): leave it unset so picking a country suggests its currency.
+  const savedCurrency = text(business.currency) in currencies ? (text(business.currency) as keyof typeof currencies) : null
+  const currency = savedCurrency ?? "USD"
+  const country = (text(business.country) || null) as OnboardingData["business"]["country"]
   const sizes = Array.isArray(product.sizes) ? product.sizes.map((value) => {
     const size = object(value)
     return { label: text(size.label), stock: String(number(size.stock)) }
@@ -91,11 +94,11 @@ export function onboardingDataFromServer(raw: Record<string, unknown>, user: { n
       templateEdited: !!storefront.template,
     },
     business: {
-      country: (text(business.country) || null) as OnboardingData["business"]["country"],
+      country,
       city: text(business.city),
       address: text(business.address),
-      currency,
-      currencyEdited: true,
+      currency: savedCurrency,
+      currencyEdited: savedCurrency !== null && (!country || countries[country]?.currency !== savedCurrency),
       sellerType: business.sellerType === "company" ? "company" : "individual",
       legalName: text(business.legalName),
       contactEmail: text(business.contactEmail),
