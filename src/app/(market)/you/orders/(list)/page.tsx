@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { AccountGate } from "@/components/market/account/auth-panel"
 import { OrdersList } from "@/components/market/account/orders-list"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Orders" }
 
@@ -13,7 +15,7 @@ export default function OrdersPage() {
         invite={{
           title: "Orders",
           body: "Sign in to see every order you've placed. Each brand's part of a checkout has its own status, tracking and returns.",
-          image: img("objects/bags/1"),
+          ...invitePhoto(getEnv().seedDemo, img("objects/bags/1"), siteImages.orders),
         }}
       >
         <OrdersList />

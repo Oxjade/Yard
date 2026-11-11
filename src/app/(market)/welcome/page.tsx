@@ -4,6 +4,8 @@ import { AccountGate } from "@/components/market/account/auth-panel"
 import { AccountSkeleton } from "@/components/market/account/skeletons"
 import { WelcomeFlow } from "@/components/market/account/welcome-flow"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Welcome" }
 
@@ -16,7 +18,7 @@ export default function WelcomePage() {
           invite={{
             title: "Make it yours",
             body: "Sign in and tell us what you shop for. Three quick picks, under a minute, and Discover starts with your kind of brands.",
-            image: img("fashion/campaign/3"),
+            ...invitePhoto(getEnv().seedDemo, img("fashion/campaign/3"), siteImages.welcome),
           }}
         >
           <WelcomeFlow />

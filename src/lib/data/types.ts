@@ -15,6 +15,8 @@ export type ImageAsset = {
   imageId?: string
   /** The uploaded media behind the asset, when it has one (live server photos only). */
   mediaId?: string
+  /** CSS object-position for a cropped (object-cover) frame; centre when absent. */
+  position?: string
 }
 
 export type CategorySlug =

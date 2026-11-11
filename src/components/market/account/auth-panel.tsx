@@ -51,7 +51,7 @@ export function AuthPanel({
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       <figure className="relative aspect-[16/10] overflow-hidden rounded-lg bg-card sm:aspect-[16/9] lg:aspect-auto lg:min-h-[640px]">
-        <Image src={image.src} alt={image.alt} fill loading="eager" fetchPriority="high" sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
+        <Image src={image.src} alt={image.alt} fill loading="eager" fetchPriority="high" sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" style={image.position ? { objectPosition: image.position } : undefined} />
         <span className="scrim-b absolute inset-0" aria-hidden />
         {caption ? <figcaption className="absolute bottom-4 left-4 text-xs text-ink-2">{caption}</figcaption> : null}
       </figure>

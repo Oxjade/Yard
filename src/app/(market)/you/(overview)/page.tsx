@@ -6,6 +6,7 @@ import { getEnv } from "@/server/env"
 import { AccountGate } from "@/components/market/account/auth-panel"
 import { YouOverview } from "@/components/market/account/you-overview"
 import { img } from "@/lib/data/media"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Your World" }
 
@@ -16,7 +17,7 @@ export default function YouPage() {
         invite={{
           title: "Your World",
           body: "Sign in to see drops from the brands you follow, everything you've saved and every order, across every brand, in one place.",
-          image: img("fashion/campaign/2"),
+          ...invitePhoto(getEnv().seedDemo, img("fashion/campaign/2"), siteImages.you),
         }}
       >
         {/* The demo switch, read at request time: the demo shows sample drops, production the scheduled ones. */}

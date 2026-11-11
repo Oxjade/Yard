@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { AccountGate } from "@/components/market/account/auth-panel"
 import { SettingsView } from "@/components/market/account/settings-view"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Settings" }
 
@@ -13,7 +15,7 @@ export default function SettingsPage() {
         invite={{
           title: "Settings",
           body: "Sign in to change your details, the notifications you get, where you ship to and what you're into.",
-          image: img("fashion/cover/3"),
+          ...invitePhoto(getEnv().seedDemo, img("fashion/cover/3"), siteImages.settings),
         }}
       >
         <SettingsView />

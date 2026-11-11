@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { AccountGate } from "@/components/market/account/auth-panel"
 import { FollowingFeed } from "@/components/market/account/following-feed"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Following" }
 
@@ -13,7 +15,7 @@ export default function FollowingPage() {
         invite={{
           title: "Following",
           body: "Follow brands and their new pieces, collections, drop announcements and stories arrive here, in the order they happen. Sign in to start.",
-          image: img("fashion/streetwear-editorial/3"),
+          ...invitePhoto(getEnv().seedDemo, img("fashion/streetwear-editorial/3"), siteImages.following),
         }}
       >
         <FollowingFeed />

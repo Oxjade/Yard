@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { dropImageSrc, isApiImage, type PublicDropDto } from "@/lib/api/drops"
 import { listPublicDrops } from "@/server/drops/service"
 import { FollowButton } from "./follow-button"
+import { HeroCurtain } from "./hero-curtain"
 import "./hero-motion.css"
 
 const delay = (ms: number) => ({ "--delay": `${ms}ms` }) as React.CSSProperties
@@ -13,7 +14,8 @@ const heroClass = "relative isolate min-h-[640px] overflow-hidden md:h-[min(100s
 /**
  * Discover's hero in production (the demo keeps DiscoverHero with its sample drop): the drop
  * that is live now, else the next one to release, read from the database at request time.
- * With no drop scheduled it is a plain welcome with no drop in it, never a sample one.
+ * With no drop scheduled it is a welcome with no drop in it, never a sample one, over the
+ * founding brands' photos sliding past (HeroCurtain).
  */
 export async function LiveDiscoverHero() {
   // Request time, outside the try: the prerender's bail-out must reach Next, not the catch below.
@@ -70,11 +72,10 @@ function DropHero({ drop }: { drop: PublicDropDto }) {
 
 function WelcomeHero() {
   return (
-    <section aria-labelledby="hero-title" className={`${heroClass} bg-obsidian`}>
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_70%_20%,var(--color-purple)_0%,transparent_60%)] opacity-60" aria-hidden />
+    <section aria-labelledby="hero-title" className={`${heroClass} curtain-host bg-obsidian`}>
       <div className="mx-auto flex h-full max-w-page flex-col justify-end px-4 pt-32 pb-10 md:px-8 md:pb-14">
-        <div className="max-w-3xl">
-          <h1 id="hero-title" className="font-display text-display-2xl text-ink">
+        <div className="curtain-hold max-w-[60rem]">
+          <h1 id="hero-title" className="curtain-title font-display text-display-2xl text-ink">
             {["Independent brands,", "limited drops"].map((line, i) => (
               <span key={line} className="block overflow-hidden pb-[0.04em]">
                 <span className="hero-line block" style={{ "--line": i } as React.CSSProperties}>{line}</span>
@@ -90,6 +91,7 @@ function WelcomeHero() {
           </div>
         </div>
       </div>
+      <HeroCurtain />
     </section>
   )
 }

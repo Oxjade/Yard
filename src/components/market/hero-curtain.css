@@ -1,0 +1,93 @@
+/*
+ * The welcome hero's sliding curtain (hero-curtain.tsx). One transform animation on the track,
+ * so the compositor runs it and the main thread never touches it.
+ */
+
+/* A tile before its photo arrives: a warm neutral from the photos themselves (cream walls,
+   concrete, brick), never the brand purple. */
+.curtain-tile {
+  background: #1c1915;
+}
+
+/* One loop moves the track by one set of photos (half the track), right to left. Phones have
+   shorter tiles, so a shorter loop keeps the pace the same: about 40 to 60 px a second. */
+.curtain-track {
+  --curtain-duration: 60s;
+  animation: curtain-slide var(--curtain-duration) linear infinite;
+  will-change: transform;
+}
+
+@media (min-width: 48rem) {
+  .curtain-track {
+    --curtain-duration: 90s;
+  }
+}
+
+@keyframes curtain-slide {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/*
+ * Hold still while someone reads or points at the headline, copy and buttons (.curtain-hold),
+ * or works the buttons from the keyboard. Not on hover of the whole hero: a pointer resting
+ * anywhere on the first screen at load would freeze the curtain before anyone saw it move.
+ */
+.curtain-host:has(.curtain-hold:hover) .curtain-track,
+.curtain-host:focus-within .curtain-track {
+  animation-play-state: paused;
+}
+
+/*
+ * The scrim that keeps the headline, copy and buttons at AA contrast over any photo.
+ * Phone: the tiles fill the top 60%. The headline's first line sits about a fifth of the way
+ * down, over the tiles, so the scrim holds at least 0.55 black from there and deepens through
+ * the lower tiles into the page colour where the copy sits.
+ * Desktop: dark from the left where the text column is (at least 0.55 black at the right end of
+ * "INDEPENDENT", about 57-59% across from 768 to 1440), open on the right where the photos show,
+ * and a fade at the bottom into the page and at the top under the header.
+ * Measured, not estimated (every track position over all 8 photos, 320 to 1440): the worst
+ * pixel behind the headline stays above 4:1, and behind the copy above 4.5:1.
+ */
+.curtain-scrim {
+  background:
+    linear-gradient(180deg, rgba(8, 8, 8, 0.5) 0%, rgba(8, 8, 8, 0.55) 14%, rgba(8, 8, 8, 0.75) 34%, #080808 60%);
+}
+
+@media (min-width: 48rem) {
+  .curtain-scrim {
+    background:
+      linear-gradient(0deg, #080808 0%, rgba(8, 8, 8, 0.55) 16%, rgba(8, 8, 8, 0) 42%),
+      linear-gradient(180deg, rgba(8, 8, 8, 0.5) 0%, rgba(8, 8, 8, 0) 22%),
+      linear-gradient(90deg, rgba(8, 8, 8, 0.88) 0%, rgba(8, 8, 8, 0.8) 30%, rgba(8, 8, 8, 0.62) 55%, rgba(8, 8, 8, 0.2) 80%, rgba(8, 8, 8, 0) 100%);
+  }
+}
+
+/* Reduced motion: the row stands still (the global rule would only shorten the loop). */
+@media (prefers-reduced-motion: reduce) {
+  .curtain-track {
+    animation: none;
+  }
+}
+
+/*
+ * The welcome headline: "INDEPENDENT" is about 5 em wide in the display face, and each line is
+ * masked (overflow hidden) for the entrance, so anything wider than the column cut its last
+ * letter. Phones: the shared display-2xl size (60 px floor) is wider than a 320 px screen, so
+ * the size never exceeds the viewport less the gutters; from about 360 px up it is the shared
+ * size. Desktop: the column is wider than the word (curtain-hold, 60rem) and the headline is
+ * held to 5.4 em, so it keeps its one-word-a-line stack over the dark side of the scrim.
+ */
+.curtain-title {
+  font-size: min(clamp(3.75rem, 11vw, 11rem), calc((100vw - 2.5rem) / 5.4));
+}
+
+@media (min-width: 48rem) {
+  .curtain-title {
+    max-width: 5.4em;
+  }
+}

@@ -28,6 +28,7 @@ import {
   trendingProducts,
 } from "@/lib/data"
 import { img } from "@/lib/data/media"
+import { siteImages } from "@/lib/site-images"
 import type { Product } from "@/lib/data/types"
 import { getEnv } from "@/server/env"
 
@@ -137,7 +138,7 @@ export default function DiscoverPage() {
             page itself stays a static shell. */}
         <div className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-4 md:mt-32 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
           <ChartsThisWeek />
-          <AroundTeaser />
+          <AroundTeaser image={demo ? undefined : siteImages.aroundTeaser} />
         </div>
 
         {/* Underground Index */}

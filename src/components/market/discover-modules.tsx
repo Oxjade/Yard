@@ -12,6 +12,7 @@ import { api } from "@/lib/api/client"
 import { chartBoardDto, type ChartBoardDto, type ChartEntryDto } from "@/lib/api/contracts/charts"
 import { useApi } from "@/lib/api/use-api"
 import { brandById } from "@/lib/data/brands"
+import type { ImageAsset } from "@/lib/data/types"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
 
@@ -106,18 +107,22 @@ function ChartRow({ entry: e }: { entry: ChartEntryDto }) {
   )
 }
 
-/** Discover's Around teaser (§7.3): one card into the map. */
-export function AroundTeaser({ className }: { className?: string }) {
+/**
+ * Discover's Around teaser (§7.3): one card into the map. `image` is the live site's photo
+ * (src/lib/site-images.ts); the demo keeps its sample one. Decorative: the card's text is its name.
+ */
+export function AroundTeaser({ className, image }: { className?: string; image?: ImageAsset }) {
   return (
     <Link
       href="/around"
       className={cn("group relative isolate flex min-h-[260px] min-w-0 flex-col justify-end overflow-hidden rounded-xl border border-line-soft bg-card p-5 md:p-6", className)}
     >
       <Image
-        src="/media/lifestyle/cover-boutique-clothing-rails-01.jpg"
+        src={image?.src ?? "/media/lifestyle/cover-boutique-clothing-rails-01.jpg"}
         alt=""
         fill
         sizes="(min-width: 1024px) 34vw, 100vw"
+        style={image?.position ? { objectPosition: image.position } : undefined}
         className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04] motion-reduce:transition-none"
       />
       <span className="scrim-b absolute inset-0 -z-10" />

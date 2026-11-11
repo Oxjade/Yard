@@ -3,6 +3,8 @@ import { Suspense } from "react"
 import { InboxApp, InboxSkeleton } from "@/components/inbox/inbox-app"
 import { InboxGate } from "@/components/inbox/inbox-gate"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Inbox" }
 
@@ -15,7 +17,7 @@ export default function InboxPage() {
         invite={{
           title: "Your inbox",
           body: "Sign in to message brands about sizing, stock and delivery.",
-          image: img("fashion/streetwear-editorial/1"),
+          ...invitePhoto(getEnv().seedDemo, img("fashion/streetwear-editorial/1"), siteImages.inbox),
         }}
       >
         <Suspense fallback={<InboxSkeleton />}>

@@ -3,6 +3,8 @@ import { AccountGate } from "@/components/market/account/auth-panel"
 import { OrderDetail } from "@/components/market/account/order-detail"
 import { customerOrders } from "@/lib/data/orders"
 import { img } from "@/lib/data/media"
+import { getEnv } from "@/server/env"
+import { invitePhoto, siteImages } from "@/lib/site-images"
 
 export const metadata: Metadata = { title: "Order" }
 
@@ -28,7 +30,7 @@ export default async function OrderPage({ params }: PageProps<"/you/orders/[id]"
         invite={{
           title: "Your order",
           body: "Sign in to see this order's progress, tracking and returns.",
-          image: img("objects/bags/1"),
+          ...invitePhoto(getEnv().seedDemo, img("objects/bags/1"), siteImages.orderDetail),
         }}
       >
         <OrderDetail id={id} />
