@@ -18,8 +18,9 @@ export const instant = false
  */
 export const ensureStatic = "navigation"
 
-/** Drops created in Studio get ids like d_local_<base36>; they live in the local Studio store. */
+/** Local demo ids and database drop ids are resolved by the active Studio session. */
 const LOCAL_DROP_ID = /^d_local_[a-z0-9]+$/
+const SERVER_DROP_ID = /^drp_[A-Za-z0-9_-]+$/
 
 const brandDrops = drops.filter((d) => d.brandId === STUDIO_BRAND_ID)
 
@@ -29,6 +30,6 @@ export function generateStaticParams() {
 
 export default async function EditDropPage({ params }: PageProps<"/studio/drops/[id]">) {
   const { id } = await params
-  if (!brandDrops.some((d) => d.id === id) && !LOCAL_DROP_ID.test(id)) notFound()
+  if (!brandDrops.some((d) => d.id === id) && !LOCAL_DROP_ID.test(id) && !SERVER_DROP_ID.test(id)) notFound()
   return <DropBuilder id={id} />
 }

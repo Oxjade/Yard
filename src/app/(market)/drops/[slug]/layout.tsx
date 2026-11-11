@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
-import { getDrop } from "@/lib/data"
+import { connection } from "next/server"
+import { loadDrop } from "@/server/drops/service"
 
 /**
  * Checks the slug before anything streams, so an unknown drop still answers with a real 404
@@ -9,7 +10,9 @@ import { getDrop } from "@/lib/data"
 export const instant = false
 
 export default async function DropLayout({ children, params }: LayoutProps<"/drops/[slug]">) {
+  await connection()
   const { slug } = await params
-  if (!getDrop(slug)) notFound()
+  const drop = await loadDrop(slug)
+  if (!drop || drop.status === "cancelled") notFound()
   return children
 }

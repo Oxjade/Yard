@@ -28,7 +28,7 @@ import { mediaAssets } from "../db/schema"
  * Brand image uploads that CATALOG accepts as product, collection and storefront-cover photos.
  * Inbox attachments never qualify.
  */
-export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover"] as const
+export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover", "drop_image"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
 const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)

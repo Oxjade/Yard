@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 import { SectionHeader } from "@/components/market/section-header"
-import { DropsBoard } from "@/components/market/editorial/drops-board"
+import { LiveDropsBoard } from "@/components/market/live-drops-board"
 import { accessName, accessRule } from "@/components/market/editorial/drop-facts"
-import { drops } from "@/lib/data"
 import type { Drop } from "@/lib/data/types"
 
 export const metadata: Metadata = {
@@ -20,8 +19,7 @@ export default function DropsPage() {
         </p>
       </header>
 
-      {/* The feature slot and every group below follow the demo clock, so they are picked together on the client. */}
-      <DropsBoard drops={drops} />
+      <LiveDropsBoard />
 
       <section aria-labelledby="how-title" className="mt-24 md:mt-32">
         <div id="how-title">

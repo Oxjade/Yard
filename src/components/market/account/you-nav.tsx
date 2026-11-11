@@ -7,14 +7,17 @@ import { motion } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useUnread } from "@/lib/realtime/unread"
 import { useServerSession } from "@/lib/session/use-server-session"
+import { useApi } from "@/lib/api/use-api"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { cn } from "@/lib/utils"
 import { useServerOrderSummaries } from "./use-server-order-summaries"
+import { loadMyDrops, myDropsKey } from "./my-drops"
 
 const items = [
   { href: "/you", label: "Overview", exact: true },
   { href: "/inbox", label: "Inbox", count: "inbox" },
+  { href: "/you/drops", label: "Drops", count: "drops" },
   { href: "/following", label: "Following", count: "following" },
   { href: "/wishlist", label: "Wishlist", count: "wishlist" },
   { href: "/you/orders", label: "Orders", count: "orders" },
@@ -47,9 +50,16 @@ export function YouNav({ className }: { className?: string }) {
   const orders = server === undefined ? localOrders : server?.counts ? server.counts.checkouts : null
   // Unread conversations from the server (the realtime provider keeps it current); unknown or
   // signed out reads as no count, never 0.
-  const signedIn = useServerSession((s) => !!s.shopper)
+  const shopper = useServerSession((s) => s.shopper)
+  const signedIn = !!shopper
+  const localDropCount = useSaved((s) => s.notify.length)
+  const myDrops = useApi(shopper && !shopper.demo ? myDropsKey(shopper.id) : null, loadMyDrops, { keepPrevious: false })
+  const serverDropCount = myDrops.data ? new Set([
+    ...myDrops.data.entries.filter((entry) => entry.status !== "withdrawn").map((entry) => entry.drop.id),
+    ...myDrops.data.reminders.filter((reminder) => reminder.drop).map((reminder) => reminder.dropId),
+  ]).size : null
   const unread = useUnread("market")
-  const counts = { following, wishlist, orders, inbox: signedIn && unread ? unread : 0 }
+  const counts = { following, wishlist, orders, inbox: signedIn && unread ? unread : 0, drops: shopper?.demo ? localDropCount : serverDropCount }
   const navRef = useRef<HTMLElement>(null)
   const [fade, setFade] = useState<Fade>("none")
 
