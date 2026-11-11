@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# deploy-gate ENV
+#   The forced command of a CI deploy key (setup.sh installs one key per environment in
+#   /home/deploy/.ssh/authorized_keys as: restrict,command="/opt/yard/bin/deploy-gate ENV" ssh-ed25519 …).
+#   The key never gets a shell, a pty, port forwarding or scp; it can only run:
+#
+#     info                         YARD_DOMAIN and the service states
+#     upload ENV SHA SHA256        stdin -> /srv/yard/ENV/incoming/SHA.tar.gz (max 400 MB), checksum verified
+#     release ENV SHA              /opt/yard/bin/release ENV SHA
+#     rollback ENV                 /opt/yard/bin/rollback ENV   (previous release only)
+#     health ENV                   GET /api/health of ENV
+#
+#   ENV in a command must equal the environment the key is bound to, so the staging key (used by
+#   unreviewed pushes to v3) can never touch production. Anything else exits 126.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+
+bound=${1:-}
+valid_env "$bound" || { echo "deploy-gate: key is not bound to an environment" >&2; exit 126; }
+cmdline=${SSH_ORIGINAL_COMMAND:-}
+refuse() { echo "deploy-gate: refused: $*" >&2; exit 126; }
+
+[[ ${#cmdline} -le 200 ]] || refuse "command too long"
+[[ "$cmdline" =~ ^[a-z0-9\ -]*$ ]] || refuse "unexpected characters"
+read -r -a words <<<"$cmdline"
+((${#words[@]} > 0)) || refuse "no command (this key has no shell)"
+verb=${words[0]}
+want_env() {
+  [[ "${words[1]:-}" == "$bound" ]] || refuse "this key may only act on $bound"
+}
+
+MAX_UPLOAD=$((400 * 1024 * 1024))
+
+case "$verb" in
+  info)
+    ((${#words[@]} == 1)) || refuse "usage: info"
+    printf 'YARD_DOMAIN=%s\n' "$(env_get "$YARD_ETC/domain.env" YARD_DOMAIN)"
+    printf 'bound=%s\n' "$bound"
+    for e in "${YARD_ENVS[@]}"; do
+      printf '%s=%s current=%s\n' "$(env_service "$e")" "$("$SYSTEMCTL" is-active "$(env_service "$e")" 2>/dev/null || true)" "$(current_release "$e")"
+    done
+    ;;
+  upload)
+    ((${#words[@]} == 4)) || refuse "usage: upload ENV SHA SHA256"
+    want_env
+    sha=${words[2]}
+    sum=${words[3]}
+    valid_sha "$sha" || refuse "bad commit id"
+    [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || refuse "bad sha256"
+    dir="$YARD_SRV/$bound/incoming"
+    umask 027
+    # Old partial uploads (a dropped connection) are cleared after a day.
+    find "$dir" -maxdepth 1 -type f -mmin +1440 -delete 2>/dev/null || true
+    part="$dir/.$sha.tar.gz.part"
+    head -c $((MAX_UPLOAD + 1)) >"$part"
+    size=$(stat -c %s "$part")
+    if ((size > MAX_UPLOAD)); then
+      rm -f "$part"
+      refuse "upload larger than 400 MB"
+    fi
+    have=$(sha256sum "$part" | awk '{ print $1 }')
+    if [[ "$have" != "$sum" ]]; then
+      rm -f "$part"
+      echo "deploy-gate: checksum mismatch (got $have)" >&2
+      exit 1
+    fi
+    mv -f "$part" "$dir/$sha.tar.gz"
+    printf '%s  %s.tar.gz\n' "$sum" "$sha" >"$dir/$sha.sha256"
+    echo "uploaded $sha ($size bytes)"
+    ;;
+  release)
+    ((${#words[@]} == 3)) || refuse "usage: release ENV SHA"
+    want_env
+    valid_sha "${words[2]}" || refuse "bad commit id"
+    exec "$YARD_OPT/bin/release" "$bound" "${words[2]}"
+    ;;
+  rollback)
+    ((${#words[@]} == 2)) || refuse "usage: rollback ENV"
+    want_env
+    exec "$YARD_OPT/bin/rollback" "$bound"
+    ;;
+  health)
+    ((${#words[@]} == 2)) || refuse "usage: health ENV"
+    want_env
+    if body=$(health_json "$bound"); then
+      printf '%s\n' "$body"
+    else
+      down='{"status":"down"}'
+      printf '%s\n' "${body:-$down}"
+      exit 1
+    fi
+    ;;
+  *)
+    refuse "unknown command '$verb'"
+    ;;
+esac

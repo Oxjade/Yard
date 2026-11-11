@@ -1,0 +1,78 @@
+# /etc/caddy/Caddyfile — written by the Yard setup.sh. The domain comes from /etc/yard/domain.env
+# (YARD_DOMAIN, through caddy.service.d/yard.conf); change it with /opt/yard/bin/set-domain.
+# HTTPS certificates come from Let's Encrypt automatically.
+{
+	admin localhost:2019
+	# Caddy ignores X-Forwarded-For sent by clients and writes the real peer address itself,
+	# which is why the app trusts exactly one hop (YARD_TRUSTED_PROXY_HOPS=1).
+}
+
+(yard_common) {
+	# Only text-like responses are compressed. Never text/event-stream: live updates must not buffer.
+	encode {
+		zstd
+		gzip 5
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/javascript*
+			header Content-Type text/xml*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type application/manifest+json*
+			header Content-Type application/xml*
+			header Content-Type application/rss+xml*
+			header Content-Type image/svg+xml*
+		}
+	}
+	# Largest upload Yard accepts is 50 MB (video); a little room for multipart overhead.
+	# Declared bodies over ~60 MB get a clear 413 before anything is read; request_body also caps
+	# bodies that don't declare a length.
+	@too_large header_regexp Content-Length ^([6-9][0-9]{7}|[0-9]{9,})$
+	respond @too_large "Upload too large (the limit is 50 MB)." 413
+	request_body {
+		max_size 60MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+		-X-Powered-By
+	}
+	log {
+		output file /var/log/caddy/yard-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+{$YARD_DOMAIN} {
+	import yard_common
+	reverse_proxy 127.0.0.1:3000 {
+		# Server-sent events: pass every chunk through immediately.
+		flush_interval -1
+		# During a deploy restart (a few seconds) hold requests instead of answering 502.
+		lb_try_duration 20s
+		lb_try_interval 250ms
+	}
+}
+
+staging.{$YARD_DOMAIN} {
+	import yard_common
+	# Staging is public but should never appear in search results.
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy 127.0.0.1:3001 {
+		flush_interval -1
+		lb_try_duration 5s
+		lb_try_interval 250ms
+	}
+	handle_errors {
+		@down expression `{err.status_code} in [502, 503, 504]`
+		handle @down {
+			header Content-Type "text/plain; charset=utf-8"
+			respond "Staging is stopped (it only runs when needed, to save memory). Start it with: sudo systemctl start yard-staging" 503
+		}
+	}
+}

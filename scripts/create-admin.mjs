@@ -11,8 +11,9 @@
 // Safety:
 //  - Refuses once any real (non-demo) active owner admin exists: bootstrap is one time only.
 //  - Only the owner role is accepted (the first admin must be able to add the others).
-//  - PGlite allows one process per data directory: stop the server first. The script refuses
-//    while a server holds the lock, so it can never run beside one.
+//  - With DATABASE_URL (Postgres, a real deployment) it runs beside the live server. Without it
+//    (PGlite) only one process may open the data directory: stop the server first. The script
+//    refuses while a server holds the lock, so it can never run beside one.
 //  - Run it with the SAME environment as the server (NODE_ENV, YARD_DATA_DIR, YARD_PUBLIC_URL,
 //    YARD_SESSION_SECRET, YARD_ENCRYPTION_KEY, EMAIL_*). Like `next start`, it reads
 //    .env.production.local, .env.local, .env.production and .env; variables already set win.
@@ -127,7 +128,7 @@ try {
   fail(`Couldn't create the admin: ${e instanceof Error ? e.message : String(e)}${fields}`)
 } finally {
   try {
-    await root?.$client.close()
+    if (root) await (await import("@/server/db/client")).closeDb()
   } catch {
     /* closing is best effort; the lock is released on exit */
   }

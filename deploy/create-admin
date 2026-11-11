@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# create-admin ENV --email you@example.com --name "Your Name" [--print-link]
+#   Creates the FIRST owner admin of ENV (one time only; later admins are added from the Control
+#   Center). Runs tools/create-admin.mjs of the current release as the 'yard' user with ENV's
+#   settings. Email is not connected yet, so the set-password link is printed: send it privately.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+((EUID == 0)) || die "run as root: sudo /opt/yard/bin/create-admin $*"
+
+env=${1:-}
+require_env "$env"
+shift
+[[ $# -gt 0 ]] || die "usage: create-admin production|staging --email you@example.com --name \"Your Name\" [--print-link]" 64
+link="$YARD_SRV/$env/current"
+[[ -L "$link" ]] || die "$env has no release yet; deploy it first"
+dir=$(readlink -f "$link")
+[[ -f "$dir/tools/create-admin.mjs" ]] || die "release $(basename "$dir") has no tools/create-admin.mjs"
+# Postgres serves several processes at once, so the server can keep running.
+run_as_yard "$env" "$dir" node tools/create-admin.mjs "$@"

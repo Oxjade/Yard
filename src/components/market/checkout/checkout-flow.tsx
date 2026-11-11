@@ -161,6 +161,9 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const syncCart = useCart((s) => s.syncFromServer)
   const reduceMotion = useReducedMotion()
   const { mode: paymentsMode, currencies: chargeable, ready: optionsReady } = useCheckoutOptions()
+  // No payment provider yet (YARD_PAYMENTS=off): everything up to Review works and is saved, but
+  // Place order stays off; the server refuses with the same words if it's reached anyway.
+  const paymentsClosed = paymentsMode === "off"
   // The checkout charges only in a currency this deployment's Paystack account takes (the server's
   // list; NGN alone on a live Nigerian account). Browsing in another (GBP, or GHS/USD where the
   // account doesn't take them), the checkout shows the one it will charge in, so every price here
@@ -360,7 +363,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const submitting = submit.pending
 
   function placeOrder() {
-    if (submitting || shippingBlock || !optionsReady) return
+    if (submitting || shippingBlock || !optionsReady || paymentsClosed) return
     const firstInvalid = stepErrors.findIndex((e) => Object.keys(e).length > 0)
     if (firstInvalid !== -1) {
       showErrors(firstInvalid)
@@ -457,9 +460,11 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                       {bag.groups.length === 1
                         ? `Placing this order creates one order with ${bag.groups[0].brand.name}.`
                         : `Placing this order creates ${bag.groups.length} orders, one for each brand. Each ships and tracks separately.`}{" "}
-                      {paymentsMode === "stub"
-                        ? "Payments aren't connected here, so nothing is charged and the orders are recorded as awaiting payment confirmation."
-                        : "Next, Paystack opens to take the payment. Brands start preparing orders once Paystack confirms it."}
+                      {paymentsMode === "off"
+                        ? "Payments open soon, so orders can't be placed yet. Your cart and these details are saved for when they do."
+                        : paymentsMode === "stub"
+                          ? "Payments aren't connected here, so nothing is charged and the orders are recorded as awaiting payment confirmation."
+                          : "Next, Paystack opens to take the payment. Brands start preparing orders once Paystack confirms it."}
                     </Notice>
                     <div className="flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
                       <span className="text-base text-ink">
@@ -471,6 +476,11 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                   </div>
                 ) : null}
 
+                {step === REVIEW && paymentsClosed ? (
+                  <p id="payments-closed-reason" role="status" className="mt-5 text-sm text-ink-2">
+                    {PAYMENTS_OPEN_SOON}
+                  </p>
+                ) : null}
                 {(step === 2 || step === REVIEW) && shippingBlock ? (
                   <p id="ship-block-reason" role="status" className="mt-5 text-sm text-ink-2">
                     {shippingBlock}
@@ -491,7 +501,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                     </Button>
                   )}
                   {step === REVIEW ? (
-                    <Button type="submit" variant="primary" size="xl" loading={submitting} disabled={(!!shippingBlock || !optionsReady) && !submitting} aria-describedby={shippingBlock ? "ship-block-reason" : undefined} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
+                    <Button type="submit" variant="primary" size="xl" loading={submitting} disabled={(!!shippingBlock || !optionsReady || paymentsClosed) && !submitting} aria-describedby={[paymentsClosed ? "payments-closed-reason" : null, shippingBlock ? "ship-block-reason" : null].filter(Boolean).join(" ") || undefined} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
                       Place order
                     </Button>
                   ) : (
@@ -511,6 +521,8 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
     </PriceCurrencyContext.Provider>
   )
 }
+
+const PAYMENTS_OPEN_SOON = "Payments open soon. Your cart is saved — you can place your order once payments open."
 
 /** Where a restored draft picks up: the step the shopper was on, or the first earlier step that no longer validates. */
 /** "NGN", "NGN and USD", "NGN, GHS and USD". */

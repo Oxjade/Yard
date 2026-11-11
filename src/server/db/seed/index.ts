@@ -131,8 +131,9 @@ async function record(m: SeedModule) {
  * Boot: runs every module whose recorded version is below its own, each in its own transaction.
  * A failing or waiting module is logged and skipped, so a wave-2 seed can't break boot.
  */
-export async function runSeeds(root: Root) {
+export async function runSeeds(root: Root): Promise<{ ran: string[]; failed: string[]; waiting: string[] }> {
   const env = getEnv()
+  const out = { ran: [] as string[], failed: [] as string[], waiting: [] as string[] }
   const modules = env.seedDemo ? seedModules : referenceModules
   const versions = await runTx(root, () => recordedVersions())
   const ctx = await runTx(root, () => context())
@@ -151,11 +152,14 @@ export async function runSeeds(root: Root) {
         return true
       })
       if (ran) log.info(`[yard] ${m.key} v${m.version} seeded in ${Date.now() - started} ms`)
+      ;(ran ? out.ran : out.waiting).push(m.key)
     } catch (e) {
       log.error(`[yard] ${m.key} failed; it will retry at the next boot or reseed`, e)
+      out.failed.push(m.key)
     }
   }
   if (!env.seedDemo) await warnEmptyCatalogue(root)
+  return out
 }
 
 /**
@@ -166,7 +170,7 @@ export async function runSeeds(root: Root) {
  * warn loudly when sample rows are present (a database once booted with YARD_SEED_DEMO=1): they
  * stay hidden from every public read (sample-guard.ts) but should be cleaned up.
  */
-async function warnEmptyCatalogue(root: Root) {
+export async function warnEmptyCatalogue(root: Root) {
   let products = 0
   let sampleRows = 0
   try {

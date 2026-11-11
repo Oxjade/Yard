@@ -331,7 +331,8 @@ export async function decideChartFlag(ctx: DecisionCtx, body: { id: string; outc
           order by e.kind, e.brand_id, coalesce(e.product_id, ''), coalesce(e.drop_id, ''), e.actor_id, e.day, e.seq
         ) v
       )`)
-    reincluded = (r as { affectedRows?: number }).affectedRows ?? 0
+    // PGlite reports affectedRows, node-postgres rowCount.
+    reincluded = (r as { affectedRows?: number }).affectedRows ?? (r as { rowCount?: number | null }).rowCount ?? 0
   }
   const { invalidate } = await charts()
   await tryFeature("charts.invalidate", () => invalidate(f.brandId))

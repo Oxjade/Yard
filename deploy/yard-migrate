@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# yard-migrate ENV SLOT [--check]
+#   Runs the database migration of a release as the 'yard' user with that environment's secrets.
+#   SLOT is 'next' (the release being deployed, before the switch) or 'current'.
+#   1. tools/check-env.mjs   validates every required production variable (prints all problems)
+#   2. tools/db-migrate.mjs  advisory-locked migrate + reference seeds (demo seeds never in production)
+# Root-owned (/opt/yard/bin). The deploy user may run it through sudo with exactly these arguments,
+# so CI can migrate without ever being able to read /etc/yard/*.env.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+
+env=${1:-}
+slot=${2:-}
+mode=${3:-}
+require_env "$env"
+case "$slot" in next | current) ;; *) die "slot must be 'next' or 'current'" 64 ;; esac
+case "$mode" in "" | --check) ;; *) die "unknown option '$mode'" 64 ;; esac
+((EUID == 0)) || die "run as root (sudo)"
+
+link="$YARD_SRV/$env/$slot"
+[[ -L "$link" ]] || die "$link does not exist"
+dir=$(readlink -f "$link")
+[[ "$dir" == "$YARD_SRV/$env/releases/"* ]] || die "$link points outside $YARD_SRV/$env/releases"
+for f in tools/check-env.mjs tools/db-migrate.mjs; do
+  [[ -f "$dir/$f" ]] || die "release $(basename "$dir") has no $f (built without scripts/bundle-tools.mjs?)"
+done
+
+if [[ "$mode" == --check ]]; then
+  # exit 0 = up to date, 3 = migrations pending, anything else = error
+  run_as_yard "$env" "$dir" node tools/db-migrate.mjs --check
+  exit $?
+fi
+
+log "$env: checking environment ($YARD_ETC/$env.env)"
+run_as_yard "$env" "$dir" node tools/check-env.mjs
+log "$env: migrating database $(env_db "$env") with release $(basename "$dir")"
+run_as_yard "$env" "$dir" node tools/db-migrate.mjs
+log "$env: migrations done"

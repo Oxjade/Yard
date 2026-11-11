@@ -37,6 +37,21 @@ export type Env = {
   instagram: { appId: string | null; appSecret: string | null; graphVersion: string; configured: boolean }
   tiktok: { clientKey: string | null; clientSecret: string | null; usePkce: boolean; configured: boolean }
   mapStyleUrl: string
+  /**
+   * DATABASE_URL (postgres:// or postgresql://) when set: the server uses that Postgres through
+   * node-postgres. Null: the embedded PGlite under ${envDir}/pg (development, tests, local demo).
+   */
+  databaseUrl: string | null
+  /** Connections in this process's Postgres pool (YARD_PG_POOL_MAX, default 5). */
+  pgPoolMax: number
+  /** A label for logs and /api/health: YARD_ENV_NAME (production, staging…), else NODE_ENV. */
+  envName: string
+  /**
+   * Which payment provider checkout uses (YARD_PAYMENTS): "off" = checkout is closed ("Payments
+   * open soon"), "stub" = nothing is charged (development, or an isolated demo deployment),
+   * "paystack" = PAYSTACK_SECRET_KEY. Production defaults to off.
+   */
+  payments: "off" | "stub" | "paystack"
 }
 
 const raw = z.object({
@@ -60,6 +75,13 @@ const raw = z.object({
   TIKTOK_CLIENT_KEY: z.string().optional(),
   TIKTOK_CLIENT_SECRET: z.string().optional(),
   TIKTOK_USE_PKCE: z.string().optional(),
+  DATABASE_URL: z.string().optional(),
+  YARD_PG_POOL_MAX: z.string().optional(),
+  YARD_ENV_NAME: z.string().optional(),
+  YARD_PAYMENTS: z.string().optional(),
+  YARD_ALLOW_PGLITE_PRODUCTION: z.string().optional(),
+  YARD_ALLOW_HTTP: z.string().optional(),
+  PAYSTACK_SECRET_KEY: z.string().optional(),
 })
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined)
@@ -134,13 +156,15 @@ function parse(): Env {
       sessionRaw ??= randomBytes(32).toString("base64url")
       encryptionRaw ??= randomBytes(32).toString("base64")
     } else {
-      throw new Error("[yard] YARD_SESSION_SECRET and YARD_ENCRYPTION_KEY are required in production (see .env.example). `npm run start:demo` generates them for a local demo.")
+      // Production: every missing or invalid variable is listed at once (below), not one per restart.
+      if (!sessionRaw) problems.push("YARD_SESSION_SECRET is required (≥ 32 random bytes, base64url; e.g. openssl rand -base64 32)")
+      if (!encryptionRaw) problems.push("YARD_ENCRYPTION_KEY is required (exactly 32 random bytes, base64; e.g. openssl rand -base64 32). Keep a copy: encrypted data can't be read without it")
     }
   }
-  let sessionSecret = decode(sessionRaw)
-  let encryptionKey = decode(encryptionRaw)
-  if (sessionSecret.length < 32) problems.push("YARD_SESSION_SECRET must decode to at least 32 bytes")
-  if (encryptionKey.length !== 32) problems.push("YARD_ENCRYPTION_KEY must decode to exactly 32 bytes")
+  let sessionSecret = sessionRaw ? decode(sessionRaw) : Buffer.alloc(0)
+  let encryptionKey = encryptionRaw ? decode(encryptionRaw) : Buffer.alloc(0)
+  if (sessionRaw && sessionSecret.length < 32) problems.push("YARD_SESSION_SECRET must decode to at least 32 bytes")
+  if (encryptionRaw && encryptionKey.length !== 32) problems.push("YARD_ENCRYPTION_KEY must decode to exactly 32 bytes")
   const prevRaw = blank(e.YARD_ENCRYPTION_KEY_PREVIOUS)
   let encryptionKeyPrevious = prevRaw ? decode(prevRaw) : null
   if (encryptionKeyPrevious && encryptionKeyPrevious.length !== 32) {
@@ -169,8 +193,46 @@ function parse(): Env {
   const ttKey = blank(e.TIKTOK_CLIENT_KEY) ?? null
   const ttSecret = providerSecret("TIKTOK_CLIENT_SECRET", e.TIKTOK_CLIENT_SECRET)
 
+  // Postgres. Production needs it unless this is a local demo of the production build (PGlite).
+  const databaseUrl = blank(e.DATABASE_URL) ?? null
+  if (databaseUrl && !/^postgres(ql)?:\/\/[^\s]+$/.test(databaseUrl)) problems.push("DATABASE_URL must be a postgres:// or postgresql:// URL")
+  if (!dev && !building && !databaseUrl && !seedDemo && !on(e.YARD_ALLOW_PGLITE_PRODUCTION))
+    problems.push("DATABASE_URL is required in production (postgres://user:password@127.0.0.1:5432/db). Set YARD_ALLOW_PGLITE_PRODUCTION=1 only for a local test of the production build on PGlite")
+  // A real deployment (production on Postgres, not a local demo): its address and data directory are explicit.
+  if (!dev && !building && databaseUrl && !seedDemo) {
+    if (!blank(e.YARD_PUBLIC_URL)) problems.push("YARD_PUBLIC_URL is required (the public https:// address, e.g. https://example.com)")
+    else if (!cookieSecure && !on(e.YARD_ALLOW_HTTP)) problems.push("YARD_PUBLIC_URL must start with https:// in production (YARD_ALLOW_HTTP=1 only for a local test)")
+    if (!blank(e.YARD_DATA_DIR) || !path.isAbsolute(blank(e.YARD_DATA_DIR)!)) problems.push("YARD_DATA_DIR is required and must be an absolute path (uploads live there)")
+    if (trustedProxyHops === 0) log.once("env:hops", "warn", "[yard] YARD_TRUSTED_PROXY_HOPS=0: behind Caddy or another reverse proxy set it to 1, or every visitor shares one rate limit.")
+  }
+  const poolRaw = blank(e.YARD_PG_POOL_MAX) ?? "5"
+  let pgPoolMax = Number(poolRaw)
+  if (!Number.isInteger(pgPoolMax) || pgPoolMax < 1 || pgPoolMax > 50) {
+    problems.push("YARD_PG_POOL_MAX must be an integer from 1 to 50")
+    pgPoolMax = 5
+  }
+  const envName = blank(e.YARD_ENV_NAME) ?? nodeEnv
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(envName)) problems.push("YARD_ENV_NAME must be lowercase letters, digits and dashes (e.g. production, staging)")
+
+  // Payments (YARD_PAYMENTS). A real deployment never falls back to the stub on its own: without a
+  // provider it takes no orders at all.
+  const paystackKey = blank(e.PAYSTACK_SECRET_KEY)
+  const paymentsRaw = blank(e.YARD_PAYMENTS)?.toLowerCase()
+  let payments: Env["payments"]
+  if (paymentsRaw && paymentsRaw !== "off" && paymentsRaw !== "stub" && paymentsRaw !== "paystack") {
+    problems.push("YARD_PAYMENTS must be off, stub or paystack")
+    payments = "off"
+  } else if (paymentsRaw) payments = paymentsRaw as Env["payments"]
+  else payments = dev ? (paystackKey ? "paystack" : "stub") : "off"
+  if (payments === "paystack" && (!paystackKey || paystackKey.length < 16)) {
+    if (dev || building) payments = "stub"
+    problems.push("YARD_PAYMENTS=paystack needs PAYSTACK_SECRET_KEY (sk_live_… or sk_test_…)")
+  }
+  if (payments === "stub" && !dev && !seedDemo) problems.push("YARD_PAYMENTS=stub is for development or an isolated demo deployment (YARD_SEED_DEMO=1) only; use off until a provider is connected")
+  if (!dev && !building && !paymentsRaw && paystackKey) log.once("env:paystack-off", "warn", "[yard] PAYSTACK_SECRET_KEY is set but YARD_PAYMENTS isn't: payments stay off. Set YARD_PAYMENTS=paystack to take payments.")
+
   if (problems.length) {
-    const msg = `[yard] Invalid configuration: ${problems.join("; ")}.`
+    const msg = dev || building ? `[yard] Invalid configuration: ${problems.join("; ")}.` : ["[yard] Invalid production configuration. Fix each line, then restart:", ...problems.map((p) => `  - ${p}`)].join("\n")
     if (!dev && !building) throw new Error(msg)
     log.once("env:problems", "error", msg)
     // Development keeps working on generated secrets rather than refusing to start.
@@ -207,6 +269,10 @@ function parse(): Env {
     instagram: { appId: igId, appSecret: igSecret, graphVersion: blank(e.INSTAGRAM_GRAPH_VERSION) ?? "v23.0", configured: !!(igId && igSecret) },
     tiktok: { clientKey: ttKey, clientSecret: ttSecret, usePkce: blank(e.TIKTOK_USE_PKCE) !== "0", configured: !!(ttKey && ttSecret) },
     mapStyleUrl: blank(e.NEXT_PUBLIC_MAP_STYLE_URL) ?? "https://tiles.openfreemap.org/styles/dark",
+    databaseUrl,
+    pgPoolMax,
+    envName,
+    payments,
   }
 }
 

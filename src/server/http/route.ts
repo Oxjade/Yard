@@ -11,7 +11,7 @@ import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
 import type { AdminPermission, BrandPermission } from "@/lib/permissions"
 import { assertSameOrigin } from "./csrf"
 import { badRequest, errorBody, forbidden, HttpError, NotImplemented, rateLimited } from "./errors"
-import { pgDataException } from "./pg-errors"
+import { pgDataException, pgTransient } from "./pg-errors"
 import { clientIp, ipHash as hashIp } from "./request"
 
 /**
@@ -291,6 +291,11 @@ function errorResponse(e: unknown, requestId: string): Response {
   if (data) {
     log.once(`pg-data:${data.code}`, "warn", `[yard] request ${requestId}: Postgres refused a value (${data.code} ${data.name}); a contract is missing ${data.text ? "safeText()/safeId()" : "a rule for this field"}`)
     return Response.json({ error: { code: "validation", message: data.message } }, { status: 400 })
+  }
+  const transient = pgTransient(e)
+  if (transient) {
+    log.warn(`[yard] request ${requestId}: database busy (${transient}); answered 503`)
+    return Response.json({ error: { code: "busy", message: "Yard is busy right now. Try again shortly." } }, { status: 503, headers: { "Retry-After": "5" } })
   }
   log.error(`[yard] request ${requestId} failed`, e)
   return Response.json({ error: { code: "internal", message: "Something went wrong on our side. Try again." } }, { status: 500 })

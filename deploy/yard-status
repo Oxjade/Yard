@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# yard-status: services, health, releases, memory, disk and the last backup, at a glance.
+set -uo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+
+domain=$(env_get "$YARD_ETC/domain.env" YARD_DOMAIN)
+echo "Yard on $(hostname) — domain ${domain:-?}"
+echo
+for e in "${YARD_ENVS[@]}"; do
+  s=$(env_service "$e")
+  state=$("$SYSTEMCTL" is-active "$s" 2>/dev/null)
+  mem=$("$SYSTEMCTL" show -p MemoryCurrent --value "$s" 2>/dev/null)
+  [[ "$mem" =~ ^[0-9]+$ ]] && mem="$((mem / 1048576)) MB" || mem="-"
+  body=$(health_json "$e" 2>/dev/null) || true
+  printf '%-11s %-9s mem %-8s release %-12s health %s\n' "$e" "${state:-?}" "$mem" "$(current_release "$e" | cut -c1-12)" "${body:-down}"
+done
+echo
+for s in postgresql caddy fail2ban yard-backup.timer; do
+  printf '%-18s %s\n' "$s" "$("$SYSTEMCTL" is-active "$s" 2>/dev/null)"
+done
+echo
+free -m | sed -n '1,3p'
+echo
+df -h / | sed -n '1,2p'
+echo
+last=$(find "$YARD_BACKUPS" -mindepth 1 -maxdepth 1 -type d -name '20*' -printf '%f\n' 2>/dev/null | sort | tail -n 1)
+echo "last nightly backup: ${last:-none yet} ($YARD_BACKUPS)"

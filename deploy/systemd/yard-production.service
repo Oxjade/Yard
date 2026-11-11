@@ -1,0 +1,55 @@
+# Yard production: Next.js standalone server on 127.0.0.1:3000 behind Caddy.
+[Unit]
+Description=Yard marketplace (production)
+Documentation=file:///opt/yard/kit/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+# Nothing to run until the first release is deployed.
+ConditionPathExists=/srv/yard/production/current/server.js
+
+[Service]
+Type=simple
+User=yard
+Group=yard
+# Secrets and settings (root:yard 0640). PORT=3000, HOSTNAME=127.0.0.1, DATABASE_URL, YARD_*.
+EnvironmentFile=/etc/yard/production.env
+# Memory: V8 heap 384 MB inside a 550 MB ceiling (native memory, sharp/libvips, buffers on top).
+Environment=NODE_OPTIONS=--max-old-space-size=384
+Environment=MALLOC_ARENA_MAX=2 VIPS_CONCURRENCY=1 UV_THREADPOOL_SIZE=4
+WorkingDirectory=/srv/yard/production/current
+ExecStart=/usr/local/bin/node server.js
+Restart=on-failure
+RestartSec=5
+# Next finishes in-flight requests and after() work on SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+MemoryHigh=480M
+MemoryMax=550M
+MemorySwapMax=256M
+OOMScoreAdjust=-100
+UMask=0077
+# Hardening: the release is read-only; only the data dir (uploads, image cache) is writable.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/yard/production
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

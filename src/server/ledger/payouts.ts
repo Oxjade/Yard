@@ -2,6 +2,7 @@ import "server-only"
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { enqueueEmail } from "@/server/email"
 import { initiatePayout } from "@/server/payments"
+import { paymentsConfig } from "@/server/payments/config"
 import { writeAudit } from "../audit"
 import { catalogChanged } from "../catalog/hooks"
 import type { AdminActor, BrandActor } from "../auth/dal"
@@ -386,7 +387,7 @@ export async function runBatch(actor: AdminActor, batchId: string, ipHash: strin
 
   const results: { payoutId: string; status: string }[] = claimed.skipped.map((payoutId) => ({ payoutId, status: "on_hold" }))
   for (const p of claimed.rows) {
-    if (p.recipientProvider === "stub" && process.env.PAYSTACK_SECRET_KEY) {
+    if (p.recipientProvider === "stub" && paymentsConfig().provider === "paystack") {
       // A stub recipient can never be paid by the live provider: send it back for a real account.
       await withTx(async (tx) => {
         await tx.update(payouts).set({ status: "approved", lastError: "stub_recipient", updatedAt: new Date() }).where(eq(payouts.id, p.id))

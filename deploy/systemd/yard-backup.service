@@ -1,0 +1,10 @@
+[Unit]
+Description=Yard nightly backup (both databases + production uploads)
+Documentation=file:///opt/yard/kit/README.md
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/yard/bin/backup
+Nice=10
+IOSchedulingClass=idle
