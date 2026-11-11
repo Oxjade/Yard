@@ -12,7 +12,8 @@ export const brandProfileOf = (a: BrandActor): BrandProfile => ({
   brand: { id: a.brand.id, handle: a.brand.handle, name: a.brand.name, reviewStatus: a.brand.reviewStatus as BrandProfile["brand"]["reviewStatus"] },
   role: a.role,
   permissions: a.permissions,
-  demo: a.demo,
+  // Yard setup works on a real founding brand: Studio reads its live data, even for a demo admin.
+  demo: a.role === "yard_setup" ? false : a.demo,
 })
 
 export const adminProfileOf = (a: AdminActor): AdminProfile => ({ id: a.userId, name: a.name, role: a.role, permissions: a.permissions, demo: a.demo })

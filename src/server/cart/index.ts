@@ -4,6 +4,7 @@ import type { CountryCode } from "@/config/markets"
 import { getShopper } from "../auth/dal"
 import { db, withTx, type Executor } from "../db"
 import { cartLines, carts } from "../db/schema/payments"
+import { catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { notForSaleMessage } from "../catalog/sellable"
 import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -229,4 +230,27 @@ export async function purgeStaleCarts() {
 export async function eraseCustomerData(tx: Executor, userId: string): Promise<{ erased: number }> {
   const rows = await tx.delete(carts).where(eq(carts.customerId, userId)).returning({ id: carts.id })
   return { erased: rows.length }
+}
+
+/**
+ * DEVELOPMENT ONLY (POST /api/cart/dev): puts a line in the cart without the sellable check, so the
+ * acceptance kits can prove checkout refuses a line that slipped past the cart (a founding brand
+ * that isn't selling). Kit products only (title starting t_v3_); the route 404s in production.
+ */
+export async function devForceLine(owner: CartOwner, variantId: string, qty: number) {
+  const d = await db()
+  const [v] = await d
+    .select({ title: catalogProducts.title })
+    .from(catalogVariants)
+    .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
+    .where(eq(catalogVariants.id, variantId))
+    .limit(1)
+  if (!v || !v.title.startsWith("t_v3_")) throw notFound("Only kit products (t_v3_) can be forced into a cart.")
+  await withTx(async (tx) => {
+    const c = (await findCart(tx, owner)) ?? (await createCart(tx, owner))
+    await tx
+      .insert(cartLines)
+      .values({ id: newId("cl"), cartId: c.id, variantId, qty })
+      .onConflictDoUpdate({ target: [cartLines.cartId, cartLines.variantId], set: { qty, updatedAt: new Date() } })
+  })
 }

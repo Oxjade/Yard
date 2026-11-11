@@ -74,6 +74,8 @@ export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode;
   if (input.mode !== "signin") {
     const current = input.actor === "shopper" ? await getShopper() : await getBrandActor()
     if (!current) throw new HttpError(401, "unauthenticated", "Sign in first.")
+    // Yard setup sessions (founding brands) are not a sign-in of their own: no linking or re-auth through them.
+    if (current.kind === "brand" && current.role === "yard_setup") throw new HttpError(403, "forbidden", "Yard setup can't link or confirm sign-in methods.")
     // Demo accounts never get Google/Apple identities: a linked identity would open them through a
     // real (non-demo) session that outlives the demo flags and passes re-auth in production.
     if (current.demo) throw new HttpError(422, "rule", "Demo accounts can't use Google or Apple sign-in.")

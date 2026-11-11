@@ -260,17 +260,20 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
 
   const session = useServerSession()
   const sessionBrand = session.brand?.brand.id ?? null
-  const ownSession = session.status === "ready" && sessionBrand === brandId
+  // Yard setup (founding brands) can't read the brand's social posts or accounts: the server refuses them.
+  const ownSession = session.status === "ready" && sessionBrand === brandId && session.brand?.role !== "yard_setup"
   const socialPostsApi = useApi(ownSession ? studioPostsKey("all", "published") : null, getStudioPosts, { revalidateOnFocus: true })
   const socialAccountsApi = useApi(ownSession ? accountsKey : null, getAccounts)
   const social = useMemo<SocialEditorData>(() => {
     if (session.status === "loading") return { status: "loading", posts: null, accounts: null }
     if (!session.brand) return { status: "signed_out", posts: null, accounts: null }
+    // Yard setup: an unclaimed brand has no social accounts yet (its owner connects them after claiming).
+    if (session.brand.role === "yard_setup" && session.brand.brand.id === brandId) return { status: "ready", posts: [], accounts: [] }
     if (!ownSession) return { status: "other_brand", posts: null, accounts: null }
     if (socialPostsApi.error) return { status: "error", posts: null, accounts: socialAccountsApi.data?.accounts ?? null }
     if (!socialPostsApi.data) return { status: "loading", posts: null, accounts: socialAccountsApi.data?.accounts ?? null }
     return { status: "ready", posts: socialPostsApi.data.posts, accounts: socialAccountsApi.data?.accounts ?? null }
-  }, [session.status, session.brand, ownSession, socialPostsApi.data, socialPostsApi.error, socialAccountsApi.data])
+  }, [session.status, session.brand, brandId, ownSession, socialPostsApi.data, socialPostsApi.error, socialAccountsApi.data])
   // Not ready: the preview's Social feed says why (it never claims the live section is hidden).
   const socialPreviewState = social.status === "ready" ? undefined : social.status
   const stories = providedStories ?? []

@@ -303,7 +303,8 @@ export async function updateFoundingBrand(actor: AdminActor, brandId: string, bo
       ipHash,
       meta: { fields: changed },
     })
-    catalogChanged({ brands: [b.id] })
+    // A rename or move changes the brand's search rows (and its products' brand name).
+    catalogChanged(body.name !== undefined || body.city !== undefined ? { reindexBrands: [b.id] } : { brands: [b.id] })
     const [fresh] = await tx.select().from(brands).where(eq(brands.id, b.id)).limit(1)
     return { brand: (await rowsFor(tx, [fresh]))[0] }
   })
@@ -392,7 +393,8 @@ export async function issueClaimLink(actor: AdminActor, brandId: string, input: 
   return withTx(async (tx) => {
     const b = await loadFounding(tx, brandId, true)
     assertUnclaimed(b, "sending a claim link")
-    if (b.reviewStatus === "suspended") throw rule(`Yard has suspended ${b.name}. Reinstate it from Brands first.`)
+    // Restricted brands are on hold too: the claim page would refuse the link (auth/claims.ts).
+    assertNotOnHold(b)
     const now = new Date()
     const revoked = await tx
       .update(brandInvites)
@@ -465,7 +467,9 @@ export async function listFoundingBrandsForHome(limit = 12): Promise<FoundingHom
         logoMediaId: brands.logoMediaId,
         foundingBadge: brands.foundingBadge,
         forSale: sql<boolean>`${brandForSaleSql()}`,
-        cover: sql<string | null>`(select sv.config ->> 'coverMediaId' from catalog_storefront_versions sv where sv.brand_id = ${brands.id} order by sv.version desc limit 1)`,
+        // Qualified by hand: inside a select, drizzle may print a column without its table, and a bare
+        // "id" here would resolve to the subquery's own sv.id (so no cover was ever found).
+        cover: sql<string | null>`(select sv.config ->> 'coverMediaId' from catalog_storefront_versions sv where sv.brand_id = "brands"."id" order by sv.version desc limit 1)`,
       })
       .from(brands)
       .where(and(eq(brands.founding, true), isNotNull(brands.launchedAt), sql`${brands.reviewStatus} not in ('restricted', 'suspended')`))

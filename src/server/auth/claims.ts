@@ -189,7 +189,7 @@ export async function acceptClaim(input: ClaimAcceptBody, shopper: ShopperActor 
       meta: { invite: invite.id, agreementVersion: SELLER_AGREEMENT_VERSION, newAccount: !existing, setupSessionsEnded: ended },
     })
     await notifyAdmins("brands.founding", { key: `founding-claimed:${b.id}`, template: "founding.claimed", vars: { brand: b.name, owner: user.name }, href: `/admin/brands?tab=founding&brand=${b.id}` })
-    catalogChanged({ brands: [b.id] })
+    catalogChanged({ reindexBrands: [b.id] })
     const session = await openSession({ actor: "brand", user, brandId: b.id, method: "claim", meta })
     return { profile: session.profile, brandId: b.id }
   })

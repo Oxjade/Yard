@@ -76,7 +76,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
         {moreFromBrand.length ? (
           <section aria-labelledby="more-from-title" className="mt-24 md:mt-32">
             <div id="more-from-title">
-              <SectionHeader title={`More from ${brand.name}`} description={brand.tagline ?? `Independent pieces from ${brand.name}.`} href={brandHref(brand.handle)} action={brandHref(brand.handle).startsWith("/brands/") ? "Visit storefront" : "See all pieces"} />
+              <SectionHeader title={`More from ${brand.name}`} description={brand.tagline ?? `Independent pieces from ${brand.name}.`} href={brandHref(brand.handle, brand.hasStorefront)} action={brandHref(brand.handle, brand.hasStorefront).startsWith("/brands/") ? "Visit storefront" : "See all pieces"} />
             </div>
             <Rail label={`More from ${brand.name}`}>
               {moreFromBrand.map((p) => (

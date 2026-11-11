@@ -1,7 +1,9 @@
+import { Suspense } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { BrandCard } from "@/components/market/brand-card"
 import { DiscoverHero } from "@/components/market/discover-hero"
+import { FoundingBrandsSection } from "@/components/market/founding-brands"
 import { AroundTeaser, ChartsThisWeek } from "@/components/market/discover-modules"
 import { UpcomingDropsBand } from "@/components/market/editorial/upcoming-drops-band"
 import { ProductCard } from "@/components/market/product-card"
@@ -25,6 +27,7 @@ import {
 } from "@/lib/data"
 import { img } from "@/lib/data/media"
 import type { Product } from "@/lib/data/types"
+import { getEnv } from "@/server/env"
 
 const indexNotes: Record<string, string> = {
   b_paper_riot: "Five illustrators, one risograph and a basement gallery in Braamfontein.",
@@ -45,6 +48,9 @@ const storyKind: Record<string, string> = {
 }
 
 export default function DiscoverPage() {
+  // Production (no demo seed): the real founding brands take the place of the sample brand modules
+  // (the Underground Index and the brand rails). Demo and development keep every sample module.
+  const demo = getEnv().seedDemo
   const heroDrop = getDrop("drop-07-third-mainland")!
   const heroBrand = brandById.get(heroDrop.brandId)!
   const heroProducts = heroDrop.productIds.map((id) => productById.get(id)).filter(Boolean) as Product[]
@@ -97,7 +103,13 @@ export default function DiscoverPage() {
           </div>
         </section>
 
+        {/* Founding brands: read from the database at request time, so they stream in here. */}
+        <Suspense fallback={null}>
+          <FoundingBrandsSection />
+        </Suspense>
+
         {/* Emerging brands */}
+        {demo ? (
         <section aria-labelledby="emerging-title" className="mt-24 md:mt-32">
           <div id="emerging-title">
             <SectionHeader title="Emerging brands" description="Smaller studios growing fastest this month. Placement here is earned, never bought." href="/brands?sort=emerging" />
@@ -108,6 +120,7 @@ export default function DiscoverPage() {
             ))}
           </div>
         </section>
+        ) : null}
 
         {/* The week's Trending board and a way into Around (§7.3). Both fetch on the client: the
             page itself stays a static shell. */}
@@ -117,12 +130,14 @@ export default function DiscoverPage() {
         </div>
 
         {/* Underground Index */}
+        {demo ? (
         <section aria-labelledby="index-title" className="mt-24 md:mt-32">
           <div id="index-title">
             <SectionHeader title="The Underground Index" description="Independent studios our editors think you should know. Updated every week, never for sale." href="/brands" action="All brands" />
           </div>
           <UndergroundIndex entries={indexEntries} />
         </section>
+        ) : null}
 
         {/* Curated collections */}
         <section aria-labelledby="collections-title" className="mt-24 md:mt-32">
@@ -156,6 +171,7 @@ export default function DiscoverPage() {
         </div>
 
         {/* Featured brands with labelled sponsored slots */}
+        {demo ? (
         <section aria-labelledby="featured-title" className="mt-24 md:mt-32">
           <div id="featured-title">
             <SectionHeader title="Featured brands" description="Editors' picks alongside sponsored slots. Paid placements are always marked." href="/brands" />
@@ -166,8 +182,10 @@ export default function DiscoverPage() {
             ))}
           </div>
         </section>
+        ) : null}
 
         {/* Recently discovered */}
+        {demo ? (
         <section aria-labelledby="recent-title" className="mt-24 md:mt-32">
           <div id="recent-title">
             <SectionHeader title="Recently discovered" description="The newest studios on the platform." href="/brands?sort=newest" />
@@ -178,6 +196,7 @@ export default function DiscoverPage() {
             ))}
           </div>
         </section>
+        ) : null}
 
         {/* Stories */}
         <section aria-labelledby="stories-title" className="mt-24 md:mt-32">

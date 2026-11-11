@@ -1,6 +1,6 @@
 import "server-only"
 import type { Actor } from "../auth/dal"
-import { badRequest, forbidden, HttpError, rateLimited, rule } from "../http/errors"
+import { badRequest, HttpError, rateLimited, rule } from "../http/errors"
 import { log } from "../log"
 import type { MediaDto, UploadPurpose } from "@/lib/api/contracts/uploads"
 import { authorizeAdminUpload, authorizeBrandUpload, authorizeShopperUpload } from "./authorize"

@@ -8,6 +8,7 @@ import { productStock } from "@/lib/data/products"
 import { cn } from "@/lib/utils"
 import type { Product } from "@/lib/data/types"
 import { Price } from "./price"
+import { OpeningSoonTag } from "./founding-badge"
 import { ProductBadge, primaryBadge } from "./product-badge"
 import { QuickAdd, type AddBlocked } from "./quick-add"
 import { SponsoredTag } from "./sponsored-tag"
@@ -50,7 +51,9 @@ export function ProductCard({
 }) {
   const brand = brandById.get(product.brandId) ?? product.brandSummary ?? { name: "Your brand", handle: "" }
   const badge = primaryBadge(product)
-  const soldOut = productStock(product) === 0
+  // A founding brand that isn't selling yet shows "Opening soon", never "Sold out" (its stock reads 0 until it opens).
+  const opening = product.brandSummary?.forSale === false
+  const soldOut = !opening && productStock(product) === 0
   const href = `/products/${product.slug}`
   const isFeature = variant === "feature"
 
@@ -85,7 +88,7 @@ export function ProductCard({
           {/* The paid-placement disclosure sits with the badges, where the quick-add capsule
               (bottom right) can never cover it; on a narrow card it wraps under the badge. */}
           <div className="flex min-w-0 flex-wrap gap-1.5">
-            {soldOut ? <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span> : badge ? <ProductBadge kind={badge} /> : null}
+            {opening ? <OpeningSoonTag /> : soldOut ? <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span> : badge ? <ProductBadge kind={badge} /> : null}
             {sponsored ? <SponsoredTag /> : null}
           </div>
           <div className="pointer-events-auto">
@@ -128,7 +131,7 @@ export function ProductCard({
           <div className="min-w-0">
             {brand.handle ? (
               <Link
-                href={brandHref(brand.handle)}
+                href={brandHref(brand.handle, "hasStorefront" in brand ? brand.hasStorefront : undefined)}
                 className="relative z-10 block text-xs text-ink-2 transition-colors after:absolute after:inset-x-0 after:-top-5 after:-bottom-1 hover:text-violet lg:after:hidden"
               >
                 <span className="block truncate">{brand.name}</span>

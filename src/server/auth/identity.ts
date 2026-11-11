@@ -128,7 +128,9 @@ export async function profileFor(actor: ActorKind, user: UserRow, brandId: strin
     brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus as BrandProfile["brand"]["reviewStatus"] },
     role,
     permissions: brandRolePermissions[role],
-    demo: user.demo,
+    // Yard setup works on a real founding brand, so Studio reads its live data even when the admin
+    // doing the setup is a demo account (demo here means "show the browser's sample brand").
+    demo: role === "yard_setup" ? false : user.demo,
   }
 }
 

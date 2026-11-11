@@ -6,6 +6,7 @@ import { categoryBySlug } from "@/lib/data/catalog"
 import { products as sampleProducts } from "@/lib/data/products"
 import { convert } from "@/lib/money"
 import { db } from "../db"
+import { brandListed } from "../auth/dal"
 import { brands } from "../db/schema"
 import { shopperWishlist } from "../db/schema/charts"
 import { searchBrands, searchProducts } from "../db/schema/engagement"
@@ -92,6 +93,9 @@ export async function reindexBrand(brandId: string): Promise<void> {
     return
   }
   const sample = brandById.get(b.id)
+  // The same listed rule as every public read: not restricted or suspended, and a founding brand
+  // only once its storefront is published (launched_at).
+  const listed = brandListed(b)
   const values = {
     handle: b.handle,
     name: b.name,
@@ -99,17 +103,17 @@ export async function reindexBrand(brandId: string): Promise<void> {
     country: b.country,
     categoriesText: b.categories.map((c) => categoryBySlug.get(c as never)?.name ?? c).join(" "),
     tagline: sample?.tagline ?? "",
-    visible: b.reviewStatus !== "suspended",
+    visible: listed,
     indexedAt: new Date(),
   }
   await d
     .insert(searchBrands)
     .values({ brandId: b.id, ...values })
     .onConflictDoUpdate({ target: searchBrands.brandId, set: values })
-  // A brand's suspension hides its products too.
+  // An unlisted brand hides its products too (they come back through reindexProduct).
   await d
     .update(searchProducts)
-    .set({ brandHandle: b.handle, brandName: b.name, country: b.country, visible: sql`${searchProducts.visible} and ${b.reviewStatus !== "suspended"}` })
+    .set({ brandHandle: b.handle, brandName: b.name, country: b.country, visible: sql`${searchProducts.visible} and ${listed}` })
     .where(eq(searchProducts.brandId, b.id))
 }
 

@@ -23,6 +23,7 @@ import type { Brand, Drop, Product } from "@/lib/data/types"
 import { BackInStockButton } from "../back-in-stock-button"
 import { BrandMark } from "../brand-mark"
 import { FollowButton } from "../follow-button"
+import { FoundingBadge, OpeningSoonTag } from "../founding-badge"
 import { NotifyButton } from "../notify-button"
 import { Price } from "../price"
 import { ProductBadge, primaryBadge } from "../product-badge"
@@ -35,9 +36,10 @@ import { SizeGuide } from "./size-guide"
 import { SizeSheet } from "./size-sheet"
 import { useDropPhase, useProductSelection } from "./use-product-selection"
 
-type Action = "locked" | "closed" | "choose-size" | "sold-out" | "limit" | "ready"
+type Action = "opening" | "locked" | "closed" | "choose-size" | "sold-out" | "limit" | "ready"
 
 const actionLabel: Record<Action, string> = {
+  opening: "Opening soon",
   locked: "Not released yet",
   closed: "Entries closed",
   "choose-size": "Select a size",
@@ -68,6 +70,9 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   const drawClosed = (phase === "live" || phase === "ended") && drop?.access === "draw"
   // The drop module explains the buy box while the drop decides it: upcoming, live, or a closed draw.
   const activeDrop = drop && (phase === "upcoming" || phase === "live" || drawClosed) ? drop : null
+  // A founding brand that isn't selling yet (unclaimed, or no payout account): the piece shows,
+  // but the buy box offers Notify me and Follow instead of Add to cart (the server refuses it too).
+  const opening = brand.forSale === false || product.brandSummary?.forSale === false
   const hydrated = useHydrated()
   const add = useCart((s) => s.add)
   const openBag = useCart((s) => s.open)
@@ -91,10 +96,12 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
 
   const productSoldOut = productStock(product) === 0
   const soldOut = productSoldOut || (sel.variant !== undefined && sel.stock === 0) || (sel.needsSize && sel.colourStock === 0)
-  const action: Action = phase === "upcoming" ? "locked" : drawClosed ? "closed" : soldOut ? "sold-out" : sel.needsSize ? "choose-size" : maxQty === 0 ? "limit" : "ready"
+  const action: Action = opening ? "opening" : phase === "upcoming" ? "locked" : drawClosed ? "closed" : soldOut ? "sold-out" : sel.needsSize ? "choose-size" : maxQty === 0 ? "limit" : "ready"
   const fitNote = product.details.find((d) => /\bfit\b|size down|size up|true to size/i.test(d))
   // One status badge over the image, picked like ProductCard's; the sale signal stays beside the price.
   const overlayBadge = primaryBadge({ badges: product.badges, compareAt: undefined })
+  // Every size reads as open while the brand is opening: availability means nothing until it sells.
+  const gridStock = opening ? new Map(sel.sizes.map((s) => [s, 1] as const)) : sel.stockBySize
 
   // Record the view once the saved store has been read from storage, so the write isn't overwritten.
   useEffect(() => {
@@ -176,7 +183,9 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
   }, [])
 
   const helper =
-    action === "closed"
+    action === "opening"
+      ? `${brand.name} is opening soon on Yard. ${sel.sizes.length && !sel.variant ? "Choose your size and tap Notify me" : "Tap Notify me"} to hear when it opens, or follow ${brand.name}.`
+      : action === "closed"
       ? `${phase === "ended" ? "This draw has ended." : "Entries closed at release."} Only drawn winners can buy, and picking winners needs the drops backend, which isn't connected in this build.`
       : action === "limit"
       ? phase === "live" && drop && cap === drop.limitPerCustomer
@@ -207,7 +216,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
     </AnimatePresence>
   )
   // Blocked states are disabled, except while the success check is still showing.
-  const blocked = action === "locked" || action === "closed" || action === "sold-out" || action === "limit"
+  const blocked = action === "opening" || action === "locked" || action === "closed" || action === "sold-out" || action === "limit"
   const addDisabled = !adding.succeeded && blocked
   // Acid is for the action the shopper can take (add, choose a size, get notified). A blocked
   // state is not an action, so it drops to the quiet secondary slab instead of a dimmed acid one.
@@ -221,7 +230,9 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             images={product.images}
             name={product.name}
             overlay={
-              productSoldOut ? (
+              opening ? (
+                <OpeningSoonTag />
+              ) : productSoldOut ? (
                 <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span>
               ) : overlayBadge ? (
                 <ProductBadge kind={overlayBadge} />
@@ -237,13 +248,14 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
               that line runs under the Message and Follow buttons too and its badges don't break
               mid-phrase in a narrow buy box. */}
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
-            <Link href={brandHref(brand.handle)} aria-hidden tabIndex={-1} className="row-span-2 shrink-0">
+            <Link href={brandHref(brand.handle, brand.hasStorefront)} aria-hidden tabIndex={-1} className="row-span-2 shrink-0">
               <BrandMark brand={brand} size="md" />
             </Link>
             {/* 40px tap targets on phones and tablets without moving the row (negative margins); compact beside the desktop buy box. */}
-            <Link href={brandHref(brand.handle)} className="col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 self-end text-sm font-medium text-ink transition-colors hover:text-violet max-lg:min-h-10 max-lg:self-center">
+            <Link href={brandHref(brand.handle, brand.hasStorefront)} className="col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 self-end text-sm font-medium text-ink transition-colors hover:text-violet max-lg:min-h-10 max-lg:self-center">
               <span className="truncate">{brand.name}</span>
               {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
+              {brand.foundingBadge ? <FoundingBadge compact className="max-sm:hidden" /> : null}
             </Link>
             <div className="col-start-3 row-start-1 flex items-center gap-3">
               {/* 40px icon with the tooltip "Message {brand}"; the brand's own Studio members see "Open Studio inbox". */}
@@ -255,6 +267,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
               <span className="truncate">
                 {brand.city}, {countries[brand.country].name}
               </span>
+              {brand.foundingBadge ? <FoundingBadge compact className="sm:hidden" /> : null}
               <PlaceBadge brandId={brand.id} className="-my-2" />
               <RankBadge brandId={brand.id} variant="meta" className="max-lg:-my-2 max-lg:min-h-10" />
             </span>
@@ -292,7 +305,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                   <div ref={sizeGridRef} className="mt-3 scroll-mt-28">
                     <SizeGrid
                       sizes={sel.sizes}
-                      stockBySize={sel.stockBySize}
+                      stockBySize={gridStock}
                       value={sel.size}
                       onChange={chooseSize}
                       disabled={action === "locked" || action === "closed"}
@@ -302,7 +315,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                       invalid={sizePrompt && !sel.size}
                     />
                   </div>
-                  <SizeHint id={sizeHintId} show={sizePrompt && !sel.size} />
+                  <SizeHint id={sizeHintId} show={sizePrompt && !sel.size} opening={opening} />
                 </div>
               ) : null}
             </div>
@@ -311,11 +324,19 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           {/* Quantity, availability and the main action */}
           <div ref={ctaRef} className="mt-8">
             <div className="flex items-center justify-between gap-4">
-              <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={blocked} />
-              <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} className="justify-end text-right" />
+              {opening ? <span aria-hidden /> : <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={blocked} />}
+              <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} className="justify-end text-right" />
             </div>
             <div className="mt-3 flex gap-2">
-              {action === "locked" && activeDrop ? (
+              {action === "opening" ? (
+                sel.variant ? (
+                  <BackInStockButton variantId={sel.variant.id} className="min-w-0 flex-1" />
+                ) : (
+                  <Button type="button" variant="primary" size="xl" className="flex-1" onClick={() => promptSize(sizeGridRef.current)}>
+                    Notify me
+                  </Button>
+                )
+              ) : action === "locked" && activeDrop ? (
                 <NotifyButton drop={activeDrop} variant="primary" size="lg" className="h-14 flex-1 text-base" />
               ) : action === "sold-out" && sel.variant && sel.stock === 0 ? (
                 <BackInStockButton variantId={sel.variant.id} className="min-w-0 flex-1" />
@@ -359,7 +380,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           </div>
 
           <div className="mt-8">
-            <DeliverySummary brand={brand} product={product} drop={drop} variantId={sel.variant?.id ?? null} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" ? "unavailable" : "available"} />
+            <DeliverySummary brand={brand} product={product} drop={drop} variantId={sel.variant?.id ?? null} status={action === "locked" ? "unreleased" : action === "sold-out" || action === "closed" || action === "opening" ? "unavailable" : "available"} />
           </div>
 
           <section aria-labelledby="pdp-info-title" className="mt-8">
@@ -426,7 +447,17 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
                   {sel.size ? <span className="truncate">Size {sel.size}</span> : null}
                 </p>
               </div>
-              {action === "locked" && activeDrop ? (
+              {action === "opening" ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="lg"
+                  className="h-11 px-4"
+                  onClick={() => (sel.sizes.length ? setSheetOpen(true) : ctaRef.current?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }))}
+                >
+                  Notify me
+                </Button>
+              ) : action === "locked" && activeDrop ? (
                 <NotifyButton drop={activeDrop} variant="primary" size="lg" className="h-11 px-4" />
               ) : action === "choose-size" ? (
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={() => setSheetOpen(true)}>
@@ -470,11 +501,15 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           footer={
             <>
               <div className="flex items-center justify-between gap-3">
-                <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} />
+                <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} />
                 <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
               </div>
-              {action === "sold-out" && sel.variant && sel.stock === 0 ? (
+              {(action === "sold-out" || action === "opening") && sel.variant && (opening || sel.stock === 0) ? (
                 <BackInStockButton variantId={sel.variant.id} />
+              ) : action === "opening" ? (
+                <Button type="button" variant="primary" size="xl" className="w-full" onClick={() => promptSize(sheetGridRef.current)}>
+                  Notify me
+                </Button>
               ) : (
                 <Button
                   type="button"
@@ -497,7 +532,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
           <div ref={sheetGridRef}>
             <SizeGrid
               sizes={sel.sizes}
-              stockBySize={sel.stockBySize}
+              stockBySize={gridStock}
               value={sel.size}
               onChange={chooseSize}
               layoutKey="sheet"
@@ -506,7 +541,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
               invalid={sizePrompt && !sel.size}
             />
           </div>
-          <SizeHint id={`${sizeHintId}-sheet`} show={sizePrompt && !sel.size} />
+          <SizeHint id={`${sizeHintId}-sheet`} show={sizePrompt && !sel.size} opening={opening} />
         </SizeSheet>
       ) : null}
     </>
@@ -514,7 +549,7 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
 }
 
 /** "Choose a size" under the size grid, shown after Add to cart was pressed without one. */
-function SizeHint({ id, show }: { id: string; show: boolean }) {
+function SizeHint({ id, show, opening = false }: { id: string; show: boolean; opening?: boolean }) {
   return (
     <AnimatePresence initial={false}>
       {show ? (
@@ -528,7 +563,7 @@ function SizeHint({ id, show }: { id: string; show: boolean }) {
           transition={{ duration: duration.hover, ease: ease.out }}
           className="mt-2 text-xs text-danger"
         >
-          Choose a size to add this to your cart.
+          {opening ? "Choose a size to hear when it goes on sale." : "Choose a size to add this to your cart."}
         </motion.p>
       ) : null}
     </AnimatePresence>

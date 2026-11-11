@@ -52,6 +52,9 @@ export type PublicStorefrontDto = {
     joinedAt: string | null
     followersBase: number
     timeZone: string
+    foundingBadge?: boolean
+    forSale?: boolean
+    logoSrc?: string | null
   }
   storefront: { version: number; publishedAt: string; config: StorefrontConfigDto } | null
   collections: {
@@ -249,6 +252,9 @@ export function storefrontBrandFromApi(
     shipsFrom: country,
     processingDays: [2, 5],
     returnsDays: 14,
+    foundingBadge: !!profile.foundingBadge,
+    forSale: profile.forSale !== false,
+    logoSrc: profile.logoSrc ?? null,
   }
 }
 

@@ -167,9 +167,15 @@ export const isYardSetup = (a: { kind: string; role?: string } | null | undefine
 export const getBrandActor = getBrandActorInternal
 
 /** List endpoints: the active brand, permission-checked against the active membership only. */
-export async function requireActiveBrand(permission: BrandPermission | "any_member"): Promise<BrandActor> {
+/**
+ * `allowYardSetup`: only route() passes it, because route() then applies the Yard setup path
+ * allow-list (http/route.ts yardSetupMayUse). Any other caller refuses Yard setup sessions, so a
+ * handler that resolves the brand itself can never widen Yard setup's reach (deny by default).
+ */
+export async function requireActiveBrand(permission: BrandPermission | "any_member", opts: { allowYardSetup?: boolean } = {}): Promise<BrandActor> {
   const a = await getBrandActorInternal()
   if (!a) throw unauthenticated("Sign in to Brand Studio to continue.")
+  if (a.role === "yard_setup" && !opts.allowYardSetup) throw forbidden("Yard setup covers products, photos, collections, storefront and shipping only.")
   if (!canBrand(a.role, permission)) throw forbidden()
   return a
 }
@@ -215,6 +221,9 @@ export async function requireAdmin(permission: AdminPermission | "any_admin"): P
 }
 
 /** `brandListed(brand)`: the single predicate behind every public read (§2.2, §3.9). */
-export function brandListed(brand: { reviewStatus: string }) {
+export function brandListed(brand: { reviewStatus: string; founding?: boolean; launchedAt?: Date | null }) {
+  // A founding brand is listed only once it has launched (first storefront publish); callers that
+  // pass the whole brand row get that gate, ordinary brands are unaffected.
+  if (brand.founding && brand.launchedAt === null) return false
   return brand.reviewStatus !== "restricted" && brand.reviewStatus !== "suspended"
 }

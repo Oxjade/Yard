@@ -51,6 +51,7 @@ export function BagDrawer() {
   const emptyTitle = useRef<HTMLParagraphElement>(null)
 
   function checkout() {
+    if (bag.notForSaleBlock) return
     const go = () => {
       setOpen(false)
       router.push("/checkout")
@@ -150,7 +151,12 @@ export function BagDrawer() {
                         {quoteFailed ? "Shipping is calculated at checkout. " : ""}Taxes aren&apos;t calculated in this build; import duties, if any, are collected by the courier.
                       </p>
                       <div className="mt-4 grid gap-2">
-                        <Button variant="primary" size="lg" onClick={checkout} className="w-full">
+                        {bag.notForSaleBlock ? (
+                          <p id="drawer-checkout-block" role="status" className="text-xs break-words text-acid">
+                            {bag.notForSaleBlock}
+                          </p>
+                        ) : null}
+                        <Button variant="primary" size="lg" onClick={checkout} disabled={!!bag.notForSaleBlock} aria-describedby={bag.notForSaleBlock ? "drawer-checkout-block" : undefined} className="w-full">
                           Checkout
                         </Button>
                         <Button asChild variant="secondary" size="lg" onClick={close} className="w-full">

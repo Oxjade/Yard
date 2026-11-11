@@ -7,7 +7,7 @@ import { findUserByEmail, userById } from "@/server/auth/identity"
 import { endSessionsForUser } from "@/server/auth/session"
 import { db, withTx } from "@/server/db"
 import { adminMembers, brandMembers, emailOutbox, sessions, users } from "@/server/db/schema"
-import { accountDeletions, adminMfa, authTokens, AUTH_TOKEN_PURPOSES, mfaRecoveryCodes, sessionAuth, userCredentials } from "@/server/db/schema/identity"
+import { accountDeletions, adminMfa, authTokens, AUTH_TOKEN_PURPOSES, brandInvites, mfaRecoveryCodes, sessionAuth, userCredentials } from "@/server/db/schema/identity"
 import { getEnv } from "@/server/env"
 import { badRequest, notFound } from "@/server/http/errors"
 import { route } from "@/server/http/route"
@@ -25,6 +25,7 @@ import { route } from "@/server/http/route"
  * POST { op: "expire-tokens", email, purpose }     → expires the user's live tokens of `purpose`
  * POST { op: "run-erasures" }                      → processDueErasures()
  * POST { op: "retire-admin", email }               → removes a kit admin's admin role, TOTP and sessions; suspends the user
+ * POST { op: "expire-claim-links", email }         → backdates the pending founding-brand claim links sent to that address
  */
 
 const TAG = "t_v3_"
@@ -42,6 +43,7 @@ const postBody = z.discriminatedUnion("op", [
   z.object({ op: z.literal("expire-tokens"), email: z.string().max(254), purpose: z.enum(AUTH_TOKEN_PURPOSES) }),
   z.object({ op: z.literal("run-erasures") }),
   z.object({ op: z.literal("retire-admin"), email: z.string().max(254) }),
+  z.object({ op: z.literal("expire-claim-links"), email: z.string().max(254) }),
 ])
 
 async function taggedUser(email?: string, userId?: string) {
@@ -115,6 +117,16 @@ const postHandler = route({ auth: "public", body: postBody, maxBody: 2 * 1024 },
     }
     case "run-erasures":
       return processDueErasures()
+    case "expire-claim-links": {
+      // Claim links name an address that may have no account yet, so the tag is checked on the address itself.
+      if (!tagged(body.email)) throw badRequest({ email: `Only addresses containing ${TAG}.` })
+      const rows = await d
+        .update(brandInvites)
+        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .where(and(sql`lower(${brandInvites.email}) = ${body.email.trim().toLowerCase()}`, eq(brandInvites.kind, "founding_claim"), eq(brandInvites.status, "pending")))
+        .returning({ id: brandInvites.id })
+      return { expired: rows.length }
+    }
     case "retire-admin": {
       const u = await taggedUser(body.email)
       if (u.kind !== "admin") throw badRequest({ email: "Not an admin account." })

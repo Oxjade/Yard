@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api, ApiError } from "@/lib/api/client"
 import { errorMessage, fieldErrors } from "@/lib/api/errors"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { cn } from "@/lib/utils"
 
 /** A 403 that asks for a fresh authenticator code before the action can go through. */
@@ -18,6 +19,8 @@ export const needsReauth = (error: unknown) => error instanceof ApiError && erro
  * server's own field message under the input.
  */
 export function useReauth() {
+  // A demo admin has no authenticator: development confirms it with { demo: true } (the server refuses that in production).
+  const demo = useServerSession((s) => !!s.admin?.demo)
   const [required, setRequired] = useState(false)
   const [code, setCodeValue] = useState("")
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -31,7 +34,7 @@ export function useReauth() {
   async function verify(): Promise<boolean> {
     if (!required) return true
     try {
-      await api("/api/auth/reauth", { method: "POST", query: { as: "admin" }, body: { code: code.trim() } })
+      await api("/api/auth/reauth", { method: "POST", query: { as: "admin" }, body: demo ? { demo: true } : { code: code.trim() } })
     } catch (cause) {
       const fields = fieldErrors(cause)
       const message = fields.code ?? fields.recoveryCode
@@ -47,7 +50,7 @@ export function useReauth() {
     setRequired(true); setCodeValue(""); setCodeError(null)
     return true
   }
-  return { required, code, setCode, codeError, verify, catches, reset, waiting: required && !code.trim() }
+  return { required, demo, code, setCode, codeError, verify, catches, reset, waiting: required && !demo && !code.trim() }
 }
 
 export type Reauth = ReturnType<typeof useReauth>
@@ -55,6 +58,12 @@ export type Reauth = ReturnType<typeof useReauth>
 /** The authenticator code input a sensitive form shows once the server asks for it. */
 export function ReauthCodeField({ reauth, id, className }: { reauth: Reauth; id: string; className?: string }) {
   if (!reauth.required) return null
+  if (reauth.demo)
+    return (
+      <p className={cn("text-xs text-ink-2", className)} role="status">
+        {reauth.codeError ?? "Yard asks you to confirm this action. Demo admin accounts confirm without a code in development: press the button again."}
+      </p>
+    )
   return (
     <div className={cn("grid gap-1.5", className)}>
       <Label htmlFor={id}>Authenticator code</Label>

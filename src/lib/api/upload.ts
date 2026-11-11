@@ -6,7 +6,7 @@ import type { MediaDto, UploadPurpose } from "./contracts/uploads"
  * upload progress and never a timer. Purpose and target travel in the query string, so the server
  * authorises before reading the body. Abort with the returned handle's `abort()`.
  */
-export type UploadTarget = { purpose: UploadPurpose; as: "shopper" | "brand"; conversationId?: string; brandId?: string }
+export type UploadTarget = { purpose: UploadPurpose; as: "shopper" | "brand" | "admin"; conversationId?: string; brandId?: string }
 
 export function apiUpload(file: Blob & { name?: string }, target: UploadTarget, onProgress?: (fraction: number) => void) {
   const xhr = new XMLHttpRequest()

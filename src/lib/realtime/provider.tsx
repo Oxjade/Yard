@@ -73,6 +73,8 @@ function toServerItem(dto: NotificationDto, audience: Audience, recipient: strin
 export function RealtimeProvider({ surface, children }: { surface: Surface; children: React.ReactNode }) {
   const identityKey = useIdentityKey(surface)
   const sessionReady = useServerSession((s) => s.status === "ready")
+  // Yard setup (staff preparing a founding brand) has no inbox, notifications or stream on the brand.
+  const yardSetup = useServerSession((s) => surface === "studio" && s.brand?.role === "yard_setup")
   const [status, setStatus] = useState<RealtimeStatus>("idle")
   const handlers = useRef(new Map<string, Set<Handler>>())
   const conn = useRef<Connection | null>(null)
@@ -152,7 +154,7 @@ export function RealtimeProvider({ surface, children }: { surface: Surface; chil
   useEffect(() => {
     resetUnread(surface)
     // Signed out: no stream. The context reports "idle" whenever the identity key is null.
-    if (!identityKey) return
+    if (!identityKey || yardSetup) return
     let alive = true
 
     const refreshUnread = () => {
@@ -285,7 +287,7 @@ export function RealtimeProvider({ surface, children }: { surface: Surface; chil
       c.stop()
       if (conn.current === c) conn.current = null
     }
-  }, [identityKey, surface, audience, dispatch])
+  }, [identityKey, yardSetup, surface, audience, dispatch])
 
   const on = useCallback((type: string, handler: Handler) => {
     let set = handlers.current.get(type)

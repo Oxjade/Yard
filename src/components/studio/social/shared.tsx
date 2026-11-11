@@ -2,7 +2,7 @@
 
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { providerLabels, type SocialAccountDto, type SocialPostDto, type StudioSocialPostDto } from "@/lib/api/contracts/social"
-import { teamRoleLabels, type BrandPermission } from "@/lib/permissions"
+import { memberRoleLabel, type BrandPermission } from "@/lib/permissions"
 import type { BrandProfile } from "@/lib/api/contracts/session"
 import { cn } from "@/lib/utils"
 
@@ -37,7 +37,7 @@ export const missingNote = (p: StudioSocialPostDto) => (p.upstreamMissingAt ? `N
 /** "Your role (Fulfilment) can't connect accounts." — the copy each disabled control explains itself with. */
 export function cantSentence(brand: BrandProfile | null, permission: BrandPermission) {
   if (!brand) return "Sign in to Brand Studio first."
-  const role = teamRoleLabels[brand.role]
+  const role = memberRoleLabel(brand.role)
   return permission === "social.connect" ? `Your role (${role}) can't connect accounts.` : `Your role (${role}) can't publish posts.`
 }
 

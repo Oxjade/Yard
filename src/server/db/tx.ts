@@ -32,10 +32,36 @@ export async function withTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return runTx(await getDb(), fn)
 }
 
+/**
+ * A request-scoped step that runs as the last statement of the first outermost transaction the
+ * request opens, inside it (so it commits or rolls back with the write). route() uses it to write
+ * the Yard setup audit row atomically with the staff write. `ran` is 1 once it has run.
+ */
+export type BeforeCommit = { run: (tx: Tx) => Promise<void>; ran: number }
+const beforeCommitAls = new AsyncLocalStorage<BeforeCommit>()
+
+/** Runs `fn` with `hook` attached to every transaction it opens (see BeforeCommit). */
+export function withBeforeCommit<T>(hook: BeforeCommit, fn: () => Promise<T>): Promise<T> {
+  return beforeCommitAls.run(hook, fn)
+}
+
 /** withTx on an explicit root: the seed runner uses it while the boot promise is still pending. */
 export async function runTx<T>(root: Root, fn: (tx: Tx) => Promise<T>): Promise<T> {
   const after: Scope["after"] = []
-  const out = await root.transaction((tx) => als.run({ tx, after }, () => fn(tx)))
+  const hook = beforeCommitAls.getStore()
+  const out = await root.transaction((tx) =>
+    als.run({ tx, after }, async () => {
+      const r = await fn(tx)
+      // A failure here throws, so the transaction (and the write it belongs to) rolls back.
+      // Once per request: the first transaction it opens carries the step (later ones, and
+      // after-commit work, are covered by it).
+      if (hook && !hook.ran) {
+        await hook.run(tx)
+        hook.ran++
+      }
+      return r
+    }),
+  )
   // Committed. A rollback throws before this point, so its queue is dropped.
   for (const f of after) await Promise.resolve().then(f).catch((e) => log.error("[yard] after-commit", e))
   return out

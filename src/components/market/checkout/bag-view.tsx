@@ -55,6 +55,7 @@ export function BagView() {
   }, [wishlist, lines])
 
   function checkout() {
+    if (bag.notForSaleBlock) return
     const go = () => router.push("/checkout")
     if (requireAuth("checkout", go)) go()
   }
@@ -150,7 +151,9 @@ export function BagView() {
                             {g.brand.name}
                             {g.option ? `, ${g.option.service === "express" ? "express" : "standard"}` : ""}
                           </span>
-                          {g.quote ? (
+                          {g.notForSale ? (
+                            <span className="shrink-0">Not selling yet</span>
+                          ) : g.quote ? (
                             g.unavailable ? (
                               <span className="shrink-0">Not available</span>
                             ) : g.option?.free ? (
@@ -162,7 +165,7 @@ export function BagView() {
                             <Bone className="h-3.5 w-12" />
                           )}
                         </span>
-                        {g.quote ? (
+                        {g.notForSale ? null : g.quote ? (
                           g.unavailable ? <span className="text-ink-3">{g.reason}. Remove its pieces or change the delivery country at checkout.</span> : <ArrivalChip estimate={g.estimate} className="justify-self-start" />
                         ) : (
                           <Bone className="h-5 w-32 rounded-full" />
@@ -179,7 +182,12 @@ export function BagView() {
               <Price amount={bag.total ?? bag.subtotal} currency={currency} size="lg" />
             </div>
             <div className="mt-5 grid gap-2">
-              <Button variant="primary" size="lg" className="w-full" onClick={checkout}>
+              {bag.notForSaleBlock ? (
+                <p id="bag-checkout-block" role="status" className="text-xs break-words text-acid">
+                  {bag.notForSaleBlock}
+                </p>
+              ) : null}
+              <Button variant="primary" size="lg" className="w-full" onClick={checkout} disabled={!!bag.notForSaleBlock} aria-describedby={bag.notForSaleBlock ? "bag-checkout-block" : undefined}>
                 Checkout
               </Button>
               <Button asChild variant="secondary" size="lg" className="w-full">
@@ -213,7 +221,7 @@ export function BagView() {
               {bag.total === null ? "Subtotal" : "Total"}, {plural(bagCount(lines), "item")}
               <Price amount={bag.total ?? bag.subtotal} currency={currency} className="flex text-base text-ink" />
             </p>
-            <Button variant="primary" size="lg" onClick={checkout} className="min-w-36">
+            <Button variant="primary" size="lg" onClick={checkout} disabled={!!bag.notForSaleBlock} title={bag.notForSaleBlock ?? undefined} className="min-w-36">
               Checkout
             </Button>
           </motion.div>

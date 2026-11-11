@@ -147,13 +147,15 @@ export async function publishStorefront(actor: BrandActor, body: { draftRevision
     await tx.insert(storefrontVersions).values({ id: newId("sfv"), brandId: actor.brandId, version, config: draft.config, note: body.note ?? null, publishedBy: actor.userId })
     await tx.update(storefrontDrafts).set({ baseVersion: version }).where(eq(storefrontDrafts.brandId, actor.brandId))
     // Founding brands go public with their first storefront (products, storefront and logo are hidden until then).
-    await tx
+    const launched = await tx
       .update(brands)
       .set({ launchedAt: new Date() })
       .where(and(eq(brands.id, actor.brandId), eq(brands.founding, true), isNull(brands.launchedAt)))
+      .returning({ id: brands.id })
     await writeAudit({ actor: auditActor(actor), action: "storefront.published", target: `${actor.brand.name} storefront v${version}`, subjectType: "storefront", subjectId: actor.brandId, brandId: actor.brandId, ipHash, meta: { version, draftRevision: draft.revision } })
     // The brand: the published cover (config.coverMediaId) becomes public, a replaced one private.
-    catalogChanged({ brands: [actor.brandId] })
+    // A launch makes the brand and every product it published while hidden public: re-index them all.
+    catalogChanged(launched.length ? { reindexBrands: [actor.brandId] } : { brands: [actor.brandId] })
     return { version, publishedAt: new Date().toISOString() }
   })
 }

@@ -22,6 +22,8 @@ export type PricedLine = {
   unit: number
   total: number
   maxQty: number
+  /** Its brand isn't selling yet (a founding brand before it opens): checkout refuses the line. */
+  notForSale: boolean
 }
 
 export type ShippingService = QuoteOptionDto["service"]
@@ -29,7 +31,10 @@ export type ShippingService = QuoteOptionDto["service"]
 export type BrandGroup = {
   brand: Brand
   lines: PricedLine[]
+  /** The lines that are for sale (a brand not selling yet adds nothing: checkout refuses it). */
   subtotal: number
+  /** Every line of this brand is not for sale: no shipping is priced for it. */
+  notForSale: boolean
   /** The server's quote for this brand, or null while it loads or when it couldn't load. */
   quote: QuoteGroupDto | null
   /** The options the brand offers to this destination (available ones only); null without a quote. */
@@ -70,15 +75,20 @@ export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: Curr
     const { product, variant } = hit
     const brand = brandById.get(product.brandId)!
     const unit = convert(product.price, product.currency, currency)
-    const priced: PricedLine = { line, product, variant, unit, total: unit * line.quantity, maxQty: Math.max(1, Math.min(10, availableStock(variant))) }
+    const notForSale = brand.forSale === false || product.brandSummary?.forSale === false
+    const priced: PricedLine = { line, product, variant, unit, total: unit * line.quantity, maxQty: notForSale ? line.quantity : Math.max(1, Math.min(10, availableStock(variant))), notForSale }
     const g =
       groups.get(brand.id) ??
-      ({ brand, lines: [], subtotal: 0, quote: null, options: null, unavailable: false, option: null, estimate: null, shipping: 0, freeShipping: false, toFreeShipping: 0, days: [0, 0], shippingKnown: false } satisfies BrandGroup)
+      ({ brand, lines: [], subtotal: 0, notForSale: true, quote: null, options: null, unavailable: false, option: null, estimate: null, shipping: 0, freeShipping: false, toFreeShipping: 0, days: [0, 0], shippingKnown: false } satisfies BrandGroup)
     g.lines.push(priced)
-    g.subtotal += priced.total
+    if (!notForSale) {
+      g.subtotal += priced.total
+      g.notForSale = false
+    }
     groups.set(brand.id, g)
   }
   for (const g of groups.values()) {
+    if (g.notForSale) continue
     const q = quotes?.[g.brand.id] ?? null
     // A quote only counts for exactly these lines (a stale one would price another bag).
     const fits = !!q && q.subtotal.currency === currency && q.subtotal.amount === g.subtotal
@@ -98,9 +108,12 @@ export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: Curr
     }
   }
   const list = [...groups.values()]
-  const subtotal = list.reduce((s, g) => s + g.subtotal, 0)
-  const known = list.length > 0 && list.every((g) => g.shippingKnown)
-  const shipping = known ? list.reduce((s, g) => s + (g.option?.price.amount ?? 0), 0) : null
+  // Totals and shipping count only what can be bought; lines not for sale block checkout instead.
+  const selling = list.filter((g) => !g.notForSale)
+  const subtotal = selling.reduce((s, g) => s + g.subtotal, 0)
+  const known = selling.length > 0 && selling.every((g) => g.shippingKnown)
+  const shipping = known ? selling.reduce((s, g) => s + (g.option?.price.amount ?? 0), 0) : null
+  const notForSale = list.flatMap((g) => g.lines.filter((l) => l.notForSale))
   const count = lines.reduce((n, l) => n + l.quantity, 0)
   return {
     groups: list,
@@ -111,6 +124,10 @@ export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: Curr
     count,
     /** Brands that don't ship to this destination. */
     blocked: list.filter((g) => g.quote && g.unavailable),
+    /** Lines from brands that aren't selling yet (checkout refuses them). */
+    notForSale,
+    /** Why Checkout is off: a line in the cart isn't for sale (null when the cart can check out). */
+    notForSaleBlock: notForSale.length ? `${notForSale[0].product.brandSummary?.name ?? list.find((g) => g.lines.includes(notForSale[0]))?.brand.name ?? "A brand in your cart"} isn't selling on Yard yet. Remove its pieces to check out.` : null,
   }
 }
 

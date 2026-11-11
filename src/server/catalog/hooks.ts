@@ -1,5 +1,5 @@
 import "server-only"
-import { inArray } from "drizzle-orm"
+import { and, inArray, ne } from "drizzle-orm"
 import { afterCommit, db } from "../db"
 import { catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { refreshBrandMediaVisibility } from "../media/visibility"
@@ -20,9 +20,15 @@ type Change = {
   reindexVariants?: boolean
   /** Brands whose product/collection photos may have changed visibility (products' brands are added automatically). */
   brands?: string[]
+  /**
+   * Brands whose whole catalogue must be re-indexed: the brand row and every non-archived product.
+   * For brand-level changes that flip what search stores for each product (a founding brand
+   * launching, being claimed, getting its first payout account, a rename).
+   */
+  reindexBrands?: string[]
 }
 
-type SearchModule = { reindexProduct?: (productId: string) => Promise<unknown> }
+type SearchModule = { reindexProduct?: (productId: string) => Promise<unknown>; reindexBrand?: (brandId: string) => Promise<unknown> }
 
 async function loadSearch(): Promise<SearchModule | null> {
   try {
@@ -37,7 +43,7 @@ export function catalogChanged(change: Change) {
     invalidateMemo("catalog:")
     // Uploaded product and collection photos are public only while a published product or
     // collection of a listed brand shows them (media/visibility.ts). One brand's media is small.
-    const brandIds = new Set(change.brands ?? [])
+    const brandIds = new Set([...(change.brands ?? []), ...(change.reindexBrands ?? [])])
     if (change.products?.length) {
       const d = await db()
       const rows = await d.select({ brandId: catalogProducts.brandId }).from(catalogProducts).where(inArray(catalogProducts.id, change.products))
@@ -50,8 +56,19 @@ export function catalogChanged(change: Change) {
       const rows = await d.select({ productId: catalogVariants.productId }).from(catalogVariants).where(inArray(catalogVariants.id, change.variants))
       for (const r of rows) ids.add(r.productId)
     }
-    if (!ids.size) return
+    if (change.reindexBrands?.length) {
+      const d = await db()
+      const rows = await d
+        .select({ id: catalogProducts.id })
+        .from(catalogProducts)
+        .where(and(inArray(catalogProducts.brandId, change.reindexBrands), ne(catalogProducts.status, "archived")))
+      for (const r of rows) ids.add(r.id)
+    }
+    if (!ids.size && !change.reindexBrands?.length) return
     const search = await loadSearch()
+    for (const b of change.reindexBrands ?? []) {
+      if (typeof search?.reindexBrand === "function") await search.reindexBrand(b).catch((e: unknown) => log.error(`[yard] catalog: reindexBrand(${b}) failed`, e))
+    }
     if (typeof search?.reindexProduct !== "function") return
     for (const id of ids) {
       await search.reindexProduct(id).catch((e: unknown) => log.error(`[yard] catalog: reindexProduct(${id}) failed`, e))

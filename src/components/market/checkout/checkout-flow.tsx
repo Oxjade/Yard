@@ -190,7 +190,9 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const bag = useMemo(() => priceCart(lines, country, currency, quote.quotes, (b) => shipping[b]), [lines, country, currency, quote.quotes, shipping])
   const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: bag.shipping, total: bag.total, count: bagCount(lines) }
   const quoteFailed = !quote.isLoading && !!quote.error && !quote.quotes
-  const shippingBlock = quote.isLoading && !quote.quotes
+  const shippingBlock = bag.notForSaleBlock
+    ? bag.notForSaleBlock
+    : quote.isLoading && !quote.quotes
     ? "Shipping is still being calculated."
     : quoteFailed
       ? "Couldn't calculate shipping. Retry to continue."

@@ -194,7 +194,11 @@ function BagLine({
             {formatMoney(l.total, currency)}
           </motion.p>
         </div>
-        {l.line.quantity >= l.maxQty && l.maxQty < 10 ? <p className="mt-1 text-[11px] text-acid">Only {l.maxQty} available</p> : null}
+        {l.notForSale ? (
+          <p className="mt-1 text-[11px] break-words text-acid">{l.product.brandSummary?.name ?? "This brand"} isn&apos;t selling on Yard yet. Remove it to check out.</p>
+        ) : l.line.quantity >= l.maxQty && l.maxQty < 10 ? (
+          <p className="mt-1 text-[11px] text-acid">Only {l.maxQty} available</p>
+        ) : null}
       </div>
     </motion.li>
   )

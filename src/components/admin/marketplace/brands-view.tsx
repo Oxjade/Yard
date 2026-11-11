@@ -12,12 +12,15 @@ import { useNow } from "@/hooks/use-now"
 import { errorMessage } from "@/lib/api/errors"
 import type { BrandApplication, BrandReviewStatus } from "@/lib/data/admin"
 import { formatNumber } from "@/lib/money"
+import { canAdmin } from "@/lib/permissions"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { Initials } from "./bits"
 import { BrandDetail } from "./brand-detail"
 import { allowedBrandActions, brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { useDecision } from "./decision"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
+import { FoundingPanel } from "./founding-view"
 import { useBrandApplications } from "./onboarding"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
@@ -29,6 +32,9 @@ const TABS: { value: BrandReviewStatus; label: string; empty: string; emptyBody:
   { value: "suspended", label: "Suspended", empty: "No suspended brands", emptyBody: "Suspended brands stay here until they're reinstated." },
 ]
 const isTab = (v: string | null): v is BrandReviewStatus => TABS.some((t) => t.value === v)
+/** The owner's founding brands (brands.founding), a tab of its own beside the status tabs. */
+const FOUNDING = "founding"
+type Tab = BrandReviewStatus | typeof FOUNDING
 
 const n = (v: number) => formatNumber(Math.round(v))
 const days = (v: number) => `${n(v)} ${Math.round(v) === 1 ? "day" : "days"}`
@@ -43,12 +49,15 @@ export function BrandsView() {
   const blockFor = useBrandStatusBlock()
   const linkedTab = useSearchParam("tab")
   const reviewId = useSearchParam("review")
+  const canFounding = useServerSession((s) => !!s.admin && canAdmin(s.admin.role, "brands.founding"))
+  const founding = linkedTab === FOUNDING && canFounding
 
   // The open record lives in the URL (?review=app_…), so the palette, the Overview and other
   // screens can link straight to it and a reload reopens it.
   const reviewing = reviewId ? applications.find((a) => a.id === reviewId) : undefined
   // A link to a record shows the tab it's in; otherwise the tab in the URL, else the queue.
-  const tab: BrandReviewStatus = isTab(linkedTab) ? linkedTab : reviewing && !linkedTab ? reviewing.status : "pending_review"
+  const statusTab: BrandReviewStatus = isTab(linkedTab) ? linkedTab : reviewing && !linkedTab ? reviewing.status : "pending_review"
+  const tab: Tab = founding ? FOUNDING : statusTab
   // When the control that asked has gone or turned disabled: back to the selection bar while rows
   // stay selected (a search hid some of them), else the status tab.
   const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, tab)))
@@ -62,10 +71,10 @@ export function BrandsView() {
   const rows = useMemo(
     () =>
       applications
-        .filter((a) => a.status === tab)
+        .filter((a) => a.status === statusTab)
         // The review queue is first in, first out; the other lists show the newest first.
-        .sort((a, b) => (tab === "pending_review" ? a.submittedAt.localeCompare(b.submittedAt) : b.submittedAt.localeCompare(a.submittedAt))),
-    [applications, tab],
+        .sort((a, b) => (statusTab === "pending_review" ? a.submittedAt.localeCompare(b.submittedAt) : b.submittedAt.localeCompare(a.submittedAt))),
+    [applications, statusTab],
   )
 
   const pending = applications.filter((a) => a.status === "pending_review")
@@ -128,7 +137,7 @@ export function BrandsView() {
 
   // The tab's transitions, plus Reject when a submitted Studio application is listed (it's the only row that can be rejected).
   const canReject = rows.some((a) => allowedBrandActions(a).includes("reject"))
-  const allowedHere = canReject ? brandAllowed[tab].flatMap((k): BrandActionKey[] => (k === "approve" ? ["approve", "reject"] : [k])) : brandAllowed[tab]
+  const allowedHere = canReject ? brandAllowed[statusTab].flatMap((k): BrandActionKey[] => (k === "approve" ? ["approve", "reject"] : [k])) : brandAllowed[statusTab]
   if (canReject && !allowedHere.includes("reject")) allowedHere.push("reject")
   const rowActions: RowAction<BrandApplication>[] = [
     { label: "Open review", icon: EyeIcon, onSelect: open },
@@ -150,7 +159,7 @@ export function BrandsView() {
     disabledReason: "Sign in with a demo admin account that can restrict brands. Yard enforces brand status on the server.",
     onSelect: (list) => decide(key, list.filter((a) => allowedBrandActions(a).includes(key) && !blockFor(a))),
   }))
-  const current = TABS.find((t) => t.value === tab)!
+  const current = TABS.find((t) => t.value === statusTab)!
 
   return (
     <Reveal ssrVisible className="@container grid gap-3">
@@ -177,21 +186,28 @@ export function BrandsView() {
         </StatRow>
       </InPageLinks>
 
-      <Panel id="brand-review" title="Brand review" description="Open a brand for its verification checklist, notes and history. Every decision asks for a reason." className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+      <Panel id="brand-review" title={founding ? "Founding brands" : "Brand review"} description={founding ? "Brands Yard creates and sets up itself. Each owner claims theirs with a single-use link, then adds a payout account to start selling." : "Open a brand for its verification checklist, notes and history. Every decision asks for a reason."} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
         <PanelRail value={tab}>
           <Segmented
             label="Brand status"
             size="sm"
             value={tab}
-            onChange={(t) => writeParams({ tab: t === "pending_review" ? null : t })}
+            onChange={(t) => writeParams({ tab: t === "pending_review" ? null : t, brand: null })}
             loading={!ready}
             idBase={qid}
             panelId={`${qid}-panel`}
             // Only the queue carries a count: the Segmented gives any count above zero the attention edge, which is for work waiting.
-            options={TABS.map((t) => ({ value: t.value, label: t.label, count: t.value === "pending_review" ? counts[t.value] : undefined }))}
+            options={[
+              ...TABS.map((t): { value: Tab; label: string; count?: number } => ({ value: t.value, label: t.label, count: t.value === "pending_review" ? counts[t.value] : undefined })),
+              ...(canFounding ? [{ value: FOUNDING as Tab, label: "Founding" }] : []),
+            ]}
           />
         </PanelRail>
         <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
+          {founding ? (
+            <FoundingPanel phone={phone} />
+          ) : (
+          <>
           {onboarding.error ? (
             <div className="pb-3">
               <PanelError message={errorMessage(onboarding.error)} onRetry={() => void onboarding.revalidate()} />
@@ -211,6 +227,8 @@ export function BrandsView() {
             initialPageSize={10}
             minWidth={300}
           />
+          </>
+          )}
         </div>
       </Panel>
 

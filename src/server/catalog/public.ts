@@ -29,6 +29,8 @@ const brandSummary = {
   foundingBadge: brands.foundingBadge,
   /** False while a founding brand isn't selling yet: show "Notify me" instead of Add to cart. */
   forSale: sql<boolean>`${brandForSaleSql()}`,
+  /** The brand has published a storefront, so its name links to /brands/<handle>. */
+  hasStorefront: sql<boolean>`exists (select 1 from catalog_storefront_versions sfv where sfv.brand_id = ${brands.id})`,
 }
 
 export async function listPublicProducts(q: PublicProductsQuery) {
@@ -124,6 +126,9 @@ export async function publicCategories() {
   })
 }
 
+/** Brand columns that never leave the server on a public read. */
+const PRIVATE_BRAND_FIELDS = ["createdBy", "creationKey", "claimedBy", "sellerAgreementVersion", "sellerAgreementAcceptedAt"] as const
+
 async function listedBrandByHandle(handleOrId: string) {
   const d = await db()
   const [b] = await d
@@ -134,8 +139,9 @@ async function listedBrandByHandle(handleOrId: string) {
   if (!b) return null
   const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}` }).from(brands).where(eq(brands.id, b.id)).limit(1)
   // Only public fields: never who created or claimed it, its idempotency key or agreement details.
-  const { createdBy: _c, creationKey: _k, claimedBy: _cb, sellerAgreementVersion: _sv, sellerAgreementAcceptedAt: _sa, ...pub } = b
-  return { ...pub, forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}` : null }
+  const pub: Partial<typeof b> = { ...b }
+  for (const k of PRIVATE_BRAND_FIELDS) delete pub[k]
+  return { ...(pub as Omit<typeof b, (typeof PRIVATE_BRAND_FIELDS)[number]>), forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}` : null }
 }
 
 /** A brand's published collections (with product ids that are public). */

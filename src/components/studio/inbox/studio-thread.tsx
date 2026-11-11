@@ -41,7 +41,7 @@ import type { ConversationSummary, CustomerContextDto, Interaction, MessageDto, 
 import { errorMessage } from "@/lib/api/errors"
 import { blockCustomer, patchStudioConversation, sendStudioMessage } from "@/lib/api/inbox"
 import { products } from "@/lib/data/products"
-import { needsRole, teamRoleLabels } from "@/lib/permissions"
+import { memberRoleLabel, needsRole } from "@/lib/permissions"
 import { formatShortRange } from "@/lib/shipping/format"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { cn } from "@/lib/utils"
@@ -102,7 +102,7 @@ export function StudioThread({ conversationId, summary, session, quickReplies, c
   const search = useThreadSearch("brand", conversationId, t, scroller)
   const conv = t.conversation ?? summary
   const customerName = conv?.customer?.name ?? "This shopper"
-  const disabled = studioDisabledReason(t.conversation?.interaction, { customer: customerName, brand: session.brand.name, role: teamRoleLabels[session.role] })
+  const disabled = studioDisabledReason(t.conversation?.interaction, { customer: customerName, brand: session.brand.name, role: memberRoleLabel(session.role) })
 
   const patch = useAsyncAction(
     async (body: { status?: "open" | "resolved"; markedUnread?: boolean; spam?: boolean }) => {

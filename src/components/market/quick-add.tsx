@@ -139,8 +139,14 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   const single = product.variants.length === 1
   const noun = sizeOpt ? "size" : "colour"
 
+  // A founding brand that isn't selling yet: the card says so (the product page has Notify me).
+  const opening = product.brandSummary?.forSale === false
   // Sold out reads as such on every card, drop or not; a tap only shows the words.
-  const closed: Closed | undefined = soldOut ? { reason: "sold out", label: "Sold out", describedBy: blocked?.describedBy, onAttempt: () => {} } : blocked
+  const closed: Closed | undefined = opening
+    ? { reason: "opening soon, not on sale yet", label: "Opening soon", describedBy: blocked?.describedBy, onAttempt: () => {} }
+    : soldOut
+      ? { reason: "sold out", label: "Sold out", describedBy: blocked?.describedBy, onAttempt: () => {} }
+      : blocked
   const pickable = !single && !closed
   // Adding closed while the picker was up (the drop's clock moved on): put it away, so it
   // can't open again by itself if adding reopens later.
@@ -180,7 +186,9 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   const label = added ? (result === "in-cart" ? "In your cart" : "Added") : adding.pending ? heldLabel : readyLabel
   // Closed looks (grey glass, not-allowed) only once any add on it has finished confirming.
   const closedLook = closed !== undefined && !busy
-  const ariaLabel = soldOut
+  const ariaLabel = opening
+    ? `${product.name} isn't on sale yet: its brand is opening soon`
+    : soldOut
     ? `${product.name} is sold out`
     : closed
       ? `Add ${product.name} to cart, ${closedWords(closed)}`

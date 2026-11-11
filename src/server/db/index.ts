@@ -7,7 +7,7 @@ import { getDb } from "./client"
  * The database API for everything outside src/server/db (§1.3). `getDb` is deliberately not
  * exported: every query goes through db() or withTx().
  */
-export { db, withTx, afterCommit, inTransaction, type Executor, type Tx } from "./tx"
+export { db, withTx, afterCommit, inTransaction, withBeforeCommit, type BeforeCommit, type Executor, type Tx } from "./tx"
 export * as t from "./schema"
 
 /**

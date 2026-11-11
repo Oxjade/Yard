@@ -4,6 +4,7 @@ import { connection, type NextRequest } from "next/server"
 import { z, type ZodType } from "zod"
 import { getAdmin, requireActiveBrand, requireAdmin, requireShopper, type Actor, type AdminActor, type BrandActor, type ShopperActor } from "../auth/dal"
 import { writeAudit } from "../audit"
+import { withBeforeCommit, type BeforeCommit } from "../db"
 import { getEnv } from "../env"
 import { log } from "../log"
 import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
@@ -205,14 +206,14 @@ async function resolveActor(opts: RouteOpts, asParam: string | null): Promise<Ac
     case "shopper":
       return requireShopper({ notRestricted: opts.notRestricted })
     case "brand":
-      return requireActiveBrand(opts.permission)
+      return requireActiveBrand(opts.permission, { allowYardSetup: true })
     case "admin":
       return requireAdmin(opts.permission)
     case "multi": {
       const as = asParam as "shopper" | "brand" | "admin" | null
       if (!as || !opts.as.includes(as)) throw badRequest({ as: `Use as=${opts.as.join(" or as=")}.` })
       if (as === "shopper") return requireShopper()
-      if (as === "brand") return requireActiveBrand(opts.permission?.brand ?? "any_member")
+      if (as === "brand") return requireActiveBrand(opts.permission?.brand ?? "any_member", { allowYardSetup: true })
       return requireAdmin(opts.permission?.admin ?? "any_admin")
     }
   }
@@ -329,14 +330,19 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
       const raw = (await context?.params) ?? {}
       const params = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, Array.isArray(v) ? v.join("/") : v]))
       // 8. The handler.
-      const out = await handler({ req, actor: actor as ActorOf<O>, query: query as QueryOf<O>, body: body as BodyOf<O>, params, ip, ipHash, requestId })
+      const run = async () => handler({ req, actor: actor as ActorOf<O>, query: query as QueryOf<O>, body: body as BodyOf<O>, params, ip, ipHash, requestId })
+      // Every Yard setup write leaves an admin-attributed row (writeAudit maps the role), written
+      // inside the handler's first transaction, so the write and its audit commit together or not at all.
+      const setupWrite = yardSetup && method !== "GET" && method !== "HEAD" ? yardSetup : null
+      const auditSetup = setupWrite
+        ? (extra: Record<string, unknown>) =>
+            writeAudit({ actor: { kind: "brand", id: setupWrite.userId, name: setupWrite.name, role: "yard_setup" }, action: "yard_setup.write", target: `${method} ${url.pathname}`, subjectType: "brand", subjectId: setupWrite.brandId, brandId: setupWrite.brandId, ipHash, meta: { requestId, ...extra } })
+        : null
+      const hook: BeforeCommit | null = auditSetup ? { run: async () => void (await auditSetup({ inTransaction: true })), ran: 0 } : null
+      const out = hook ? await withBeforeCommit(hook, run) : await run()
       const res = out instanceof Response ? out : Response.json(out ?? { ok: true })
-      // Every successful Yard setup write leaves an admin-attributed row (writeAudit maps the role).
-      if (yardSetup && method !== "GET" && method !== "HEAD" && res.status < 400) {
-        await writeAudit({ actor: { kind: "brand", id: yardSetup.userId, name: yardSetup.name, role: "yard_setup" }, action: "yard_setup.write", target: `${method} ${url.pathname}`, subjectType: "brand", subjectId: yardSetup.brandId, brandId: yardSetup.brandId, ipHash, meta: { status: res.status, requestId } }).catch((e: unknown) =>
-          log.error(`[yard] request ${requestId}: yard_setup audit failed`, e),
-        )
-      }
+      // A write that opened no transaction: audit it now, and fail the request if that can't be recorded.
+      if (auditSetup && hook && !hook.ran && res.status < 400) await auditSetup({ status: res.status, inTransaction: false })
       return finish(res, opts, requestId)
     } catch (e) {
       return finish(errorResponse(e, requestId), { ...opts, cache: "no-store" }, requestId)

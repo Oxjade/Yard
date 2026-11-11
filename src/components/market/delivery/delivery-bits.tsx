@@ -101,7 +101,9 @@ export function BrandDeliveryList({ groups, state, className, title = "Delivery"
           {groups.map((g) => (
             <li key={g.brand.id} className="flex min-h-6 items-center justify-between gap-3 text-xs">
               <span className="min-w-0 truncate text-ink-2">{g.brand.name}</span>
-              {g.quote ? (
+              {g.notForSale ? (
+                <span className="shrink-0 text-ink-3">Not selling yet</span>
+              ) : g.quote ? (
                 g.unavailable ? (
                   <span className="shrink-0 text-ink-2">{g.reason ?? "Doesn't ship here"}</span>
                 ) : (

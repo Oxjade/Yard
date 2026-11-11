@@ -13,7 +13,8 @@ import { route } from "@/server/http/route"
  * of brand cards can never use up the allowance the Charts page and GET /api/charts draw on.
  */
 const BADGE_RATE = { key: "charts.badge", limit: 120, windowSec: 60, anonGlobal: 6000 } as const
-const BRAND_ID = /^b_[a-z0-9_]{1,60}$/
+// Sample ids (b_lagos_static) and server ids (newId: base36 time + base64url, so mixed case and "-").
+const BRAND_ID = /^b_[A-Za-z0-9_-]{1,60}$/
 const MAX_RANK_IDS = 48
 
 const query = z.strictObject({

@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react"
 import Image from "next/image"
 import { motion, useReducedMotion, useScroll, useTransform } from "motion/react"
 import {
+  BellSimpleIcon as BellSimple,
   CalendarBlankIcon as CalendarBlank,
   MapPinIcon as MapPin,
   SealCheckIcon as SealCheck,
@@ -17,6 +18,7 @@ import { PlaceBadge } from "@/components/around/entry/place-badge"
 import { RankBadge } from "@/components/charts/entry/rank-badge"
 import { MessageAction } from "@/components/inbox/entry"
 import { BrandMark } from "@/components/market/brand-mark"
+import { FoundingBadge } from "@/components/market/founding-badge"
 import { Button } from "@/components/ui/button"
 import { getBrandPlaces } from "@/lib/api/around"
 import { useApi } from "@/lib/api/use-api"
@@ -276,6 +278,17 @@ function ProfileMeta({ ctx, className }: { ctx: StorefrontContext; className?: s
   ]
   return (
     <ul className={cn("flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-2", className)} aria-label={`About ${brand.name}`}>
+      {brand.foundingBadge ? (
+        <li className="inline-flex items-center">
+          <FoundingBadge />
+        </li>
+      ) : null}
+      {brand.forSale === false ? (
+        <li className="inline-flex items-center gap-1.5 text-ink">
+          <BellSimple aria-hidden className="size-4 shrink-0 text-violet" />
+          Opening soon on Yard
+        </li>
+      ) : null}
       {items.map((m) => (
         <li key={m.key} className="inline-flex items-center gap-1.5">
           <m.icon aria-hidden className="size-4 shrink-0" />

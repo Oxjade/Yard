@@ -45,10 +45,10 @@ const LOCK_MS = 2 * 60_000
  * Templates whose `url` carries a raw single-use auth token (AUTH stores only its hash). The outbox
  * keeps that link only while the row can still be sent: it is removed when the row reaches sent,
  * failed or suppressed (and stub in production, where no one reads the stub output), and from any
- * row older than the longest token lifetime (invites: 7 days). Stale stub rows of these templates are
+ * row older than the longest token lifetime (invites and founding claim links: 7 days). Stale stub rows of these templates are
  * never re-queued.
  */
-const SECRET_TEMPLATES: readonly string[] = ["verification", "reset", "magic_link", "team_invite"]
+const SECRET_TEMPLATES: readonly string[] = ["verification", "reset", "magic_link", "team_invite", "founding_claim"]
 const SECRET_RETENTION = "8 days"
 /** Finished rows are deleted after this. */
 const ROW_RETENTION = "90 days"

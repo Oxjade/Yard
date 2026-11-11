@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
+  ArrowLeftIcon,
   ArrowUpRightIcon,
   BellIcon,
   CalendarXIcon,
@@ -35,6 +36,7 @@ import {
   UserSwitchIcon,
   UsersIcon,
   WalletIcon,
+  WrenchIcon,
 } from "@phosphor-icons/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { currencies, type CurrencyCode } from "@/config/markets"
@@ -46,7 +48,10 @@ import { PaletteGroup, PaletteItem, matches, queryTerms, topMatches } from "@/co
 import { orderStatusMeta, productStatusMeta } from "@/components/dashboard/status-badge"
 import { CommandItem } from "@/components/ui/command"
 import { buildCustomers } from "@/components/studio/business/model"
+import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
+import { endSetupSession } from "@/lib/api/founding"
 import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
 import { brandById } from "@/lib/data/brands"
 import { listStudioLocations, STUDIO_LOCATIONS_KEY } from "@/lib/api/around"
@@ -54,9 +59,10 @@ import { listStudioConversations } from "@/lib/api/inbox"
 import { accountsKey, getAccounts, getStudioPosts, studioPostsKey } from "@/lib/api/social"
 import { useApi } from "@/lib/api/use-api"
 import { kindLabel } from "@/lib/around/labels"
-import { teamRoleLabels, type BrandPermission } from "@/lib/permissions"
+import { memberRoleLabel, type BrandPermission } from "@/lib/permissions"
 import { useUnread } from "@/lib/realtime/unread"
 import { useRealtimeEvent, useRealtimeEventName } from "@/lib/realtime/use-realtime"
+import { afterIdentityChange } from "@/lib/session/identity"
 import { useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
@@ -142,10 +148,12 @@ function StudioServerResults({ query, go }: { query: string; go: (href: string) 
   const live = query.length >= 2 ? query : ""
   const q = settled.length >= 2 ? settled : ""
   const can = (p: BrandPermission) => !!member?.permissions.includes(p)
-  const convKey = member && q && can("inbox.read") ? `/api/studio/inbox/conversations?q=${encodeURIComponent(q)}` : null
+  // Yard setup reaches the catalogue, storefront and shipping only: no inbox, places or posts.
+  const full = !!member && member.role !== "yard_setup"
+  const convKey = full && q && can("inbox.read") ? `/api/studio/inbox/conversations?q=${encodeURIComponent(q)}` : null
   const conv = useApi(convKey, () => listStudioConversations({ q }), { revalidateOnFocus: false, keepPrevious: false })
-  const places = useApi(member && live ? STUDIO_LOCATIONS_KEY : null, listStudioLocations, { revalidateOnFocus: false })
-  const postsKey = member && live ? studioPostsKey("all", "all") : null
+  const places = useApi(full && live ? STUDIO_LOCATIONS_KEY : null, listStudioLocations, { revalidateOnFocus: false })
+  const postsKey = full && live ? studioPostsKey("all", "all") : null
   const posts = useApi(postsKey, getStudioPosts, { revalidateOnFocus: false })
   if (!member || query.length < 2) return null
   const fresh = query === settled
@@ -269,6 +277,89 @@ const search: ShellSearch = {
   Results: StudioResults,
 }
 
+/**
+ * Yard setup (founding brands): Yard staff setting up an unclaimed brand before its owner claims
+ * it. The server allows the catalogue, storefront, shipping and uploads only (route() allow-list),
+ * so the workspace offers just those pages and sends anything else to Products.
+ */
+const YARD_SETUP_PAGES = ["/studio/products", "/studio/inventory", "/studio/collections", "/studio/storefront", "/studio/shipping"]
+const yardSetupAllows = (pathname: string) => YARD_SETUP_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+const yardSetupSearch: ShellSearch = {
+  ...search,
+  placeholder: "Search products",
+  destinations: [
+    { label: "Add a product", href: "/studio/products/new", icon: PlusIcon, hint: "Catalogue" },
+    { label: "Holidays & closures", href: "/studio/shipping#holidays", icon: CalendarXIcon, hint: "Shipping" },
+  ],
+}
+const yardSetupGroups: ShellNavGroup[] = [
+  {
+    label: "Catalogue",
+    items: [
+      { href: "/studio/products", label: "Products", icon: PackageIcon },
+      { href: "/studio/collections", label: "Collections", icon: StackIcon },
+      { href: "/studio/inventory", label: "Inventory", icon: WarehouseIcon },
+    ],
+  },
+  {
+    label: "Brand",
+    items: [
+      { href: "/studio/storefront", label: "Storefront", icon: LayoutIcon },
+      { href: "/studio/shipping", label: "Shipping & fulfilment", icon: TruckIcon },
+    ],
+  },
+]
+
+/** The Yard setup notice over every Studio page: whose brand this is, and the way back. */
+function YardSetupBanner({ brandId, brandName }: { brandId: string; brandName: string }) {
+  const router = useRouter()
+  const [ending, setEnding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const back = `/admin/brands?tab=founding&brand=${encodeURIComponent(brandId)}`
+  async function end() {
+    setEnding(true)
+    setError(null)
+    try {
+      await endSetupSession(brandId)
+      await afterIdentityChange("studio")
+      router.push(back)
+    } catch (cause) {
+      setError(errorMessage(cause, "Yard setup couldn't be ended. Try again."))
+      setEnding(false)
+    }
+  }
+  return (
+    <div role="region" aria-label="Yard setup" className="mb-4 grid gap-3 rounded-xl border border-violet/40 bg-violet/[0.08] p-3 sm:flex sm:items-center sm:justify-between sm:p-4">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-violet/40 text-violet">
+          <WrenchIcon className="size-4" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium break-words text-ink">Yard setup: {brandName}</p>
+          <p className="mt-0.5 text-xs leading-relaxed break-words text-ink-2">
+            You&apos;re preparing this founding brand for its owner as Yard staff. Products, photos, collections, storefront and shipping only; every change is recorded under your name. It ends when the owner claims the brand, or after 8 hours.
+          </p>
+          {error ? (
+            <p role="alert" className="mt-1 text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
+        <Button asChild size="sm" variant="secondary" className="h-10 sm:h-9">
+          <Link href={back}>
+            <ArrowLeftIcon /> Back to Control Center
+          </Link>
+        </Button>
+        <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-9" loading={ending} disabled={ending} onClick={() => void end()}>
+          End setup
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 const initialsOf = (name: string) =>
   name
     .split(/\s+/)
@@ -282,6 +373,8 @@ const MISMATCH_NOTE = "Catalogue, orders and payouts still show Lagos Static's s
 /** Brand Studio: the merchant's operating environment. Calm, structured, functional. */
 export function StudioShell({ children }: { children: React.ReactNode }) {
   useLateHashTarget()
+  const pathname = usePathname()
+  const router = useRouter()
   const studioReady = useStoreReady(useStudio)
   const adminReady = useStoreReady(useAdmin)
   const brandId = useStudio((s) => s.brandId)
@@ -303,6 +396,12 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
     [sessionBrand, member, brand],
   )
   const mismatch = !!sessionBrand && sessionBrand.id !== brand.id
+  const yardSetup = member?.role === "yard_setup"
+  // Yard setup on a page outside its reach: straight to Products (the server would refuse the page's reads).
+  const offLimits = yardSetup && !yardSetupAllows(pathname)
+  useEffect(() => {
+    if (offLimits) router.replace("/studio/products")
+  }, [offLimits, router])
   const demoOn = !!session.demoAuth?.brand
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
@@ -347,7 +446,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   // shows no badge.
   const studioUnread = useUnread("studio")
   const inboxBadge = member && studioUnread ? studioUnread : undefined
-  const social = useApi(member ? accountsKey : null, getAccounts, { revalidateOnFocus: false })
+  const social = useApi(member && !yardSetup ? accountsKey : null, getAccounts, { revalidateOnFocus: false })
   useRealtimeEvent("social.status", () => void social.revalidate())
   const reconnect = member ? (social.data?.accounts.filter((a) => a.status === "needs_reauth" || a.status === "error").length ?? 0) : 0
 
@@ -400,15 +499,18 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   return (
     <AppShell
       surface="studio"
-      root="/studio"
-      groups={groups}
-      search={search}
+      root={yardSetup ? "/studio/products" : "/studio"}
+      groups={yardSetup ? yardSetupGroups : groups}
+      search={yardSetup ? yardSetupSearch : search}
       workspace={{
         mark: checking ? <Bone className="size-8 rounded-[5px]" /> : <BrandMark brand={workspaceBrand} size="sm" />,
         name: checking ? "Brand Studio" : workspaceBrand.name,
         caption: checking ? "Checking your session" : "Brand Studio",
         label: checking ? "Brand Studio" : `${workspaceBrand.name}, Brand Studio`,
-        menu: [
+        menu: yardSetup && member ? [
+          { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
+          { label: "Back to Control Center", href: `/admin/brands?tab=founding&brand=${encodeURIComponent(member.brand.id)}`, icon: ArrowLeftIcon, separated: true },
+        ] : [
           ...(checking ? [] : [{ label: "View storefront", href: `/brands/${workspaceBrand.handle}`, icon: StorefrontIcon, external: true }]),
           { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
           { label: "Settings", href: "/studio/settings", icon: GearIcon },
@@ -447,7 +549,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       }
       account={
         member
-          ? { initials: initialsOf(member.name), name: member.name, caption: member.demo ? `${teamRoleLabels[member.role]}, demo account` : teamRoleLabels[member.role] }
+          ? { initials: initialsOf(member.name), name: member.name, caption: member.demo ? `${memberRoleLabel(member.role)}, demo account` : memberRoleLabel(member.role) }
           : checking
             ? { initials: "", name: "Brand Studio", caption: "Checking your session" }
             : session.status === "error"
@@ -459,7 +561,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
           {mismatch ? <WorkspaceNote text={MISMATCH_NOTE.replace("Lagos Static", brand.name)} label="About this workspace's data" /> : null}
           {checking ? (
             <Bone className="hidden h-10 w-[9.5rem] rounded-full sm:block" />
-          ) : (
+          ) : yardSetup ? null : (
             <Link
               href={`/brands/${workspaceBrand.handle}`}
               target="_blank"
@@ -474,7 +576,14 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         </>
       }
     >
-      {children}
+      {yardSetup && member ? <YardSetupBanner brandId={member.brand.id} brandName={member.brand.name} /> : null}
+      {offLimits ? (
+        <p role="status" className="py-10 text-center text-sm text-ink-2">
+          Yard setup covers products, collections, inventory, storefront and shipping. Opening Products…
+        </p>
+      ) : (
+        children
+      )}
       <DemoAccountMenuBridge surface="studio" />
     </AppShell>
   )

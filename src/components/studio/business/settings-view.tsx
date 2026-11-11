@@ -22,6 +22,7 @@ import { toast } from "sonner"
 import { categories } from "@/lib/data/catalog"
 import type { CategorySlug } from "@/lib/data/types"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { useSearchParam } from "@/hooks/use-search-param"
 import { useStudio } from "@/lib/stores/studio"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -405,6 +406,8 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
   // The same cache entry as the Payouts page and the sidebar card, so a save here updates both.
   const summary = useApi<PayoutSummaryDto>(financeView ? `studio.payouts:${brandId}` : null, () => api<PayoutSummaryDto>("/api/studio/payouts"), { revalidateOnFocus: true })
   const [changing, setChanging] = useState(false)
+  // Arriving from claiming a founding brand (/auth/claim): selling starts once this account is saved.
+  const justClaimed = useSearchParam("claimed") === "1"
 
   if (!financeView) return <p className="text-sm text-ink-2">Only the owner, admins and finance can see where payouts go.</p>
   if (!summary.data) {
@@ -427,6 +430,14 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
 
   return (
     <>
+      {justClaimed && !a ? (
+        <div role="status" className="mb-3 flex items-start gap-2.5 rounded-md border border-violet/40 bg-violet/[0.08] p-3">
+          <Info className="mt-0.5 size-4 shrink-0 text-violet" aria-hidden />
+          <p className="min-w-0 text-sm text-ink-2">
+            <span className="text-ink">Your store is yours.</span> Add your payout account to start selling: shoppers can see your pieces now, and Buy turns on as soon as it&apos;s saved.
+          </p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-md border border-line-soft bg-surface/60 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
         <span className="inline-flex size-9 items-center justify-center rounded-full border border-line"><Landmark className="size-4 text-ink-2" aria-hidden /></span>
         <div className="min-w-0">

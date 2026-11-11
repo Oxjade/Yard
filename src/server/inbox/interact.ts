@@ -43,10 +43,16 @@ const refuse = (error: HttpError, reason: Refusal["reason"], until: Date | null 
 /** For a shopper writing to `brandId` (an existing conversation or a new thread). */
 export async function shopperCanInteract(actor: ShopperActor, target: { brandId: string; locked?: boolean }): Promise<InteractResult> {
   const d = await db()
-  const [brand] = await d.select({ name: brands.name, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, target.brandId)).limit(1)
+  const [brand] = await d
+    .select({ name: brands.name, reviewStatus: brands.reviewStatus, founding: brands.founding, launchedAt: brands.launchedAt, claimStatus: brands.claimStatus })
+    .from(brands)
+    .where(eq(brands.id, target.brandId))
+    .limit(1)
   const name = brand?.name ?? "This brand"
   if (target.locked) return refuse(restricted("This conversation was closed by Yard."), "locked")
   if (!brand || !brandListed(brand)) return refuse(restricted(`${name} isn't taking messages right now.`), "brand_unavailable")
+  // A founding brand nobody has claimed yet has no one to read its inbox (Yard setup can't open it).
+  if (brand.claimStatus === "unclaimed") return refuse(restricted(`${name} isn't taking messages yet. Follow it to hear when it opens.`), "brand_unavailable")
   const b = await blockState(actor.userId, target.brandId)
   if (b.brandBlockedShopper) return refuse(blocked(endWith(`You can't message ${name}`)), "blocked_by_them")
   if (b.shopperBlockedBrand) return refuse(blocked(`${endWith(`You blocked ${name}`)} Unblock them to send a message.`), "blocked_by_me")
