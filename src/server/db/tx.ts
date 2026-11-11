@@ -5,7 +5,8 @@ import { getDb, type Root } from "./client"
 
 /**
  * PGlite has ONE connection and drizzle's transaction holds it exclusively (§1.3). A query sent
- * on the root handle from inside a transaction callback waits forever and wedges the process, so
+ * on the root handle from inside a transaction callback waits forever and wedges the process (on
+ * Postgres it takes a second pooled connection that can't see the transaction's rows), so
  * every query goes through db(), which joins the ambient transaction, and side effects wait for
  * commit through afterCommit(). No network, file or fetch I/O inside a transaction.
  */
@@ -45,10 +46,39 @@ export function withBeforeCommit<T>(hook: BeforeCommit, fn: () => Promise<T>): P
   return beforeCommitAls.run(hook, fn)
 }
 
+/**
+ * Postgres runs transactions concurrently (PGlite runs one at a time), so two requests can
+ * deadlock (40P01) or, under a stricter isolation, fail to serialize (40001). Postgres has already
+ * rolled the loser back; it is retried once, from the start, as the outermost transaction. That is
+ * safe because nothing inside a transaction does I/O (side effects wait in afterCommit, and the
+ * queue of a rolled-back attempt is dropped).
+ */
+const RETRYABLE = new Set(["40P01", "40001"])
+function retryable(e: unknown): boolean {
+  for (let cur: unknown = e, depth = 0; cur && typeof cur === "object" && depth < 4; cur = (cur as { cause?: unknown }).cause, depth++) {
+    const code = (cur as { code?: unknown }).code
+    if (typeof code === "string" && RETRYABLE.has(code)) return true
+  }
+  return false
+}
+
 /** withTx on an explicit root: the seed runner uses it while the boot promise is still pending. */
 export async function runTx<T>(root: Root, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const after: Scope["after"] = []
   const hook = beforeCommitAls.getStore()
+  for (let attempt = 0; ; attempt++) {
+    const ranBefore = hook?.ran ?? 0
+    try {
+      return await attemptTx(root, fn, hook)
+    } catch (e) {
+      if (attempt >= 1 || !retryable(e)) throw e
+      if (hook) hook.ran = ranBefore // the step rolled back with the attempt: run it again
+      log.warn(`[yard] transaction ${(e as { code?: string }).code ?? (e as { cause?: { code?: string } }).cause?.code ?? ""} (deadlock or serialization failure); retrying once`)
+    }
+  }
+}
+
+async function attemptTx<T>(root: Root, fn: (tx: Tx) => Promise<T>, hook: BeforeCommit | undefined): Promise<T> {
+  const after: Scope["after"] = []
   const out = await root.transaction((tx) =>
     als.run({ tx, after }, async () => {
       const r = await fn(tx)

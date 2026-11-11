@@ -121,6 +121,9 @@ export function createConnection(h: ConnectionHooks) {
           // The server couldn't open the stream: back off like any other failure.
           if (noteFailure()) startPolling()
           else sseRetryTimer = window.setTimeout(openSse, 3000 * failures.length)
+        } else if (reason === "restart") {
+          // The server is restarting (a deploy): reconnect shortly, spread out so tabs don't all arrive at once.
+          sseRetryTimer = window.setTimeout(openSse, 500 + Math.floor(Math.random() * 1500))
         } else openSse()
         return
       }

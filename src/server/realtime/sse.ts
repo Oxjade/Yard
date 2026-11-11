@@ -185,7 +185,10 @@ export async function openStream(identity: StreamIdentity, req: Request): Promis
       "Content-Type": "text/event-stream; charset=utf-8",
       // no-transform: Next's compression (dev and start) skips the response, so nothing buffers it.
       "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
+      // A stream's connection is never reused for another request: when the stream ends (a bye,
+      // a restart) the socket closes with it, so a shutting-down server isn't kept waiting for an
+      // idle keep-alive connection to time out.
+      Connection: "close",
       "X-Accel-Buffering": "no",
     },
   })

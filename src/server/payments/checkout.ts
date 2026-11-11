@@ -11,12 +11,12 @@ import { holdStock, releaseHold } from "../catalog"
 import { notForSaleMessage } from "../catalog/sellable"
 import { db, withTx, type Executor, type Tx } from "../db"
 import { checkouts, payments } from "../db/schema/payments"
-import { HttpError, badRequest, busy, conflict, notFound, rule } from "../http/errors"
+import { HttpError, badRequest, busy, conflict, notConfigured, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { createOrdersFromCheckout, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
-import { chargeCurrencies, paymentsConfig } from "./config"
+import { chargeCurrencies, PAYMENTS_OFF_MESSAGE, paymentsConfig } from "./config"
 import { recordProviderEvent, processEvent } from "./events"
 import { getProvider, ProviderError } from "./providers"
 import { randomBytes } from "node:crypto"
@@ -189,6 +189,11 @@ export async function getCheckout(actor: ShopperActor, checkoutId: string): Prom
 
 /* ---------- Start ---------- */
 
+/** 503 not_configured "Payments open soon…" while YARD_PAYMENTS=off. */
+export function assertPaymentsOpen() {
+  if (paymentsConfig().provider === "off") throw notConfigured(PAYMENTS_OFF_MESSAGE)
+}
+
 /** Paystack reference: letters, digits, '-', '.', '=' only. */
 const paymentReference = () => `yp-${Date.now().toString(36)}-${randomBytes(8).toString("hex")}`
 
@@ -205,6 +210,9 @@ function requestHash(body: StartCheckoutBody) {
  * payment row] → provider initialise outside the transaction.
  */
 export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody): Promise<{ status: 200 | 201; view: CheckoutView }> {
+  // Payments off (no provider connected): refuse before anything is read or written, so no order,
+  // stock hold or payment row exists that nobody can pay for.
+  assertPaymentsOpen()
   const hash = requestHash(body)
   const existing = await findByKey(actor.userId, body.idempotencyKey)
   if (existing) {
@@ -404,6 +412,7 @@ function splitCodeFor(brandIds: string[]): string | null {
  * limits Paystack's page to the method the shopper chose; it only matters on the first initialise.
  */
 async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?: string[]): Promise<CheckoutView> {
+  assertPaymentsOpen()
   const d = await db()
   const p = await latestPayment(d, c.id)
   if (!p || c.status !== "pending_payment" || p.status !== "initialized" || p.provider !== "paystack" || p.accessCode) return toView(c, p)
@@ -438,6 +447,7 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?:
  * nothing.
  */
 export async function verifyCheckout(actor: ShopperActor, checkoutId: string): Promise<CheckoutView> {
+  assertPaymentsOpen()
   const view = await getCheckout(actor, checkoutId)
   if (view.status !== "pending_payment" || !view.payment || view.payment.provider !== "paystack" || view.payment.status !== "initialized") return view
   // Paystack never opened a page for this payment (its initialise failed): there is nothing to

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Run with the same NODE_ENV and YARD_DATA_DIR as Yard. NODE_ENV defaults to production.
-// Stop Yard first: PGlite permits one process per data directory.
+// With PGlite (no DATABASE_URL) stop Yard first: PGlite permits one process per data directory. On Postgres it can run beside the server.
 // Opening the database brings it up to THIS checkout's schema (pending migrations and seeds run first,
 // as when Yard boots), even on a dry run. Run it from the checkout you are about to deploy.
 
@@ -185,7 +185,7 @@ try {
   process.exitCode = 1
 } finally {
   try {
-    await root?.$client.close()
+    if (root) await (await import("@/server/db/client")).closeDb()
   } catch {
     // The database lock is released on process exit.
   }

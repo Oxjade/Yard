@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# fake-systemctl: a stand-in for systemctl inside a container WITHOUT systemd (rehearsal stage 1 only).
+# Yard units are started from their unit files (User=, EnvironmentFile=, Environment=,
+# WorkingDirectory=, ExecStart=, ConditionPathExists=) with setpriv, in the background.
+# postgresql and caddy are driven by their own tools; everything else is a logged no-op.
+set -uo pipefail
+# Real systemd never hands a service the caller's file descriptors (setup/release locks): close them.
+for fd in "/proc/$$/fd"/*; do
+  fd=${fd##*/}
+  if ((fd > 2)); then eval "exec $fd>&-"; fi
+done
+state=/run/fake-systemd
+mkdir -p "$state" /var/log/fake-systemd
+log() { echo "fake-systemctl: $*" >>/var/log/fake-systemd/calls.log; }
+log "$*"
+
+quiet=0
+args=()
+for a in "$@"; do
+  case "$a" in
+    --quiet | -q) quiet=1 ;;
+    --now | --no-pager | --no-block) ;;
+    *) args+=("$a") ;;
+  esac
+done
+verb=${args[0]:-}
+unit=${args[1]:-}
+unit=${unit%.service}
+
+unitfile() { echo "/etc/systemd/system/$1.service"; }
+pidfile() { echo "$state/$1.pid"; }
+running() { [[ -f "$(pidfile "$1")" ]] && kill -0 "$(cat "$(pidfile "$1")")" 2>/dev/null; }
+
+yard_start() {
+  local u=$1 f key val wd="" envfiles=() envs=() cond=""
+  f=$(unitfile "$u")
+  [[ -f "$f" ]] || { echo "unit $u not found" >&2; return 5; }
+  while IFS= read -r line; do
+    [[ "$line" =~ ^([A-Za-z]+)=(.*)$ ]] || continue
+    key=${BASH_REMATCH[1]} val=${BASH_REMATCH[2]}
+    case "$key" in
+      WorkingDirectory) wd=$val ;;
+      EnvironmentFile) envfiles+=("$val") ;;
+      Environment) read -r -a parts <<<"$val"; envs+=("${parts[@]}") ;;
+      ConditionPathExists) cond=$val ;;
+    esac
+  done <"$f"
+  if [[ -n "$cond" && ! -e "$cond" ]]; then log "$u: condition $cond failed, skipped"; return 0; fi
+  running "$u" && return 0
+  (
+    cd "$(readlink -f "$wd")" || exit 1
+    # shellcheck disable=SC2016 # expanded by the inner shell
+    exec env -i PATH=/usr/local/bin:/usr/bin:/bin U="$U" X="$X" "${envs[@]}" bash -c '
+      for f in "$@"; do set -a; . "$f"; set +a; done
+      # shellcheck disable=SC2086 # ExecStart is split into words like systemd does
+      exec setpriv --reuid="$U" --regid="$U" --init-groups -- $X
+    ' fake "${envfiles[@]}" >>"/var/log/fake-systemd/$u.log" 2>&1 &
+    echo $! >"$(pidfile "$u")"
+  )
+  return 0
+}
+
+case "$verb" in
+  daemon-reload | enable | disable | reload) exit 0 ;;
+  is-enabled) exit 0 ;;
+  is-active)
+    case "$unit" in
+      yard-production | yard-staging)
+        if running "$unit"; then ((quiet)) || echo active; exit 0; fi
+        ((quiet)) || echo inactive
+        exit 3
+        ;;
+      postgresql) runuser -u postgres -- pg_isready -q && { ((quiet)) || echo active; exit 0; }; ((quiet)) || echo inactive; exit 3 ;;
+      *) ((quiet)) || echo active; exit 0 ;;
+    esac
+    ;;
+  show)
+    pid=$(cat "$(pidfile "$unit")" 2>/dev/null)
+    [[ -n "$pid" ]] && ps -o rss= --ppid "$pid" -p "$pid" | awk '{ s += $1 } END { print s * 1024 }' || echo "[not set]"
+    exit 0
+    ;;
+  start | stop | restart | try-reload-or-restart)
+    case "$unit" in
+      yard-production | yard-staging)
+        if [[ "$verb" != start ]] && running "$unit"; then
+          pid=$(cat "$(pidfile "$unit")")
+          pkill -TERM -P "$pid" 2>/dev/null
+          kill -TERM "$pid" 2>/dev/null
+          for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+          rm -f "$(pidfile "$unit")"
+        fi
+        [[ "$verb" == stop ]] && exit 0
+        f=$(unitfile "$unit")
+        U=$(sed -n 's/^User=//p' "$f") X=$(sed -n 's/^ExecStart=//p' "$f") yard_start "$unit"
+        exit $?
+        ;;
+      postgresql)
+        ver=$(find /etc/postgresql -mindepth 1 -maxdepth 1 -printf '%f\n' | sort -V | tail -n 1)
+        case "$verb" in
+          start) pg_ctlcluster "$ver" main start 2>/dev/null || true ;;
+          stop) pg_ctlcluster "$ver" main stop ;;
+          *) pg_ctlcluster "$ver" main restart ;;
+        esac
+        exit $?
+        ;;
+      caddy)
+        set -a
+        # shellcheck source=/dev/null
+        . /etc/yard/domain.env
+        set +a
+        # The Caddyfile turns the admin API off, so `caddy stop` can't be used: signal the process.
+        pkill -x caddy 2>/dev/null
+        for _ in $(seq 1 40); do pgrep -x caddy >/dev/null || break; sleep 0.25; done
+        [[ "$verb" == stop ]] && exit 0
+        cfg=/etc/caddy/Caddyfile
+        [[ -f /etc/caddy/Caddyfile.rehearsal ]] && cfg=/etc/caddy/Caddyfile.rehearsal
+        caddy start --config "$cfg" --adapter caddyfile >>/var/log/fake-systemd/caddy.log 2>&1
+        exit $?
+        ;;
+      *) exit 0 ;;
+    esac
+    ;;
+  *) exit 0 ;;
+esac

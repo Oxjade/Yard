@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# set-domain DOMAIN
+#   Moves both sites to DOMAIN (production) and staging.DOMAIN. This is the ONE place the domain
+#   lives: /etc/yard/domain.env (read by Caddy) and YARD_PUBLIC_URL in /etc/yard/*.env.
+#   Before running it, point DNS A records for DOMAIN and staging.DOMAIN at this server.
+#   Afterwards redeploy both environments: the public URL is built into the pages at build time.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+((EUID == 0)) || die "run as root"
+
+domain=${1:-}
+domain=${domain,,}
+[[ "$domain" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || die "usage: set-domain example.com (a bare domain name, no https://, no path)" 64
+old=$(env_get "$YARD_ETC/domain.env" YARD_DOMAIN)
+[[ "$domain" != "$old" ]] || { log "domain is already $domain"; exit 0; }
+
+ip=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)
+for host in "$domain" "staging.$domain"; do
+  resolved=$(getent ahostsv4 "$host" | awk 'NR==1 { print $1 }' || true)
+  if [[ -z "$resolved" ]]; then
+    warn "$host does not resolve yet; Caddy will keep retrying the certificate until it does"
+  elif [[ -n "$ip" && "$resolved" != "$ip" ]]; then
+    warn "$host resolves to $resolved but this server is $ip"
+  fi
+done
+
+cp -a "$YARD_ETC/domain.env" "$YARD_ETC/domain.env.bak"
+env_set "$YARD_ETC/domain.env" YARD_DOMAIN "$domain"
+if ! (load_env_file "$YARD_ETC/domain.env" && caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1); then
+  mv -f "$YARD_ETC/domain.env.bak" "$YARD_ETC/domain.env"
+  die "Caddy rejected the new configuration; nothing changed"
+fi
+env_set "$YARD_ETC/production.env" YARD_PUBLIC_URL "https://$domain"
+env_set "$YARD_ETC/staging.env" YARD_PUBLIC_URL "https://staging.$domain"
+rm -f "$YARD_ETC/domain.env.bak"
+# The drop-in reads domain.env at start, so Caddy needs a restart (not a reload) to see it.
+"$SYSTEMCTL" restart caddy
+for e in "${YARD_ENVS[@]}"; do
+  s=$(env_service "$e")
+  if "$SYSTEMCTL" is-active --quiet "$s"; then svc_restart "$s"; fi
+done
+log "domain is now $domain (was ${old:-none})"
+log "production: https://$domain   staging: https://staging.$domain"
+log "NEXT: redeploy both environments (re-run the latest GitHub deploy for v3 and main) so pages use the new address."

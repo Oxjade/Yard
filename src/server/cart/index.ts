@@ -179,14 +179,16 @@ async function checkSellable(variantId: string, qty: number) {
 
 /** Adds `qty` of a variant (adds to an existing line). Refuses more than CATALOG has available. */
 export async function addLine(owner: CartOwner, variantId: string, qty: number) {
-  const d = await db()
-  const cart = await findCart(d, owner)
-  const [cur] = cart ? await d.select().from(cartLines).where(and(eq(cartLines.cartId, cart.id), eq(cartLines.variantId, variantId))).limit(1) : []
-  const next = (cur?.qty ?? 0) + qty
-  if (next > MAX_QTY) throw rule(`You can add up to ${MAX_QTY} of one piece.`)
-  await checkSellable(variantId, next)
   await withTx(async (tx) => {
-    const c = cart ?? (await createCart(tx, owner))
+    const c = (await findCart(tx, owner)) ?? (await createCart(tx, owner))
+    // The cart row is locked for the rest of this transaction, so two adds to one cart (a double
+    // tap, two tabs) run one after the other and each adds to what the other wrote. On Postgres
+    // they would otherwise both read the old quantity and one add would be lost.
+    await tx.select({ id: carts.id }).from(carts).where(eq(carts.id, c.id)).for("update")
+    const [cur] = await tx.select().from(cartLines).where(and(eq(cartLines.cartId, c.id), eq(cartLines.variantId, variantId))).limit(1)
+    const next = (cur?.qty ?? 0) + qty
+    if (next > MAX_QTY) throw rule(`You can add up to ${MAX_QTY} of one piece.`)
+    await checkSellable(variantId, next)
     if (!cur) {
       const n = await tx.$count(cartLines, eq(cartLines.cartId, c.id))
       if (n >= MAX_LINES) throw rule(`Your cart holds up to ${MAX_LINES} different pieces.`)

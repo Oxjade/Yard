@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# yard-predump ENV
+#   Takes a pg_dump (custom format) of ENV's database before a migration and keeps the newest 5.
+#   Prints the dump path on stdout. Root-owned; the deploy user may run it through sudo.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+
+env=${1:-}
+require_env "$env"
+[[ $# -eq 1 ]] || die "usage: yard-predump production|staging" 64
+((EUID == 0)) || die "run as root (sudo)"
+
+dir="$YARD_BACKUPS/pre-migrate/$env"
+install -d -m 700 -o root -g root "$YARD_BACKUPS" "$YARD_BACKUPS/pre-migrate" "$dir"
+db=$(env_db "$env")
+out="$dir/pre-$(date -u +%Y%m%dT%H%M%SZ).dump"
+avail=$(df -Pk "$dir" | awk 'NR==2 { print $4 }')
+((avail > 1048576)) || die "less than 1 GB free on $(df -P "$dir" | awk 'NR==2 { print $6 }'); not dumping"
+
+runuser -u postgres -- pg_dump --format=custom --compress=6 --dbname="$db" >"$out.part"
+mv "$out.part" "$out"
+chmod 600 "$out"
+# keep the newest 5
+mapfile -t old < <(find "$dir" -maxdepth 1 -name 'pre-*.dump' -printf '%f\n' | sort -r | tail -n +6)
+for f in "${old[@]}"; do rm -f -- "${dir:?}/$f"; done
+log "$env: pre-migration dump $(du -h "$out" | cut -f1) at $out"
+echo "$out"

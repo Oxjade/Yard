@@ -22,10 +22,53 @@ export type StreamSlot = { id: string; surface: "market" | "studio" | "admin"; s
 export const STREAM_CAPS = { perSession: 4, perUserSurface: 12, perIp: 20, perProcess: 300 } as const
 
 type Open = StreamSlot & { openedAt: number }
-type Registry = { all: Map<string, Open> }
+type Registry = { all: Map<string, Open>; shutdownHooked?: boolean; shuttingDown?: boolean }
 
 function registry(): Registry {
-  return (yard.streams ??= { all: new Map() }) as Registry
+  const r = (yard.streams ??= { all: new Map() }) as Registry
+  hookShutdown(r)
+  return r
+}
+
+/**
+ * On SIGTERM/SIGINT (a deploy, a rollback, `systemctl restart`) every open stream gets
+ * `bye {reason: "restart"}` and ends, so the browser's EventSource reconnects at once (Caddy holds
+ * the request until the new process is up) and Next's server.close(), which waits for open
+ * connections, finishes in milliseconds instead of running into systemd's stop timeout. New streams
+ * asked for while the process drains are refused with 503 busy (Retry-After: 1).
+ * Next's standalone server handles the signal itself (drains, then exits); when nothing else
+ * handles it (a bare script), the default action is restored and the signal raised again.
+ */
+function hookShutdown(r: Registry) {
+  if (r.shutdownHooked) return
+  r.shutdownHooked = true
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    const onSignal = () => {
+      closeAllStreams("restart")
+      if (process.listenerCount(sig) === 1) {
+        process.removeListener(sig, onSignal)
+        process.kill(process.pid, sig)
+      }
+    }
+    process.on(sig, onSignal)
+  }
+}
+
+/** Ends every open stream with `bye {reason}` and refuses new ones (process shutdown). Returns how many it closed. */
+export function closeAllStreams(reason: string): number {
+  const r = (yard.streams ??= { all: new Map() }) as Registry
+  r.shuttingDown = true
+  const open = [...r.all.values()]
+  for (const s of open) {
+    r.all.delete(s.id)
+    try {
+      s.close(reason)
+    } catch (e) {
+      log.error("[yard] closing a stream at shutdown", e)
+    }
+  }
+  if (open.length) log.info(`[yard] shutting down: closed ${open.length} live ${open.length === 1 ? "stream" : "streams"}`)
+  return open.length
 }
 
 const bySession = (r: Registry, sessionId: string) => [...r.all.values()].filter((s) => s.sessionId === sessionId).sort((a, b) => a.openedAt - b.openedAt)
@@ -43,6 +86,7 @@ function refuse(key: string, slot: StreamSlot, detail: Record<string, unknown>) 
  */
 export function acquireStreamSlot(slot: StreamSlot): () => void {
   const r = registry()
+  if (r.shuttingDown) throw busy(1, "Yard is restarting. Live updates reconnect in a moment.")
   const mine = bySession(r, slot.sessionId)
   const sessionEvict = mine.length >= STREAM_CAPS.perSession ? mine.slice(0, mine.length - STREAM_CAPS.perSession + 1) : []
   // The user's other streams on this surface, across sessions, oldest first.

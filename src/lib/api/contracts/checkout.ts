@@ -67,4 +67,4 @@ export type CheckoutOrderSummary = {
 
 export type CheckoutOrdersPage = { items: CheckoutOrderSummary[]; nextCursor: string | null }
 /** GET /api/checkout/options: how this deployment takes payments. */
-export type CheckoutOptions = { mode: "stub" | "test" | "live"; currencies: string[] }
+export type CheckoutOptions = { mode: "off" | "stub" | "test" | "live"; currencies: string[] }

@@ -1,0 +1,169 @@
+# CI: type-check, lint, unit tests, a production build with demo flags off, and the app on real
+# Postgres (18 = what Ubuntu 26.04 ships, 16 = still supported).
+# Runs on pull requests and on pushes to any branch except v3/main; deploy.yml calls it first for those.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main, v3]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Demo switches must never be on in CI (see the build job's guard).
+  YARD_SEED_DEMO: ""
+  YARD_DEMO_AUTH: ""
+  YARD_DEMO_ADMIN: ""
+
+jobs:
+  check:
+    name: Types, lint, tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests (PGlite)
+        run: npm test
+
+  build:
+    name: Production build (demo off) + release tarball
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Demo flags must be off
+        run: |
+          for v in YARD_SEED_DEMO YARD_DEMO_AUTH YARD_DEMO_ADMIN; do
+            case "${!v:-}" in "" | 0 | false | off) ;; *) echo "::error::$v is set; production builds must have demo flags off"; exit 1 ;; esac
+          done
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-ci-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-ci-${{ hashFiles('package-lock.json') }}-
+      - name: next build (output standalone)
+        env:
+          YARD_PUBLIC_URL: https://ci.invalid
+        run: npm run build
+      - name: Bundle server tools (db:migrate, check-env, create-admin, db-check)
+        run: node scripts/bundle-tools.mjs --out tools
+      - name: Package release
+        env:
+          YARD_PUBLIC_URL: https://ci.invalid
+        run: bash deploy/package-release.sh ci "$GITHUB_SHA" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ci
+          path: dist/
+          retention-days: 3
+          if-no-files-found: error
+
+  postgres:
+    name: Postgres ${{ matrix.pg }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["18", "16"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: yard
+          POSTGRES_PASSWORD: yard-ci-only
+          POSTGRES_DB: yard
+          # Same collation as the server (and PGlite): C, ctype C.UTF-8, UTC.
+          POSTGRES_INITDB_ARGS: --locale-provider=libc --lc-collate=C --lc-ctype=C.UTF-8
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://yard:yard-ci-only@127.0.0.1:5432/yard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: db:migrate twice (second run must be a no-op), then --check
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+          npm run db:migrate -- --check
+      - name: Postgres parity tests
+        run: |
+          test -f src/server/db/pg-parity.test.ts || { echo "::error::src/server/db/pg-parity.test.ts is missing"; exit 1; }
+          npx tsx --test src/server/db/pg-parity.test.ts
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-ci
+          path: dist
+      - name: Boot the release tarball against Postgres
+        run: |
+          set -euo pipefail
+          rel="$RUNNER_TEMP/release"
+          data="$RUNNER_TEMP/yard-data"
+          mkdir -p "$rel" "$data"
+          chmod 700 "$data"
+          tar -xzf "dist/yard-$GITHUB_SHA.tar.gz" -C "$rel"
+          # The bundled tools must work from the tarball alone (no repo node_modules).
+          (cd "$rel" && node tools/db-migrate.mjs --check)
+          cat >"$RUNNER_TEMP/yard.env" <<EOF
+          NODE_ENV=production
+          YARD_ENV_NAME=ci
+          PORT=3100
+          HOSTNAME=127.0.0.1
+          YARD_PUBLIC_URL=http://127.0.0.1:3100
+          YARD_ALLOW_HTTP=1
+          YARD_DATA_DIR=$data
+          YARD_TRUSTED_PROXY_HOPS=0
+          YARD_PAYMENTS=off
+          YARD_SESSION_SECRET=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')
+          YARD_ENCRYPTION_KEY=$(openssl rand 32 | base64 | tr -d '\n')
+          EOF
+          (cd "$rel" && set -a && . "$RUNNER_TEMP/yard.env" && set +a && node tools/check-env.mjs)
+          (cd "$rel" && set -a && . "$RUNNER_TEMP/yard.env" && set +a && exec node server.js) >"$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if body=$(curl -fsS http://127.0.0.1:3100/api/health 2>/dev/null); then break; fi
+            sleep 1
+          done
+          echo "health: ${body:-none}"
+          echo "$body" | jq -e --arg sha "$GITHUB_SHA" '.status == "ok" and .version == $sha' >/dev/null || { cat "$RUNNER_TEMP/server.log"; exit 1; }
+      - name: Production-clean kit against the booted release
+        env:
+          YARD_PROD_BASE: http://127.0.0.1:3100
+          YARD_PROD_BROWSER: "0"
+        run: node scripts/checks/v3-prod-clean.mjs
+      - name: Server log
+        if: always()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" || true

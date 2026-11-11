@@ -216,6 +216,11 @@ const stubProvider: PaymentProvider = {
   },
 }
 
+/**
+ * The provider for this deployment. With payments off there is none: checkout refuses before it
+ * gets here (checkout.ts), and anything else that asks (a refund or payout job) gets the stub,
+ * which moves nothing and says so.
+ */
 export function getProvider(): PaymentProvider {
   const cfg = paymentsConfig()
   return cfg.provider === "paystack" && cfg.secretKey ? paystackProvider(cfg.secretKey) : stubProvider

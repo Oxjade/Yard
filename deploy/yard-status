@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# yard-status: services, health, releases, memory, disk and the last backup, at a glance.
+set -uo pipefail
+# shellcheck source=lib/common.sh
+. "${YARD_COMMON:-/opt/yard/lib/common.sh}"
+
+domain=$(env_get "$YARD_ETC/domain.env" YARD_DOMAIN)
+echo "Yard on $(hostname) — domain ${domain:-?}"
+echo
+for e in "${YARD_ENVS[@]}"; do
+  s=$(env_service "$e")
+  state=$("$SYSTEMCTL" is-active "$s" 2>/dev/null)
+  mem=$("$SYSTEMCTL" show -p MemoryCurrent --value "$s" 2>/dev/null)
+  [[ "$mem" =~ ^[0-9]+$ ]] && mem="$((mem / 1048576)) MB" || mem="-"
+  body=$(health_json "$e" 2>/dev/null) || true
+  printf '%-11s %-9s mem %-8s release %-12s health %s\n' "$e" "${state:-?}" "$mem" "$(current_release "$e" | cut -c1-12)" "${body:-down}"
+done
+echo
+for s in postgresql caddy fail2ban yard-backup.timer; do
+  printf '%-18s %s\n' "$s" "$("$SYSTEMCTL" is-active "$s" 2>/dev/null)"
+done
+echo
+free -m | sed -n '1,3p'
+echo
+df -h / | sed -n '1,2p'
+echo
+if [[ -f /var/run/reboot-required ]]; then
+  echo "REBOOT REQUIRED for security updates ($(tr '\n' ' ' </var/run/reboot-required.pkgs 2>/dev/null)). Pick a quiet moment and run: reboot"
+  echo
+fi
+# Backups: the newest dated folder that is COMPLETE (production dump present, checksums verify), the
+# result of the last run (backup.sh writes last-result) and of the systemd job.
+last_ok=""
+while IFS= read -r d; do
+  if [[ -s "$YARD_BACKUPS/$d/yard_production.dump" && -s "$YARD_BACKUPS/$d/SHA256SUMS" ]] &&
+    (cd "$YARD_BACKUPS/$d" && sha256sum --quiet -c SHA256SUMS >/dev/null 2>&1); then
+    last_ok=$d
+    break
+  fi
+done < <(find "$YARD_BACKUPS" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}' -printf '%f\n' 2>/dev/null | sort -r)
+echo "last complete backup: ${last_ok:-NONE} ($YARD_BACKUPS; checksums verified)"
+lr=$(cat "$YARD_BACKUPS/last-result" 2>/dev/null || true)
+job=$("$SYSTEMCTL" show -p Result --value yard-backup.service 2>/dev/null || true)
+echo "last backup run: ${lr:-never}   (yard-backup.service result: ${job:-?})"
+if [[ "$lr" == failed* || ( -n "$job" && "$job" != success ) ]]; then
+  echo "BACKUP PROBLEM: the last run failed. Look at: sudo journalctl -u yard-backup -n 50"
+fi
+if [[ -z "$last_ok" || "$last_ok" < "$(date -u -d '-2 days' +%F)" ]]; then
+  echo "BACKUP PROBLEM: no complete backup in the last 2 days. Run: sudo /opt/yard/bin/backup"
+fi
+if [[ -s "$YARD_ETC/.keys-not-confirmed" ]]; then
+  echo
+  echo "The encryption keys are not confirmed as saved off the server. See them with: sudo bash /opt/yard/kit/setup.sh"
+fi

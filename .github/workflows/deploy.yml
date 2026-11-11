@@ -1,0 +1,224 @@
+# Deploy to the VPS.
+#   push to v3   -> staging     (https://staging.<domain>)  automatic
+#   push to main -> production  (https://<domain>)          waits for approval: GitHub Environment
+#                                                            "production" with a required reviewer
+#   Actions tab -> Deploy -> Run workflow: redeploy either environment by hand (production from main only).
+#
+# CI runs first. The build happens once per deploy, here, with the environment's public URL baked in
+# (it is read from the server, which is the single source of the domain). The server never builds.
+#
+# Secrets (deploy/README.md, section 4):
+#   repository:              VPS_HOST, VPS_KNOWN_HOSTS
+#   environment "staging":    VPS_SSH_KEY  (the staging deploy key printed by setup.sh)
+#   environment "production": VPS_SSH_KEY  (the production deploy key printed by setup.sh)
+# Each key logs in as its own environment's deploy user (deploy-staging / deploy-production) and only
+# works for that environment on the server (deploy-gate), so an unreviewed push to v3 can never reach
+# production.
+name: Deploy
+
+on:
+  push:
+    branches: [v3, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy this branch to
+        type: choice
+        options: [staging, production]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  target:
+    name: Pick environment
+    runs-on: ubuntu-24.04
+    outputs:
+      env: ${{ steps.pick.outputs.env }}
+    steps:
+      - id: pick
+        env:
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            workflow_dispatch:*) env="$INPUT_ENV" ;;
+            push:refs/heads/main) env=production ;;
+            push:refs/heads/v3) env=staging ;;
+            *) echo "::error::no environment for $GITHUB_EVENT_NAME on $GITHUB_REF"; exit 1 ;;
+          esac
+          if [ "$env" = production ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::production deploys only from main (this is $GITHUB_REF)"
+            exit 1
+          fi
+          echo "env=$env" >>"$GITHUB_OUTPUT"
+          echo "Deploying $GITHUB_REF ($GITHUB_SHA) to **$env**" >>"$GITHUB_STEP_SUMMARY"
+
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to ${{ needs.target.outputs.env }}
+    needs: [target, ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment:
+      name: ${{ needs.target.outputs.env }}
+      url: ${{ steps.domain.outputs.url }}
+    concurrency:
+      group: deploy-${{ needs.target.outputs.env }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ needs.target.outputs.env }}
+      NEXT_TELEMETRY_DISABLED: "1"
+      YARD_SEED_DEMO: ""
+      YARD_DEMO_AUTH: ""
+      YARD_DEMO_ADMIN: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the deploy secrets are set
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          [ -n "$VPS_HOST" ] || missing="$missing VPS_HOST"
+          [ -n "$VPS_SSH_KEY" ] || missing="$missing VPS_SSH_KEY(environment $DEPLOY_ENV)"
+          [ -n "$VPS_KNOWN_HOSTS" ] || missing="$missing VPS_KNOWN_HOSTS"
+          if [ -n "$missing" ]; then
+            echo "::error::missing secrets:$missing (deploy/README.md, section 4)"
+            exit 1
+          fi
+
+      - name: SSH to the server (deploy key, pinned host key)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" >~/.ssh/yard_deploy
+          chmod 600 ~/.ssh/yard_deploy
+          printf '%s\n' "$VPS_KNOWN_HOSTS" >~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          cat >~/.ssh/config <<EOF
+          Host yard
+            HostName $VPS_HOST
+            User deploy-$DEPLOY_ENV
+            IdentityFile ~/.ssh/yard_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+          ssh yard info
+
+      - name: Read the domain from the server
+        id: domain
+        run: |
+          domain=$(ssh yard info | sed -n 's/^YARD_DOMAIN=//p')
+          if [ -z "$domain" ]; then echo "::error::the server did not report YARD_DOMAIN"; exit 1; fi
+          if [ "$DEPLOY_ENV" = production ]; then url="https://$domain"; else url="https://staging.$domain"; fi
+          echo "url=$url" >>"$GITHUB_OUTPUT"
+          echo "YARD_PUBLIC_URL=$url" >>"$GITHUB_ENV"
+          echo "Public URL: $url" >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ needs.target.outputs.env }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-${{ needs.target.outputs.env }}-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build (demo off)
+        env:
+          NEXT_PUBLIC_MAP_STYLE_URL: ${{ vars.NEXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/dark' }}
+        run: |
+          npm run build
+          node scripts/bundle-tools.mjs --out tools
+          bash deploy/package-release.sh "$DEPLOY_ENV" "$GITHUB_SHA" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.target.outputs.env }}-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+      - name: Upload to the server
+        run: |
+          sum=$(cut -d' ' -f1 "dist/yard-$GITHUB_SHA.tar.gz.sha256")
+          # shellcheck disable=SC2029 # expanded here on purpose: the server gets plain words
+          ssh yard "upload $DEPLOY_ENV $GITHUB_SHA $sum" <"dist/yard-$GITHUB_SHA.tar.gz"
+
+      - name: Release (migrate, switch, health check, automatic rollback)
+        id: release
+        run: |
+          set +e
+          # The server runs the release detached from this SSH session: if the connection drops, it
+          # still finishes (health check and automatic rollback included). Then ask for its result.
+          # shellcheck disable=SC2029
+          ssh yard "release $DEPLOY_ENV $GITHUB_SHA" 2>&1 | tee release.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" = 255 ]; then
+            run=$(sed -n 's/^run \([a-z0-9-]*\)$/\1/p' release.log | head -n 1)
+            echo "SSH connection lost (exit 255); polling the server for the result of ${run:-the latest run}"
+            for _ in $(seq 1 60); do
+              sleep 10
+              # shellcheck disable=SC2029
+              st=$(ssh yard "status $DEPLOY_ENV $run" 2>/dev/null) || continue
+              last=$(printf '%s\n' "$st" | tail -n 1)
+              case "$last" in
+                "status: exit "*)
+                  rc=${last#status: exit }
+                  printf '%s\n' "$st" >release.log
+                  break
+                  ;;
+              esac
+            done
+          fi
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Report
+        if: always()
+        env:
+          RC: ${{ steps.release.outputs.rc }}
+          URL: ${{ steps.domain.outputs.url }}
+        run: |
+          case "$RC" in
+            0) verdict="Deployed and healthy." ;;
+            1) verdict="Not deployed: failed before the switch (upload, checksum, backup or migration). The previous release is still serving." ;;
+            2) verdict="Deployed but unhealthy, so it was ROLLED BACK automatically. The previous release is serving again." ;;
+            3) verdict="UNHEALTHY and the rollback is unhealthy too. Check the server now (sudo yard-status)." ;;
+            *) verdict="Release did not run (exit '${RC:-none}')." ;;
+          esac
+          # shellcheck disable=SC2029
+          health=$(ssh yard "health $DEPLOY_ENV" 2>/dev/null || true)
+          {
+            echo "### $DEPLOY_ENV: $verdict"
+            echo
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- site: $URL"
+            echo
+            echo "Health now:"
+            echo '```json'
+            echo "${health:-no answer}"
+            echo '```'
+            echo "<details><summary>Release log</summary>"
+            echo
+            echo '```'
+            tail -n 80 release.log 2>/dev/null || true
+            echo '```'
+            echo "</details>"
+          } >>"$GITHUB_STEP_SUMMARY"
+          [ "$RC" = 0 ]
