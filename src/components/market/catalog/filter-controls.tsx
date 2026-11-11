@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useMemo, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -8,16 +8,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { currencies, type CurrencyCode } from "@/config/markets"
-import { convert, formatMoney, toMajor } from "@/lib/money"
+import { convert, formatMoney, toMajor, toMinor } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import type { Product } from "@/lib/data/types"
 import { Chip, ChipRadioGroup } from "./chip"
-import { computeFacets, priceBands, sortOptions, type CatalogState } from "./catalog-state"
+import { priceBands, sortOptions, type CatalogFacets, type CatalogState } from "./catalog-state"
 
 /* ---------- price labels in the shopper's currency ---------- */
 
 function money(usd: number, currency: CurrencyCode) {
-  return formatMoney(convert(Math.round(usd * 100), "USD", currency), currency, { compact: currency !== "USD" })
+  return formatMoney(convert(toMinor(usd, "USD"), "USD", currency), currency, { compact: currency !== "USD" })
 }
 
 /** "Under $50", "$50–$100", "Over $300", or a custom range. */
@@ -52,7 +51,7 @@ export function FilterControls({
   onPriceValidityChange,
   resetKey,
   className,
-  products,
+  facets,
 }: {
   state: CatalogState
   onChange: (patch: FilterPatch) => void
@@ -63,9 +62,8 @@ export function FilterControls({
   /** Changing it empties the typed price range, even when the draft's min and max did not change. */
   resetKey?: number
   className?: string
-  products?: Product[]
+  facets: CatalogFacets
 }) {
-  const facets = useMemo(() => computeFacets(state, products), [state, products])
   const [allBrands, setAllBrands] = useState(false)
   const id = useId()
   const brandRows = allBrands ? facets.brandFacet : facets.brandFacet.slice(0, 6)
@@ -271,10 +269,9 @@ function PriceRange({
 }) {
   const id = useId()
   const live = mode === "live"
-  const minor = currencies[currency].minor
-  const toDisplay = (usd?: number) => (usd === undefined ? "" : String(Math.round(toMajor(convert(Math.round(usd * 100), "USD", currency), currency))))
+  const toDisplay = (usd?: number) => (usd === undefined ? "" : String(Math.round(toMajor(convert(toMinor(usd, "USD"), "USD", currency), currency))))
   const toUsd = (value: number | undefined, round: (n: number) => number) =>
-    value === undefined ? undefined : round(convert(Math.round(value * 10 ** minor), currency, "USD") / 100)
+    value === undefined ? undefined : round(toMajor(convert(toMinor(value, currency), currency, "USD"), "USD"))
   const keyOf = (lo?: number, hi?: number) => `${lo}|${hi}|${currency}|${resetKey}`
 
   // Keep the inputs in step with the URL or draft (a band chip or "Clear filters" changes min/max).

@@ -152,6 +152,7 @@ async function publicCollectionsOf(brandId: string) {
     name: c.name,
     description: c.description,
     imageSrc: c.imageMediaId ? `/api/media/${encodeURIComponent(c.imageMediaId)}` : c.imagePath,
+    imageMediaId: c.imageMediaId,
     productIds: links.filter((l) => l.collectionId === c.id).map((l) => l.productId),
   }))
 }

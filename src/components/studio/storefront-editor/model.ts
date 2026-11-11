@@ -119,7 +119,7 @@ export function brandPhotos(brand: Brand, products: Product[], collections: Coll
   return out
 }
 
-export const isUpload = (image?: ImageAsset) => !!image && (image.src.startsWith("data:") || image.src.startsWith("blob:"))
+export const isUpload = (image?: ImageAsset) => !!image && (image.mediaId !== undefined || image.src.startsWith("data:") || image.src.startsWith("blob:"))
 
 /* ---------- Validation (on publish) ---------- */
 

@@ -445,6 +445,7 @@ function collectionDto(c: typeof catalogCollections.$inferSelect, productIds: st
     imageMediaId: c.imageMediaId,
     imageSrc: c.imageMediaId ? `/api/media/${encodeURIComponent(c.imageMediaId)}?as=brand` : c.imagePath,
     productIds,
+    version: c.version,
     updatedAt: c.updatedAt.toISOString(),
   }
 }
@@ -455,6 +456,23 @@ async function collectionProductIds(d: Executor, ids: string[]) {
   const m = new Map<string, string[]>()
   for (const l of links) m.set(l.collectionId, [...(m.get(l.collectionId) ?? []), l.productId])
   return m
+}
+
+async function validateCollectionProductIds(d: Executor, brandId: string, productIds: string[]) {
+  const ids = [...new Set(productIds)]
+  if (ids.length) {
+    const rows = await d
+      .select({ id: catalogProducts.id })
+      .from(catalogProducts)
+      .where(and(inArray(catalogProducts.id, ids), eq(catalogProducts.brandId, brandId)))
+    const valid = new Set(rows.map((row) => row.id))
+    const fields: Record<string, string> = {}
+    productIds.forEach((productId, index) => {
+      if (!valid.has(productId)) fields[`productIds.${index}`] = "That piece isn't in your catalogue."
+    })
+    if (Object.keys(fields).length) throw badRequest(fields)
+  }
+  return ids
 }
 
 async function loadCollection(d: Executor, brandId: string, id: string) {
@@ -491,29 +509,52 @@ export async function listStudioCollections(actor: BrandActor) {
   return { collections: rows.map((c) => collectionDto(c, links.get(c.id) ?? [])) }
 }
 
-export async function createCollection(actor: BrandActor, body: CollectionBody, ipHash: string | null) {
+export async function createCollection(actor: BrandActor, body: CollectionBody, idempotencyKey: string | null, ipHash: string | null) {
   return withTx(async (tx) => {
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{8,80}$/.test(idempotencyKey)) throw badRequest({ _: "Send an Idempotency-Key of 8-80 letters, digits, - or _." })
+    const sameRequest = (existing: typeof catalogCollections.$inferSelect) => existing.name === body.name.trim() && existing.description === body.description && existing.imageMediaId === (body.imageMediaId ?? null) && existing.status === body.status && (body.handle === undefined || existing.handle === body.handle) && (body.position === undefined || existing.position === body.position)
+    const findRetry = async () => {
+      const [existing] = await tx.select().from(catalogCollections).where(and(eq(catalogCollections.brandId, actor.brandId), eq(catalogCollections.idempotencyKey, idempotencyKey))).limit(1)
+      if (!existing) return null
+      if (!sameRequest(existing)) throw conflict("That Idempotency-Key was already used for a different collection. Start a new action.")
+      const links = await collectionProductIds(tx, [existing.id])
+      return { collection: collectionDto(existing, links.get(existing.id) ?? []) }
+    }
+    const replay = await findRetry()
+    if (replay) return replay
     if (body.imageMediaId) await assertBrandImages(tx, actor.brandId, [body.imageMediaId], "imageMediaId")
-    const id = newId("col")
-    const handle = await uniqueHandle(tx, actor.brandId, body.handle ?? slugify(body.name), !!body.handle)
-    const [{ n }] = await tx
-      .select({ n: sql<number>`coalesce(max(${catalogCollections.position}), -1) + 1`.mapWith(Number) })
-      .from(catalogCollections)
-      .where(eq(catalogCollections.brandId, actor.brandId))
-    const [c] = await tx
-      .insert(catalogCollections)
-      .values({ id, brandId: actor.brandId, handle, name: body.name.trim(), description: body.description, imageMediaId: body.imageMediaId ?? null, status: body.status, position: body.position ?? n })
-      .returning()
-    await writeAudit({ actor: auditActor(actor), action: "catalog.collection_created", target: c.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash })
-    catalogChanged({ brands: [actor.brandId] })
-    return { collection: collectionDto(c, []) }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const id = newId("col")
+      const handle = await uniqueHandle(tx, actor.brandId, body.handle ?? slugify(body.name), !!body.handle)
+      const [{ n }] = await tx
+        .select({ n: sql<number>`coalesce(max(${catalogCollections.position}), -1) + 1`.mapWith(Number) })
+        .from(catalogCollections)
+        .where(eq(catalogCollections.brandId, actor.brandId))
+      const [created] = await tx
+        .insert(catalogCollections)
+        .values({ id, brandId: actor.brandId, handle, name: body.name.trim(), description: body.description, imageMediaId: body.imageMediaId ?? null, status: body.status, position: body.position ?? n, idempotencyKey })
+        .onConflictDoNothing()
+        .returning()
+      if (created) {
+        await writeAudit({ actor: auditActor(actor), action: "catalog.collection_created", target: created.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash })
+        catalogChanged({ brands: [actor.brandId] })
+        return { collection: collectionDto(created, []) }
+      }
+      const retry = await findRetry()
+      if (retry) return retry
+      if (body.handle !== undefined) throw badRequest({ handle: "You already have a collection at that address." })
+    }
+    throw conflict("The collection couldn't be created. Try again with a new action.")
   })
 }
 
 export async function updateCollection(actor: BrandActor, id: string, body: CollectionUpdateBody, ipHash: string | null) {
   return withTx(async (tx) => {
     const c = await loadCollection(tx, actor.brandId, id)
+    if (c.version !== body.expectedVersion) throw conflict("Someone else changed this collection. Reload to see their changes.")
     if (body.imageMediaId) await assertBrandImages(tx, actor.brandId, [body.imageMediaId], "imageMediaId")
+    const productIds = body.productIds === undefined ? undefined : await validateCollectionProductIds(tx, actor.brandId, body.productIds)
+    const previousProductIds = productIds === undefined ? [] : (await collectionProductIds(tx, [id])).get(id) ?? []
     const patch: Partial<typeof catalogCollections.$inferInsert> = { updatedAt: new Date() }
     if (body.name !== undefined) patch.name = body.name.trim()
     if (body.handle !== undefined && body.handle !== c.handle) patch.handle = await uniqueHandle(tx, actor.brandId, body.handle, true, id)
@@ -521,19 +562,27 @@ export async function updateCollection(actor: BrandActor, id: string, body: Coll
     if (body.imageMediaId !== undefined) patch.imageMediaId = body.imageMediaId
     if (body.status !== undefined) patch.status = body.status
     if (body.position !== undefined) patch.position = body.position
-    const [row] = await tx.update(catalogCollections).set(patch).where(eq(catalogCollections.id, id)).returning()
+    const [row] = await tx.update(catalogCollections).set({ ...patch, version: c.version + 1 }).where(and(eq(catalogCollections.id, id), eq(catalogCollections.version, body.expectedVersion))).returning()
+    if (!row) throw conflict("Someone else changed this collection. Reload to see their changes.")
+    if (productIds !== undefined) {
+      await tx.delete(catalogCollectionProducts).where(eq(catalogCollectionProducts.collectionId, id))
+      if (productIds.length) await tx.insert(catalogCollectionProducts).values(productIds.map((productId, position) => ({ collectionId: id, productId, position })))
+      await writeAudit({ actor: auditActor(actor), action: "catalog.collection_products_set", target: row.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash, meta: { count: productIds.length } })
+    }
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_updated", target: row.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash, meta: { fields: Object.keys(body) } })
-    const links = await collectionProductIds(tx, [id])
-    catalogChanged({ products: links.get(id) ?? [], brands: [actor.brandId] })
-    return { collection: collectionDto(row, links.get(id) ?? []) }
+    const currentProductIds = productIds ?? (await collectionProductIds(tx, [id])).get(id) ?? []
+    catalogChanged({ products: [...new Set([...previousProductIds, ...currentProductIds])], brands: [actor.brandId] })
+    return { collection: collectionDto(row, currentProductIds) }
   })
 }
 
-export async function deleteCollection(actor: BrandActor, id: string, ipHash: string | null) {
+export async function deleteCollection(actor: BrandActor, id: string, expectedVersion: number, ipHash: string | null) {
   return withTx(async (tx) => {
     const c = await loadCollection(tx, actor.brandId, id)
+    if (c.version !== expectedVersion) throw conflict("Someone else changed this collection. Reload to see their changes.")
     const links = await collectionProductIds(tx, [id])
-    await tx.delete(catalogCollections).where(eq(catalogCollections.id, id))
+    const [deleted] = await tx.delete(catalogCollections).where(and(eq(catalogCollections.id, id), eq(catalogCollections.version, expectedVersion))).returning({ id: catalogCollections.id })
+    if (!deleted) throw conflict("Someone else changed this collection. Reload to see their changes.")
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_deleted", target: c.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash })
     catalogChanged({ products: links.get(id) ?? [], brands: [actor.brandId] })
     return { ok: true }
@@ -541,28 +590,19 @@ export async function deleteCollection(actor: BrandActor, id: string, ipHash: st
 }
 
 /** Replaces a collection's products, in order. Every id must be one of the brand's products. */
-export async function setCollectionProducts(actor: BrandActor, id: string, productIds: string[], ipHash: string | null) {
+export async function setCollectionProducts(actor: BrandActor, id: string, productIds: string[], expectedVersion: number, ipHash: string | null) {
   return withTx(async (tx) => {
     const c = await loadCollection(tx, actor.brandId, id)
-    const ids = [...new Set(productIds)]
-    if (ids.length) {
-      const rows = await tx
-        .select({ id: catalogProducts.id })
-        .from(catalogProducts)
-        .where(and(inArray(catalogProducts.id, ids), eq(catalogProducts.brandId, actor.brandId)))
-      const ok = new Set(rows.map((r) => r.id))
-      const fields: Record<string, string> = {}
-      productIds.forEach((pid, i) => {
-        if (!ok.has(pid)) fields[`productIds.${i}`] = "That piece isn't in your catalogue."
-      })
-      if (Object.keys(fields).length) throw badRequest(fields)
-    }
+    if (c.version !== expectedVersion) throw conflict("Someone else changed this collection. Reload to see their changes.")
+    const ids = await validateCollectionProductIds(tx, actor.brandId, productIds)
     const before = (await collectionProductIds(tx, [id])).get(id) ?? []
+    const updatedAt = new Date()
+    const [updated] = await tx.update(catalogCollections).set({ updatedAt, version: c.version + 1 }).where(and(eq(catalogCollections.id, id), eq(catalogCollections.version, expectedVersion))).returning({ id: catalogCollections.id })
+    if (!updated) throw conflict("Someone else changed this collection. Reload to see their changes.")
     await tx.delete(catalogCollectionProducts).where(eq(catalogCollectionProducts.collectionId, id))
     if (ids.length) await tx.insert(catalogCollectionProducts).values(ids.map((productId, position) => ({ collectionId: id, productId, position })))
-    await tx.update(catalogCollections).set({ updatedAt: new Date() }).where(eq(catalogCollections.id, id))
     await writeAudit({ actor: auditActor(actor), action: "catalog.collection_products_set", target: c.name, subjectType: "catalog_collection", subjectId: id, brandId: actor.brandId, ipHash, meta: { count: ids.length } })
     catalogChanged({ products: [...new Set([...before, ...ids])] })
-    return { collection: collectionDto({ ...c, updatedAt: new Date() }, ids) }
+    return { collection: collectionDto({ ...c, version: c.version + 1, updatedAt }, ids) }
   })
 }

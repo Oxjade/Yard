@@ -1,15 +1,9 @@
-import { notFound } from "next/navigation"
-import { collectionsOf, getBrand } from "@/lib/data"
-
 /**
- * Checks the collection before anything streams, so an unknown one still answers with a real
- * 404 while the page has a loading state. Its not-found page sits in collections/, one level up.
+ * Collection existence is checked against the public catalogue in page.tsx. This layout must not
+ * gate server-created collections against the frontend sample directory.
  */
 export const instant = false
 
-export default async function BrandCollectionLayout({ children, params }: LayoutProps<"/brands/[handle]/collections/[collection]">) {
-  const { handle, collection } = await params
-  const brand = getBrand(handle)
-  if (!brand || !collectionsOf(brand.id).some((c) => c.handle === collection)) notFound()
+export default function BrandCollectionLayout({ children }: LayoutProps<"/brands/[handle]/collections/[collection]">) {
   return children
 }

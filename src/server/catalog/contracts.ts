@@ -107,9 +107,13 @@ export const collectionBody = z.strictObject({
   position: z.number().int().min(0).max(10_000).optional(),
 })
 export type CollectionBody = z.output<typeof collectionBody>
-export const collectionUpdateBody = collectionBody.partial()
+export const collectionUpdateBody = collectionBody.partial().extend({
+  productIds: z.array(safeId()).max(500).optional(),
+  expectedVersion: z.number().int().positive(),
+})
 export type CollectionUpdateBody = z.output<typeof collectionUpdateBody>
-export const collectionProductsBody = z.strictObject({ productIds: z.array(safeId()).max(500) })
+export const collectionDeleteBody = z.strictObject({ expectedVersion: z.number().int().positive() })
+export const collectionProductsBody = z.strictObject({ productIds: z.array(safeId()).max(500), expectedVersion: z.number().int().positive() })
 
 /* ---------- Public reads ---------- */
 
@@ -153,9 +157,16 @@ export const storefrontConfig = z.strictObject({
     .nullable()
     .optional(),
   coverMediaId: safeId().nullable().optional(),
+  coverAlt: safeText({ max: 160 }).nullable().optional(),
   /** A library cover (/media/… path), e.g. from onboarding or the sample storefronts. */
   coverPath: z.string().max(300).regex(/^\/media\/[\w-]+(?:\/[\w-]+)*\.[a-z0-9]+$/, { error: "Choose a photo from the library." }).nullable().optional(),
   mark: z.strictObject({ text: z.string().regex(/^[A-Za-z0-9&]{1,3}$/), style: z.enum(["condensed", "expanded", "grotesk"]) }).optional(),
+  social: z.strictObject({
+    instagram: safeLine({ max: 30 }).optional(),
+    tiktok: safeLine({ max: 24 }).optional(),
+    x: safeLine({ max: 15 }).optional(),
+    website: safeLine({ max: 200 }).optional(),
+  }).optional(),
   sections: z.array(section).max(20),
 })
 export type StorefrontConfigInput = z.output<typeof storefrontConfig>

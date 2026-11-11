@@ -24,11 +24,14 @@ import { actionError, ActionErrorNote, ReauthCodeField, useReauth, type ActionEr
 type Summary = { id: string; reference: string; groupReference: string; checkoutId: string | null; brand: { id: string; name: string; handle: string }; customerName: string; shipToPreview: { city: string | null; country: string }; placedAt: string; currency: string; subtotalMinor: number; shippingMinor: number; totalMinor: number; refundedMinor: number; itemCount: number; previewItems: { productId: string; variantId: string; name: string; qty: number; unitMinor: number }[]; states: { merchant: string; payment: string; fulfilment: string; return: string; dispute: string }; service: string }
 type OrdersPage = { items: Summary[]; nextCursor: string | null }
 type Detail = Summary & { lines: { id: string; variantId: string; productId: string; title: string; qty: number; unitMinor: number; returnedQty: number; restockedQty: number; variantLabel: string; image: { src: string; alt: string; width: number; height: number } }[]; shipTo: Record<string, unknown> | null; paidAt: string | null; cancelledAt: string | null; cancelReason: string | null; deliveredAt: string | null; completedAt: string | null; refundableMinor: number; returns: { id: string; status: string; reason: string; reasonLabel: string; note: string; lines: { orderLineId: string; variantId: string; title: string; qty: number }[]; requestedAt: string; decisionReason: string | null; refundId: string | null }[]; refunds: { id: string; kind: string; status: string; amountMinor: number; currency: string; reason: string; createdAt: string; settledAt: string | null; returnId: string | null }[]; disputes: { id: string; status: string; category: string | null; amountMinor: number; currency: string; evidenceDueAt: string | null; brandEvidence: string | null; openedAt: string; resolvedAt: string | null }[]; timeline: { id: string; kind: string; actorKind: string; at: string; data: Record<string, unknown> }[]; actions: { canCancel: boolean; canRequestReturn: boolean; returnWindowEndsAt: string | null }; delivery: unknown }
-type Dispute = { id: string; status: string; category: string | null; amountMinor: number; currency: string; evidenceDueAt: string | null; brandEvidence: string | null; brandEvidenceAt: string | null; responseSubmittedAt: string | null; openedAt: string; resolvedAt: string | null; adminNote?: string | null; provider?: string; providerDisputeId?: string; orderRefIds?: string[]; brandIds?: string[] }
+type Dispute = { id: string; status: string; category: string | null; amountMinor: number; currency: string; evidenceDueAt: string | null; brandEvidence: string | null; brandEvidenceAt: string | null; responseSubmittedAt: string | null; openedAt: string; resolvedAt: string | null; adminNote?: string | null; provider?: string; providerDisputeId?: string; orderRefIds?: string[]; brandIds?: string[]; evidenceByBrand?: { brandId: string; evidence: string; at: string }[] }
+type DisputesPage = { items: Dispute[]; nextCursor: string | null }
+type OrderException = { id: string; kind: "refund" | "return"; createdAt: string; status: string; reason: string; note: string | null; failureReason: string | null; amountMinor: number | null; currency: string; orderId: string; orderReference: string; brandId: string; brandName: string }
+type ExceptionsPage = { items: OrderException[]; nextCursor: string | null }
 type EventSummary = { id: string; provider: string; eventType: string; subjectRef: string | null; status: string; receivedAt: string; processedAt: string | null; attempts: number; lastError: string | null }
 type EventDetail = EventSummary & { payload: unknown }
-type Tab = "orders" | "disputes" | "events"
-const tabs: { value: Tab; label: string }[] = [{ value: "orders", label: "Orders" }, { value: "disputes", label: "Disputes" }, { value: "events", label: "Paystack events" }]
+type Tab = "orders" | "disputes" | "exceptions" | "events"
+const tabs: { value: Tab; label: string }[] = [{ value: "orders", label: "Orders" }, { value: "disputes", label: "Disputes" }, { value: "exceptions", label: "Refunds & returns" }, { value: "events", label: "Paystack events" }]
 const time = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })
 const ccy = (value: string): CurrencyCode => value in currencies ? value as CurrencyCode : "USD"
 const money = (minor: number, currency: string) => formatMoney(minor, ccy(currency))
@@ -64,6 +67,7 @@ export function OrdersLiveView() {
     <div className="rail flex gap-1 overflow-x-auto border-b border-white/10">{shown.map((item) => <button key={item.value} type="button" aria-current={tab === item.value ? "page" : undefined} onClick={() => writeParams({ view: item.value === "orders" ? null : item.value, order: null })} className={`min-h-10 shrink-0 border-b-2 px-3 text-sm ${tab === item.value ? "border-violet text-ink" : "border-transparent text-ink-3 hover:text-ink"}`}>{item.label}</button>)}</div>
     {tab === "orders" ? <OrdersTab /> : null}
     {tab === "disputes" ? <DisputesTab /> : null}
+    {tab === "exceptions" ? <ExceptionsTab /> : null}
     {tab === "events" ? <EventsTab /> : null}
   </div>
 }
@@ -189,31 +193,126 @@ function OrderDetailPanel({ id, data, error, loading, retry, onClose, onChanged 
 
 function DisputesTab() {
   const rights = useOrderRights()
-  const disputes = useApi<{ items: Dispute[] }>("admin.orders.disputes", () => api("/api/orders/admin/disputes", { query: { limit: 100 } }), { keepPrevious: false })
+  const disputes = useApi<DisputesPage>("admin.orders.disputes:first", () => api("/api/orders/admin/disputes", { query: { limit: 50 } }), { keepPrevious: false })
+  const [older, setOlder] = useState<Dispute[]>([])
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined)
+  const [moreBusy, setMoreBusy] = useState(false)
   const [selected, setSelected] = useState<Dispute | null>(null)
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<ActionError | null>(null)
-  const columns: Column<Dispute>[] = [
-    { key: "id", header: "Dispute", sortValue: (item) => item.id, cell: (item) => <button type="button" className="max-w-40 truncate text-left font-medium text-ink hover:text-violet" onClick={() => { setSelected(item); setNote(item.adminNote ?? "") }}>{item.id}</button> },
-    { key: "status", header: "Status", cell: (item) => <StatusBadge tone={tone[item.status] ?? "muted"}>{showStatus(item.status)}</StatusBadge> },
-    { key: "amount", header: "Amount", align: "right", sortValue: (item) => item.amountMinor, cell: (item) => money(item.amountMinor, item.currency) },
-    { key: "provider", header: "Provider", hideBelow: "md", cell: (item) => item.provider ?? "—" },
-    { key: "opened", header: "Opened", hideBelow: "sm", sortValue: (item) => item.openedAt, cell: (item) => time.format(new Date(item.openedAt)) },
-  ]
+  const rows = older.length ? older : disputes.data?.items ?? []
+  const nextCursor = cursor === undefined ? disputes.data?.nextCursor ?? null : cursor
+
+  async function refresh() {
+    setOlder([])
+    setCursor(undefined)
+    await disputes.revalidate()
+  }
+
+  async function loadMore() {
+    const before = cursor === undefined ? disputes.data?.nextCursor : cursor
+    if (!before || moreBusy) return
+    setMoreBusy(true)
+    try {
+      const page = await api<DisputesPage>("/api/orders/admin/disputes", { query: { limit: 50, before } })
+      setOlder((current) => [...(current.length ? current : disputes.data?.items ?? []), ...page.items])
+      setCursor(page.nextCursor)
+    } catch (cause) {
+      toast.error(errorMessage(cause, "Couldn't load older disputes."))
+    } finally {
+      setMoreBusy(false)
+    }
+  }
+
+  async function updateDispute(patch: { adminNote?: string; responseSubmitted?: boolean; status?: "under_review" | "closed" }, success: string) {
+    if (!selected || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await api<{ dispute: Dispute }>(`/api/orders/admin/disputes/${selected.id}`, { method: "PATCH", body: patch })
+      setSelected(result.dispute)
+      if (patch.adminNote !== undefined) setNote(result.dispute.adminNote ?? "")
+      await refresh()
+      toast.success(success)
+    } catch (cause) {
+      setError(actionError(cause, "The dispute couldn't be updated."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function update(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selected || busy) return
-    // An empty note clears the stored one (the server stores "" as none).
     const next = note.trim()
-    if (next === (selected.adminNote ?? "").trim()) { setError(null); toast.info("Nothing to save", { description: "The note is unchanged." }); return }
-    setBusy(true); setError(null)
-    try {
-      await api(`/api/orders/admin/disputes/${selected.id}`, { method: "PATCH", body: { adminNote: next } })
-      await disputes.revalidate(); setSelected(null); toast.success(next ? "Dispute note saved" : "Dispute note cleared")
-    } catch (cause) { setError(actionError(cause, "The dispute couldn't be updated.")) } finally { setBusy(false) }
+    if (next === (selected.adminNote ?? "").trim()) {
+      setError(null)
+      toast.info("Nothing to save", { description: "The note is unchanged." })
+      return
+    }
+    await updateDispute({ adminNote: next }, next ? "Dispute note saved" : "Dispute note cleared")
   }
-  return <div className="grid gap-3"><Panel title="Payment disputes" description={rights.resolve ? "Open a dispute to add an internal note. Provider outcomes remain authoritative." : "Open a dispute to read it. Internal notes need the Support or Owner role. Provider outcomes remain authoritative."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{disputes.error ? <PanelError message={errorMessage(disputes.error, "Couldn't load disputes.")} onRetry={() => void disputes.revalidate()} /> : null}<DataTable label="Payment disputes" rows={disputes.data?.items ?? []} columns={columns} getId={(item) => item.id} loading={disputes.isLoading} search={{ placeholder: "Search disputes", text: (item) => `${item.id} ${item.provider ?? ""} ${item.providerDisputeId ?? ""} ${item.brandIds?.join(" ") ?? ""}` }} empty={{ title: "No payment disputes", body: "Provider disputes will appear here." }} initialSort={{ key: "opened", dir: "desc" }} pageSizes={[10, 25]} minWidth={340} /></Panel>{selected ? <Panel title={`Dispute ${selected.id}`} description={`${money(selected.amountMinor, selected.currency)} · ${selected.provider ?? "Provider unknown"} · ${selected.status}`} className="rounded-[20px]"><p className="text-sm text-ink-2">{selected.brandEvidence || "No brand evidence submitted."}</p>{rights.resolve ? <form className="mt-3 grid gap-2" onSubmit={(event) => void update(event)}><Label htmlFor="dispute-note">Internal note</Label><Textarea id="dispute-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} rows={3} /><p className="text-xs text-ink-3">Leave it empty and save to remove the note.</p><ActionErrorNote error={error} onReload={() => { setError(null); setSelected(null); void disputes.revalidate() }} /><div className="flex gap-2"><Button type="submit" loading={busy} disabled={busy}>Save note</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setSelected(null)}>Close</Button></div></form> : <div className="mt-3 grid gap-2"><p className="text-xs text-ink-3">Internal note</p><p className="text-sm text-ink-2">{selected.adminNote || "No internal note."}</p><div><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Close</Button></div></div>}</Panel> : null}</div>
+
+  const columns: Column<Dispute>[] = [
+    { key: "id", header: "Dispute", sortValue: (item) => item.id, cell: (item) => <button type="button" className="max-w-40 truncate text-left font-medium text-ink hover:text-violet" onClick={() => { setSelected(item); setNote(item.adminNote ?? "") }}>{item.id}</button> },
+    { key: "status", header: "Status", cell: (item) => <span className="flex flex-wrap gap-1"><StatusBadge tone={tone[item.status] ?? "muted"}>{item.status === "awaiting_response" ? "evidence requested" : showStatus(item.status)}</StatusBadge>{item.responseSubmittedAt ? <StatusBadge tone="info">response submitted</StatusBadge> : null}</span> },
+    { key: "amount", header: "Amount", align: "right", sortValue: (item) => item.amountMinor, cell: (item) => money(item.amountMinor, item.currency) },
+    { key: "provider", header: "Provider", hideBelow: "md", cell: (item) => item.provider ?? "—" },
+    { key: "orders", header: "Orders", cell: (item) => item.orderRefIds?.length ? <span className="flex flex-wrap gap-x-2 gap-y-1">{item.orderRefIds.map((id, index) => <button key={id} type="button" className="text-left text-ink-2 underline underline-offset-2 hover:text-ink" title={id} onClick={() => writeParams({ view: null, order: id })}>Order {index + 1}</button>)}</span> : "No matched order" },
+    { key: "opened", header: "Opened", hideBelow: "sm", sortValue: (item) => item.openedAt, cell: (item) => time.format(new Date(item.openedAt)) },
+  ]
+  const terminal = selected?.status === "won" || selected?.status === "lost" || selected?.status === "closed"
+  const evidence = new Map((selected?.evidenceByBrand ?? []).map((item) => [item.brandId, item]))
+
+  return <div className="grid gap-3">
+    <Panel title="Payment disputes" description={rights.resolve ? "Review provider status, record Yard's response, and add an internal note. Won and lost outcomes come from the provider." : "Open a dispute to read it. Dispute updates and internal notes need the Support or Owner role."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">
+      {disputes.error ? <PanelError message={errorMessage(disputes.error, "Couldn't load disputes.")} onRetry={() => void refresh()} /> : null}
+      <DataTable label="Payment disputes" rows={rows} columns={columns} getId={(item) => item.id} loading={disputes.isLoading} search={{ placeholder: "Search disputes", text: (item) => `${item.id} ${item.provider ?? ""} ${item.providerDisputeId ?? ""} ${item.brandIds?.join(" ") ?? ""}` }} empty={{ title: "No payment disputes", body: "Provider disputes will appear here." }} initialSort={{ key: "opened", dir: "desc" }} pageSizes={[10, 25]} minWidth={340} />
+      {nextCursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={moreBusy} disabled={moreBusy} onClick={() => void loadMore()}>Load older disputes</Button></div> : null}
+    </Panel>
+    {selected ? <Panel title={`Dispute ${selected.id}`} description={`${money(selected.amountMinor, selected.currency)} · ${selected.provider ?? "Provider unknown"}`} className="rounded-[20px]">
+      <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={tone[selected.status] ?? "muted"}>{selected.status === "awaiting_response" ? "evidence requested" : showStatus(selected.status)}</StatusBadge>{selected.responseSubmittedAt ? <StatusBadge tone="info">response submitted</StatusBadge> : null}{selected.evidenceDueAt ? <span className="text-xs text-ink-3">Evidence due {time.format(new Date(selected.evidenceDueAt))}</span> : null}</div>
+      <div className="mt-3 grid gap-3">{selected.brandIds?.length ? selected.brandIds.map((brandId) => { const item = evidence.get(brandId); return <section key={brandId} className="min-w-0 border-t border-white/10 pt-2"><p className="text-xs font-medium text-ink">Brand {brandId}</p><p className="mt-1 break-words text-sm text-ink-2">{item?.evidence ?? "No evidence submitted."}</p>{item ? <p className="mt-1 text-[11px] text-ink-3">Submitted {time.format(new Date(item.at))}</p> : null}</section> }) : <p className="break-words text-sm text-ink-2">{selected.brandEvidence || "No brand evidence submitted."}</p>}</div>
+      {selected.orderRefIds?.length ? <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs text-ink-3">Covered orders</span>{selected.orderRefIds.map((id, index) => <Button key={id} type="button" size="xs" variant="secondary" title={id} onClick={() => writeParams({ view: null, order: id })}>Open order {index + 1}</Button>)}</div> : null}
+      {rights.resolve ? <div className="mt-4 grid gap-3 border-t border-white/10 pt-3">
+        <p className="text-xs text-ink-3">Evidence requested and won/lost outcomes are set by Paystack. Yard can mark a case under review, record a submitted response, or close it.</p>
+        <div className="flex flex-wrap gap-2">{!terminal && selected.status !== "under_review" ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ status: "under_review" }, "Dispute moved under review")}>Mark under review</Button> : null}{!terminal && !selected.responseSubmittedAt ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ responseSubmitted: true }, "Provider response recorded")}>Mark response submitted</Button> : null}{!terminal ? <Button type="button" size="sm" variant="ghost" loading={busy} disabled={busy} onClick={() => void updateDispute({ status: "closed" }, "Dispute closed")}>Close dispute</Button> : null}</div>
+        <form className="grid gap-2" onSubmit={(event) => void update(event)}><Label htmlFor="dispute-note">Internal note</Label><Textarea id="dispute-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} rows={3} /><p className="text-xs text-ink-3">Leave it empty and save to remove the note.</p><ActionErrorNote error={error} onReload={() => { setError(null); setSelected(null); void refresh() }} /><div className="flex gap-2"><Button type="submit" loading={busy} disabled={busy}>Save note</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setSelected(null)}>Close</Button></div></form>
+      </div> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3"><p className="text-xs text-ink-3">Updates need the Support or Owner role.</p><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Close</Button></div>}
+    </Panel> : null}
+  </div>
+}
+
+function ExceptionsTab() {
+  const exceptions = useApi<ExceptionsPage>("admin.orders.exceptions:first", () => api("/api/orders/admin/exceptions", { query: { limit: 50 } }), { keepPrevious: false })
+  const [older, setOlder] = useState<{ base: ExceptionsPage; items: OrderException[]; cursor: string | null } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const first = exceptions.data
+  const extra = older && older.base === first ? older : null
+  const rows = first ? [...first.items, ...(extra?.items ?? [])] : []
+  const cursor = extra ? extra.cursor : first?.nextCursor ?? null
+  const columns: Column<OrderException>[] = [
+    { key: "type", header: "Type", cell: (item) => <StatusBadge tone={item.kind === "return" ? "attention" : item.status === "failed" ? "danger" : "info"}>{item.kind === "return" ? "return request" : "refund"}</StatusBadge> },
+    { key: "order", header: "Order", sortValue: (item) => item.orderReference, cell: (item) => <button type="button" className="text-left font-medium text-ink hover:text-violet" onClick={() => writeParams({ view: null, order: item.orderId })}>#{item.orderReference}<span className="block max-w-[42vw] truncate text-[11px] text-ink-3 sm:max-w-none">{item.brandName}</span></button> },
+    { key: "status", header: "Status", cell: (item) => <StatusBadge tone={tone[item.status] ?? "muted"}>{showStatus(item.status)}</StatusBadge> },
+    { key: "created", header: "Requested", hideBelow: "sm", sortValue: (item) => item.createdAt, cell: (item) => time.format(new Date(item.createdAt)) },
+    { key: "amount", header: "Amount", align: "right", cell: (item) => item.amountMinor === null ? "—" : <span className="whitespace-nowrap">{money(item.amountMinor, item.currency)}</span> },
+    { key: "reason", header: "Reason", hideBelow: "md", cell: (item) => <span className="block max-w-56 truncate" title={item.failureReason || item.note || item.reason}>{item.failureReason || item.note || item.reason}</span> },
+  ]
+  async function loadMore() {
+    if (!first || !cursor || busy) return
+    setBusy(true)
+    try {
+      const page = await api<ExceptionsPage>("/api/orders/admin/exceptions", { query: { limit: 50, cursor } })
+      setOlder({ base: first, items: [...(extra?.items ?? []), ...page.items], cursor: page.nextCursor })
+    } catch (cause) {
+      toast.error(errorMessage(cause, "Couldn't load older refunds and returns."))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <Panel title="Refund and return exceptions" description="Pending return requests and pending or failed refunds, oldest first. Open an order to review or act on it." className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{exceptions.error ? <PanelError message={errorMessage(exceptions.error, "Couldn't load refund and return exceptions.")} onRetry={() => void exceptions.revalidate()} /> : null}<DataTable label="Refund and return exceptions" rows={rows} columns={columns} getId={(item) => `${item.kind}:${item.id}`} loading={exceptions.isLoading} search={{ placeholder: "Search order, brand, status or reason", text: (item) => `${item.orderReference} ${item.brandName} ${item.status} ${item.reason} ${item.failureReason ?? ""}` }} empty={{ title: "No refund or return exceptions", body: "Pending return requests and pending or failed refunds will appear here." }} initialSort={{ key: "created", dir: "asc" }} pageSizes={[10, 25, 50]} minWidth={360} />{cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={busy} disabled={busy} onClick={() => void loadMore()}>Load older exceptions</Button></div> : null}</Panel>
 }
 
 function EventsTab() {

@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { countries } from "@/config/markets"
 import { ProductCardSkeleton } from "@/components/feedback/skeletons"
 import { useHydrated } from "@/hooks/use-hydrated"
-import { loadPublicCatalog } from "@/lib/api/catalog-products"
+import { loadPublicProductsByIds } from "@/lib/api/catalog-products"
+import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import { registerLiveProducts } from "@/lib/api/live-catalog"
-import { brandByHandle, categories, categoryBySlug, searchProducts, type ProductSort } from "@/lib/data"
+import { brandByHandle, categories, categoryBySlug, type ProductSort } from "@/lib/data"
 import { duration, ease, spring } from "@/lib/motion"
 import { useSession } from "@/lib/stores/session"
 import type { CategorySlug, Product } from "@/lib/data/types"
@@ -20,14 +22,17 @@ import { CatalogGrid } from "./catalog-grid"
 import { CatalogSearch } from "./catalog-search"
 import {
   activeFilterCount,
-  buildListing,
+  buildListingFromResults,
+  catalogFacetsFromSearch,
+  catalogSearchQuery,
+  EMPTY_CATALOG_FACETS,
   emptyState,
-  filterProducts,
   panelFilterCount,
   parseCatalogParams,
   serializeCatalogParams,
   sizeChipLabel,
   sortOptions,
+  type CatalogSearchResponse,
   type CatalogScope,
   type CatalogState,
 } from "./catalog-state"
@@ -41,72 +46,76 @@ const NO_PANEL_FILTERS = { brands: [], min: undefined, max: undefined, sizes: []
 /**
  * The product listing shared by /shop and /categories/[slug]. All state is in the URL
  * (q, category, sub, brands, min, max, size, stock, country, sort, page), read with
- * useSearchParams, so this must render inside <Suspense>. The catalogue is filtered in the
- * browser, so changes are written with history.replaceState (which Next keeps in sync with
- * useSearchParams) rather than a router navigation: no server round trip per click.
+ * useSearchParams, so this must render inside <Suspense>. Search results and facets come from
+ * the search API; changes are written with history.replaceState to keep the URL authoritative.
  */
-export function CatalogListing({ category, initialProducts, initialComplete = false }: { category?: CategorySlug; initialProducts?: Product[]; initialComplete?: boolean }) {
+export function CatalogListing({ category }: { category?: CategorySlug }) {
   const scope: CatalogScope = useMemo(() => ({ category }), [category])
   const pathname = usePathname()
   const params = useSearchParams()
-  // The server renders the first page (initialProducts), so the HTML has products; the rest of the
-  // catalogue loads in the browser unless that page was already all of it.
-  const [catalogProducts, setCatalogProducts] = useState<Product[]>(() => initialProducts ?? [])
-  const [catalogLoaded, setCatalogLoaded] = useState(!!initialProducts)
-  /** The whole catalogue is in (counts and facets are final). */
-  const [catalogComplete, setCatalogComplete] = useState(!!initialProducts && initialComplete)
-  const [catalogError, setCatalogError] = useState(false)
-  /** The browser's load has finished (or wasn't needed), so an empty result is final. */
-  const [catalogSettled, setCatalogSettled] = useState(!!initialProducts && initialComplete)
-  const [reloadKey, setReloadKey] = useState(0)
-  const knownBrandHandles = useMemo(() => [...new Set(catalogProducts.flatMap((p) => (p.brandSummary ? [p.brandSummary.handle] : [])))], [catalogProducts])
-  const state = useMemo(() => parseCatalogParams(params, scope, knownBrandHandles), [params, scope, knownBrandHandles])
-  const listing = useMemo(() => buildListing(state, catalogProducts), [state, catalogProducts])
-
-  useEffect(() => {
-    if (initialProducts) registerLiveProducts(initialProducts)
-  }, [initialProducts])
-
-  useEffect(() => {
-    if (catalogComplete) return
-    let active = true
-    loadPublicCatalog()
-      .then((products) => {
-        if (!active) return
-        // Quick add from the grid can then show a live-only piece in the bag without another fetch.
-        registerLiveProducts(products)
-        setCatalogProducts(products)
-        setCatalogComplete(true)
-      })
-      .catch(() => {
-        // With the server's first page on screen, keep showing it rather than an error.
-        if (active && !initialProducts) setCatalogError(true)
-      })
-      .finally(() => {
-        if (!active) return
-        setCatalogLoaded(true)
-        setCatalogSettled(true)
-      })
-    return () => {
-      active = false
-    }
-    // catalogComplete only stops a reload once everything is in; reloadKey retries.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey])
-
-  const idBase = useId()
+  const state = useMemo(() => parseCatalogParams(params, scope), [params, scope])
   const hydrated = useHydrated()
   const shopperCurrency = useSession((s) => s.currency)
   const currency = hydrated ? shopperCurrency : "USD"
+  const requestQuery = useMemo(() => catalogSearchQuery(state, currency), [state, currency])
+  const searchKey = useMemo(() => {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(requestQuery)) if (value !== undefined) query.set(key, String(value))
+    return query.toString()
+  }, [requestQuery])
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([])
+  const [searchResponse, setSearchResponse] = useState<CatalogSearchResponse | null>(null)
+  const [resultKey, setResultKey] = useState("")
+  const [loadedPages, setLoadedPages] = useState(0)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [loadedNote, setLoadedNote] = useState("")
+
+  useEffect(() => {
+    const sameQuery = resultKey === searchKey
+    if (sameQuery && (loadedPages >= state.page || !nextCursor)) return
+    const cursor = sameQuery ? nextCursor ?? undefined : undefined
+    const controller = new AbortController()
+    void api<CatalogSearchResponse>("/api/search", { query: { ...requestQuery, cursor }, signal: controller.signal })
+      .then(async (result) => {
+        const products = await loadPublicProductsByIds(result.items.map((item) => item.productId), controller.signal)
+        if (controller.signal.aborted) return
+        registerLiveProducts(products)
+        setCatalogProducts((current) => sameQuery ? [...current, ...products] : products)
+        setSearchResponse(result)
+        setResultKey(searchKey)
+        setLoadedPages((current) => sameQuery ? current + 1 : 1)
+        setNextCursor(result.nextCursor)
+        if (sameQuery) setLoadedNote(`${products.length} more ${products.length === 1 ? "piece" : "pieces"} loaded. Showing ${catalogProducts.length + products.length} of ${result.total}.`)
+        setRequestError(null)
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setRequestError({ key: searchKey, message: errorMessage(error, "The shop results couldn't be loaded.") })
+      })
+    return () => controller.abort()
+  }, [catalogProducts.length, loadedPages, nextCursor, reloadKey, requestQuery, resultKey, searchKey, state.page])
+
+  const hasCurrentResults = resultKey === searchKey
+  const catalogError = requestError?.key === searchKey ? requestError.message : null
+  const requestLoading = !catalogError && (!hasCurrentResults || (loadedPages < state.page && nextCursor !== null))
+  const currentResponse = hasCurrentResults ? searchResponse : null
+  const listing = useMemo(
+    () => buildListingFromResults(hasCurrentResults ? catalogProducts : [], currentResponse?.total ?? 0, currentResponse?.brandCount ?? 0, currentResponse?.nextCursor != null),
+    [catalogProducts, currentResponse, hasCurrentResults],
+  )
+  const facets = useMemo(
+    () => currentResponse ? catalogFacetsFromSearch(currentResponse.facets, state) : EMPTY_CATALOG_FACETS,
+    [currentResponse, state],
+  )
+
+  const idBase = useId()
 
   const [revealFrom, setRevealFrom] = useState(Infinity)
   const [changed, setChanged] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [draft, setDraft] = useState<CatalogState>(state)
-  // Said once per "Load more" press. The results heading is the live region for filter changes,
-  // so the count is never announced twice.
-  const [loadedNote, setLoadedNote] = useState("")
-
   const rootRef = useRef<HTMLDivElement>(null)
   const inView = useInView(rootRef, { margin: "0px 0px -35% 0px" })
 
@@ -137,7 +146,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
   )
 
   const patch = (p: FilterPatch) => apply({ ...state, ...p })
-  const onSearch = useCallback((q: string) => apply({ ...parseCatalogParams(new URLSearchParams(window.location.search), scope, knownBrandHandles), q }), [apply, knownBrandHandles, scope])
+  const onSearch = useCallback((q: string) => apply({ ...parseCatalogParams(new URLSearchParams(window.location.search), scope), q }), [apply, scope])
   const clearAll = () => apply({ ...emptyState(scope), sort: state.sort })
   const clearPanel = () => patch(NO_PANEL_FILTERS)
 
@@ -158,7 +167,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
     setRevealFrom(listing.cardCount)
     setFocusFrom(listing.cardCount)
     setLoadedNote(`${listing.nextCount} more ${listing.nextCount === 1 ? "piece" : "pieces"} loaded. Showing ${after} of ${listing.total}.`)
-    navigate({ ...state, page: listing.page + 1 })
+    navigate({ ...state, page: state.page + 1 })
   }
 
   /** Desktop: the panel has ~35 tab stops, so a skip link jumps straight to the results. */
@@ -177,6 +186,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
   const activeCount = activeFilterCount(state, scope)
   const panelCount = panelFilterCount(state)
   const signature = serializeCatalogParams({ ...state, page: 1 }, scope)
+  const availableCategories = new Set(currentResponse?.facets.categories.map((facet) => facet.value) ?? categories.map((item) => item.slug))
 
   /* ---------- active-filter chips ---------- */
   // Each chip carries the change that removes it; the click handler applies it.
@@ -192,7 +202,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
 
   const shown = listing.shown
   const progress = listing.total ? shown / listing.total : 0
-  const empty = catalogLoaded && catalogSettled && listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name, catalogProducts) : null
+  const empty = !requestLoading && !catalogError && hasCurrentResults && listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name) : null
 
   return (
     <div ref={rootRef}>
@@ -202,7 +212,6 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
           value={state.q}
           onCommit={onSearch}
           state={state}
-          products={catalogProducts}
           label={cat ? `Search ${cat.name}` : "Search the shop"}
           placeholder={cat ? `Search ${cat.name.toLowerCase()}` : "Search pieces, brands and materials"}
           className="md:max-w-xl"
@@ -229,7 +238,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
               <Chip radio selected={!state.category} layoutId="catalog-category" onClick={() => state.category && patch({ category: undefined, sub: undefined })}>
                 All
               </Chip>
-              {categories.map((c) => (
+              {categories.filter((c) => availableCategories.has(c.slug)).map((c) => (
                 <Chip key={c.slug} radio selected={state.category === c.slug} layoutId="catalog-category" onClick={() => state.category !== c.slug && patch({ category: c.slug, sub: undefined })}>
                   {c.name}
                 </Chip>
@@ -261,7 +270,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
                 </button>
               ) : null}
             </div>
-            <FilterControls state={state} onChange={patch} currency={currency} products={catalogProducts} />
+            <FilterControls state={state} onChange={patch} currency={currency} facets={facets} />
           </div>
         </aside>
 
@@ -269,7 +278,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
           {/* Toolbar */}
           <div ref={resultsRef} className="flex scroll-mt-28 items-center justify-between gap-3">
             <h2 ref={resultsHeadingRef} id={`${idBase}-results`} tabIndex={-1} className="scroll-mt-28 rounded-sm text-sm font-normal text-ink-2 outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-4 focus-visible:ring-offset-obsidian" aria-live="polite">
-              <span className="tabular text-ink">{catalogComplete ? listing.total : "…"}</span> {listing.total === 1 ? "piece" : "pieces"}
+              <span className="tabular text-ink">{hasCurrentResults ? listing.total : "…"}</span> {listing.total === 1 ? "piece" : "pieces"}
               {listing.total ? (
                 <span className="hidden sm:inline">
                   {" "}
@@ -332,7 +341,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
             animate={{ opacity: 1 }}
             transition={{ duration: duration.page, ease: ease.out }}
           >
-            {!catalogLoaded || (!listing.total && !catalogSettled) ? (
+            {requestLoading && !hasCurrentResults ? (
               <div role="status" aria-label="Loading pieces" aria-busy="true" className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-3">
                 {Array.from({ length: 6 }, (_, i) => (
                   <ProductCardSkeleton key={i} />
@@ -340,14 +349,12 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
               </div>
             ) : catalogError ? (
               <div role="alert" className="rounded-md border border-line-soft px-4 py-10 text-center">
-                <p className="text-sm text-ink-2">The shop catalogue couldn’t be loaded.</p>
+                <p className="text-sm text-ink-2">{catalogError}</p>
                 <Button
                   variant="secondary"
                   className="mt-4"
                   onClick={() => {
-                    setCatalogLoaded(false)
-                    setCatalogSettled(false)
-                    setCatalogError(false)
+                    setRequestError(null)
                     setReloadKey((key) => key + 1)
                   }}
                 >
@@ -405,7 +412,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
                 </div>
               ) : null}
               {listing.hasMore ? (
-                <Button variant="secondary" size="lg" onClick={loadMore} className="mt-2 min-w-48">
+                <Button variant="secondary" size="lg" onClick={loadMore} disabled={requestLoading} className="mt-2 min-w-48">
                   Load {listing.nextCount} more
                 </Button>
               ) : null}
@@ -451,7 +458,7 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
           setSheetOpen(false)
         }}
         currency={currency}
-        products={catalogProducts}
+        initialFacets={facets}
       />
     </div>
   )
@@ -459,47 +466,36 @@ export function CatalogListing({ category, initialProducts, initialComplete = fa
 
 type EmptyAdvice = { title: string; reason: string; action: "shop" | "category" | "panel" | "search" | "all" }
 
-const pieces = (n: number) => `${n} ${n === 1 ? "piece" : "pieces"}`
-
 /**
  * What to say when nothing matches, and the one action most likely to bring pieces back:
  * filters that hide every match are cleared on their own; a search narrowed to one category
  * that matches elsewhere widens to all of them (or, on a category page, opens the whole shop);
  * otherwise the search, or everything, is cleared.
  */
-function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string, products?: Product[]): EmptyAdvice {
+function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string): EmptyAdvice {
   if (panelCount) {
-    const without = filterProducts({ ...state, ...NO_PANEL_FILTERS }, undefined, products).length
-    if (without > 0) {
-      const priced = state.min !== undefined || state.max !== undefined
-      return {
-        title: "Nothing matches those filters",
-        reason: `${pieces(without)} without them. ${priced ? "Try removing one, or widen the price range." : "Try removing one."}`,
-        action: "panel",
-      }
+    const priced = state.min !== undefined || state.max !== undefined
+    return {
+      title: "Nothing matches those filters",
+      reason: priced ? "Try removing one filter or widening the price range." : "Try removing one filter.",
+      action: "panel",
     }
   }
   if (state.q && !panelCount) {
     const narrowed = Boolean(state.sub || (state.category && !scope.category))
     if (narrowed) {
-      const wider = filterProducts({ ...state, category: scope.category, sub: undefined }, undefined, products).length
-      if (wider > 0) {
-        const narrowedTo = state.sub ?? categoryBySlug.get(state.category!)!.name
-        return {
-          title: `No ${narrowedTo.toLowerCase()} matches “${state.q}”`,
-          reason: `${pieces(wider)} ${wider === 1 ? "matches" : "match"} in ${categoryName ? `all of ${categoryName.toLowerCase()}` : "other categories"}.`,
-          action: "category",
-        }
+      const narrowedTo = state.sub ?? categoryBySlug.get(state.category!)!.name
+      return {
+        title: `No ${narrowedTo.toLowerCase()} matches “${state.q}”`,
+        reason: `Try searching ${categoryName ? `all of ${categoryName.toLowerCase()}` : "other categories"}.`,
+        action: "category",
       }
     }
     if (scope.category && categoryName) {
-      const elsewhere = products ? filterProducts({ ...state, category: undefined, sub: undefined }, undefined, products).length : searchProducts({ q: state.q }).length
-      if (elsewhere > 0) {
-        return {
-          title: `No ${categoryName.toLowerCase()} matches “${state.q}”`,
-          reason: `${pieces(elsewhere)} ${elsewhere === 1 ? "matches" : "match"} elsewhere in the shop.`,
-          action: "shop",
-        }
+      return {
+        title: `No ${categoryName.toLowerCase()} matches “${state.q}”`,
+        reason: "Try searching the whole shop.",
+        action: "shop",
       }
     }
     if (activeCount === 1) return { title: `No pieces match “${state.q}”`, reason: "Try a brand name, a material or a simpler word.", action: "search" }

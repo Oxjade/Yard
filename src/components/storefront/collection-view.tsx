@@ -10,11 +10,9 @@ import { ProductCard } from "@/components/market/product-card"
 import { EmptyCard } from "@/components/market/editorial/empty-card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { priceUsd } from "@/lib/data"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import type { Brand, Collection, Product } from "@/lib/data/types"
-import { usePublishedStorefront } from "./live-storefront"
+import type { Brand, Collection, Product, StorefrontConfig } from "@/lib/data/types"
 import { AccentLink } from "./parts"
 import { collectionHref } from "./sections/collections"
 import { accentStyle, collectionsAnchorId, storefrontType } from "./theme"
@@ -32,8 +30,8 @@ function sortProducts(list: Product[], sort: Sort) {
   if (sort === "featured") return list // the brand's own order
   return [...list].sort((a, b) => {
     if (sort === "newest") return b.createdAt.localeCompare(a.createdAt)
-    if (sort === "price-asc") return priceUsd(a) - priceUsd(b)
-    return priceUsd(b) - priceUsd(a)
+    if (sort === "price-asc") return a.price - b.price
+    return b.price - a.price
   })
 }
 
@@ -42,12 +40,10 @@ function sortProducts(list: Product[], sort: Sort) {
  * storefront. The header follows the marketplace's other image-header pages (/collections,
  * /categories): full-bleed photograph, scrim-l and scrim-b, title at the foot.
  */
-export function CollectionView({ brand: seedBrand, collection, products, others }: { brand: Brand; collection: Collection; products: Product[]; others: Collection[] }) {
+export function CollectionView({ brand, collection, products, others, storefrontConfig }: { brand: Brand; collection: Collection; products: Product[]; others: Collection[]; storefrontConfig: StorefrontConfig }) {
   const [sort, setSort] = useState<Sort>("featured")
   const sorted = useMemo(() => sortProducts(products, sort), [products, sort])
-  // Accent, headline type, mark and the breadcrumb's anchor follow the storefront the brand has
-  // published (the Studio brand's lives in the Studio store), so the page matches the storefront.
-  const { brand, config } = usePublishedStorefront(seedBrand)
+  const config = storefrontConfig
   const type = storefrontType[config.typePreset] ?? storefrontType.condensed
   const storefront = `/brands/${brand.handle}`
   // Where the storefront lists its collections: the section, or the index under a Street hero.

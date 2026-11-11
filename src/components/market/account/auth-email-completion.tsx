@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { api, ApiError } from "@/lib/api/client"
 import { afterIdentityChange } from "@/lib/session/identity"
+import { takeOnboardingAuthReturn } from "@/lib/session/auth-return"
 import { getServerSessionState, refreshServerSession } from "@/lib/session/use-server-session"
 import { useSession, type SessionUser } from "@/lib/stores/session"
 import { Button } from "@/components/ui/button"
@@ -66,6 +67,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
   const pathname = usePathname()
   const token = params.get("token") ?? ""
   const [result, setResult] = useState<LinkResult | null>(null)
+  const [continueTo, setContinueTo] = useState("/you/orders")
   // Once the token has been used it is taken out of the address bar; the result stays on screen.
   const current = token ? (result?.token === token ? result : null) : result
 
@@ -75,6 +77,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
     void completeOnce(mode, token).then((outcome) => {
       if (!active) return
       setResult(outcome)
+      if (mode === "verify" && outcome.signedIn) setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
       // Keep the spent token out of history, screenshots and shared URLs.
       const url = new URL(window.location.href)
       if (url.searchParams.get("token") === token) {
@@ -95,7 +98,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
       {current?.state === "error" ? (
         <Button asChild variant="primary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button>
       ) : current?.state === "success" ? (
-        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : "/you/orders"}>{current.signedIn === false ? "Sign in" : "Continue to your account"}</Link></Button>
+        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : continueTo}>{current.signedIn === false ? "Sign in" : "Continue to your account"}</Link></Button>
       ) : null}
     </>
   )

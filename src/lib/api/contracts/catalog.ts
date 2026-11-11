@@ -71,6 +71,7 @@ export type StudioCollectionDto = {
   imageMediaId: string | null
   imageSrc: string | null
   productIds: string[]
+  version: number
   updatedAt: string
 }
 

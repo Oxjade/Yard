@@ -8,5 +8,5 @@ export const GET = route({ auth: "brand", permission: "any_member", rate: { key:
 /** POST /api/studio/catalog/collections (content.publish): creates a collection (handle from the name unless given). 201. */
 export const POST = route(
   { auth: "brand", permission: "content.publish", body: collectionBody, rate: { key: "studio.catalog.collections", limit: 30, windowSec: 60 } },
-  async ({ actor, body, ipHash }) => json(await createCollection(actor, body, ipHash), 201),
+  async ({ actor, body, req, ipHash }) => json(await createCollection(actor, body, req.headers.get("Idempotency-Key"), ipHash), 201),
 )

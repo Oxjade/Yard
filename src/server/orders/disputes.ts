@@ -1,5 +1,5 @@
 import "server-only"
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import type { Executor, Tx } from "../db"
 import { orderRefs } from "../db/schema"
@@ -301,13 +301,25 @@ export async function submitBrandEvidence(tx: Tx, input: { orderRefId: string; d
   return { row, orderTotalMinor: order.totalMinor }
 }
 
-export async function listDisputes(tx: Executor, q: { status?: DisputeState; limit: number }) {
-  return tx
+export async function listDisputes(tx: Executor, q: { status?: DisputeState; before?: string; limit: number }) {
+  const where: SQL[] = []
+  if (q.status) where.push(eq(orderDisputes.status, q.status))
+  if (q.before) {
+    const separator = q.before.indexOf("|")
+    const openedAt = new Date(separator === -1 ? q.before : q.before.slice(0, separator))
+    const id = separator === -1 ? null : q.before.slice(separator + 1)
+    where.push(id ? or(lt(orderDisputes.openedAt, openedAt), and(eq(orderDisputes.openedAt, openedAt), lt(orderDisputes.id, id)))! : lt(orderDisputes.openedAt, openedAt))
+  }
+  const rows = await tx
     .select()
     .from(orderDisputes)
-    .where(q.status ? eq(orderDisputes.status, q.status) : undefined)
-    .orderBy(desc(orderDisputes.openedAt))
-    .limit(q.limit)
+    .where(where.length ? and(...where) : undefined)
+    .orderBy(desc(orderDisputes.openedAt), desc(orderDisputes.id))
+    .limit(q.limit + 1)
+  const hasMore = rows.length > q.limit
+  const items = rows.slice(0, q.limit)
+  const last = items[items.length - 1]
+  return { items, nextCursor: hasMore && last ? `${last.openedAt.toISOString()}|${last.id}` : null }
 }
 
 export async function adminUpdateDispute(tx: Tx, input: { disputeId: string; actor: OrderActor; adminNote?: string; responseSubmitted?: boolean; status?: "under_review" | "closed"; ipHash?: string | null }) {

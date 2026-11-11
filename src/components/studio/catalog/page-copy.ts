@@ -17,5 +17,5 @@ export const inventoryCopy = {
 export const collectionsCopy = {
   title: "Collections",
   description: "Group products into drops, seasons or edits, so shoppers can see the pieces side by side on your storefront.",
-  note: "Collections are saved in Studio. Your live storefront lists them once the catalogue backend is connected.",
+  note: "Published collections appear on your storefront. Drafts stay private until you publish them.",
 }

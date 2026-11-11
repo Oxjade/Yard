@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, count, desc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { brandById } from "@/lib/data/brands"
 import { categoryBySlug } from "@/lib/data/catalog"
@@ -46,7 +46,7 @@ export async function reindexProduct(productId: string, doc?: SearchProductDoc |
     await d.update(searchProducts).set({ visible: false, indexedAt: new Date() }).where(eq(searchProducts.productId, productId))
     return
   }
-  const [brand] = await d.select({ id: brands.id, name: brands.name, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, src.brandId)).limit(1)
+  const [brand] = await d.select({ id: brands.id, handle: brands.handle, name: brands.name, country: brands.country, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, src.brandId)).limit(1)
   if (!brand) {
     log.once(`search:no-brand:${src.brandId}`, "warn", `[yard] reindexProduct: brand ${src.brandId} isn't in the brands table; product ${productId} not indexed`)
     return
@@ -54,7 +54,9 @@ export async function reindexProduct(productId: string, doc?: SearchProductDoc |
   const tags = (src.tags ?? []).map((t) => t.slice(0, 40)).slice(0, 30)
   const values = {
     brandId: src.brandId,
+    brandHandle: brand.handle,
     brandName: brand.name,
+    country: brand.country,
     slug: src.slug ?? null,
     title: src.title.slice(0, 200),
     description: (src.description ?? "").slice(0, 4000),
@@ -68,6 +70,7 @@ export async function reindexProduct(productId: string, doc?: SearchProductDoc |
     priceUsdMinor: usdMinor(src.priceMinor, src.currency),
     available: Math.max(0, Math.round(src.available)),
     variantIds: src.variantIds.slice(0, 500),
+    sizes: [...new Set((src.sizes ?? []).filter((size) => size && size !== "One size"))],
     image: src.image ?? null,
     visible: src.visible && brand.reviewStatus !== "suspended",
     publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
@@ -105,7 +108,7 @@ export async function reindexBrand(brandId: string): Promise<void> {
   // A brand's suspension hides its products too.
   await d
     .update(searchProducts)
-    .set({ brandName: b.name, visible: sql`${searchProducts.visible} and ${b.reviewStatus !== "suspended"}` })
+    .set({ brandHandle: b.handle, brandName: b.name, country: b.country, visible: sql`${searchProducts.visible} and ${b.reviewStatus !== "suspended"}` })
     .where(eq(searchProducts.brandId, b.id))
 }
 
@@ -132,7 +135,11 @@ export function toTsQuery(q: string | undefined | null): string | null {
 export type SearchParams = {
   q?: string
   category?: string
+  subcategory?: string
   brandIds?: string[]
+  brandHandles?: string[]
+  sizes?: string[]
+  country?: string
   /** Price bounds in the shopper's currency, minor units. */
   minPrice?: number
   maxPrice?: number
@@ -143,27 +150,37 @@ export type SearchParams = {
   offset?: number
 }
 
-/** USD bucket edges (minor units) shown in the shopper's currency. */
-const PRICE_EDGES_USD = [0, 2500, 5000, 10000, 25000, 50000]
+/** Price filter bands in USD minor units, matching the catalog's visible controls. */
+const PRICE_BANDS_USD = [
+  { min: 0, max: 5000 },
+  { min: 5000, max: 10000 },
+  { min: 10000, max: 20000 },
+  { min: 20000, max: 30000 },
+  { min: 30000, max: null },
+]
 
 export async function searchCatalog(p: SearchParams) {
   const d = await db()
   const tsq = toTsQuery(p.q)
   const query = tsq ? sql`to_tsquery('simple', ${tsq})` : null
   const limit = Math.min(Math.max(p.limit ?? 24, 1), 48)
-  const offset = Math.min(Math.max(p.offset ?? 0, 0), 2000)
+  const offset = Math.max(p.offset ?? 0, 0)
 
   const base: SQL[] = [eq(searchProducts.visible, true)]
   if (query) base.push(sql`${searchProducts.tsv} @@ ${query}`)
-  if (p.inStock) base.push(gt(searchProducts.available, 0))
+  const byStock = p.inStock ? gt(searchProducts.available, 0) : undefined
   const byCategory = p.category ? eq(searchProducts.category, p.category) : undefined
+  const bySubcategory = p.subcategory ? eq(searchProducts.subcategory, p.subcategory) : undefined
   const byBrand = p.brandIds?.length ? inArray(searchProducts.brandId, p.brandIds.slice(0, 20)) : undefined
+  const byBrandHandle = p.brandHandles?.length ? inArray(searchProducts.brandHandle, p.brandHandles.slice(0, 20)) : undefined
+  const bySize = p.sizes?.length ? or(...p.sizes.slice(0, 12).map((size) => sql`${size} = any(${searchProducts.sizes})`)) : undefined
+  const byCountry = p.country ? eq(searchProducts.country, p.country) : undefined
   const priceConds: SQL[] = []
   if (p.minPrice != null) priceConds.push(gte(searchProducts.priceUsdMinor, convert(p.minPrice, p.currency, "USD")))
-  if (p.maxPrice != null) priceConds.push(sql`${searchProducts.priceUsdMinor} <= ${convert(p.maxPrice, p.currency, "USD")}`)
+  if (p.maxPrice != null) priceConds.push(lte(searchProducts.priceUsdMinor, convert(p.maxPrice, p.currency, "USD")))
   const byPrice = priceConds.length ? and(...priceConds) : undefined
 
-  const where = and(...base, byCategory, byBrand, byPrice)
+  const where = and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)
   const rank = query ? sql<number>`ts_rank(${searchProducts.tsv}, ${query})` : sql<number>`0`
   const order =
     p.sort === "price_asc"
@@ -174,7 +191,7 @@ export async function searchCatalog(p: SearchParams) {
           ? [sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
           : [desc(rank), desc(searchProducts.available), asc(searchProducts.productId)]
 
-  const [rows, [{ total }], categoryFacet, brandFacet, priceFacet] = await Promise.all([
+  const [rows, [{ total }], [{ brandCount }], categoryFacet, brandFacet, [priceCounts], sizeFacet, countryFacet, [{ inStockCount }]] = await Promise.all([
     d
       .select({
         productId: searchProducts.productId,
@@ -197,34 +214,49 @@ export async function searchCatalog(p: SearchParams) {
       .limit(limit)
       .offset(offset),
     d.select({ total: count() }).from(searchProducts).where(where),
+    d.select({ brandCount: sql<number>`count(distinct ${searchProducts.brandId})`.mapWith(Number) }).from(searchProducts).where(where),
     d
       .select({ value: searchProducts.category, count: count() })
       .from(searchProducts)
-      .where(and(...base, byBrand, byPrice))
+      .where(and(...base, byStock, byBrand, byBrandHandle, byPrice, bySize, byCountry))
       .groupBy(searchProducts.category)
       .orderBy(desc(count())),
     d
-      .select({ value: searchProducts.brandId, label: searchProducts.brandName, count: count() })
+      .select({ value: searchProducts.brandId, handle: searchProducts.brandHandle, label: searchProducts.brandName, count: count() })
       .from(searchProducts)
-      .where(and(...base, byCategory, byPrice))
-      .groupBy(searchProducts.brandId, searchProducts.brandName)
+      .where(and(...base, byStock, byCategory, bySubcategory, byPrice, bySize, byCountry))
+      .groupBy(searchProducts.brandId, searchProducts.brandHandle, searchProducts.brandName)
       .orderBy(desc(count()))
-      .limit(30),
+      .limit(100),
     d
       .select({
-        bucket: sql<number>`width_bucket(${searchProducts.priceUsdMinor}, array[${sql.raw(PRICE_EDGES_USD.slice(1).join(","))}]::int[])`,
-        count: count(),
+        under50: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} <= 5000)`.mapWith(Number),
+        from50To100: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 5000 and ${searchProducts.priceUsdMinor} <= 10000)`.mapWith(Number),
+        from100To200: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 10000 and ${searchProducts.priceUsdMinor} <= 20000)`.mapWith(Number),
+        from200To300: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 20000 and ${searchProducts.priceUsdMinor} <= 30000)`.mapWith(Number),
+        over300: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 30000)`.mapWith(Number),
       })
       .from(searchProducts)
-      .where(and(...base, byCategory, byBrand))
-      .groupBy(sql`1`),
+      .where(and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, bySize, byCountry)),
+    d
+      .select({ value: sql<string>`unnest(${searchProducts.sizes})`, count: count() })
+      .from(searchProducts)
+      .where(and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, byCountry))
+      .groupBy(sql`1`)
+      .orderBy(desc(count())),
+    d
+      .select({ value: searchProducts.country, count: count() })
+      .from(searchProducts)
+      .where(and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize))
+      .groupBy(searchProducts.country)
+      .orderBy(desc(count())),
+    d.select({ inStockCount: count() }).from(searchProducts).where(and(...base, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)),
   ])
 
-  const counts = new Map(priceFacet.map((r) => [Number(r.bucket), r.count]))
-  const price = PRICE_EDGES_USD.map((edge, i) => ({
-    minMinor: convert(edge, "USD", p.currency),
-    maxMinor: i + 1 < PRICE_EDGES_USD.length ? convert(PRICE_EDGES_USD[i + 1], "USD", p.currency) : null,
-    count: counts.get(i) ?? 0,
+  const priceFacet = PRICE_BANDS_USD.map((band, index) => ({
+    minMinor: convert(band.min, "USD", p.currency),
+    maxMinor: band.max == null ? null : convert(band.max, "USD", p.currency),
+    count: [priceCounts.under50, priceCounts.from50To100, priceCounts.from100To200, priceCounts.from200To300, priceCounts.over300][index],
   }))
 
   const items = rows.map((r) => ({
@@ -249,12 +281,16 @@ export async function searchCatalog(p: SearchParams) {
   return {
     items,
     total,
+    brandCount,
     nextCursor: next,
     brands: brandHits,
     facets: {
       categories: categoryFacet.filter((c) => c.value).map((c) => ({ value: c.value!, label: categoryBySlug.get(c.value as never)?.name ?? c.value!, count: c.count })),
-      brands: brandFacet.map((b) => ({ value: b.value, label: b.label, count: b.count })),
-      price: { currency: p.currency, buckets: price },
+      brands: brandFacet.map((b) => ({ value: b.value, handle: b.handle, label: b.label, count: b.count })),
+      price: { currency: p.currency, buckets: priceFacet },
+      sizes: sizeFacet.filter((facet) => facet.count > 0),
+      countries: countryFacet.filter((facet) => facet.value).map((facet) => ({ value: facet.value!, count: facet.count })),
+      inStockCount,
     },
   }
 }
@@ -265,12 +301,12 @@ export async function searchBrandsQuery(q: string, limit = 10) {
   const d = await db()
   const query = sql`to_tsquery('simple', ${tsq})`
   const rows = await d
-    .select({ brandId: searchBrands.brandId, handle: searchBrands.handle, name: searchBrands.name, city: searchBrands.city, country: searchBrands.country, rank: sql<number>`ts_rank(${searchBrands.tsv}, ${query})` })
+    .select({ brandId: searchBrands.brandId, handle: searchBrands.handle, name: searchBrands.name, city: searchBrands.city, country: searchBrands.country })
     .from(searchBrands)
     .where(and(eq(searchBrands.visible, true), sql`${searchBrands.tsv} @@ ${query}`))
     .orderBy(desc(sql`ts_rank(${searchBrands.tsv}, ${query})`), asc(searchBrands.name))
     .limit(Math.min(limit, 20))
-  return rows.map(({ rank: _rank, ...r }) => r)
+  return rows
 }
 
 /** Type-ahead: a few product titles and brands for a prefix. */

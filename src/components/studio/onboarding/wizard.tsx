@@ -85,6 +85,7 @@ function Wizard() {
   const step = useOnboarding((s) => s.step)
   const maxReached = useOnboarding((s) => s.maxReached)
   const data = useOnboarding((s) => s.data)
+  const reviewNote = useOnboarding((s) => s.reviewNote)
   // A draft that already created a brand (rejected, then edited) can't be cleared: the server refuses.
   const canStartOver = useOnboarding((s) => s.status === "draft" && !s.brandId)
   const next = useOnboarding((s) => s.next)
@@ -134,6 +135,12 @@ function Wizard() {
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 pt-6 pb-28 md:px-8 md:pt-10 lg:pb-20">
+      {reviewNote ? (
+        <div role="status" className="mb-6 rounded-md border border-line-soft bg-surface/50 p-4 text-sm">
+          <p className="font-medium text-ink">Yard asked for changes</p>
+          <p className="mt-1 break-words leading-relaxed text-ink-2">{reviewNote}</p>
+        </div>
+      ) : null}
       {resumed ? <ResumeNote onDismiss={() => setResumed(false)} step={step} /> : null}
       <div className={cn("grid gap-6", isPublish ? "xl:grid-cols-[200px_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[200px_minmax(0,1fr)_380px]")}>
         <StepNav step={step} maxReached={maxReached} className="hidden xl:block" />

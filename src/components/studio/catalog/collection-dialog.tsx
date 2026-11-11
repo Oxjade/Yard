@@ -1,273 +1,274 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import Image from "next/image"
-import { CheckIcon as Check, MagnifyingGlassIcon as Search, TrashIcon as Trash2 } from "@phosphor-icons/react"
+import { CaretDownIcon, CaretUpIcon, CheckIcon, MagnifyingGlassIcon, TrashIcon } from "@phosphor-icons/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Textarea } from "@/components/ui/textarea"
-import { useAsyncAction } from "@/hooks/use-async-action"
+import { ApiError } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import type { Collection, ImageAsset, Product } from "@/lib/data/types"
-import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
-import { ConfirmDialog, control, Field, FieldMessage, inputClass, useReturnFocus } from "./fields"
+import { Segmented, control, Field, FieldMessage, inputClass } from "./fields"
 import { Thumb } from "./parts"
-import { useCatalog } from "./store"
-import { plural, slugify } from "./utils"
 
 const NAME_MAX = 60
 const DESCRIPTION_MAX = 280
 
-/**
- * Create (collection = null) or edit a collection. `open` is driven by the parent, so focus
- * goes back to the button or card that opened it, or to `returnFocus` once that card is gone.
- */
+export type CollectionDraft = {
+  name: string
+  description: string
+  productIds: string[]
+  image: ImageAsset | null
+  status: "draft" | "published"
+}
+
 export function CollectionDialog({
   open,
   onOpenChange,
   collection,
   collections,
-  brandId,
-  returnFocus,
+  products,
+  onSave,
+  onDelete,
+  onConflict,
 }: {
   open: boolean
-  onOpenChange: (o: boolean) => void
+  onOpenChange: (open: boolean) => void
   collection: Collection | null
   collections: Collection[]
-  brandId: string
-  returnFocus?: () => HTMLElement | null
+  products: Product[]
+  onSave: (draft: CollectionDraft, idempotencyKey?: string) => Promise<void>
+  onDelete: (collection: Collection) => Promise<void>
+  onConflict: () => void
 }) {
-  const onCloseAutoFocus = useReturnFocus(open, returnFocus)
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl" onCloseAutoFocus={onCloseAutoFocus}>
-        {open ? <CollectionForm key={collection?.id ?? "new"} collection={collection} collections={collections} brandId={brandId} onDone={() => onOpenChange(false)} returnFocus={returnFocus} /> : null}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function CollectionForm({ collection, collections, brandId, onDone, returnFocus }: { collection: Collection | null; collections: Collection[]; brandId: string; onDone: () => void; returnFocus?: () => HTMLElement | null }) {
-  const products = useStudio((s) => s.products)
   const isNew = !collection
-
-  const initialSelected = useMemo(() => {
-    if (!collection) return [] as string[]
-    const members = products.filter((p) => p.collectionIds.includes(collection.id)).map((p) => p.id)
-    const ordered = collection.productIds.filter((id) => members.includes(id))
-    return [...ordered, ...members.filter((id) => !ordered.includes(id))]
-    // Only when the dialog opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collection])
-
   const [name, setName] = useState(collection?.name ?? "")
   const [description, setDescription] = useState(collection?.description ?? "")
-  const [selected, setSelected] = useState<string[]>(initialSelected)
+  const [selected, setSelected] = useState<string[]>(collection?.productIds ?? [])
   const [cover, setCover] = useState<ImageAsset | null>(collection?.image ?? null)
-  const [q, setQ] = useState("")
+  const [status, setStatus] = useState<"draft" | "published">(collection?.status ?? "published")
+  const [query, setQuery] = useState("")
   const [submitted, setSubmitted] = useState(false)
+  const [pending, setPending] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const createRequest = useRef<{ signature: string; key: string } | null>(null)
 
-  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
-  const list = useMemo(() => {
-    const term = q.trim().toLowerCase()
-    return products.filter((p) => !term || [p.name, p.subcategory, ...p.tags].join(" ").toLowerCase().includes(term))
-  }, [products, q])
-
-  /** Photos from the chosen products first, then the rest of the catalogue, plus the current cover. */
+  const byId = useMemo(() => new Map(products.map((product) => [product.id, product])), [products])
+  const term = query.trim().toLowerCase()
+  const availableProducts = useMemo(
+    () => products.filter((product) => !term || [product.name, product.subcategory, ...product.tags].join(" ").toLowerCase().includes(term)),
+    [products, term],
+  )
+  const selectedProducts = selected.flatMap((id) => {
+    const product = byId.get(id)
+    return product ? [product] : []
+  })
   const covers = useMemo(() => {
     const seen = new Set<string>()
-    const out: ImageAsset[] = []
-    const add = (im?: ImageAsset | null) => {
-      if (!im || seen.has(im.src)) return
-      seen.add(im.src)
-      out.push(im)
+    const result: ImageAsset[] = []
+    const add = (image?: ImageAsset | null) => {
+      if (!image || seen.has(image.src)) return
+      seen.add(image.src)
+      result.push(image)
     }
     add(collection?.image)
-    selected.forEach((id) => byId.get(id)?.images.forEach(add))
-    products.forEach((p) => p.images.forEach(add))
-    return out
-  }, [collection, selected, byId, products])
+    selectedProducts.forEach((product) => product.images.forEach(add))
+    products.forEach((product) => product.images.forEach(add))
+    return result
+  }, [collection, products, selectedProducts])
 
-  function toggle(p: Product, on: boolean) {
-    setSelected((s) => (on ? [...s, p.id] : s.filter((x) => x !== p.id)))
-    if (on && !cover && p.images[0]) setCover(p.images[0])
-  }
+  const errors = submitted
+    ? {
+        name: name.trim().length < 2 ? "Enter a collection name." : name.trim().length > NAME_MAX ? `Keep the name to ${NAME_MAX} characters or fewer.` : collections.some((item) => item.id !== collection?.id && item.name.trim().toLowerCase() === name.trim().toLowerCase()) ? "You already have a collection with this name." : undefined,
+        description: description.trim().length > DESCRIPTION_MAX ? `Keep the description to ${DESCRIPTION_MAX} characters or fewer.` : undefined,
+      }
+    : {}
 
-  function check() {
-    const n = name.trim()
-    const errs: { name?: string; description?: string; cover?: string } = {}
-    if (n.length < 2) errs.name = "Enter a collection name."
-    else if (n.length > NAME_MAX) errs.name = `Keep the name to ${NAME_MAX} characters or fewer.`
-    else if (collections.some((c) => c.id !== collection?.id && c.name.trim().toLowerCase() === n.toLowerCase())) errs.name = "You already have a collection with this name."
-    if (description.trim().length > DESCRIPTION_MAX) errs.description = `Keep the description to ${DESCRIPTION_MAX} characters or fewer.`
-    if (!cover) errs.cover = "Choose a cover photo."
-    return errs
-  }
-  // Validate on submit, then keep messages in step with the fields.
-  const errors = submitted ? check() : {}
-
-  function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (commit.pending) return
-    const errs = check()
+  async function save(event: React.FormEvent) {
+    event.preventDefault()
     setSubmitted(true)
-    if (Object.values(errs).some(Boolean) || !cover) {
-      const first = errs.name ? "col-name" : errs.description ? "col-description" : "col-cover"
-      document.getElementById(first)?.focus()
-      return
+    if (pending || errors.name || errors.description || name.trim().length < 2 || name.trim().length > NAME_MAX || description.trim().length > DESCRIPTION_MAX) return
+    setPending(true)
+    setFailure(null)
+    try {
+      const draft = { name: name.trim(), description: description.trim(), productIds: selected, image: cover, status }
+      const signature = JSON.stringify(draft)
+      if (isNew && (!createRequest.current || createRequest.current.signature !== signature)) createRequest.current = { signature, key: crypto.randomUUID() }
+      await onSave(draft, createRequest.current?.key)
+      createRequest.current = null
+      toast.success(isNew ? "Collection created" : "Collection saved")
+      onOpenChange(false)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error("Someone else changed this collection", {
+          description: "Reload to see their changes. Your edits in this tray will be replaced.",
+          duration: Infinity,
+          action: { label: "Reload", onClick: onConflict },
+        })
+      } else {
+        const fields = error instanceof ApiError && error.fields ? Object.values(error.fields).filter(Boolean) : []
+        setFailure([errorMessage(error, "The collection couldn't be saved. Check your connection and try again."), ...fields].join(" "))
+      }
+    } finally {
+      setPending(false)
     }
-    void commit.run(cover)
   }
 
-  function write(cover: ImageAsset) {
-    const n = name.trim()
-
-    const base = slugify(n) || "collection"
-    const takenHandles = new Set(collections.filter((c) => c.id !== collection?.id).map((c) => c.handle))
-    let handle = collection?.handle ?? base
-    for (let i = 2; !collection && takenHandles.has(handle); i++) handle = `${base}-${i}`
-    const id = collection?.id ?? `c_${brandId.replace(/^b_/, "")}_${handle.replace(/-/g, "_")}`
-
-    useCatalog.getState().upsertCollection({ id, brandId, handle, name: n, description: description.trim(), image: cover, productIds: selected })
-
-    // Membership lives on the product, so the catalogue and storefront agree.
-    const want = new Set(selected)
-    const at = new Date().toISOString()
-    useStudio.setState((s) => ({
-      products: s.products.map((p) => {
-        const has = p.collectionIds.includes(id)
-        if (want.has(p.id) === has) return p
-        return { ...p, collectionIds: has ? p.collectionIds.filter((x) => x !== id) : [...p.collectionIds, id], updatedAt: at }
-      }),
-    }))
-    return n
+  async function remove() {
+    if (!collection || pending) return
+    setPending(true)
+    setFailure(null)
+    try {
+      await onDelete(collection)
+      toast.success("Collection deleted", { description: "Its products are still in your catalogue." })
+      onOpenChange(false)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error("Someone else changed this collection", {
+          description: "Reload to see their changes before deleting it.",
+          duration: Infinity,
+          action: { label: "Reload", onClick: onConflict },
+        })
+      } else {
+        setFailure(errorMessage(error, "The collection couldn't be deleted. Check your connection and try again."))
+      }
+    } finally {
+      setPending(false)
+    }
   }
 
-  // One save per submit; the dialog closes once it's stored, so the toast says what happened.
-  const commit = useAsyncAction((image: ImageAsset) => write(image), {
-    error: "The collection couldn't be saved. This browser's storage may be full: try again, or use a different cover.",
-    onSuccess: (n) => {
-      toast.success(isNew ? "Collection created" : "Collection saved", { description: `${n}, ${plural(selected.length, "product")}.` })
-      onDone()
-    },
-  })
+  function toggleProduct(id: string, checked: boolean) {
+    setSelected((current) => {
+      if (checked) return current.includes(id) ? current : [...current, id]
+      return current.filter((productId) => productId !== id)
+    })
+    if (checked && !cover) setCover(byId.get(id)?.images[0] ?? null)
+  }
 
-  function remove() {
-    if (!collection) return
-    useStudio.setState((s) => ({ products: s.products.map((p) => (p.collectionIds.includes(collection.id) ? { ...p, collectionIds: p.collectionIds.filter((x) => x !== collection.id) } : p)) }))
-    useCatalog.getState().removeCollection(collection.id)
-    toast.success("Collection deleted", { description: "Its products are still in your catalogue." })
-    onDone()
+  function moveProduct(index: number, direction: -1 | 1) {
+    setSelected((current) => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
   }
 
   return (
-    <form onSubmit={save} noValidate className="flex min-h-0 flex-1 flex-col">
-      <DialogHeader className="p-6 pb-4">
-        <DialogTitle>{isNew ? "Create collection" : "Edit collection"}</DialogTitle>
-        <DialogDescription className="text-ink-2">Group products for your storefront, like a drop, a season or a fabric.</DialogDescription>
-      </DialogHeader>
+    <Sheet open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <SheetContent side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[560px]">
+        {open ? <form key={`${collection?.id ?? "new"}:${collection?.version ?? 0}`} onSubmit={save} noValidate className="flex min-h-0 flex-1 flex-col">
+          <SheetHeader className="shrink-0 border-b border-line-soft p-4 pr-12 md:p-5 md:pr-12">
+            <SheetTitle className="text-[15px] text-ink">{isNew ? "Create collection" : "Edit collection"}</SheetTitle>
+            <SheetDescription className="text-xs text-ink-2">Group products into a drop, season or edit for your storefront.</SheetDescription>
+          </SheetHeader>
 
-      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
-        <Field id="col-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{name.length}/{NAME_MAX}</span>}>
-          <Input {...control("col-name", errors.name)} value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="e.g. Drop 08: Lagoon" className={inputClass} />
-        </Field>
-        <Field id="col-description" label="Description" optional error={errors.description} aside={<span className="text-xs text-ink-3 tabular">{description.length}/{DESCRIPTION_MAX}</span>}>
-          <Textarea {...control("col-description", errors.description)} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={DESCRIPTION_MAX} rows={2} placeholder="What ties these pieces together." className="min-h-16" />
-        </Field>
+          <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto overscroll-contain p-4 md:p-5">
+            <Field id="col-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{name.length}/{NAME_MAX}</span>}>
+              <Input {...control("col-name", errors.name)} value={name} onChange={(event) => setName(event.target.value)} maxLength={NAME_MAX} placeholder="e.g. Drop 08: Lagoon" className={inputClass} />
+            </Field>
+            <Field id="col-description" label="Description" optional error={errors.description} aside={<span className="text-xs text-ink-3 tabular">{description.length}/{DESCRIPTION_MAX}</span>}>
+              <Textarea {...control("col-description", errors.description)} value={description} onChange={(event) => setDescription(event.target.value)} maxLength={DESCRIPTION_MAX} rows={2} placeholder="What ties these pieces together." className="min-h-16" />
+            </Field>
 
-        <div className="grid gap-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <p id="col-products-label" className="text-[13px] text-ink">Products</p>
-            <span className="text-xs text-ink-3 tabular">{selected.length} selected</span>
+            <div className="grid gap-2">
+              <p className="text-[13px] text-ink">Storefront visibility</p>
+              <Segmented id="collection-status" label="Storefront visibility" value={status} onChange={setStatus} options={[{ value: "draft", label: "Draft" }, { value: "published", label: "Published" }]} />
+            </div>
+
+            <section aria-labelledby="col-selected-label" className="grid min-w-0 gap-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 id="col-selected-label" className="text-[13px] text-ink">Product order</h2>
+                <span className="text-xs text-ink-3 tabular">{selected.length} selected</span>
+              </div>
+              {selectedProducts.length ? (
+                <ol className="divide-y divide-line-soft rounded-lg border border-line-soft">
+                  {selectedProducts.map((product, index) => (
+                    <li key={product.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
+                      <span className="w-6 shrink-0 text-center text-xs text-ink-3 tabular">{index + 1}</span>
+                      <Thumb image={product.images[0]} size={36} />
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{product.name}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={`Move ${product.name} up`} disabled={index === 0 || pending} onClick={() => moveProduct(index, -1)}><CaretUpIcon /></Button>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={`Move ${product.name} down`} disabled={index === selectedProducts.length - 1 || pending} onClick={() => moveProduct(index, 1)}><CaretDownIcon /></Button>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${product.name}`} disabled={pending} onClick={() => toggleProduct(product.id, false)}><TrashIcon /></Button>
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className="text-sm text-ink-3">No products selected yet.</p>}
+              <InputGroup className={inputClass}>
+                <InputGroupAddon><MagnifyingGlassIcon className="text-ink-3" /></InputGroupAddon>
+                <InputGroupInput type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your products" aria-label="Search products to add" />
+              </InputGroup>
+              <ul aria-label="Products to add" className="max-h-56 divide-y divide-line-soft overflow-y-auto rounded-lg border border-line-soft">
+                {availableProducts.length ? availableProducts.map((product) => {
+                  const checked = selected.includes(product.id)
+                  const meta = productStatusMeta[product.status]
+                  return (
+                    <li key={product.id}>
+                      <label className={cn("flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-white/[0.03]", checked && "bg-purple/[0.08]")}>
+                        <Checkbox checked={checked} onCheckedChange={(value) => toggleProduct(product.id, value === true)} />
+                        <Thumb image={product.images[0]} size={36} />
+                        <span className="min-w-0 flex-1 truncate text-sm text-ink">{product.name}</span>
+                        {product.status !== "published" ? <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge> : null}
+                      </label>
+                    </li>
+                  )
+                }) : <li className="px-3 py-6 text-center text-sm text-ink-2">No products match &ldquo;{query}&rdquo;.</li>}
+              </ul>
+            </section>
+
+            <section aria-labelledby="col-cover-label" className="grid gap-2">
+              <h2 id="col-cover-label" className="text-[13px] text-ink">Cover image</h2>
+              <RadioGroupPrimitive.Root
+                value={cover?.src ?? ""}
+                onValueChange={(src) => setCover(covers.find((image) => image.src === src) ?? null)}
+                aria-label="Cover image"
+                className="grid grid-cols-4 gap-2 rounded-md outline-none sm:grid-cols-6"
+              >
+                {covers.slice(0, 18).map((image, index) => (
+                  <RadioGroupPrimitive.Item key={image.src} value={image.src} aria-label={image.alt || `Photo ${index + 1}`} className="relative aspect-[4/5] overflow-hidden rounded-md bg-surface outline-none focus-visible:ring-2 focus-visible:ring-violet">
+                    <Image src={image.src} alt="" fill sizes="96px" className="object-cover" />
+                    <RadioGroupPrimitive.Indicator className="absolute inset-0">
+                      <span aria-hidden className="absolute inset-0 rounded-md border-2 border-purple" />
+                      <span aria-hidden className="absolute top-1 right-1 inline-flex size-5 items-center justify-center rounded-full bg-purple"><CheckIcon className="size-3 text-ink" /></span>
+                    </RadioGroupPrimitive.Indicator>
+                  </RadioGroupPrimitive.Item>
+                ))}
+              </RadioGroupPrimitive.Root>
+              <FieldMessage id="col-cover" hint="Product photos can be used as the collection cover." />
+            </section>
+
+            {failure ? <p role="alert" className="rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{failure}</p> : null}
+            {confirmDelete && collection ? (
+              <div role="group" aria-label="Confirm collection deletion" className="grid gap-3 rounded-md border border-danger/30 bg-danger/5 p-3">
+                <p className="text-sm text-ink">Delete {collection.name}? Its products will stay in your catalogue.</p>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => setConfirmDelete(false)}>Keep collection</Button>
+                  <Button type="button" variant="destructive" size="sm" loading={pending} onClick={() => void remove()}>Delete collection</Button>
+                </div>
+              </div>
+            ) : null}
           </div>
-          <InputGroup className={inputClass}>
-            <InputGroupAddon><Search className="text-ink-3" /></InputGroupAddon>
-            <InputGroupInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your products" aria-label="Search products to add" />
-          </InputGroup>
-          <ul aria-labelledby="col-products-label" className="max-h-60 divide-y divide-line-soft overflow-y-auto rounded-lg border border-line-soft">
-            {list.length ? (
-              list.map((p) => {
-                const on = selected.includes(p.id)
-                const meta = productStatusMeta[p.status]
-                return (
-                  <li key={p.id}>
-                    <label className={cn("flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-white/[0.03]", on && "bg-purple/[0.08]")}>
-                      <Checkbox checked={on} onCheckedChange={(v) => toggle(p, v === true)} />
-                      <Thumb image={p.images[0]} size={36} />
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{p.name}</span>
-                      {p.status !== "published" ? <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge> : null}
-                    </label>
-                  </li>
-                )
-              })
-            ) : (
-              <li className="px-3 py-6 text-center text-sm text-ink-2">No products match &ldquo;{q}&rdquo;.</li>
-            )}
-          </ul>
-        </div>
 
-        <div className="grid gap-2">
-          <p id="col-cover-label" className="text-[13px] text-ink">Cover</p>
-          {/* Radix radio group: one Tab stop, arrow keys move between photos. */}
-          <RadioGroupPrimitive.Root
-            id="col-cover"
-            value={cover?.src ?? ""}
-            onValueChange={(src) => {
-              const im = covers.find((c) => c.src === src)
-              if (im) setCover(im)
-            }}
-            aria-labelledby="col-cover-label"
-            aria-invalid={errors.cover ? true : undefined}
-            aria-describedby={errors.cover ? "col-cover-error" : "col-cover-hint"}
-            className="grid grid-cols-4 gap-2 rounded-md outline-none sm:grid-cols-6"
-          >
-            {covers.slice(0, 18).map((im, i) => (
-                <RadioGroupPrimitive.Item
-                  key={im.src}
-                  value={im.src}
-                  aria-label={im.alt || `Photo ${i + 1}`}
-                  className="relative aspect-[4/5] overflow-hidden rounded-md bg-surface outline-none focus-visible:ring-2 focus-visible:ring-violet"
-                >
-                  <Image src={im.src} alt="" fill sizes="96px" className="object-cover" />
-                  <RadioGroupPrimitive.Indicator className="absolute inset-0">
-                    <span aria-hidden className="absolute inset-0 rounded-md border-2 border-purple" />
-                    <span aria-hidden className="absolute top-1 right-1 inline-flex size-5 items-center justify-center rounded-full bg-purple"><Check className="size-3 text-ink" /></span>
-                  </RadioGroupPrimitive.Indicator>
-                </RadioGroupPrimitive.Item>
-            ))}
-          </RadioGroupPrimitive.Root>
-          <FieldMessage id="col-cover" error={errors.cover} hint="Photos from the products you picked come first." />
-        </div>
-      </div>
-
-      <DialogFooter className="m-0 sm:items-center sm:justify-between">
-        {!isNew ? (
-          <Button type="button" variant="destructive" onClick={() => setConfirmDelete(true)}><Trash2 /> Delete</Button>
-        ) : <span className="hidden sm:block" />}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row">
-          <Button type="button" variant="secondary" onClick={onDone} disabled={commit.pending}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={commit.pending}>{isNew ? "Create collection" : "Save collection"}</Button>
-        </div>
-      </DialogFooter>
-
-      {collection ? (
-        <ConfirmDialog
-          open={confirmDelete}
-          onOpenChange={setConfirmDelete}
-          title={`Delete ${collection.name}?`}
-          body="It's removed from Studio and your storefront design. Its products stay in your catalogue."
-          confirmLabel="Delete collection"
-          onConfirm={remove}
-          returnFocus={returnFocus}
-        />
-      ) : null}
-    </form>
+          <SheetFooter className="mt-0 flex-row items-center justify-between border-t border-line-soft p-4 md:px-5">
+            {collection ? <Button type="button" variant="destructive" onClick={() => setConfirmDelete((value) => !value)} disabled={pending}><TrashIcon /> Delete</Button> : <span />}
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+              <Button type="submit" variant="primary" loading={pending}>{isNew ? "Create collection" : "Save collection"}</Button>
+            </div>
+          </SheetFooter>
+        </form> : null}
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -186,6 +186,9 @@ export type Collection = {
   description: string
   image: ImageAsset
   productIds: string[]
+  status?: "draft" | "published"
+  position?: number
+  version?: number
 }
 
 /** Platform-curated editorial collections (not owned by one brand). */

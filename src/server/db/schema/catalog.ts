@@ -168,10 +168,16 @@ export const catalogCollections = pgTable(
     imagePath: text("image_path"),
     status: text("status").notNull().default("published"),
     position: integer("position").notNull().default(0),
+    version: integer("version").notNull().default(1),
+    idempotencyKey: text("idempotency_key"),
     createdAt: tz("created_at").notNull().defaultNow(),
     updatedAt: tz("updated_at").notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("catalog_collections_brand_handle_ux").on(t.brandId, t.handle), oneOf("catalog_collections_status_ck", "status", COLLECTION_STATUSES)],
+  (t) => [
+    uniqueIndex("catalog_collections_brand_handle_ux").on(t.brandId, t.handle),
+    uniqueIndex("catalog_collections_brand_idempotency_ux").on(t.brandId, t.idempotencyKey).where(raw("idempotency_key is not null")),
+    oneOf("catalog_collections_status_ck", "status", COLLECTION_STATUSES),
+  ],
 )
 
 export const catalogCollectionProducts = pgTable(

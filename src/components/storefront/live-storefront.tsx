@@ -43,7 +43,17 @@ function useScrollToHash(ready: boolean) {
 }
 
 /** The public storefront: the published config (see usePublishedStorefront), rendered live. */
-export function LiveStorefront(props: Omit<StorefrontRendererProps, "preview">) {
+export function LiveStorefront(props: Omit<StorefrontRendererProps, "preview"> & { serverPublished?: boolean }) {
+  const { serverPublished = false, ...rendererProps } = props
+  return serverPublished ? <ServerPublishedStorefront {...rendererProps} /> : <DemoPublishedStorefront {...rendererProps} />
+}
+
+function ServerPublishedStorefront(props: Omit<StorefrontRendererProps, "preview">) {
+  useScrollToHash(true)
+  return <StorefrontRenderer {...props} />
+}
+
+function DemoPublishedStorefront(props: Omit<StorefrontRendererProps, "preview">) {
   const { brand, config, hydrated } = usePublishedStorefront(props.brand, props.config)
   useScrollToHash(hydrated)
   return <StorefrontRenderer {...props} config={config} brand={brand} />

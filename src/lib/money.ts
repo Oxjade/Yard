@@ -7,6 +7,10 @@ export function toMajor(amount: number, currency: CurrencyCode) {
   return amount / 10 ** currencies[currency].minor
 }
 
+export function toMinor(amount: number, currency: CurrencyCode) {
+  return Math.round(amount * 10 ** currencies[currency].minor)
+}
+
 export function convert(amount: number, from: CurrencyCode, to: CurrencyCode) {
   if (from === to) return amount
   const majorFrom = toMajor(amount, from)

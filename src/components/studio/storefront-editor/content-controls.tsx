@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { apiUpload } from "@/lib/api/upload"
 import Link from "next/link"
 import type { SocialAccountDto } from "@/lib/api/contracts/social"
 import type { Brand, BrandMark as BrandMarkType, ImageAsset } from "@/lib/data/types"
@@ -38,7 +39,7 @@ function Counter({ n, max }: { n: number; max: number }) {
 }
 
 /** Turns a file into an image for the draft: an instant object-URL preview, then a durable data URL. */
-function useUpload(kind: "cover" | "logo", apply: (image: ImageAsset, previewSrc?: string) => void) {
+function useUpload(kind: "cover" | "logo", apply: (image: ImageAsset, previewSrc?: string) => void, serverUpload: boolean) {
   const [busy, setBusy] = useState(false)
   async function run(file: File) {
     const problem = uploadError(file)
@@ -50,12 +51,17 @@ function useUpload(kind: "cover" | "logo", apply: (image: ImageAsset, previewSrc
     const preview = URL.createObjectURL(file)
     apply({ src: preview, alt: "", width: 1600, height: 1000 })
     try {
+      if (serverUpload) {
+        const media = await apiUpload(file, { purpose: "storefront_cover", as: "brand" }).promise
+        apply({ src: media.src, alt: "", width: media.width ?? 1600, height: media.height ?? 1000, mediaId: media.id }, preview)
+        return
+      }
       const encoded = await encodeImage(file, kind === "cover" ? { max: 1600, type: "image/jpeg", quality: 0.8 } : { max: 400, type: "image/webp", quality: 0.9 })
       // No toast: the photo shows in the picker and the preview, and the logo's note says it isn't shown yet.
       apply({ src: encoded.src, alt: "", width: encoded.width, height: encoded.height }, preview)
     } catch {
       apply({ src: "", alt: "", width: 0, height: 0 }, preview)
-      toast.error("We couldn't read that image", { description: "Try another file, or save it again as a JPG or PNG." })
+      toast.error("We couldn't read that image", { description: serverUpload ? "Try another JPG, PNG or WebP photo." : "Try another file, or save it again as a JPG or PNG." })
     } finally {
       // The preview renders a deferred copy of the draft, so it can still ask for the instant
       // preview's URL a moment after the swap. Let it settle before the URL goes away.
@@ -73,12 +79,14 @@ export function ContentControls({
   errors,
   onChange,
   socialAccounts,
+  serverMode = false,
 }: {
   config: EditorConfig
   brand: Brand
   photos: ImageAsset[]
   errors: FieldErrors
   onChange: Update
+  serverMode?: boolean
   /** The brand's Instagram and TikTok connections (null signed out or still loading). */
   socialAccounts?: SocialAccountDto[] | null
 }) {
@@ -97,7 +105,7 @@ export function ContentControls({
       if (replacing && c.cover?.src !== replacing) return {}
       return { cover: { ...image, alt: replacing && c.cover?.src === replacing ? c.cover.alt : "" } }
     })
-  })
+  }, serverMode)
 
   /* ---- Logo ---- */
   const mark: BrandMarkType = config.logo?.kind === "mark" ? config.logo.mark : brand.mark
@@ -116,7 +124,7 @@ export function ContentControls({
       if (replacing && !(c.logo?.kind === "image" && c.logo.image.src === replacing)) return {}
       return { logo: { kind: "image", image: { ...image, alt } } }
     })
-  })
+  }, serverMode)
 
   function setMark(next: Partial<BrandMarkType>) {
     const m = { ...mark, ...next }
@@ -139,7 +147,7 @@ export function ContentControls({
       <ControlGroup
         id="sf-media"
         title="Logo and cover"
-        description="Choose from your photos or upload from this computer. Your choice shows in the preview now and on your storefront once you publish. Image logos are saved, but storefronts show your text mark for now. Uploads are kept in this browser until media storage is connected."
+        description={serverMode ? "Choose a catalogue photo or upload a cover. It becomes public when you publish." : "Choose from your photos or upload from this computer. Your choice shows in the preview now and on your storefront once you publish. Image logos are saved, but storefronts show your text mark for now. Uploads are kept in this browser."}
       >
         <div className="grid gap-6">
           <div className="grid gap-2">
@@ -188,23 +196,30 @@ export function ContentControls({
 
           <div className="grid gap-2">
             <p id="sf-logo-label" className="text-[13px] leading-none font-medium text-ink">Logo</p>
-            <PhotoPicker
-              id="sf-logo"
-              labelledBy="sf-logo-label"
-              photos={photos}
-              initialCount={6}
-              value={logoValue}
-              upload={logoUpload}
-              uploading={logoUploader.busy}
-              onUpload={logoUploader.run}
-              leading={{ value: MARK_VALUE, label: `Text mark, ${mark.text}`, node: <span className="absolute inset-0 flex items-center justify-center"><BrandMark brand={{ mark, name: brand.name }} size="md" /></span> }}
-              onPick={(src) => {
-                if (src === MARK_VALUE) return onChange({ logo: { kind: "mark", mark: lastMark } })
-                if (logoUpload && src === logoUpload.src) return onChange({ logo: { kind: "image", image: logoUpload } })
-                const photo = photos.find((p) => p.src === src)
-                if (photo) onChange({ logo: { kind: "image", image: { ...photo, alt: `${brand.name} logo` } } })
-              }}
-            />
+            {serverMode ? (
+              <div className="flex items-center gap-3 rounded-md border border-line-soft bg-surface/50 p-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-md border border-line-soft bg-obsidian"><BrandMark brand={{ mark, name: brand.name }} size="md" /></span>
+                <p className="text-xs text-ink-2">Your text mark appears across the storefront.</p>
+              </div>
+            ) : (
+              <PhotoPicker
+                id="sf-logo"
+                labelledBy="sf-logo-label"
+                photos={photos}
+                initialCount={6}
+                value={logoValue}
+                upload={logoUpload}
+                uploading={logoUploader.busy}
+                onUpload={logoUploader.run}
+                leading={{ value: MARK_VALUE, label: `Text mark, ${mark.text}`, node: <span className="absolute inset-0 flex items-center justify-center"><BrandMark brand={{ mark, name: brand.name }} size="md" /></span> }}
+                onPick={(src) => {
+                  if (src === MARK_VALUE) return onChange({ logo: { kind: "mark", mark: lastMark } })
+                  if (logoUpload && src === logoUpload.src) return onChange({ logo: { kind: "image", image: logoUpload } })
+                  const photo = photos.find((p) => p.src === src)
+                  if (photo) onChange({ logo: { kind: "image", image: { ...photo, alt: `${brand.name} logo` } } })
+                }}
+              />
+            )}
 
             <AnimatePresence initial={false} mode="popLayout">
               {config.logo?.kind === "image" ? (
