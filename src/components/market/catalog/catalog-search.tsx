@@ -1,14 +1,13 @@
 "use client"
 
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { ClockCounterClockwiseIcon as Recent, MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
-import type { Product } from "@/lib/data/types"
-import { filterProducts, type CatalogState } from "./catalog-state"
+import type { CatalogState } from "./catalog-state"
 
 /* ---------- recent searches (this browser only) ---------- */
 
@@ -42,14 +41,12 @@ const coarsePointer = () => typeof window !== "undefined" && window.matchMedia("
 
 /**
  * Search within the listing, as a combobox. Typing settles for a moment before it touches the
- * URL; Enter applies at once. While the field is focused it offers completions from the
- * catalogue (each with how many pieces it would list under the current filters) or, when it is
+ * URL; Enter applies at once. While the field is focused it offers server-backed completions or, when it is
  * empty, this browser's recent searches. Arrow keys move through them, Enter picks, Escape closes
  * the list and then clears the field. If the URL changes from elsewhere (Clear all, the search
  * overlay), the field follows it without overwriting what the shopper is typing.
  *
- * Without `state` there are no completions (they count pieces, which only fits a listing of
- * pieces) and, unless a `recentKey` is given, no recent searches either: a plain search field
+ * Without `state` there are no completions and, unless a `recentKey` is given, no recent searches either: a plain search field
  * with the same look and the same settle, Enter, Escape and clear behaviour (the brand
  * directory, say). The shop's recent searches are only offered where the shop's completions are.
  */
@@ -61,7 +58,6 @@ export function CatalogSearch({
   placeholder,
   label,
   className,
-  products,
 }: {
   value: string
   onCommit: (q: string) => void
@@ -72,8 +68,6 @@ export function CatalogSearch({
   placeholder: string
   label: string
   className?: string
-  /** The listing's catalogue: suggestions are kept only when they would list something here (category, filters), with that count. */
-  products?: Product[]
 }) {
   const recentKey = recentKeyProp === undefined ? (state ? RECENT_KEY : null) : recentKeyProp
   const id = useId()
@@ -136,15 +130,7 @@ export function CatalogSearch({
     }
   }, [state, typed])
 
-  // The suggest API is marketplace-wide: keep what this listing (its category and filters) would show, with how many.
-  const suggestions = useMemo(() => {
-    if (!state || typed.length < 2 || remote?.term !== typed) return []
-    if (!products) return remote.options
-    return remote.options.flatMap((o) => {
-      const count = filterProducts({ ...state, q: o.term }, undefined, products).length
-      return count ? [{ term: o.term, count }] : []
-    })
-  }, [state, typed, remote, products])
+  const suggestions = state && typed.length >= 2 && remote?.term === typed ? remote.options : []
   const suggestionError = remoteError?.term === typed ? remoteError.message : null
   /** Nothing to offer at all: a plain search field, not a combobox. */
   const plain = !state && !recentKey

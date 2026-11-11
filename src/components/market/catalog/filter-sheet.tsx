@@ -1,12 +1,13 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { CurrencyCode } from "@/config/markets"
-import { filterProducts, panelFilterCount, type CatalogState } from "./catalog-state"
+import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
+import { catalogFacetsFromSearch, catalogSearchQuery, panelFilterCount, type CatalogFacets, type CatalogSearchResponse, type CatalogState } from "./catalog-state"
 import { FilterControls, type FilterPatch } from "./filter-controls"
 import { PhoneSheet } from "./phone-sheet"
-import type { Product } from "@/lib/data/types"
 
 /**
  * The phone filter sheet. It edits a draft: "Show N pieces" applies it, closing (drag down,
@@ -22,7 +23,7 @@ export function FilterSheet({
   onApply,
   onClear,
   currency,
-  products,
+  initialFacets,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -31,13 +32,39 @@ export function FilterSheet({
   onApply: () => void
   onClear: () => void
   currency: CurrencyCode
-  products?: Product[]
+  initialFacets: CatalogFacets
 }) {
-  const count = useMemo(() => filterProducts(draft, undefined, products).length, [draft, products])
+  const searchKey = JSON.stringify(catalogSearchQuery(draft, currency, undefined, 1))
+  const [result, setResult] = useState<{ key: string; response: CatalogSearchResponse } | null>(null)
+  const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null)
+  const [retry, setRetry] = useState(0)
+  const currentResult = result?.key === searchKey ? result.response : null
+  const count = currentResult?.total
+  const facets = currentResult ? catalogFacetsFromSearch(currentResult.facets, draft) : initialFacets
+  const searchError = requestError?.key === searchKey ? requestError.message : null
   const active = panelFilterCount(draft)
   const [priceValid, setPriceValid] = useState(true)
   // Bumped by "Clear filters" so a typed (not yet valid) range empties too.
   const [clears, setClears] = useState(0)
+
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void api<CatalogSearchResponse>("/api/search", { query: catalogSearchQuery(draft, currency, undefined, 1), signal: controller.signal })
+        .then((result) => {
+          setResult({ key: searchKey, response: result })
+          setRequestError(null)
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setRequestError({ key: searchKey, message: errorMessage(error, "Filter results couldn't be checked.") })
+        })
+    }, 120)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [open, draft, currency, retry, searchKey])
 
   return (
     <PhoneSheet
@@ -65,8 +92,8 @@ export function FilterSheet({
             Clear filters
           </Button>
           {/* Acid only while it can apply; a held footer is the quiet secondary, not a dimmed acid slab. */}
-          <Button variant={count === 0 || !priceValid ? "secondary" : "primary"} size="lg" onClick={onApply} disabled={count === 0 || !priceValid} className="tabular">
-            {!priceValid ? "Check the price range" : count === 0 ? "No pieces match" : `Show ${count} ${count === 1 ? "piece" : "pieces"}`}
+          <Button variant={count === 0 || !priceValid || count === undefined ? "secondary" : "primary"} size="lg" onClick={searchError ? () => setRetry((value) => value + 1) : onApply} disabled={count === 0 || !priceValid || (count === undefined && !searchError)} className="tabular">
+            {!priceValid ? "Check the price range" : searchError ? "Retry results" : count === undefined ? "Checking results…" : count === 0 ? "No pieces match" : `Show ${count} ${count === 1 ? "piece" : "pieces"}`}
           </Button>
         </>
       }
@@ -79,8 +106,9 @@ export function FilterSheet({
         priceMode="live"
         onPriceValidityChange={setPriceValid}
         resetKey={clears}
-        products={products}
+        facets={facets}
       />
+      {searchError ? <p role="alert" className="mt-4 text-sm text-danger">{searchError}</p> : null}
     </PhoneSheet>
   )
 }

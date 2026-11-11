@@ -3,7 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { motion } from "motion/react"
-import { ArrowUpRightIcon as ArrowUpRight, EyeIcon as Eye } from "@phosphor-icons/react"
+import { ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, EyeIcon as Eye } from "@phosphor-icons/react"
 import { Tabs as TabsPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -14,12 +14,28 @@ import { formatDateTime } from "@/components/studio/catalog/utils"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { ApiError } from "@/lib/api/client"
 import { useApi } from "@/lib/api/use-api"
 import { accountsKey, getAccounts, getStudioPosts, studioPostsKey } from "@/lib/api/social"
-import { useServerSession } from "@/lib/session/use-server-session"
+import {
+  editorConfigFromDto,
+  editorConfigToDto,
+  getStudioStorefront,
+  getStudioStorefrontVersion,
+  loadStorefrontEditorContext,
+  publishStudioStorefront,
+  restoreStudioStorefrontVersion,
+  saveStudioStorefrontDraft,
+  storefrontBrandFromApi,
+  type StorefrontDraftDto,
+  type StorefrontEditorContext,
+  type StorefrontVersionResponse,
+} from "@/lib/api/storefront"
+import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
+import type { BrandProfile } from "@/lib/api/contracts/session"
 import { storiesOf } from "@/lib/data"
 import { brandById } from "@/lib/data/brands"
-import type { StorefrontSection } from "@/lib/data/types"
+import type { Brand, Collection, Drop, Product, Story, StorefrontConfig, StorefrontSection } from "@/lib/data/types"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { ContentControls, type Update } from "./content-controls"
@@ -64,6 +80,10 @@ function withoutStaleUploads(config: EditorConfig): EditorConfig {
   return next
 }
 
+function hasTemporaryUpload(config: EditorConfig) {
+  return config.cover?.src.startsWith("blob:") || (config.logo?.kind === "image" && config.logo.image.src.startsWith("blob:"))
+}
+
 function listJoin(items: string[]) {
   if (items.length <= 1) return items.join("")
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
@@ -95,34 +115,124 @@ function useWide() {
  * and autosave to the Studio draft; publishing copies the draft to the live storefront.
  */
 export function StorefrontEditor() {
-  const ready = useCatalogReady()
+  const session = useServerSession()
+  const demoBrand = session.status === "ready" && !!session.brand?.demo && brandById.has(session.brand.brand.id)
   return (
     // From lg the editor fills the window under the Studio shell (see editorFrame).
     <div className={editorFrame}>
-      {ready ? (
-        <Editor />
+      {session.status !== "ready" ? (
+        session.status === "loading" ? (
+          <>
+            <PageHeader title={TITLE} description={DESCRIPTION} />
+            <EditorSkeleton />
+          </>
+        ) : (
+          <div className="grid gap-3 rounded-md border border-line-soft bg-card p-5" role="alert">
+            <p className="text-sm text-ink">The storefront editor couldn't load your session.</p>
+            <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => void refreshServerSession()}>Try again</Button>
+          </div>
+        )
+      ) : session.brand && !demoBrand ? (
+        <ServerEditor profile={session.brand} />
       ) : (
-        <>
-          <PageHeader title={TITLE} description={DESCRIPTION} />
-          <EditorSkeleton />
-        </>
+        <DemoEditor />
       )}
     </div>
   )
 }
 
-function Editor() {
-  const brandId = useStudio((s) => s.brandId)
+function DemoEditor() {
+  const ready = useCatalogReady()
+  const brandId = useStudio((state) => state.brandId)
   const brand = brandById.get(brandId)!
-  const storefront = useStudio((s) => s.storefront)
-  const saveDraft = useStudio((s) => s.saveStorefrontDraft)
-  const publishStorefront = useStudio((s) => s.publishStorefront)
-  const discardDraft = useStudio((s) => s.discardStorefrontDraft)
-  const studioProducts = useStudio((s) => s.products)
-  const drops = useStudio((s) => s.drops)
+  const storefront = useStudio((state) => state.storefront)
+  const products = useStudio((state) => state.products)
+  const drops = useStudio((state) => state.drops)
+  const saveDraft = useStudio((state) => state.saveStorefrontDraft)
+  const publishStorefront = useStudio((state) => state.publishStorefront)
+  const discardDraft = useStudio((state) => state.discardStorefrontDraft)
   const collections = useBrandCollections(brandId)
+  if (!ready) {
+    return (
+      <>
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <EditorSkeleton />
+      </>
+    )
+  }
+  return (
+    <Editor
+      mode="demo"
+      brandId={brandId}
+      brand={brand}
+      storefront={storefront}
+      products={products.filter((product) => product.status === "published")}
+      drops={drops}
+      collections={collections}
+      stories={storiesOf(brandId)}
+      saveLocalDraft={saveDraft}
+      publishLocalStorefront={publishStorefront}
+      discardLocalDraft={discardDraft}
+    />
+  )
+}
 
-  const products = useMemo(() => studioProducts.filter((p) => p.status === "published"), [studioProducts])
+function ServerEditor({ profile }: { profile: BrandProfile }) {
+  const context = useApi(`studio:storefront-editor:${profile.brand.id}`, () => loadStorefrontEditorContext(profile.brand.handle, profile.brand.id), { revalidateOnFocus: false })
+  if (context.error) {
+    const message = context.error instanceof ApiError ? context.error.message : "Your storefront data couldn't be loaded. Check your connection and try again."
+    return (
+      <div className="grid gap-3 rounded-md border border-line-soft bg-card p-5" role="alert">
+        <p className="text-sm text-ink">{message}</p>
+        <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => void context.revalidate()}>Try again</Button>
+      </div>
+    )
+  }
+  if (!context.data) return <EditorSkeleton />
+  const brand = storefrontBrandFromApi(context.data.published.brand, null, context.data.products, "brand")
+  return (
+    <Editor
+      key={profile.brand.id}
+      mode="server"
+      serverContext={context.data}
+      canEdit={profile.permissions.includes("content.publish")}
+      brandId={profile.brand.id}
+      brand={brand}
+      products={context.data.products}
+      drops={context.data.drops}
+      collections={context.data.collections}
+      stories={[]}
+    />
+  )
+}
+
+type EditorMode = "demo" | "server"
+
+function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefront: localStorefront, products, drops, collections, stories: providedStories, saveLocalDraft, publishLocalStorefront, discardLocalDraft }: {
+  mode: EditorMode
+  serverContext?: StorefrontEditorContext
+  canEdit?: boolean
+  brandId: string
+  brand: Brand
+  storefront?: { draft: StorefrontConfig; published: StorefrontConfig; publishedAt: string | null; savedAt: string | null }
+  products: Product[]
+  drops: Drop[]
+  collections: Collection[]
+  stories?: Story[]
+  saveLocalDraft?: (draft: StorefrontConfig) => void
+  publishLocalStorefront?: () => void
+  discardLocalDraft?: () => void
+}) {
+  const [reloadPending, setReloadPending] = useState(false)
+  const initialConfig = mode === "server"
+    ? normalize(editorConfigFromDto(serverContext!.studio.draft.config, brand), brand)
+    : withoutStaleUploads(normalize(localStorefront!.draft as EditorConfig, brand))
+  const [serverDraft, setServerDraft] = useState<StorefrontDraftDto | null>(serverContext?.studio.draft ?? null)
+  const [liveDocument, setLiveDocument] = useState(serverContext?.studio.live ?? null)
+  const [versions, setVersions] = useState(serverContext?.studio.versions ?? [])
+  const [savedConfig, setSavedConfig] = useState<EditorConfig>(initialConfig)
+  const revision = useRef(serverContext?.studio.draft.revision ?? 0)
+  const liveVersion = useRef(serverContext?.studio.live?.version ?? 0)
 
   /* ---------- Social feed preview data (§6.1): the session brand's published posts ---------- */
 
@@ -141,50 +251,87 @@ function Editor() {
   }, [session.status, session.brand, ownSession, socialPostsApi.data, socialPostsApi.error, socialAccountsApi.data])
   // Not ready: the preview's Social feed says why (it never claims the live section is hidden).
   const socialPreviewState = social.status === "ready" ? undefined : social.status
-  const stories = useMemo(() => storiesOf(brandId), [brandId])
-  const photos = useMemo(() => brandPhotos(brand, studioProducts, collections, drops, stories), [brand, studioProducts, collections, drops, stories])
+  const stories = providedStories ?? []
+  const photos = useMemo(() => brandPhotos(brand, products, collections, drops, stories), [brand, products, collections, drops, stories])
 
   /* ---------- Working copy and autosave ---------- */
 
-  const [config, setConfig] = useState<EditorConfig>(() => withoutStaleUploads(normalize(storefront.draft as EditorConfig, brand)))
+  const [config, setConfig] = useState<EditorConfig>(initialConfig)
   const latest = useRef(config)
   const timer = useRef<number | null>(null)
+  const inFlightSave = useRef<Promise<boolean> | null>(null)
+  const conflictRef = useRef(false)
   /** The last autosave failed: the edit exists only on this page until a save succeeds. */
   const [saveFailed, setSaveFailed] = useState(false)
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null)
 
-  const flush = useCallback(() => {
+  const flush = useCallback((keepalive = false): Promise<boolean> => {
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = null
-    try {
-      saveDraft(latest.current)
-      setSaveFailed(false)
-      return true
-    } catch {
-      setSaveFailed(true)
-      toast.error("Your draft couldn't be saved", { id: "sf-save-failed", description: "This browser's storage is full. Use a smaller image, or remove an upload, then save again." })
-      return false
+    if (mode === "demo") {
+      try {
+        saveLocalDraft!(withoutStaleUploads(latest.current))
+        setSaveFailed(false)
+        return Promise.resolve(true)
+      } catch {
+        setSaveFailed(true)
+        toast.error("Your draft couldn't be saved", { id: "sf-save-failed", description: "This browser's storage is full. Use a smaller image, or remove an upload, then save again." })
+        return Promise.resolve(false)
+      }
     }
-  }, [saveDraft])
+    if (conflictRef.current || hasTemporaryUpload(latest.current)) return Promise.resolve(false)
+    if (inFlightSave.current) return inFlightSave.current
+    const snapshot = normalize(withoutStaleUploads(latest.current), brand)
+    const pending = (async () => {
+      try {
+        const result = await saveStudioStorefrontDraft(editorConfigToDto(snapshot, brand), revision.current, { keepalive })
+        revision.current = result.draft.revision
+        setServerDraft(result.draft)
+        setSavedConfig(snapshot)
+        setSaveFailed(false)
+        return true
+      } catch (error) {
+        setSaveFailed(true)
+        if (error instanceof ApiError && error.status === 409) {
+          conflictRef.current = true
+          setConflictMessage(error.message)
+        } else {
+          toast.error("Your draft couldn't be saved", {
+            id: "sf-save-failed",
+            description: error instanceof ApiError ? error.message : "Check your connection and try again.",
+          })
+        }
+        return false
+      } finally {
+        inFlightSave.current = null
+        if (!conflictRef.current && !hasTemporaryUpload(latest.current) && fingerprint(latest.current) !== fingerprint(snapshot)) {
+          timer.current = window.setTimeout(() => void flush(), AUTOSAVE_MS)
+        }
+      }
+    })()
+    inFlightSave.current = pending
+    return pending
+  }, [mode, saveLocalDraft, brand])
 
   const update: Update = useCallback(
     (patch) => {
-      setConfig((prev) => {
-        const p = typeof patch === "function" ? patch(prev) : patch
-        if (!Object.keys(p).length) return prev
-        const next = normalize({ ...prev, ...p }, brand)
-        latest.current = next
-        return next
-      })
+      const current = latest.current
+      const p = typeof patch === "function" ? patch(current) : patch
+      if (!Object.keys(p).length) return
+      const next = normalize({ ...current, ...p }, brand)
+      latest.current = next
+      setConfig(next)
       if (timer.current) window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(flush, AUTOSAVE_MS)
+      if (mode === "server" && (conflictRef.current || hasTemporaryUpload(next))) return
+      timer.current = window.setTimeout(() => void flush(), AUTOSAVE_MS)
     },
-    [brand, flush],
+    [brand, flush, mode],
   )
 
-  // Nothing typed is lost: save on the way out, whether by navigation, reload or closing the tab.
+  // Nothing typed is lost: server saves use keepalive on the way out; demos persist synchronously.
   useEffect(() => {
     const onHide = () => {
-      if (timer.current) flush()
+      if (timer.current) void flush(true)
     }
     window.addEventListener("pagehide", onHide)
     window.addEventListener("beforeunload", onHide)
@@ -197,12 +344,16 @@ function Editor() {
 
   /* ---------- Where the draft stands ---------- */
 
-  const storedFp = useMemo(() => fingerprint(normalize(storefront.draft as EditorConfig, brand)), [storefront.draft, brand])
-  const live = useMemo(() => normalize(storefront.published as EditorConfig, brand), [storefront.published, brand])
+  const storedFp = useMemo(() => fingerprint(mode === "server" ? normalize(savedConfig, brand) : normalize(localStorefront!.draft as EditorConfig, brand)), [mode, savedConfig, localStorefront, brand])
+  const live = useMemo(() => {
+    if (mode === "demo") return normalize(localStorefront!.published as EditorConfig, brand)
+    const liveConfig = liveDocument?.config ?? serverContext!.studio.draft.config
+    return normalize(editorConfigFromDto(liveConfig, brand), brand)
+  }, [mode, localStorefront, liveDocument, serverContext, brand])
   const liveFp = useMemo(() => fingerprint(live), [live])
   const configFp = useMemo(() => fingerprint(config), [config])
-  const state: SaveState = configFp !== storedFp ? (saveFailed ? "unsaved" : "saving") : configFp !== liveFp ? "unpublished" : "published"
-  const hasDraftChanges = configFp !== liveFp
+  const state: SaveState = configFp !== storedFp ? (saveFailed ? "unsaved" : "saving") : (mode === "server" && !liveDocument) || configFp !== liveFp ? "unpublished" : "published"
+  const hasDraftChanges = (mode === "server" && !liveDocument) || configFp !== liveFp
 
   /* ---------- Validation: on publish, then live while fixing ---------- */
 
@@ -221,6 +372,9 @@ function Editor() {
   const [highlight, setHighlight] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historySelection, setHistorySelection] = useState<StorefrontVersionResponse | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [resetKey, setResetKey] = useState(0)
   const previewRef = useRef<HTMLDivElement>(null)
   const wide = useWide()
@@ -246,64 +400,160 @@ function Editor() {
 
   /* ---------- Actions ---------- */
 
-  // Autosave keeps the draft current; this saves now. The badge and the button's check say it worked.
   const saveNow = useAsyncAction(
-    () => {
-      if (timer.current) window.clearTimeout(timer.current)
-      timer.current = null
-      saveDraft(latest.current)
-      setSaveFailed(false)
+    async () => {
+      const saved = await flush()
+      if (!saved) throw new Error("Draft save failed")
     },
-    {
-      error: "Your draft couldn't be saved. This browser's storage is full: use a smaller image, or remove an upload, then try again.",
-      onError: () => setSaveFailed(true),
-    },
+    { errorToast: false },
   )
 
   function onSaveDraft() {
     if (state === "saving" || state === "unsaved") void saveNow.run()
   }
 
-  // Publishing goes through the shared action pattern: one run at a time, then a brief check.
-  const publish = useAsyncAction(() => {
+  const publish = useAsyncAction(async () => {
     const changed = changeSummary(config, live)
-    publishStorefront()
+    if (!(await flush())) throw new Error("Draft save failed")
+    if (mode === "demo") {
+      publishLocalStorefront!()
+    } else {
+      const publishedConfig = editorConfigToDto(normalize(withoutStaleUploads(latest.current), brand), brand)
+      const result = await publishStudioStorefront(revision.current, liveVersion.current)
+      liveVersion.current = result.version
+      setLiveDocument({ version: result.version, config: publishedConfig, publishedAt: result.publishedAt })
+      setServerDraft((current) => current ? { ...current, baseVersion: result.version, behindLive: false } : current)
+      setSavedConfig(normalize(latest.current, brand))
+      setVersions((current) => [{ version: result.version, publishedAt: result.publishedAt, note: null }, ...current.filter((v) => v.version !== result.version)].slice(0, 30))
+    }
     setSubmitted(false)
-    // Below lg the bottom bar says it in place (its badge, Publish's check, then View
-    // storefront), and a toast there would sit over that bar. From lg, say what changed.
     if (!window.matchMedia(WIDE).matches) return
     toast.success("Storefront published", {
-      description: changed.length ? `Your storefront in this browser shows the new ${listJoin(changed)}. Other shoppers see it once publishing is connected.` : "Your storefront is up to date.",
+      description: mode === "server"
+        ? changed.length ? `Your storefront is live with the new ${listJoin(changed)}.` : "Your storefront is up to date."
+        : changed.length ? `Your demo storefront was published with the new ${listJoin(changed)}.` : "Your demo storefront is up to date.",
       action: { label: "View", onClick: () => window.open(`/brands/${brand.handle}`, "_blank", "noopener,noreferrer") },
     })
+  }, {
+    errorToast: false,
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        conflictRef.current = true
+        setConflictMessage(error.message)
+      }
+      toast.error("Your storefront couldn't be published", { description: error instanceof ApiError ? error.message : "Check your connection and try again." })
+    },
   })
 
   function onPublish() {
-    if (!hasDraftChanges) return
+    if (!hasDraftChanges || !canEdit || conflictRef.current) return
     const found = validate(config, brand)
     const keys = errorOrder.filter((k) => found[k])
     if (keys.length) {
       setSubmitted(true)
       goToField(keys[0])
-      // The field opens with its message beside it and each tab counts what's left to fix.
-      // Below lg that's the whole story: a toast would cover the bottom bar.
       if (wide) toast.error(keys.length === 1 ? "Fix 1 field before publishing" : `Fix ${keys.length} fields before publishing`, { description: found[keys[0]] })
       return
     }
-    if (!flush()) return
     void publish.run()
+  }
+
+  function applyServerDraft(next: StorefrontDraftDto) {
+    const nextConfig = normalize(editorConfigFromDto(next.config, brand), brand)
+    revision.current = next.revision
+    setServerDraft(next)
+    setSavedConfig(nextConfig)
+    latest.current = nextConfig
+    setConfig(nextConfig)
+    setConflictMessage(null)
+    conflictRef.current = false
+    setSaveFailed(false)
+    setSubmitted(false)
+    setResetKey((key) => key + 1)
+  }
+
+  async function restoreVersion(version: number) {
+    if (!canEdit || conflictRef.current) return
+    try {
+      const result = await restoreStudioStorefrontVersion(version, revision.current)
+      applyServerDraft(result.draft)
+      setHistoryOpen(false)
+      setHistorySelection(null)
+      toast.success(`Version ${version} copied to your draft`, { description: "Publish the draft when you're ready to make it live." })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        conflictRef.current = true
+        setConflictMessage(error.message)
+      }
+      toast.error("That version couldn't be restored", { description: error instanceof ApiError ? error.message : "Check your connection and try again." })
+    }
+  }
+
+  async function selectVersion(version: number) {
+    setHistoryLoading(true)
+    setHistorySelection(null)
+    try {
+      setHistorySelection(await getStudioStorefrontVersion(version))
+    } catch (error) {
+      toast.error("That version couldn't be loaded", { description: error instanceof ApiError ? error.message : "Check your connection and try again." })
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  async function reloadServerDraft() {
+    setReloadPending(true)
+    try {
+      const current = await getStudioStorefront()
+      setLiveDocument(current.live)
+      liveVersion.current = current.live?.version ?? 0
+      setVersions(current.versions)
+      applyServerDraft(current.draft)
+    } catch (error) {
+      toast.error("The latest storefront couldn't be loaded", { description: error instanceof ApiError ? error.message : "Check your connection and try again." })
+    } finally {
+      setReloadPending(false)
+    }
   }
 
   function onDiscard() {
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = null
-    discardDraft()
-    latest.current = live
-    setConfig(live)
-    setSubmitted(false)
-    setSaveFailed(false)
-    setResetKey((k) => k + 1)
-    // No toast: the controls and preview go back to the live storefront and the badge reads "All changes published".
+    if (mode === "demo") {
+      discardLocalDraft!()
+      latest.current = live
+      setConfig(live)
+      setSubmitted(false)
+      setSaveFailed(false)
+      setResetKey((key) => key + 1)
+      return
+    }
+    if (liveDocument) {
+      void restoreVersion(liveDocument.version)
+    } else {
+      const defaultConfig: EditorConfig = {
+        template: "editorial",
+        accent: "violet",
+        typePreset: "condensed",
+        intro: "",
+        announcement: null,
+        sections: [
+          { id: "hero", type: "hero", enabled: true },
+          { id: "featured", type: "featured-products", enabled: true, productIds: [] },
+          { id: "collections", type: "collections", enabled: true, collectionIds: [] },
+          { id: "all", type: "all-products", enabled: true },
+        ],
+      }
+      void saveStudioStorefrontDraft(editorConfigToDto(defaultConfig, brand), revision.current)
+        .then((result) => applyServerDraft(result.draft))
+        .catch((error: unknown) => {
+          if (error instanceof ApiError && error.status === 409) {
+            conflictRef.current = true
+            setConflictMessage(error.message)
+          }
+          toast.error("Your draft couldn't be discarded", { description: error instanceof ApiError ? error.message : "Check your connection and try again." })
+        })
+    }
   }
 
   // ⌘S / Ctrl+S saves the draft.
@@ -323,14 +573,14 @@ function Editor() {
   }, [])
 
   const status = storefrontStatusMeta[state]
-  /** Phones: once everything is live (and Publish has shown its check), the bar offers the storefront instead. */
   const nothingToPublish = !hasDraftChanges && !publish.pending && !publish.succeeded
-  /** Where focus lands when the control that opened an overlay is gone or disabled: the open settings tab. */
   const toSelectedTab = () => document.querySelector<HTMLElement>('[aria-label="Settings"] [role="tab"][aria-selected="true"]')
   const onSheetCloseFocus = useReturnFocus(sheetOpen, toSelectedTab)
+  const savedAt = mode === "server" ? serverDraft?.updatedAt ?? null : localStorefront?.savedAt ?? null
+  const publishedAt = mode === "server" ? liveDocument?.publishedAt ?? null : localStorefront?.publishedAt ?? null
   const stamps = [
-    state === "unpublished" && storefront.savedAt ? `Draft saved ${formatDateTime(storefront.savedAt)}` : null,
-    storefront.publishedAt ? `Last published ${formatDateTime(storefront.publishedAt)}` : null,
+    state === "unpublished" && savedAt ? `Draft saved ${formatDateTime(savedAt)}` : null,
+    publishedAt ? `Last published ${formatDateTime(publishedAt)}` : null,
   ].filter((t): t is string => !!t)
 
   const renderer = {
@@ -352,15 +602,21 @@ function Editor() {
         actions={
           <div className="flex items-center gap-2">
             {wide ? <DeviceToggle value={device} onChange={setDevice} /> : null}
-            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={!hasDraftChanges || publish.pending} onClick={() => setDiscardOpen(true)}>
+            {mode === "server" ? (
+              <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => setHistoryOpen(true)}>
+                <History aria-hidden />
+                <span className="sr-only">Version history</span>
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={!hasDraftChanges || publish.pending || !canEdit} onClick={() => setDiscardOpen(true)}>
               Discard
             </Button>
             {/* Enabled while an edit waits for autosave (or a save failed); afterwards it rests disabled. */}
-            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={state !== "saving" && state !== "unsaved" && !saveNow.succeeded} loading={saveNow.pending} success={saveNow.succeeded} onClick={onSaveDraft}>
+            <Button type="button" variant="secondary" size="sm" className="h-10 md:h-8" disabled={!canEdit || conflictRef.current || (state !== "saving" && state !== "unsaved" && !saveNow.succeeded)} loading={saveNow.pending} success={saveNow.succeeded} onClick={onSaveDraft}>
               Save draft
             </Button>
             {/* Phones carry Publish in the bar at the bottom: one acid button on screen. */}
-            <Button type="button" variant="primary" size="sm" className="max-lg:hidden" disabled={!hasDraftChanges && !publish.succeeded} loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
+            <Button type="button" variant="primary" size="sm" className="max-lg:hidden" disabled={!canEdit || conflictRef.current || (!hasDraftChanges && !publish.succeeded)} loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
               Publish changes
             </Button>
           </div>
@@ -383,6 +639,14 @@ function Editor() {
           </Link>
         </div>
       </PageHeader>
+
+      {conflictMessage ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3">
+          <p className="min-w-0 flex-1 text-sm text-ink">{conflictMessage}</p>
+          <Button type="button" variant="secondary" size="sm" loading={reloadPending} onClick={() => void reloadServerDraft()}>Reload</Button>
+        </div>
+      ) : null}
+      {!canEdit ? <p className="text-sm text-ink-2">Your role can view this storefront but can't edit or publish it.</p> : null}
 
       <div className="grid min-h-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] xl:gap-6">
         <TabsPrimitive.Root value={tab} onValueChange={(v) => setTab(v as Tab)} asChild>
@@ -416,13 +680,14 @@ function Editor() {
               })}
             </TabsPrimitive.List>
 
-            <motion.div layoutScroll className="min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-contain">
+            <fieldset disabled={!canEdit} className="min-h-0 min-w-0 flex-1 border-0 p-0">
+            <motion.div layoutScroll className="min-h-0 lg:overflow-y-auto lg:overscroll-contain">
               {/* Not tab stops themselves: every panel opens with its own controls. */}
               <TabsPrimitive.Content value="design" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <DesignControls config={config} brandName={brand.name} cover={config.cover ?? brand.cover} onChange={update} />
               </TabsPrimitive.Content>
               <TabsPrimitive.Content value="content" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
-                <ContentControls key={resetKey} config={config} brand={brand} photos={photos} errors={errors} onChange={update} socialAccounts={social.accounts} />
+                <ContentControls key={resetKey} config={config} brand={brand} photos={photos} errors={errors} onChange={update} socialAccounts={social.accounts} serverMode={mode === "server"} />
               </TabsPrimitive.Content>
               <TabsPrimitive.Content value="sections" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">
                 <SectionsControls
@@ -442,6 +707,7 @@ function Editor() {
                 />
               </TabsPrimitive.Content>
             </motion.div>
+            </fieldset>
           </aside>
         </TabsPrimitive.Root>
 
@@ -485,7 +751,7 @@ function Editor() {
               </Link>
             </Button>
           ) : (
-            <Button type="button" variant="primary" size="sm" className="h-10" loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
+            <Button type="button" variant="primary" size="sm" className="h-10" disabled={!canEdit || conflictRef.current} loading={publish.pending} success={publish.succeeded} onClick={onPublish}>
               Publish
             </Button>
           )}
@@ -508,11 +774,46 @@ function Editor() {
         open={discardOpen}
         onOpenChange={setDiscardOpen}
         title="Discard your draft?"
-        body="Your draft goes back to what's live on your storefront now. Everything you've changed since you last published is lost."
+        body={mode === "server" ? "Your saved draft will be replaced by the current live version. Any unpublished edits will be lost." : "Your draft goes back to what's live on your storefront now. Everything you've changed since you last published is lost."}
         confirmLabel="Discard draft"
         onConfirm={onDiscard}
         returnFocus={toSelectedTab}
       />
+
+      {mode === "server" ? (
+        <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+          <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-lg">
+            <SheetHeader className="border-b border-line-soft pb-4">
+              <SheetTitle>Version history</SheetTitle>
+              <SheetDescription>Review a published version, or copy it into your draft. Restoring never publishes by itself.</SheetDescription>
+            </SheetHeader>
+            <div className="grid gap-3 py-5">
+              {versions.map((version) => (
+                <div key={version.version} className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft pb-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink">Version {version.version}{version.version === liveVersion.current ? " · Live" : ""}</p>
+                    <p className="text-xs text-ink-2">{formatDateTime(version.publishedAt)}{version.note ? ` · ${version.note}` : ""}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" size="sm" loading={historyLoading && historySelection?.version === version.version} onClick={() => void selectVersion(version.version)}>Review</Button>
+                    {canEdit ? <Button type="button" variant="secondary" size="sm" disabled={!!conflictMessage} onClick={() => void restoreVersion(version.version)}>Restore</Button> : null}
+                  </div>
+                </div>
+              ))}
+              {!versions.length ? <p className="text-sm text-ink-2">No published versions yet.</p> : null}
+              {historySelection ? (
+                <section aria-label={`Version ${historySelection.version} preview`} className="mt-3 grid gap-2 border-t border-line-soft pt-4">
+                  <h3 className="text-sm font-medium text-ink">Version {historySelection.version} preview</h3>
+                  <p className="text-xs text-ink-2">Published {formatDateTime(historySelection.publishedAt)}{historySelection.note ? ` · ${historySelection.note}` : ""}</p>
+                  <p className="text-sm text-ink-2">{historySelection.config.intro || "No introduction"}</p>
+                  <p className="text-xs text-ink-3">{historySelection.config.sections.filter((section) => section.enabled).map((section) => section.title ?? section.type).join(" · ") || "No visible sections"}</p>
+                  {canEdit ? <Button type="button" variant="primary" size="sm" className="mt-2 w-fit" disabled={!!conflictMessage} onClick={() => void restoreVersion(historySelection.version)}>Restore this version</Button> : null}
+                </section>
+              ) : null}
+            </div>
+          </SheetContent>
+        </Sheet>
+      ) : null}
     </>
   )
 }

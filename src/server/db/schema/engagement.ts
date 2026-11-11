@@ -265,7 +265,9 @@ export const searchProducts = pgTable(
     brandId: text("brand_id")
       .notNull()
       .references(() => brands.id),
+    brandHandle: text("brand_handle").notNull().default(""),
     brandName: text("brand_name").notNull(),
+    country: text("country").notNull().default(""),
     slug: text("slug"),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
@@ -279,6 +281,7 @@ export const searchProducts = pgTable(
     priceUsdMinor: integer("price_usd_minor").notNull(),
     available: integer("available").notNull().default(0),
     variantIds: text("variant_ids").array().notNull().default(raw("'{}'::text[]")),
+    sizes: text("sizes").array().notNull().default(raw("'{}'::text[]")),
     image: text("image"),
     visible: boolean("visible").notNull().default(true),
     publishedAt: tz("published_at"),
@@ -292,6 +295,8 @@ export const searchProducts = pgTable(
   (t) => [
     index("search_products_tsv_ix").using("gin", t.tsv),
     index("search_products_brand_ix").on(t.brandId),
+    index("search_products_country_ix").on(t.country),
+    index("search_products_sizes_ix").using("gin", t.sizes),
     index("search_products_category_ix").on(t.category),
     index("search_products_price_ix").on(t.priceUsdMinor),
   ],

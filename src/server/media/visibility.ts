@@ -25,11 +25,10 @@ import { mediaAssets } from "../db/schema"
  * seen unreferenced. The purge deletes post and place media 7 days after that.
  */
 /**
- * Brand image uploads that CATALOG accepts as product and collection photos (there is no
- * product_image purpose: the media purpose check constraint would need a migration). Inbox
- * attachments never qualify.
+ * Brand image uploads that CATALOG accepts as product, collection and storefront-cover photos.
+ * Inbox attachments never qualify.
  */
-export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image"] as const
+export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
 const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)
@@ -43,6 +42,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from message_attachments ma where ma.media_id = m.id)
   or exists (select 1 from catalog_product_images ci where ci.media_id = m.id)
   or exists (select 1 from catalog_collections cc where cc.image_media_id = m.id)
+  or exists (select 1 from drops d where d.image = m.id)
   or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
   or exists (
@@ -96,6 +96,10 @@ export async function refreshVisibility(mediaIds: string[]): Promise<void> {
         where ${listed("b")} and sv.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
           and sv.version = (select max(current.version) from catalog_storefront_versions current where current.brand_id = sv.brand_id)
           and sv.config ->> 'coverMediaId' = m.id)
+      or exists (
+        select 1 from drops d join brands b on b.id = d.brand_id
+        where ${listed("b")} and d.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
+          and d.status in ('scheduled', 'live', 'ended') and d.image = m.id)
     ) then 'public' else 'private' end,
     unreferenced_at = case when ${referencedAtAll} then null else coalesce(m.unreferenced_at, now()) end
     where m.id in (${sql.join(

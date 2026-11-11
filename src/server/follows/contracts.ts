@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { currencyCodes } from "@/config/markets"
+import { countryCodes, currencyCodes } from "@/config/markets"
 import { safeId } from "@/lib/api/contracts/common"
 
 /** ENGAGEMENT request contracts for follows, wishlist, search and notification preferences (zod 4, strict bodies). */
@@ -15,8 +15,12 @@ const searchMinor = z.coerce.number().int().min(0).max(1_000_000_000_000)
 export const searchQuery = z.object({
   q: z.string().max(200).optional(),
   category: safeId().optional(),
+  subcategory: z.string().max(60).optional(),
   brand: safeId().optional(),
   brandIds: z.array(safeId()).max(20).optional(),
+  brandHandles: z.string().max(1300).optional(),
+  sizes: z.string().max(300).optional(),
+  country: z.enum(countryCodes as [string, ...string[]]).optional(),
   min: searchMinor.optional(),
   max: searchMinor.optional(),
   minPrice: searchMinor.optional(),
@@ -38,6 +42,8 @@ export const searchQuery = z.object({
 export function normalizeSearchQuery(query: z.output<typeof searchQuery>) {
   return {
     brandIds: query.brandIds ?? (query.brand ? [query.brand] : undefined),
+    brandHandles: query.brandHandles?.split(",").map((handle) => handle.trim()).filter(Boolean).slice(0, 20),
+    sizes: query.sizes?.split(",").map((size) => size.trim()).filter(Boolean).slice(0, 12),
     minPrice: query.minPrice ?? query.min,
     maxPrice: query.maxPrice ?? query.max,
   }

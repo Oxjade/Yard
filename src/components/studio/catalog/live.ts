@@ -110,6 +110,9 @@ export function fromStudioCollection(dto: StudioCollectionDto, brandId: string):
       ...(dto.imageMediaId ? { mediaId: dto.imageMediaId } : {}),
     },
     productIds: dto.productIds,
+    status: dto.status === "published" ? "published" : "draft",
+    position: dto.position,
+    version: dto.version,
   }
 }
 

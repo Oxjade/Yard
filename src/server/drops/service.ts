@@ -13,6 +13,7 @@ import { newId } from "../ids"
 import { indexedProducts } from "../search"
 import { sellableVariants } from "../search/catalog-port"
 import { ingestSignal } from "../signals"
+import { refreshVisibility } from "../media/visibility"
 import type { DropCreateBody, DropUpdateBody } from "./contracts"
 import { DRAW_ALGORITHM, newDrawSeed, runDraw, winnersFor } from "./draw"
 import { accessFor, claimedUnits } from "./limits"
@@ -24,6 +25,7 @@ export type DropPhase = "draft" | "upcoming" | "entries_open" | "early_access" |
 
 const HOUR = 3_600_000
 const MAX_DURATION_MS = 30 * 24 * HOUR
+const dropImageMediaId = (image: string | null | undefined) => image && !image.startsWith("/media/") ? image : null
 
 export function phaseOf(d: DropRow, now = new Date()): DropPhase {
   if (d.status === "cancelled") return "cancelled"
@@ -388,7 +390,7 @@ export async function createDrop(actor: BrandActor, body: DropCreateBody, ipHash
     false,
   )
   if (body.access === "draw" && body.totalUnits < 1 && !body.winnersCount) throw badRequest({ totalUnits: "Set the units (or the number of winners) for a draw." })
-  return withTx(async (tx) => {
+  const created = await withTx(async (tx) => {
     const slug = await uniqueSlug(body.slug ?? slugify(body.name))
     const id = newId("drp")
     const [row] = await tx
@@ -414,6 +416,8 @@ export async function createDrop(actor: BrandActor, body: DropCreateBody, ipHash
     await writeAudit({ actor: auditActor(actor), action: "drop.create", target: row.name, subjectType: "drop", subjectId: id, brandId: actor.brandId, ipHash, meta: { access: row.access, startsAt: row.startsAt.toISOString(), products: body.productIds.length } })
     return (await dtos([row]))[0]
   })
+  await refreshVisibility([dropImageMediaId(body.image)].filter((id): id is string => !!id))
+  return created
 }
 
 function assertVersion(row: DropRow, expected: number) {
@@ -442,7 +446,7 @@ export async function updateDrop(actor: BrandActor, row: DropRow, body: DropUpda
   const pairs = body.productIds || body.variantIds ? await resolveItems(actor.brandId, body.productIds ?? (await itemsOf([row.id])).get(row.id)?.productIds ?? [], body.variantIds) : null
   if (row.status === "scheduled") await assertNoOverlap(row.id, pairs?.map((p) => p.variantId) ?? (await itemsOf([row.id])).get(row.id)?.variantIds ?? [], times)
   const timesChanged = times.startsAt.getTime() !== row.startsAt.getTime() || (times.entryClosesAt?.getTime() ?? 0) !== (row.entryClosesAt?.getTime() ?? 0)
-  return withTx(async (tx) => {
+  const updated = await withTx(async (tx) => {
     const slug = body.slug && body.slug !== row.slug ? await uniqueSlug(body.slug, row.id) : row.slug
     const [next] = await tx
       .update(drops)
@@ -474,6 +478,8 @@ export async function updateDrop(actor: BrandActor, row: DropRow, body: DropUpda
     await writeAudit({ actor: auditActor(actor), action: "drop.update", target: next.name, subjectType: "drop", subjectId: row.id, brandId: actor.brandId, ipHash, meta: { fields: Object.keys(body).filter((k) => k !== "expectedVersion") } })
     return (await dtos([next]))[0]
   })
+  await refreshVisibility([row.image, body.image].map(dropImageMediaId).filter((id): id is string => !!id))
+  return updated
 }
 
 export async function scheduleDrop(actor: BrandActor, row: DropRow, expectedVersion: number, ipHash: string | null) {
@@ -483,7 +489,7 @@ export async function scheduleDrop(actor: BrandActor, row: DropRow, expectedVers
   const items = (await itemsOf([row.id])).get(row.id)
   if (!items?.variantIds.length) throw rule("Add products before scheduling.")
   await assertNoOverlap(row.id, items.variantIds, times)
-  return withTx(async (tx) => {
+  const scheduled = await withTx(async (tx) => {
     const seed = row.access === "draw" ? newDrawSeed() : null
     const [next] = await tx
       .update(drops)
@@ -494,6 +500,8 @@ export async function scheduleDrop(actor: BrandActor, row: DropRow, expectedVers
     await writeAudit({ actor: auditActor(actor), action: "drop.schedule", target: next.name, subjectType: "drop", subjectId: row.id, brandId: actor.brandId, ipHash, meta: { startsAt: next.startsAt.toISOString(), access: next.access, seedHash: next.drawSeedHash } })
     return (await dtos([next]))[0]
   })
+  await refreshVisibility([dropImageMediaId(row.image)].filter((id): id is string => !!id))
+  return scheduled
 }
 
 /** Back to draft before anything has started (no entries yet). */
@@ -504,7 +512,7 @@ export async function unscheduleDrop(actor: BrandActor, row: DropRow, expectedVe
   const d = await db()
   const [e] = await d.select({ n: count() }).from(dropEntries).where(eq(dropEntries.dropId, row.id))
   if ((e?.n ?? 0) > 0) throw rule("Shoppers have entered this draw; cancel it instead.")
-  return withTx(async (tx) => {
+  const unscheduled = await withTx(async (tx) => {
     const [next] = await tx
       .update(drops)
       .set({ status: "draft", drawSeed: null, drawSeedHash: null, reminderSentAt: null, earlyAccessSentAt: null, version: row.version + 1, updatedAt: new Date() })
@@ -514,12 +522,14 @@ export async function unscheduleDrop(actor: BrandActor, row: DropRow, expectedVe
     await writeAudit({ actor: auditActor(actor), action: "drop.unschedule", target: next.name, subjectType: "drop", subjectId: row.id, brandId: actor.brandId, ipHash })
     return (await dtos([next]))[0]
   })
+  await refreshVisibility([dropImageMediaId(row.image)].filter((id): id is string => !!id))
+  return unscheduled
 }
 
 export async function cancelDrop(actor: BrandActor, row: DropRow, expectedVersion: number, ipHash: string | null) {
   assertVersion(row, expectedVersion)
   if (row.status === "ended" || row.status === "cancelled") throw rule("This drop is already over.")
-  return withTx(async (tx) => {
+  const cancelled = await withTx(async (tx) => {
     const [next] = await tx
       .update(drops)
       .set({ status: "cancelled", endedAt: new Date(), version: row.version + 1, updatedAt: new Date() })
@@ -534,6 +544,8 @@ export async function cancelDrop(actor: BrandActor, row: DropRow, expectedVersio
     await writeAudit({ actor: auditActor(actor), action: "drop.cancel", target: next.name, subjectType: "drop", subjectId: row.id, brandId: actor.brandId, ipHash })
     return (await dtos([next]))[0]
   })
+  await refreshVisibility([dropImageMediaId(row.image)].filter((id): id is string => !!id))
+  return cancelled
 }
 
 /** Runs the draw now (only once entries have closed; the scheduler normally does this). */

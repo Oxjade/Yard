@@ -22,6 +22,7 @@ export type SearchProductDoc = {
   description?: string | null
   category?: string | null
   subcategory?: string | null
+  sizes?: string[]
   tags?: string[]
   priceMinor: number
   compareAtMinor?: number | null
@@ -70,6 +71,7 @@ export function sampleProductDoc(productId: string): SearchProductDoc | null {
     description: p.description,
     category: p.category,
     subcategory: p.subcategory,
+    sizes: [...new Set(p.variants.filter((v) => Math.max(0, v.stock - v.reserved) > 0 && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))],
     tags: p.tags,
     priceMinor: p.price,
     compareAtMinor: p.compareAt ?? null,

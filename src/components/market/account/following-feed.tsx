@@ -207,7 +207,7 @@ export function FollowingFeed() {
     <>
       {header}
       <YouNav className="mt-8" />
-      <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-14 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-14 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">
           <ChipRadioGroup label="Show updates" className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
             {(Object.keys(filterLabels) as Filter[]).map((k) => (
@@ -305,23 +305,23 @@ export function FollowingFeed() {
           </AnimatePresence>
         </div>
 
-        <aside className="grid content-start gap-10 lg:sticky lg:top-28 lg:self-start">
-          <section aria-labelledby="followed-title">
+        <aside className="grid min-w-0 content-start gap-10 lg:sticky lg:top-28 lg:self-start">
+          <section aria-labelledby="followed-title" className="min-w-0">
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 id="followed-title" className="text-sm font-medium text-ink">You follow</h2>
               <span className="text-xs text-ink-3 tabular">{followedBrands.length}</span>
             </div>
-            <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 sm:grid-cols-2 lg:grid-cols-1">
               {rowBrands.map((b) => (
                 <BrandCard key={b.id} brand={b} variant="row" />
               ))}
             </div>
           </section>
           {suggested.length ? (
-            <section aria-labelledby="suggested-title">
+            <section aria-labelledby="suggested-title" className="min-w-0">
               <h2 id="suggested-title" className="mb-1 text-sm font-medium text-ink">Suggested for you</h2>
               <p className="mb-3 text-xs text-ink-2">From your interests and fast-growing studios.</p>
-              <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 sm:grid-cols-2 lg:grid-cols-1">
                 {suggested.map((b) => (
                   <BrandCard key={b.id} brand={b} variant="row" />
                 ))}

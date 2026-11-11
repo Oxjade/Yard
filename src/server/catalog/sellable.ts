@@ -101,6 +101,7 @@ export async function getProductForSearch(productId: string): Promise<{
   description: string
   category: string
   subcategory: string | null
+  sizes: string[]
   tags: string[]
   priceMinor: number
   compareAtMinor: number | null
@@ -121,7 +122,7 @@ export async function getProductForSearch(productId: string): Promise<{
   if (!row) return null
   const p = row.p
   const [variants, [img], [pub]] = await Promise.all([
-    d.select({ id: catalogVariants.id, onHand: catalogVariants.onHand, held: catalogVariants.held }).from(catalogVariants).where(and(eq(catalogVariants.productId, p.id), eq(catalogVariants.status, "active"))),
+    d.select({ id: catalogVariants.id, options: catalogVariants.options, onHand: catalogVariants.onHand, held: catalogVariants.held }).from(catalogVariants).where(and(eq(catalogVariants.productId, p.id), eq(catalogVariants.status, "active"))),
     d.select({ mediaId: catalogImages.mediaId, path: catalogImages.path }).from(catalogImages).where(eq(catalogImages.productId, p.id)).orderBy(asc(catalogImages.position)).limit(1),
     d.select({ id: catalogProducts.id }).from(catalogProducts).innerJoin(brands, eq(brands.id, catalogProducts.brandId)).where(and(eq(catalogProducts.id, p.id), productPublicWhere())).limit(1),
   ])
@@ -133,6 +134,7 @@ export async function getProductForSearch(productId: string): Promise<{
     description: p.description,
     category: p.categorySlug,
     subcategory: p.subcategory,
+    sizes: [...new Set(variants.filter((v) => v.onHand > v.held && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))],
     tags: p.tags,
     priceMinor: p.priceMinor,
     compareAtMinor: p.compareAtMinor,

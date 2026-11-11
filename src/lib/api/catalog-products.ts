@@ -1,4 +1,5 @@
 import type { CurrencyCode, CountryCode } from "@/config/markets"
+import { api } from "@/lib/api/client"
 import { brandByHandle } from "@/lib/data/brands"
 import type { Brand, CategorySlug, Product, ProductBadge, ProductOption } from "@/lib/data/types"
 
@@ -16,7 +17,7 @@ export type PublicCatalogProduct = {
   priceMinor: number
   compareAtMinor: number | null
   currency: string
-  images: { src: string; alt: string; width: number | null; height: number | null }[]
+  images: { src: string; alt: string; width: number | null; height: number | null; mediaId?: string | null }[]
   options: { name: string; values: { value: string; hex?: string }[] }[]
   variants: { id: string; sku: string; options: Record<string, string>; priceMinor: number; available: number }[]
   processingDays: [number, number] | null
@@ -43,7 +44,7 @@ export function toCatalogProduct(row: PublicCatalogProduct): Product {
     price: row.priceMinor,
     ...(row.compareAtMinor == null ? {} : { compareAt: row.compareAtMinor }),
     currency: row.currency as CurrencyCode,
-    images: row.images.map((image) => ({ ...image, width: image.width ?? 1000, height: image.height ?? 1250 })),
+    images: row.images.map(({ mediaId, ...image }) => ({ ...image, ...(mediaId ? { mediaId } : {}), width: image.width ?? 1000, height: image.height ?? 1250 })),
     options: row.options.map((option) => ({ name: option.name, values: option.values.map(({ value, hex }) => (option.name === "Colour" ? { name: value, hex: hex ?? "#777777" } : value)) })) as ProductOption[],
     variants: row.variants.map((variant) => ({ ...variant, stock: variant.available, reserved: 0 })),
     badges: row.badges as ProductBadge[],
@@ -110,4 +111,17 @@ export async function loadPublicCatalog(): Promise<Product[]> {
   } while (offset <= 5000)
 
   return products
+}
+
+/** Hydrate a bounded search page while preserving the search index's ranking order. */
+export async function loadPublicProductsByIds(ids: string[], signal?: AbortSignal): Promise<Product[]> {
+  if (!ids.length) return []
+  const query = new URLSearchParams()
+  ids.forEach((id) => query.append("ids", id))
+  const page = await api<PublicCatalogPage>(`/api/catalog/products?${query}`, { signal })
+  const productsById = new Map(page.products.map((product) => [product.id, toCatalogProduct(product)]))
+  return ids.flatMap((id) => {
+    const product = productsById.get(id)
+    return product ? [product] : []
+  })
 }

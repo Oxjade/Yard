@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation"
 import { getBrand } from "@/lib/data"
+import { HttpError } from "@/server/http/errors"
+import { publicStorefront } from "@/server/catalog/public"
 
 /**
  * Checks the handle before anything streams, so an unknown storefront still answers with a
@@ -10,6 +12,13 @@ export const instant = false
 
 export default async function BrandLayout({ children, params }: LayoutProps<"/brands/[handle]">) {
   const { handle } = await params
-  if (!getBrand(handle)) notFound()
+  if (!getBrand(handle)) {
+    try {
+      await publicStorefront(handle)
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) notFound()
+      throw error
+    }
+  }
   return children
 }

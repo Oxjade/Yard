@@ -665,41 +665,63 @@ async function main() {
     check("collections: viewer can list (200) but not create (403)", (await get("/api/studio/catalog/collections", { cookie: VIEWER.cookie })).status === 200 && (await post("/api/studio/catalog/collections", { name: `${TAG} c` }, { cookie: VIEWER.cookie })).status === 403)
     check("collections: no session is 401", (await get("/api/studio/catalog/collections")).status === 401)
     check("collections: name too short is 400", (await post("/api/studio/catalog/collections", { name: "x" }, { cookie: A.cookie })).status === 400)
-    const cc = await post("/api/studio/catalog/collections", { name: `${TAG} Capsule`, description: "kit" }, { cookie: A.cookie })
+    check("collections: create requires an idempotency key", (await post("/api/studio/catalog/collections", { name: `${TAG} no-key` }, { cookie: A.cookie })).status === 400)
+    const createBody = { name: `${TAG} Capsule`, description: "kit" }
+    const createHeaders = { headers: { "Idempotency-Key": `${TAG}_create_1` } }
+    const cc = await post("/api/studio/catalog/collections", createBody, { cookie: A.cookie, ...createHeaders })
     const C = cc.body?.collection
     if (C) created.collections.push(C.id)
     check("collections: create → 201 with a handle from the name", cc.status === 201 && /^t-v3-catalog-/.test(C?.handle ?? "") && C.status === "published", brief(cc).slice(0, 160))
     if (C) {
-      const dup = await post("/api/studio/catalog/collections", { name: `${TAG} Capsule 2`, handle: C.handle }, { cookie: A.cookie })
+      const replay = await post("/api/studio/catalog/collections", createBody, { cookie: A.cookie, ...createHeaders })
+      check("collections: retrying the same create key returns the original row", replay.status === 201 && replay.body?.collection?.id === C.id)
+      const parallelHeaders = { headers: { "Idempotency-Key": `${TAG}_parallel` } }
+      const parallelBody = { name: `${TAG} Concurrent`, description: "same request" }
+      const [parallelA, parallelB] = await Promise.all([
+        post("/api/studio/catalog/collections", parallelBody, { cookie: A.cookie, ...parallelHeaders }),
+        post("/api/studio/catalog/collections", parallelBody, { cookie: A.cookie, ...parallelHeaders }),
+      ])
+      if (parallelA.body?.collection) created.collections.push(parallelA.body.collection.id)
+      check("collections: concurrent same-key creates return one row", parallelA.status === 201 && parallelB.status === 201 && parallelA.body?.collection?.id === parallelB.body?.collection?.id, `${brief(parallelA)} / ${brief(parallelB)}`)
+      const dup = await post("/api/studio/catalog/collections", { name: `${TAG} Capsule 2`, handle: C.handle }, { cookie: A.cookie, headers: { "Idempotency-Key": `${TAG}_create_2` } })
       check("collections: an explicit handle already used by the brand is 400", dup.status === 400)
-      const auto = await post("/api/studio/catalog/collections", { name: `${TAG} Capsule` }, { cookie: A.cookie })
+      const auto = await post("/api/studio/catalog/collections", { name: `${TAG} Capsule` }, { cookie: A.cookie, headers: { "Idempotency-Key": `${TAG}_create_3` } })
       if (auto.body?.collection) created.collections.push(auto.body.collection.id)
       check("collections: the same name gets a suffixed handle", auto.status === 201 && auto.body.collection.handle === `${C.handle}-2`, auto.body?.collection?.handle)
-      check("tenancy: brand B PATCH of brand A's collection is 404", (await patch(`/api/studio/catalog/collections/${C.id}`, { name: `${TAG} hijack` }, { cookie: B.cookie })).status === 404)
-      check("tenancy: brand B PUT products into brand A's collection is 404", (await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [] }, { cookie: B.cookie })).status === 404)
-      check("tenancy: brand B DELETE of brand A's collection is 404", (await del(`/api/studio/catalog/collections/${C.id}`, { cookie: B.cookie })).status === 404)
+      check("tenancy: brand B PATCH of brand A's collection is 404", (await patch(`/api/studio/catalog/collections/${C.id}`, { name: `${TAG} hijack`, expectedVersion: C.version }, { cookie: B.cookie })).status === 404)
+      check("tenancy: brand B PUT products into brand A's collection is 404", (await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [], expectedVersion: C.version }, { cookie: B.cookie })).status === 404)
+      check("tenancy: brand B DELETE of brand A's collection is 404", (await del(`/api/studio/catalog/collections/${C.id}`, { cookie: B.cookie, body: { expectedVersion: C.version } })).status === 404)
       const bList = await get("/api/catalog/products?brand=b_null_form&limit=1")
       const bProduct = bList.body?.products?.[0]?.id
-      const foreign = await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [P.id, bProduct ?? "p_x"] }, { cookie: A.cookie })
+      const foreign = await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [P.id, bProduct ?? "p_x"], expectedVersion: C.version }, { cookie: A.cookie })
       check("tenancy: brand A can't put brand B's product in its collection (400)", foreign.status === 400 && !!foreign.body?.error?.fields?.["productIds.1"], brief(foreign).slice(0, 160))
-      const setp = await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [P.id] }, { cookie: A.cookie })
-      check("collections: PUT products sets the ordered list", setp.status === 200 && JSON.stringify(setp.body.collection.productIds) === JSON.stringify([P.id]))
+      const invalidPatch = await patch(`/api/studio/catalog/collections/${C.id}`, { name: `${TAG} rejected`, productIds: [P.id, bProduct ?? "p_x"], expectedVersion: C.version }, { cookie: A.cookie })
+      const afterInvalidPatch = await get("/api/studio/catalog/collections", { cookie: A.cookie })
+      const unchanged = afterInvalidPatch.body?.collections?.find((collection) => collection.id === C.id)
+      check("collections: invalid atomic PATCH rolls back metadata and version", invalidPatch.status === 400 && unchanged?.name === C.name && unchanged?.version === C.version, brief(invalidPatch).slice(0, 160))
+      check("collections: update requires an expected version", (await patch(`/api/studio/catalog/collections/${C.id}`, { name: `${TAG} missing version` }, { cookie: A.cookie })).status === 400)
+      check("collections: product order requires an expected version", (await put(`/api/studio/catalog/collections/${C.id}/products`, { productIds: [] }, { cookie: A.cookie })).status === 400)
+      check("collections: delete requires an expected version", (await del(`/api/studio/catalog/collections/${C.id}`, { cookie: A.cookie })).status === 400)
+      const setp = await patch(`/api/studio/catalog/collections/${C.id}`, { description: "ordered kit", productIds: [P.id], expectedVersion: C.version }, { cookie: A.cookie })
+      check("collections: PATCH saves metadata and product order in one version", setp.status === 200 && setp.body.collection.description === "ordered kit" && JSON.stringify(setp.body.collection.productIds) === JSON.stringify([P.id]) && setp.body.collection.version === C.version + 1)
+      const cv = setp.body.collection.version
+      check("collections: stale collection update is 409", (await patch(`/api/studio/catalog/collections/${C.id}`, { name: `${TAG} stale`, expectedVersion: C.version }, { cookie: A.cookie })).status === 409)
       const pc = await get(`/api/catalog/storefronts/b_lagos_static/collections/${C.handle}`)
       check("public: a published collection shows its public products", pc.status === 200 && pc.body.collection.productIds.includes(P.id), brief(pc).slice(0, 160))
       const byCol = await get(`/api/catalog/products?collection=${C.id}`)
       check("public: products?collection= filters by the collection", byCol.status === 200 && byCol.body.total === 1 && byCol.body.products[0].id === P.id)
       const studioCol = (await get(`/api/studio/catalog/products/${P.id}`, { cookie: A.cookie })).body?.product
       check("studio: the product knows its collection", studioCol?.collectionIds?.includes(C.id))
-      const draft = await patch(`/api/studio/catalog/collections/${C.id}`, { status: "draft" }, { cookie: A.cookie })
+      const draft = await patch(`/api/studio/catalog/collections/${C.id}`, { status: "draft", expectedVersion: cv }, { cookie: A.cookie })
       check("collections: PATCH status draft", draft.status === 200 && draft.body.collection.status === "draft")
       check("public: a draft collection is 404", (await get(`/api/catalog/storefronts/b_lagos_static/collections/${C.id}`)).status === 404)
       check("public: products?collection= ignores a draft collection", (await get(`/api/catalog/products?collection=${C.id}`)).body?.total === 0)
-      const unknownField = await patch(`/api/studio/catalog/collections/${C.id}`, { brandId: "b_null_form" }, { cookie: A.cookie })
+      const unknownField = await patch(`/api/studio/catalog/collections/${C.id}`, { brandId: "b_null_form", expectedVersion: draft.body.collection.version }, { cookie: A.cookie })
       check("collections: PATCH with an unknown field is 400", unknownField.status === 400, brief(unknownField).slice(0, 120))
-      const rm = await del(`/api/studio/catalog/collections/${C.id}`, { cookie: A.cookie })
+      const rm = await del(`/api/studio/catalog/collections/${C.id}`, { cookie: A.cookie, body: { expectedVersion: draft.body.collection.version } })
       check("collections: DELETE removes it; the product stays", rm.status === 200 && (await get(`/api/studio/catalog/products/${P.id}`, { cookie: A.cookie })).body?.product?.collectionIds?.length === 0)
       created.collections = created.collections.filter((x) => x !== C.id)
-      check("collections: deleting again is 404", (await del(`/api/studio/catalog/collections/${C.id}`, { cookie: A.cookie })).status === 404)
+      check("collections: deleting again is 404", (await del(`/api/studio/catalog/collections/${C.id}`, { cookie: A.cookie, body: { expectedVersion: draft.body.collection.version } })).status === 404)
     }
   }
 
@@ -1009,7 +1031,7 @@ async function cleanup() {
         await del(`/api/studio/catalog/products/${p.id}?expectedVersion=${p.version}`, { cookie: who.cookie })
       }
       const cols = await get("/api/studio/catalog/collections", { cookie: who.cookie })
-      for (const c of cols.body?.collections ?? []) if (c.name.includes(TAG)) await del(`/api/studio/catalog/collections/${c.id}`, { cookie: who.cookie })
+      for (const c of cols.body?.collections ?? []) if (c.name.includes(TAG)) await del(`/api/studio/catalog/collections/${c.id}`, { cookie: who.cookie, body: { expectedVersion: c.version } })
     }
     const left = await get(`/api/studio/catalog/products?q=${TAG}&status=published`, { cookie: A.cookie })
     check("cleanup: no product of this run stays published in the seeded brand", (left.body?.products ?? []).length === 0)

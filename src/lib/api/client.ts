@@ -21,6 +21,7 @@ export class ApiError extends Error {
 export type ApiInit<T> = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
   body?: unknown
+  headers?: Record<string, string>
   query?: Record<string, string | number | boolean | undefined | null>
   signal?: AbortSignal
   schema?: z.ZodType<T>
@@ -52,7 +53,7 @@ export async function api<T = unknown>(path: string, init: ApiInit<T> = {}): Pro
     else init.signal.addEventListener("abort", onAbort, { once: true })
   }
   inflight.add(controller)
-  const headers: Record<string, string> = { "X-Yard-Client": "1", Accept: "application/json" }
+  const headers: Record<string, string> = { ...init.headers, "X-Yard-Client": "1", Accept: "application/json" }
   if (init.body !== undefined) headers["Content-Type"] = "application/json"
   try {
     let res: Response
