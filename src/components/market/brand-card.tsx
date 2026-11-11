@@ -39,7 +39,7 @@ export function BrandCard({
     stat === "growth"
       ? `+${Math.round(brand.followerGrowth30d * 100)}% followers in 30 days`
       : stat === "joined"
-        ? `Joined ${new Date(brand.joinedAt).toLocaleDateString("en-GB", { month: "long", day: "numeric" })}`
+        ? `Joined ${new Date(brand.joinedAt).toLocaleDateString("en-GB", { month: "long", day: "numeric", timeZone: "UTC" })}`
         : `${formatNumber(brand.followers, { compact: true })} followers`
 
   if (variant === "row") {

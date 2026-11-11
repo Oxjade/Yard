@@ -7,3 +7,8 @@ import { createCn } from "cn/config"
 export const cn = createCn({
   extend: { classGroups: { "font-size": [{ text: ["display-sm", "display-md", "display-lg", "display-xl", "display-2xl"] }] } },
 })
+
+/** A count with the noun that agrees with it: "1 piece", "12 pieces", "1,200 units". */
+export function pluralize(n: number, one: string, many = `${one}s`) {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`
+}

@@ -11,7 +11,7 @@ import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { brandHref } from "@/lib/api/catalog-products"
 import { dropAccessForButton, dropActionMode, dropImageSrc, dropPhaseAt, isApiImage, type DropPhaseDto, type PublicDropDto } from "@/lib/api/drops"
-import { cn } from "@/lib/utils"
+import { cn, pluralize } from "@/lib/utils"
 import { NotifyButton } from "./notify-button"
 import { SectionHeader } from "./section-header"
 
@@ -174,7 +174,7 @@ export function LiveDropCard({ drop, now, hydrated }: { drop: PublicDropDto; now
   const drawWaiting = drop.access === "draw" && phase === "upcoming" && !!drop.entryOpensAt
   const status = phase === "entries_open" ? "Entries open" : phase === "early_access" ? "Early access" : winners ? "Winners buying" : phase === "live" ? "Live now" : phase === "ended" ? (drop.access === "draw" ? "Draw closed" : "Ended") : "Upcoming"
   const timing =
-    phase === "live" ? `${winners ? "Winners can buy until" : "Closes"} ${displayTime(drop.endsAt, hydrated)}`
+    phase === "live" ? `${winners ? "Winners and the waitlist can buy until" : "Closes"} ${displayTime(drop.endsAt, hydrated)}`
     : phase === "ended" ? `Closed ${displayTime(drop.endsAt, hydrated)}`
     : phase === "entries_open" ? `Entries close ${displayTime(drop.entryClosesAt ?? drop.startsAt, hydrated)}`
     : drawWaiting ? `Entries open ${displayTime(drop.entryOpensAt!, hydrated)}`
@@ -196,7 +196,7 @@ export function LiveDropCard({ drop, now, hydrated }: { drop: PublicDropDto; now
         <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm break-words text-ink hover:text-ink/80">{drop.name}</Link>
         <p className="line-clamp-2 text-sm leading-relaxed text-ink-2">{drop.description}</p>
         <div className="mt-auto border-t border-line-soft pt-3">
-          <p className="text-xs text-ink-3">{accessLabel(drop.access)} · {drop.totalUnits} pieces · limit {drop.limitPerCustomer}</p>
+          <p className="text-xs text-ink-3">{accessLabel(drop.access)} · {pluralize(drop.totalUnits, "piece")} · limit {drop.limitPerCustomer}</p>
           <p className="mt-1 text-xs text-ink-2">{timing}{hydrated ? " · your time" : ""}</p>
           <div className="mt-4 flex min-w-0 justify-end">
             {mode ? <NotifyButton drop={{ id: drop.id, access: dropAccessForButton(drop.access) }} mode={mode} size="sm" />

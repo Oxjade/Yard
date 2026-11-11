@@ -5,6 +5,7 @@ import { CheckIcon, PlusIcon, ShoppingBagOpenIcon } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { ChipRadioGroup } from "@/components/market/catalog/chip"
 import { useDropClock } from "@/components/market/editorial/use-drop-phase"
+import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { availableStock } from "@/lib/data/products"
@@ -76,7 +77,7 @@ function closedWords(closed: Closed) {
 
 /** Quick add: one tap when there is one variant; otherwise a small size/colour picker. */
 export function QuickAdd({ product, className, addBlocked }: Props) {
-  const drop = dropOf(product)
+  const drop = dropOf(product, usePageSampleDataState())
   if (drop && addBlocked === undefined) return <DropQuickAdd product={product} className={className} drop={drop} />
   if (drop && addBlocked !== undefined) return <AppliedDropQuickAdd product={product} className={className} drop={drop} addBlocked={addBlocked} />
   return <QuickAddButton product={product} className={className} closed={addBlocked ? { ...addBlocked, label: closedLabel(addBlocked.reason, null, null) } : undefined} />

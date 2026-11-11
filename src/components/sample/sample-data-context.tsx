@@ -20,3 +20,13 @@ export function usePageSampleData(): boolean {
   const fromSession = useServerSession((s) => s.sampleData === true)
   return fromServer ?? fromSession
 }
+
+/**
+ * The same switch, but null while it is still unknown (no provider, /api/session not answered).
+ * For code that must not guess either way: a sample lookup skips only once it is known to be off.
+ */
+export function usePageSampleDataState(): boolean | null {
+  const fromServer = useContext(SampleDataContext)
+  const fromSession = useServerSession((s) => s.sampleData)
+  return fromServer ?? fromSession
+}

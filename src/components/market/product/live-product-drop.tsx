@@ -55,12 +55,12 @@ export function LiveProductDrop({ slug }: { slug: string }) {
   if (phase === "ended") return null
   const mode = dropActionMode(drop, phase)
   const status = phase === "entries_open" ? "Entries open" : phase === "early_access" ? "Early access" : phase === "live" ? (drop.access === "draw" ? "Winners buying" : "Live now") : "Upcoming"
+  const won = me?.entry?.status === "won"
   const timing =
     drop.access === "draw" && phase === "upcoming" && drop.entryOpensAt ? `Entries open ${show(drop.entryOpensAt, hydrated)}`
     : phase === "entries_open" ? `Entries close ${show(drop.entryClosesAt ?? drop.startsAt, hydrated)}`
-    : phase === "live" ? `${drop.access === "draw" ? "Winners can buy until" : "Closes"} ${show(drop.endsAt, hydrated)}`
+    : phase === "live" ? `${drop.access === "draw" ? (won ? "Last chance for the waitlist:" : "Winners and the waitlist can buy until") : "Closes"} ${show(drop.endsAt, hydrated)}`
     : `Releases ${show(drop.startsAt, hydrated)}`
-  const won = me?.entry?.status === "won"
 
   return (
     <section aria-labelledby="pdp-live-drop-title" className="rounded-lg border border-line bg-card p-4 sm:p-5">
@@ -72,8 +72,8 @@ export function LiveProductDrop({ slug }: { slug: string }) {
         </Link>
       </div>
       <h2 id="pdp-live-drop-title" className="mt-4 text-base font-medium break-words text-ink">{drop.name}</h2>
+      {won && me?.canBuy && me.entry?.windowEndsAt ? <p className="mt-1 text-sm text-ink">You won the draw. Buy by {show(me.entry.windowEndsAt, hydrated)}.</p> : null}
       <p className="mt-1 text-sm text-ink-2">{timing}</p>
-      {won && me?.canBuy && me.entry?.windowEndsAt ? <p className="mt-3 text-sm text-ink">You won the draw. Buy by {show(me.entry.windowEndsAt, hydrated)}.</p> : null}
       {me && !me.canBuy && me.reason ? <p role="status" className="mt-3 border-l-2 border-line py-1 pl-3 text-sm text-ink-2">{me.reason}</p> : null}
       {me?.entry && !won ? <p className="mt-2 text-xs text-ink-3">Your draw entry: {dropEntryStatus(me.entry.status).label}</p> : null}
       {mode ? (

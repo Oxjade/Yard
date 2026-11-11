@@ -15,6 +15,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { loadPublicProductsByIds, brandHref } from "@/lib/api/catalog-products"
 import { dropAccessForButton, dropActionMode, dropEntryStatus, dropImageSrc, dropPhaseAt, isApiImage, type DropPhaseDto, type PublicDropDetailDto, type PublicDrawInfoDto } from "@/lib/api/drops"
 import type { Product } from "@/lib/data/types"
+import { pluralize } from "@/lib/utils"
 
 type DetailState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; detail: PublicDropDetailDto; products: Product[]; draw: PublicDrawInfoDto | null; phase: DropPhaseDto }
 
@@ -86,6 +87,8 @@ export function LiveDropDetail({ slug }: { slug: string }) {
   const winnersWindow = current === "live" && drop.access === "draw"
   const live = current === "live" && drop.access !== "draw"
   const ended = current === "ended"
+  const entry = me?.entry ?? null
+  const winner = entry?.status === "won"
   const drawWaiting = drop.access === "draw" && current === "upcoming" && !!drop.entryOpensAt && Date.parse(drop.entryOpensAt) > (now ?? 0)
   const timing =
     drawWaiting ? `Entries open ${dateLabel(drop.entryOpensAt!, hydrated)}`
@@ -93,15 +96,16 @@ export function LiveDropDetail({ slug }: { slug: string }) {
     : entriesOpen ? `Entries close ${dateLabel(drop.entryClosesAt ?? drop.startsAt, hydrated)}`
     : earlyAccess ? `Early access · public release ${dateLabel(drop.startsAt, hydrated)}`
     : live ? `Closes ${dateLabel(drop.endsAt, hydrated)}`
-    : winnersWindow ? `Winners can buy until ${dateLabel(drop.endsAt, hydrated)}`
+    // The drop's end covers the whole draw window, the waitlist's turns included. A winner sees
+    // their own deadline above ("Buy your piece by …"), so for them this line is about the
+    // waitlist's last chance, not a later deadline of theirs.
+    : winnersWindow ? `${winner ? "Last chance for the waitlist:" : "Winners and the waitlist can buy until"} ${dateLabel(drop.endsAt, hydrated)}`
     : `Released ${dateLabel(drop.startsAt, hydrated)}`
   const countdown = drawWaiting ? Date.parse(drop.entryOpensAt!) - (now ?? 0) : current === "upcoming" ? startsAt - (now ?? startsAt) : entriesOpen ? closesAt - (now ?? closesAt) : null
   const countdownLabel = drawWaiting ? "Entries open in" : current === "upcoming" ? (drop.access === "draw" ? "Entries close in" : "Opens in") : "Entries close in"
   const badge = entriesOpen ? "Entries open" : earlyAccess ? "Early access" : live ? "Live now" : winnersWindow ? "Winners buying" : ended ? (drop.access === "draw" ? "Draw closed" : "Ended") : "Upcoming"
   const mode = dropActionMode(drop, current)
-  const entry = me?.entry ?? null
   const entryLabel = entry ? dropEntryStatus(entry.status).label : null
-  const winner = entry?.status === "won"
   const windowOpens = entry?.windowOpensAt ? Date.parse(entry.windowOpensAt) : null
   const src = dropImageSrc(drop.image)
   const reload = () => setRefresh((value) => value + 1)
@@ -147,7 +151,7 @@ export function LiveDropDetail({ slug }: { slug: string }) {
               {entry && entryLabel && !winner ? <p className="text-xs text-ink-3">Your draw entry: {entryLabel}{entry.rank ? ` · position ${entry.rank}` : ""}</p> : null}
             </div>
             <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-line-soft pt-4 text-sm">
-              <div><dt className="text-xs text-ink-3">Run</dt><dd className="mt-1">{drop.totalUnits} pieces</dd></div>
+              <div><dt className="text-xs text-ink-3">Run</dt><dd className="mt-1">{pluralize(drop.totalUnits, "piece")}</dd></div>
               <div><dt className="text-xs text-ink-3">Limit</dt><dd className="mt-1">{drop.limitPerCustomer} per customer</dd></div>
               {drop.access === "draw" && drop.winners ? <div><dt className="text-xs text-ink-3">Winners</dt><dd className="mt-1">{drop.winners}</dd></div> : null}
               {drop.access === "draw" && drop.purchaseWindowMinutes ? <div><dt className="text-xs text-ink-3">Winner window</dt><dd className="mt-1">{windowLength(drop.purchaseWindowMinutes)}</dd></div> : null}
@@ -169,7 +173,7 @@ export function LiveDropDetail({ slug }: { slug: string }) {
 function windowLength(minutes: number) {
   if (minutes % 1440 === 0) return `${minutes / 1440} day${minutes === 1440 ? "" : "s"}`
   if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? "" : "s"}`
-  return `${minutes} minutes`
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`
 }
 
 function DrawFairness({ draw, hydrated }: { draw: PublicDrawInfoDto; hydrated: boolean }) {

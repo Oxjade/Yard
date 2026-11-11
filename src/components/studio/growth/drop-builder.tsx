@@ -27,7 +27,7 @@ import { productStock } from "@/lib/data/products"
 import { dropAccessLabel } from "@/lib/drops"
 import { formatMoney, formatNumber } from "@/lib/money"
 import { useStudio } from "@/lib/stores/studio"
-import { cn } from "@/lib/utils"
+import { cn, pluralize } from "@/lib/utils"
 import type { Drop, DropAccess, ImageAsset } from "@/lib/data/types"
 import { CATALOGUE_NOTE } from "./copy"
 import { ChoiceCard, ChoiceGroup, control, EditorSkeleton, Field, inputClass, NumberStepper, Panel, selectClass } from "./form"
@@ -286,7 +286,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
     }
     if (!/^\d+$/.test(values.quantity) || quantity < 1) e.quantity = "Release at least 1 unit."
     else if (quantity > 10_000) e.quantity = "Drops are limited to 10,000 units."
-    else if (quantity < sold) e.quantity = `${formatNumber(sold)} units have already sold, so the quantity can't go below that.`
+    else if (quantity < sold) e.quantity = `${pluralize(sold, "unit")} ${sold === 1 ? "has" : "have"} already sold, so the quantity can't go below that.`
     if (!/^\d+$/.test(values.limit) || limit < 1) e.limit = "Allow at least 1 per customer."
     else if (limit > 10) e.limit = "Keep the limit to 10 or fewer per customer."
     else if (!e.quantity && limit > quantity) e.limit = "The limit can't be more than the quantity."
@@ -438,7 +438,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
           </Panel>
 
           <Panel title="Products" description={locked ? "Products can't change after release." : "What's in the drop. Stock is held for the drop from release until it closes."}>
-            <Field id="drop-products" label="Products in this drop" as="legend" error={errors.products} hint={values.productIds.length ? `${values.productIds.length} selected, ${formatNumber(selectedStock)} units in stock across them.` : undefined}>
+            <Field id="drop-products" label="Products in this drop" as="legend" error={errors.products} hint={values.productIds.length ? `${values.productIds.length} selected, ${pluralize(selectedStock, "unit")} in stock across ${values.productIds.length === 1 ? "it" : "them"}.` : undefined}>
               <ul id="drop-products" tabIndex={-1} className="grid grid-cols-1 gap-1.5 outline-none sm:grid-cols-2">
                 {sellable.map((p) => {
                   const on = values.productIds.includes(p.id)
@@ -565,7 +565,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
                 </p>
               ) : null}
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field id="drop-quantity" label="Limited quantity" error={errors.quantity} hint={sold ? `${formatNumber(sold)} already sold.` : selectedStock && quantity > selectedStock ? `More than the ${formatNumber(selectedStock)} units in stock. Restock before release.` : "Total units across all sizes."}>
+                <Field id="drop-quantity" label="Limited quantity" error={errors.quantity} hint={sold ? `${formatNumber(sold)} already sold.` : selectedStock && quantity > selectedStock ? `More than the ${pluralize(selectedStock, "unit")} in stock. Restock before release.` : "Total units across all sizes."}>
                   <NumberStepper id="drop-quantity" label="quantity" value={values.quantity} onChange={(v) => set("quantity", v)} min={1} max={10_000} step={10} invalid={!!errors.quantity} describedBy={errors.quantity ? "drop-quantity-error" : "drop-quantity-hint"} suffix="units" disabled={locked} />
                 </Field>
                 <Field id="drop-limit" label="Limit per customer" error={errors.limit} hint="Applies per account, across sizes.">

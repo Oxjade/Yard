@@ -2,7 +2,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
 import { brandById } from "@/lib/data/brands"
-import { cn } from "@/lib/utils"
+import { cn, pluralize } from "@/lib/utils"
 import type { CuratedCollection } from "@/lib/data/types"
 
 /** A curated collection as a photographic tile. A sponsored edit always names its sponsor. */
@@ -19,7 +19,7 @@ export function CollectionTile({ collection, className }: { collection: CuratedC
       <h3 className="font-display text-display-sm text-ink">{collection.name}</h3>
       <p className="mt-2 max-w-sm text-sm text-ink/80">{collection.description}</p>
       <p className="mt-3 text-xs text-ink-2">
-        {collection.brandIds.length} brands, {collection.productIds.length} pieces
+        {pluralize(collection.brandIds.length, "brand")}, {pluralize(collection.productIds.length, "piece")}
       </p>
     </Link>
   )

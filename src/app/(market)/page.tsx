@@ -178,10 +178,13 @@ export default function DiscoverPage() {
         </section>
         ) : null}
 
-        {/* Recommended */}
+        {/* Recommended: picked from the sample catalogue (follows, saves and views against sample
+            products), so demo and development only; production has no recommendations yet. */}
+        {demo ? (
         <div className="mt-24 md:mt-32">
           <RecommendedForYou />
         </div>
+        ) : null}
 
         {/* Featured brands with labelled sponsored slots */}
         {demo ? (
