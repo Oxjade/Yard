@@ -1,5 +1,6 @@
 import { campaigns } from "@/lib/data/ads"
 import type { Drop } from "@/lib/data/types"
+import { pluralize } from "@/lib/utils"
 import { agoText } from "@/components/market/ago-text"
 
 /**
@@ -38,7 +39,7 @@ export const limitText = (d: Drop) => `Limit ${d.limitPerCustomer} per customer`
 export function runText(d: Drop) {
   const sold = d.totalUnits - d.unitsLeft
   if (d.unitsLeft <= 0) return `All ${d.totalUnits} sold`
-  if (d.releaseOffsetHours > 0) return `${d.totalUnits} pieces in the run`
+  if (d.releaseOffsetHours > 0) return `${pluralize(d.totalUnits, "piece")} in the run`
   return `${sold} of ${d.totalUnits} sold`
 }
 

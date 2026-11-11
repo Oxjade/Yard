@@ -10,6 +10,7 @@ import { useNow } from "@/hooks/use-now"
 import { api } from "@/lib/api/client"
 import { brandHref } from "@/lib/api/catalog-products"
 import { dropAccessForButton, dropActionMode, dropImageSrc, dropPhaseAt, isApiImage, type PublicDropDto } from "@/lib/api/drops"
+import { pluralize } from "@/lib/utils"
 import { useApi } from "@/lib/api/use-api"
 import { NotifyButton } from "@/components/market/notify-button"
 import { Rail } from "@/components/market/rail"
@@ -113,7 +114,7 @@ function LeadDrop({ drop, hydrated, now }: { drop: PublicDropDto; hydrated: bool
     <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm text-ink">{drop.name}</Link>
     <p className="text-xs text-ink/70">{nextMoment(drop, now, hydrated)}{hydrated ? " · your time" : ""}</p>
     <div className="flex items-center justify-between gap-3 border-t border-white/15 pt-4">
-      <span className="text-xs text-ink/70">{drop.totalUnits} pieces · limit {drop.limitPerCustomer}</span>
+      <span className="text-xs text-ink/70">{pluralize(drop.totalUnits, "piece")} · limit {drop.limitPerCustomer}</span>
       {releaseAction(drop, now)}
     </div>
   </article>

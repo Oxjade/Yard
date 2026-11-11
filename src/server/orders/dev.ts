@@ -120,7 +120,9 @@ export async function resetKitDailyCaps() {
   const today = new Date().toISOString().slice(0, 10)
   const keys = [
     ...KIT_BRAND_ACCOUNTS.flatMap((u) => KIT_DAILY_KEYS.map((k) => `${k}:day:brand:${u}:${today}`)),
-    // The founding kit and journey generate claim links as the demo owner admin (100 a day).
+    // The founding kit and journey create founding brands and generate claim links as the demo
+    // owner admin (100 a day each); the drops kit creates its founding brands the same way.
+    `admin.founding.create:day:admin:adm_1:${today}`,
     `admin.founding.claim_link:day:admin:adm_1:${today}`,
     // The engagement kit's long-lived shoppers start many stub checkouts a run (checkout.start, 100 a day).
     ...(await d.select({ id: users.id }).from(users).where(ilike(users.email, "t\\_v3\\_engagement\\_kit\\_%@example.com"))).map((u) => `checkout.start:day:shopper:${u.id}:${today}`),

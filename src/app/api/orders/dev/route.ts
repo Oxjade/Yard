@@ -15,8 +15,10 @@ import { ageDelivery, declineCancelRefund, DEV_JOBS, resetKitDailyCaps, runJobFo
  * POST { op: "decline-cancel-refund", orderId, restock } → a paid order cancelled by its brand
  *   whose cancellation refund the provider declined (stub refunds always succeed)
  * POST { op: "reset-kit-daily-caps" } → clears TODAY's studio.refund / payouts.account /
- *   payouts.request daily buckets of the kits' demo brand accounts only (resetKitDailyCaps lists
- *   them), so repeated kit runs in a day don't hit those caps. The caps themselves are unchanged.
+ *   payouts.request daily buckets of the kits' demo brand accounts, the demo owner admin's
+ *   founding create / claim-link buckets and the engagement kit shoppers' checkout.start buckets
+ *   only (resetKitDailyCaps lists them), so repeated kit runs in a day don't hit those caps. The
+ *   caps themselves are unchanged.
  */
 const orderId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
 const body = z.discriminatedUnion("op", [

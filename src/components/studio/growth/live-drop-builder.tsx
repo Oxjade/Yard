@@ -24,7 +24,7 @@ import { dropImageSrc, isApiImage, type DropAccessDto, type PublicDropDto, type 
 import { useApi } from "@/lib/api/use-api"
 import type { Product } from "@/lib/data/types"
 import { formatNumber, formatMoney } from "@/lib/money"
-import { cn } from "@/lib/utils"
+import { cn, pluralize } from "@/lib/utils"
 import { loadStudioDrops, studioDropsKey } from "./live-drops"
 import { ChoiceCard, ChoiceGroup, EditorSkeleton, Field, inputClass, Panel } from "./form"
 
@@ -556,7 +556,7 @@ function LiveDropForm({ id, existing, products, now, onSaved, onReload }: { id: 
                 <div className="flex justify-between gap-3"><dt className="text-ink-3">Entries close</dt><dd className="text-right text-ink">{summaryDate.format(new Date(start.getTime() - entryCloseHours * HOUR))}</dd></div>
               </> : null}
               {start && values.access === "early_access" && Number.isFinite(earlyHours) ? <div className="flex justify-between gap-3"><dt className="text-ink-3">Early access</dt><dd className="text-right text-ink">{summaryDate.format(new Date(Math.max(now, start.getTime() - earlyHours * HOUR)))}</dd></div> : null}
-              <div className="flex justify-between gap-3"><dt className="text-ink-3">Quantity</dt><dd className="text-right text-ink tabular">{Number.isInteger(quantity) && quantity > 0 ? `${formatNumber(quantity)} units` : "Not set"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-ink-3">Quantity</dt><dd className="text-right text-ink tabular">{Number.isInteger(quantity) && quantity > 0 ? pluralize(quantity, "unit") : "Not set"}</dd></div>
               <div className="flex justify-between gap-3"><dt className="text-ink-3">Products</dt><dd className="text-right text-ink tabular">{selectedProducts.length}</dd></div>
             </dl>
           </section>

@@ -369,8 +369,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const demoOn = !!session.demoAuth?.admin
   // The existing admin pages keep their browser data and act as Kemi Ajayi (the Owner, adm_1);
-  // say so whenever the server session is someone else, or nobody (§1.11, §8.3).
-  const legacyNote = session.status === "ready" && admin?.id !== LEGACY_ADMIN_ID
+  // say so whenever the server session is someone else, or nobody (§1.11, §8.3). Only with sample
+  // data on: in production the legacy store isn't shown, so a real admin never reads about it.
+  const legacyNote = session.status === "ready" && sampleData && admin?.id !== LEGACY_ADMIN_ID
   const initials = (admin?.name ?? "")
     .split(/\s+/)
     .map((w) => w[0])
@@ -407,7 +408,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           ...(sampleData ? [{ label: "System health", href: "/admin/health", icon: HeartbeatIcon }] : []),
           ...(demoOn ? [{ label: "Switch demo admin…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
           // Signing out never depends on the demo flag: whoever holds a session can always end it.
-          ...(admin ? [{ label: "Sign out of demo account", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
+          ...(admin ? [{ label: admin.demo ? "Sign out of demo account" : "Sign out", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
           { label: "Leave the Control Center", href: "/", icon: SignOutIcon, separated: true },
         ],
       }}
@@ -427,12 +428,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       }}
       account={
         admin
-          ? { initials, name: admin.name, caption: `${adminRoleLabels[admin.role]}, demo account` }
+          ? { initials, name: admin.name, caption: admin.demo ? `${adminRoleLabels[admin.role]}, demo account` : adminRoleLabels[admin.role] }
           : session.status === "loading"
             ? { initials: "", name: "Control Center", caption: "Checking your session" }
             : session.status === "error"
               ? { initials: "!", name: "Session unavailable", caption: "Couldn't reach Yard" }
-              : { initials: "–", name: "Not signed in", caption: "Demo accounts" }
+              : { initials: "–", name: "Not signed in", caption: demoOn ? "Demo accounts" : "Sign in to continue" }
       }
       topbar={
         <>

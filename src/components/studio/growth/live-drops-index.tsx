@@ -18,6 +18,7 @@ import { dropImageSrc, dropPhaseAt, isApiImage, type StudioDropDto } from "@/lib
 import { useApi } from "@/lib/api/use-api"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"
+import { pluralize } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { dropsDescription } from "./copy"
 import { ListSkeleton } from "./form"
@@ -81,7 +82,7 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
         toast.success(drop.status === "draft" ? "Draft discarded" : "Drop cancelled", { description: drop.name })
       } else {
         const result = await api<{ counts: { entries: number; won: number } }>(`/api/drops/${encodeURIComponent(drop.id)}/draw`, { method: "POST" })
-        toast.success("Draw completed", { description: `${result.counts.won} winners from ${result.counts.entries} entries.` })
+        toast.success("Draw completed", { description: `${pluralize(result.counts.won, "winner")} from ${pluralize(result.counts.entries, "entry", "entries")}.` })
       }
       await query.revalidate()
     } catch (error) {

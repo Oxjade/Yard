@@ -15,6 +15,11 @@ import type { OptionalCategory } from "./preferences"
  */
 type Vars = Record<string, string | number | undefined>
 const s = (v: string | number | undefined, fallback = "") => String(v ?? fallback).slice(0, 80)
+/** "1 winner", "3 winners": a count var with the noun that agrees with it (0 when missing). */
+const count = (v: string | number | undefined, one: string, many: string) => {
+  const n = Number(v ?? 0) || 0
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`
+}
 
 const templates = {
   "drop.reminder": { category: "drop_update", pref: "drops", build: (v: Vars) => ({ title: `${s(v.drop)} drops ${s(v.when, "soon")}`, body: `${s(v.brand, "The brand")} releases it soon. Be ready.` }) },
@@ -22,7 +27,7 @@ const templates = {
   "drop.early_access": { category: "drop_update", pref: "drops", build: (v: Vars) => ({ title: `Early access: ${s(v.drop)}`, body: `As a follower of ${s(v.brand, "the brand")} you can shop it now.` }) },
   "drop.draw_won": { category: "drop_update", pref: "drops", build: (v: Vars) => ({ title: `You won the ${s(v.drop)} draw`, body: `Buy before ${s(v.until, "your window closes")}.` }) },
   "drop.draw_lost": { category: "drop_update", pref: "drops", build: (v: Vars) => ({ title: `${s(v.drop)}: not drawn this time`, body: "If a winner doesn't buy in time, places pass down the list." }) },
-  "drop.draw_closed_for_brand": { category: "drop_update", pref: null, build: (v: Vars) => ({ title: `Draw complete: ${s(v.drop)}`, body: `${s(v.winners, "0")} winners from ${s(v.entries, "0")} entries.` }) },
+  "drop.draw_closed_for_brand": { category: "drop_update", pref: null, build: (v: Vars) => ({ title: `Draw complete: ${s(v.drop)}`, body: `${count(v.winners, "winner", "winners")} from ${count(v.entries, "entry", "entries")}.` }) },
   "wishlist.price_drop": { category: "price_drop", pref: "price_drops", build: (v: Vars) => ({ title: `Price drop: ${s(v.product)}`, body: `Now ${s(v.price)}${v.was ? `, was ${s(v.was)}` : ""}.` }) },
   "wishlist.back_in_stock": { category: "back_in_stock", pref: "back_in_stock", build: (v: Vars) => ({ title: `Back in stock: ${s(v.product)}`, body: `${s(v.brand, "The brand")} restocked it.` }) },
 } as const satisfies Record<string, { category: string; pref: OptionalCategory | null; build: (v: Vars) => { title: string; body: string } }>

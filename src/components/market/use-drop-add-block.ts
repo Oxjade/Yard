@@ -19,9 +19,15 @@ export type AddBlocked = {
 
 const dropById = new Map(drops.map((d) => [d.id, d]))
 
-/** The drop a product is released in, if it belongs to one. */
-export function dropOf(product: Pick<Product, "dropId" | "brandSummary">) {
-  if (product.brandSummary) return undefined
+/**
+ * The sample drop a product is released in, if it belongs to one. Sample drops exist only with
+ * sample data on (usePageSampleDataState): once that is known to be off (production), no sample
+ * drop is looked up, so a quick add never says "Not released yet" or links to a sample drop that
+ * isn't served. While it is still unknown (null) the lookup stands, so a demo piece is never
+ * briefly addable before its release.
+ */
+export function dropOf(product: Pick<Product, "dropId" | "brandSummary">, sampleData: boolean | null) {
+  if (product.brandSummary || sampleData === false) return undefined
   return product.dropId ? dropById.get(product.dropId) : undefined
 }
 
