@@ -740,8 +740,10 @@ async function main() {
     check("draw: brand can't run it before entries close (422)", (await post(`/api/drops/${D.dr.id}/draw`, undefined, { jar: OWNER })).status === 422)
     check("draw: another brand can't run it (404)", (await post(`/api/drops/${D.dr.id}/draw`, undefined, { jar: OTHER })).status === 404)
     check("draw: a shopper can't run it (401)", (await post(`/api/drops/${D.dr.id}/draw`, undefined, { jar: S1.jar })).status === 401)
-    const editLive = await patch(`/api/drops/${D.dr.id}`, { startsAt: iso(T0 + 10_000), expectedVersion: D.dr.version }, { jar: OWNER })
+    const editLive = await patch(`/api/drops/${D.fc.id}`, { startsAt: iso(T0 + 10_000), expectedVersion: D.fc.version }, { jar: OWNER })
     check("drops: a scheduled edit must keep its times in the future (400)", editLive.status === 400, brief(editLive))
+    const drawLock = await patch(`/api/drops/${D.dr.id}`, { winnersCount: 5, expectedVersion: D.dr.version }, { jar: OWNER })
+    check("drops: a draw's terms are locked once it has entries (422)", drawLock.status === 422, brief(drawLock))
   }
 
   /* ===== Checkout gate before release (checkDropLimit) ===== */

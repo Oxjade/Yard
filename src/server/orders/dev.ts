@@ -1,7 +1,7 @@
 import "server-only"
 import { and, eq, ilike, inArray, sql } from "drizzle-orm"
 import { db, withTx } from "../db"
-import { rateLimitBuckets, shipmentEvents } from "../db/schema"
+import { rateLimitBuckets, shipmentEvents, users } from "../db/schema"
 import { orderLines, orderRefunds, orderStates } from "../db/schema/orders-v3"
 import { notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -107,7 +107,8 @@ export async function declineCancelRefund(orderId: string, restock: boolean) {
  * The demo brand accounts the money kits act as (v3-orders, v3-checkout, v3-ledger), and the durable
  * daily caps per account those kits spend: brand refunds (studio.refund, 200 a day), payout account
  * changes (payouts.account, 10 a day) and payout requests (payouts.request, 20 a day), plus the demo
- * owner admin's founding claim links (admin.founding.claim_link, 100 a day). A few kit runs
+ * owner admin's founding claim links (admin.founding.claim_link, 100 a day) and the engagement kit
+ * shoppers' checkout starts (checkout.start, 100 a day). A few kit runs
  * a day use them up, after which those checks answer 429. In DEVELOPMENT only (the route is 404 in
  * production) this clears TODAY's buckets of exactly these keys for exactly these accounts: no other
  * key or account is touched, and the caps themselves are unchanged.
@@ -121,6 +122,8 @@ export async function resetKitDailyCaps() {
     ...KIT_BRAND_ACCOUNTS.flatMap((u) => KIT_DAILY_KEYS.map((k) => `${k}:day:brand:${u}:${today}`)),
     // The founding kit and journey generate claim links as the demo owner admin (100 a day).
     `admin.founding.claim_link:day:admin:adm_1:${today}`,
+    // The engagement kit's long-lived shoppers start many stub checkouts a run (checkout.start, 100 a day).
+    ...(await d.select({ id: users.id }).from(users).where(ilike(users.email, "t\\_v3\\_engagement\\_kit\\_%@example.com"))).map((u) => `checkout.start:day:shopper:${u.id}:${today}`),
   ]
   const gone = await d.delete(rateLimitBuckets).where(inArray(rateLimitBuckets.key, keys)).returning({ key: rateLimitBuckets.key })
   return { cleared: gone.map((g) => g.key) }

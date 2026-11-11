@@ -26,7 +26,7 @@ import { loadStudioDrops, studioDropsKey } from "./live-drops"
 type Tab = "all" | "scheduled" | "live" | "drafts" | "past"
 type LiveRow = { drop: StudioDropDto; status: Tab; statusLabel: string; tone: "info" | "muted" | "success" | "attention" }
 const localDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
-const utcDate = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC", timeZoneName: "short" })
+const utcDate = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" })
 
 function dateLabel(value: string, hydrated: boolean) {
   return (hydrated ? localDate : utcDate).format(new Date(value))

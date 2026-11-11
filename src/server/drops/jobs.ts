@@ -38,7 +38,7 @@ async function brandOf(id: string) {
 
 function when(at: Date, timeZone: string) {
   try {
-    return `on ${new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "medium", timeStyle: "short", timeZoneName: "short" }).format(at)}`
+    return `on ${new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(at)}`
   } catch {
     return `on ${at.toISOString().slice(0, 16).replace("T", " ")} UTC`
   }
