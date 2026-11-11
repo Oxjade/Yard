@@ -25,6 +25,14 @@ export function brandLaunchedSql() {
 }
 
 /**
+ * A brand is listed (public) when it isn't restricted or suspended and, for a founding brand, has
+ * launched: the rule the public storefront read uses (public.ts listedBrandByHandle), in SQL.
+ */
+export function brandListedSql() {
+  return and(sql`${brands.reviewStatus} not in ('restricted', 'suspended')`, brandLaunchedSql())!
+}
+
+/**
  * The one not-for-sale predicate (founding brands). An unclaimed brand never sells; a claimed one
  * sells once it has a payout account; every ordinary brand (claim_status 'none') sells as before.
  * Used by getSellableVariants (cart pricing, PDP availability, watches, search) and isSellable

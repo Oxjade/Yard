@@ -1,6 +1,7 @@
 import "server-only"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { endBrandSessions, endSessionsForUser } from "../auth/session"
+import { catalogChanged } from "../catalog/hooks"
 import { db } from "../db"
 import { auditLog, brandLocations, brands, locationEvents, socialPosts, users } from "../db/schema"
 import { notFound, rule } from "../http/errors"
@@ -96,6 +97,10 @@ export async function setBrandStatus(ctx: DecisionCtx, body: { id: string; statu
   await tryFeature("charts.invalidate", () => chartsMod.invalidate(b.id))
   const aroundMod = await import("../around")
   await tryFeature("around.invalidate", () => aroundMod.invalidate())
+  // Listing follows review_status (brandListedSql), so drop the public catalogue memos (the home
+  // hero, the founding rail, the storefront) and refresh the brand's catalogue photo visibility now,
+  // not when the 60 s memo runs out. After commit, like every catalogue write.
+  catalogChanged({ brands: [b.id] })
   const reinstated = OUT_OF_STANDING.includes(b.reviewStatus) && !OUT_OF_STANDING.includes(next)
   const entry = await audit(ctx, {
     action: "brand.status_changed",

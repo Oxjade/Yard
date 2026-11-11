@@ -12,7 +12,7 @@ import { recordSessionAuth } from "../auth/session-auth"
 import { memo } from "../cache"
 import { db, withTx, type Executor } from "../db"
 import { adminMembers, brandMembers, brands, sessions, users } from "../db/schema"
-import { catalogCategories, catalogProducts, storefrontDrafts, storefrontVersions } from "../db/schema/catalog"
+import { catalogCategories, catalogImages, catalogProducts, storefrontDrafts, storefrontVersions } from "../db/schema/catalog"
 import { brandInvites, sessionAuth } from "../db/schema/identity"
 import { brandPayoutAccounts } from "../db/schema/ledger"
 import { badRequest, conflict, notFound, rateLimited, rule } from "../http/errors"
@@ -23,7 +23,7 @@ import { dailyHit, hit } from "../security/rate-limit"
 import { createStarterShipping } from "../shipping/profile"
 import { catalogChanged } from "./hooks"
 import { handleStatus, type HandleStatus } from "./onboarding"
-import { brandForSaleSql } from "./sellable"
+import { brandForSaleSql, brandListedSql, imageSrc } from "./sellable"
 import { DEFAULT_STOREFRONT } from "./storefront"
 import { assertBrandImages, slugify } from "./studio"
 
@@ -487,5 +487,101 @@ export async function listFoundingBrandsForHome(limit = 12): Promise<FoundingHom
       foundingBadge: r.foundingBadge,
       forSale: !!r.forSale,
     }))
+  })
+}
+
+/* ---------- Home hero ---------- */
+
+export type FeaturedFoundingBrand = {
+  id: string
+  handle: string
+  name: string
+  city: string
+  country: string
+  /** One sentence of the story, at most about 140 characters; null without a story. */
+  excerpt: string | null
+  /** The live storefront cover, else the brand's first public product photo, else null (the page falls back). */
+  image: { src: string; alt: string } | null
+  foundingBadge: boolean
+}
+
+/** Words that end in a full stop without ending a sentence ("Ìrìn Co. Ltd. Lagos"). */
+const ABBREVIATIONS = new Set(["co", "ltd", "inc", "st", "mt", "ave", "rd", "dr", "mr", "mrs", "ms", "mx", "jr", "sr", "prof", "no", "vs", "est", "bros", "corp", "dept", "ft"])
+
+/**
+ * The first sentence of a story, cut at a word when it runs long. A sentence ends at . ! or ?
+ * followed by the end of the text, or by a space and a capital letter (any script), and only once
+ * it is at least 20 characters long, and never after an initial ("J.") or a common abbreviation
+ * ("Co.", "St.", "Dr."), so "Ìrìn Co.", "Founded by J." or "Made on St." never end it. No such end
+ * within the story: the word-boundary cut at about `max` characters.
+ */
+export function storyExcerpt(story: string | null | undefined, max = 140): string | null {
+  const s = (story ?? "").replace(/\s+/g, " ").trim()
+  if (!s) return null
+  let sentence = s
+  for (const m of s.matchAll(/[.!?]["'’”)]*(?=$|\s+["'‘“(]*\p{Lu})/gu)) {
+    const end = m.index + m[0].length
+    if (end < 20) continue
+    const word = /(\p{L}+)\.$/u.exec(s.slice(0, m.index + 1))?.[1]
+    if (m[0][0] === "." && word && (word.length === 1 || ABBREVIATIONS.has(word.toLowerCase()))) continue
+    sentence = s.slice(0, end)
+    break
+  }
+  if (sentence.length <= max) return sentence
+  const cut = sentence.slice(0, max - 1)
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), Math.floor(max * 0.6))).replace(/[\s,;:–—-]+$/, "")}…`
+}
+
+/** Days since the Unix epoch in UTC: the hero's rotation key, the same on every server for a day. */
+export const utcDay = (now = new Date()) => Math.floor(now.getTime() / 86_400_000)
+
+/**
+ * The home hero's featured founding brand for today (UTC), or null when no founding brand is
+ * listed. Listed is the public storefront's rule (brandListedSql: launched, not restricted or
+ * suspended). With several, one a day in launch order: candidate (day mod count), so every
+ * server and every visitor sees the same brand all day and the next one tomorrow. Memoised 60 s
+ * under catalog: (a storefront publish or any catalogue write drops it), keyed by the day.
+ * Only public media: the live cover, or a published product's photo.
+ */
+export async function featuredFoundingBrandForHome(now = new Date()): Promise<FeaturedFoundingBrand | null> {
+  await requestScope()
+  const day = utcDay(now)
+  return memo(`catalog:founding:hero:${day}`, HOME_TTL, async () => {
+    const d = await db()
+    const list = await d
+      .select({
+        id: brands.id,
+        handle: brands.handle,
+        name: brands.name,
+        city: brands.city,
+        country: brands.country,
+        story: brands.story,
+        foundingBadge: brands.foundingBadge,
+        // Qualified by hand, as in listFoundingBrandsForHome.
+        cover: sql<string | null>`(select sv.config ->> 'coverMediaId' from catalog_storefront_versions sv where sv.brand_id = "brands"."id" order by sv.version desc limit 1)`,
+      })
+      .from(brands)
+      .where(and(eq(brands.founding, true), brandListedSql()))
+      .orderBy(asc(brands.launchedAt), asc(brands.id))
+      .limit(48)
+    if (!list.length) return null
+    const b = list[day % list.length]
+    let image: FeaturedFoundingBrand["image"] = b.cover ? { src: `/api/media/${encodeURIComponent(b.cover)}`, alt: `${b.name} storefront banner` } : null
+    if (!image) {
+      const [first] = await d
+        .select({ mediaId: catalogImages.mediaId, path: catalogImages.path, alt: catalogImages.alt, title: catalogProducts.title })
+        .from(catalogImages)
+        .innerJoin(catalogProducts, eq(catalogProducts.id, catalogImages.productId))
+        .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+        // The rule media/visibility.ts uses for a product photo: status 'published' only (a due
+        // 'scheduled' product's photos stay private until the publish job flips it), moderation ok,
+        // brand listed. productPublicWhere would admit a due scheduled product and a broken image.
+        .where(and(eq(catalogProducts.brandId, b.id), eq(catalogProducts.status, "published"), eq(catalogProducts.moderationStatus, "ok"), brandListedSql()))
+        .orderBy(sql`coalesce(${catalogProducts.publishedAt}, ${catalogProducts.createdAt}) asc`, asc(catalogProducts.id), asc(catalogImages.position), asc(catalogImages.id))
+        .limit(1)
+      const src = first ? imageSrc(first) : undefined
+      if (first && src) image = { src, alt: first.alt || `${first.title} by ${b.name}` }
+    }
+    return { id: b.id, handle: b.handle, name: b.name, city: b.city, country: b.country, excerpt: storyExcerpt(b.story), image, foundingBadge: b.foundingBadge }
   })
 }
