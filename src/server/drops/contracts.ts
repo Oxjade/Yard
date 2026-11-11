@@ -55,6 +55,8 @@ export const dropVersionBody = z.strictObject({ expectedVersion: z.number().int(
 
 export const dropListQuery = z.object({
   phase: z.enum(["upcoming", "live", "ended", "all"]).optional(),
+  /** "brands" leaves out the seeded sample drops (demo pages show those on the demo clock). */
+  source: z.enum(["all", "brands"]).optional(),
   brandId: safeId().optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
   cursor: z.string().max(40).regex(/^\d+$/).optional(),

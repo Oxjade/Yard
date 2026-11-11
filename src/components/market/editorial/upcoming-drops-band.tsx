@@ -6,9 +6,10 @@ import { ArrowCounterClockwiseIcon as RetryIcon } from "@phosphor-icons/react"
 import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { useNow } from "@/hooks/use-now"
 import { api } from "@/lib/api/client"
 import { brandHref } from "@/lib/api/catalog-products"
-import { dropAccessForButton, dropImageSrc, type PublicDropDto } from "@/lib/api/drops"
+import { dropAccessForButton, dropActionMode, dropImageSrc, dropPhaseAt, isApiImage, type PublicDropDto } from "@/lib/api/drops"
 import { useApi } from "@/lib/api/use-api"
 import { NotifyButton } from "@/components/market/notify-button"
 import { Rail } from "@/components/market/rail"
@@ -28,13 +29,30 @@ function accessLabel(drop: PublicDropDto) {
   return drop.access === "draw" ? "Draw" : drop.access === "early_access" ? "Early access" : "First come"
 }
 
-function releaseAction(drop: PublicDropDto) {
-  return <NotifyButton drop={{ id: drop.id, access: dropAccessForButton(drop.access) }} size="sm" variant="glass" quiet />
+/** Before release: a reminder, or the draw entry once entries are open (a draw takes no entries before). */
+function releaseAction(drop: PublicDropDto, now: number | null) {
+  const mode = dropActionMode(drop, dropPhaseAt(drop, now))
+  if (!mode) return <Button asChild size="sm" variant="glass"><Link href={`/drops/${drop.slug}`}>View drop</Link></Button>
+  return <NotifyButton drop={{ id: drop.id, access: dropAccessForButton(drop.access) }} mode={mode} size="sm" variant="glass" quiet />
 }
 
-/** Discover's live upcoming-drops band. Times are API instants and render in the shopper's zone. */
+/** When the drop's next moment is: entries opening for a draw that isn't open yet, else the release. */
+function nextMoment(drop: PublicDropDto, now: number | null, hydrated: boolean) {
+  const phase = dropPhaseAt(drop, now)
+  if (drop.access === "draw" && phase === "upcoming" && drop.entryOpensAt) return `Entries open ${displayTime(drop.entryOpensAt, hydrated)}`
+  if (phase === "entries_open") return `Entries close ${displayTime(drop.entryClosesAt ?? drop.startsAt, hydrated)}`
+  return `Releases ${displayTime(drop.startsAt, hydrated)}`
+}
+
+const statusOf = (drop: PublicDropDto, now: number | null) => {
+  const phase = dropPhaseAt(drop, now)
+  return phase === "entries_open" ? "Entries open" : phase === "early_access" ? "Early access" : accessLabel(drop)
+}
+
+/** Discover's live upcoming-drops band (production; demo shows SampleUpcomingDropsBand). Times are API instants and render in the shopper's zone. */
 export function UpcomingDropsBand() {
   const hydrated = useHydrated()
+  const now = useNow(30_000)
   const { data, error, isLoading, isValidating, revalidate } = useApi(DROPS_KEY, getUpcoming, { revalidateOnFocus: false })
   const [lead, ...rest] = data?.items ?? []
 
@@ -51,7 +69,7 @@ export function UpcomingDropsBand() {
               <p>Upcoming drops couldn&apos;t be loaded.</p>
               <Button variant="glass" size="sm" className="mt-3" loading={isValidating} onClick={() => void revalidate()}><RetryIcon /> Retry</Button>
             </div>
-          ) : lead ? <LeadDrop drop={lead} hydrated={hydrated} /> : (
+          ) : lead ? <LeadDrop drop={lead} hydrated={hydrated} now={now} /> : (
             <p className="mt-10 rounded-lg border border-white/15 bg-obsidian/25 p-5 text-sm leading-relaxed text-ink/80">
               No release is scheduled right now. Past drops keep their pages on the drops calendar.
             </p>
@@ -60,7 +78,7 @@ export function UpcomingDropsBand() {
         <div className="min-w-0 lg:pt-16">
           {rest.length ? (
             <Rail label="More upcoming drops" marquee itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48cqw]" footer={<Link href="/drops" className="inline-flex py-2.5 text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>}>
-              {rest.map((drop) => <RailDrop key={drop.id} drop={drop} hydrated={hydrated} />)}
+              {rest.map((drop) => <RailDrop key={drop.id} drop={drop} hydrated={hydrated} now={now} />)}
             </Rail>
           ) : (
             <Link href="/drops" className="mt-6 inline-flex min-h-10 items-center text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
@@ -80,37 +98,39 @@ function LeadSkeleton() {
   </div>
 }
 
-function LeadDrop({ drop, hydrated }: { drop: PublicDropDto; hydrated: boolean }) {
+function LeadDrop({ drop, hydrated, now }: { drop: PublicDropDto; hydrated: boolean; now: number | null }) {
   const brandName = drop.brand.name ?? "Independent brand"
+  const src = dropImageSrc(drop.image)
   return <article className="mt-10 grid min-w-0 gap-4 rounded-lg border border-white/15 bg-obsidian/25 p-4 backdrop-blur-sm sm:p-5">
     <Link href={`/drops/${drop.slug}`} className="group relative block aspect-[4/3] overflow-hidden rounded-md">
-      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill sizes="(min-width: 1024px) 390px, 90vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+      <Image src={src} alt={drop.name} fill unoptimized={isApiImage(src)} sizes="(min-width: 1024px) 390px, 90vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
       {drop.sponsored ? <span className="absolute top-3 left-3"><SponsoredTag /></span> : null}
     </Link>
     <div className="flex min-w-0 items-center justify-between gap-3">
       {drop.brand.handle ? <Link href={brandHref(drop.brand.handle)} className="truncate text-sm text-ink/80 hover:text-ink">{brandName}</Link> : <span className="truncate text-sm text-ink/80">{brandName}</span>}
-      <span className="shrink-0 rounded-sm bg-elevated px-2 py-1 text-[10px] text-ink">{drop.phase === "entries_open" ? "Entries open" : accessLabel(drop)}</span>
+      <span className="shrink-0 rounded-sm bg-elevated px-2 py-1 text-[10px] text-ink">{statusOf(drop, now)}</span>
     </div>
     <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm text-ink">{drop.name}</Link>
-    <p className="text-xs text-ink/70">Releases {displayTime(drop.startsAt, hydrated)}{hydrated ? " · your time" : ""}</p>
+    <p className="text-xs text-ink/70">{nextMoment(drop, now, hydrated)}{hydrated ? " · your time" : ""}</p>
     <div className="flex items-center justify-between gap-3 border-t border-white/15 pt-4">
       <span className="text-xs text-ink/70">{drop.totalUnits} pieces · limit {drop.limitPerCustomer}</span>
-      {releaseAction(drop)}
+      {releaseAction(drop, now)}
     </div>
   </article>
 }
 
-function RailDrop({ drop, hydrated }: { drop: PublicDropDto; hydrated: boolean }) {
+function RailDrop({ drop, hydrated, now }: { drop: PublicDropDto; hydrated: boolean; now: number | null }) {
   const brandName = drop.brand.name ?? "Independent brand"
+  const src = dropImageSrc(drop.image)
   return <article className="group/drop relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-obsidian/70">
     <Link href={`/drops/${drop.slug}`} className="relative block aspect-[4/3] overflow-hidden">
-      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill sizes="(min-width: 1024px) 420px, 80vw" className="object-cover transition-transform duration-700 group-hover/drop:scale-[1.03]" />
+      <Image src={src} alt={drop.name} fill unoptimized={isApiImage(src)} sizes="(min-width: 1024px) 420px, 80vw" className="object-cover transition-transform duration-700 group-hover/drop:scale-[1.03]" />
     </Link>
     <div className="flex flex-1 flex-col gap-3 p-4">
       {drop.brand.handle ? <Link href={brandHref(drop.brand.handle)} className="truncate text-xs text-ink/70 hover:text-ink">{brandName}</Link> : <span className="truncate text-xs text-ink/70">{brandName}</span>}
       <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm text-ink">{drop.name}</Link>
-      <p className="text-xs text-ink/70">{drop.phase === "entries_open" ? "Entries open" : accessLabel(drop)} · {displayTime(drop.startsAt, hydrated)}{hydrated ? " · your time" : ""}</p>
-      <div className="mt-auto flex justify-end border-t border-white/10 pt-3">{releaseAction(drop)}</div>
+      <p className="text-xs text-ink/70">{statusOf(drop, now)} · {nextMoment(drop, now, hydrated)}{hydrated ? " · your time" : ""}</p>
+      <div className="mt-auto flex justify-end border-t border-white/10 pt-3">{releaseAction(drop, now)}</div>
     </div>
   </article>
 }

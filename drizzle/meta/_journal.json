@@ -71,6 +71,13 @@
       "when": 1794363286125,
       "tag": "0009_fantastic_blue_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794402832184,
+      "tag": "0010_drop_idempotency",
+      "breakpoints": true
     }
   ]
 }

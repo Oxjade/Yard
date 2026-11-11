@@ -12,6 +12,9 @@ import type { Brand } from "@/lib/data/types"
 import { initialDropPhase } from "@/lib/drops"
 import { listPublicProducts, publicProduct } from "@/server/catalog/public"
 import { HttpError } from "@/server/http/errors"
+import { currentDropForProduct } from "@/server/drops/service"
+import { getEnv } from "@/server/env"
+import { LiveProductDrop } from "@/components/market/product/live-product-drop"
 
 /**
  * The slug is checked before anything renders so an unknown product answers with a real 404.
@@ -57,9 +60,12 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
 
   const brand: Brand = catalogBrand(product, brandById.get(product.brandId))
   const category = categoryBySlug.get(product.category) ?? { slug: product.category, name: categories.find((c) => c.slug === product.category)?.name ?? product.category }
-  const productDrop = product.dropId ? drops.find((d) => d.id === product.dropId) : undefined
+  // Demo and development: the sample drop on the demo clock, as before. Otherwise (and for any
+  // piece a brand put in a drop) the drop the database has it in, with the shopper's own state.
+  const productDrop = getEnv().seedDemo && product.dropId ? drops.find((d) => d.id === product.dropId) : undefined
   // Only a release that hasn't ended is worth a module; the client re-checks the phase on its own clock.
   const drop = productDrop && ["upcoming", "live"].includes(initialDropPhase(productDrop)) ? productDrop : null
+  const liveDrop = drop ? null : await currentDropForProduct(product.id).catch(() => null)
   const [brandResults, categoryResults] = await Promise.all([
     listPublicProducts({ brand: product.brandId, sort: "new", limit: 9, offset: 0 }),
     listPublicProducts({ category: product.category, sort: "new", limit: 24, offset: 0 }),
@@ -72,7 +78,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
       <ViewBeacon kind="product_view" productId={product.id} />
       <ProductBreadcrumb product={product} category={category} brand={brand} />
 
-      <ProductView product={product} brand={brand} drop={drop}>
+      <ProductView product={product} brand={brand} drop={drop} dropPanel={liveDrop ? <LiveProductDrop slug={liveDrop.slug} /> : undefined}>
         {moreFromBrand.length ? (
           <section aria-labelledby="more-from-title" className="mt-24 md:mt-32">
             <div id="more-from-title">

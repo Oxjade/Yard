@@ -1,17 +1,21 @@
 import { notFound } from "next/navigation"
 import { connection } from "next/server"
+import { getDrop } from "@/lib/data"
+import { getEnv } from "@/server/env"
 import { loadDrop } from "@/server/drops/service"
 
 /**
  * Checks the slug before anything streams, so an unknown drop still answers with a real 404
  * while the page below it can have a loading state (loading.tsx sits inside this layout).
  * The not-found page is one level up, where a layout's notFound() is caught.
+ * Demo and development also answer for the sample drops (shown on the demo clock).
  */
 export const instant = false
 
 export default async function DropLayout({ children, params }: LayoutProps<"/drops/[slug]">) {
   await connection()
   const { slug } = await params
+  if (getEnv().seedDemo && getDrop(slug)) return children
   const drop = await loadDrop(slug)
   if (!drop || drop.status === "cancelled") notFound()
   return children

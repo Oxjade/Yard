@@ -62,7 +62,7 @@ const actionLabel: Record<Action, string> = {
  * and only drawn winners can buy, which needs the drops backend this build doesn't have, so the
  * button reads "Entries closed".
  */
-export function ProductView({ product, brand, drop, children }: { product: Product; brand: Brand; drop: Drop | null; children?: React.ReactNode }) {
+export function ProductView({ product, brand, drop, dropPanel, children }: { product: Product; brand: Brand; drop: Drop | null; /** A database drop's release panel, shown where the sample drop module goes. */ dropPanel?: React.ReactNode; children?: React.ReactNode }) {
   const sel = useProductSelection(product)
   const phase = useDropPhase(drop)
   // A released draw: entries closed, and its window belongs to drawn winners only. It stays
@@ -287,6 +287,8 @@ export function ProductView({ product, brand, drop, children }: { product: Produ
             <div className="mt-6">
               <DropModule drop={activeDrop} phase={phase} />
             </div>
+          ) : dropPanel ? (
+            <div className="mt-6">{dropPanel}</div>
           ) : null}
 
           {sel.colours.length || sel.sizes.length ? (

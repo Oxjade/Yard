@@ -83,3 +83,23 @@ export function dropPhaseAt(drop: PublicDropDto, now: number | null): DropPhaseD
   if (now >= Date.parse(drop.startsAt)) return "live"
   return "upcoming"
 }
+/** A draw entry's status as shoppers read it (never the raw code). */
+export function dropEntryStatus(status: string): { label: string; tone: "info" | "muted" | "success" | "attention" | "danger" } {
+  if (status === "won") return { label: "Winner", tone: "success" }
+  if (status === "purchased") return { label: "Purchased", tone: "info" }
+  if (status === "waitlisted") return { label: "Waitlisted", tone: "attention" }
+  if (status === "expired") return { label: "Window expired", tone: "muted" }
+  if (status === "lost") return { label: "Not selected", tone: "muted" }
+  if (status === "withdrawn") return { label: "Withdrawn", tone: "muted" }
+  return { label: "Entered", tone: "info" }
+}
+
+/** Uploaded drop images are served by /api/media (with a query string): next/image must not optimise them. */
+export const isApiImage = (src: string) => src.startsWith("/api/")
+
+/** The action a drop offers before release: a reminder, or (only while entries are open) a draw entry. */
+export function dropActionMode(drop: Pick<PublicDropDto, "access">, phase: DropPhaseDto): "entry" | "reminder" | null {
+  if (phase === "entries_open" && drop.access === "draw") return "entry"
+  if (phase === "upcoming") return "reminder"
+  return null
+}

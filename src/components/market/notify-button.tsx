@@ -64,19 +64,29 @@ function updateParticipation(userId: string, dropId: string, draw: boolean, acti
   participationCache = { userId, value: { reminders, entries }, expiresAt: Date.now() + 30_000 }
 }
 
-/** `quiet` skips the toast where the page already explains the result next to the button. */
+/**
+ * A drop reminder, or a draw entry. `mode` says which: a draw takes entries only while its
+ * entries are open, so before that the live pages pass "reminder" (and "entry" once open).
+ * Without `mode` the access decides (the sample pages, which follow the demo clock).
+ * `quiet` skips the toast where the page already explains the result next to
+ * the button; `onChange` runs after the server accepted a change, so the page can reload its state.
+ */
 export function NotifyButton({
   drop,
+  mode,
   size = "sm",
   variant = "secondary",
   quiet = false,
   className,
+  onChange,
 }: {
   drop: Pick<Drop, "id" | "access">
+  mode?: "entry" | "reminder"
   size?: "sm" | "default" | "lg"
   variant?: "secondary" | "glass" | "primary"
   quiet?: boolean
   className?: string
+  onChange?: (active: boolean) => void
 }) {
   const hydrated = useHydrated()
   const on = useSaved((s) => s.notify.includes(drop.id))
@@ -85,7 +95,8 @@ export function NotifyButton({
   const requireAuth = useSession((s) => s.requireAuth)
   const demo = userId === DEMO_SHOPPER
   const serverUserId = userId && !demo ? userId : null
-  const draw = drop.access === "draw"
+  const draw = mode ? mode === "entry" : drop.access === "draw"
+  const reminderForDraw = !draw && drop.access === "draw"
   const [serverActive, setServerActive] = useState<{ userId: string; dropId: string; active: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const [requestError, setRequestError] = useState<{ userId: string; dropId: string; message: string } | null>(null)
@@ -110,7 +121,7 @@ export function NotifyButton({
 
   const active = hydrated && (demo ? on : serverActive?.userId === serverUserId && serverActive.dropId === drop.id && serverActive.active)
   const error = requestError?.userId === userId && requestError.dropId === drop.id ? requestError.message : null
-  const label = draw ? (active ? "Entered" : "Enter the draw") : active ? "Reminder set" : "Notify me"
+  const label = draw ? (active ? "Entered" : "Enter the draw") : active ? "Reminder set" : reminderForDraw ? "Remind me to enter" : "Notify me"
 
   function onClick(e: React.MouseEvent) {
     e.preventDefault()
@@ -139,6 +150,7 @@ export function NotifyButton({
         updateParticipation(user.id, drop.id, draw, !wasActive)
         setServerActive({ userId: user.id, dropId: drop.id, active: !wasActive })
         revalidatePrefix("market.drops:")
+        onChange?.(!wasActive)
         if (!quiet) toast.success(draw ? (wasActive ? "Entry withdrawn" : "Entered the draw") : (wasActive ? "Reminder removed" : "Reminder set"))
       } catch (cause) {
         const message = errorMessage(cause, draw ? "Your draw entry couldn't be updated." : "Your reminder couldn't be updated.")

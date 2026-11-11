@@ -98,7 +98,8 @@ async function api(method, path, { jar, body, raw, headers, noOrigin, noRetry429
   }
 }
 const get = (p, o) => api("GET", p, o)
-const post = (p, body, o = {}) => api("POST", p, { ...o, body })
+// Drop creates need an Idempotency-Key (one per action): the kit sends a fresh one unless a test sets its own.
+const post = (p, body, o = {}) => api("POST", p, { ...o, body, headers: p === "/api/drops" ? { "Idempotency-Key": `kit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, ...(o.headers ?? {}) } : o.headers })
 const patch = (p, body, o = {}) => api("PATCH", p, { ...o, body })
 const del = (p, o = {}) => api("DELETE", p, o)
 const brief = (r) => `${r.status} ${r.body?.error ? `${r.body.error.code}: ${r.body.error.message} ${r.body.error.fields ? JSON.stringify(r.body.error.fields) : ""}` : (r.text ?? "").slice(0, 300)}`
@@ -597,6 +598,17 @@ async function main() {
     const c = await post("/api/drops", dropBody("cx", { limitPerCustomer: 2 }), { jar: DESIGNER })
     check("drops: a designer (content.publish) creates a draft → 201, version 1", c.status === 201 && c.body.drop.status === "draft" && c.body.drop.version === 1 && c.body.drop.brand.id === BRAND && c.body.drop.slug === dropBody("cx").slug, brief(c))
     D.cx = c.body?.drop
+    {
+      const key = `kit-idem-${Date.now().toString(36)}`
+      const noKey = await api("POST", "/api/drops", { body: dropBody("cxi"), jar: OWNER })
+      check("drops: create without an Idempotency-Key is 400", noKey.status === 400, brief(noKey))
+      const first = await post("/api/drops", dropBody("cxi"), { jar: OWNER, headers: { "Idempotency-Key": key } })
+      const again = await post("/api/drops", dropBody("cxi"), { jar: OWNER, headers: { "Idempotency-Key": key } })
+      check("drops: a retried create with the same key returns the same draft (201 then 200)", first.status === 201 && again.status === 200 && again.body?.drop?.id === first.body?.drop?.id, `${brief(first)} | ${brief(again)}`)
+      const other = await post("/api/drops", dropBody("cxi", { name: "Different drop" }), { jar: OWNER, headers: { "Idempotency-Key": key } })
+      check("drops: the same key with a different body is 409", other.status === 409, brief(other))
+      if (first.body?.drop) await post(`/api/drops/${first.body.drop.id}/cancel`, { expectedVersion: first.body.drop.version }, { jar: OWNER })
+    }
     const dupSlug = await post("/api/drops", dropBody("cx"), { jar: OWNER })
     check("drops: a taken slug gets a unique suffix", dupSlug.status === 201 && dupSlug.body.drop.slug !== D.cx.slug && dupSlug.body.drop.slug.startsWith(D.cx.slug), brief(dupSlug))
     D.cx2 = dupSlug.body?.drop

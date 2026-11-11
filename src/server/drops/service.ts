@@ -7,6 +7,7 @@ import type { BrandActor, ShopperActor } from "../auth/dal"
 import { db, withTx } from "../db"
 import { brandMembers, brands, shopperFollows, shopperReminders } from "../db/schema"
 import { dropClaims, dropEntries, dropItems, drops } from "../db/schema/engagement"
+import { brandForSale, brandLaunchedSql, notForSaleMessage } from "../catalog/sellable"
 import { signalActorFor, type RequestMeta } from "../follows"
 import { badRequest, conflict, forbidden, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -38,6 +39,11 @@ export function phaseOf(d: DropRow, now = new Date()): DropPhase {
 }
 
 type BrandInfo = { id: string; handle: string; name: string }
+
+/** A drop's brand name for page titles (null for an unknown brand). */
+export async function dropBrandName(brandId: string) {
+  return (await brandInfo([brandId])).get(brandId)?.name ?? null
+}
 
 async function brandInfo(ids: string[]): Promise<Map<string, BrandInfo>> {
   if (!ids.length) return new Map()
@@ -106,14 +112,20 @@ async function dtos(rows: DropRow[]) {
 
 /* ---------- Public reads ---------- */
 
-export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended" | "all"; brandId?: string; limit?: number; cursor?: string }) {
+/**
+ * The catalogue's listing rule for a drop's brand: not restricted or suspended, and (founding
+ * brands) launched. A drop of a brand whose storefront is hidden is hidden with it.
+ */
+const listedBrandSql = sql`${drops.brandId} in (select b.id from brands b where b.review_status not in ('restricted', 'suspended') and (not b.founding or b.launched_at is not null))`
+
+export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended" | "all"; brandId?: string; limit?: number; cursor?: string; source?: "all" | "brands" }) {
   const d = await db()
   const now = new Date()
   const limit = q.limit ?? 24
   const offset = q.cursor ? Number(q.cursor) : 0
-  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined]
-  const notSuspended = sql`${drops.brandId} not in (select id from brands where review_status = 'suspended')`
-  conds.push(notSuspended)
+  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined, listedBrandSql]
+  // Demo pages show the sample drops on the demo clock themselves; this leaves the brand-created ones.
+  if (q.source === "brands") conds.push(sql`coalesce(${drops.createdBy}, '') <> 'seed'`)
   let order = [asc(drops.startsAt)]
   if (q.phase === "upcoming") conds.push(gt(drops.startsAt, now), ne(drops.status, "ended"))
   else if (q.phase === "live") conds.push(lte(drops.startsAt, now), gt(drops.endsAt, now), ne(drops.status, "ended"))
@@ -143,9 +155,23 @@ export async function loadDrop(idOrSlug: string, opts: { brandId?: string } = {}
   if (!row) return null
   if (opts.brandId) return row.brandId === opts.brandId ? row : null
   if (row.status === "draft") return null
-  const [b] = await d.select({ s: brands.reviewStatus }).from(brands).where(eq(brands.id, row.brandId)).limit(1)
-  if (b?.s === "suspended") return null
+  const [b] = await d.select({ s: brands.reviewStatus, launched: sql<boolean>`${brandLaunchedSql()}` }).from(brands).where(eq(brands.id, row.brandId)).limit(1)
+  if (!b || b.s === "suspended" || b.s === "restricted" || !b.launched) return null
   return row
+}
+
+/** The scheduled or live public drop a product is released in right now (by drop_items), or null. */
+export async function currentDropForProduct(productId: string): Promise<{ id: string; slug: string } | null> {
+  const d = await db()
+  const now = new Date()
+  const [hit] = await d
+    .select({ id: drops.id, slug: drops.slug })
+    .from(dropItems)
+    .innerJoin(drops, eq(drops.id, dropItems.dropId))
+    .where(and(eq(dropItems.productId, productId), inArray(drops.status, ["scheduled", "live"]), gt(drops.endsAt, now), listedBrandSql))
+    .orderBy(asc(drops.startsAt))
+    .limit(1)
+  return hit ?? null
 }
 
 /** Live availability across the drop's variants (CATALOG), or null when CATALOG isn't loaded. */
@@ -168,7 +194,8 @@ export async function dropDetail(row: DropRow, viewer: ShopperActor | null) {
       d.select().from(dropEntries).where(and(eq(dropEntries.dropId, row.id), eq(dropEntries.userId, viewer.userId))).limit(1),
       d.select({ at: shopperFollows.createdAt }).from(shopperFollows).where(and(eq(shopperFollows.userId, viewer.userId), eq(shopperFollows.brandId, row.brandId))).limit(1),
     ])
-    const access = row.status === "draft" ? { ok: false as const, message: "Not published." } : await accessFor(d, row, viewer.userId)
+    const sale = await brandForSale(d, row.brandId)
+    const access = row.status === "draft" ? { ok: false as const, message: "Not published." } : !sale.forSale ? { ok: false as const, message: notForSaleMessage(sale.name) } : await accessFor(d, row, viewer.userId)
     const claimed = await claimedUnits(d, row.id, viewer.userId)
     const e = entry[0]
     me = {
@@ -383,7 +410,38 @@ const toDate = (s: string | null | undefined) => (s ? new Date(s) : null)
 
 const auditActor = (a: BrandActor) => ({ kind: "brand" as const, id: a.userId, name: a.name, role: a.role })
 
-export async function createDrop(actor: BrandActor, body: DropCreateBody, ipHash: string | null) {
+/** Whether a stored drop is the one `body` would create (a retry of the same request). */
+async function sameCreate(row: DropRow, body: DropCreateBody) {
+  const t = (s: string | null | undefined) => (s ? new Date(s).getTime() : null)
+  const items = (await itemsOf([row.id])).get(row.id)
+  const products = new Set(items?.productIds ?? [])
+  return (
+    row.name === body.name &&
+    row.description === body.description &&
+    row.image === (body.image ?? null) &&
+    row.access === body.access &&
+    row.startsAt.getTime() === t(body.startsAt) &&
+    row.endsAt.getTime() === t(body.endsAt) &&
+    row.limitPerCustomer === body.limitPerCustomer &&
+    row.totalUnits === body.totalUnits &&
+    (row.winnersCount ?? null) === (body.winnersCount ?? null) &&
+    row.purchaseWindowMinutes === body.purchaseWindowMinutes &&
+    new Set(body.productIds).size === products.size &&
+    body.productIds.every((p) => products.has(p))
+  )
+}
+
+export async function createDrop(actor: BrandActor, body: DropCreateBody, idempotencyKey: string | null, ipHash: string | null) {
+  if (!idempotencyKey || !/^[A-Za-z0-9_-]{8,80}$/.test(idempotencyKey)) throw badRequest({ _: "Send an Idempotency-Key of 8-80 letters, digits, - or _." })
+  const findRetry = async () => {
+    const d = await db()
+    const [existing] = await d.select().from(drops).where(and(eq(drops.brandId, actor.brandId), eq(drops.idempotencyKey, idempotencyKey))).limit(1)
+    if (!existing) return null
+    if (!(await sameCreate(existing, body))) throw conflict("That Idempotency-Key was already used for a different drop. Start a new action.")
+    return (await dtos([existing]))[0]
+  }
+  const replay = await findRetry()
+  if (replay) return { drop: replay, replayed: true }
   const pairs = await resolveItems(actor.brandId, body.productIds, body.variantIds)
   const times = checkTimes(
     { access: body.access, startsAt: new Date(body.startsAt), endsAt: new Date(body.endsAt), earlyAccessAt: toDate(body.earlyAccessAt), entryOpensAt: toDate(body.entryOpensAt), entryClosesAt: toDate(body.entryClosesAt) },
@@ -410,14 +468,23 @@ export async function createDrop(actor: BrandActor, body: DropCreateBody, ipHash
         totalUnits: body.totalUnits,
         reminderLeadMinutes: body.reminderLeadMinutes,
         createdBy: actor.userId,
+        idempotencyKey,
       })
+      .onConflictDoNothing({ target: [drops.brandId, drops.idempotencyKey], where: sql`idempotency_key is not null` })
       .returning()
+    if (!row) return null
     await tx.insert(dropItems).values(pairs.map((p) => ({ dropId: id, ...p })))
     await writeAudit({ actor: auditActor(actor), action: "drop.create", target: row.name, subjectType: "drop", subjectId: id, brandId: actor.brandId, ipHash, meta: { access: row.access, startsAt: row.startsAt.toISOString(), products: body.productIds.length } })
     return (await dtos([row]))[0]
   })
+  if (!created) {
+    // A concurrent retry with the same key won the insert.
+    const raced = await findRetry()
+    if (raced) return { drop: raced, replayed: true }
+    throw conflict("The drop couldn't be created. Try again with a new action.")
+  }
   await refreshVisibility([dropImageMediaId(body.image)].filter((id): id is string => !!id))
-  return created
+  return { drop: created, replayed: false }
 }
 
 function assertVersion(row: DropRow, expected: number) {
@@ -431,6 +498,31 @@ export async function updateDrop(actor: BrandActor, row: DropRow, body: DropUpda
   if (row.status === "scheduled" && now >= (row.earlyAccessAt ?? row.startsAt)) throw rule("This drop has started; it can't be edited. Cancel it instead.")
   if (row.drawnAt && (body.startsAt || body.entryClosesAt !== undefined || body.access || body.winnersCount !== undefined)) throw rule("The draw has happened; its times and winners can't change.")
   if (row.status === "scheduled" && body.access && body.access !== row.access) throw rule("Move the drop back to draft to change how shoppers get access.")
+  if (row.access === "draw" && row.status === "scheduled") {
+    // Shoppers enter on the published terms: once entries open (or anyone has entered) they stay fixed.
+    const d = await db()
+    const [e] = await d.select({ n: count() }).from(dropEntries).where(and(eq(dropEntries.dropId, row.id), ne(dropEntries.status, "withdrawn")))
+    const open = phaseOf(row, now) === "entries_open" || (row.entryOpensAt !== null && now >= row.entryOpensAt) || (e?.n ?? 0) > 0
+    const same = (a: Date | null, b: string | null | undefined) => b === undefined || (a?.getTime() ?? null) === (b ? new Date(b).getTime() : null)
+    const locked: Record<string, boolean> = {
+      access: body.access !== undefined && body.access !== row.access,
+      winnersCount: body.winnersCount !== undefined && body.winnersCount !== row.winnersCount,
+      totalUnits: body.totalUnits !== undefined && body.totalUnits !== row.totalUnits,
+      limitPerCustomer: body.limitPerCustomer !== undefined && body.limitPerCustomer !== row.limitPerCustomer,
+      purchaseWindowMinutes: body.purchaseWindowMinutes !== undefined && body.purchaseWindowMinutes !== row.purchaseWindowMinutes,
+      entryOpensAt: !same(row.entryOpensAt, body.entryOpensAt),
+      entryClosesAt: !same(row.entryClosesAt ?? row.startsAt, body.entryClosesAt === null ? row.startsAt.toISOString() : body.entryClosesAt),
+      startsAt: !same(row.startsAt, body.startsAt),
+      productIds: false,
+    }
+    if (body.productIds !== undefined || body.variantIds !== undefined) {
+      const cur = (await itemsOf([row.id])).get(row.id) ?? { productIds: [], variantIds: [] }
+      const sameSet = (a: string[], b: string[]) => a.length === b.length && new Set([...a, ...b]).size === new Set(a).size
+      locked.productIds = (body.productIds !== undefined && !sameSet([...new Set(body.productIds)], cur.productIds)) || (!!body.variantIds && !sameSet([...new Set(body.variantIds)], cur.variantIds))
+    }
+    const changed = Object.keys(locked).filter((k) => locked[k])
+    if (open && changed.length) throw rule("Entries are open for this draw, so its terms, times and pieces can't change. Cancel it to start again.")
+  }
   const access = body.access ?? row.access
   const times = checkTimes(
     {
@@ -482,9 +574,20 @@ export async function updateDrop(actor: BrandActor, row: DropRow, body: DropUpda
   return updated
 }
 
+/** A drop goes public only for a brand shoppers can see and buy from (the catalogue's listing and for-sale rules). */
+async function assertBrandCanRelease(brandId: string) {
+  const d = await db()
+  const [b] = await d.select({ name: brands.name, review: brands.reviewStatus, launched: sql<boolean>`${brandLaunchedSql()}` }).from(brands).where(eq(brands.id, brandId)).limit(1)
+  if (!b || b.review === "restricted" || b.review === "suspended") throw rule("Your brand can't schedule drops while its account is under review. Contact Yard support.")
+  if (!b.launched) throw rule("Publish your storefront before scheduling a drop.")
+  const sale = await brandForSale(d, brandId)
+  if (!sale.forSale) throw rule("Add a payout account before scheduling a drop, so shoppers can buy from it.")
+}
+
 export async function scheduleDrop(actor: BrandActor, row: DropRow, expectedVersion: number, ipHash: string | null) {
   assertVersion(row, expectedVersion)
   if (row.status !== "draft") throw rule("Only a draft can be scheduled.")
+  await assertBrandCanRelease(actor.brandId)
   const times = checkTimes(row, true)
   const items = (await itemsOf([row.id])).get(row.id)
   if (!items?.variantIds.length) throw rule("Add products before scheduling.")

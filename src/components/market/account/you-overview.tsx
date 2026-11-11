@@ -9,6 +9,14 @@ import { ProductCard } from "@/components/market/product-card"
 import { Rail } from "@/components/market/rail"
 import { SectionHeader } from "@/components/market/section-header"
 import { useUpcomingDrops } from "@/components/market/editorial/use-drop-phase"
+import { LiveDropCard } from "@/components/market/live-drops-board"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { useNow } from "@/hooks/use-now"
+import { api } from "@/lib/api/client"
+import { dropPhaseAt, type PublicDropDto } from "@/lib/api/drops"
+import { errorMessage } from "@/lib/api/errors"
+import { useApi } from "@/lib/api/use-api"
 import { Button } from "@/components/ui/button"
 import { brandById, drops as allDrops, productById, recommendBrands } from "@/lib/data"
 import { useOrders } from "@/lib/stores/orders"
@@ -22,6 +30,9 @@ import { InboxSummaryCard } from "@/components/inbox/entry"
 import { YouNav } from "./you-nav"
 import { merchantStatusOf, serverCheckoutGroups, useServerOrderSummaries } from "./use-server-order-summaries"
 import type { CurrencyCode } from "@/config/markets"
+
+const LIVE_UPCOMING_KEY = "/api/drops?phase=upcoming&limit=24"
+const loadLiveUpcoming = () => api<{ items: PublicDropDto[]; nextCursor: string | null }>(LIVE_UPCOMING_KEY, { cache: "default" })
 
 function greeting(hour: number) {
   if (hour < 5) return "Up late"
@@ -70,10 +81,18 @@ export function YouOverview() {
   const rowBrands = [...visitFollowing, ...following.filter((id) => !visitFollowing.includes(id))]
     .map((id) => brandById.get(id))
     .filter((b): b is Brand => !!b)
-  // On the demo clock, so a drop that has released during the visit leaves "Upcoming drops".
-  const allUpcoming = useUpcomingDrops(allDrops)
-  const followedUpcoming = allUpcoming.filter((d) => following.includes(d.brandId))
-  const drops = followedUpcoming.length ? followedUpcoming : allUpcoming
+  // Demo: the sample drops on the demo clock, so a drop that has released during the visit leaves
+  // "Upcoming drops". Otherwise the drops brands scheduled, from the server.
+  const sampleData = usePageSampleData()
+  const sampleUpcoming = useUpcomingDrops(sampleData ? allDrops : [])
+  const liveQuery = useApi(sampleData ? null : LIVE_UPCOMING_KEY, loadLiveUpcoming, { revalidateOnFocus: false })
+  const hydrated = useHydrated()
+  const now = useNow(30_000)
+  const liveUpcoming = (liveQuery.data?.items ?? []).filter((d) => dropPhaseAt(d, now) !== "ended")
+  const followedLive = liveUpcoming.filter((d) => following.includes(d.brand.id))
+  const followedUpcoming = sampleData ? sampleUpcoming.filter((d) => following.includes(d.brandId)) : []
+  const drops = sampleData ? (followedUpcoming.length ? followedUpcoming : sampleUpcoming) : []
+  const liveDrops = sampleData ? [] : (followedLive.length ? followedLive : liveUpcoming).slice(0, 4)
   const saved = wishlist.map((id) => productById.get(id)).filter((p): p is Product => !!p)
   const viewed = recentlyViewed.map((id) => productById.get(id)).filter((p): p is Product => !!p).slice(0, 4)
   // Worked out once per visit so a suggestion doesn't disappear the moment it's followed.
@@ -130,6 +149,30 @@ export function YouOverview() {
             <Link href="/welcome?next=/you">Personalise</Link>
           </Button>
         </div>
+      ) : null}
+
+      {!sampleData && liveQuery.error && !liveQuery.data ? (
+        <section aria-labelledby="you-drops" className="mt-24 md:mt-32">
+          <div id="you-drops"><SectionHeader title="Upcoming drops" href="/drops" /></div>
+          <div role="alert" className="grid max-w-xl gap-3 rounded-lg border border-line-soft bg-card p-5">
+            <p className="text-sm text-ink">Upcoming drops couldn&apos;t be loaded.</p>
+            <p className="text-sm text-ink-2">{errorMessage(liveQuery.error)}</p>
+            <Button variant="secondary" size="sm" className="w-fit" loading={liveQuery.isValidating} onClick={() => void liveQuery.revalidate()}>Try again</Button>
+          </div>
+        </section>
+      ) : liveDrops.length ? (
+        <section aria-labelledby="you-drops" className="mt-24 md:mt-32">
+          <div id="you-drops">
+            <SectionHeader
+              title={followedLive.length ? "Coming from brands you follow" : "Upcoming drops"}
+              description={followedLive.length ? "Limited releases from your brands. Set a reminder and we'll tell you the moment one goes live." : "None of your brands have a drop scheduled, so here's what's coming up."}
+              href="/drops"
+            />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {liveDrops.map((d) => <LiveDropCard key={d.id} drop={d} now={now} hydrated={hydrated} />)}
+          </div>
+        </section>
       ) : null}
 
       {drops.length ? (

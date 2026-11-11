@@ -1,8 +1,11 @@
 import type { Metadata } from "next"
 import { SectionHeader } from "@/components/market/section-header"
 import { LiveDropsBoard } from "@/components/market/live-drops-board"
+import { DropsBoard } from "@/components/market/editorial/drops-board"
 import { accessName, accessRule } from "@/components/market/editorial/drop-facts"
+import { drops } from "@/lib/data"
 import type { Drop } from "@/lib/data/types"
+import { getEnv } from "@/server/env"
 
 export const metadata: Metadata = {
   title: "Drops",
@@ -10,6 +13,9 @@ export const metadata: Metadata = {
 }
 
 export default function DropsPage() {
+  // Demo and development: the sample drops on the demo clock, as before, then any drop a brand
+  // created (from the database). Production: only the database drops.
+  const demo = getEnv().seedDemo
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
       <header className="max-w-2xl">
@@ -19,7 +25,17 @@ export default function DropsPage() {
         </p>
       </header>
 
-      <LiveDropsBoard />
+      {demo ? (
+        <>
+          {/* The feature slot and every group below follow the demo clock, so they are picked together on the client. */}
+          <DropsBoard drops={drops} />
+          <div className="mt-24 md:mt-32">
+            <LiveDropsBoard source="brands" hideWhenEmpty title="From brands on Yard" />
+          </div>
+        </>
+      ) : (
+        <LiveDropsBoard />
+      )}
 
       <section aria-labelledby="how-title" className="mt-24 md:mt-32">
         <div id="how-title">

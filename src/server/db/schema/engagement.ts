@@ -135,12 +135,15 @@ export const drops = pgTable(
     drawnAt: tz("drawn_at"),
     sponsored: boolean("sponsored").notNull().default(false),
     createdBy: text("created_by"),
+    /** The brand's Idempotency-Key for the create, so a retried POST returns the same draft. */
+    idempotencyKey: text("idempotency_key"),
     version: integer("version").notNull().default(1),
     createdAt: tz("created_at").notNull().defaultNow(),
     updatedAt: tz("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("drops_slug_ux").on(t.slug),
+    uniqueIndex("drops_brand_idempotency_ux").on(t.brandId, t.idempotencyKey).where(raw("idempotency_key is not null")),
     index("drops_status_starts_ix").on(t.status, t.startsAt),
     index("drops_brand_starts_ix").on(t.brandId, t.startsAt.desc()),
     oneOf("drops_access_ck", "access", DROP_ACCESS),

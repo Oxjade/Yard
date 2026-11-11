@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { DiceFiveIcon as Dices, ArrowCounterClockwiseIcon as RetryIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/dashboard/status-badge"
@@ -10,8 +10,8 @@ import { SectionHeader } from "@/components/market/section-header"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useApi } from "@/lib/api/use-api"
 import { errorMessage } from "@/lib/api/errors"
-import { dropImageSrc, type PublicDropDto } from "@/lib/api/drops"
-import { useServerSession } from "@/lib/session/use-server-session"
+import { dropEntryStatus, dropImageSrc, type PublicDropDto } from "@/lib/api/drops"
+import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
 import { useSaved } from "@/lib/stores/saved"
 import { drops as demoDrops } from "@/lib/data"
 import { YouNav } from "./you-nav"
@@ -22,15 +22,6 @@ const utcDate = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "shor
 
 function showTime(value: string, hydrated: boolean) {
   return (hydrated ? localDate : utcDate).format(new Date(value))
-}
-
-function entryStatus(status: string): { label: string; tone: "info" | "muted" | "success" | "attention" | "danger" } {
-  if (status === "won") return { label: "Winner", tone: "success" }
-  if (status === "purchased") return { label: "Purchased", tone: "info" }
-  if (status === "waitlisted") return { label: "Waitlisted", tone: "attention" }
-  if (status === "expired") return { label: "Window expired", tone: "muted" }
-  if (status === "lost") return { label: "Not selected", tone: "muted" }
-  return { label: "Entered", tone: "info" }
 }
 
 function demoParticipation(ids: string[]): MyDropsResponse {
@@ -104,10 +95,10 @@ function demoParticipation(ids: string[]): MyDropsResponse {
 }
 
 function DropRow({ drop, caption, status, children }: { drop: PublicDropDto; caption: string; status?: string; children?: React.ReactNode }) {
-  const result = status ? entryStatus(status) : null
+  const result = status ? dropEntryStatus(status) : null
   return <article className="flex min-w-0 flex-col gap-4 border-b border-line-soft py-5 sm:flex-row sm:items-center">
     <Link href={`/drops/${drop.slug}`} className="relative aspect-[4/3] w-full shrink-0 overflow-hidden rounded-md bg-card sm:size-24 sm:aspect-auto">
-      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill sizes="(min-width: 640px) 96px, 90vw" className="object-cover" />
+      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill unoptimized={dropImageSrc(drop.image).startsWith("/api/")} sizes="(min-width: 640px) 96px, 90vw" className="object-cover" />
     </Link>
     <div className="grid min-w-0 flex-1 gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -152,6 +143,7 @@ export function DropsView() {
   const isLiveShopper = session.status === "ready" && !!session.shopper && !session.shopper.demo
   const query = useApi(isLiveShopper ? myDropsKey(session.shopper!.id) : null, loadMyDrops, { keepPrevious: false })
   const demo = useMemo(() => demoParticipation(localReminders), [localReminders])
+  const [retrying, setRetrying] = useState(false)
 
   return <>
     <header>
@@ -163,7 +155,8 @@ export function DropsView() {
     {session.status === "loading" ? <div role="status" className="mt-12 rounded-lg border border-line-soft p-6 text-sm text-ink-3">Loading your drops…</div> : session.status === "error" ? (
       <div role="alert" className="mt-12 grid max-w-xl gap-3 rounded-lg border border-line-soft bg-card p-5">
         <p className="text-sm text-ink">Your account couldn&apos;t be loaded.</p>
-        <p className="text-sm text-ink-2">Refresh the page and try again.</p>
+        <p className="text-sm text-ink-2">Check your connection and try again.</p>
+        <Button variant="secondary" size="sm" className="w-fit" loading={retrying} onClick={() => { setRetrying(true); void refreshServerSession().finally(() => setRetrying(false)) }}><RetryIcon /> Try again</Button>
       </div>
     ) : isLiveShopper ? query.error && !query.data ? (
       <div role="alert" className="mt-12 grid max-w-xl gap-3 rounded-lg border border-line-soft bg-card p-5">

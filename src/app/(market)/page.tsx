@@ -6,6 +6,8 @@ import { DiscoverHero } from "@/components/market/discover-hero"
 import { FoundingBrandsSection } from "@/components/market/founding-brands"
 import { AroundTeaser, ChartsThisWeek } from "@/components/market/discover-modules"
 import { UpcomingDropsBand } from "@/components/market/editorial/upcoming-drops-band"
+import { SampleUpcomingDropsBand } from "@/components/market/editorial/sample-upcoming-drops-band"
+import { HeroFrame, LiveDiscoverHero } from "@/components/market/live-discover-hero"
 import { ProductCard } from "@/components/market/product-card"
 import { RecommendedForYou } from "@/components/market/recommended"
 import { SectionHeader } from "@/components/market/section-header"
@@ -15,6 +17,7 @@ import { withSponsoredSlots } from "@/lib/data/ads"
 import {
   brandById,
   curatedCollections,
+  drops,
   emergingBrands,
   getDrop,
   productById,
@@ -48,8 +51,8 @@ const storyKind: Record<string, string> = {
 
 export default function DiscoverPage() {
   // Production (no demo seed): the real founding brands take the place of the sample modules
-  // (Trending now, the Underground Index and the brand rails). Demo and development keep every
-  // sample module. The hero and the drops band stay for now: they belong to the drops work (task G).
+  // (Trending now, the Underground Index and the brand rails), and the hero and drops band read
+  // the drops a brand scheduled. Demo and development keep every sample module, on the demo clock.
   const demo = getEnv().seedDemo
   const heroDrop = getDrop("drop-07-third-mainland")!
   const heroBrand = brandById.get(heroDrop.brandId)!
@@ -70,16 +73,22 @@ export default function DiscoverPage() {
 
   return (
     <>
-      <DiscoverHero
-        brand={heroBrand}
-        drop={heroDrop}
-        image={img("fashion/campaign/5", "Lagos Static, Drop 07 campaign")}
-        headline={["Third", "Mainland"]}
-        products={heroProducts}
-        spotlight={{ brand: spotlightBrand, title: "Bags, saddle-stitched in Paris", image: spotlightBrand.cover, href: `/brands/${spotlightBrand.handle}` }}
-      />
+      {demo ? (
+        <DiscoverHero
+          brand={heroBrand}
+          drop={heroDrop}
+          image={img("fashion/campaign/5", "Lagos Static, Drop 07 campaign")}
+          headline={["Third", "Mainland"]}
+          products={heroProducts}
+          spotlight={{ brand: spotlightBrand, title: "Bags, saddle-stitched in Paris", image: spotlightBrand.cover, href: `/brands/${spotlightBrand.handle}` }}
+        />
+      ) : (
+        <Suspense fallback={<HeroFrame />}>
+          <LiveDiscoverHero />
+        </Suspense>
+      )}
 
-      <UpcomingDropsBand />
+      {demo ? <SampleUpcomingDropsBand drops={drops} /> : <UpcomingDropsBand />}
 
       <div className="mx-auto max-w-page px-4 md:px-8">
         {/* Trending: ranked from the sample catalogue, demo and development only (production

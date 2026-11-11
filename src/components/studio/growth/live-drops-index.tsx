@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarPlusIcon as CalendarPlus, DiceFiveIcon as Dices, ProhibitIcon as CancelIcon, ArrowCounterClockwiseIcon as RetryIcon } from "@phosphor-icons/react"
+import { CalendarPlusIcon as CalendarPlus, DiceFiveIcon as Dices, ProhibitIcon as CancelIcon, ArrowCounterClockwiseIcon as RetryIcon, EyeIcon as ViewIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { MetricTile } from "@/components/dashboard/metric-tile"
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { StatusTabs } from "@/components/studio/catalog/status-tabs"
 import { ApiError, api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
-import { dropImageSrc, type StudioDropDto } from "@/lib/api/drops"
+import { dropImageSrc, dropPhaseAt, isApiImage, type StudioDropDto } from "@/lib/api/drops"
 import { useApi } from "@/lib/api/use-api"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"
@@ -32,15 +32,20 @@ function dateLabel(value: string, hydrated: boolean) {
   return (hydrated ? localDate : utcDate).format(new Date(value))
 }
 
-function classify(drop: StudioDropDto): Omit<LiveRow, "drop"> {
+/** The row's tab and label on this device's clock (the server's phase is only as fresh as the last fetch). */
+function classify(drop: StudioDropDto, now: number | null): Omit<LiveRow, "drop"> {
   if (drop.status === "cancelled") return { status: "past", statusLabel: "Cancelled", tone: "muted" }
   if (drop.status === "draft") return { status: "drafts", statusLabel: "Draft", tone: "muted" }
-  if (drop.status === "ended" || drop.phase === "ended") return { status: "past", statusLabel: "Ended", tone: "muted" }
-  if (["live", "early_access", "entries_open"].includes(drop.phase)) {
-    return { status: "live", statusLabel: drop.phase === "entries_open" ? "Entries open" : drop.phase === "early_access" ? "Early access" : "Live", tone: "info" }
+  const phase = dropPhaseAt(drop, now)
+  if (drop.status === "ended" || phase === "ended") return { status: "past", statusLabel: "Ended", tone: "muted" }
+  if (phase === "live" || phase === "early_access" || phase === "entries_open") {
+    return { status: "live", statusLabel: phase === "entries_open" ? "Entries open" : phase === "early_access" ? "Early access" : drop.access === "draw" ? (drop.drawnAt ? "Winners buying" : "Draw due") : "Live", tone: "info" }
   }
   return { status: "scheduled", statusLabel: "Scheduled", tone: "attention" }
 }
+
+/** Only drafts and scheduled drops that haven't opened can be edited. */
+const editable = (row: LiveRow) => row.status === "drafts" || row.status === "scheduled"
 
 export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canManage: boolean }) {
   const router = useRouter()
@@ -49,8 +54,9 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
   const [tab, setTab] = useState<Tab>("all")
   const [confirm, setConfirm] = useState<StudioDropDto | null>(null)
   const [workingId, setWorkingId] = useState<string | null>(null)
-  const query = useApi(studioDropsKey(brandId), loadStudioDrops, { keepPrevious: false })
-  const rows = useMemo(() => (query.data ?? []).map((drop) => ({ drop, ...classify(drop) })), [query.data])
+  // Refreshed every minute, so entry counts, draws and status changes made elsewhere show up.
+  const query = useApi(studioDropsKey(brandId), loadStudioDrops, { keepPrevious: false, refreshInterval: 60_000 })
+  const rows = useMemo(() => (query.data ?? []).map((drop) => ({ drop, ...classify(drop, now) })), [query.data, now])
   const counts = {
     all: rows.length,
     scheduled: rows.filter((row) => row.status === "scheduled").length,
@@ -72,7 +78,7 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
         toast.success("Drop moved to drafts", { description: drop.name })
       } else if (action === "cancel") {
         await api(`/api/drops/${encodeURIComponent(drop.id)}/cancel`, { body: { expectedVersion: drop.version } })
-        toast.success("Drop cancelled", { description: drop.name })
+        toast.success(drop.status === "draft" ? "Draft discarded" : "Drop cancelled", { description: drop.name })
       } else {
         const result = await api<{ counts: { entries: number; won: number } }>(`/api/drops/${encodeURIComponent(drop.id)}/draw`, { method: "POST" })
         toast.success("Draw completed", { description: `${result.counts.won} winners from ${result.counts.entries} entries.` })
@@ -95,14 +101,14 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
       cell: (row) => {
         const content = <span className="group flex min-w-0 items-center gap-3">
           <span className="relative size-11 shrink-0 overflow-hidden rounded-md bg-surface">
-            <Image src={dropImageSrc(row.drop.image, "brand")} alt="" fill sizes="44px" className="object-cover" />
+            <Image src={dropImageSrc(row.drop.image, "brand")} alt="" fill unoptimized={isApiImage(dropImageSrc(row.drop.image, "brand"))} sizes="44px" className="object-cover" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-ink group-hover:text-violet md:max-w-[18rem]">{row.drop.name}</span>
             <span className="block truncate text-xs text-ink-3">{row.drop.access === "draw" ? "Draw" : row.drop.access === "early_access" ? "Early access" : "First come"} · limit {row.drop.limitPerCustomer}</span>
           </span>
         </span>
-        return canManage ? <Link href={`/studio/drops/${row.drop.id}`} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-violet">{content}</Link> : content
+        return canManage && editable(row) ? <Link href={`/studio/drops/${row.drop.id}`} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-violet">{content}</Link> : content
       },
     },
     { key: "status", header: "Status", sortValue: (row) => row.statusLabel, hideBelow: "md", cell: (row) => <StatusBadge tone={row.tone}>{row.statusLabel}</StatusBadge> },
@@ -113,8 +119,9 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
   ]
 
   const rowActions: RowAction<LiveRow>[] = [
-    { label: "Edit drop", icon: CalendarPlus, onSelect: (row) => router.push(`/studio/drops/${row.drop.id}`) },
-    { label: "Move to drafts", icon: RetryIcon, onSelect: (row) => void lifecycle(row.drop, "unschedule"), disabled: (row) => workingId === row.drop.id, hidden: (row) => row.drop.status !== "scheduled" },
+    { label: "Edit drop", icon: CalendarPlus, onSelect: (row) => router.push(`/studio/drops/${row.drop.id}`), hidden: (row) => !editable(row) },
+    { label: "View public page", icon: ViewIcon, onSelect: (row) => router.push(`/drops/${row.drop.slug}`), hidden: (row) => row.status === "drafts" || row.drop.status === "cancelled" },
+    { label: "Move to drafts", icon: RetryIcon, onSelect: (row) => void lifecycle(row.drop, "unschedule"), disabled: (row) => workingId === row.drop.id, hidden: (row) => row.status !== "scheduled" },
     {
       label: "Run draw",
       icon: Dices,
@@ -124,6 +131,7 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
       hidden: (row) => row.drop.access !== "draw" || !!row.drop.drawnAt || row.drop.status === "cancelled" || row.drop.status === "ended",
     },
     { label: "Cancel drop", icon: CancelIcon, onSelect: (row) => setConfirm(row.drop), destructive: true, disabled: (row) => workingId === row.drop.id, hidden: (row) => !["scheduled", "live"].includes(row.status) },
+    { label: "Discard draft", icon: CancelIcon, onSelect: (row) => setConfirm(row.drop), destructive: true, disabled: (row) => workingId === row.drop.id, hidden: (row) => row.status !== "drafts" },
   ]
 
   return (
@@ -191,12 +199,12 @@ export function LiveDropsIndex({ brandId, canManage }: { brandId: string; canMan
       <Dialog open={!!confirm} onOpenChange={(open) => !open && setConfirm(null)}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle>Cancel this drop?</DialogTitle>
-            <DialogDescription className="text-ink-2">{confirm?.name} will stop accepting purchases or entries. Any open winner claims will be released.</DialogDescription>
+            <DialogTitle>{confirm?.status === "draft" ? "Discard this draft?" : "Cancel this drop?"}</DialogTitle>
+            <DialogDescription className="text-ink-2">{confirm?.status === "draft" ? `${confirm.name} will move to Past as cancelled and can't be scheduled.` : `${confirm?.name} will stop accepting purchases or entries. Any open winner claims will be released.`}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirm(null)}>Keep drop</Button>
-            <Button variant="destructive-solid" loading={!!workingId} onClick={() => confirm && void lifecycle(confirm, "cancel")}><CancelIcon /> Cancel drop</Button>
+            <Button variant="secondary" onClick={() => setConfirm(null)}>{confirm?.status === "draft" ? "Keep draft" : "Keep drop"}</Button>
+            <Button variant="destructive-solid" loading={!!workingId} onClick={() => confirm && void lifecycle(confirm, "cancel")}><CancelIcon /> {confirm?.status === "draft" ? "Discard draft" : "Cancel drop"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
