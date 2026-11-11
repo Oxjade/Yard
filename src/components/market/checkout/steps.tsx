@@ -14,22 +14,18 @@ import { cn } from "@/lib/utils"
 import type { BrandGroup } from "@/lib/cart"
 import { describedBy, Field, inputClass, Notice, OptionCard, OptionGroup } from "./fields"
 import {
-  cardBrand,
   cityLine,
   countryRules,
-  formatCardNumber,
-  formatExpiry,
-  mobileMoneyNetworks,
   parsePhone,
   paymentMethodCopy,
+  paymentMethodNext,
   paymentSummary,
-  ussdBanks,
   type AddressDraft,
   type ContactDraft,
   type FieldErrors,
-  type PaymentDraft,
   type PaymentMethod,
 } from "./rules"
+import { usePaymentsMode } from "./payment-options"
 import { Bone } from "@/components/feedback/skeletons"
 import { RetryButton } from "@/components/market/delivery/delivery-bits"
 import { businessDays, formatDay } from "@/lib/shipping/format"
@@ -285,45 +281,20 @@ const methodIcon: Record<PaymentMethod, React.ReactNode> = {
   mobile_money: <Smartphone className="size-[18px]" />,
 }
 
-/** Room kept at the card field's end for the detected brand: only as wide as its label, so the number stays readable on a phone. */
-const brandPad: Record<NonNullable<ReturnType<typeof cardBrand>>, string> = {
-  "American Express": "pr-32",
-  Mastercard: "pr-24",
-  Verve: "pr-16",
-  Visa: "pr-16",
-}
-
 export function PaymentStep({
-  value,
   method,
   methods,
-  onChange,
   onMethodChange,
-  errors,
   country,
-  cardCleared = false,
 }: {
-  value: PaymentDraft
   method: PaymentMethod
   methods: PaymentMethod[]
-  onChange: (v: PaymentDraft) => void
   onMethodChange: (m: PaymentMethod) => void
-  errors: FieldErrors
   country: CountryCode
-  /** The rest of the checkout was restored after a reload; card details never are. */
-  cardCleared?: boolean
 }) {
-  const set = (k: keyof PaymentDraft, format?: (v: string) => string) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    onChange({ ...value, [k]: format ? format(e.target.value) : e.target.value })
-  const brand = cardBrand(value.cardNumber)
-  const networks = mobileMoneyNetworks[country] ?? []
-
+  const mode = usePaymentsMode()
   return (
     <div className="grid grid-cols-1 gap-5">
-      <Notice icon={ShieldCheck}>
-        <span className="text-ink">No payment provider is connected in this development build.</span> Placing the order records it as awaiting payment confirmation and nothing is charged. Card details are checked for format only and never stored.
-      </Notice>
-
       <OptionGroup value={method} onValueChange={(v) => onMethodChange(v as PaymentMethod)} label="Payment method" className={cn(methods.length === 2 && "sm:grid-cols-2", methods.length === 3 && "md:grid-cols-3")}>
         {methods.map((m) => {
           const copy = paymentMethodCopy(m, country)
@@ -335,111 +306,38 @@ export function PaymentStep({
       ) : null}
 
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={method} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: duration.dropdown, ease: ease.out }} className="rounded-lg border border-line-soft bg-card p-4 md:p-5">
-          {method === "card" ? (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              {cardCleared ? (
-                <p className="text-xs leading-relaxed text-ink-2 sm:col-span-2">Your other details were kept. Card details never are, so enter them again to continue.</p>
-              ) : null}
-              <Field id="pay-number" label="Card number" hint="To test, use 4242 4242 4242 4242 with any future date." error={errors["pay-number"]} className="sm:col-span-2">
-                <div className="relative">
-                  <Input
-                    {...describedBy("pay-number", errors["pay-number"], "hint")}
-                    inputMode="numeric"
-                    autoComplete="cc-number"
-                    placeholder="1234 5678 9012 3456"
-                    value={value.cardNumber}
-                    onChange={set("cardNumber", formatCardNumber)}
-                    className={cn(inputClass, brand ? brandPad[brand] : undefined, "tabular")}
-                  />
-                  {brand ? <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-2">{brand}</span> : null}
-                </div>
-              </Field>
-              <Field id="pay-expiry" label="Expiry date" error={errors["pay-expiry"]}>
-                <Input {...describedBy("pay-expiry", errors["pay-expiry"])} inputMode="numeric" autoComplete="cc-exp" placeholder="MM/YY" value={value.expiry} onChange={set("expiry", formatExpiry)} className={cn(inputClass, "tabular")} />
-              </Field>
-              <Field id="pay-cvc" label="Security code" hint="The 3 digits on the back, or 4 on the front for American Express." error={errors["pay-cvc"]}>
-                <Input
-                  {...describedBy("pay-cvc", errors["pay-cvc"], "hint")}
-                  inputMode="numeric"
-                  autoComplete="cc-csc"
-                  placeholder="123"
-                  value={value.cvc}
-                  onChange={set("cvc", (v) => v.replace(/\D/g, "").slice(0, 4))}
-                  className={cn(inputClass, "tabular")}
-                />
-              </Field>
-              <Field id="pay-name" label="Name on card" error={errors["pay-name"]} className="sm:col-span-2">
-                <Input {...describedBy("pay-name", errors["pay-name"])} autoComplete="cc-name" value={value.cardName} onChange={set("cardName")} className={inputClass} />
-              </Field>
-            </div>
-          ) : method === "bank_transfer" ? (
-            <div className="grid gap-2 text-sm leading-relaxed text-ink-2">
-              <p className="text-ink">{country === "ZA" ? "Pay by Instant EFT" : "Pay into a one-time account"}</p>
-              <p>
-                {country === "ZA"
-                  ? "Once a provider is connected, you choose your bank after placing the order and approve the payment in its app. Brands start preparing orders only once it clears."
-                  : "Once a provider is connected, you get an account number and the exact amount to send from your banking app after placing the order. The account expires after 30 minutes."}
-              </p>
-              <p className="text-xs text-ink-3">Not connected in this development build: no account details are issued, and the order stays awaiting payment confirmation.</p>
-            </div>
-          ) : method === "ussd" ? (
-            <div className="grid gap-4">
-              <Field id="pay-bank" label="Your bank" hint="Once a provider is connected, the code to dial appears after you place the order." error={errors["pay-bank"]}>
-                <Select value={value.ussdBank || undefined} onValueChange={(v) => onChange({ ...value, ussdBank: v })}>
-                  <SelectTrigger {...describedBy("pay-bank", errors["pay-bank"], "hint")} className={selectClass}>
-                    <SelectValue placeholder="Choose your bank" />
-                  </SelectTrigger>
-                  <SelectContent position="popper" className="max-h-72">
-                    {ussdBanks.map((b) => (
-                      <SelectItem key={b} value={b}>
-                        {b}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <p className="text-xs leading-relaxed text-ink-3">Dial from the phone number linked to your bank account. No data connection needed. Not connected in this development build, so no code is issued and the order stays awaiting payment confirmation.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <Field id="pay-network" label="Network" error={errors["pay-network"]}>
-                <Select value={value.momoNetwork || undefined} onValueChange={(v) => onChange({ ...value, momoNetwork: v })}>
-                  <SelectTrigger {...describedBy("pay-network", errors["pay-network"])} className={selectClass}>
-                    <SelectValue placeholder="Choose a network" />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    {networks.map((n) => (
-                      <SelectItem key={n} value={n}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field id="pay-momo" label="Mobile money number" hint="Once a provider is connected, you approve the payment on this phone. No prompt is sent in this development build." error={errors["pay-momo"]}>
-                <div className="relative">
-                  <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-2 tabular">
-                    {countryRules[country].dial}
-                  </span>
-                  <Input
-                    {...describedBy("pay-momo", errors["pay-momo"], "hint")}
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    placeholder={countryRules[country].phoneExample.replace(/^0/, "")}
-                    value={value.momoNumber}
-                    onChange={set("momoNumber")}
-                    className={cn(inputClass, dialPad[countryRules[country].dial.length] ?? "pl-13", "tabular")}
-                  />
-                </div>
-              </Field>
-            </div>
-          )}
+        <motion.div key={method} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
+          <Notice icon={ShieldCheck} className="text-sm">
+            <span className="text-ink">{method === "card" ? "You'll enter your card details securely on Paystack." : "You'll finish paying securely on Paystack."}</span> {paymentMethodNext(method, country)}
+          </Notice>
         </motion.div>
       </AnimatePresence>
+
+      <PaymentModeNote mode={mode} />
     </div>
   )
+}
+
+/**
+ * What this deployment does with the payment. Stub: nothing is charged. Test: Paystack's test mode,
+ * pointing to Paystack's own test details. Live, loading or unknown: nothing extra.
+ */
+export function PaymentModeNote({ mode, className }: { mode: ReturnType<typeof usePaymentsMode>; className?: string }) {
+  if (mode === "stub") {
+    return (
+      <p className={cn("text-xs leading-relaxed text-ink-3", className)}>
+        Payments aren&apos;t connected here. Placing the order records it as awaiting payment, and nothing is charged.
+      </p>
+    )
+  }
+  if (mode === "test") {
+    return (
+      <p className={cn("text-xs leading-relaxed text-ink-3", className)}>
+        Test mode: no real money moves. On Paystack&apos;s page, use one of the test cards or test bank details Paystack lists in its test payments guide.
+      </p>
+    )
+  }
+  return null
 }
 
 /* ---------- 5. Review ---------- */
@@ -461,7 +359,6 @@ function ReviewBlock({ title, onChange, children }: { title: string; onChange: (
 export function ReviewStep({
   contact,
   address,
-  payment,
   method,
   groups,
   currency,
@@ -471,7 +368,6 @@ export function ReviewStep({
 }: {
   contact: ContactDraft
   address: AddressDraft
-  payment: PaymentDraft
   method: PaymentMethod
   groups: BrandGroup[]
   currency: CurrencyCode
@@ -516,7 +412,8 @@ export function ReviewStep({
         </ul>
       </ReviewBlock>
       <ReviewBlock title="Payment" onChange={() => onEdit(3)}>
-        <p>{paymentSummary(payment, method, country)}</p>
+        <p>{paymentSummary(method, country)}</p>
+        <p className="text-ink-2">Paid on Paystack after you place the order</p>
       </ReviewBlock>
     </div>
   )

@@ -287,17 +287,24 @@ const LEGACY_ADMIN_NOTE = "Legacy pages act as Kemi Ajayi in this browser."
 /** The internal Admin Control Center: a control room — dense, operational, data-first. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
-  // The Brands queue as the page counts it: live Studio applications and sample ones.
-  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
-  const openModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
+  // Advertising and Health have only sample data so far: demo and development only (production
+  // serves them as "coming soon", src/proxy.ts). Hidden until the session says which, so production
+  // never flashes them. Production badges also count only the server's records, never this
+  // browser's sample queues (sample applications, flagged listings, refunds, payouts, campaigns).
+  const sampleData = useServerSession((s) => s.sampleData === true)
+  // The Brands queue as the page counts it: live Studio applications and, in the demo, sample ones.
+  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review" && (sampleData || !!a.onboardingId)).length
+  const sampleModeration = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
+  const openModeration = sampleData ? sampleModeration : 0
   const sampleRefunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
   const samplePayouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
   // A real admin's Finance reads the server: its badge counts the server's payouts awaiting approval
   // (for the Owner and Finance roles), never the sample store's.
   const money = useLiveMoney()
-  const refunds = money.live ? 0 : sampleRefunds
-  const payoutsToApprove = money.live ? (money.payoutsToDecide ?? 0) : samplePayouts
-  const inReview = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
+  const refunds = money.live || !sampleData ? 0 : sampleRefunds
+  const payoutsToApprove = money.live || !sampleData ? (money.payoutsToDecide ?? 0) : samplePayouts
+  const sampleInReview = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
+  const inReview = sampleData ? sampleInReview : 0
   // Counts appear once the store has loaded from this browser, so they never flash a stale figure.
   const n = (v: number) => (ready && v > 0 ? v : undefined)
 
@@ -348,13 +355,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       items: [
         // The finance service answers the Owner and Finance roles only (ADMIN_FINANCE_ROLES).
         ...when(!money.live || money.finance, { href: "/admin/finance", label: "Finance", icon: MoneyIcon, badge: money.live ? q(payoutsToApprove) : n(refunds + payoutsToApprove), badgeLabel: "to decide", tone: "attention" }),
-        { href: "/admin/advertising", label: "Advertising", icon: MegaphoneIcon, badge: n(inReview), badgeLabel: "in review", tone: "attention" },
+        ...when(sampleData, { href: "/admin/advertising", label: "Advertising", icon: MegaphoneIcon, badge: n(inReview), badgeLabel: "in review", tone: "attention" }),
       ],
     },
     {
       label: "Platform",
       items: [
-        { href: "/admin/health", label: "Health", icon: PulseIcon },
+        ...when(sampleData, { href: "/admin/health", label: "Health", icon: PulseIcon }),
         { href: "/admin/security", label: "Security", icon: ShieldCheckIcon },
       ],
     },
@@ -397,7 +404,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         menu: [
           { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
           { label: "Security and audit log", href: "/admin/security", icon: ShieldCheckIcon },
-          { label: "System health", href: "/admin/health", icon: HeartbeatIcon },
+          ...(sampleData ? [{ label: "System health", href: "/admin/health", icon: HeartbeatIcon }] : []),
           ...(demoOn ? [{ label: "Switch demo admin…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
           // Signing out never depends on the demo flag: whoever holds a session can always end it.
           ...(admin ? [{ label: "Sign out of demo account", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),
@@ -430,7 +437,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       topbar={
         <>
           {legacyNote ? <WorkspaceNote text={LEGACY_ADMIN_NOTE} label="About whose account these pages use" /> : null}
-          <SystemStatus />
+          {/* Its status comes from the sample health data, so it shows in demo and development only. */}
+          {sampleData ? <SystemStatus /> : null}
         </>
       }
     >

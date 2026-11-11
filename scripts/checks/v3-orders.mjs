@@ -208,6 +208,20 @@ const devJob = (job, orderIds, at) => post("/api/orders/dev", { op: "run-job", j
 const ageDelivery = (orderId, days) => post("/api/orders/dev", { op: "age-delivery", orderId, days })
 const sumRefunds = (o) => (o?.refunds ?? []).filter((r) => r.status === "succeeded" || r.status === "pending").reduce((s, r) => s + r.amountMinor, 0)
 const code = (r) => r?.body?.error?.code
+/**
+ * Brand money actions (refund, cancelling a paid order, receiving a return with its refund) need a
+ * re-auth within 5 minutes. Demo brand sessions confirm with { demo: true } (development only).
+ * Re-confirms when the last one is older than 3 minutes, so a long section never runs out.
+ */
+async function brandReauth(...whos) {
+  for (const who of whos) {
+    if (who.reauthAt && Date.now() - who.reauthAt < 180_000) continue
+    const r = await post("/api/auth/reauth?as=brand", { demo: true }, { who })
+    if (r.status !== 200) throw new Error(`brand re-auth ${who.account}: ${brief(r)}`)
+    who.reauthAt = Date.now()
+  }
+}
+const needsReauth = (r) => r?.status === 403 && r.body?.error?.fields?.reauth === "required"
 
 /* ---------------- the kit ---------------- */
 
@@ -290,6 +304,7 @@ async function main() {
     const T = before?.totalMinor ?? 0
     const amt = Math.floor(T * 0.4)
     await post("/api/auth/reauth?as=admin", { demo: true }, { who: ADM_SUP })
+    await brandReauth(TOBI)
     const fire = (i) =>
       i % 2 === 0
         ? post(`/api/studio/orders/${O.orderId}/refunds`, { amountMinor: amt, reason: "parallel goodwill", idempotencyKey: key(`par${i}`) }, { who: TOBI, noRetry: true })
@@ -348,6 +363,7 @@ async function main() {
     check("admin detail: shipping.view admin reads any order; no-permission admin 403", (await get(`/api/orders/admin/${O1.orderId}`, { who: ADM_TS })).status === 200 && (await get(`/api/orders/admin/${O1.orderId}`, { who: ADM_ADS })).status === 403)
 
     // Refund validation and roles
+    await brandReauth(TOBI, MINJI)
     const R = (b, who = TOBI) => post(`/api/studio/orders/${O1.orderId}/refunds`, b, { who })
     const v = [
       ["amount 0", { amountMinor: 0, reason: "goodwill", idempotencyKey: key("v") }],
@@ -409,6 +425,46 @@ async function main() {
     check("admin refund: over-refund 422", overA.status === 422, brief(overA))
   }
 
+  /* ===== Brand money actions need a recent re-auth (password; demo confirm in development) ===== */
+  {
+    // Fresh sessions: signing in doesn't count as a re-auth, so their first money action is refused.
+    const owner = await demo("brand", "u_b_tobi", "b_lagos_static")
+    const staff = await demo("brand", "u_b_kemi", "b_lagos_static")
+    const O = await buy(S3, [{ variantId: vS, qty: 1 }])
+    const refundPath = `/api/studio/orders/${O.orderId}/refunds`
+    const body = { amountMinor: 1_000, reason: "goodwill after reauth", idempotencyKey: key("rr") }
+    const no = await post(refundPath, body, { who: owner })
+    check("brand refund reauth: owner without a recent re-auth → 403 fields.reauth=required", needsReauth(no), brief(no))
+    const d0 = await studioOrder(owner, O.orderId)
+    check("brand refund reauth: the refused refund recorded nothing", d0?.refunds?.length === 0 && d0.refundedMinor === 0 && d0.states.payment === "paid", { refunds: d0?.refunds, states: d0?.states })
+    const role = await post(refundPath, { ...body, idempotencyKey: key("rr") }, { who: staff })
+    check("brand refund reauth: a fulfilment member is still refused by role (403, not a re-auth ask)", role.status === 403 && !needsReauth(role), brief(role))
+    const wrong = await post("/api/auth/reauth?as=brand", { password: "not-the-demo-way" }, { who: owner })
+    check("brand refund reauth: a demo session can't confirm with a password (422)", wrong.status === 422, brief(wrong))
+    const ra = await post("/api/auth/reauth?as=brand", { demo: true }, { who: owner })
+    check("brand refund reauth: demo re-auth as brand (development) → 200", ra.status === 200 && ra.body?.ok === true, brief(ra))
+    const ok = await post(refundPath, body, { who: owner })
+    check("brand refund reauth: retry with the SAME Idempotency-Key after re-auth → 201 succeeded", ok.status === 201 && ok.body.status === "succeeded" && ok.body.duplicate === false && ok.body.order?.refundedMinor === 1_000, brief(ok).slice(0, 200))
+    const dup = await post(refundPath, body, { who: owner })
+    check("brand refund reauth: the same key again → 200 duplicate, one refund", dup.status === 200 && dup.body.duplicate === true && dup.body.refundId === ok.body.refundId && dup.body.order?.refunds?.length === 1, brief(dup).slice(0, 200))
+
+    // Cancel: an unpaid order refunds nothing, so no password; a paid one is a refund, so it asks.
+    const U = await buy(S3, [{ variantId: vS, qty: 1 }], { pay: null })
+    const cu = await post(`/api/studio/orders/${U.orderId}/cancel`, { reason: "Out of stock", idempotencyKey: key("rcu") }, { who: staff })
+    check("brand cancel reauth: an unpaid order cancels without a re-auth (200, no refund)", cu.status === 200 && cu.body.order?.states?.fulfilment === "cancelled" && cu.body.order.refunds.length === 0, brief(cu).slice(0, 200))
+    const P = await buy(S3, [{ variantId: vS, qty: 1 }])
+    const ck = key("rcp")
+    const cancel = () => post(`/api/studio/orders/${P.orderId}/cancel`, { reason: "Out of stock", idempotencyKey: ck }, { who: staff })
+    const c1 = await cancel()
+    const dp = await studioOrder(owner, P.orderId)
+    check("brand cancel reauth: a paid order without a recent re-auth → 403 fields.reauth=required, order untouched", needsReauth(c1) && dp?.states?.fulfilment === "unfulfilled" && dp.states.payment === "paid" && dp.refunds.length === 0, { c1: brief(c1), states: dp?.states })
+    const rs = await post("/api/auth/reauth?as=brand", { demo: true }, { who: staff })
+    const c2 = await cancel()
+    check("brand cancel reauth: after re-auth the same key cancels and refunds in full", rs.status === 200 && c2.status === 200 && c2.body.order?.states?.fulfilment === "cancelled" && c2.body.order.states.payment === "refunded" && c2.body.order.refunds.length === 1, brief(c2).slice(0, 200))
+    const c3 = await cancel()
+    check("brand cancel reauth: the same key again → alreadyCancelled, still one refund", c3.status === 200 && c3.body.alreadyCancelled === true && c3.body.order?.refunds?.length === 1, brief(c3).slice(0, 200))
+  }
+
   /* ===== O2: shopper cancel before dispatch (refund + restock, idempotent) ===== */
   {
     const s0 = await stockOf(vS)
@@ -428,6 +484,7 @@ async function main() {
     check("cancel: cancelling again → 200 alreadyCancelled, no second refund, no second restock", again.status === 200 && again.body.alreadyCancelled === true && d2.refunds.length === 1 && (await stockOf(vS)) === s0, brief(again).slice(0, 160))
     check("cancel: actions after cancel — nothing allowed", d2?.actions?.canCancel === false && d2.actions.canRequestReturn === false, d2?.actions)
     check("studio list: fulfilment=cancelled filter finds it", (await get(`/api/studio/orders?fulfilment=cancelled&q=${encodeURIComponent(d2.reference)}`, { who: TOBI })).body?.items?.some((o) => o.id === O.orderId))
+    await brandReauth(TOBI)
     const late = await post(`/api/studio/orders/${O.orderId}/refunds`, { amountMinor: 100, reason: "after cancel", idempotencyKey: key("x") }, { who: TOBI })
     check("cancel: a refund after the full cancellation refund is 422", late.status === 422, brief(late))
   }
@@ -436,6 +493,7 @@ async function main() {
   {
     const s0 = await stockOf(vM)
     const O = await buy(S2, [{ variantId: vM, qty: 2 }])
+    await brandReauth(KEMI)
     const B = (b, who) => post(`/api/studio/orders/${O.orderId}/cancel`, b, { who })
     check("brand cancel: reason under 3 chars is 400", (await B({ reason: "x", idempotencyKey: key("bc") }, KEMI)).status === 400)
     check("brand cancel: viewer is 403", (await B({ reason: "Out of stock", idempotencyKey: key("bc") }, VIEWER)).status === 403)
@@ -453,6 +511,7 @@ async function main() {
     const F = await buy(S2, [{ variantId: vS, qty: 1 }], { pay: "failed" })
     const d = await shopperOrder(S2, F.orderId)
     check("payment failed: order payment failed, fulfilment cancelled, no actions", d?.states?.payment === "failed" && d.states.fulfilment === "cancelled" && d.actions.canCancel === false && d.refundableMinor === 0, d?.states)
+    await brandReauth(TOBI)
     const r = await post(`/api/studio/orders/${F.orderId}/refunds`, { amountMinor: 100, reason: "nothing paid", idempotencyKey: key("x") }, { who: TOBI })
     check("payment failed: refunding an unpaid order is 422", r.status === 422, brief(r))
 
@@ -483,6 +542,7 @@ async function main() {
     await ship(TOBI, O.orderId, ["shipped"])
     const cShipped = await post(`/api/orders/${O.orderId}/cancel`, { idempotencyKey: key("c") }, { who: S1 })
     check("cancel: after dispatch → 422, actions.canCancel false", cShipped.status === 422 && (await shopperOrder(S1, O.orderId))?.actions?.canCancel === false, brief(cShipped))
+    await brandReauth(TOBI)
     check("brand cancel: after dispatch → 422", (await post(`/api/studio/orders/${O.orderId}/cancel`, { reason: "Too late now", idempotencyKey: key("bc") }, { who: TOBI })).status === 422)
     await ship(TOBI, O.orderId, ["delivered"])
     const d0 = await shopperOrder(S1, O.orderId)
@@ -516,6 +576,7 @@ async function main() {
     const second = await RET({ reason: "too_large", idempotencyKey: key("r") })
     check("returns: a second open return → 409", second.status === 409, brief(second))
     check("studio list: returns=open finds the order", (await get(`/api/studio/orders?returns=open&q=${encodeURIComponent(d0.reference)}`, { who: TOBI })).body?.items?.some((o) => o.id === O.orderId))
+    await brandReauth(TOBI)
     check("brand cancel: with a return in progress → 409 or 422", [409, 422].includes((await post(`/api/studio/orders/${O.orderId}/cancel`, { reason: "No longer", idempotencyKey: key("bc") }, { who: TOBI })).status))
 
     check("return cancel: another shopper → 404", (await post(`/api/orders/${O.orderId}/returns/${rid1}/cancel`, {}, { who: S2 })).status === 404)
@@ -547,6 +608,11 @@ async function main() {
     check("return cancel: an approved return can't be withdrawn (409)", (await post(`/api/orders/${O.orderId}/returns/${rid2}/cancel`, {}, { who: S1 })).status === 409)
 
     const REC = (b, who) => post(`/api/studio/orders/${O.orderId}/returns/${rid2}/receive`, b, { who })
+    // Receiving with its refund moves money: a fulfilment member who hasn't re-confirmed is asked to.
+    const kemiFresh = await demo("brand", "u_b_kemi", "b_lagos_static")
+    const recNoReauth = await REC({ idempotencyKey: key("rcv") }, kemiFresh)
+    check("receive reauth: refund without a recent re-auth → 403 fields.reauth=required, return still approved", needsReauth(recNoReauth) && (await studioOrder(TOBI, O.orderId))?.returns?.find((r) => r.id === rid2)?.status === "approved", brief(recNoReauth))
+    await brandReauth(KEMI, MINJI)
     check("receive: viewer → 403, another brand → 404", (await REC({ idempotencyKey: key("rcv") }, VIEWER)).status === 403 && (await REC({ idempotencyKey: key("rcv") }, MINJI)).status === 404)
     check("receive: missing key → 400", (await REC({}, KEMI)).status === 400)
     const sBefore = await stockOf(vS)
@@ -579,6 +645,7 @@ async function main() {
     check("brand decision: approve again → 200 unchanged", ap2.status === 200 && ap2.body.status === "approved")
     const T = ap.body.order.totalMinor
     const sBefore = await stockOf(vM)
+    await brandReauth(TOBI)
     const tooMuch = await post(`/api/studio/orders/${O.orderId}/returns/${rid}/receive`, { amountMinor: T + 1, idempotencyKey: key("rcv") }, { who: TOBI })
     check("receive: everything back — refund may be the full total incl. shipping, never more (422)", tooMuch.status === 422, brief(tooMuch))
     const half = Math.floor(T / 2)
@@ -640,6 +707,7 @@ async function main() {
     check("dispute evidence: viewer 403, another brand 404", (await EV({ evidence: "Delivered with signature on file." }, VIEWER)).status === 403 && (await EV({ evidence: "Delivered with signature on file." }, MINJI)).status === 404)
     const ev = await EV({ evidence: "Delivered to the shopper; signature and tracking on file." }, KEMI)
     check("dispute evidence: fulfilment member submits → stored with time", ev.status === 200 && ev.body.dispute.brandEvidence?.startsWith("Delivered") && !!ev.body.dispute.brandEvidenceAt, brief(ev).slice(0, 200))
+    await brandReauth(TOBI)
     const gw = await post(`/api/studio/orders/${O.orderId}/refunds`, { amountMinor: T, reason: "goodwill during a chargeback", idempotencyKey: key("gwd") }, { who: TOBI })
     check("dispute open: a brand goodwill refund → 409 (would pay the shopper twice)", gw.status === 409, brief(gw).slice(0, 200))
     await post("/api/auth/reauth?as=admin", { demo: true }, { who: ADM_SUP })
@@ -665,6 +733,7 @@ async function main() {
     check("dispute lost: a repeated resolve event records no second refund", again.status === 200 && (await studioOrder(TOBI, O.orderId))?.refunds?.length === 1, brief(again).slice(0, 160))
     check("dispute: evidence after resolution → 409", (await EV({ evidence: "More evidence after the fact." }, KEMI)).status === 409)
     check("admin dispute update: closing a lost dispute → 409", (await PD({ status: "closed" }, ADM_SUP)).status === 409)
+    await brandReauth(TOBI)
     const rf = await post(`/api/studio/orders/${O.orderId}/refunds`, { amountMinor: 1, reason: "after dispute", idempotencyKey: key("x") }, { who: TOBI })
     check("dispute lost: nothing left to refund (422)", rf.status === 422, brief(rf))
   }
@@ -751,6 +820,7 @@ async function main() {
     const dpId = `${TAG}_dpr`
     const sim = (event, data) => post("/api/webhooks/paystack/simulate", { event, data }, { who: ADM_OWNER })
     await sim("charge.dispute.create", { id: dpId, status: "awaiting-merchant-feedback", currency: "NGN", transaction: { reference: payRef } })
+    await brandReauth(KEMI)
     const rec = await post(`/api/studio/orders/${O.orderId}/returns/${rid}/receive`, { idempotencyKey: key("rcvd") }, { who: KEMI })
     const d = await studioOrder(TOBI, O.orderId)
     check("dispute open: receiving a return with its refund → 409, no refund, return still approved", rec.status === 409 && d?.refunds?.length === 0 && d.states.return === "approved" && d.states.payment === "paid", { rec: brief(rec).slice(0, 160), refunds: d?.refunds, states: d?.states })

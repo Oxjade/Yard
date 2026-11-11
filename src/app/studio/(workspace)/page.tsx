@@ -40,10 +40,13 @@ import { NotificationRow } from "@/components/feedback/notification-bell"
 import { bestSellers as rankBestSellers, lowConversion, periodSummary, productTraffic, salesByProduct, useBrandSeries } from "@/components/studio/business/brand-series"
 import { orderCustomerName } from "@/components/studio/business/model"
 import { SetupCard } from "@/components/studio/setup/setup-card"
+import { LiveOverview } from "@/components/studio/business/live-overview"
+import { SessionGate } from "@/components/session/session-gate"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { brandById } from "@/lib/data/brands"
 import { formatMoney, formatNumber, formatPercent } from "@/lib/money"
 import { useNotifications, type AppNotification } from "@/lib/stores/notifications"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 
@@ -54,7 +57,24 @@ function relDays(iso: string) {
 
 const periods: Period[] = ["today", "7d", "30d", "90d"]
 
+/**
+ * A real brand's session (not a demo account) gets the Overview from Yard's server. The sample
+ * Overview (this browser's sample orders and generated traffic) is for demo and development only:
+ * in production, everyone else gets the Studio sign-in, never sample figures.
+ */
 export default function StudioOverviewPage() {
+  const member = useServerSession((s) => s.brand)
+  const sampleData = useServerSession((s) => s.sampleData)
+  if (member && !member.demo) return <LiveOverview member={member} />
+  if (sampleData === true) return <SampleOverview />
+  return (
+    <SessionGate surface="studio" feature="the Overview">
+      {member ? <LiveOverview member={member} /> : null}
+    </SessionGate>
+  )
+}
+
+function SampleOverview() {
   const router = useRouter()
   const hydrated = useHydrated()
   const [period, setPeriod] = useState<Period>("30d")

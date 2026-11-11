@@ -724,6 +724,11 @@ async function main() {
     const so = await get(`/api/studio/orders/${orderId}`, { jar: OWNER })
     const total = so.body?.order?.totalMinor ?? so.body?.totalMinor ?? paidCo.totalMinor
     const refund = (b, jar = OWNER) => post(`/api/studio/orders/${orderId}/refunds`, b, { jar })
+    // Brand refunds need a recent re-auth (demo brand sessions confirm with { demo: true } in development).
+    const noRe = await refund({ amountMinor: 100, reason: TAG, idempotencyKey: key("rfre") })
+    check("refund: without a recent re-auth → 403 fields.reauth=required", noRe.status === 403 && noRe.body?.error?.fields?.reauth === "required", brief(noRe))
+    const ra = await post("/api/auth/reauth?as=brand", { demo: true }, { jar: OWNER })
+    if (ra.status !== 200) throw new Error(`brand re-auth: ${brief(ra)}`)
     check("refund: a viewer can't refund (403)", (await refund({ amountMinor: 100, reason: TAG, idempotencyKey: key("rfv") }, VIEWER_B)).status === 403)
     check("refund: zero amount is 400/422", [400, 422].includes((await refund({ amountMinor: 0, reason: TAG, idempotencyKey: key("rf0") })).status))
     const over = await refund({ amountMinor: total + 1, reason: TAG, idempotencyKey: key("rfover") })

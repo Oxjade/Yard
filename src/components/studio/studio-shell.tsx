@@ -63,7 +63,7 @@ import { memberRoleLabel, type BrandPermission } from "@/lib/permissions"
 import { useUnread } from "@/lib/realtime/unread"
 import { useRealtimeEvent, useRealtimeEventName } from "@/lib/realtime/use-realtime"
 import { afterIdentityChange } from "@/lib/session/identity"
-import { useServerSession } from "@/lib/session/use-server-session"
+import { useSampleData, useServerSession } from "@/lib/session/use-server-session"
 import type { MerchantOrder } from "@/lib/data/types"
 import { formatMoney } from "@/lib/money"
 import { payoutBalances, payoutBlockedReason } from "@/lib/payouts"
@@ -213,8 +213,10 @@ function StudioLocalResults({ query, go }: { query: string; go: (href: string) =
   const orders = useStudio((s) => s.orders)
   const brandId = useStudio((s) => s.brandId)
   const currency = brandById.get(brandId)!.currency
+  // Customers is a sample-data screen: production has no Customers page, so no customer rows either.
+  const sample = useSampleData()
   // The Customers page's own derivation, so a result's order count matches the panel it opens.
-  const customers = useMemo(() => buildCustomers(orders, currency), [orders, currency])
+  const customers = useMemo(() => (sample ? buildCustomers(orders, currency) : []), [sample, orders, currency])
   if (!query) return null
 
   // An order found by one of its items says which one, since its title and detail don't show it.
@@ -403,10 +405,12 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
     if (offLimits) router.replace("/studio/products")
   }, [offLimits, router])
   const demoOn = !!session.demoAuth?.brand
+  const sampleData = session.sampleData === true
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
   // The browser's sample orders belong to the sample brand; a brand that isn't in the sample gets no count from them.
-  const notShipped = member && !sessionBrand ? 0 : orders.filter((o) => o.status === "paid" || o.status === "processing").length
+  // Production has no sample orders at all (the demo switch is off), so nothing is counted from them.
+  const notShipped = !sampleData || (member && !sessionBrand) ? 0 : orders.filter((o) => o.status === "paid" || o.status === "processing").length
   // A real brand's card reads the ledger, the same summary the Payouts page uses. The demo brand
   // keeps the browser sample, so both never disagree on screen.
   const liveBrand = member && !member.demo ? member.brand.id : null
@@ -477,20 +481,31 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         { href: "/studio/drops", label: "Drops", icon: CalendarDotsIcon },
       ],
     },
-    {
-      label: "Growth",
-      items: [
-        { href: "/studio/campaigns", label: "Promotions", icon: TagIcon },
-        { href: "/studio/advertising", label: "Advertising", icon: MegaphoneIcon },
-      ],
-    },
+    // Promotions, Advertising, Customers and Analytics have only sample data so far: they show in
+    // demo and development only (production serves them as "coming soon", src/proxy.ts). Until the
+    // session says which, they stay hidden, so production never flashes them.
+    ...(sampleData
+      ? [
+          {
+            label: "Growth",
+            items: [
+              { href: "/studio/campaigns", label: "Promotions", icon: TagIcon },
+              { href: "/studio/advertising", label: "Advertising", icon: MegaphoneIcon },
+            ],
+          },
+        ]
+      : []),
     {
       label: "Business",
       items: [
         { href: "/studio/shipping", label: "Shipping & fulfilment", icon: TruckIcon },
         { href: "/studio/payouts", label: "Payouts", icon: WalletIcon },
-        { href: "/studio/customers", label: "Customers", icon: UsersIcon },
-        { href: "/studio/analytics", label: "Analytics", icon: ChartBarIcon },
+        ...(sampleData
+          ? [
+              { href: "/studio/customers", label: "Customers", icon: UsersIcon },
+              { href: "/studio/analytics", label: "Analytics", icon: ChartBarIcon },
+            ]
+          : []),
         { href: "/studio/settings", label: "Settings", icon: GearIcon },
       ],
     },
@@ -522,7 +537,8 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         ],
       }}
       status={
-        liveBrand && !financeView
+        // A real brand's card reads the ledger; the browser's sample balance shows in demo and development only.
+        (liveBrand && !financeView) || (!liveBrand && !sampleData)
           ? undefined
           : payoutsFailed
             ? {

@@ -48,8 +48,9 @@ const storyKind: Record<string, string> = {
 }
 
 export default function DiscoverPage() {
-  // Production (no demo seed): the real founding brands take the place of the sample brand modules
-  // (the Underground Index and the brand rails). Demo and development keep every sample module.
+  // Production (no demo seed): the real founding brands take the place of the sample modules
+  // (Trending now, the Underground Index and the brand rails). Demo and development keep every
+  // sample module. The hero and the drops band stay for now: they belong to the drops work (task G).
   const demo = getEnv().seedDemo
   const heroDrop = getDrop("drop-07-third-mainland")!
   const heroBrand = brandById.get(heroDrop.brandId)!
@@ -83,7 +84,9 @@ export default function DiscoverPage() {
       <UpcomingDropsBand drops={drops} />
 
       <div className="mx-auto max-w-page px-4 md:px-8">
-        {/* Trending */}
+        {/* Trending: ranked from the sample catalogue, demo and development only (production
+            has no momentum ranking yet; the week's Trending board below reads the server). */}
+        {demo ? (
         <section aria-labelledby="trending-title" className="mt-24 md:mt-32">
           <div id="trending-title">
             <SectionHeader title="Trending now" description="Ranked by this week's momentum, with at most two pieces per brand." href="/shop?sort=trending" />
@@ -102,6 +105,7 @@ export default function DiscoverPage() {
             ))}
           </div>
         </section>
+        ) : null}
 
         {/* Founding brands: read from the database at request time, so they stream in here. */}
         <Suspense fallback={null}>
@@ -139,7 +143,8 @@ export default function DiscoverPage() {
         </section>
         ) : null}
 
-        {/* Curated collections */}
+        {/* Curated collections: sample edits, demo and development only (production has no /collections yet). */}
+        {demo ? (
         <section aria-labelledby="collections-title" className="mt-24 md:mt-32">
           <div id="collections-title">
             <SectionHeader title="Curated collections" description="Edits across brands, put together by people rather than an algorithm." />
@@ -164,6 +169,7 @@ export default function DiscoverPage() {
             })}
           </div>
         </section>
+        ) : null}
 
         {/* Recommended */}
         <div className="mt-24 md:mt-32">
@@ -198,7 +204,8 @@ export default function DiscoverPage() {
         </section>
         ) : null}
 
-        {/* Stories */}
+        {/* Stories: sample stories, demo and development only (production has no /stories yet). */}
+        {demo ? (
         <section aria-labelledby="stories-title" className="mt-24 md:mt-32">
           <div id="stories-title">
             <SectionHeader title="Brand stories" description="Origins, process and the people behind the pieces." href="/stories" />
@@ -220,6 +227,7 @@ export default function DiscoverPage() {
             })}
           </div>
         </section>
+        ) : null}
       </div>
     </>
   )

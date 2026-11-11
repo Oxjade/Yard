@@ -409,6 +409,7 @@ async function main() {
     // Partial refund on O2 (standard): commission back pro rata, the brand's share from pending.
     const O = orders["O2 (standard)"]
     const amt = 5_000
+    await reauth(OWNER, "brand") // brand refunds need a recent re-auth
     const before = await balances(OWNER)
     const r = await post(`/api/studio/orders/${O.id}/refunds`, { amountMinor: amt, reason: "kit partial refund", idempotencyKey: key("rf") }, { who: OWNER })
     const after = await balances(OWNER)
@@ -470,6 +471,7 @@ async function main() {
     // A refund after completion comes out of available.
     const amt = 1_000
     const back = Math.round((amt * capTr.commission) / capTr.gross)
+    await reauth(OWNER, "brand") // brand refunds need a recent re-auth
     const b5 = await balances(OWNER)
     const rf = await post(`/api/studio/orders/${O3.id}/refunds`, { amountMinor: amt, reason: "kit refund after completion", idempotencyKey: key("rf") }, { who: OWNER })
     const a5 = await balances(OWNER)

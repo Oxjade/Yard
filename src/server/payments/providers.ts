@@ -21,13 +21,15 @@ export class ProviderError extends Error {
   }
 }
 
-export type InitInput = { reference: string; email: string; amountMinor: number; currency: string; callbackUrl: string; metadata: Record<string, string>; splitCode?: string | null }
+export type InitInput = { reference: string; email: string; amountMinor: number; currency: string; callbackUrl: string; metadata: Record<string, string>; splitCode?: string | null; channels?: string[] }
 export type InitResult = { authorizationUrl: string | null; accessCode: string | null }
 
 /** A transaction's state as the provider reports it. `pending` covers Paystack's abandoned/ongoing/processing/queued. */
 export type ChargeState = {
   reference: string
   status: "success" | "failed" | "pending"
+  /** The provider's own word for it ("abandoned", "ongoing", "success"…): "abandoned" = no payment was completed. */
+  providerStatus: string | null
   amountMinor: number
   currency: string
   providerTxnId: string | null
@@ -95,6 +97,7 @@ export function chargeStateFromPaystack(d: PaystackTxn): ChargeState {
   return {
     reference: String(d.reference ?? ""),
     status: mapChargeStatus(d.status),
+    providerStatus: d.status ?? null,
     amountMinor: Number(d.amount ?? 0),
     currency: String(d.currency ?? ""),
     providerTxnId: d.id != null ? String(d.id) : null,
@@ -117,6 +120,7 @@ function paystackProvider(secret: string): PaymentProvider {
         callback_url: input.callbackUrl,
         metadata: { ...input.metadata, cancel_action: input.callbackUrl },
         ...(input.splitCode ? { split_code: input.splitCode } : {}),
+        ...(input.channels?.length ? { channels: input.channels } : {}),
       })
       return { authorizationUrl: d.authorization_url ?? null, accessCode: d.access_code ?? null }
     },

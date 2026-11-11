@@ -52,6 +52,8 @@ import { useOrders } from "@/lib/stores/orders"
 import { cn } from "@/lib/utils"
 import { useBrandApplications } from "@/components/admin/marketplace/onboarding"
 import { useLiveMoney } from "@/components/admin/finance/live-counts"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { SessionGate } from "@/components/session/session-gate"
 
 const usd = (n: number) => formatMoney(Math.round(n), "USD", { compact: true })
 const usdFull = (n: number) => formatMoney(Math.round(n), "USD")
@@ -104,7 +106,11 @@ const noRefunds: Refund[] = []
 function CommandStrip() {
   const hydrated = useHydrated()
   const now = useNow(60_000)
-  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review").length
+  // Production (the demo switch off) counts only the server's records: live brand applications,
+  // the finance service's payouts and the server queues. The browser's sample queues (sample
+  // applications, refunds, campaigns, flagged listings) belong to the demo.
+  const sampleData = useServerSession((s) => s.sampleData === true)
+  const pendingBrands = useBrandApplications().applications.filter((a) => a.status === "pending_review" && (sampleData || !!a.onboardingId)).length
   const sampleRefunds = useAdmin((s) => s.refunds.filter((r) => r.status === "requested").length)
   const samplePayouts = useAdmin((s) => s.payouts.filter((p) => p.status === "awaiting_approval" || p.status === "held").length)
   // A real admin's payouts come from the finance service (Owner and Finance roles); the sample
@@ -112,8 +118,11 @@ function CommandStrip() {
   const money = useLiveMoney()
   const payouts = money.live ? (money.payoutsToDecide ?? 0) : samplePayouts
   const refunds = money.live ? 0 : sampleRefunds
+  const sessionAdminName = useServerSession((s) => s.admin?.name ?? null)
   const campaigns = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   const moderation = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
+  // Production greets the signed-in admin; the demo keeps its sample Owner.
+  const firstName = (sampleData ? adminUser.name : (sessionAdminName ?? "")).split(" ")[0]
   // The greeting follows the viewer's clock; the date is the Control Center's today (anchorDay), the
   // day every figure on this page and the others counts up to. It waits for the client's clock.
   const hour = hydrated ? new Date().getHours() : 12
@@ -123,8 +132,12 @@ function CommandStrip() {
     // Awaiting approval and held (a held one needs a release): the Finance Payouts tab's count.
     ...(!money.live || money.finance ? [{ href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote }] : []),
     ...(money.live ? [] : [{ href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw }]),
-    { href: "/admin/advertising", label: "Campaigns in review", count: campaigns, icon: Megaphone },
-    { href: "/admin/products", label: "Listings flagged", count: moderation, icon: Flag },
+    ...(sampleData
+      ? [
+          { href: "/admin/advertising", label: "Campaigns in review", count: campaigns, icon: Megaphone },
+          { href: "/admin/products", label: "Listings flagged", count: moderation, icon: Flag },
+        ]
+      : []),
   ]
   const total = chips.reduce((s, c) => s + c.count, 0)
   // The server queues (Messages, Content, Places, Charts, Delivery) count too, for the roles that see them.
@@ -133,7 +146,7 @@ function CommandStrip() {
   const waiting = !all
     ? "Nothing is waiting on a decision."
     : server.total
-      ? `${all} ${all === 1 ? "decision is" : "decisions are"} waiting on the platform team: ${total} in the sample queues below and ${server.total} in Messages, Content, Places, Charts and Delivery.`
+      ? `${all} ${all === 1 ? "decision is" : "decisions are"} waiting on the platform team: ${total} in the ${sampleData ? "sample " : ""}queues below and ${server.total} in Messages, Content, Places, Charts and Delivery.`
       : `${all} ${all === 1 ? "decision is" : "decisions are"} waiting on the platform team.`
 
   return (
@@ -141,11 +154,11 @@ function CommandStrip() {
       <div className="relative grid gap-6 p-5 md:p-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <SampleDataNote />
+            {sampleData ? <SampleDataNote /> : null}
             {now !== null ? <span className="text-[12px] text-ink-3 tabular">{longDate(anchorDay(now))}</span> : <span aria-hidden className="skeleton inline-block h-3 w-32 rounded" />}
           </div>
           <h1 id="cc-title" className="font-label mt-4 text-[clamp(1.5rem,2.6vw,2rem)] leading-tight text-ink">
-            {hydrated ? `${greeting}, ${adminUser.name.split(" ")[0]}` : `Welcome back, ${adminUser.name.split(" ")[0]}`}
+            {firstName ? (hydrated ? `${greeting}, ${firstName}` : `Welcome back, ${firstName}`) : hydrated ? greeting : "Welcome back"}
           </h1>
           <p className="mt-2 min-h-5 max-w-xl text-[13px] leading-relaxed text-ink-2">
             {hydrated && server.ready ? waiting : <span aria-hidden className="skeleton inline-block h-3.5 w-72 max-w-full rounded align-middle" />}
@@ -205,7 +218,10 @@ function DecisionQueue({ className }: { className?: string }) {
   const panelRef = useRef<HTMLDivElement>(null)
   // The button that opened the dialog, so focus can go back to it (see restoreFocus).
   const opener = useRef<HTMLElement | null>(null)
-  const [chosenTab, setTab] = useState<QueueTab>("payouts")
+  const [pickedTab, setTab] = useState<QueueTab>("payouts")
+  // Campaign review belongs to Advertising, a sample-data screen: demo and development only.
+  const sampleData = useServerSession((s) => s.sampleData === true)
+  const chosenTab: QueueTab = !sampleData && (pickedTab === "campaigns" || pickedTab === "moderation") ? "brands" : pickedTab
   // A real admin decides payouts in Finance on the server, so the sample payout and refund queues
   // (and their approve buttons, which only change this browser's store) aren't offered to them.
   const { live } = useLiveMoney()
@@ -224,7 +240,7 @@ function DecisionQueue({ className }: { className?: string }) {
   const setRefundStatus = useAdmin((s) => s.setRefundStatus)
 
   const lists = {
-    brands: applications.filter((a) => a.status === "pending_review"),
+    brands: applications.filter((a) => a.status === "pending_review" && (sampleData || !!a.onboardingId)),
     // Only payouts that need a person: awaiting approval first, then held. Scheduled ones go out on their own.
     payouts: payouts
       .filter((p) => p.status === "awaiting_approval" || p.status === "held")
@@ -349,8 +365,8 @@ function DecisionQueue({ className }: { className?: string }) {
                   { value: "refunds" as QueueTab, label: "Refunds", count: count("refunds") },
                 ]),
             { value: "brands", label: "Brands", count: count("brands") },
-            { value: "campaigns", label: "Campaigns", count: count("campaigns") },
-            { value: "moderation", label: "Moderation", count: count("moderation") },
+            ...(sampleData ? [{ value: "campaigns" as QueueTab, label: "Campaigns", count: count("campaigns") }] : []),
+            ...(sampleData ? [{ value: "moderation" as QueueTab, label: "Moderation", count: count("moderation") }] : []),
             ...server.tabs.map((t) => ({ value: t.value as QueueTab, label: t.label, count: t.count })),
           ]}
         />
@@ -625,6 +641,7 @@ function LatencyBars() {
 
 export default function AdminOverviewPage() {
   const hydrated = useHydrated()
+  const sampleData = useServerSession((s) => s.sampleData === true)
   // Every window ends on the Control Center's today (anchorDay), the same day the Orders page and
   // the others count from: the demo's on the server, the real one once the client knows the time.
   const now = useNow(60_000)
@@ -705,6 +722,22 @@ export default function AdminOverviewPage() {
 
   const charges = transactions.filter((t) => t.type === "charge")
   const byProvider = (["paystack", "flutterwave", "stripe"] as const).map((p) => ({ p, n: charges.filter((c) => c.provider === p).length, ok: charges.filter((c) => c.provider === p && c.status === "succeeded").length }))
+
+  // Production (the demo switch off): the performance figures, revenue mix, weekday rhythm, health
+  // and payments panels read sample data, so only the decision queues and the audit log show.
+  if (!sampleData) {
+    return (
+      <SessionGate surface="admin" feature="the Control Center">
+        <Reveal ssrVisible className="@container grid gap-3">
+          <CommandStrip />
+          <div className="grid gap-3 @5xl:grid-cols-12">
+            <DecisionQueue className="@5xl:col-span-8" />
+            <AuditTrail className="@5xl:col-span-4" />
+          </div>
+        </Reveal>
+      </SessionGate>
+    )
+  }
 
   return (
     <Reveal ssrVisible className="@container grid gap-3">

@@ -3,7 +3,7 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import { toast } from "sonner"
-import type { CountryCode, CurrencyCode } from "@/config/markets"
+import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { api } from "@/lib/api/client"
 import type { DemoSignInResult, ShopperProfile } from "@/lib/api/contracts/session"
 import type { Aesthetic, CategorySlug } from "@/lib/data/types"
@@ -47,6 +47,11 @@ export const DEMO_SHOPPER = "u_ada"
 type SessionState = {
   user: SessionUser | null
   currency: CurrencyCode
+  /**
+   * True once the shopper picked a currency themselves. Until then the currency follows the
+   * delivery country (Nigeria → NGN), wherever the country changes.
+   */
+  currencyChosen: boolean
   shipTo: CountryCode
   /** The delivery city chosen with the destination picker (optional; never a precise location). */
   shipToCity: string | null
@@ -79,7 +84,9 @@ type SessionState = {
    * "Signed out" only after `true`.
    */
   signOut: () => Promise<boolean>
+  /** The shopper's own choice: from now on the currency no longer follows the country. */
   setCurrency: (c: CurrencyCode) => void
+  /** Changes the delivery country; the currency follows it unless the shopper chose one. */
   setShipTo: (c: CountryCode) => void
   setShipToCity: (city: string | null) => void
   setInterests: (interests: CategorySlug[], aesthetics: Aesthetic[]) => void
@@ -89,11 +96,15 @@ type SessionState = {
   dismissAuthPrompt: () => void
 }
 
+/** The currency a delivery country pays in (Nigeria → NGN). */
+const countryCurrency = (c: CountryCode) => (countries[c]?.currency ?? "NGN") as CurrencyCode
+
 export const useSession = create<SessionState>()(
   persist(
     (set, get) => ({
       user: null,
-      currency: "USD",
+      currency: "NGN",
+      currencyChosen: false,
       shipTo: "NG",
       shipToCity: null,
       interests: [],
@@ -170,8 +181,8 @@ export const useSession = create<SessionState>()(
         }
         return true
       },
-      setCurrency: (currency) => set({ currency }),
-      setShipTo: (shipTo) => set({ shipTo }),
+      setCurrency: (currency) => set({ currency, currencyChosen: true }),
+      setShipTo: (shipTo) => set(get().currencyChosen ? { shipTo } : { shipTo, currency: countryCurrency(shipTo) }),
       setShipToCity: (shipToCity) => set({ shipToCity: shipToCity?.trim() ? shipToCity.trim().slice(0, 60) : null }),
       setInterests: (interests, aesthetics) => set({ interests, aesthetics }),
       finishOnboarding: () => set({ onboarded: true }),
@@ -188,8 +199,20 @@ export const useSession = create<SessionState>()(
       storage: createJSONStorage(() => localStorage),
       // Everything but the sign-in prompt (it holds a callback and only lives for this visit) and
       // the in-flight flag.
-      partialize: ({ user, signedOutAt, currency, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }) => ({ user, signedOutAt, currency, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }),
+      partialize: ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }) => ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }),
       skipHydration: true,
+      // v1: the currency follows the delivery country until the shopper picks one. Sessions saved
+      // before then (which defaulted to USD whatever the country) move to their country's currency;
+      // a currency picked on purpose then can't be told apart, and is picked again in a click.
+      version: 1,
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Partial<SessionState>
+        if (version < 1) {
+          const shipTo = s.shipTo && s.shipTo in countries ? s.shipTo : "NG"
+          return { ...s, currencyChosen: false, currency: countryCurrency(shipTo) } as SessionState
+        }
+        return s as SessionState
+      },
     },
   ),
 )

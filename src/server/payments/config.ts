@@ -38,7 +38,17 @@ export function paymentsConfig(): PaymentsConfig {
     publicKey: blank(process.env.PAYSTACK_PUBLIC_KEY),
     webhookKeys: [webhookSecret, secretKey].filter((k): k is string => !!k).filter((k, i, a) => a.indexOf(k) === i),
     split: process.env.PAYSTACK_SPLIT === "subaccount" ? "subaccount" : "off",
-    callbackUrl: (checkoutId) => `${origin}/checkout/confirm?checkout=${encodeURIComponent(checkoutId)}`,
+    // Straight to the confirmation, which verifies first (paid=1) and then follows the server.
+    callbackUrl: (checkoutId) => `${origin}/checkout/confirmation?group=${encodeURIComponent(checkoutId)}&paid=1`,
     holdMinutes: 30,
   }
+}
+
+/**
+ * Which kind of payments this deployment takes: "stub" (no secret key, nothing is charged),
+ * "test" (a Paystack test key, sk_test_…) or "live". Read at request time.
+ */
+export function paymentsMode(): "stub" | "test" | "live" {
+  const key = paymentsConfig().secretKey
+  return !key ? "stub" : key.startsWith("sk_test_") ? "test" : "live"
 }

@@ -9,7 +9,7 @@ import { formatOrderMoney } from "@/components/market/account/format"
 import { orderEstimate } from "@/components/market/delivery/browser-estimate"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { barcodeBars, canEncode128B } from "@/lib/barcode128"
-import { brandById } from "@/lib/data/brands"
+import { orderBrand } from "@/lib/order-brand"
 import { spring } from "@/lib/motion"
 import { formatRange } from "@/lib/shipping/format"
 import { cn } from "@/lib/utils"
@@ -20,10 +20,12 @@ import { methodFromLabel } from "./shipping"
 export const receiptLine = {
   paid: "Your order has been placed.",
   awaiting: "Order received — awaiting payment confirmation. Nothing was charged.",
+  confirming: "Order received — Paystack is confirming your payment.",
+  notPaid: "Order received — payment not completed. Nothing was charged.",
   sample: "Sample order history for the demo account.",
 } as const
 
-/** What placeCheckout stores about payment: words only (method, holder, card brand, last four). */
+/** What the receipt knows about payment: words only (method, holder; the sample history also has a card brand and last four). */
 type ReceiptPayment = PaymentSnapshot & { label?: string; holder?: string; cardBrand?: string; last4?: string }
 
 /** States in which a delivery estimate still means something. */
@@ -51,14 +53,30 @@ const scallop = "[mask-image:radial-gradient(circle_at_50%_100%,transparent_7px,
  * charged" while nothing has been charged), each brand's estimated arrival, a tear line, a Code
  * 128 barcode of the reference and a scalloped bottom edge. Nothing on it says money moved.
  */
-export function ReceiptTicket({ group, orders, sample, holder, className }: { group: CheckoutGroup; orders: MerchantOrder[]; sample: boolean; holder?: string; className?: string }) {
+export function ReceiptTicket({
+  group,
+  orders,
+  sample,
+  holder,
+  notPaid = false,
+  className,
+}: {
+  group: CheckoutGroup
+  orders: MerchantOrder[]
+  sample: boolean
+  holder?: string
+  /** Paystack reported no completed payment (cancelled or left its page): still open, nothing charged. */
+  notPaid?: boolean
+  className?: string
+}) {
   const reduce = useReducedMotion()
   const hydrated = useHydrated()
   const payment = checkoutPayment(orders)
   const paid = payment.status === "Confirmed"
   const snap = group.payment as ReceiptPayment | undefined
   const paymentFailed = !sample && snap?.status === "failed"
-  const line = sample ? receiptLine.sample : paymentFailed ? "Payment wasn’t completed — nothing was charged." : paid ? receiptLine.paid : receiptLine.awaiting
+  const unpaid = !sample && !paid && !paymentFailed && notPaid
+  const line = sample ? receiptLine.sample : paymentFailed ? "Payment wasn’t completed — nothing was charged." : unpaid ? receiptLine.notPaid : paid ? receiptLine.paid : snap?.status === "pending" ? receiptLine.confirming : receiptLine.awaiting
   const notCharged = !sample && !paid
   return (
     <motion.section
@@ -70,13 +88,13 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
     >
       {/* Top: confetti (a plain mark when the payment failed), thanks and the state's sentence. */}
       <div className={cn("rounded-t-[10px] bg-ink px-6 pt-8 pb-6 text-center print:bg-white", notchBelow)}>
-        {paymentFailed ? (
+        {paymentFailed || unpaid ? (
           <WarningCircleIcon weight="duotone" className="mx-auto size-10 text-[#4a4a4a]" aria-hidden />
         ) : (
           <ConfettiIcon weight="duotone" className="mx-auto size-10 text-purple" aria-hidden />
         )}
         <h2 id="receipt-title" className="mt-3 font-display text-[2rem] leading-none text-obsidian">
-          {paymentFailed ? "Payment update" : "Thank you!"}
+          {paymentFailed || unpaid ? "Payment update" : "Thank you!"}
         </h2>
         <p className="mx-auto mt-3 max-w-[18rem] text-sm leading-relaxed text-[#4a4a4a]">{line}</p>
       </div>
@@ -110,11 +128,11 @@ export function ReceiptTicket({ group, orders, sample, holder, className }: { gr
             {/* On a narrow ticket the tag drops under the words instead of cutting them short. */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{snap?.holder || holder || "Demo shopper"}</p>
+                {snap?.holder || holder ? <p className="truncate text-sm font-medium">{snap?.holder || holder}</p> : null}
                 <p className="truncate text-[13px] text-[#4a4a4a] tabular">{methodLine(snap)}</p>
               </div>
               {notCharged ? (
-                <span className="shrink-0 rounded-full border border-obsidian/15 px-2.5 py-1 text-[11px] font-medium text-[#4a4a4a]">{paymentFailed ? "Payment failed" : "Not charged"}</span>
+                <span className="shrink-0 rounded-full border border-obsidian/15 px-2.5 py-1 text-[11px] font-medium text-[#4a4a4a]">{paymentFailed ? "Payment failed" : unpaid ? "Not paid" : snap?.status === "pending" ? "Confirming" : "Not charged"}</span>
               ) : sample ? (
                 <span className="shrink-0 rounded-[3px] border border-obsidian/15 px-1.5 py-0.5 text-[10px] text-[#4a4a4a]">Sample</span>
               ) : null}
@@ -169,7 +187,7 @@ function PaymentIcon({ snap }: { snap: ReceiptPayment | undefined }) {
 
 /** One brand's line: its name and estimated arrival (or where the order stands). */
 function BrandArrival({ order, hydrated }: { order: MerchantOrder; hydrated: boolean }) {
-  const brand = brandById.get(order.brandId)
+  const brand = orderBrand(order)
   const pickup = methodFromLabel(order.shippingMethod) === "pickup"
   let value: React.ReactNode
   if (!expecting.has(order.status)) value = customerOrderStatus[order.status].label
@@ -181,7 +199,7 @@ function BrandArrival({ order, hydrated }: { order: MerchantOrder; hydrated: boo
   return (
     // The arrival wraps under the name when both don't fit, so neither is cut short.
     <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[13px]">
-      <span className="min-w-0 truncate font-medium">{brand?.name ?? "Brand"}</span>
+      <span className="min-w-0 truncate font-medium">{brand?.name ?? "Your order"}</span>
       <span className="ml-auto shrink-0 text-right text-[#4a4a4a] tabular">{value}</span>
     </li>
   )

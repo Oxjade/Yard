@@ -1,10 +1,18 @@
 "use client"
 
+import { createContext, useContext } from "react"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { convert, formatMoney } from "@/lib/money"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import type { CurrencyCode } from "@/config/markets"
+
+/**
+ * Overrides the currency prices are shown in, for one subtree, without touching the shopper's
+ * saved preference. The checkout uses it to show the currency it will charge in (Paystack can't
+ * charge in every display currency) while the shopper's own choice stays as it was.
+ */
+export const PriceCurrencyContext = createContext<CurrencyCode | null>(null)
 
 /**
  * Shows a price in the shopper's currency. Brands price in their own currency; the
@@ -25,7 +33,9 @@ export function Price({
 }) {
   const hydrated = useHydrated()
   const shopper = useSession((s) => s.currency)
-  const target = hydrated ? shopper : "USD"
+  const override = useContext(PriceCurrencyContext)
+  // Before hydration: the default shopper's currency (Nigeria, NGN), so the usual case doesn't flash.
+  const target = override ?? (hydrated ? shopper : "NGN")
   const value = formatMoney(convert(amount, currency, target), target)
   const was = compareAt ? formatMoney(convert(compareAt, currency, target), target) : null
   return (

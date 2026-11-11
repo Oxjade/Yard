@@ -2,11 +2,12 @@ import Link from "next/link"
 import { site } from "@/config/site"
 import { LocaleSelect } from "./locale-select"
 import { YardLogo } from "@/components/brand/yard-logo"
+import { SampleOnly } from "@/components/sample/sample-only"
 
 const columns = [
-  { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories"]] },
+  { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories", "sample"]] },
   { title: "You", links: [["Your World", "/you"], ["Inbox", "/inbox"], ["Following", "/following"], ["Wishlist", "/wishlist"], ["Orders", "/you/orders"], ["Settings", "/you/settings"]] },
-  { title: "For brands", links: [["Sell on " + site.name, "/studio/onboarding"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising"]] },
+  { title: "For brands", links: [["Sell on " + site.name, "/studio/onboarding"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising", "sample"]] },
 ] as const
 
 export function MarketFooter() {
@@ -25,12 +26,17 @@ export function MarketFooter() {
             <div key={col.title}>
               <h2 className="text-sm text-ink">{col.title}</h2>
               <ul className="mt-2 grid md:mt-4 md:gap-2.5">
-                {col.links.map(([label, href]) => (
-                  <li key={href}>
-                    {/* 40px tall on phones (a tap target), the quiet list from md. */}
-                    <Link href={href} className="inline-flex min-h-10 items-center text-sm text-ink-2 transition-colors hover:text-ink md:min-h-0">{label}</Link>
-                  </li>
-                ))}
+                {col.links.map((link) => {
+                  const [label, href] = link
+                  const item = (
+                    <li key={href}>
+                      {/* 40px tall on phones (a tap target), the quiet list from md. */}
+                      <Link href={href} className="inline-flex min-h-10 items-center text-sm text-ink-2 transition-colors hover:text-ink md:min-h-0">{label}</Link>
+                    </li>
+                  )
+                  // Stories and Advertising have only sample data so far: their links show in demo and development only.
+                  return link.length > 2 ? <SampleOnly key={href}>{item}</SampleOnly> : item
+                })}
               </ul>
             </div>
           ))}
