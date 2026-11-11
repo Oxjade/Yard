@@ -27,6 +27,8 @@ import { CATALOGUE_NOTE, dropsDescription } from "./copy"
 import { ListSkeleton } from "./form"
 import { useGrowth, useGrowthReady } from "./store"
 import { brandZone, dropRevenue, localId, dropStatusMeta, dropUnitsSold, formatInZone, notifyCount, relativeTime, studioDropStatus, zoneAbbr, type StudioDropStatus } from "./utils"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { LiveDropsIndex } from "./live-drops-index"
 
 type Tab = "all" | "scheduled" | "live" | "drafts" | "past"
 type Sort = "status" | "release" | "notify" | "name"
@@ -50,8 +52,11 @@ type Row = {
 }
 
 export function DropsIndex() {
+  const session = useServerSession()
   const ready = useGrowthReady()
   const now = useNow(30_000)
+  if (session.status === "loading") return <ListSkeleton title="Drops" description={dropsDescription} />
+  if (session.brand && !session.brand.demo) return <LiveDropsIndex key={session.brand.brand.id} brandId={session.brand.brand.id} canManage={session.brand.permissions.includes("content.publish")} />
   if (!ready || now === null) return <ListSkeleton title="Drops" description={dropsDescription} />
   return <DropsIndexView now={now} />
 }

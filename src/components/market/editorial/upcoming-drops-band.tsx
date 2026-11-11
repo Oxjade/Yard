@@ -1,77 +1,116 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
-import { Countdown, DropStatus } from "@/components/market/countdown"
-import { DropCard } from "@/components/market/drop-card"
+import { ArrowCounterClockwiseIcon as RetryIcon } from "@phosphor-icons/react"
+import { Bone } from "@/components/feedback/skeletons"
+import { Button } from "@/components/ui/button"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { api } from "@/lib/api/client"
+import { brandHref } from "@/lib/api/catalog-products"
+import { dropAccessForButton, dropImageSrc, type PublicDropDto } from "@/lib/api/drops"
+import { useApi } from "@/lib/api/use-api"
+import { NotifyButton } from "@/components/market/notify-button"
 import { Rail } from "@/components/market/rail"
 import { SponsoredTag } from "@/components/market/sponsored-tag"
-import { brandById } from "@/lib/data/brands"
-import { dropAccessLabel } from "@/lib/drops"
-import type { Drop } from "@/lib/data/types"
-import { DropPrimaryAction } from "./drop-actions"
-import { useUpcomingDrops } from "./use-drop-phase"
 
-const calendarLink = (
-  <Link href="/drops" className="inline-flex py-2.5 text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
-)
+const DROPS_KEY = "/api/drops?phase=upcoming&limit=8"
+type DropPage = { items: PublicDropDto[]; nextCursor: string | null }
+const localDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
+const utcDate = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" })
+const getUpcoming = () => api<DropPage>(DROPS_KEY, { cache: "default" })
 
-/**
- * Discover's drops band, the page's one large purple surface: the next release as the lead
- * card, the rest in a rail that glides right to left on its own (Rail's marquee: it pauses on
- * hover, keyboard focus and touch, and stays still under reduced motion). Both are picked on
- * the demo clock, so a drop that releases while the demo runs leaves "Upcoming drops" instead
- * of heading it as "Entries closed" or "Ended"; before mount they are what the server rendered.
- */
-export function UpcomingDropsBand({ drops }: { drops: Drop[] }) {
-  const [next, ...rest] = useUpcomingDrops(drops)
-  const nextBrand = next ? brandById.get(next.brandId) : undefined
+function displayTime(value: string, hydrated: boolean) {
+  return (hydrated ? localDate : utcDate).format(new Date(value))
+}
+
+function accessLabel(drop: PublicDropDto) {
+  return drop.access === "draw" ? "Draw" : drop.access === "early_access" ? "Early access" : "First come"
+}
+
+function releaseAction(drop: PublicDropDto) {
+  return <NotifyButton drop={{ id: drop.id, access: dropAccessForButton(drop.access) }} size="sm" variant="glass" quiet />
+}
+
+/** Discover's live upcoming-drops band. Times are API instants and render in the shopper's zone. */
+export function UpcomingDropsBand() {
+  const hydrated = useHydrated()
+  const { data, error, isLoading, isValidating, revalidate } = useApi(DROPS_KEY, getUpcoming, { revalidateOnFocus: false })
+  const [lead, ...rest] = data?.items ?? []
 
   return (
     <section aria-labelledby="drops-title" className="relative mt-4 overflow-hidden bg-purple">
-      {/* Beside the lead card (lg) the rail's 32px bleed and end fade sit in the column gap, so
-          the gap is 64px there: cards fade out 32px clear of the lead card, not tucked under it. */}
       <div className="mx-auto grid max-w-page gap-10 px-4 py-14 md:px-8 md:py-20 lg:grid-cols-[minmax(0,420px)_1fr] lg:gap-x-16">
-        <div className="flex flex-col">
+        <div className="flex min-w-0 flex-col">
           <h2 id="drops-title" className="font-display text-display-lg text-ink">Upcoming drops</h2>
           <p className="mt-3 max-w-sm text-[0.9375rem] leading-relaxed text-ink/80">
             Limited releases on a schedule. Set a reminder and we&apos;ll tell you the moment one goes live.
           </p>
-          {next && nextBrand ? (
-            <div className="mt-10 rounded-2xl border border-white/15 bg-obsidian/25 p-5 backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <DropStatus drop={next} />
-                {next.sponsored ? <SponsoredTag /> : null}
-              </div>
-              <p className="mt-4 text-sm text-ink/80">{nextBrand.name}</p>
-              <Link href={`/drops/${next.slug}`} className="mt-1 block font-display text-display-sm text-ink">{next.name}</Link>
-              <Countdown drop={next} size="lg" className="mt-6 text-ink" />
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-ink/70">{dropAccessLabel[next.access]}</p>
-                {/* Glass: the hero's Preview the drop is this view's one acid action. */}
-                <DropPrimaryAction drop={next} variant="glass" size="sm" />
-              </div>
+          {isLoading && !data ? <LeadSkeleton /> : error && !data ? (
+            <div role="alert" className="mt-10 rounded-lg border border-white/15 bg-obsidian/25 p-5 text-sm text-ink/85">
+              <p>Upcoming drops couldn&apos;t be loaded.</p>
+              <Button variant="glass" size="sm" className="mt-3" loading={isValidating} onClick={() => void revalidate()}><RetryIcon /> Retry</Button>
             </div>
-          ) : (
-            <p className="mt-10 rounded-2xl border border-white/15 bg-obsidian/25 p-5 text-sm leading-relaxed text-ink/80">
+          ) : lead ? <LeadDrop drop={lead} hydrated={hydrated} /> : (
+            <p className="mt-10 rounded-lg border border-white/15 bg-obsidian/25 p-5 text-sm leading-relaxed text-ink/80">
               No release is scheduled right now. Past drops keep their pages on the drops calendar.
             </p>
           )}
         </div>
         <div className="min-w-0 lg:pt-16">
           {rest.length ? (
-            // Glides right to left on its own; still under reduced motion (see Rail). Named apart
-            // from the section, whose heading already says "Upcoming drops". The cards fill their
-            // slot, so the action rows line up when a title wraps.
-            <Rail label="More upcoming drops" marquee itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48cqw]" footer={calendarLink}>
-              {rest.map((d) => (
-                <DropCard key={d.id} drop={d} className="h-full" />
-              ))}
+            <Rail label="More upcoming drops" marquee itemClassName="sm:w-[46vw] md:w-[34vw] lg:w-[48cqw]" footer={<Link href="/drops" className="inline-flex py-2.5 text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>}>
+              {rest.map((drop) => <RailDrop key={drop.id} drop={drop} hydrated={hydrated} />)}
             </Rail>
           ) : (
-            <div className="mt-6">{calendarLink}</div>
+            <Link href="/drops" className="mt-6 inline-flex min-h-10 items-center text-sm text-ink underline-offset-4 hover:underline">See the full drop calendar</Link>
           )}
         </div>
       </div>
     </section>
   )
+}
+
+function LeadSkeleton() {
+  return <div role="status" aria-label="Loading upcoming drops" className="mt-10 grid gap-3 rounded-lg border border-white/15 bg-obsidian/25 p-5">
+    <Bone className="aspect-[4/3] w-full rounded-md" />
+    <Bone className="h-4 w-24" />
+    <Bone className="h-6 w-3/4" />
+    <Bone className="h-4 w-40" />
+  </div>
+}
+
+function LeadDrop({ drop, hydrated }: { drop: PublicDropDto; hydrated: boolean }) {
+  const brandName = drop.brand.name ?? "Independent brand"
+  return <article className="mt-10 grid min-w-0 gap-4 rounded-lg border border-white/15 bg-obsidian/25 p-4 backdrop-blur-sm sm:p-5">
+    <Link href={`/drops/${drop.slug}`} className="group relative block aspect-[4/3] overflow-hidden rounded-md">
+      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill sizes="(min-width: 1024px) 390px, 90vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+      {drop.sponsored ? <span className="absolute top-3 left-3"><SponsoredTag /></span> : null}
+    </Link>
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      {drop.brand.handle ? <Link href={brandHref(drop.brand.handle)} className="truncate text-sm text-ink/80 hover:text-ink">{brandName}</Link> : <span className="truncate text-sm text-ink/80">{brandName}</span>}
+      <span className="shrink-0 rounded-sm bg-elevated px-2 py-1 text-[10px] text-ink">{drop.phase === "entries_open" ? "Entries open" : accessLabel(drop)}</span>
+    </div>
+    <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm text-ink">{drop.name}</Link>
+    <p className="text-xs text-ink/70">Releases {displayTime(drop.startsAt, hydrated)}{hydrated ? " · your time" : ""}</p>
+    <div className="flex items-center justify-between gap-3 border-t border-white/15 pt-4">
+      <span className="text-xs text-ink/70">{drop.totalUnits} pieces · limit {drop.limitPerCustomer}</span>
+      {releaseAction(drop)}
+    </div>
+  </article>
+}
+
+function RailDrop({ drop, hydrated }: { drop: PublicDropDto; hydrated: boolean }) {
+  const brandName = drop.brand.name ?? "Independent brand"
+  return <article className="group/drop relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-obsidian/70">
+    <Link href={`/drops/${drop.slug}`} className="relative block aspect-[4/3] overflow-hidden">
+      <Image src={dropImageSrc(drop.image)} alt={drop.name} fill sizes="(min-width: 1024px) 420px, 80vw" className="object-cover transition-transform duration-700 group-hover/drop:scale-[1.03]" />
+    </Link>
+    <div className="flex flex-1 flex-col gap-3 p-4">
+      {drop.brand.handle ? <Link href={brandHref(drop.brand.handle)} className="truncate text-xs text-ink/70 hover:text-ink">{brandName}</Link> : <span className="truncate text-xs text-ink/70">{brandName}</span>}
+      <Link href={`/drops/${drop.slug}`} className="font-display text-display-sm text-ink">{drop.name}</Link>
+      <p className="text-xs text-ink/70">{drop.phase === "entries_open" ? "Entries open" : accessLabel(drop)} · {displayTime(drop.startsAt, hydrated)}{hydrated ? " · your time" : ""}</p>
+      <div className="mt-auto flex justify-end border-t border-white/10 pt-3">{releaseAction(drop)}</div>
+    </div>
+  </article>
 }

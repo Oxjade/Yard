@@ -33,6 +33,9 @@ import { CATALOGUE_NOTE } from "./copy"
 import { ChoiceCard, ChoiceGroup, control, EditorSkeleton, Field, inputClass, NumberStepper, Panel, selectClass } from "./form"
 import { useGrowth, useGrowthReady } from "./store"
 import { addDays, brandZone, countryZone, dropStatusMeta, formatInZone, HOUR, localId, notifyCount, relativeTime, studioDropStatus, todayIn, utcToZoned, zoneAbbr, zoneLongName, zonedToUtc } from "./utils"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { revalidatePrefix } from "@/lib/api/use-api"
+import { LiveDropBuilder } from "./live-drop-builder"
 
 type Mode = "draft" | "schedule" | "publish" | "save"
 
@@ -118,11 +121,17 @@ function suggestedDate(today: string) {
 }
 
 export function DropBuilder({ id }: { id: string | null }) {
+  const session = useServerSession()
   const [generation, setGeneration] = useState(0)
   const reset = useCallback(() => setGeneration((g) => g + 1), [])
   const ready = useGrowthReady()
   const now = useNow(30_000)
   const drops = useStudio((s) => s.drops)
+  if (session.status === "loading") return <EditorSkeleton />
+  if (session.brand && !session.brand.demo) {
+    const brandId = session.brand.brand.id
+    return <LiveDropBuilder id={id} brandId={brandId} canManage={session.brand.permissions.includes("content.publish")} onSaved={() => revalidatePrefix(`studio.drops:${brandId}`)} />
+  }
   if (!ready || now === null) return <EditorSkeleton />
   const existing = id ? drops.find((d) => d.id === id) : undefined
   if (id && !existing) {

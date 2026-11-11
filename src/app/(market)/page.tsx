@@ -15,7 +15,6 @@ import { withSponsoredSlots } from "@/lib/data/ads"
 import {
   brandById,
   curatedCollections,
-  drops,
   emergingBrands,
   getDrop,
   productById,
@@ -80,8 +79,7 @@ export default function DiscoverPage() {
         spotlight={{ brand: spotlightBrand, title: "Bags, saddle-stitched in Paris", image: spotlightBrand.cover, href: `/brands/${spotlightBrand.handle}` }}
       />
 
-      {/* Drops band, the page's one large purple surface. Its lead card and rail follow the demo clock. */}
-      <UpcomingDropsBand drops={drops} />
+      <UpcomingDropsBand />
 
       <div className="mx-auto max-w-page px-4 md:px-8">
         {/* Trending: ranked from the sample catalogue, demo and development only (production

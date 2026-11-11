@@ -561,17 +561,24 @@ export async function drawNow(actor: BrandActor, row: DropRow, ipHash: string | 
   return drawInfo((await loadDrop(row.id, { brandId: actor.brandId }))!, null)
 }
 
-/** Studio list: every drop of the brand with entry and reminder counts. */
-export async function listBrandDrops(brandId: string, status?: string) {
+/** Studio list: a page of brand drops with entry and reminder counts. */
+export async function listBrandDrops(brandId: string, q: { status?: string; limit?: number; cursor?: string } = {}) {
   const d = await db()
+  const limit = q.limit ?? 50
+  const offset = q.cursor ? Number(q.cursor) : 0
   const rows = await d
     .select()
     .from(drops)
-    .where(and(eq(drops.brandId, brandId), status && status !== "all" ? eq(drops.status, status) : undefined))
-    .orderBy(desc(drops.startsAt))
-    .limit(200)
-  const ids = rows.map((r) => r.id)
+    .where(and(eq(drops.brandId, brandId), q.status && q.status !== "all" ? eq(drops.status, q.status) : undefined))
+    .orderBy(desc(drops.startsAt), asc(drops.id))
+    .limit(limit + 1)
+    .offset(offset)
+  const page = rows.slice(0, limit)
+  const ids = page.map((r) => r.id)
   const reminders = ids.length ? await d.select({ id: shopperReminders.dropId, n: count() }).from(shopperReminders).where(inArray(shopperReminders.dropId, ids)).groupBy(shopperReminders.dropId) : []
   const remBy = new Map(reminders.map((r) => [r.id, r.n]))
-  return (await dtos(rows)).map((x, i) => ({ ...x, variantIds: undefined, reminders: remBy.get(x.id) ?? 0, drawSeedHash: rows[i].drawSeedHash }))
+  return {
+    items: (await dtos(page)).map((x, i) => ({ ...x, variantIds: undefined, reminders: remBy.get(x.id) ?? 0, drawSeedHash: page[i].drawSeedHash })),
+    nextCursor: rows.length > limit ? String(offset + limit) : null,
+  }
 }

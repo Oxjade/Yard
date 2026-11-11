@@ -60,4 +60,8 @@ export const dropListQuery = z.object({
   cursor: z.string().max(40).regex(/^\d+$/).optional(),
 })
 
-export const studioDropListQuery = z.object({ status: z.enum(["draft", "scheduled", "live", "ended", "cancelled", "all"]).optional() })
+export const studioDropListQuery = z.object({
+  status: z.enum(["draft", "scheduled", "live", "ended", "cancelled", "all"]).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  cursor: z.string().max(40).regex(/^\d+$/).optional(),
+})

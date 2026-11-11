@@ -10,22 +10,23 @@ import { log } from "../log"
 import { sha256hex } from "../security/crypto"
 import type { Sniffed } from "./sniff"
 
-export type MediaPurpose = "social_post" | "inbox_attachment" | "location_image" | "social_import" | "sample" | "onboarding_image" | "storefront_cover"
+export type MediaPurpose = "social_post" | "inbox_attachment" | "location_image" | "social_import" | "sample" | "onboarding_image" | "storefront_cover" | "drop_image"
 export type MediaRow = typeof mediaAssets.$inferSelect
 
 /** Size caps by purpose and kind (§5.4 step 2). */
-export const MEDIA_CAPS = { inbox_attachment: 8 << 20, social_post_image: 10 << 20, social_post_video: 50 << 20, location_image: 10 << 20, onboarding_image: 10 << 20, storefront_cover: 10 << 20, social_import_image: 10 << 20, social_import_video: 50 << 20 } as const
+export const MEDIA_CAPS = { inbox_attachment: 8 << 20, social_post_image: 10 << 20, social_post_video: 50 << 20, location_image: 10 << 20, onboarding_image: 10 << 20, storefront_cover: 10 << 20, drop_image: 10 << 20, social_import_image: 10 << 20, social_import_video: 50 << 20 } as const
 
 /** The largest file a purpose takes before its kind is known (the Content-Length check). */
-export function headerCap(purpose: "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover") {
+export function headerCap(purpose: "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover" | "drop_image") {
   return purpose === "social_post" ? MEDIA_CAPS.social_post_video : purpose === "inbox_attachment" ? MEDIA_CAPS.inbox_attachment : purpose === "onboarding_image" ? MEDIA_CAPS.onboarding_image : purpose === "storefront_cover" ? MEDIA_CAPS.storefront_cover : MEDIA_CAPS.location_image
 }
 
 /** The cap for a sniffed file. */
-export function kindCap(purpose: "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover", kind: "image" | "video") {
+export function kindCap(purpose: "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover" | "drop_image", kind: "image" | "video") {
   if (purpose === "social_post") return kind === "video" ? MEDIA_CAPS.social_post_video : MEDIA_CAPS.social_post_image
   if (purpose === "onboarding_image") return MEDIA_CAPS.onboarding_image
   if (purpose === "storefront_cover") return MEDIA_CAPS.storefront_cover
+  if (purpose === "drop_image") return MEDIA_CAPS.drop_image
   return purpose === "inbox_attachment" ? MEDIA_CAPS.inbox_attachment : MEDIA_CAPS.location_image
 }
 

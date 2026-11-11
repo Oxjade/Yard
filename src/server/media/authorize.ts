@@ -98,7 +98,7 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
   if (q.purpose === "onboarding_image") throw forbidden("Onboarding photos are uploaded by the applicant, not by a brand.")
   // Yard setup (founding brands) works on catalogue and storefront photos only.
   if (actor.role === "yard_setup" && q.purpose !== "social_post" && q.purpose !== "storefront_cover") throw forbidden("Yard setup uploads product and storefront photos only.")
-  if ((q.purpose === "social_post" || q.purpose === "storefront_cover") && !canBrand(actor.role, "content.publish")) throw forbidden()
+  if ((q.purpose === "social_post" || q.purpose === "storefront_cover" || q.purpose === "drop_image") && !canBrand(actor.role, "content.publish")) throw forbidden()
   if (q.purpose === "location_image" && !canBrand(actor.role, "locations.manage")) throw forbidden()
   assertBrandMayPublish(actor)
   return { ...base, purpose: q.purpose, conversationId: null }

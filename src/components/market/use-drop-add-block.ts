@@ -20,7 +20,8 @@ export type AddBlocked = {
 const dropById = new Map(drops.map((d) => [d.id, d]))
 
 /** The drop a product is released in, if it belongs to one. */
-export function dropOf(product: Pick<Product, "dropId">) {
+export function dropOf(product: Pick<Product, "dropId" | "brandSummary">) {
+  if (product.brandSummary) return undefined
   return product.dropId ? dropById.get(product.dropId) : undefined
 }
 

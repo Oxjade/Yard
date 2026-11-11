@@ -30,7 +30,7 @@ import { mediaAssets } from "../db/schema"
  * Brand image uploads that CATALOG accepts as product, collection and storefront-cover photos.
  * Inbox attachments never qualify.
  */
-export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover"] as const
+export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover", "drop_image"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
 // Listed: not restricted or suspended, and (founding brands) launched with a published storefront.
