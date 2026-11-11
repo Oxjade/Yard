@@ -6,6 +6,7 @@ import { db } from "../db"
 import { messageAttachments } from "../db/schema"
 import { badRequest } from "../http/errors"
 import type { Actor } from "./dal"
+import { refusedSampleDrop, refusedSampleProduct, sampleOff } from "../catalog/sample-guard"
 
 const dropById = (id: string) => drops.find((d) => d.id === id)
 
@@ -53,15 +54,29 @@ export async function assertOwned(actor: Actor, refs: OwnedRef[]) {
   for (const r of refs) {
     switch (r.kind) {
       case "product": {
-        const p = productById.get(r.id)
+        // Demo and development: a sample piece first. Otherwise (always in production, where a
+        // sample id fails) the server catalogue's product, not archived.
         const brand = r.brandId ?? brandOf(actor)
-        if (!p || !brand || p.brandId !== brand) fail(r)
+        if (refusedSampleProduct(r.id)) {
+          fail(r)
+          break
+        }
+        const sample = sampleOff() ? undefined : productById.get(r.id)
+        const owner = sample
+          ? sample.brandId
+          : (await d.query.catalogProducts.findFirst({ columns: { brandId: true, status: true }, where: (p, { eq }) => eq(p.id, r.id) }).then((p) => (p && p.status !== "archived" ? p.brandId : undefined)))
+        if (!owner || !brand || owner !== brand) fail(r)
         break
       }
       case "drop": {
-        const drop = dropById(r.id)
         const brand = r.brandId ?? brandOf(actor)
-        if (!drop || !brand || drop.brandId !== brand) fail(r)
+        if (refusedSampleDrop(r.id)) {
+          fail(r)
+          break
+        }
+        const sample = sampleOff() ? undefined : dropById(r.id)
+        const owner = sample ? sample.brandId : (await d.query.drops.findFirst({ columns: { brandId: true }, where: (x, { eq }) => eq(x.id, r.id) }))?.brandId
+        if (!owner || !brand || owner !== brand) fail(r)
         break
       }
       case "pickupLocation": {

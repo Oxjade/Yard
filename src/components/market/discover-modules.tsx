@@ -6,6 +6,7 @@ import { ArrowCounterClockwiseIcon, ArrowRightIcon, MapPinIcon } from "@phosphor
 import { RankMove } from "@/components/charts/rank-move"
 import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { SampleChip } from "@/components/ui/sample-chip"
 import { boardPath } from "@/lib/api/charts"
 import { api } from "@/lib/api/client"
@@ -24,13 +25,14 @@ const getTrending = () => api<ChartBoardDto>(TRENDING_WEEKLY, { schema: chartBoa
  * Discover's "On the charts this week" (§7.3): the top five of the weekly Trending board as
  * compact rows, from the same GET /api/charts the Charts page reads (never a number of its own).
  * One read per page view: the board changes once a day, so it isn't refetched on focus, and the
- * browser may reuse its cached copy for the route's 5-minute max-age. Rankings include the sample baseline in this build, so the module header
- * says so. Loading shows five row skeletons; a failed load says so with Retry; a board that has no
+ * browser may reuse its cached copy for the route's 5-minute max-age. With sample data on (demo) the rankings include the sample baseline, so the
+ * module header says so; production has no sample activity and no such label. Loading shows five row skeletons; a failed load says so with Retry; a board that has no
  * edition yet says it's warming up.
  */
 export function ChartsThisWeek({ className }: { className?: string }) {
   const { data, error, isLoading, revalidate, isValidating } = useApi(TRENDING_WEEKLY, getTrending, { revalidateOnFocus: false })
   const entries = data?.entries.slice(0, 5) ?? []
+  const sampleData = usePageSampleData()
   return (
     <section aria-labelledby="discover-charts-title" className={cn("flex min-w-0 flex-col rounded-xl border border-line-soft bg-card p-5 md:p-6", className)}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -40,7 +42,7 @@ export function ChartsThisWeek({ className }: { className?: string }) {
           </h2>
           <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-2">
             Trending: who&apos;s gaining follows, views and saves fastest.
-            <SampleChip label="Includes sample activity" />
+            {sampleData ? <SampleChip label="Includes sample activity" /> : null}
           </p>
         </div>
         <Link href="/charts?chart=trending" className="group -my-1 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md text-sm text-ink-2 transition-colors hover:text-ink">

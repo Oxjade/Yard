@@ -7,6 +7,11 @@ import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { BrandCard } from "@/components/market/brand-card"
+import { BrandsJoining } from "@/components/market/brands/brands-joining"
+import { LiveBrandCard } from "@/components/market/brands/live-brand-card"
+import { FollowButton } from "@/components/market/follow-button"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { fetchPublicBrands, type PublicBrandCard } from "@/lib/api/public-brands"
 import { Chip } from "@/components/market/catalog/chip"
 import { Button } from "@/components/ui/button"
 import { aestheticLabels, brands, categories, categoryBySlug, recommendBrands } from "@/lib/data"
@@ -60,6 +65,34 @@ function toggle<T>(list: T[], v: T) {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
 }
 
+/** Production: up to six listed brands from the server, those in the picked categories first; null while loading. */
+function useLiveSuggestions(on: boolean, cats: CategorySlug[]) {
+  const [list, setList] = useState<PublicBrandCard[] | null>(null)
+  const key = cats.join(",")
+  useEffect(() => {
+    if (!on) return
+    let live = true
+    ;(async () => {
+      const out: PublicBrandCard[] = []
+      for (const category of key ? key.split(",").slice(0, 3) : []) {
+        const page = await fetchPublicBrands({ category, sort: "new", limit: 6 })
+        for (const b of page.brands) if (out.length < 6 && !out.some((x) => x.id === b.id)) out.push(b)
+      }
+      if (out.length < 6) {
+        const page = await fetchPublicBrands({ sort: "new", limit: 12 })
+        for (const b of page.brands) if (out.length < 6 && !out.some((x) => x.id === b.id)) out.push(b)
+      }
+      if (live) setList(out)
+    })().catch(() => {
+      if (live) setList([])
+    })
+    return () => {
+      live = false
+    }
+  }, [on, key])
+  return list
+}
+
 /** Customer onboarding: categories, looks, then brands to follow. Every step can be skipped. */
 export function WelcomeFlow() {
   const router = useRouter()
@@ -79,15 +112,18 @@ export function WelcomeFlow() {
   const [followedHere] = useState(() => useSaved.getState().following.length)
 
   // Suggestions are fixed when step 3 opens, so following a brand doesn't reshuffle the list.
+  // Demo ranks the sample brands; production suggests listed brands from the server (useLiveSuggestions).
+  const demo = usePageSampleData()
+  const liveSuggestions = useLiveSuggestions(!demo && step === 2, cats)
   const suggestions = useMemo(() => {
-    if (step !== 2) return []
+    if (step !== 2 || !demo) return []
     const following = useSaved.getState().following
     return recommendBrands({ interests: cats, following }, 12)
       .map((b, i) => ({ b, score: b.aesthetics.filter((a) => looks.includes(a)).length * 6 - i }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 6)
       .map((s) => s.b)
-  }, [step, cats, looks])
+  }, [step, cats, looks, demo])
 
   const topRef = useRef<HTMLDivElement>(null)
   const [navigated, setNavigated] = useState(false)
@@ -201,11 +237,30 @@ export function WelcomeFlow() {
               </div>
             ) : (
               <>
+                {demo ? (
                 <div className="rail -mx-4 mt-8 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-3">
                   {suggestions.map((b) => (
                     <BrandCard key={b.id} brand={b} />
                   ))}
                 </div>
+                ) : liveSuggestions === null ? (
+                  <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy aria-label="Loading brands">
+                    {Array.from({ length: 3 }, (_, i) => (
+                      <div key={i} className="aspect-[4/3] animate-pulse rounded-lg bg-surface" />
+                    ))}
+                  </div>
+                ) : liveSuggestions.length ? (
+                  <ul className="rail -mx-4 mt-8 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-3">
+                    {liveSuggestions.map((b) => (
+                      <li key={b.id} className="flex min-w-0 flex-col gap-2">
+                        <LiveBrandCard brand={b} />
+                        <FollowButton brandId={b.id} brandName={b.name} className="w-full" />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <BrandsJoining compact className="mt-8" />
+                )}
                 <p className="mt-4 text-sm text-ink-2" aria-live="polite">
                   {followingCount ? `Following ${followingCount} ${followingCount === 1 ? "brand" : "brands"}.` : "Not following anyone yet. You can always follow brands later."}
                 </p>

@@ -6,6 +6,7 @@ import { db, withTx, type Executor } from "../db"
 import { cartLines, carts } from "../db/schema/payments"
 import { catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { notForSaleMessage } from "../catalog/sellable"
+import { refuseSampleVariant, refusedSampleVariant } from "../catalog/sample-guard"
 import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { clearAnonCartCookie, issueAnonCartCookie, readAnonCartKey } from "./cookie"
@@ -78,6 +79,8 @@ export async function mergeAnonCart(customerId: string): Promise<{ merged: numbe
     let count = existing.length
     let n = 0
     for (const l of anonLines) {
+      // Production never carries a sample piece into the shopper's cart.
+      if (refusedSampleVariant(l.variantId)) continue
       const cur = byVariant.get(l.variantId)
       if (cur) {
         await tx
@@ -99,13 +102,22 @@ export async function mergeAnonCart(customerId: string): Promise<{ merged: numbe
   return { merged }
 }
 
-/** The raw lines (variant id + qty) of an owner's cart. */
-export async function cartLinesOf(owner: CartOwner): Promise<{ cartId: string | null; lines: { variantId: string; qty: number }[] }> {
+export const SAMPLE_LINES_REMOVED = "Pieces from our preview catalogue were removed from your cart."
+
+/**
+ * The raw lines (variant id + qty) of an owner's cart. In production a line holding a sample
+ * variant id (an old cart from before the sample catalogue was switched off, or a demo-seeded
+ * database) is deleted here, so neither the cart view nor checkout ever prices it;
+ * `removedSample` says how many went.
+ */
+export async function cartLinesOf(owner: CartOwner): Promise<{ cartId: string | null; lines: { variantId: string; qty: number }[]; removedSample: number }> {
   const d = await db()
   const cart = await findCart(d, owner)
-  if (!cart) return { cartId: null, lines: [] }
-  const lines = await d.select({ variantId: cartLines.variantId, qty: cartLines.qty }).from(cartLines).where(eq(cartLines.cartId, cart.id)).orderBy(asc(cartLines.addedAt))
-  return { cartId: cart.id, lines }
+  if (!cart) return { cartId: null, lines: [], removedSample: 0 }
+  const all = await d.select({ variantId: cartLines.variantId, qty: cartLines.qty }).from(cartLines).where(eq(cartLines.cartId, cart.id)).orderBy(asc(cartLines.addedAt))
+  const sample = all.filter((l) => refusedSampleVariant(l.variantId)).map((l) => l.variantId)
+  if (sample.length) await d.delete(cartLines).where(and(eq(cartLines.cartId, cart.id), inArray(cartLines.variantId, sample)))
+  return { cartId: cart.id, lines: sample.length ? all.filter((l) => !sample.includes(l.variantId)) : all, removedSample: sample.length }
 }
 
 export type CartView = {
@@ -117,6 +129,11 @@ export type CartView = {
   groups: { brandId: string; variantIds: string[]; subtotalMinor: number; shipping: GroupQuote | null }[]
   /** Plain sentences about lines that need attention (sold out, fewer left than in the cart). */
   issues: string[]
+  /**
+   * How many sample lines this read took out of the cart (production; see cartLinesOf). The bag
+   * says so once (the same notice as lines dropped from this browser's storage).
+   */
+  removedSample: number
   destination: { country: string; city: string | null } | null
 }
 
@@ -124,12 +141,12 @@ export type CartView = {
 export async function viewCart(owner: CartOwner | null, opts: { currency: string; to?: string; city?: string }): Promise<CartView> {
   const currency = asCurrency(opts.currency)
   const to: CountryCode | null = opts.to ? asCountry(opts.to) : null
-  const { cartId, lines: raw } = owner ? await cartLinesOf(owner) : { cartId: null, lines: [] }
+  const { cartId, lines: raw, removedSample } = owner ? await cartLinesOf(owner) : { cartId: null, lines: [], removedSample: 0 }
   const lines = await priceLines(raw, currency)
   const groups = groupByBrand(lines)
   const now = Date.now()
   const quotes = to ? await Promise.all(groups.map((g) => quoteGroup(g, to, opts.city ?? null, currency, now))) : []
-  const issues: string[] = []
+  const issues: string[] = removedSample ? [SAMPLE_LINES_REMOVED] : []
   for (const l of lines) {
     if (l.unavailableReason === "not_for_sale") issues.push(`${l.title ?? "A piece in your cart"}: ${notForSaleMessage(l.brandName)}`)
     else if (l.status === "unavailable") issues.push(`${l.title ?? "A piece in your cart"} isn't available any more.`)
@@ -143,11 +160,14 @@ export async function viewCart(owner: CartOwner | null, opts: { currency: string
     lines,
     groups: groups.map((g, i) => ({ brandId: g.brandId, variantIds: g.lines.map((l) => l.variantId), subtotalMinor: g.subtotalMinor, shipping: quotes[i] ?? null })),
     issues,
+    removedSample,
     destination: to ? { country: to, city: opts.city?.trim() || null } : null,
   }
 }
 
 async function checkSellable(variantId: string, qty: number) {
+  // Production: a sample piece is refused by identity, even if a demo-seeded database holds it.
+  refuseSampleVariant(variantId)
   const [line] = await priceLines([{ variantId, qty }], "USD")
   // Unknown or no longer sold (CATALOG leaves it out) → 404; sold out or short → 409.
   if (!line || !line.productId) throw notFound("That piece isn't available.")
@@ -182,6 +202,7 @@ export async function addLine(owner: CartOwner, variantId: string, qty: number) 
 /** Sets a line's quantity (0 removes it). */
 export async function setLine(owner: CartOwner, variantId: string, qty: number) {
   if (qty === 0) return removeLine(owner, variantId)
+  refuseSampleVariant(variantId)
   const d = await db()
   const cart = await findCart(d, owner)
   if (!cart) throw notFound("That piece isn't in your cart.")

@@ -1,9 +1,13 @@
 import "server-only"
-import { and, asc, countDistinct, eq, inArray, isNull, ne } from "drizzle-orm"
+import { and, asc, countDistinct, eq, inArray, isNull, ne, notInArray } from "drizzle-orm"
 import { drops } from "@/lib/data/catalog"
 import { productById } from "@/lib/data/products"
 import { db, withTx } from "../db"
-import { chartEvents, shopperFollows, shopperReminders, shopperWishlist } from "../db/schema"
+import { brands, chartEvents, shopperFollows, shopperReminders, shopperWishlist } from "../db/schema"
+import { catalogProducts } from "../db/schema/catalog"
+import { drops as dropRows } from "../db/schema/engagement"
+import { refuseSampleDrop, refuseSampleProduct, refusedSampleBrand, sampleOff } from "../catalog/sample-guard"
+import { brandListedSql, productPublicWhere } from "../catalog/sellable"
 import { badRequest } from "../http/errors"
 import { recordAbuse } from "../security/rate-limit"
 
@@ -50,23 +54,58 @@ export const ANON_CAP_UNKNOWN_IP = 100
 
 const dropById = (id: string) => drops.find((d) => d.id === id)
 
+/**
+ * A product's brand from the server catalogue (a public product of a listed brand), or null. The
+ * sample catalogue answers first only in demo and development; production refuses sample ids
+ * before this and reads real products here, so a real piece's page view and saves count.
+ */
+async function catalogueProductBrand(productId: string): Promise<string | null> {
+  const d = await db()
+  const [row] = await d
+    .select({ brandId: catalogProducts.brandId })
+    .from(catalogProducts)
+    .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+    .where(and(eq(catalogProducts.id, productId), productPublicWhere()))
+    .limit(1)
+  return row?.brandId ?? null
+}
+
+/** A brand-created public drop's brand (not draft or cancelled, listed brand), or null. */
+async function catalogueDropBrand(dropId: string): Promise<string | null> {
+  const d = await db()
+  const [row] = await d
+    .select({ brandId: dropRows.brandId })
+    .from(dropRows)
+    .innerJoin(brands, eq(brands.id, dropRows.brandId))
+    .where(and(eq(dropRows.id, dropId), notInArray(dropRows.status, ["draft", "cancelled"]), brandListedSql()))
+    .limit(1)
+  return row?.brandId ?? null
+}
+
 /** The brand (and item ids) a signal is about, validated against the catalogue and the brands table. */
 async function resolveTarget(input: SignalInput): Promise<{ brandId: string; productId: string | null; dropId: string | null }> {
   const d = await db()
-  const brandExists = async (id: string | undefined) => !!id && !!(await d.query.brands.findFirst({ columns: { id: true }, where: (b, { eq }) => eq(b.id, id) }))
+  // Production refuses sample brand ids by identity, whatever the brands table holds.
+  const brandExists = async (id: string | undefined) => !!id && !refusedSampleBrand(id) && !!(await d.query.brands.findFirst({ columns: { id: true }, where: (b, { eq }) => eq(b.id, id) }))
   switch (input.kind) {
     case "product_view":
     case "wishlist_add":
     case "wishlist_remove": {
-      const p = input.productId ? productById.get(input.productId) : undefined
-      if (!p) throw badRequest({ productId: "Name a product in the catalogue." })
-      return { brandId: p.brandId, productId: p.id, dropId: null }
+      refuseSampleProduct(input.productId, "productId")
+      const p = input.productId && !sampleOff() ? productById.get(input.productId) : undefined
+      if (p) return { brandId: p.brandId, productId: p.id, dropId: null }
+      const brandId = typeof input.productId === "string" && input.productId ? await catalogueProductBrand(input.productId) : null
+      if (!brandId) throw badRequest({ productId: "Name a product in the catalogue." })
+      return { brandId, productId: input.productId!, dropId: null }
     }
     case "reminder_set":
     case "reminder_unset": {
-      const drop = input.dropId ? dropById(input.dropId) : undefined
-      if (!drop) throw badRequest({ dropId: "Name a drop in the catalogue." })
-      return { brandId: drop.brandId, productId: null, dropId: drop.id }
+      refuseSampleDrop(input.dropId, "dropId")
+      const drop = input.dropId && !sampleOff() ? dropById(input.dropId) : undefined
+      if (drop) return { brandId: drop.brandId, productId: null, dropId: drop.id }
+      const brandId = typeof input.dropId === "string" && input.dropId ? await catalogueDropBrand(input.dropId) : null
+      if (!brandId) throw badRequest({ dropId: "Name a drop in the catalogue." })
+      return { brandId, productId: null, dropId: input.dropId! }
     }
     case "post_open": {
       if (input.postId) {

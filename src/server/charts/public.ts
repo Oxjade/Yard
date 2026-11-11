@@ -11,6 +11,7 @@ import { yard } from "../state"
 import { refreshFlags } from "./antifraud"
 import { addDays, dropAnchor, todayUtc } from "./baseline"
 import { boardKeyString, datesNeeded, editionWindow, loadPrior, priorFrom, rankBoard, withMovement, writeSnapshots, type BoardKey, type ChartKind, type EditionEntry, type Stat } from "./editions"
+import { refusedSampleBrand, sampleOff } from "../catalog/sample-guard"
 import { dropStatus, listed, loadBrands, loadFrozen, loadHolds, loadUniverse, maxEventSeq, PERIOD_DAYS, type BrandRow, type Period } from "./metrics"
 import { categoryLabel, cityName, countryName, scopeKey, type Scope } from "./scope"
 
@@ -80,7 +81,7 @@ async function flagsFresh(now: number) {
 /* ── DTOs ────────────────────────────────────────────────────────────────── */
 
 export function brandDto(row: Pick<BrandRow, "id" | "handle" | "name" | "city" | "country" | "categories">): ChartBrandDto {
-  const b = brandById.get(row.id)
+  const b = sampleOff() ? undefined : brandById.get(row.id)
   return {
     id: row.id,
     handle: row.handle,
@@ -115,7 +116,8 @@ function scopeDto(s: Scope): ChartScopeDto {
 
 function entryDto(e: Pick<EditionEntry, "rank" | "prevRank" | "movement" | "delta" | "peak" | "editionsOnChart" | "subjectType" | "subjectId" | "brandId" | "stats">, brands: Map<string, BrandRow>, history: (number | null)[], anchor: number, asOf: number): ChartEntryDto | null {
   const row = brands.get(e.brandId)
-  if (!row) return null
+  // Production: never a sample brand's entry, even from a demo-seeded database.
+  if (!row || refusedSampleBrand(row.id)) return null
   return {
     rank: e.rank,
     prevRank: e.prevRank,

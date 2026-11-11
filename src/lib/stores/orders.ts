@@ -13,6 +13,7 @@ import { brandById } from "@/lib/data/brands"
 import { convert, formatMoney } from "@/lib/money"
 import { priceCart, type ShippingService } from "@/lib/cart"
 import { afterIdentityChange } from "@/lib/session/identity"
+import { sampleDataOff } from "@/lib/sample-switch"
 import { DEMO_SHOPPER } from "./session"
 import { customerCheckoutGroups, customerOrders, sampleReturnRequest } from "@/lib/data/orders"
 import { variantLabel } from "@/lib/data/products"
@@ -215,6 +216,11 @@ type OrdersState = {
    */
   scopeTo: (shopperId: string | null) => void
   /**
+   * Production (demo switch off): drops the sample order history (cg_ada_*, its orders) and every
+   * demo-shopper checkout an earlier visit kept here; none of it exists on a live site.
+   */
+  purgeSample: () => void
+  /**
    * A return request on a delivered order. It lands on the brand's order in Studio and in the
    * admin refund queue (in the backend phase: one row both read). Returns false when the order
    * can't take a request (not delivered, or already requested).
@@ -223,6 +229,10 @@ type OrdersState = {
 }
 
 const sampleOrderById = new Map(customerOrders.map((o) => [o.id, o]))
+const sampleGroupIds = new Set(customerCheckoutGroups.map((g) => g.id))
+/** The sample order history, or a checkout of the demo shopper (who exists only with sample data on). */
+const sampleGroup = (g: Pick<CheckoutGroup, "id" | "customerId">) => sampleGroupIds.has(g.id) || g.customerId === DEMO_SHOPPER
+const sampleOrder = (o: Pick<MerchantOrder, "id" | "customerId" | "groupId">) => sampleOrderById.has(o.id) || o.customerId === DEMO_SHOPPER || (!!o.groupId && sampleGroupIds.has(o.groupId))
 
 export const useOrders = create<OrdersState>()(
   persist(
@@ -385,6 +395,14 @@ export const useOrders = create<OrdersState>()(
         const studio = useStudio.getState()
         if (dropped.size && studio.orders.some((o) => dropped.has(o.id))) useStudio.setState({ orders: studio.orders.filter((o) => !dropped.has(o.id)) })
       },
+      purgeSample: () => {
+        const current = get()
+        const groups = current.groups.filter((g) => !sampleGroup(g))
+        const orders = current.orders.filter((o) => !sampleOrder(o))
+        if (groups.length === current.groups.length && orders.length === current.orders.length) return
+        const kept = new Set(groups.map((g) => g.id))
+        set({ groups, orders, processedKeys: Object.fromEntries(Object.entries(current.processedKeys).filter(([, id]) => kept.has(id))) })
+      },
       requestReturn: (orderId, request) => {
         const o = get().orders.find((x) => x.id === orderId)
         if (!o || o.status !== "delivered" || o.returnRequest) return false
@@ -423,6 +441,16 @@ export const useOrders = create<OrdersState>()(
       // A real account's checkout ids stay in memory only, like its orders (not left for the next sign-in).
       partialize: (s) => ({ groups: s.groups.filter((g) => persistable(g.customerId)), orders: s.orders.filter((o) => persistable(o.customerId)), processedKeys: Object.fromEntries(Object.entries(s.processedKeys).filter(([, id]) => s.groups.some((g) => g.id === id && persistable(g.customerId)))) }),
       version: 2,
+      // Production: the sample history and demo-shopper checkouts an earlier visit saved never load.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Pick<OrdersState, "groups" | "orders" | "processedKeys">>
+        if (!sampleDataOff()) return { ...current, ...p }
+        const groups = (p.groups ?? current.groups).filter((g) => !sampleGroup(g))
+        const orders = (p.orders ?? current.orders).filter((o) => !sampleOrder(o))
+        const kept = new Set(groups.map((g) => g.id))
+        const processedKeys = Object.fromEntries(Object.entries(p.processedKeys ?? current.processedKeys).filter(([, id]) => kept.has(id)))
+        return { ...current, ...p, groups, orders, processedKeys }
+      },
       // v1: decisions saved on an order's timeline before the platform was renamed read its
       // current name ("approved by Yard").
       // v2: checkout references read the current prefix ("YRD-…", was "NCT-…"), and the sample

@@ -14,6 +14,9 @@ import { badRequest, conflict, notFound } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
 import { indexedProducts } from "../search"
+import { catalogProducts, catalogVariants } from "../db/schema/catalog"
+import { productPublicWhere } from "../catalog/sellable"
+import { refuseSampleBrand, refuseSampleProduct, refuseSampleVariant, refusedSampleBrand, refusedSampleProduct, sampleOff } from "../catalog/sample-guard"
 import { hasLiveCatalog, sampleProductDoc, sellableVariants } from "../search/catalog-port"
 import { hmacHex } from "../security/crypto"
 import { keys } from "../security/keys"
@@ -39,7 +42,7 @@ export function signalActorFor(shopper: ShopperActor, meta: RequestMeta): Signal
 
 /** Public follower counts: the brand's baseline plus real follows. */
 export async function followerCounts(brandIds: string[]): Promise<Record<string, number>> {
-  const ids = [...new Set(brandIds)].slice(0, 100)
+  const ids = [...new Set(brandIds)].filter((id) => !refusedSampleBrand(id)).slice(0, 100)
   if (!ids.length) return {}
   const d = await db()
   const [base, real] = await Promise.all([
@@ -69,12 +72,14 @@ export async function listFollows(userId: string) {
     .innerJoin(brands, eq(brands.id, shopperFollows.brandId))
     .where(eq(shopperFollows.userId, userId))
     .orderBy(desc(shopperFollows.createdAt))
-  const visible = rows.filter((r) => r.reviewStatus !== "suspended")
+  const visible = rows.filter((r) => r.reviewStatus !== "suspended" && !refusedSampleBrand(r.brandId))
   const counts = await followerCounts(visible.map((r) => r.brandId))
   return visible.map(({ reviewStatus: _r, ...r }) => ({ ...r, followedAt: r.followedAt.toISOString(), followers: counts[r.brandId] ?? 0 }))
 }
 
 async function assertBrand(brandId: string) {
+  // Production: a sample brand is refused by identity (404), whatever the database holds.
+  refuseSampleBrand(brandId)
   const d = await db()
   const [b] = await d.select({ id: brands.id, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, brandId)).limit(1)
   if (!b || b.reviewStatus === "suspended") throw notFound("We couldn't find that brand.")
@@ -96,10 +101,26 @@ export async function unfollowBrand(shopper: ShopperActor, brandId: string, meta
 
 /** A product's brand and variants: the sample catalogue first (ingest can count it), else the search index. */
 async function resolveProduct(productId: string): Promise<{ productId: string; brandId: string; sample: boolean; variantIds: string[] } | null> {
-  const sample = productById.get(productId)
+  // Production: a sample piece is refused by identity (404); demo resolves it from the sample catalogue.
+  refuseSampleProduct(productId)
+  const sample = sampleOff() ? undefined : productById.get(productId)
   if (sample) return { productId, brandId: sample.brandId, sample: true, variantIds: sample.variants.map((v) => v.id) }
   const [row] = await indexedProducts([productId])
   if (row && row.visible) return { productId, brandId: row.brandId, sample: false, variantIds: row.variantIds }
+  // Not in the search index yet (or the index is behind): the public catalogue itself.
+  if (!row) {
+    const d = await db()
+    const [p] = await d
+      .select({ brandId: catalogProducts.brandId })
+      .from(catalogProducts)
+      .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+      .where(and(eq(catalogProducts.id, productId), productPublicWhere()))
+      .limit(1)
+    if (p) {
+      const vs = await d.select({ id: catalogVariants.id }).from(catalogVariants).where(eq(catalogVariants.productId, productId))
+      return { productId, brandId: p.brandId, sample: false, variantIds: vs.map((v) => v.id) }
+    }
+  }
   return null
 }
 
@@ -114,7 +135,7 @@ export async function addToWishlist(shopper: ShopperActor, productId: string, me
 
 export async function removeFromWishlist(shopper: ShopperActor, productId: string, meta: RequestMeta) {
   let verdict: SignalVerdict | "direct" = "direct"
-  if (productById.has(productId)) verdict = await ingestSignal({ kind: "wishlist_remove", productId }, signalActorFor(shopper, meta))
+  if (!sampleOff() && productById.has(productId)) verdict = await ingestSignal({ kind: "wishlist_remove", productId }, signalActorFor(shopper, meta))
   else await withTx(async (tx) => tx.delete(shopperWishlist).where(and(eq(shopperWishlist.userId, shopper.userId), eq(shopperWishlist.productId, productId))))
   return { productId, saved: false, verdict }
 }
@@ -122,10 +143,15 @@ export async function removeFromWishlist(shopper: ShopperActor, productId: strin
 /** The shopper's wishlist with product details from the search index (or the sample catalogue) and live price/stock when CATALOG is loaded. */
 export async function listWishlist(userId: string) {
   const d = await db()
-  const rows = await d.select().from(shopperWishlist).where(eq(shopperWishlist.userId, userId)).orderBy(desc(shopperWishlist.createdAt)).limit(500)
+  const all = await d.select().from(shopperWishlist).where(eq(shopperWishlist.userId, userId)).orderBy(desc(shopperWishlist.createdAt)).limit(500)
+  // Production: saved sample pieces are dropped from the list and from the account.
+  const gone = all.filter((r) => refusedSampleProduct(r.productId) || refusedSampleBrand(r.brandId)).map((r) => r.productId)
+  if (gone.length) await d.delete(shopperWishlist).where(and(eq(shopperWishlist.userId, userId), inArray(shopperWishlist.productId, gone)))
+  const rows = gone.length ? all.filter((r) => !gone.includes(r.productId)) : all
+  const sampleDoc = (id: string) => (sampleOff() ? null : sampleProductDoc(id))
   const ids = rows.map((r) => r.productId)
   const indexed = new Map((await indexedProducts(ids)).map((r) => [r.productId, r]))
-  const variantIds = ids.flatMap((id) => indexed.get(id)?.variantIds ?? sampleProductDoc(id)?.variantIds ?? [])
+  const variantIds = ids.flatMap((id) => indexed.get(id)?.variantIds ?? sampleDoc(id)?.variantIds ?? [])
   const live = await sellableVariants(variantIds).catch(() => [])
   const liveBy = new Map<string, { minPriceMinor: number; currency: string; available: number }>()
   for (const v of live) {
@@ -139,7 +165,7 @@ export async function listWishlist(userId: string) {
     .where(and(eq(backInStockRequests.userId, userId), isNull(backInStockRequests.notifiedAt)))
   return rows.map((r) => {
     const ix = indexed.get(r.productId)
-    const sample = ix ? null : sampleProductDoc(r.productId)
+    const sample = ix ? null : sampleDoc(r.productId)
     const l = liveBy.get(r.productId)
     return {
       productId: r.productId,
@@ -175,6 +201,10 @@ export async function mergeSaved(shopper: ShopperActor, input: { brandIds: strin
   let saved = 0
   for (const brandId of [...new Set(input.brandIds)]) {
     if (hb.has(brandId)) continue
+    if (refusedSampleBrand(brandId)) {
+      skipped.push(brandId)
+      continue
+    }
     try {
       await followBrand(shopper, brandId, meta)
       followed++
@@ -184,6 +214,10 @@ export async function mergeSaved(shopper: ShopperActor, input: { brandIds: strin
   }
   for (const productId of [...new Set(input.productIds)]) {
     if (hp.has(productId)) continue
+    if (refusedSampleProduct(productId)) {
+      skipped.push(productId)
+      continue
+    }
     try {
       await addToWishlist(shopper, productId, meta)
       saved++
@@ -198,11 +232,13 @@ export async function mergeSaved(shopper: ShopperActor, input: { brandIds: strin
 
 /** The product a variant belongs to and its live availability (CATALOG), falling back to the index. */
 async function variantInfo(variantId: string): Promise<{ productId: string; brandId: string; available: number | null; label: string | null; title: string | null } | null> {
+  // Production: a sample size or colour is refused by identity (404).
+  refuseSampleVariant(variantId)
   if (await hasLiveCatalog()) {
     const [live] = await sellableVariants([variantId])
     return live ? { productId: live.productId, brandId: live.brandId, available: live.available, label: live.variantLabel, title: live.title } : null
   }
-  for (const p of productById.values()) {
+  for (const p of sampleOff() ? [] : productById.values()) {
     if (!sampleProductDoc(p.id)?.visible) continue
     const v = p.variants.find((x) => x.id === variantId)
     if (v) return { productId: p.id, brandId: p.brandId, available: Math.max(0, v.stock - v.reserved), label: Object.values(v.options).join(" / "), title: p.name }
@@ -306,7 +342,7 @@ export async function watchPrices() {
   const pendingBis = await d.select().from(backInStockRequests).where(isNull(backInStockRequests.notifiedAt)).limit(5000)
   const productIds = [...new Set(wished.map((r) => r.productId))]
   const indexed = new Map((await indexedProducts(productIds)).map((r) => [r.productId, r]))
-  const variantIds = [...new Set([...productIds.flatMap((id) => indexed.get(id)?.variantIds ?? sampleProductDoc(id)?.variantIds ?? []), ...pendingBis.map((r) => r.variantId)])]
+  const variantIds = [...new Set([...productIds.flatMap((id) => indexed.get(id)?.variantIds ?? (sampleOff() ? null : sampleProductDoc(id))?.variantIds ?? []), ...pendingBis.map((r) => r.variantId)])]
   const live = await sellableVariants(variantIds)
   if (variantIds.length && !live.length) {
     log.once("engagement:watch-no-catalog", "info", "[yard] price/stock watch skipped: CATALOG getSellableVariants returned nothing (not loaded yet?)")

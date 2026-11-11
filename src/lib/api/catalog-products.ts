@@ -1,3 +1,4 @@
+import { sampleDataOff } from "@/lib/sample-switch"
 import type { CurrencyCode, CountryCode } from "@/config/markets"
 import { api } from "@/lib/api/client"
 import { brandByHandle } from "@/lib/data/brands"
@@ -27,7 +28,7 @@ export type PublicCatalogProduct = {
   brand: { id: string; handle: string; name: string; verified: boolean; city: string; country: string; foundingBadge?: boolean; forSale?: boolean; hasStorefront?: boolean }
 }
 
-type PublicCatalogPage = { products: PublicCatalogProduct[]; total: number; nextOffset: number | null }
+export type PublicCatalogPage = { products: PublicCatalogProduct[]; total: number; nextOffset: number | null }
 
 export function toCatalogProduct(row: PublicCatalogProduct): Product {
   return {
@@ -94,7 +95,8 @@ export function catalogBrand(product: Product, known?: Brand): Brand {
  */
 export function brandHref(handle: string, hasStorefront?: boolean) {
   // Sample brands and live brands that published a storefront have a page; others list in the shop.
-  return brandByHandle.has(handle) || hasStorefront ? `/brands/${encodeURIComponent(handle)}` : `/shop?brands=${encodeURIComponent(handle)}`
+  // Production never treats a sample handle as having a storefront (only the server's hasStorefront counts).
+  return (brandByHandle.has(handle) && !sampleDataOff()) || hasStorefront ? `/brands/${encodeURIComponent(handle)}` : `/shop?brands=${encodeURIComponent(handle)}`
 }
 
 /** Loads the complete public DB catalogue using the API's bounded page size. */

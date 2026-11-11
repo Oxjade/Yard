@@ -6,6 +6,8 @@ import { brandById } from "@/lib/data/brands"
 import { drops } from "@/lib/data/catalog"
 import { productById } from "@/lib/data/products"
 import type { t } from "../db"
+import { isSampleProduct } from "@/lib/data/sample-ids"
+import { sampleOff } from "../catalog/sample-guard"
 import { eventStillPublic, type PublicEventRow, type PublicPlaceRow } from "./public"
 
 /** Response DTOs (§1.10): built here, never a raw row. */
@@ -15,14 +17,21 @@ type EventRow = typeof t.locationEvents.$inferSelect
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
 
-function brandDto(brandId: string) {
-  const b = brandById.get(brandId)
+/** The brand columns a public place read carries (public.ts); a Studio row has none. */
+type BrandCols = { brandName?: string; brandHandle?: string; brandVerified?: boolean; brandCategories?: string[] }
+
+/** The sample brand, only in demo and development: production builds every DTO from the brands table. */
+const sampleBrand = (brandId: string) => (sampleOff() ? undefined : brandById.get(brandId))
+
+function brandDto(brandId: string, row: BrandCols = {}) {
+  const b = sampleBrand(brandId)
+  const name = row.brandName ?? b?.name ?? "A Yard brand"
   return {
     id: brandId,
-    handle: b?.handle ?? brandId,
-    name: b?.name ?? "A Yard brand",
-    verified: b?.verified ?? false,
-    mark: { text: b?.mark.text ?? "Y", style: b?.mark.style ?? "grotesk" },
+    handle: row.brandHandle ?? b?.handle ?? brandId,
+    name,
+    verified: row.brandVerified ?? b?.verified ?? false,
+    mark: { text: b?.mark.text ?? (name.replace(/[^A-Za-z0-9&]/g, "").slice(0, 2).toUpperCase() || "Y"), style: b?.mark.style ?? "grotesk" },
   }
 }
 
@@ -52,13 +61,14 @@ function eventFacts(events: PublicEventRow[], now: number) {
   }
 }
 
-export function toPlaceSummary(p: PublicPlaceRow | PlaceRow, events: PublicEventRow[], now: number): PlaceSummaryDto {
-  const b = brandById.get(p.brandId)
+export function toPlaceSummary(p: (PublicPlaceRow | PlaceRow) & BrandCols, events: PublicEventRow[], now: number): PlaceSummaryDto {
+  const s = sampleBrand(p.brandId)
+  const b = p.brandCategories ? { categories: p.brandCategories as never[] } : s
   const facts = eventFacts(events, now)
   const images = cleanImages(p.images)
   return {
     id: p.id,
-    brand: brandDto(p.brandId),
+    brand: brandDto(p.brandId, p),
     brandCategory: b ? brandCategoryName(b) : "Independent brand",
     brandCategories: b ? [...b.categories] : [],
     kind: p.kind as PlaceSummaryDto["kind"],
@@ -85,7 +95,7 @@ export function toPlaceSummary(p: PublicPlaceRow | PlaceRow, events: PublicEvent
 
 function dropRef(dropId: string | null) {
   if (!dropId) return null
-  const d = drops.find((x) => x.id === dropId)
+  const d = sampleOff() ? undefined : drops.find((x) => x.id === dropId)
   return d ? { id: d.id, slug: d.slug, name: d.name } : null
 }
 
@@ -100,7 +110,8 @@ export function toPlaceEvent(e: PublicEventRow): PlaceEventDto {
     drop: dropRef(e.dropId),
     promoText: e.promoText,
     image: cleanImage(e.image),
-    productIds: e.productIds.filter((id) => productById.get(id)?.brandId === e.brandId),
+    // Demo: sample pieces of this brand. Production: never a sample piece.
+    productIds: sampleOff() ? e.productIds.filter((id) => !isSampleProduct(id)) : e.productIds.filter((id) => productById.get(id)?.brandId === e.brandId),
     sample: e.sample,
   }
 }
@@ -115,7 +126,7 @@ export function toPlaceDetail(p: PublicPlaceRow, events: PublicEventRow[], now: 
     images: cleanImages(p.images),
     events: live.map(toPlaceEvent),
     featured: p.featuredProductIds
-      .map((id) => productById.get(id))
+      .map((id) => (sampleOff() ? undefined : productById.get(id)))
       .filter((x): x is NonNullable<typeof x> => !!x && x.brandId === p.brandId && x.status === "published")
       .map((x) => ({ id: x.id, slug: x.slug, name: x.name, price: { amount: x.price, currency: x.currency }, image: safePlaceSrc(x.images[0]?.src) })),
   }

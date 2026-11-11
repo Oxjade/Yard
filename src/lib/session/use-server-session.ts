@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { create } from "zustand"
 import { api } from "@/lib/api/client"
+import { setSampleDataFromSession } from "@/lib/sample-switch"
 import type { AdminProfile, BrandProfile, DemoAuthState, SessionDto, ShopperProfile } from "@/lib/api/contracts/session"
 
 /**
@@ -36,7 +37,9 @@ export function refreshServerSession(): Promise<void> {
   started = true
   const p = api<SessionDto>("/api/session")
     .then((s) => {
-      if (mine === generation) store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, sampleData: s.sampleData, fetchedAt: Date.now() })
+      if (mine !== generation) return
+      setSampleDataFromSession(s.sampleData)
+      store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, sampleData: s.sampleData, fetchedAt: Date.now() })
     })
     .catch(() => {
       if (mine === generation) store.setState((st) => ({ status: st.status === "ready" ? "ready" : "error", fetchedAt: Date.now() }))

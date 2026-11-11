@@ -4,6 +4,8 @@ import { loadDrop } from "../drops/service"
 import { getEnv } from "../env"
 import { HttpError } from "../http/errors"
 import { publicCollection, publicProduct, publicStorefront } from "./public"
+import { isSampleBrand, isSampleDrop, isSampleProduct } from "@/lib/data/sample-ids"
+import { sampleOff } from "./sample-guard"
 
 /**
  * Whether a public detail page has anything to show: the one check behind both the segment
@@ -26,23 +28,31 @@ async function found(load: () => Promise<unknown>) {
   }
 }
 
-/** A drop page: demo and development also answer for the sample drops; cancelled drops have no page. */
+/**
+ * A drop page: demo and development also answer for the sample drops; cancelled drops have no
+ * page. Production never answers for a sample drop, even when a demo-seeded database holds it.
+ */
 export async function dropPageExists(slug: string) {
-  if (getEnv().seedDemo && getDrop(slug)) return true
+  if (getEnv().seedDemo) {
+    if (getDrop(slug)) return true
+  } else if (isSampleDrop(slug)) return false
   const drop = await loadDrop(slug)
-  return !!drop && drop.status !== "cancelled"
+  return !!drop && drop.status !== "cancelled" && !(sampleOff() && isSampleDrop(drop.id))
 }
 
-export const productPageExists = (slug: string) => found(() => publicProduct(slug))
+/** A product page: a public product on the server (publicProduct already hides sample brands in production). */
+export const productPageExists = (slug: string) => (sampleOff() && isSampleProduct(slug) ? Promise.resolve(false) : found(() => publicProduct(slug)))
 
 /**
- * A storefront: a sample brand (in every mode, as before) or a listed brand on the server.
- * Production still lists the sample brands in /brands, search, brand cards and the following
- * feed, so their storefronts must keep answering until those lists are gated on the demo switch;
- * hiding only the storefront would leave every one of those links pointing at a 404.
+ * A storefront: in demo and development a sample brand or a listed brand on the server; in
+ * production only a listed brand on the server. The public storefront read excludes sample brand
+ * ids in production (sellable.ts brandLaunchedSql), so a sample handle is a 404 there even when a
+ * demo-seeded database holds its row, while a real brand that happens to use the same word is not.
  */
 export async function brandPageExists(handle: string) {
-  return !!getBrand(handle) || found(() => publicStorefront(handle))
+  if (getEnv().seedDemo && getBrand(handle)) return true
+  if (sampleOff() && isSampleBrand(handle)) return false
+  return found(() => publicStorefront(handle))
 }
 
 export const collectionPageExists = (handle: string, collection: string) => found(() => publicCollection(handle, collection))

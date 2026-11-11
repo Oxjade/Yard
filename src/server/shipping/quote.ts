@@ -3,6 +3,7 @@ import { countries, countryCodes, currencies, type CountryCode, type CurrencyCod
 import type { EstimateResponse, QuoteGroupDto, QuoteOptionDto } from "@/lib/api/contracts/shipping"
 import { cities, fold } from "@/lib/around/gazetteer"
 import { productById } from "@/lib/data/products"
+import { refuseSampleProduct, sampleOff } from "../catalog/sample-guard"
 import type { Product } from "@/lib/data/types"
 import { countryTimeZone, zonedTimeToUtc } from "@/lib/data/zones"
 import { convert } from "@/lib/money"
@@ -49,13 +50,16 @@ export async function calendarsFor(s: BrandShipping, dest: string): Promise<{ H:
 
 export type PricedLine = { product: Product; variantId: string; qty: number }
 
+/** A sample product, read from the bundled data only in demo and development; production never prices one. */
+export const staticProduct = (id: string) => (sampleOff() ? undefined : productById.get(id))
+
 /** The lines' static products (one brand), checked: field paths match the request body. */
 export function resolveLines(lines: { productId: string; variantId?: string; qty: number }[], field: string, live?: Map<string, Product>): { brandId: string; lines: PricedLine[] } {
   const fields: Record<string, string> = {}
   const out: PricedLine[] = []
   const brandIds = new Set<string>()
   lines.forEach((l, j) => {
-    const p = productById.get(l.productId) ?? live?.get(l.productId)
+    const p = staticProduct(l.productId) ?? live?.get(l.productId)
     if (!p || p.status === "draft" || p.status === "archived") {
       fields[`${field}.${j}.productId`] = "That piece isn't on Yard."
       return
@@ -184,7 +188,9 @@ async function liveProduct(slugOrId: string): Promise<Product | null> {
 }
 
 export async function productEstimate(q: { product: string; to: string; city?: string; qty?: number; cur?: string; release?: string }): Promise<EstimateResponse> {
-  const p = productById.get(q.product) ?? (await liveProduct(q.product))
+  // Production: a sample piece has no delivery estimate (404, never the 503 "not set up").
+  refuseSampleProduct(q.product)
+  const p = staticProduct(q.product) ?? (await liveProduct(q.product))
   if (!p || p.status === "draft" || p.status === "archived") throw notFound()
   if (!isCountry(q.to)) throw badRequest({ to: "Choose one of Yard's markets." })
   const currency: CurrencyCode = q.cur && isCurrency(q.cur) ? q.cur : (countries[q.to].currency as CurrencyCode)
@@ -259,7 +265,7 @@ export async function quoteGroups(body: { to: string; city?: string; currency: s
   const seen = new Set<string>()
   // Pieces only the live catalogue knows (made in Studio) are read from it, so their bag and checkout get quotes too.
   const live = new Map<string, Product>()
-  for (const id of [...new Set(body.groups.flatMap((g) => g.lines.map((l) => l.productId)).filter((id) => !productById.has(id)))].slice(0, 100)) {
+  for (const id of [...new Set(body.groups.flatMap((g) => g.lines.map((l) => l.productId)).filter((id) => !staticProduct(id)))].slice(0, 100)) {
     const p = await liveProduct(id)
     if (p) live.set(id, p)
   }

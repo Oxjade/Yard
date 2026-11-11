@@ -12,6 +12,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { conversationByBrand } from "@/lib/api/inbox"
 import { useApi } from "@/lib/api/use-api"
 import { brandByHandle } from "@/lib/data/brands"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
 import { useSearchParam, writeParams } from "@/hooks/use-search-param"
 import { ConversationList } from "./conversation-list"
@@ -57,7 +58,12 @@ export function InboxApp() {
   const [known, setKnown] = useState<Record<string, string>>({})
   const remember = useCallback((id: string, brandId: string) => setKnown((k) => (k[id] === brandId ? k : { ...k, [id]: brandId })), [])
 
-  const brand = brandHandle ? brandByHandle.get(brandHandle) : undefined
+  // Demo: a sample brand by handle. Production: the listed brand on the server (a sample handle
+  // isn't one), so a ?brand= link opens a real brand's composer and never a sample one.
+  const sampleOn = usePageSampleData()
+  const sampleBrand = brandHandle && sampleOn ? brandByHandle.get(brandHandle) : undefined
+  const liveBrandQuery = useApi(!sampleOn && brandHandle ? `inbox:brand:${brandHandle}` : null, () => api<{ brand: { id: string; name: string } }>(`/api/catalog/storefronts/${encodeURIComponent(brandHandle!)}`), { revalidateOnFocus: false })
+  const brand: { id: string; name: string } | undefined = sampleBrand ?? (liveBrandQuery.data ? { id: liveBrandQuery.data.brand.id, name: liveBrandQuery.data.brand.name } : undefined)
   const { data: byBrand, error: byBrandError, revalidate: retryByBrand } = useApi(brand && !thread && session.shopper ? `inbox:by-brand:${brand.id}` : null, () => conversationByBrand(brand!.id), { revalidateOnFocus: false })
 
   // An existing conversation with the brand opens as itself (keeping any product or order chip).
@@ -103,7 +109,7 @@ export function InboxApp() {
   }
 
   const threadBrandId = thread ? (known[thread] ?? (byBrand?.conversation?.id === thread ? byBrand.conversation.brand.id : null)) : (brand?.id ?? null)
-  const unknownBrand = !!brandHandle && !brand && !thread
+  const unknownBrand = !!brandHandle && !brand && !thread && (sampleOn || !!liveBrandQuery.error)
   // A stale ?brand= link says so in the pane (desktop) or the phone layer, never fails silently.
   const open = !!thread || !!brand || unknownBrand
 

@@ -1,5 +1,6 @@
 "use client"
 
+import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { CurrencyCode } from "@/config/markets"
@@ -34,13 +35,14 @@ export function FilterSheet({
   currency: CurrencyCode
   initialFacets: CatalogFacets
 }) {
+  const sampleData = usePageSampleDataState()
   const searchKey = JSON.stringify(catalogSearchQuery(draft, currency, undefined, 1))
   const [result, setResult] = useState<{ key: string; response: CatalogSearchResponse } | null>(null)
   const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null)
   const [retry, setRetry] = useState(0)
   const currentResult = result?.key === searchKey ? result.response : null
   const count = currentResult?.total
-  const facets = currentResult ? catalogFacetsFromSearch(currentResult.facets, draft) : initialFacets
+  const facets = currentResult ? catalogFacetsFromSearch(currentResult.facets, draft, sampleData) : initialFacets
   const searchError = requestError?.key === searchKey ? requestError.message : null
   const active = panelFilterCount(draft)
   const [priceValid, setPriceValid] = useState(true)

@@ -238,3 +238,19 @@ export type OnboardingStep = keyof typeof onboardingStepSchemas
 export const onboardingStepBody = z.strictObject({ data: z.unknown(), revision: z.number().int().min(0) })
 export const onboardingSubmitBody = z.strictObject({ revision: z.number().int().positive() })
 export const handleQuery = z.object({ handle: z.string().max(40) })
+
+/* ---------- Public brand list ---------- */
+
+export const publicBrandsQuery = z.object({
+  /** Name, handle or city contains (case-insensitive). */
+  q: safeLine({ max: 60 }).optional(),
+  category: safeId().optional(),
+  country: z.string().regex(/^[A-Z]{2}$/).optional(),
+  founding: z.enum(["1", "0"]).optional(),
+  /** Excluded from the list (a storefront's own brand in "Brands like this"). */
+  exclude: safeId().optional(),
+  sort: z.enum(["name", "new"]).default("name"),
+  limit: z.coerce.number().int().min(1).max(60).default(24),
+  offset: z.coerce.number().int().min(0).max(5000).default(0),
+})
+export type PublicBrandsQuery = z.output<typeof publicBrandsQuery>

@@ -406,6 +406,9 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   }, [offLimits, router])
   const demoOn = !!session.demoAuth?.brand
   const sampleData = session.sampleData === true
+  // Signed out with the sample data off (production): there is no workspace brand to show, never
+  // the browser's sample brand or a link to its storefront. The header stays neutral, as while checking.
+  const neutral = checking || (!member && !sampleData)
   // Paid or processing: everything not yet shipped (the To fulfil and Processing tabs together,
   // and the Overview's "Paid, not yet shipped" figure).
   // The browser's sample orders belong to the sample brand; a brand that isn't in the sample gets no count from them.
@@ -518,15 +521,15 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       groups={yardSetup ? yardSetupGroups : groups}
       search={yardSetup ? yardSetupSearch : search}
       workspace={{
-        mark: checking ? <Bone className="size-8 rounded-[5px]" /> : <BrandMark brand={workspaceBrand} size="sm" />,
-        name: checking ? "Brand Studio" : workspaceBrand.name,
-        caption: checking ? "Checking your session" : "Brand Studio",
-        label: checking ? "Brand Studio" : `${workspaceBrand.name}, Brand Studio`,
+        mark: checking ? <Bone className="size-8 rounded-[5px]" /> : neutral ? <BrandMark brand={{ name: "Yard", mark: { text: "Y", style: "condensed" } }} size="sm" /> : <BrandMark brand={workspaceBrand} size="sm" />,
+        name: neutral ? "Brand Studio" : workspaceBrand.name,
+        caption: checking ? "Checking your session" : neutral ? "Sign in to continue" : "Brand Studio",
+        label: neutral ? "Brand Studio" : `${workspaceBrand.name}, Brand Studio`,
         menu: yardSetup && member ? [
           { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
           { label: "Back to Control Center", href: `/admin/brands?tab=founding&brand=${encodeURIComponent(member.brand.id)}`, icon: ArrowLeftIcon, separated: true },
         ] : [
-          ...(checking ? [] : [{ label: "View storefront", href: `/brands/${workspaceBrand.handle}`, icon: StorefrontIcon, external: true }]),
+          ...(neutral ? [] : [{ label: "View storefront", href: `/brands/${workspaceBrand.handle}`, icon: StorefrontIcon, external: true }]),
           { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
           { label: "Settings", href: "/studio/settings", icon: GearIcon },
           { label: "Notifications", href: "/studio/notifications", icon: BellIcon },
@@ -570,14 +573,14 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
             ? { initials: "", name: "Brand Studio", caption: "Checking your session" }
             : session.status === "error"
               ? { initials: "!", name: "Session unavailable", caption: "Couldn't reach Yard" }
-              : { initials: "–", name: "Not signed in", caption: "Sample pages work without signing in" }
+              : { initials: "–", name: "Not signed in", caption: sampleData ? "Sample pages work without signing in" : "Sign in to use Brand Studio" }
       }
       topbar={
         <>
           {mismatch ? <WorkspaceNote text={MISMATCH_NOTE.replace("Lagos Static", brand.name)} label="About this workspace's data" /> : null}
           {checking ? (
             <Bone className="hidden h-10 w-[9.5rem] rounded-full sm:block" />
-          ) : yardSetup ? null : (
+          ) : yardSetup || neutral ? null : (
             <Link
               href={`/brands/${workspaceBrand.handle}`}
               target="_blank"

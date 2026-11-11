@@ -1,9 +1,10 @@
 "use client"
 
+import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
-import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, XIcon as X } from "@phosphor-icons/react"
+import { MagnifyingGlassMinusIcon as SearchX, SlidersHorizontalIcon as SlidersHorizontal, StorefrontIcon, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useInView } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -17,6 +18,7 @@ import { registerLiveProducts } from "@/lib/api/live-catalog"
 import { categories, categoryBySlug, type ProductSort } from "@/lib/data"
 import { duration, ease, spring } from "@/lib/motion"
 import { useSession } from "@/lib/stores/session"
+import { cn } from "@/lib/utils"
 import type { CategorySlug, Product } from "@/lib/data/types"
 import { CatalogGrid } from "./catalog-grid"
 import { CatalogSearch } from "./catalog-search"
@@ -24,6 +26,7 @@ import {
   activeFilterCount,
   buildListingFromResults,
   catalogFacetsFromSearch,
+  unknownBrandLabel,
   CATALOG_SSR_CURRENCY,
   catalogSearchKey,
   catalogSearchQuery,
@@ -60,6 +63,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
   const pathname = usePathname()
   const params = useSearchParams()
   const state = useMemo(() => parseCatalogParams(params, scope), [params, scope])
+  const sampleData = usePageSampleDataState()
   const hydrated = useHydrated()
   const shopperCurrency = useSession((s) => s.currency)
   const currency = hydrated ? shopperCurrency : CATALOG_SSR_CURRENCY
@@ -113,8 +117,8 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
     [catalogProducts, currentResponse, hasCurrentResults],
   )
   const facets = useMemo(
-    () => currentResponse ? catalogFacetsFromSearch(currentResponse.facets, state) : EMPTY_CATALOG_FACETS,
-    [currentResponse, state],
+    () => currentResponse ? catalogFacetsFromSearch(currentResponse.facets, state, sampleData) : EMPTY_CATALOG_FACETS,
+    [currentResponse, state, sampleData],
   )
 
   const idBase = useId()
@@ -201,7 +205,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
   if (state.q) chips.push({ key: "q", label: `“${state.q}”`, without: { q: "" } })
   if (state.category && !scope.category) chips.push({ key: "category", label: categoryBySlug.get(state.category)!.name, without: { category: undefined, sub: undefined } })
   if (state.sub) chips.push({ key: "sub", label: state.sub, without: { sub: undefined } })
-  for (const h of state.brands) chips.push({ key: `b-${h}`, label: facets.brandFacet.find(({ brand }) => brand.handle === h)?.brand.name ?? catalogProducts.find((p) => p.brandSummary?.handle === h)?.brandSummary?.name ?? h, without: { brands: state.brands.filter((x) => x !== h) } })
+  for (const h of state.brands) chips.push({ key: `b-${h}`, label: facets.brandFacet.find(({ brand }) => brand.handle === h)?.brand.name ?? catalogProducts.find((p) => p.brandSummary?.handle === h)?.brandSummary?.name ?? unknownBrandLabel(h), without: { brands: state.brands.filter((x) => x !== h) } })
   if (state.min !== undefined || state.max !== undefined) chips.push({ key: "price", label: priceLabel(state.min, state.max, currency), without: { min: undefined, max: undefined } })
   for (const s of state.sizes) chips.push({ key: `s-${s}`, label: sizeChipLabel(s), without: { sizes: state.sizes.filter((x) => x !== s) } })
   if (state.inStock) chips.push({ key: "stock", label: "In stock", without: { inStock: false } })
@@ -210,6 +214,8 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
   const shown = listing.shown
   const progress = listing.total ? shown / listing.total : 0
   const empty = !requestLoading && !catalogError && hasCurrentResults && listing.total === 0 ? emptyAdvice(state, scope, activeCount, panelCount, cat?.name) : null
+  // An empty shelf with nothing to filter: no filter panel, no "0 pieces" toolbar, no sort.
+  const bareShelf = empty?.action === "joining"
 
   return (
     <div ref={rootRef}>
@@ -256,7 +262,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
         </ChipRadioGroup>
       </div>
 
-      <div className="relative mt-8 border-t border-line-soft pt-6 md:mt-10 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-10 xl:gap-14">
+      <div className={cn("relative mt-8 border-t border-line-soft pt-6 md:mt-10", !bareShelf && "lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-10 xl:gap-14")}>
         {/* Desktop: visible on keyboard focus only, out of the grid's flow. */}
         <a
           href={`#${idBase}-results`}
@@ -266,7 +272,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
           Skip to results
         </a>
         {/* Desktop filter panel */}
-        <aside className="hidden lg:block" aria-labelledby="catalog-filters-title">
+        <aside className={cn("hidden", !bareShelf && "lg:block")} aria-labelledby="catalog-filters-title">
           <div className="rail sticky top-24 max-h-[calc(100dvh-7rem)] overflow-y-auto pr-1 pb-8">
             <div className="mb-5 flex h-10 items-center justify-between">
               <h2 id="catalog-filters-title" className="text-sm font-medium text-ink">
@@ -284,7 +290,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
 
         <section aria-labelledby={`${idBase}-results`} className="min-w-0">
           {/* Toolbar */}
-          <div ref={resultsRef} className="flex scroll-mt-28 items-center justify-between gap-3">
+          <div ref={resultsRef} className={cn("flex scroll-mt-28 items-center justify-between gap-3", bareShelf && "sr-only")}>
             <h2 ref={resultsHeadingRef} id={`${idBase}-results`} tabIndex={-1} className="scroll-mt-28 rounded-sm text-sm font-normal text-ink-2 outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-4 focus-visible:ring-offset-obsidian" aria-live="polite">
               <span className="tabular text-ink">{hasCurrentResults ? listing.total : "…"}</span> {listing.total === 1 ? "piece" : "pieces"}
               {listing.total ? (
@@ -374,7 +380,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
             ) : empty ? (
               <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-line-soft bg-card px-6 py-14 text-center md:py-20">
                 <span className="inline-flex size-14 items-center justify-center rounded-full border border-line">
-                  <SearchX className="size-6 text-ink-2" />
+                  {bareShelf ? <StorefrontIcon className="size-6 text-ink-2" aria-hidden /> : <SearchX className="size-6 text-ink-2" />}
                 </span>
                 <div>
                   <p className="text-base text-ink">{empty.title}</p>
@@ -396,6 +402,15 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
                   <Button variant="primary" onClick={() => patch({ q: "" })}>
                     Clear search
                   </Button>
+                ) : empty.action === "joining" ? (
+                  <div className="flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <Button asChild variant="primary">
+                      <Link href="/drops">See upcoming drops</Link>
+                    </Button>
+                    <Button asChild variant="secondary">
+                      <Link href="/brands">Browse brands</Link>
+                    </Button>
+                  </div>
                 ) : (
                   <Button variant="primary" onClick={clearAll}>
                     Clear all filters
@@ -434,7 +449,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
       {/* Phone: a floating glass pill opens the filter sheet. It stays mounted while the sheet is
           open (under its overlay) so closing the sheet returns focus to it. */}
       <AnimatePresence>
-        {inView || sheetOpen ? (
+        {(inView && !bareShelf) || sheetOpen ? (
           <motion.div
             className="pointer-events-none fixed inset-x-0 bottom-(--tabbar-clear) z-30 flex justify-center lg:hidden"
             initial={{ opacity: 0, y: 16 }}
@@ -474,7 +489,10 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
   )
 }
 
-type EmptyAdvice = { title: string; reason: string; action: "shop" | "category" | "panel" | "search" | "all" }
+type EmptyAdvice = { title: string; reason: string; action: "shop" | "category" | "panel" | "search" | "all" | "joining" }
+
+/** No search and no panel filter: an empty result is an empty shelf, not a filter that hides everything. */
+const isUnfilteredEmpty = (state: CatalogState, panelCount: number) => !state.q && panelCount === 0
 
 /**
  * What to say when nothing matches, and the one action most likely to bring pieces back:
@@ -483,6 +501,16 @@ type EmptyAdvice = { title: string; reason: string; action: "shop" | "category" 
  * otherwise the search, or everything, is cleared.
  */
 function emptyAdvice(state: CatalogState, scope: CatalogScope, activeCount: number, panelCount: number, categoryName?: string): EmptyAdvice {
+  // Nothing searched and no filter set, yet nothing here: the shelf itself is empty (brands are
+  // still joining), so there is nothing to clear. Say so, and point at drops and brands instead.
+  if (isUnfilteredEmpty(state, panelCount)) {
+    const shelf = state.sub ?? (state.category ? categoryBySlug.get(state.category)?.name : undefined) ?? categoryName
+    return {
+      title: shelf ? `No ${shelf.toLowerCase()} pieces yet` : "No pieces yet",
+      reason: "Brands are joining Yard. Their pieces appear here the day they open; follow along with upcoming drops.",
+      action: "joining",
+    }
+  }
   if (panelCount) {
     const priced = state.min !== undefined || state.max !== undefined
     return {

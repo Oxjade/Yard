@@ -8,6 +8,7 @@ import { db, withTx } from "../db"
 import { brandMembers, brands, shopperFollows, shopperReminders } from "../db/schema"
 import { dropClaims, dropEntries, dropItems, drops } from "../db/schema/engagement"
 import { brandForSale, brandLaunchedSql, notForSaleMessage } from "../catalog/sellable"
+import { notSampleBrandSql, refusedSampleDrop, sampleOff } from "../catalog/sample-guard"
 import { signalActorFor, type RequestMeta } from "../follows"
 import { badRequest, conflict, forbidden, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -123,7 +124,8 @@ export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended"
   const now = new Date()
   const limit = q.limit ?? 24
   const offset = q.cursor ? Number(q.cursor) : 0
-  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined, listedBrandSql]
+  // Production never lists a sample brand's drop, even from a demo-seeded database (sample-guard.ts).
+  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined, listedBrandSql, notSampleBrandSql(drops.brandId)]
   // Demo pages show the sample drops on the demo clock themselves; this leaves the brand-created ones.
   if (q.source === "brands") conds.push(sql`coalesce(${drops.createdBy}, '') <> 'seed'`)
   let order = [asc(drops.startsAt)]
@@ -146,6 +148,8 @@ export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended"
 
 /** A drop by id or slug. Drafts and cancelled drops only for members of its brand (`brandId`). */
 export async function loadDrop(idOrSlug: string, opts: { brandId?: string } = {}): Promise<DropRow | null> {
+  // Production: a sample drop id is never a public drop (the brand rule below also hides its brand).
+  if (!opts.brandId && refusedSampleDrop(idOrSlug)) return null
   const d = await db()
   const [row] = await d
     .select()
@@ -168,7 +172,7 @@ export async function currentDropForProduct(productId: string): Promise<{ id: st
     .select({ id: drops.id, slug: drops.slug })
     .from(dropItems)
     .innerJoin(drops, eq(drops.id, dropItems.dropId))
-    .where(and(eq(dropItems.productId, productId), inArray(drops.status, ["scheduled", "live"]), gt(drops.endsAt, now), listedBrandSql))
+    .where(and(eq(dropItems.productId, productId), inArray(drops.status, ["scheduled", "live"]), gt(drops.endsAt, now), listedBrandSql, notSampleBrandSql(drops.brandId)))
     .orderBy(asc(drops.startsAt))
     .limit(1)
   return hit ?? null
@@ -327,7 +331,8 @@ async function resolveItems(brandId: string, productIds: string[], variantIds: s
   const pairs: { productId: string; variantId: string }[] = []
   productIds.forEach((pid, i) => {
     const ix = indexed.get(pid)
-    const sample = productById.get(pid)
+    // The sample catalogue only in demo and development; production resolves from the index alone.
+    const sample = sampleOff() ? undefined : productById.get(pid)
     const owner = ix?.brandId ?? sample?.brandId
     if (!owner || owner !== brandId) {
       fields[`productIds.${i}`] = "Choose one of your own products."

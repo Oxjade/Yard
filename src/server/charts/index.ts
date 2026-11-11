@@ -1,6 +1,7 @@
 import "server-only"
 import { and, eq, gte, inArray, like } from "drizzle-orm"
 import { brandById } from "@/lib/data/brands"
+import { refusedSampleBrand } from "../catalog/sample-guard"
 import { kindToSlug } from "@/lib/api/contracts/charts"
 import { afterCommit, db, t } from "../db"
 import { log } from "../log"
@@ -112,7 +113,8 @@ async function notifyMovement(writes: SnapshotWrite[], edition: string, opts: { 
     for (const e of w.entries) {
       const was = prev?.get(e.subjectId)?.rank
       if (e.rank > 10 || (was !== undefined && was <= 10)) continue
-      const brand = brandById.get(e.brandId)
+      // The sample brand only in demo and development: production never notifies a sample brand.
+      const brand = refusedSampleBrand(e.brandId) ? undefined : brandById.get(e.brandId)
       if (!brand) continue
       const citySlug = w.key.scope.replace(/^city:/, "")
       const key = `chart:${w.key.chart}:${w.key.scope}:${isoWeek(edition)}`

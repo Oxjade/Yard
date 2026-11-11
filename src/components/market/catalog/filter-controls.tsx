@@ -1,5 +1,6 @@
 "use client"
 
+import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { useEffect, useId, useState } from "react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
@@ -66,6 +67,7 @@ export function FilterControls({
   className?: string
   facets: CatalogFacets
 }) {
+  const sampleData = usePageSampleDataState()
   const [allBrands, setAllBrands] = useState(false)
   const id = useId()
   // The brand facet is paged on the server: "More brands" loads the next page for these filters.
@@ -85,7 +87,7 @@ export function FilterControls({
     setBrandsError(null)
     try {
       const result = await api<CatalogSearchResponse>("/api/search", { query: { ...brandQuery, brandCursor: brandsNext } })
-      setMoreBrands({ key: brandKey, base: facets.brandsNextCursor, rows: [...(extra?.rows ?? []), ...brandFacetEntries(result.facets.brands)], next: result.facets.brandsNextCursor ?? null })
+      setMoreBrands({ key: brandKey, base: facets.brandsNextCursor, rows: [...(extra?.rows ?? []), ...brandFacetEntries(result.facets.brands, sampleData)], next: result.facets.brandsNextCursor ?? null })
       setAllBrands(true)
     } catch (error) {
       setBrandsError(errorMessage(error, "More brands couldn't be loaded."))

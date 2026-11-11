@@ -21,6 +21,8 @@ import type { Brand } from "@/lib/data/types"
 import { buildFeed, type FeedItem, type FeedKind } from "./feed"
 import { dayBucket, relativeDay } from "./format"
 import { YouNav } from "./you-nav"
+import { LiveFollowingFeed } from "./live-following-feed"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 
 type Filter = "all" | FeedKind
 
@@ -123,7 +125,12 @@ function FeedBody({ item, brand }: { item: FeedItem; brand: Brand }) {
 }
 
 /** The Following feed: chronological updates from followed brands, filterable by type. */
+/** Demo and development: the sample feed below. Production: the server's follows and pieces (LiveFollowingFeed). */
 export function FollowingFeed() {
+  return usePageSampleData() ? <SampleFollowingFeed /> : <LiveFollowingFeed />
+}
+
+function SampleFollowingFeed() {
   const following = useSaved((s) => s.following)
   const interests = useSession((s) => s.interests)
   const [filter, setFilter] = useState<Filter>("all")

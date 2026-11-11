@@ -5,6 +5,8 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import { toast } from "sonner"
 import { api } from "@/lib/api/client"
 import { reportSignal } from "@/components/signals/report-signal"
+import { isSampleBrand, isSampleDrop, isSampleProduct } from "@/lib/data/sample-ids"
+import { sampleDataOff } from "@/lib/sample-switch"
 
 type SavedState = {
   wishlist: string[]
@@ -19,6 +21,20 @@ type SavedState = {
   toggleFollow: (brandId: string) => boolean
   toggleNotify: (dropId: string) => boolean
   viewed: (productId: string) => void
+  /** Production: drops sample ids from every list; returns how many went. */
+  purgeSample: () => number
+}
+
+type SavedLists = Pick<SavedState, "wishlist" | "following" | "notify" | "recentlyViewed">
+
+/** The lists without any id of the bundled sample catalogue, and how many ids that removed. */
+function withoutSample(l: Partial<SavedLists>): SavedLists & { removed: number } {
+  const wishlist = (l.wishlist ?? []).filter((id) => !isSampleProduct(id))
+  const following = (l.following ?? []).filter((id) => !isSampleBrand(id))
+  const notify = (l.notify ?? []).filter((id) => !isSampleDrop(id))
+  const recentlyViewed = (l.recentlyViewed ?? []).filter((id) => !isSampleProduct(id))
+  const before = (l.wishlist?.length ?? 0) + (l.following?.length ?? 0) + (l.notify?.length ?? 0) + (l.recentlyViewed?.length ?? 0)
+  return { wishlist, following, notify, recentlyViewed, removed: before - wishlist.length - following.length - notify.length - recentlyViewed.length }
 }
 
 function toggle(list: string[], id: string) {
@@ -65,11 +81,24 @@ export const useSaved = create<SavedState>()(
       },
       viewed: (id) =>
         set({ recentlyViewed: [id, ...get().recentlyViewed.filter((x) => x !== id)].slice(0, 16) }),
+      purgeSample: () => {
+        const { removed, ...lists } = withoutSample(get())
+        if (removed) set(lists)
+        return removed
+      },
     }),
     {
       name: "nocturne-saved",
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
+      // Production: sample saves from an earlier visit (wishlist, follows, reminders, recently
+      // viewed) are dropped as the lists load, so they never render or reach the merge endpoint.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<SavedState>
+        if (!sampleDataOff()) return { ...current, ...p }
+        const lists = withoutSample(p)
+        return { ...current, ...p, wishlist: lists.wishlist, following: lists.following, notify: lists.notify, recentlyViewed: lists.recentlyViewed }
+      },
     },
   ),
 )
@@ -88,6 +117,7 @@ const MERGE_CHUNK = 200
  */
 export async function syncSavedWithServer(shopperId: string) {
   if (!useSaved.persist.hasHydrated()) await useSaved.persist.rehydrate()
+  if (sampleDataOff()) useSaved.getState().purgeSample()
   const { wishlist, following, owner, unmerged } = useSaved.getState()
   if (!owner) useSaved.setState({ owner: shopperId, unmerged: wishlist.length > 0 || following.length > 0 })
   if (!owner ? wishlist.length > 0 || following.length > 0 : owner === shopperId && unmerged) {

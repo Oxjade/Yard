@@ -13,6 +13,11 @@ import type {
 import { MAX_QUICK_REPLIES } from "@/lib/api/contracts/inbox"
 import { productById, variantLabel } from "@/lib/data/products"
 import { assertOwned, type OwnedRef } from "../auth/owned"
+import { refuseSampleProduct, sampleOff } from "../catalog/sample-guard"
+import { productPublicWhere } from "../catalog/sellable"
+import { loadChildren, toPublicProduct } from "../catalog/dto"
+import { brands as brandRows } from "../db/schema"
+import { catalogProducts } from "../db/schema/catalog"
 import type { BrandActor, ShopperActor } from "../auth/dal"
 import { writeAudit } from "../audit"
 import { db, withTx } from "../db"
@@ -288,12 +293,31 @@ function checkContent(kind: string, body: string | undefined, has: { productId?:
   return text || null
 }
 
-function productSnapshotOf(productId: string, variantId?: string) {
-  const p = productById.get(productId)
-  if (!p) return null
-  const v = variantId ? p.variants.find((x) => x.id === variantId) : undefined
+/**
+ * The shared piece as the message stores it. Demo and development read a sample piece from the
+ * bundled catalogue; every other piece (all of them in production, where sample ids are refused)
+ * comes from the server catalogue, so a real product can be shared too.
+ */
+async function productSnapshotOf(productId: string, variantId?: string) {
+  refuseSampleProduct(productId, "productId")
+  const p = sampleOff() ? undefined : productById.get(productId)
+  if (p) {
+    const v = variantId ? p.variants.find((x) => x.id === variantId) : undefined
+    if (variantId && !v) throw badRequest({ variantId: "That size or colour isn't part of this piece." })
+    return { slug: p.slug, name: p.name, image: p.images[0]?.src ?? "", price: { amount: p.price, currency: p.currency }, variantLabel: v ? variantLabel(v.options) : undefined, brandId: p.brandId }
+  }
+  const d = await db()
+  const [row] = await d
+    .select({ p: catalogProducts })
+    .from(catalogProducts)
+    .innerJoin(brandRows, eq(brandRows.id, catalogProducts.brandId))
+    .where(and(eq(catalogProducts.id, productId), productPublicWhere()))
+    .limit(1)
+  if (!row) return null
+  const live = toPublicProduct(row.p, await loadChildren(d, [row.p.id]))
+  const v = variantId ? live.variants.find((x) => x.id === variantId) : undefined
   if (variantId && !v) throw badRequest({ variantId: "That size or colour isn't part of this piece." })
-  return { slug: p.slug, name: p.name, image: p.images[0]?.src ?? "", price: { amount: p.price, currency: p.currency }, variantLabel: v ? variantLabel(v.options) : undefined, brandId: p.brandId }
+  return { slug: live.slug, name: live.title, image: live.images[0]?.src ?? "", price: { amount: v?.priceMinor ?? live.priceMinor, currency: live.currency }, variantLabel: v?.label, brandId: live.brandId }
 }
 
 async function orderSnapshotOf(orderRefId: string) {
@@ -543,7 +567,7 @@ export async function sendAsShopper(actor: ShopperActor, body: SendMessageBody, 
     if (body.productId) refs.push({ kind: "product", id: body.productId, field: "productId", brandId })
     if (body.orderRefId) refs.push({ kind: "orderRef", id: body.orderRefId, field: "orderRefId", brandId })
     if (refs.length) await assertOwned(actor, refs)
-    const productSnapshot = body.productId ? productSnapshotOf(body.productId, body.variantId) : null
+    const productSnapshot = body.productId ? await productSnapshotOf(body.productId, body.variantId) : null
     if (body.variantId && !body.productId) throw badRequest({ variantId: "Choose the piece first." })
     const orderSnapshot = body.orderRefId ? await orderSnapshotOf(body.orderRefId) : null
     const attachmentIds = body.attachmentIds ?? []
@@ -617,7 +641,7 @@ export async function sendAsBrand(actor: BrandActor, conv: ConvRow, body: Studio
     if (body.productId) refs.push({ kind: "product", id: body.productId, field: "productId" })
     if (body.quickReplyId) refs.push({ kind: "quickReply", id: body.quickReplyId, field: "quickReplyId" })
     if (refs.length) await assertOwned(actor, refs)
-    const productSnapshot = body.productId ? productSnapshotOf(body.productId) : null
+    const productSnapshot = body.productId ? await productSnapshotOf(body.productId) : null
     const attachmentIds = body.attachmentIds ?? []
     await checkAttachments(actor, attachmentIds, { id: conv.id, brandId: conv.brandId })
     const score = await scoreBrandMessage({ brandId: actor.brandId, userId: actor.userId, conversationId: conv.id, body: text ?? "", fromQuickReply: !!body.quickReplyId })

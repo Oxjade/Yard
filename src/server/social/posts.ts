@@ -1,7 +1,7 @@
 import "server-only"
 import { and, asc, desc, eq, inArray, like, ne, notInArray, or, sql, type SQL } from "drizzle-orm"
 import { isSafeId, providerLabels, type CreatePostsData, type FeedSource, type PatchPostBody, type StudioPostStatus } from "@/lib/api/contracts/social"
-import { brandById } from "@/lib/data/brands"
+import { refuseSampleBrand } from "../catalog/sample-guard"
 import { activeRestriction, assertBrandMayPublish, brandListed, requireBrandResource, type BrandActor } from "../auth/dal"
 import { assertOwned, type OwnedRef } from "../auth/owned"
 import { db, withTx } from "../db"
@@ -331,9 +331,11 @@ const publicWhere = (brandId: string) => and(eq(socialPosts.brandId, brandId), e
  */
 export async function publicPosts(brandId: string, q: { source: FeedSource; limit: number; product?: string; pinned: string[] }) {
   if (!isSafeId(brandId)) throw notFound()
+  // Production: a sample brand has no posts (404 by identity). A real brand needs only its row.
+  refuseSampleBrand(brandId)
   const d = await db()
   const brand = await d.query.brands.findFirst({ where: (b, { eq }) => eq(b.id, brandId) })
-  if (!brand || !brandById.has(brandId)) throw notFound()
+  if (!brand) throw notFound()
   if (!brandListed(brand) || (await activeRestriction("brand", brandId, "social_disabled"))) return { posts: [] }
   const productWhere = q.product ? sql`${socialPosts.productIds} @> array[${q.product}]::text[]` : undefined
   const pinned = q.pinned.length && !q.product ? await d.select().from(socialPosts).where(and(publicWhere(brandId), inArray(socialPosts.id, q.pinned))) : []

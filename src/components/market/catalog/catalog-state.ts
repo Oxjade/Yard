@@ -1,6 +1,7 @@
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { convert, toMinor } from "@/lib/money"
 import { brandByHandle, brandById, categoryBySlug, type ProductSort } from "@/lib/data"
+import { SAMPLE_BRAND_HANDLES } from "@/lib/data/sample-ids"
 import type { Brand, CategorySlug, Product } from "@/lib/data/types"
 
 /**
@@ -140,10 +141,15 @@ export function catalogSearchKey(query: Record<string, string | number | undefin
   return params.toString()
 }
 
-/** The facet's brands as the panel lists them. The mark is the sample brand's where there is one; the name is always the server's. */
-export function brandFacetEntries(brands: SearchFacetPayload["brands"]): CatalogBrandFacet[] {
+/**
+ * The facet's brands as the panel lists them. The name is always the server's. The mark is the
+ * sample brand's where there is one, only while sample data may be on (`sampleData`, the tri-state
+ * switch: null until /api/session answers): by id then, which a real brand can never share, and
+ * also by handle once it is known on. In production (false) it is always the name's initials.
+ */
+export function brandFacetEntries(brands: SearchFacetPayload["brands"], sampleData: boolean | null = false): CatalogBrandFacet[] {
   return brands.map(({ value, handle, label, count }) => {
-    const known = brandById.get(value) ?? brandByHandle.get(handle)
+    const known = sampleData === false ? undefined : (brandById.get(value) ?? (sampleData ? brandByHandle.get(handle) : undefined))
     return {
       brand: {
         id: value,
@@ -156,13 +162,19 @@ export function brandFacetEntries(brands: SearchFacetPayload["brands"]): Catalog
   })
 }
 
-export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: CatalogState): CatalogFacets {
-  const brandFacet = brandFacetEntries(payload.brands)
+/**
+ * The label of a brand filtered on that the server doesn't list: its handle, as typed, except a
+ * sample brand's (the server lists those whenever sample data is on, so this is production).
+ */
+export const unknownBrandLabel = (handle: string) => (SAMPLE_BRAND_HANDLES.has(handle) ? "Unknown brand" : handle)
+
+export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: CatalogState, sampleData: boolean | null = false): CatalogFacets {
+  const brandFacet = brandFacetEntries(payload.brands, sampleData)
   // A brand filtered on stays in the list (with 0) even when nothing here matches it; its name is the server's.
   for (const handle of state.brands) {
     if (brandFacet.some(({ brand }) => brand.handle === handle)) continue
     const selected = payload.selectedBrands?.find((b) => b.handle === handle)
-    const [entry] = brandFacetEntries([{ value: selected?.value ?? handle, handle, label: selected?.label ?? handle, count: 0 }])
+    const [entry] = brandFacetEntries([{ value: selected?.value ?? handle, handle, label: selected?.label ?? unknownBrandLabel(handle), count: 0 }], sampleData)
     brandFacet.push(entry)
   }
 
@@ -232,7 +244,7 @@ export function parseCatalogParams(params: ParamsLike, scope: CatalogScope, know
     q: (params.get("q") ?? "").trim().slice(0, 80),
     category,
     sub,
-    brands: [...new Set(list(params.get("brands")).filter((h) => brandByHandle.has(h) || knownBrandHandles.includes(h) || /^[a-z0-9][a-z0-9-]{0,62}$/.test(h)))],
+    brands: [...new Set(list(params.get("brands")).filter((h) => knownBrandHandles.includes(h) || /^[a-z0-9][a-z0-9-]{0,62}$/.test(h)))],
     min,
     max,
     sizes: [...new Set(list(params.get("size")).filter((s) => knownSizes.has(s)))],

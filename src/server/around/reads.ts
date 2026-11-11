@@ -3,6 +3,7 @@ import { and, eq, notInArray } from "drizzle-orm"
 import type { BrandPlaceBadgeDto, OnlineBrandsResult, PlaceDetailDto, PlaceSummaryDto } from "@/lib/api/contracts/around"
 import { brandById } from "@/lib/data/brands"
 import { db, t } from "../db"
+import { notSampleBrandSql, sampleOff } from "../catalog/sample-guard"
 import { aroundMemo } from "./cache"
 import { toBadge, toPlaceDetail, toPlaceSummary } from "./dto"
 import { eventStillPublic, publicEvents, publicPlaces, stillPublic, type PublicEventRow, type PublicPlaceRow } from "./public"
@@ -55,7 +56,7 @@ export async function listPlaces(q: { tiles?: string[]; kind?: string; category?
   const l = tiles ? narrow(all, (p) => tiles.has(p.tileKey ?? "")) : all
   let places = l.places
   if (q.kind) places = places.filter((p) => p.kind === q.kind)
-  if (q.category) places = places.filter((p) => brandById.get(p.brandId)?.categories.includes(q.category as never))
+  if (q.category) places = places.filter((p) => p.brandCategories.includes(q.category!))
   return {
     places: places.slice(0, q.tiles ? 500 : 2000).map((p) => toPlaceSummary(p, l.events.filter((e) => e.locationId === p.id), now)),
     maxAge: maxAgeFor(l, now, 60),
@@ -84,16 +85,17 @@ export async function onlineBrands(citySlug: string): Promise<OnlineBrandsResult
   const now = Date.now()
   const d = await db()
   const inCity = await d
-    .select({ id: t.brands.id, name: t.brands.name, handle: t.brands.handle, city: t.brands.city, country: t.brands.country })
+    .select({ id: t.brands.id, name: t.brands.name, handle: t.brands.handle, city: t.brands.city, country: t.brands.country, verified: t.brands.verified })
     .from(t.brands)
-    .where(and(eq(t.brands.citySlug, citySlug), notInArray(t.brands.reviewStatus, ["restricted", "suspended"])))
+    .where(and(eq(t.brands.citySlug, citySlug), notInArray(t.brands.reviewStatus, ["restricted", "suspended"]), notSampleBrandSql(t.brands.id)))
   const l = current(await loadWorld(), now)
   const withPlaces = new Set(l.places.map((p) => p.brandId))
   const brands = inCity
     .filter((b) => !withPlaces.has(b.id))
     .map((b) => {
-      const s = brandById.get(b.id)
-      return { id: b.id, handle: b.handle, name: b.name, verified: s?.verified ?? false, mark: { text: s?.mark.text ?? "Y", style: s?.mark.style ?? "grotesk" }, city: b.city, country: b.country }
+      // The sample mark only in demo; production derives one from the name (brandListedSql already drops sample brands).
+      const s = sampleOff() ? undefined : brandById.get(b.id)
+      return { id: b.id, handle: b.handle, name: b.name, verified: s?.verified ?? b.verified, mark: { text: s?.mark.text ?? (b.name.replace(/[^A-Za-z0-9&]/g, "").slice(0, 2).toUpperCase() || "Y"), style: s?.mark.style ?? "grotesk" }, city: b.city, country: b.country }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
   return { city: citySlug, brands, maxAge: maxAgeFor(l, now, 60) }

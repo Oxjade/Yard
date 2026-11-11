@@ -25,7 +25,13 @@ export const instant = false
 // No ensureStatic: the product and its rails are read live from the catalogue (connection()),
 // which 'navigation' forbids; the layout's blocking 404 check covers unknown slugs.
 
+/**
+ * Demo builds prerender the sample pieces as before. A production build never names a sample
+ * slug; Cache Components needs at least one param, so it names a placeholder that the proxy and
+ * the layout's page-exists check answer with a 404 like any unknown slug.
+ */
 export function generateStaticParams() {
+  if (!getEnv().seedDemo) return [{ slug: "_" }]
   return products.filter((p) => p.status === "published").map((p) => ({ slug: p.slug }))
 }
 
@@ -58,7 +64,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   if (!result) notFound()
   const { product } = result
 
-  const brand: Brand = catalogBrand(product, brandById.get(product.brandId))
+  const brand: Brand = catalogBrand(product, getEnv().seedDemo ? brandById.get(product.brandId) : undefined)
   const category = categoryBySlug.get(product.category) ?? { slug: product.category, name: categories.find((c) => c.slug === product.category)?.name ?? product.category }
   // Demo and development: the sample drop on the demo clock, as before. Otherwise (and for any
   // piece a brand put in a drop) the drop the database has it in, with the shopper's own state.

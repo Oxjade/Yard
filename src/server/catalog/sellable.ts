@@ -5,6 +5,7 @@ import { catalogImages, catalogProducts, catalogVariants } from "../db/schema/ca
 import { db, type Executor } from "../db"
 import { mediaSrc } from "../media"
 import { variantLabelOf } from "./dto"
+import { notSampleBrandSql } from "./sample-guard"
 
 /**
  * The one public-visibility predicate for products: published (or scheduled and due, before the
@@ -19,9 +20,13 @@ export function productPublicWhere(now = new Date()) {
   )
 }
 
-/** A founding brand is public only once its storefront has been published (launched_at). Ordinary brands always pass. */
+/**
+ * A founding brand is public only once its storefront has been published (launched_at). Ordinary
+ * brands always pass. In production a sample brand (src/lib/data, by id) never passes, even when a
+ * demo-seeded database holds its row (sample-guard.ts notSampleBrandSql; always true in demo).
+ */
 export function brandLaunchedSql() {
-  return sql`(not ${brands.founding} or ${brands.launchedAt} is not null)`
+  return sql`((not ${brands.founding} or ${brands.launchedAt} is not null) and ${notSampleBrandSql(brands.id)})`
 }
 
 /**

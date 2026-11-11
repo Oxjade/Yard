@@ -5,8 +5,11 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { useSearchOverlay } from "./search-overlay"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 
-const suggestions = ["kente coats", "silver chains", "numbered sneakers", "risograph prints", "matte stoneware", "night fragrance", "leather bags", "Lagos streetwear"]
+const sampleSuggestions = ["kente coats", "silver chains", "numbered sneakers", "risograph prints", "matte stoneware", "night fragrance", "leather bags", "Lagos streetwear"]
+/** Production: plain category words, never searches that only the sample catalogue answers. */
+const liveSuggestions = ["streetwear", "sneakers", "jewelry", "fragrance", "ceramics", "bags", "prints", "knitwear"]
 
 /**
  * The search capsule: a floating pill whose placeholder rolls through real catalogue
@@ -15,6 +18,7 @@ const suggestions = ["kente coats", "silver chains", "numbered sneakers", "risog
  */
 export function SearchCapsule({ className, compact = false }: { className?: string; compact?: boolean }) {
   const open = useSearchOverlay((s) => s.setOpen)
+  const suggestions = usePageSampleData() ? sampleSuggestions : liveSuggestions
   const reduce = useReducedMotion()
   const [i, setI] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -23,7 +27,7 @@ export function SearchCapsule({ className, compact = false }: { className?: stri
     if (reduce || paused) return
     const id = window.setInterval(() => setI((x) => (x + 1) % suggestions.length), 2600)
     return () => window.clearInterval(id)
-  }, [reduce, paused])
+  }, [reduce, paused, suggestions.length])
 
   return (
     <button

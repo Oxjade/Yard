@@ -15,6 +15,7 @@ import { refreshServerSession, useServerSession } from "@/lib/session/use-server
 import { useSaved } from "@/lib/stores/saved"
 import { drops as demoDrops } from "@/lib/data"
 import { YouNav } from "./you-nav"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { loadMyDrops, myDropsKey, type MyDropsResponse } from "./my-drops"
 
 const localDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
@@ -142,7 +143,9 @@ export function DropsView() {
   const localReminders = useSaved((state) => state.notify)
   const isLiveShopper = session.status === "ready" && !!session.shopper && !session.shopper.demo
   const query = useApi(isLiveShopper ? myDropsKey(session.shopper!.id) : null, loadMyDrops, { keepPrevious: false })
-  const demo = useMemo(() => demoParticipation(localReminders), [localReminders])
+  // The sample drops only in demo: production never resolves a local reminder against them.
+  const sampleOn = usePageSampleData()
+  const demo = useMemo(() => demoParticipation(sampleOn ? localReminders : []), [localReminders, sampleOn])
   const [retrying, setRetrying] = useState(false)
 
   return <>

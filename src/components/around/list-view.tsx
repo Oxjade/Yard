@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo } from "react"
 import { StorefrontIcon } from "@phosphor-icons/react"
 import type { PlaceSummaryDto } from "@/lib/api/contracts/around"
@@ -7,6 +8,7 @@ import { getOnlineBrands } from "@/lib/api/around"
 import { useApi } from "@/lib/api/use-api"
 import { haversineKm } from "@/lib/around/geo"
 import { brandById } from "@/lib/data/brands"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { BrandCard } from "@/components/market/brand-card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -165,7 +167,11 @@ export function ListView({
 
 function OnlineOnly({ city }: { city: { slug: string; name: string } }) {
   const { data, error, revalidate } = useApi(`around:online:${city.slug}`, () => getOnlineBrands(city.slug))
-  const brands = (data?.brands ?? []).map((b) => brandById.get(b.id)).filter((b): b is NonNullable<typeof b> => !!b)
+  // Demo shows the sample brand cards; production renders the server's brands as they come (the
+  // sample map knows none of them, so mapping through it used to drop every real brand).
+  const demo = usePageSampleData()
+  const brands = demo ? (data?.brands ?? []).map((b) => brandById.get(b.id)).filter((b): b is NonNullable<typeof b> => !!b) : []
+  const live = demo ? [] : (data?.brands ?? [])
   if (error) {
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 p-3">
@@ -176,7 +182,7 @@ function OnlineOnly({ city }: { city: { slug: string; name: string } }) {
       </div>
     )
   }
-  if (!data || !brands.length) return null
+  if (!data || !(brands.length || live.length)) return null
   return (
     <aside aria-labelledby={`online-${city.slug}`} className="mt-3 grid gap-2 rounded-2xl border border-white/[0.08] p-3">
       <div className="flex items-center gap-2">
@@ -190,6 +196,19 @@ function OnlineOnly({ city }: { city: { slug: string; name: string } }) {
         {brands.map((b) => (
           <li key={b.id}>
             <BrandCard brand={b} variant="row" />
+          </li>
+        ))}
+        {live.map((b) => (
+          <li key={b.id} className="min-w-0">
+            <Link href={`/brands/${b.handle}`} className="flex min-w-0 items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
+              <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-white/10 bg-obsidian font-display text-sm text-ink" aria-hidden>
+                {b.mark.text}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm text-ink">{b.name}</span>
+                <span className="block truncate text-xs text-ink-2">{b.city}</span>
+              </span>
+            </Link>
           </li>
         ))}
       </ul>

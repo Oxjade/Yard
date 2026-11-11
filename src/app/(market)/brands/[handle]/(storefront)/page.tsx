@@ -4,28 +4,32 @@ import { BrandCard } from "@/components/market/brand-card"
 import { SectionHeader } from "@/components/market/section-header"
 import { ViewBeacon } from "@/components/signals/view-beacon"
 import { LiveStorefront } from "@/components/storefront/live-storefront"
+import { LiveBrandCard } from "@/components/market/brands/live-brand-card"
 import { brands, collectionsOf, dropsOf, getBrand, productsOf, storiesOf } from "@/lib/data"
+import type { PublicBrandCard } from "@/lib/api/public-brands"
 import type { Brand } from "@/lib/data/types"
 import { toCatalogProduct, type PublicCatalogProduct } from "@/lib/api/catalog-products"
 import { storefrontBrandFromApi, storefrontConfigFromDto, storefrontDropsFromApi, type StorefrontConfigDto } from "@/lib/api/storefront"
 import { requestScope } from "@/server/auth/dal"
-import { listPublicProducts, publicStorefront } from "@/server/catalog/public"
+import { listPublicBrands, listPublicProducts, publicStorefront } from "@/server/catalog/public"
+import { getEnv } from "@/server/env"
 import { listPublicDrops } from "@/server/drops/service"
 import { HttpError } from "@/server/http/errors"
 
 /**
  * layout.tsx checks the address first, so an unknown storefront answers with a real 404 and this
- * page can sit under a loading state. Every known one is prerendered below.
+ * page can sit under a loading state. Storefronts render at request time (no generateStaticParams:
+ * with Cache Components it must name at least one handle, and production has no sample handles to
+ * name; an unterminated comment had also been switching generateMetadata off).
  */
 export const instant = false
-/**
-export function generateStaticParams() {
-  return brands.map((b) => ({ handle: b.handle }))
-}
+
+/** The sample brand behind a handle, only in demo and development; production reads the server alone. */
+const sampleBrandFor = (handle: string) => (getEnv().seedDemo ? getBrand(handle) : undefined)
 
 export async function generateMetadata({ params }: PageProps<"/brands/[handle]">): Promise<Metadata> {
   const { handle } = await params
-  const brand = getBrand(handle)
+  const brand = sampleBrandFor(handle)
   if (brand) return { title: brand.name, description: `${brand.tagline} ${brand.description}` }
   try {
     const result = await publicStorefront(handle)
@@ -36,7 +40,7 @@ export async function generateMetadata({ params }: PageProps<"/brands/[handle]">
   }
 }
 
-/** Brands that share a category or an aesthetic, closest first. Organic only: storefronts are ad-free. */
+/** Brands that share a category or an aesthetic, closest first (sample brands, demo only). Organic only: storefronts are ad-free. */
 function brandsLike(brand: Brand, limit = 4) {
   return brands
     .filter((b) => b.id !== brand.id)
@@ -53,9 +57,24 @@ function brandsLike(brand: Brand, limit = 4) {
     .map((x) => x.b)
 }
 
+/** Up to four listed brands from the server that share a category (production "Brands like this"); none on error. */
+async function liveBrandsLike(brandId: string, categories: readonly string[]): Promise<PublicBrandCard[]> {
+  const out: PublicBrandCard[] = []
+  try {
+    for (const category of categories.slice(0, 3)) {
+      if (out.length >= 4) break
+      const page = await listPublicBrands({ category, exclude: brandId, sort: "new", limit: 4, offset: 0 })
+      for (const b of page.brands) if (out.length < 4 && !out.some((x) => x.id === b.id)) out.push(b)
+    }
+  } catch {
+    return []
+  }
+  return out
+}
+
 export default async function BrandStorefrontPage({ params }: PageProps<"/brands/[handle]">) {
   const { handle } = await params
-  const sampleBrand = getBrand(handle)
+  const sampleBrand = sampleBrandFor(handle)
   if (!sampleBrand) {
     let data: Awaited<ReturnType<typeof publicStorefront>>
     try {
@@ -98,7 +117,10 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
       status: "published" as const,
     }))
     const drops = storefrontDropsFromApi(dropPage.items as Parameters<typeof storefrontDropsFromApi>[0], products)
-    const similar = brandsLike(brand)
+    // Demo keeps ranking the sample brands; production lists real brands from the server only.
+    const demo = getEnv().seedDemo
+    const similar = demo ? brandsLike(brand) : []
+    const similarLive = demo ? [] : await liveBrandsLike(brandDto.id, brand.categories)
     return (
       <>
         <ViewBeacon kind="storefront_view" brandId={brand.id} />
@@ -112,6 +134,22 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
               <div className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-4">
                 {similar.map((b) => <BrandCard key={b.id} brand={b} />)}
               </div>
+            </section>
+          </div>
+        ) : null}
+        {similarLive.length ? (
+          <div className="mx-auto max-w-page px-4 md:px-8">
+            <section aria-labelledby="similar-title" className="mt-24 md:mt-32">
+              <div id="similar-title">
+                <SectionHeader title="Brands like this" description={`Studios that share a category with ${brand.name}.`} href="/brands" action="All brands" />
+              </div>
+              <ul className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-4">
+                {similarLive.map((b) => (
+                  <li key={b.id} className="min-w-0">
+                    <LiveBrandCard brand={b} />
+                  </li>
+                ))}
+              </ul>
             </section>
           </div>
         ) : null}

@@ -10,6 +10,8 @@ import { CatalogListingSkeleton } from "@/components/market/catalog/catalog-skel
 import { SectionHeader } from "@/components/market/section-header"
 import { brands, categories, categoryBySlug, products } from "@/lib/data"
 import type { CategorySlug } from "@/lib/data/types"
+import { LiveCategoryBrands } from "@/components/market/brands/live-category-brands"
+import { getEnv } from "@/server/env"
 
 /**
  * The slug is checked before anything renders so an unknown category answers with a real 404.
@@ -42,10 +44,13 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
   const category = findCategory(slug)
   if (!category) notFound()
 
+  // Demo and development rank the sample brands as before; production reads listed brands from the
+  // server in the browser (this route is static output, so no request-time read here).
+  const demo = getEnv().seedDemo
   const inCategory = products.filter((p) => p.status === "published" && p.category === category.slug)
   const perBrand = new Map<string, number>()
   for (const p of inCategory) perBrand.set(p.brandId, (perBrand.get(p.brandId) ?? 0) + 1)
-  const categoryBrands = brands
+  const categoryBrands = (demo ? brands : [])
     .filter((b) => perBrand.has(b.id) || b.categories.includes(category.slug))
     .sort((a, b) => (perBrand.get(b.id) ?? 0) - (perBrand.get(a.id) ?? 0) || b.followers - a.followers)
 
@@ -80,6 +85,7 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
             </div>
           </section>
         ) : null}
+        {demo ? null : <LiveCategoryBrands category={category.slug} categoryName={category.name} />}
 
         <section aria-labelledby="category-listing-title" className="mt-24 md:mt-32">
           <div id="category-listing-title">

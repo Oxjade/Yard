@@ -15,7 +15,9 @@ import { dropPhaseAt } from "@/lib/drops"
 import { getDemoAnchor } from "@/hooks/use-now"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
-import { adminLinks, useNotifications, type AppNotification } from "@/lib/stores/notifications"
+import { adminLinks, isServerItem, useNotifications, type AppNotification } from "@/lib/stores/notifications"
+import { isSampleId } from "@/lib/data/sample-ids"
+import { sampleDataOff } from "@/lib/sample-switch"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { DEMO_SHOPPER } from "@/lib/stores/session"
@@ -208,6 +210,16 @@ function refreshSamples(fresh: New[]) {
   if (changed) useNotifications.setState({ items: next })
 }
 
+/** Drops persisted notifications that came from the sample data: seeded ones, and local ones naming a sample id. */
+export function purgeSampleNotifications() {
+  const { items } = useNotifications.getState()
+  const keep = items.filter((n) => isServerItem(n) || !(n.sample || n.eventKey.split(":").some((part) => isSampleId(part) || isSampleOrderId(part))))
+  if (keep.length !== items.length) useNotifications.setState({ items: keep })
+}
+
+const sampleOrderIds = new Set(customerOrders.map((o) => o.id))
+const isSampleOrderId = (id: string) => sampleOrderIds.has(id)
+
 /* ── Live events: subscribe to the stores and turn changes into notifications ─ */
 
 /**
@@ -224,6 +236,13 @@ export function useNotificationEvents() {
     const unsubs: (() => void)[] = []
 
     const start = () => {
+      // Production: no sample seeds and no sample-derived alerts; anything an earlier visit seeded
+      // from the sample data (the "Sample" chip, a sample order, drop or piece) leaves the bell.
+      // Server notifications (srv:) are untouched.
+      if (sampleDataOff()) {
+        purgeSampleNotifications()
+        return
+      }
       const state = useNotifications.getState()
       const seeds = { customer: customerSeed(), merchant: merchantSeed(), admin: adminSeed() }
       if (!state.seeded.customer) { state.pushMany(seeds.customer); state.setSeeded("customer") }

@@ -6,6 +6,9 @@ import { toast } from "sonner"
 import { ApiError, api } from "@/lib/api/client"
 import { variantById } from "@/lib/data/products"
 import { loadLiveProducts } from "@/lib/api/live-catalog"
+import { isSampleProduct, isSampleVariant } from "@/lib/data/sample-ids"
+import { sampleDataOff } from "@/lib/sample-switch"
+import { ensureServerSession } from "@/lib/session/use-server-session"
 
 export type CartLine = {
   productId: string
@@ -40,13 +43,34 @@ type CartState = {
   open: () => void
   close: () => void
   setOpen: (open: boolean) => void
+  /** Production: drops lines (and unavailable lines) of the sample catalogue; returns how many went. */
+  purgeSample: () => number
+}
+
+/** A line of the bundled sample catalogue (by variant or product id). */
+const isSampleLine = (l: { variantId: string; productId: string }) => isSampleVariant(l.variantId) || isSampleProduct(l.productId)
+
+export const SAMPLE_PURGE_NOTICE = "Some pieces from our preview catalogue were removed from your cart."
+
+/** Lines a rehydrate dropped before they ever reached the screen (production), for the one notice. */
+let purgedAtLoad = 0
+let noticeShown = false
+
+/** Says once per page load that preview pieces left the cart; nothing when none did. */
+export function noticeSamplePurge(count?: number) {
+  const n = count ?? purgedAtLoad
+  if (count === undefined) purgedAtLoad = 0
+  if (n <= 0 || noticeShown) return
+  noticeShown = true
+  toast(SAMPLE_PURGE_NOTICE)
 }
 
 /** The most of one piece a cart line holds: the server's own limit (src/server/cart MAX_QTY is 20; the bag stays below it). */
 export const MAX_QTY_PER_LINE = 10
 const cartMigrationKey = "yard:cart:server-v1"
 
-type ServerCart = { lines: { variantId: string; productId: string | null; qty: number }[] }
+/** GET /api/cart (src/server/cart viewCart): `removedSample` counts sample lines the server just deleted (production). */
+type ServerCart = { lines: { variantId: string; productId: string | null; qty: number }[]; removedSample?: number }
 
 let generation = 0
 let migration: Promise<boolean> | null = null
@@ -73,9 +97,11 @@ export const useCart = create<CartState>()(
         localStorage.setItem(cartMigrationKey, `pending:${Date.now()}`)
         try {
           const remote = await api<ServerCart>("/api/cart", { query: { currency: "USD" } })
+          noticeSamplePurge(remote.removedSample ?? 0)
           const serverQty = new Map(remote.lines.map((line) => [line.variantId, line.qty]))
           const refused: UnavailableCartLine[] = []
-          for (const line of stored) {
+          // Production never sends a sample piece to the server cart (it would only be refused).
+          for (const line of sampleDataOff() ? stored.filter((l) => !isSampleLine(l)) : stored) {
             const delta = Math.min(MAX_QTY_PER_LINE, line.quantity) - (serverQty.get(line.variantId) ?? 0)
             if (delta <= 0) continue
             try {
@@ -160,6 +186,9 @@ export const useCart = create<CartState>()(
           // An identity change: the previous shopper's lines go at once (their server cart stays theirs).
           if (opts?.reset) set({ lines: [], unavailable: [] })
           try {
+            // The request-time demo switch first, so production never sends a sample line to the server.
+            await ensureServerSession()
+            if (mine !== generation) return
             if (!opts?.reset) {
               migration ??= migrateLocal(get().lines).finally(() => {
                 migration = null
@@ -174,7 +203,12 @@ export const useCart = create<CartState>()(
             if (mine !== generation) return
             const previous = new Map(get().lines.map((line) => [line.variantId, line]))
             const over: string[] = []
+            const off = sampleDataOff()
+            // Sample lines the server just deleted from a signed-in shopper's cart (another device, an
+            // older session), and any it still returned: the shopper hears once that they went.
+            let removed = remote.removedSample ?? 0
             const lines = remote.lines.flatMap((line) => {
+              if (off && (isSampleVariant(line.variantId) || isSampleProduct(line.productId))) return removed++, []
               const hit = variantById.get(line.variantId)
               if (hit && line.productId && hit.product.id !== line.productId) return []
               // A line the server holds stays in the bag even if its product couldn't be loaded, so it can be removed.
@@ -191,9 +225,17 @@ export const useCart = create<CartState>()(
             // Newly loaded products change how the same lines render, so publish them even when unchanged.
             if (loaded || !sameLines(get().lines, lines)) set({ lines })
             if (unavailable.length !== get().unavailable.length) set({ unavailable })
+            noticeSamplePurge(removed)
           } catch {
             // Keep the persisted cart visible when the server is temporarily unreachable.
           }
+        },
+        purgeSample: () => {
+          const lines = get().lines.filter((l) => !isSampleLine(l))
+          const unavailable = get().unavailable.filter((l) => !isSampleLine(l))
+          const n = get().lines.length - lines.length + (get().unavailable.length - unavailable.length)
+          if (n) set({ lines, unavailable })
+          return n
         },
         open: () => set({ isOpen: true }),
         close: () => set({ isOpen: false }),
@@ -205,6 +247,15 @@ export const useCart = create<CartState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ lines: s.lines, unavailable: s.unavailable }),
       skipHydration: true,
+      // Production: lines of the sample catalogue an earlier visit saved never reach the screen.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Pick<CartState, "lines" | "unavailable">>
+        if (!sampleDataOff()) return { ...current, ...p }
+        const lines = (p.lines ?? []).filter((l) => !isSampleLine(l))
+        const unavailable = (p.unavailable ?? []).filter((l) => !isSampleLine(l))
+        purgedAtLoad += (p.lines?.length ?? 0) - lines.length + ((p.unavailable?.length ?? 0) - unavailable.length)
+        return { ...current, ...p, lines, unavailable }
+      },
     },
   ),
 )

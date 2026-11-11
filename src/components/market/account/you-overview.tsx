@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { HeartIcon as Heart, PackageIcon as Package, SparkleIcon as Sparkles, StorefrontIcon as Storefront } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
@@ -28,6 +28,11 @@ import { InterestEditor } from "./interest-editor"
 import { isSampleCheckout, OrderStatusBadge, SampleChip } from "./order-status"
 import { InboxSummaryCard } from "@/components/inbox/entry"
 import { YouNav } from "./you-nav"
+import { LiveBrandCard } from "@/components/market/brands/live-brand-card"
+import { FollowButton } from "@/components/market/follow-button"
+import { loadLiveProducts } from "@/lib/api/live-catalog"
+import { fetchPublicBrands, type PublicBrandCard } from "@/lib/api/public-brands"
+import { isSampleProduct } from "@/lib/data/sample-ids"
 import { merchantStatusOf, serverCheckoutGroups, useServerOrderSummaries } from "./use-server-order-summaries"
 import type { CurrencyCode } from "@/config/markets"
 
@@ -59,6 +64,58 @@ function InlineEmpty({ icon: Icon, title, body, href, action }: { icon: React.Co
   )
 }
 
+type LiveFollow = { id: string; handle: string; name: string; city: string }
+
+/**
+ * Production: the shopper's follows (GET /api/follows), their saved and recently viewed pieces
+ * loaded from the server catalogue into the shared maps, and a few listed brands to suggest.
+ * Nothing runs in demo (`on` false).
+ */
+function useLiveYou(on: boolean, following: string[], wishlist: string[], viewed: string[]) {
+  const [follows, setFollows] = useState<LiveFollow[] | null>(null)
+  const [suggested, setSuggested] = useState<PublicBrandCard[] | null>(null)
+  const [loaded, setLoaded] = useState(0)
+  const followKey = following.join(",")
+  const productKey = [...wishlist, ...viewed.slice(0, 8)].join(",")
+  useEffect(() => {
+    if (!on) return
+    let live = true
+    api<{ items: { brandId: string; handle: string; name: string; city: string }[] }>("/api/follows")
+      .then((r) => {
+        if (live) setFollows(r.items.map((i) => ({ id: i.brandId, handle: i.handle, name: i.name, city: i.city })))
+      })
+      .catch(() => {
+        if (live) setFollows([])
+      })
+    return () => {
+      live = false
+    }
+  }, [on, followKey])
+  useEffect(() => {
+    if (!on || !productKey) return
+    let live = true
+    loadLiveProducts(productKey.split(","))
+      .then((n) => {
+        if (live && n) setLoaded((x) => x + 1)
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [on, productKey])
+  useEffect(() => {
+    if (!on) return
+    const ctrl = new AbortController()
+    fetchPublicBrands({ sort: "new", limit: 8 }, { signal: ctrl.signal })
+      .then((p) => setSuggested(p.brands))
+      .catch(() => {
+        if (!ctrl.signal.aborted) setSuggested([])
+      })
+    return () => ctrl.abort()
+  }, [on])
+  return { follows, suggested, loaded }
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /** Your World overview: what's next from the brands you follow, what you saved, and your orders. */
@@ -74,7 +131,11 @@ export function YouOverview() {
   // Rendered only on the client (behind the account gate), so the local clock is safe here.
   const [hour] = useState(() => new Date().getHours())
 
-  const followedBrands = following.map((id) => brandById.get(id)).filter((b): b is Brand => !!b)
+  // Demo reads the sample maps; production reads follows, saved pieces and suggestions from the
+  // server (never a sample brand or piece), see useLiveYou below.
+  const sampleData = usePageSampleData()
+  const live = useLiveYou(!sampleData, following, wishlist, recentlyViewed)
+  const followedBrands = sampleData ? following.map((id) => brandById.get(id)).filter((b): b is Brand => !!b) : (live.follows ?? [])
   // The rows stay for the visit: unfollowing one turns its button back to Follow rather than
   // pulling the row, and focus, out from under the shopper. New follows join the end.
   const [visitFollowing] = useState(() => following)
@@ -83,7 +144,6 @@ export function YouOverview() {
     .filter((b): b is Brand => !!b)
   // Demo: the sample drops on the demo clock, so a drop that has released during the visit leaves
   // "Upcoming drops". Otherwise the drops brands scheduled, from the server.
-  const sampleData = usePageSampleData()
   const sampleUpcoming = useUpcomingDrops(sampleData ? allDrops : [])
   const liveQuery = useApi(sampleData ? null : LIVE_UPCOMING_KEY, loadLiveUpcoming, { revalidateOnFocus: false })
   const hydrated = useHydrated()
@@ -93,10 +153,13 @@ export function YouOverview() {
   const followedUpcoming = sampleData ? sampleUpcoming.filter((d) => following.includes(d.brandId)) : []
   const drops = sampleData ? (followedUpcoming.length ? followedUpcoming : sampleUpcoming) : []
   const liveDrops = sampleData ? [] : (followedLive.length ? followedLive : liveUpcoming).slice(0, 4)
-  const saved = wishlist.map((id) => productById.get(id)).filter((p): p is Product => !!p)
-  const viewed = recentlyViewed.map((id) => productById.get(id)).filter((p): p is Product => !!p).slice(0, 4)
+  const okProduct = (p: Product | undefined): p is Product => !!p && (sampleData || !isSampleProduct(p.id))
+  // live.loaded changes when the shared maps learn the saved pieces, re-rendering these reads.
+  const saved = live.loaded >= 0 ? wishlist.map((id) => productById.get(id)).filter(okProduct) : []
+  const viewed = recentlyViewed.map((id) => productById.get(id)).filter(okProduct).slice(0, 4)
   // Worked out once per visit so a suggestion doesn't disappear the moment it's followed.
-  const [recommended] = useState(() => recommendBrands({ interests, following }, 4))
+  const [recommended] = useState(() => (sampleData ? recommendBrands({ interests, following }, 4) : []))
+  const liveRecommended = (live.suggested ?? []).filter((b) => !following.includes(b.id)).slice(0, 4)
 
   const orderById = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders])
   const recentGroups = [...groups].sort((a, b) => b.placedAt.localeCompare(a.placedAt)).slice(0, 2)
@@ -198,9 +261,23 @@ export function YouOverview() {
 
       <section aria-labelledby="you-brands" className="mt-24 md:mt-32">
         <div id="you-brands">
-          <SectionHeader title="Brands you follow" description="Their new pieces, collections, drops and stories arrive in Following." href={rowBrands.length ? "/following" : undefined} action="Open your feed" />
+          <SectionHeader title="Brands you follow" description="Their new pieces, collections, drops and stories arrive in Following." href={(sampleData ? rowBrands.length : followedBrands.length) ? "/following" : undefined} action="Open your feed" />
         </div>
-        {rowBrands.length ? (
+        {!sampleData && live.follows?.length ? (
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 sm:grid-cols-2 lg:grid-cols-4">
+            {live.follows.map((f) => (
+              <li key={f.id} className="flex min-w-0 items-center gap-3 rounded-lg p-3 transition-colors hover:bg-card">
+                <div className="min-w-0 flex-1">
+                  <Link href={`/brands/${f.handle}`} className="block truncate text-sm text-ink transition-colors hover:text-violet">
+                    {f.name}
+                  </Link>
+                  <p className="truncate text-xs text-ink-2">{f.city}</p>
+                </div>
+                <FollowButton brandId={f.id} brandName={f.name} size="xs" />
+              </li>
+            ))}
+          </ul>
+        ) : sampleData && rowBrands.length ? (
           <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-4">
             {rowBrands.map((b) => (
               <BrandCard key={b.id} brand={b} variant="row" />
@@ -254,6 +331,21 @@ export function YouOverview() {
               <BrandCard key={b.id} brand={b} showProducts />
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {liveRecommended.length ? (
+        <section aria-labelledby="you-recommended" className="mt-24 md:mt-32">
+          <div id="you-recommended">
+            <SectionHeader title="Brands on Yard" description="Independent studios with their own storefront." href="/brands" action="All brands" />
+          </div>
+          <ul className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-4">
+            {liveRecommended.map((b) => (
+              <li key={b.id} className="min-w-0">
+                <LiveBrandCard brand={b} />
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 

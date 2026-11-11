@@ -12,6 +12,8 @@ import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
 import { browseLinks } from "@/config/site"
 import { CHART_SLUGS, chartLabels } from "@/lib/api/contracts/charts"
 import { api } from "@/lib/api/client"
+import { useApi } from "@/lib/api/use-api"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { errorMessage } from "@/lib/api/errors"
 import { fold, searchAreas } from "@/lib/around/gazetteer"
 import { categories } from "@/lib/data"
@@ -24,7 +26,18 @@ import { Price } from "./price"
 export const useSearchOverlay = create<{ open: boolean; setOpen: (o: boolean) => void }>((set) => ({ open: false, setOpen: (open) => set({ open }) }))
 
 const isCurrency = (c: string): c is CurrencyCode => c in currencies
-const suggestions = ["hoodie", "silver", "sneakers", "ceramics", "fragrance", "kente"]
+/** Demo: searches the sample catalogue answers. Production derives its own from live categories (see liveTries). */
+const sampleSuggestions = ["hoodie", "silver", "sneakers", "ceramics", "fragrance", "kente"]
+type CategoryCounts = { categories: { slug: string; name: string; productCount: number }[] }
+const CATEGORIES_KEY = "/api/catalog/categories"
+const getCategoryCounts = () => api<CategoryCounts>(CATEGORIES_KEY, { cache: "default" })
+/** Production "Try" chips: the categories that hold public pieces (most first), so every chip finds something. */
+const liveTries = (data: CategoryCounts | undefined) =>
+  (data?.categories ?? [])
+    .filter((c) => c.productCount > 0)
+    .sort((a, b) => b.productCount - a.productCount)
+    .slice(0, 6)
+    .map((c) => c.name.toLowerCase())
 type SearchResponse = {
   items: { productId: string; brandId: string; brandName: string; slug: string | null; title: string; image: string | null; display: { amount: number; currency: string } }[]
   brands: { brandId: string; handle: string; name: string; city: string; country: string }[]
@@ -53,6 +66,9 @@ export function SearchOverlay() {
   const open = useSearchOverlay((s) => s.open)
   const setOpen = useSearchOverlay((s) => s.setOpen)
   const [q, setQ] = useState("")
+  const sampleData = usePageSampleData()
+  const { data: categoryCounts } = useApi(open && !sampleData ? CATEGORIES_KEY : null, getCategoryCounts, { revalidateOnFocus: false })
+  const suggestions = sampleData ? sampleSuggestions : liveTries(categoryCounts)
   const currency = useSession((s) => s.currency)
   const [remote, setRemote] = useState<{ term: string; data: SearchResponse } | null>(null)
   const [remoteError, setRemoteError] = useState<{ term: string; message: string } | null>(null)
@@ -184,6 +200,7 @@ export function SearchOverlay() {
                           ))}
                         </ul>
                       </nav>
+                      {suggestions.length ? (
                       <div>
                         <p className="text-xs text-ink-3">Try</p>
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -194,6 +211,7 @@ export function SearchOverlay() {
                           ))}
                         </div>
                       </div>
+                      ) : null}
                     </div>
                   ) : empty ? (
                     <p className="py-8 text-center text-sm text-ink-2">Nothing matches “{q}”. Try a brand name, a city or a material.</p>

@@ -8,6 +8,7 @@ import { CircleNotchIcon as Loader2, StackIcon as PackageSearch } from "@phospho
 import { isSampleCheckout, OrderStatusBadge, orderStatusNote } from "@/components/market/account/order-status"
 import { formatOrderMoney } from "@/components/market/account/format"
 import { BrandMark } from "@/components/market/brand-mark"
+import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
 import { countries } from "@/config/markets"
@@ -77,10 +78,15 @@ export function ConfirmationView() {
   /** Why the last Retry couldn't open Paystack's page (the server's 503 message), per checkout id. */
   const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null)
 
-  const sample = isSampleCheckout(groupId ?? undefined)
+  // The demo switch as /api/session answers it (null until then). With sample data off
+  // (production) there is no sample history and no demo shopper: a sample group id is read from
+  // the server like any other (and isn't found), and nothing kept in this browser for the demo
+  // shopper shows. While the answer is pending, nothing sample-only shows either.
+  const sampleOn = usePageSampleDataState()
+  const sample = sampleOn !== false && isSampleCheckout(groupId ?? undefined)
   // A checkout kept in this browser shows to the shopper it belongs to. The demo shopper's (its
-  // sample history and demo checkouts) is public demo data, so it shows to any visitor, as before.
-  const localGroup = groupId ? groups.find((g) => g.id === groupId && (g.customerId === DEMO_SHOPPER || (!!user && g.customerId === user.id))) : undefined
+  // sample history and demo checkouts) is public demo data, so in demo it shows to any visitor, as before.
+  const localGroup = groupId ? groups.find((g) => g.id === groupId && !(sampleOn !== true && isSampleCheckout(g.id)) && ((sampleOn === true && g.customerId === DEMO_SHOPPER) || (!!user && g.customerId === user.id))) : undefined
   const localOrders = localGroup ? localGroup.orderIds.map((id) => allOrders.find((o) => o.id === id)).filter((o): o is MerchantOrder => !!o) : []
   const local = localGroup && localOrders.length ? { group: localGroup, orders: localOrders } : null
   const serverData = remote?.id === groupId ? remote.data : null
@@ -163,7 +169,7 @@ export function ConfirmationView() {
       : null
   const loadFailed = !!remoteError && remoteError.id === groupId
 
-  if (!ready || (needServer && !serverData && !loadFailed)) return <ConfirmationSkeleton />
+  if (!ready || (sample && sampleOn === null) || (needServer && !serverData && !loadFailed)) return <ConfirmationSkeleton />
 
   if (!shown) {
     const signedOut = !user || remoteError?.status === 401

@@ -1,4 +1,5 @@
 import "server-only"
+import { refusedSampleDrop } from "./sample-guard"
 import { asc, inArray } from "drizzle-orm"
 import { catalogCollectionProducts, catalogImages, catalogOptions, catalogProducts, catalogVariants } from "../db/schema/catalog"
 import type { Executor } from "../db"
@@ -106,7 +107,8 @@ function base(p: ProductRow, kids: Loaded, as?: "brand") {
     images: (kids.images.get(p.id) ?? []).map((i) => imageDto(i, as)),
     options: (kids.options.get(p.id) ?? []).map((o) => ({ name: o.name, values: o.values })),
     processingDays: p.processingMin != null && p.processingMax != null ? ([p.processingMin, p.processingMax] as [number, number]) : null,
-    dropId: p.dropId,
+    // Production never points a piece at a sample drop (a demo-seeded database's link).
+    dropId: p.dropId && !refusedSampleDrop(p.dropId) ? p.dropId : null,
     collectionIds: kids.collections.get(p.id) ?? [],
     publishedAt: p.publishedAt?.toISOString() ?? null,
     createdAt: p.createdAt.toISOString(),

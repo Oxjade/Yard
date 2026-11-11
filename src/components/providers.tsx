@@ -12,6 +12,30 @@ import { useAdmin } from "@/lib/stores/admin"
 import { useNotifications } from "@/lib/stores/notifications"
 import { useNotificationEvents } from "@/lib/notification-events"
 import { getServerSessionState, subscribeServerSession } from "@/lib/session/use-server-session"
+import { sampleDataOff } from "@/lib/sample-switch"
+import { noticeSamplePurge } from "@/lib/stores/cart"
+import { purgeSampleNotifications } from "@/lib/notification-events"
+
+/**
+ * Production: everything this browser kept from the sample catalogue (cart lines, saved lists,
+ * sample notifications, the demo shopper's sample checkouts) goes, with one notice when the cart
+ * lost pieces. Runs once /api/session (the request-time demo switch) says the sample data is off;
+ * the persisted stores also drop sample ids as they rehydrate when that answer is already in.
+ *
+ * The switch is never handed down from the root layout: that layout is prerendered at build, so a
+ * value read there would be the build's, not this server's (see src/proxy.ts).
+ */
+function purgeSampleState() {
+  const fromCart = useCart.getState().purgeSample()
+  useSaved.getState().purgeSample()
+  useOrders.getState().purgeSample()
+  purgeSampleNotifications()
+  // Write the cleaned lists back so they leave this browser's storage too.
+  useCart.setState({})
+  useSaved.setState({})
+  useNotifications.setState({})
+  noticeSamplePurge(fromCart)
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -27,6 +51,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
       useNotifications.persist.rehydrate(),
     ]).then(() => {
       if (!active) return
+      // Production: the rehydrate already dropped sample ids from what's shown; write the cleaned
+      // lists back so they leave this browser's storage too, and say once that pieces left the cart.
+      if (sampleDataOff()) {
+        useOrders.getState().purgeSample()
+        purgeSampleNotifications()
+        useCart.setState({})
+        useSaved.setState({})
+        useNotifications.setState({})
+        noticeSamplePurge()
+      }
       // Real accounts' checkouts are never kept in this browser: drop any an earlier build saved.
       useOrders.getState().scopeTo(null)
       return useCart.getState().syncFromServer()
@@ -83,6 +117,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
       unsubscribeServer()
       unsubscribeLocal()
     }
+  }, [])
+  // /api/session is the request-time answer: if it says the sample data is off, purge whatever is left.
+  useEffect(() => {
+    let done = false
+    const check = () => {
+      if (done || getServerSessionState().sampleData !== false) return
+      done = true
+      if ([useCart, useSaved, useNotifications, useOrders].every((st) => st.persist.hasHydrated())) purgeSampleState()
+      else window.setTimeout(() => ((done = false), check()), 100)
+    }
+    check()
+    return subscribeServerSession(check)
   }, [])
   useNotificationEvents()
 

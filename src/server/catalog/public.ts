@@ -7,8 +7,9 @@ import { brands } from "../db/schema"
 import { catalogCategories, catalogCollectionProducts, catalogCollections, catalogProducts, catalogVariants, storefrontVersions } from "../db/schema/catalog"
 import { notFound } from "../http/errors"
 import { loadChildren, toPublicProduct } from "./dto"
-import type { PublicProductsQuery } from "./contracts"
-import { brandForSaleSql, brandLaunchedSql, getSellableVariants, productPublicWhere } from "./sellable"
+import type { PublicBrandsQuery, PublicProductsQuery } from "./contracts"
+import type { PublicBrandCard, PublicBrandsPage } from "@/lib/api/public-brands"
+import { brandForSaleSql, brandLaunchedSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
 
 /**
  * Public catalogue reads. Every read goes through productPublicWhere (published, not hidden,
@@ -116,13 +117,13 @@ export async function publicCategories() {
     const d = await db()
     const rows = await d.select().from(catalogCategories).orderBy(asc(catalogCategories.position))
     const counts = await d
-      .select({ slug: catalogProducts.categorySlug, n: sql<number>`count(*)`.mapWith(Number) })
+      .select({ slug: catalogProducts.categorySlug, n: sql<number>`count(*)`.mapWith(Number), brands: sql<number>`count(distinct ${catalogProducts.brandId})`.mapWith(Number) })
       .from(catalogProducts)
       .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
       .where(productPublicWhere())
       .groupBy(catalogProducts.categorySlug)
-    const n = new Map(counts.map((c) => [c.slug, c.n]))
-    return { categories: rows.map((c) => ({ slug: c.slug, name: c.name, description: c.description, imagePath: c.imagePath, subcategories: c.subcategories, productCount: n.get(c.slug) ?? 0 })) }
+    const n = new Map(counts.map((c) => [c.slug, c]))
+    return { categories: rows.map((c) => ({ slug: c.slug, name: c.name, description: c.description, imagePath: c.imagePath, subcategories: c.subcategories, productCount: n.get(c.slug)?.n ?? 0, brandCount: n.get(c.slug)?.brands ?? 0 })) }
   })
 }
 
@@ -225,4 +226,69 @@ export async function publicStorefront(handle: string) {
 export async function publicVariants(ids: string[]) {
   await requestScope()
   return { variants: await getSellableVariants(ids) }
+}
+
+/**
+ * GET /api/catalog/brands: listed brands from the server (brandListedSql: not restricted or
+ * suspended, founding brands once launched, and never a sample brand in production). Paged by
+ * offset (rule 7); memoised 30 s under catalog:, so cost follows time, not traffic.
+ */
+export async function listPublicBrands(q: PublicBrandsQuery): Promise<PublicBrandsPage> {
+  await requestScope()
+  return memo(`catalog:brands:${JSON.stringify(q)}`, TTL, async () => {
+    const d = await db()
+    const where: (SQL | undefined)[] = [brandListedSql()]
+    if (q.q) {
+      const like = `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+      where.push(or(sql`${brands.name} ilike ${like}`, sql`${brands.handle} ilike ${like}`, sql`${brands.city} ilike ${like}`))
+    }
+    if (q.category) where.push(sql`${q.category} = any(${brands.categories})`)
+    if (q.country) where.push(eq(brands.country, q.country))
+    if (q.founding) where.push(eq(brands.founding, q.founding === "1"))
+    if (q.exclude) where.push(sql`${brands.id} <> ${q.exclude} and ${brands.handle} <> ${q.exclude}`)
+    const listedAt = sql<string | null>`coalesce(${brands.launchedAt}, ${brands.joinedAt}::timestamptz)`
+    const order = q.sort === "new" ? [desc(listedAt), asc(brands.id)] : [asc(sql`lower(${brands.name})`), asc(brands.id)]
+    const rows = await d
+      .select({
+        id: brands.id,
+        handle: brands.handle,
+        name: brands.name,
+        city: brands.city,
+        country: brands.country,
+        categories: brands.categories,
+        story: brands.story,
+        logoMediaId: brands.logoMediaId,
+        verified: brands.verified,
+        founding: brands.founding,
+        foundingBadge: brands.foundingBadge,
+        forSale: sql<boolean>`${brandForSaleSql()}`,
+        listedAt: sql<Date | string | null>`${listedAt}`,
+        // Qualified by hand (see founding.ts listFoundingBrandsForHome).
+        cover: sql<string | null>`(select sv.config ->> 'coverMediaId' from catalog_storefront_versions sv where sv.brand_id = "brands"."id" order by sv.version desc limit 1)`,
+        total: sql<number>`count(*) over ()`.mapWith(Number),
+      })
+      .from(brands)
+      .where(and(...where))
+      .orderBy(...order)
+      .limit(q.limit)
+      .offset(q.offset)
+    const total = rows[0]?.total ?? 0
+    const list: PublicBrandCard[] = rows.map((r) => ({
+      id: r.id,
+      handle: r.handle,
+      name: r.name,
+      city: r.city,
+      country: r.country,
+      categories: r.categories,
+      story: r.story ? (r.story.length > 160 ? `${r.story.slice(0, 157).trimEnd()}…` : r.story) : null,
+      logoSrc: r.logoMediaId ? `/api/media/${encodeURIComponent(r.logoMediaId)}` : null,
+      coverSrc: r.cover ? `/api/media/${encodeURIComponent(r.cover)}` : null,
+      verified: r.verified,
+      founding: r.founding,
+      foundingBadge: r.foundingBadge,
+      forSale: !!r.forSale,
+      listedAt: r.listedAt ? new Date(r.listedAt).toISOString() : null,
+    }))
+    return { brands: list, total, nextOffset: q.offset + rows.length < total ? q.offset + rows.length : null }
+  })
 }

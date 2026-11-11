@@ -7,6 +7,7 @@ import { parseBoardState } from "@/components/charts/state"
 import { SampleChip } from "@/components/ui/sample-chip"
 import { getBoard, getScopes } from "@/server/charts"
 import { pageReadAllowed } from "@/server/charts/limit"
+import { getEnv } from "@/server/env"
 import { log } from "@/server/log"
 
 export const metadata: Metadata = {
@@ -28,7 +29,10 @@ export default function ChartsPage({ searchParams }: { searchParams: SearchParam
         <h1 className="font-display text-display-lg text-ink">Charts</h1>
         <div className="grid gap-3 lg:justify-items-start lg:pb-1">
           <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">What&apos;s moving on Yard right now.</p>
-          <SampleChip label="Includes sample activity" title="Rankings include sample activity in this build." className="justify-self-start" />
+          {/* Read at request time (the header is the prerendered shell): demo only, never baked in at build. */}
+          <Suspense fallback={null}>
+            <SampleActivityChip />
+          </Suspense>
         </div>
       </header>
 
@@ -45,6 +49,13 @@ export default function ChartsPage({ searchParams }: { searchParams: SearchParam
       </Suspense>
     </div>
   )
+}
+
+/** "Includes sample activity" with sample data on (demo); production has no sample activity. */
+async function SampleActivityChip() {
+  await connection()
+  if (!getEnv().seedDemo) return null
+  return <SampleChip label="Includes sample activity" title="Rankings include sample activity in this build." className="justify-self-start" />
 }
 
 async function BoardLoader({ searchParams }: { searchParams: SearchParams }) {

@@ -16,6 +16,9 @@ import { useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import type { Product } from "@/lib/data/types"
 import { YouNav } from "./you-nav"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { loadLiveProducts } from "@/lib/api/live-catalog"
+import { isSampleProduct } from "@/lib/data/sample-ids"
 
 type Sort = "recent" | "price-asc" | "price-desc" | "brand" | "in-stock"
 
@@ -74,19 +77,36 @@ function MoveToBag({ product, onMoved, children }: { product: Product; onMoved?:
 export function WishlistView() {
   const wishlist = useSaved((s) => s.wishlist)
   const [sort, setSort] = useState<Sort>("recent")
+  // Production: saved pieces are real products from the server catalogue (loaded into the shared
+  // maps), never the sample catalogue, and there is no sample "Most saved" rail.
+  const demo = usePageSampleData()
+  const [liveLoaded, setLiveLoaded] = useState(0)
+  useEffect(() => {
+    if (demo || !wishlist.length) return
+    let live = true
+    loadLiveProducts(wishlist)
+      .then((n) => {
+        if (live && n) setLiveLoaded((x) => x + 1)
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [demo, wishlist])
 
-  const saved = useMemo(() => wishlist.map((id) => productById.get(id)).filter((p): p is Product => !!p), [wishlist])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- liveLoaded: the shared maps just learned more products
+  const saved = useMemo(() => wishlist.map((id) => productById.get(id)).filter((p): p is Product => !!p && (demo || !isSampleProduct(p.id))), [wishlist, demo, liveLoaded])
   const sorted = useMemo(() => {
     const list = [...saved]
     if (sort === "price-asc") list.sort((a, b) => priceUsd(a) - priceUsd(b))
     if (sort === "price-desc") list.sort((a, b) => priceUsd(b) - priceUsd(a))
-    if (sort === "brand") list.sort((a, b) => brandById.get(a.brandId)!.name.localeCompare(brandById.get(b.brandId)!.name))
+    if (sort === "brand") list.sort((a, b) => (brandById.get(a.brandId)?.name ?? "").localeCompare(brandById.get(b.brandId)?.name ?? ""))
     if (sort === "in-stock") list.sort((a, b) => Number(productStock(b) > 0) - Number(productStock(a) > 0))
     return list
   }, [saved, sort])
   const brandCount = new Set(saved.map((p) => p.brandId)).size
   const soldOut = saved.filter((p) => productStock(p) === 0).length
-  const mostSaved = useMemo(() => [...products].sort((a, b) => b.stats.wishlists - a.stats.wishlists).slice(0, 4), [])
+  const mostSaved = useMemo(() => (demo ? [...products].sort((a, b) => b.stats.wishlists - a.stats.wishlists).slice(0, 4) : []), [demo])
 
   // Removing a piece unmounts its card. Focus moves to the heart of the card that takes its
   // place (or the one before, for the last card), or to the empty state, so keyboard users
@@ -159,6 +179,7 @@ export function WishlistView() {
               <Link href="/shop?sort=newest">Browse new arrivals</Link>
             </Button>
           </div>
+          {mostSaved.length ? (
           <section aria-labelledby="most-saved-title" className="mt-24 md:mt-32">
             <div id="most-saved-title">
               <SectionHeader title="Most saved right now" description="The pieces other shoppers are keeping an eye on." href="/shop?sort=trending" />
@@ -169,6 +190,7 @@ export function WishlistView() {
               ))}
             </div>
           </section>
+          ) : null}
         </>
       ) : (
         <>

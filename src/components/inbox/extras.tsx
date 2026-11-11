@@ -20,6 +20,8 @@ import { useApi } from "@/lib/api/use-api"
 import { brandById } from "@/lib/data/brands"
 import { drops as allDrops } from "@/lib/data/catalog"
 import { productById, products } from "@/lib/data/products"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { toCatalogProduct, type PublicCatalogPage } from "@/lib/api/catalog-products"
 import type { MerchantOrderStatus, Product } from "@/lib/data/types"
 import { dropPhaseAt, dropWindow } from "@/lib/drops"
 import { getDemoAnchor, useNow } from "@/hooks/use-now"
@@ -84,14 +86,18 @@ export function ProductPicker({ open, onOpenChange, brandId, onPick }: { open: b
   const [q, setQ] = useState("")
   const viewed = useSaved((s) => s.recentlyViewed)
   const brand = brandById.get(brandId)
+  // Demo: the brand's sample pieces. Production: its public pieces from the server (never a sample one).
+  const sampleOn = usePageSampleData()
+  const liveQuery = useApi(!sampleOn && open ? `inbox:picker:${brandId}` : null, () => api<PublicCatalogPage>("/api/catalog/products", { query: { brand: brandId, sort: "new", limit: "60" } }), { revalidateOnFocus: false })
+  const live = useMemo(() => (liveQuery.data ? liveQuery.data.products.map(toCatalogProduct) : []), [liveQuery.data])
   const list = useMemo(() => {
-    const own = products.filter((p) => p.brandId === brandId && p.status === "published")
-    const recent = viewed.map((id) => productById.get(id)).filter((p): p is Product => !!p && p.brandId === brandId)
+    const own = sampleOn ? products.filter((p) => p.brandId === brandId && p.status === "published") : live
+    const recent = viewed.map((id) => (sampleOn ? productById.get(id) : live.find((p) => p.id === id))).filter((p): p is Product => !!p && p.brandId === brandId)
     const rest = own.filter((p) => !recent.some((r) => r.id === p.id))
     const term = q.trim().toLowerCase()
     const match = (p: Product) => !term || p.name.toLowerCase().includes(term) || p.subcategory.toLowerCase().includes(term)
     return { recent: recent.filter(match), rest: rest.filter(match) }
-  }, [brandId, viewed, q])
+  }, [brandId, viewed, q, sampleOn, live])
   const row = (p: Product) => (
     <li key={p.id}>
       <button

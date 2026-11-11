@@ -12,7 +12,8 @@ import { hash, pick, rand, randInt } from "@/lib/data/seed"
 import { getEnv } from "../../env"
 import { log } from "../../log"
 import type { Root } from "../client"
-import { appMeta } from "../schema"
+import { appMeta, brands as brandRows } from "../schema"
+import { SAMPLE_BRAND_IDS } from "@/lib/data/sample-ids"
 import { db, runTx, withTx } from "../tx"
 import type { SeedContext, SeedModule } from "./types"
 import people from "./people"
@@ -159,26 +160,53 @@ export async function runSeeds(root: Root) {
 
 /**
  * Demo seeding off (production only: development and test always seed the demo fixtures), so
- * only reference data was seeded. The public storefront still renders the built-in sample
- * catalogue (src/lib/data) while cart and checkout price against the server catalogue, so an
- * empty server catalogue means every add-to-cart fails. Say so loudly at every boot.
+ * only reference data was seeded. The public shop reads only the server catalogue in production
+ * (the bundled sample catalogue in src/lib/data is never shown, linked or sold), so an empty
+ * server catalogue means empty states everywhere until brands list products. Say so at boot, and
+ * warn loudly when sample rows are present (a database once booted with YARD_SEED_DEMO=1): they
+ * stay hidden from every public read (sample-guard.ts) but should be cleaned up.
  */
 async function warnEmptyCatalogue(root: Root) {
+  let products = 0
+  let sampleRows = 0
   try {
     const [row] = await runTx(root, async () => (await db()).select({ n: sql<number>`count(*)::int` }).from(catalogProducts))
-    if ((row?.n ?? 0) > 0) return
+    products = row?.n ?? 0
+    const ids = [...SAMPLE_BRAND_IDS]
+    const [hit] = await runTx(root, async () =>
+      (await db())
+        .select({ n: sql<number>`count(*)::int` })
+        .from(brandRows)
+        .where(
+          sql`${brandRows.id} in (${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        ),
+    )
+    sampleRows = hit?.n ?? 0
   } catch (e) {
     log.error("[yard] could not count catalogue products", e)
     return
   }
+  if (sampleRows > 0) {
+    log.warn(
+      [
+        "[yard] ************************************************************************************",
+        `[yard] WARNING: demo seeding is off but ${sampleRows} SAMPLE brand row(s) (b_lagos_static, …) are in this database.`,
+        "[yard] They are hidden from every public page, list, search and API and refused by cart,",
+        "[yard] checkout, wishlist and follows, but this database was once booted with YARD_SEED_DEMO=1.",
+        "[yard] ************************************************************************************",
+      ].join("\n"),
+    )
+  }
+  if (products > 0) return
   const lines = [
     "[yard] ************************************************************************************",
-    "[yard] WARNING: demo seeding is off (YARD_SEED_DEMO) and the server catalogue is EMPTY.",
+    "[yard] Demo seeding is off (YARD_SEED_DEMO) and the server catalogue is empty.",
     "[yard] Categories and the holiday calendar were seeded; no sample brands, products or admins.",
-    "[yard] The public shop still renders the built-in SAMPLE catalogue (src/lib/data), but cart",
-    "[yard] and checkout use the server catalogue, so every add-to-cart will fail (404).",
-    "[yard] Do not open this deployment to shoppers until the storefront reads /api/catalog and",
-    "[yard] brands have listed products. Create the first owner admin: npm run admin:create (README).",
+    "[yard] The public shop shows only server data, so it shows empty states until brands list",
+    "[yard] products. Create the first owner admin: npm run admin:create (README).",
     "[yard] ************************************************************************************",
   ]
   log.warn(lines.join("\n"))

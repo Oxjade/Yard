@@ -32,6 +32,8 @@ import { blockBrand, patchConversation, sendMessage } from "@/lib/api/inbox"
 import { revalidatePrefix } from "@/lib/api/use-api"
 import { brandById } from "@/lib/data/brands"
 import { productById, products, variantLabel } from "@/lib/data/products"
+import { isSampleProduct } from "@/lib/data/sample-ids"
+import { sampleDataOff } from "@/lib/sample-switch"
 import { countries } from "@/config/markets"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
@@ -65,7 +67,8 @@ export function shopperDisabledReason(i: Interaction | undefined, brand: string)
 }
 
 function chipFor(productId: string | null | undefined, variantId?: string | null): ProductChip | null {
-  const p = productId ? productById.get(productId) : undefined
+  // Production never offers a sample piece as a chip (a ?product= link from an earlier visit).
+  const p = productId && !(sampleDataOff() && isSampleProduct(productId)) ? productById.get(productId) : undefined
   if (!p) return null
   const v = variantId ? p.variants.find((x) => x.id === variantId) : undefined
   return { productId: p.id, variantId: v?.id, name: p.name, variantLabel: v ? variantLabel(v.options) : undefined, price: { amount: p.price, currency: p.currency } }
@@ -128,7 +131,7 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
   const disabled = shopperDisabledReason(interaction, brandName)
   const canInteract = !disabled
 
-  const sampleProduct = product ?? chipFor(products.find((p) => p.brandId === brandId && p.status === "published")?.id)
+  const sampleProduct = product ?? (sampleDataOff() ? null : chipFor(products.find((p) => p.brandId === brandId && p.status === "published")?.id))
   const pieceName = product?.name ?? "this piece"
   const actions = [
     {

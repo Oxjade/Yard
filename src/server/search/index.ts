@@ -4,6 +4,7 @@ import { currencies, type CurrencyCode } from "@/config/markets"
 import { brandById } from "@/lib/data/brands"
 import { categoryBySlug } from "@/lib/data/catalog"
 import { products as sampleProducts } from "@/lib/data/products"
+import { notSampleBrandSql, refusedSampleBrand, refusedSampleProduct, sampleOff } from "../catalog/sample-guard"
 import { convert } from "@/lib/money"
 import { db } from "../db"
 import { brandListed } from "../auth/dal"
@@ -74,7 +75,7 @@ export async function reindexProduct(productId: string, doc?: SearchProductDoc |
     variantIds: src.variantIds.slice(0, 500),
     sizes: [...new Set((src.sizes ?? []).filter((size) => size && size !== "One size"))],
     image: src.image ?? null,
-    visible: src.visible && brand.reviewStatus !== "suspended",
+    visible: src.visible && brand.reviewStatus !== "suspended" && !refusedSampleBrand(src.brandId),
     publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
     indexedAt: new Date(),
   }
@@ -84,6 +85,13 @@ export async function reindexProduct(productId: string, doc?: SearchProductDoc |
     .onConflictDoUpdate({ target: searchProducts.productId, set: values })
 }
 
+/**
+ * Visible in search: the index flag and, in production, never a sample brand or its products (a
+ * demo-seeded database's rows stay out of every search, suggestion and listing).
+ */
+const productVisible = () => and(eq(searchProducts.visible, true), notSampleBrandSql(searchProducts.brandId))!
+const brandVisible = () => and(eq(searchBrands.visible, true), notSampleBrandSql(searchBrands.brandId))!
+
 /** Re-indexes one brand from the brands table (plus the sample brand's tagline). */
 export async function reindexBrand(brandId: string): Promise<void> {
   const d = await db()
@@ -92,10 +100,10 @@ export async function reindexBrand(brandId: string): Promise<void> {
     await d.delete(searchBrands).where(eq(searchBrands.brandId, brandId))
     return
   }
-  const sample = brandById.get(b.id)
+  const sample = sampleOff() ? undefined : brandById.get(b.id)
   // The same listed rule as every public read: not restricted or suspended, and a founding brand
   // only once its storefront is published (launched_at).
-  const listed = brandListed(b)
+  const listed = brandListed(b) && !refusedSampleBrand(b.id)
   const values = {
     handle: b.handle,
     name: b.name,
@@ -123,7 +131,8 @@ export async function reindexAll(): Promise<{ brands: number; products: number }
   const brandRows = await d.select({ id: brands.id }).from(brands)
   for (const b of brandRows) await reindexBrand(b.id)
   const known = await d.select({ id: searchProducts.productId }).from(searchProducts)
-  const ids = new Set([...known.map((r) => r.id), ...sampleProducts.map((p) => p.id)])
+  // The sample catalogue joins the index only in demo and development.
+  const ids = new Set([...known.map((r) => r.id), ...(sampleOff() ? [] : sampleProducts.map((p) => p.id))])
   for (const id of ids) await reindexProduct(id)
   return { brands: brandRows.length, products: ids.size }
 }
@@ -209,7 +218,7 @@ export async function searchCatalog(p: SearchParams) {
   const offset = Math.min(Math.max(p.offset ?? 0, 0), MAX_SEARCH_OFFSET)
   const brandOffset = Math.max(p.brandOffset ?? 0, 0)
 
-  const base: SQL[] = [eq(searchProducts.visible, true)]
+  const base: SQL[] = [productVisible()]
   if (query) base.push(sql`${searchProducts.tsv} @@ ${query}`)
   const { byStock, byCategory, bySubcategory, byBrand, byBrandHandle, bySize, byCountry, byPrice } = scopeConditions(p)
 
@@ -297,8 +306,9 @@ export async function searchCatalog(p: SearchParams) {
       .orderBy(desc(count())),
     d.select({ inStockCount: count() }).from(searchProducts).where(and(...base, gt(searchProducts.available, 0), byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)),
     // Names of the brands the shopper filtered on, so their chips read right even with no matches here.
+    // Only brands the public may see: never a hidden brand, nor (production) a sample one.
     selectedHandles.length
-      ? d.select({ value: searchBrands.brandId, handle: searchBrands.handle, label: searchBrands.name }).from(searchBrands).where(inArray(searchBrands.handle, selectedHandles))
+      ? d.select({ value: searchBrands.brandId, handle: searchBrands.handle, label: searchBrands.name }).from(searchBrands).where(and(brandVisible(), inArray(searchBrands.handle, selectedHandles)))
       : Promise.resolve([] as { value: string; handle: string; label: string }[]),
   ])
   const brandFacet = brandFacetPage.slice(0, BRAND_FACET_PAGE)
@@ -360,7 +370,7 @@ export async function searchBrandsQuery(q: string, limit = 10) {
   const rows = await d
     .select({ brandId: searchBrands.brandId, handle: searchBrands.handle, name: searchBrands.name, city: searchBrands.city, country: searchBrands.country })
     .from(searchBrands)
-    .where(and(eq(searchBrands.visible, true), sql`${searchBrands.tsv} @@ ${query}`))
+    .where(and(brandVisible(), sql`${searchBrands.tsv} @@ ${query}`))
     .orderBy(desc(sql`ts_rank(${searchBrands.tsv}, ${query})`), asc(searchBrands.name))
     .limit(Math.min(limit, 20))
   return rows
@@ -380,7 +390,7 @@ export async function suggest(q: string, scope?: SearchScope) {
     d
       .select({ productId: searchProducts.productId, title: searchProducts.title, brandName: searchProducts.brandName, slug: searchProducts.slug, image: searchProducts.image })
       .from(searchProducts)
-      .where(and(eq(searchProducts.visible, true), sql`${searchProducts.tsv} @@ ${query}`))
+      .where(and(productVisible(), sql`${searchProducts.tsv} @@ ${query}`))
       .orderBy(desc(sql`ts_rank(${searchProducts.tsv}, ${query})`), asc(searchProducts.productId))
       .limit(6),
     searchBrandsQuery(q, 4),
@@ -401,7 +411,7 @@ export async function suggest(q: string, scope?: SearchScope) {
   const [counts] = await d
     .select(Object.fromEntries(candidates.map((c, i) => [`t${i}`, sql<number>`count(*) filter (where ${searchProducts.tsv} @@ to_tsquery('simple', ${c.termQuery}))`.mapWith(Number)])))
     .from(searchProducts)
-    .where(and(eq(searchProducts.visible, true), byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry))
+    .where(and(productVisible(), byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry))
   return { products: productsHit, brands: brandsHit, terms: candidates.map((c, i) => ({ term: c.term, count: Number(counts?.[`t${i}`] ?? 0) })) }
 }
 
@@ -409,10 +419,12 @@ export async function suggest(q: string, scope?: SearchScope) {
 export async function indexedProducts(productIds: string[]) {
   if (!productIds.length) return []
   const d = await db()
-  return d
+  const rows = await d
     .select({ productId: searchProducts.productId, brandId: searchProducts.brandId, brandName: searchProducts.brandName, title: searchProducts.title, slug: searchProducts.slug, variantIds: searchProducts.variantIds, visible: searchProducts.visible, priceMinor: searchProducts.priceMinor, currency: searchProducts.currency, available: searchProducts.available, image: searchProducts.image })
     .from(searchProducts)
     .where(inArray(searchProducts.productId, productIds))
+  // Production: a sample piece (or a sample brand's) is never visible, whatever the index says.
+  return rows.map((r) => (r.visible && (refusedSampleBrand(r.brandId) || refusedSampleProduct(r.productId)) ? { ...r, visible: false } : r))
 }
 
 /** True when the index is empty (first boot): the daily job then builds it. */

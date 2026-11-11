@@ -11,7 +11,8 @@ import { MOSAIC_GRID, mosaicLayout as layout } from "./category-mosaic-layout"
  * Spans are per position, so the composition holds as categories are added (it repeats).
  */
 
-export type CategoryTileData = { category: Category; pieces: number; brands: number }
+/** Counts are null when they aren't known (production while the server catalogue answers): the line is left out. */
+export type CategoryTileData = { category: Category; pieces: number | null; brands: number | null }
 
 export function CategoryMosaic({ items }: { items: CategoryTileData[] }) {
   return (
@@ -57,13 +58,20 @@ function CategoryTile({ category, pieces, brands, index, size, phoneWide }: Cate
           {category.name}
         </h2>
         {size === "lg" ? <p className="mt-2 hidden max-w-sm text-sm text-ink/80 sm:block">{category.description}</p> : null}
-        <p className="mt-2 text-xs text-ink/80 tabular">
-          {pieces} {pieces === 1 ? "piece" : "pieces"}
-          <span className="hidden sm:inline">
-            {" "}
-            from {brands} {brands === 1 ? "brand" : "brands"}
-          </span>
-        </p>
+        {pieces === 0 ? (
+          // An empty shelf while brands are joining: no "0 pieces" count.
+          <p className="mt-2 text-xs text-ink/80">Coming soon</p>
+        ) : pieces !== null ? (
+          <p className="mt-2 text-xs text-ink/80 tabular">
+            {pieces} {pieces === 1 ? "piece" : "pieces"}
+            {brands !== null && pieces > 0 ? (
+              <span className="hidden sm:inline">
+                {" "}
+                from {brands} {brands === 1 ? "brand" : "brands"}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
       </div>
     </Link>
   )

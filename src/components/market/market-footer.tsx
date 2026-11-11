@@ -43,7 +43,12 @@ export function MarketFooter() {
         </div>
         <div className="mt-14 flex flex-col gap-4 border-t border-line-soft pt-6 md:flex-row md:items-center md:justify-between">
           <LocaleSelect />
-          <p className="text-xs text-ink-3">© 2026 {site.name}. Development build with sample data and placeholder photography.</p>
+          <p className="text-xs text-ink-3">
+            © 2026 {site.name}.
+            {/* The demo note only where the sample data is on (the request-time switch, from /api/session;
+                this footer is prerendered, so it never reads the build's environment). */}
+            <SampleOnly> Development build with sample data and placeholder photography.</SampleOnly>
+          </p>
         </div>
       </div>
     </footer>

@@ -5,7 +5,7 @@ import { safeId, safeLine } from "@/lib/api/contracts/common"
 import { SHIPPING_SERVICES } from "@/lib/api/contracts/enums"
 import type { ShopperActor } from "../auth/dal"
 import { checkDropLimit, releaseDropClaims } from "../drops"
-import { cartLinesOf } from "../cart"
+import { cartLinesOf, SAMPLE_LINES_REMOVED } from "../cart"
 import { asCountry, asCurrency, groupByBrand, priceLines, quoteGroup } from "../cart/pricing"
 import { holdStock, releaseHold } from "../catalog"
 import { notForSaleMessage } from "../catalog/sellable"
@@ -222,7 +222,9 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
   const to = asCountry(body.shipTo.country)
 
   // 1. Re-price from CATALOG.
-  const { cartId, lines: raw } = await cartLinesOf({ kind: "customer", customerId: actor.userId })
+  const { cartId, lines: raw, removedSample } = await cartLinesOf({ kind: "customer", customerId: actor.userId })
+  // Production: sample pieces were just taken out of the cart (cartLinesOf); never charge for what's left unseen.
+  if (removedSample) throw new HttpError(409, "conflict", `${SAMPLE_LINES_REMOVED} Check your cart and try again.`, { lines: SAMPLE_LINES_REMOVED })
   if (!raw.length) throw rule("Your cart is empty.")
   const lines = await priceLines(raw, currency)
   const problems: Record<string, string> = {}

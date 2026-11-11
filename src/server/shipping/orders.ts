@@ -3,7 +3,6 @@ import { and, asc, desc, eq, gte, inArray, notInArray } from "drizzle-orm"
 import { countries, type CountryCode, type CurrencyCode, shippingRatesUsd, shippingZone } from "@/config/markets"
 import type { ComplaintBody, ComplaintDto, CurrentEstimateDto, DeliveryDto, DeliverySnapshotDto, EstimateDto, RegisterOrderBody, RegisterResponse, ShipmentEventBody, ShipmentEventDto } from "@/lib/api/contracts/shipping"
 import { complaintKindLabels } from "@/lib/api/contracts/shipping"
-import { productById } from "@/lib/data/products"
 import { convert, formatMoney } from "@/lib/money"
 import { dateIn, nextBusinessDay, addBusinessDays } from "@/lib/shipping/calendar"
 import { estimateDelivery, groupHandling } from "@/lib/shipping/estimate"
@@ -22,7 +21,7 @@ import { channels } from "../realtime/channels"
 import { loadBrandShipping, type BrandShipping } from "./profile"
 import { zoneFor } from "./providers"
 import { brandForSale, notForSaleMessage } from "../catalog/sellable"
-import { calendarsFor, citySlugFor, destTimeZone, isCountry, isCurrency, lineKey, quoteBrand, resolveLines, verifyQuote, type PricedLine } from "./quote"
+import { calendarsFor, citySlugFor, staticProduct, destTimeZone, isCountry, isCurrency, lineKey, quoteBrand, resolveLines, verifyQuote, type PricedLine } from "./quote"
 import { markFor, recordScreen, screenBrandText, screensFor } from "./screen"
 
 export type OrderRefRow = typeof orderRefs.$inferSelect
@@ -77,7 +76,7 @@ export async function computeEstimate(order: OrderRefRow, events: EventRow[], no
   }
   const { H, T } = cals
   const items = (order.items ?? []) as OrderRefItem[]
-  const handling = groupHandling([s.profile.handlingMin, s.profile.handlingMax], items.map((i) => ({ processingDays: productById.get(i.productId)?.processingDays })))
+  const handling = groupHandling([s.profile.handlingMin, s.profile.handlingMax], items.map((i) => ({ processingDays: staticProduct(i.productId)?.processingDays })))
   const base = {
     handlingCal: H,
     transitCal: T,

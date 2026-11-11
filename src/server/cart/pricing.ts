@@ -2,6 +2,7 @@ import "server-only"
 import { currencies, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { productById } from "@/lib/data/products"
 import type { Product } from "@/lib/data/types"
+import { sampleOff } from "../catalog/sample-guard"
 import { convert } from "@/lib/money"
 import { getSellableVariants } from "../catalog"
 import { HttpError, badRequest } from "../http/errors"
@@ -120,7 +121,8 @@ export function groupByBrand(lines: PricedCartLine[]): BrandGroup[] {
  * product created in the v3 catalog (not in the static sample data) uses the brand's handling.
  */
 function engineLine(l: PricedCartLine): PricedLine {
-  const known = l.productId ? productById.get(l.productId) : undefined
+  // Sample handling days only in demo and development; production uses the brand's handling.
+  const known = l.productId && !sampleOff() ? productById.get(l.productId) : undefined
   const product = {
     id: l.productId ?? l.variantId,
     brandId: l.brandId ?? "",
