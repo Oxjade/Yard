@@ -14,7 +14,8 @@ export const brandProfile = z.object({
   userId: z.string(),
   name: z.string(),
   brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), reviewStatus: z.enum(["pending_review", "verified", "restricted", "suspended"]) }),
-  role: z.enum(["owner", "admin", "designer", "fulfilment", "finance", "viewer"]),
+  /** "yard_setup": Yard staff setting up an unclaimed founding brand (Studio shows the Yard setup banner and limits its nav). */
+  role: z.enum(["owner", "admin", "designer", "fulfilment", "finance", "viewer", "yard_setup"]),
   permissions: z.array(z.enum(BRAND_PERMISSIONS)),
   demo: z.boolean(),
 })

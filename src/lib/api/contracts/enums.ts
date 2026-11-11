@@ -8,7 +8,13 @@ export const USER_KINDS = ["shopper", "brand_staff", "admin"] as const
 export const USER_STATUSES = ["active", "restricted", "suspended"] as const
 export const BRAND_REVIEW_STATUSES = ["pending_review", "verified", "restricted", "suspended"] as const
 export const TEAM_ROLES = ["owner", "admin", "designer", "fulfilment", "finance", "viewer"] as const
+/** Every brand_members role: the team roles plus Yard's temporary set-up access to an unclaimed founding brand (never invitable). */
+export const BRAND_MEMBER_ROLES = [...TEAM_ROLES, "yard_setup"] as const
 export const MEMBER_STATUSES = ["active", "invited"] as const
+/** Founding brands: none (an ordinary brand), unclaimed (set up by Yard, not for sale), claimed (an owner took it over). */
+export const CLAIM_STATUSES = ["none", "unclaimed", "claimed"] as const
+/** brand_invites kinds: a team invite, or the single-use claim link of a founding brand. */
+export const INVITE_KINDS = ["team", "founding_claim"] as const
 export const ADMIN_ROLES = ["owner", "finance", "trust_safety", "support", "ads_ops", "engineering"] as const
 export const ACTOR_KINDS = ["shopper", "brand", "admin"] as const
 export const SOCIAL_PROVIDERS = ["instagram", "tiktok"] as const

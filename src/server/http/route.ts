@@ -3,12 +3,13 @@ import { randomBytes } from "node:crypto"
 import { connection, type NextRequest } from "next/server"
 import { z, type ZodType } from "zod"
 import { getAdmin, requireActiveBrand, requireAdmin, requireShopper, type Actor, type AdminActor, type BrandActor, type ShopperActor } from "../auth/dal"
+import { writeAudit } from "../audit"
 import { getEnv } from "../env"
 import { log } from "../log"
 import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
 import type { AdminPermission, BrandPermission } from "@/lib/permissions"
 import { assertSameOrigin } from "./csrf"
-import { badRequest, errorBody, HttpError, NotImplemented, rateLimited } from "./errors"
+import { badRequest, errorBody, forbidden, HttpError, NotImplemented, rateLimited } from "./errors"
 import { pgDataException } from "./pg-errors"
 import { clientIp, ipHash as hashIp } from "./request"
 
@@ -217,6 +218,20 @@ async function resolveActor(opts: RouteOpts, asParam: string | null): Promise<Ac
   }
 }
 
+/**
+ * Yard setup (founding brands): Yard staff working in an unclaimed brand reach only these API
+ * areas. Deny by default: payouts, payout account, orders, inbox, social, locations, drops,
+ * invites, brand switch, realtime, notifications and every other path answer 403. A new Studio
+ * area must be added here on purpose.
+ */
+const YARD_SETUP_PATHS = [/^\/api\/studio\/catalog(\/|$)/, /^\/api\/studio\/storefront(\/|$)/, /^\/api\/studio\/shipping$/, /^\/api\/studio\/setup$/, /^\/api\/uploads$/, /^\/api\/media(\/|$)/]
+// Dev-only helpers under these prefixes stay closed to Yard setup.
+const YARD_SETUP_DENY = [/\/dev(\/|$)/]
+
+export function yardSetupMayUse(pathname: string) {
+  return YARD_SETUP_PATHS.some((r) => r.test(pathname)) && !YARD_SETUP_DENY.some((r) => r.test(pathname))
+}
+
 const actorKey = (a: Actor | null, ipHash: string | null) => (a ? `${a.kind}:${a.userId}` : ipHash ? `ip:${ipHash}` : "anon")
 
 async function applyRate(rate: RateOpt, actor: Actor | null, ipHash: string | null) {
@@ -300,6 +315,8 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
       // 4–5. Actor and permission (401 / 403), through the DAL.
       const asParam = typeof rawQuery.as === "string" ? rawQuery.as : null
       const actor = await resolveActor(opts, asParam)
+      const yardSetup = actor?.kind === "brand" && actor.role === "yard_setup" ? actor : null
+      if (yardSetup && !yardSetupMayUse(url.pathname)) throw forbidden("Yard setup covers products, photos, collections, storefront and shipping only.")
       const ip = clientIp(req)
       const ipHash = hashIp(ip)
       // 6. Rate limit.
@@ -314,6 +331,12 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
       // 8. The handler.
       const out = await handler({ req, actor: actor as ActorOf<O>, query: query as QueryOf<O>, body: body as BodyOf<O>, params, ip, ipHash, requestId })
       const res = out instanceof Response ? out : Response.json(out ?? { ok: true })
+      // Every successful Yard setup write leaves an admin-attributed row (writeAudit maps the role).
+      if (yardSetup && method !== "GET" && method !== "HEAD" && res.status < 400) {
+        await writeAudit({ actor: { kind: "brand", id: yardSetup.userId, name: yardSetup.name, role: "yard_setup" }, action: "yard_setup.write", target: `${method} ${url.pathname}`, subjectType: "brand", subjectId: yardSetup.brandId, brandId: yardSetup.brandId, ipHash, meta: { status: res.status, requestId } }).catch((e: unknown) =>
+          log.error(`[yard] request ${requestId}: yard_setup audit failed`, e),
+        )
+      }
       return finish(res, opts, requestId)
     } catch (e) {
       return finish(errorResponse(e, requestId), { ...opts, cache: "no-store" }, requestId)

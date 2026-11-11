@@ -7,7 +7,7 @@ export type UploadPurpose = z.infer<typeof uploadPurpose>
 export const uploadQuery = z
   .object({
     purpose: uploadPurpose,
-    as: z.enum(["shopper", "brand"]),
+    as: z.enum(["shopper", "brand", "admin"]),
     conversationId: z.string().max(80).optional(),
     brandId: z.string().max(80).optional(),
   })

@@ -12,7 +12,9 @@ import { mediaAssets } from "../db/schema"
  *  - a published, approved place of a listed brand;
  *  - a published, approved event of a listed brand, at a published, approved place;
  *  - a photo of a published, not moderation-hidden product, or the cover of a published
- *    collection, of a listed brand (brand image uploads only: CATALOG_IMAGE_PURPOSES).
+ *    collection, of a listed brand (brand image uploads only: CATALOG_IMAGE_PURPOSES);
+ *  - a listed brand's logo (brands.logo_media_id). A founding brand counts as listed only once
+ *    it has launched (first storefront publish).
  * The referencing row must belong to the file's own brand (brand_id = media_assets.brand_id) and
  * the file's purpose must match the reference (post media: social_post or social_import; place
  * and event images: location_image), so a writer bug can never publish another tenant's file or
@@ -31,7 +33,8 @@ import { mediaAssets } from "../db/schema"
 export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
-const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended')`)
+// Listed: not restricted or suspended, and (founding brands) launched with a published storefront.
+const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended') and (not ${alias}.founding or ${alias}.launched_at is not null)`)
 
 /** Any reference at all, whatever its visibility or moderation (what keeps a file from the purge). */
 export const referencedAtAll = sql.raw(`(
@@ -45,6 +48,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from drops d where d.image = m.id)
   or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
+  or exists (select 1 from brands lb where lb.logo_media_id = m.id)
   or exists (
     select 1 from catalog_brand_onboardings o
     where o.data -> 'brand' ->> 'logoMediaId' = m.id
@@ -96,6 +100,10 @@ export async function refreshVisibility(mediaIds: string[]): Promise<void> {
         where ${listed("b")} and sv.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
           and sv.version = (select max(current.version) from catalog_storefront_versions current where current.brand_id = sv.brand_id)
           and sv.config ->> 'coverMediaId' = m.id)
+      or exists (
+        select 1 from brands b
+        where ${listed("b")} and b.id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
+          and b.logo_media_id = m.id)
       or exists (
         select 1 from drops d join brands b on b.id = d.brand_id
         where ${listed("b")} and d.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}

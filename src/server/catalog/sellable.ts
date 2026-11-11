@@ -15,10 +15,44 @@ export function productPublicWhere(now = new Date()) {
     or(eq(catalogProducts.status, "published"), and(eq(catalogProducts.status, "scheduled"), lte(catalogProducts.publishAt, now))),
     eq(catalogProducts.moderationStatus, "ok"),
     sql`${brands.reviewStatus} not in ('restricted', 'suspended')`,
+    brandLaunchedSql(),
   )
 }
 
-/** Which of `variantIds` can be sold right now (active variant of a public product). */
+/** A founding brand is public only once its storefront has been published (launched_at). Ordinary brands always pass. */
+export function brandLaunchedSql() {
+  return sql`(not ${brands.founding} or ${brands.launchedAt} is not null)`
+}
+
+/**
+ * The one not-for-sale predicate (founding brands). An unclaimed brand never sells; a claimed one
+ * sells once it has a payout account; every ordinary brand (claim_status 'none') sells as before.
+ * Used by getSellableVariants (cart pricing, PDP availability, watches, search) and isSellable
+ * (the stock hold inside checkout), so no path can sell around it.
+ */
+export function brandForSaleSql() {
+  return sql`(${brands.claimStatus} <> 'unclaimed' and (${brands.claimStatus} <> 'claimed' or exists (select 1 from brand_payout_accounts bpa where bpa.brand_id = ${brands.id})))`
+}
+
+export type NotForSaleReason = "unclaimed" | "no_payout_account"
+
+/** Why a brand isn't selling, from its claim status (only meaningful when brandForSaleSql is false). */
+export const notForSaleReason = (claimStatus: string): NotForSaleReason => (claimStatus === "unclaimed" ? "unclaimed" : "no_payout_account")
+
+/** The sentence shoppers see for a brand that isn't selling yet. */
+export const notForSaleMessage = (brandName: string | null | undefined) => `${brandName ?? "This brand"} isn't selling on Yard yet. Tap Notify me to hear when it opens.`
+
+/** Whether a brand sells right now (founding rules above); false for an unknown brand. */
+export async function brandForSale(d: Executor, brandId: string): Promise<{ forSale: boolean; name: string | null; claimStatus: string | null }> {
+  const [row] = await d
+    .select({ name: brands.name, claimStatus: brands.claimStatus, forSale: sql<boolean>`${brandForSaleSql()}` })
+    .from(brands)
+    .where(eq(brands.id, brandId))
+    .limit(1)
+  return row ? { forSale: !!row.forSale, name: row.name, claimStatus: row.claimStatus } : { forSale: false, name: null, claimStatus: null }
+}
+
+/** Which of `variantIds` can be sold right now (active variant of a public product of a brand that is selling). */
 export async function isSellable(tx: Executor, variantIds: string[]): Promise<Set<string>> {
   if (!variantIds.length) return new Set()
   const rows = await tx
@@ -26,7 +60,7 @@ export async function isSellable(tx: Executor, variantIds: string[]): Promise<Se
     .from(catalogVariants)
     .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
     .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
-    .where(and(inArray(catalogVariants.id, variantIds), eq(catalogVariants.status, "active"), productPublicWhere()))
+    .where(and(inArray(catalogVariants.id, variantIds), eq(catalogVariants.status, "active"), productPublicWhere(), brandForSaleSql()))
   return new Set(rows.map((r) => r.id))
 }
 
@@ -41,7 +75,22 @@ export function imageSrc(img: { mediaId: string | null; path: string | null }, a
  * left out, so the caller treats a missing id as unavailable. Joins the caller's transaction.
  */
 export async function getSellableVariants(variantIds: string[]): Promise<
-  { variantId: string; productId: string; brandId: string; title: string; variantLabel: string; priceMinor: number; currency: string; available: number; imagePath?: string }[]
+  {
+    variantId: string
+    productId: string
+    brandId: string
+    brandName: string
+    title: string
+    variantLabel: string
+    priceMinor: number
+    currency: string
+    /** 0 whenever the brand isn't selling (forSale false), whatever is on hand. */
+    available: number
+    /** False for an unclaimed founding brand, or a claimed one without a payout account. Show "Notify me", not "Sold out". */
+    forSale: boolean
+    notForSale: NotForSaleReason | null
+    imagePath?: string
+  }[]
 > {
   const ids = [...new Set(variantIds.filter((v) => typeof v === "string" && v))].slice(0, 500)
   if (!ids.length) return []
@@ -58,6 +107,9 @@ export async function getSellableVariants(variantIds: string[]): Promise<
       currency: catalogProducts.currency,
       onHand: catalogVariants.onHand,
       held: catalogVariants.held,
+      brandName: brands.name,
+      claimStatus: brands.claimStatus,
+      forSale: sql<boolean>`${brandForSaleSql()}`,
     })
     .from(catalogVariants)
     .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
@@ -79,11 +131,14 @@ export async function getSellableVariants(variantIds: string[]): Promise<
       variantId: r.variantId,
       productId: r.productId,
       brandId: r.brandId,
+      brandName: r.brandName,
       title: r.title,
       variantLabel: variantLabelOf(r.options),
       priceMinor: r.variantPrice ?? r.productPrice,
       currency: r.currency,
-      available: Math.max(0, r.onHand - r.held),
+      available: r.forSale ? Math.max(0, r.onHand - r.held) : 0,
+      forSale: !!r.forSale,
+      notForSale: r.forSale ? null : notForSaleReason(r.claimStatus),
       ...(imagePath ? { imagePath } : {}),
     }
   })
@@ -114,7 +169,7 @@ export async function getProductForSearch(productId: string): Promise<{
 } | null> {
   const d = await db()
   const [row] = await d
-    .select({ p: catalogProducts, review: brands.reviewStatus })
+    .select({ p: catalogProducts, review: brands.reviewStatus, forSale: sql<boolean>`${brandForSaleSql()}` })
     .from(catalogProducts)
     .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
     .where(eq(catalogProducts.id, productId))
@@ -134,12 +189,13 @@ export async function getProductForSearch(productId: string): Promise<{
     description: p.description,
     category: p.categorySlug,
     subcategory: p.subcategory,
-    sizes: [...new Set(variants.filter((v) => v.onHand > v.held && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))],
+    // A brand that isn't selling yet (founding, unclaimed) reads as nothing available, never as a size in stock.
+    sizes: row.forSale ? [...new Set(variants.filter((v) => v.onHand > v.held && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))] : [],
     tags: p.tags,
     priceMinor: p.priceMinor,
     compareAtMinor: p.compareAtMinor,
     currency: p.currency,
-    available: variants.reduce((n, v) => n + Math.max(0, v.onHand - v.held), 0),
+    available: row.forSale ? variants.reduce((n, v) => n + Math.max(0, v.onHand - v.held), 0) : 0,
     variantIds: variants.map((v) => v.id),
     image: img ? (imageSrc(img) ?? null) : null,
     visible: !!pub,

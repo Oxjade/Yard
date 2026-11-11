@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { enqueueEmail } from "@/server/email"
 import { initiatePayout } from "@/server/payments"
 import { writeAudit } from "../audit"
+import { catalogChanged } from "../catalog/hooks"
 import type { AdminActor, BrandActor } from "../auth/dal"
 import { afterCommit, withTx, type Tx } from "../db"
 import { brandMembers, brands, users } from "../db/schema"
@@ -108,15 +109,26 @@ export async function savePayoutAccount(actor: BrandActor, input: SavePayoutAcco
     afterCommit(async () => {
       await publish(channels.admin, "finance.payout_account_changed", { brandId: actor.brandId })
     })
+    // A claimed founding brand starts selling once it has a payout account: drop the public memo.
+    catalogChanged({ brands: [actor.brandId] })
     return toAccountDto(saved)
   })
 }
 
 /* ---------- Brand: request / cancel ---------- */
 
+/** Founding brands that no owner has claimed yet never take payouts (Yard staff set them up). */
+async function unclaimedBrands(tx: Tx, brandIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(brandIds)]
+  if (!ids.length) return new Set()
+  const rows = await tx.select({ id: brands.id }).from(brands).where(and(inArray(brands.id, ids), eq(brands.claimStatus, "unclaimed")))
+  return new Set(rows.map((r) => r.id))
+}
+
 export async function requestPayout(actor: BrandActor, input: { amountMinor: number; currency?: string; idempotencyKey: string }, ipHash: string | null): Promise<{ payout: PayoutDto; created: boolean }> {
   assertBrandPayoutRequest(actor)
   const result = await withTx(async (tx) => {
+    if ((await unclaimedBrands(tx, [actor.brandId])).size) throw rule("This brand hasn't been claimed by its owner yet, so it can't take payouts.")
     const [existing] = await tx
       .select()
       .from(payouts)
@@ -308,6 +320,8 @@ export async function createBatch(actor: AdminActor, input: { currency: string; 
       .for("update")
     if (!rows.length) throw rule("There are no approved payouts to batch.")
     if (input.payoutIds?.length && rows.length !== new Set(input.payoutIds).size) throw rule("Some payouts aren't approved, are in another currency, or are already in a batch.")
+    const unclaimed = await unclaimedBrands(tx, rows.map((r) => r.brandId))
+    if (unclaimed.size) throw rule("Some payouts belong to a founding brand that hasn't been claimed yet.")
     const held = await heldBrands(tx, rows.map((r) => r.brandId))
     if (input.payoutIds?.length && rows.some((r) => held.has(r.brandId))) throw rule("Some payouts belong to a brand whose payouts are on hold.")
     rows = rows.filter((r) => !held.has(r.brandId))

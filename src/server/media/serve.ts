@@ -42,7 +42,7 @@ async function conversationOf(m: MediaRow) {
 
 /** The admin permission a purpose's private media needs. */
 const adminPermissionFor = (purpose: string): AdminPermission | null =>
-  purpose === "inbox_attachment" ? "messages.view_reports" : purpose === "social_post" || purpose === "social_import" ? "content.moderate" : purpose === "location_image" ? "places.moderate" : purpose === "onboarding_image" ? "brands.restrict" : null
+  purpose === "inbox_attachment" ? "messages.view_reports" : purpose === "social_post" || purpose === "social_import" ? "content.moderate" : purpose === "location_image" ? "places.moderate" : purpose === "onboarding_image" ? "brands.restrict" : purpose === "storefront_cover" ? "brands.founding" : null
 
 /** An inbox attachment an admin may open: frozen into a report snapshot, or on a held message. */
 async function inboxEvidence(mediaId: string) {

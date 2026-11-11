@@ -8,7 +8,7 @@ import { catalogCategories, catalogCollectionProducts, catalogCollections, catal
 import { notFound } from "../http/errors"
 import { loadChildren, toPublicProduct } from "./dto"
 import type { PublicProductsQuery } from "./contracts"
-import { getSellableVariants, productPublicWhere } from "./sellable"
+import { brandForSaleSql, brandLaunchedSql, getSellableVariants, productPublicWhere } from "./sellable"
 
 /**
  * Public catalogue reads. Every read goes through productPublicWhere (published, not hidden,
@@ -17,7 +17,19 @@ import { getSellableVariants, productPublicWhere } from "./sellable"
  */
 const TTL = 30_000
 
-const brandSummary = { id: brands.id, handle: brands.handle, name: brands.name, verified: brands.verified, city: brands.city, country: brands.country, currency: brands.currency }
+const brandSummary = {
+  id: brands.id,
+  handle: brands.handle,
+  name: brands.name,
+  verified: brands.verified,
+  city: brands.city,
+  country: brands.country,
+  currency: brands.currency,
+  /** The "Founding brand" badge (admin toggle). */
+  foundingBadge: brands.foundingBadge,
+  /** False while a founding brand isn't selling yet: show "Notify me" instead of Add to cart. */
+  forSale: sql<boolean>`${brandForSaleSql()}`,
+}
 
 export async function listPublicProducts(q: PublicProductsQuery) {
   await requestScope()
@@ -117,9 +129,13 @@ async function listedBrandByHandle(handleOrId: string) {
   const [b] = await d
     .select()
     .from(brands)
-    .where(and(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)), sql`${brands.reviewStatus} not in ('restricted', 'suspended')`))
+    .where(and(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)), sql`${brands.reviewStatus} not in ('restricted', 'suspended')`, brandLaunchedSql()))
     .limit(1)
-  return b ?? null
+  if (!b) return null
+  const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}` }).from(brands).where(eq(brands.id, b.id)).limit(1)
+  // Only public fields: never who created or claimed it, its idempotency key or agreement details.
+  const { createdBy: _c, creationKey: _k, claimedBy: _cb, sellerAgreementVersion: _sv, sellerAgreementAcceptedAt: _sa, ...pub } = b
+  return { ...pub, forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}` : null }
 }
 
 /** A brand's published collections (with product ids that are public). */

@@ -1,6 +1,6 @@
 import "server-only"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
-import { adminRolePermissions, brandRolePermissions, type AdminRole, type TeamRole } from "@/lib/permissions"
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm"
+import { adminRolePermissions, brandRolePermissions, type AdminRole, type MemberRole } from "@/lib/permissions"
 import type { AdminProfile, BrandProfile, ShopperProfile } from "@/lib/api/contracts/session"
 import { writeAudit } from "../audit"
 import { db, withTx, type Tx } from "../db"
@@ -44,6 +44,7 @@ export const AUTH_EMAIL_TEMPLATES = {
   brandInvite: "team_invite", // vars: brand, role, inviter, url, expiresDays
   accountDeleted: "account_deleted", // vars: name
   mfaReset: "mfa_reset", // vars: name
+  foundingClaim: "founding_claim", // vars: brand, handle, url, expiresDays
 } as const
 
 /** Queues an auth email in the caller's transaction (dedupe keys make retries harmless). */
@@ -120,7 +121,7 @@ export async function profileFor(actor: ActorKind, user: UserRow, brandId: strin
     .from(brandMembers)
     .where(and(eq(brandMembers.brandId, brandId ?? ""), eq(brandMembers.userId, user.id)))
     .limit(1)
-  const role = (m?.role ?? "viewer") as TeamRole
+  const role = (m?.role ?? "viewer") as MemberRole
   return {
     userId: user.id,
     name: user.name,
@@ -141,7 +142,8 @@ export async function brandForUser(userId: string, brandId?: string | null) {
     .select({ brandId: brandMembers.brandId, reviewStatus: brands.reviewStatus })
     .from(brandMembers)
     .innerJoin(brands, eq(brands.id, brandMembers.brandId))
-    .where(and(eq(brandMembers.userId, userId), eq(brandMembers.status, "active")))
+    // Yard setup rows are never a sign-in target: only the admin setup route opens those sessions.
+    .where(and(eq(brandMembers.userId, userId), eq(brandMembers.status, "active"), ne(brandMembers.role, "yard_setup")))
     .orderBy(asc(brandMembers.createdAt), asc(brandMembers.id))
   if (!memberships.length) throw new HttpError(403, "forbidden", "This account isn't a member of any brand on Yard. Ask the brand's owner for an invite.")
   const chosen = brandId ? memberships.find((m) => m.brandId === brandId) : (memberships.find((m) => m.reviewStatus !== "suspended") ?? memberships[0])

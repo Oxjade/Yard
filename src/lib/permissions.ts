@@ -1,4 +1,4 @@
-import type { ADMIN_ROLES, TEAM_ROLES } from "@/lib/api/contracts/enums"
+import type { ADMIN_ROLES, BRAND_MEMBER_ROLES, TEAM_ROLES } from "@/lib/api/contracts/enums"
 
 /**
  * The v2 permission model (§2.4). Isomorphic: the server checks it in the route wrapper and the
@@ -6,6 +6,12 @@ import type { ADMIN_ROLES, TEAM_ROLES } from "@/lib/api/contracts/enums"
  */
 
 export type TeamRole = (typeof TEAM_ROLES)[number]
+/**
+ * Every brand membership role: the team roles plus `yard_setup`, Yard staff's temporary access to
+ * an unclaimed founding brand. yard_setup is never a TeamRole, so role pickers and invites can't
+ * offer it, and every finance / team check that names roles leaves it out.
+ */
+export type MemberRole = (typeof BRAND_MEMBER_ROLES)[number]
 export type AdminRole = (typeof ADMIN_ROLES)[number]
 
 export const BRAND_PERMISSIONS = ["inbox.read", "inbox.reply", "inbox.manage", "social.connect", "content.publish", "locations.manage", "shipping.manage", "orders.fulfil"] as const
@@ -27,19 +33,23 @@ export const ADMIN_PERMISSIONS = [
   "holidays.edit",
   "audit.view",
   "sponsored.view",
+  "brands.founding",
 ] as const
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number]
 
 const ALL_BRAND = [...BRAND_PERMISSIONS]
 const ALL_ADMIN = [...ADMIN_PERMISSIONS]
 
-export const brandRolePermissions: Record<TeamRole, BrandPermission[]> = {
+export const brandRolePermissions: Record<MemberRole, BrandPermission[]> = {
   owner: ALL_BRAND,
   admin: ALL_BRAND,
   designer: ["inbox.read", "social.connect", "content.publish"],
   fulfilment: ["inbox.read", "inbox.reply", "inbox.manage", "orders.fulfil", "shipping.manage"],
   finance: ["inbox.read"],
   viewer: ["inbox.read"],
+  // Catalogue, photos, collections, storefront and shipping only; the route allow-list
+  // (src/server/http/route.ts) keeps it out of everything else, including orders and payouts.
+  yard_setup: ["content.publish", "shipping.manage", "orders.fulfil"],
 }
 
 export const adminRolePermissions: Record<AdminRole, AdminPermission[]> = {
@@ -82,6 +92,9 @@ export const adminRoleLabels: Record<AdminRole, string> = {
   engineering: "Engineering",
 }
 
+/** A label for any membership role (yard_setup reads "Yard setup"; it never appears in role pickers). */
+export const memberRoleLabel = (role: MemberRole) => (role === "yard_setup" ? "Yard setup" : teamRoleLabels[role])
+
 /** One plain label per brand permission, for disabled reasons ("Your role can't {label}"). */
 export const brandPermissionLabels: Record<BrandPermission, string> = {
   "inbox.read": "read messages",
@@ -114,13 +127,14 @@ export const adminPermissionLabels: Record<AdminPermission, string> = {
   "holidays.edit": "edit holidays",
   "audit.view": "view the audit log",
   "sponsored.view": "view sponsored placements",
+  "brands.founding": "set up founding brands",
 }
 
 const brandSet = new Set<string>(BRAND_PERMISSIONS)
 export const isBrandPermission = (p: string): p is BrandPermission => brandSet.has(p)
 export const isAdminPermission = (p: string): p is AdminPermission => (ADMIN_PERMISSIONS as readonly string[]).includes(p)
 
-export function canBrand(role: TeamRole, permission: BrandPermission | "any_member") {
+export function canBrand(role: MemberRole, permission: BrandPermission | "any_member") {
   return permission === "any_member" || (brandRolePermissions[role] ?? []).includes(permission)
 }
 
@@ -133,8 +147,8 @@ export const ADMIN_FINANCE_ROLES = ["owner", "finance"] as const satisfies reado
 export const canAdminFinance = (role: AdminRole) => (ADMIN_FINANCE_ROLES as readonly AdminRole[]).includes(role)
 
 /** Brand and admin permission names are disjoint, so the permission says which table to read. */
-export function can(role: TeamRole | AdminRole, permission: BrandPermission | AdminPermission) {
-  if (isBrandPermission(permission)) return role in brandRolePermissions && canBrand(role as TeamRole, permission)
+export function can(role: MemberRole | AdminRole, permission: BrandPermission | AdminPermission) {
+  if (isBrandPermission(permission)) return role in brandRolePermissions && canBrand(role as MemberRole, permission)
   return role in adminRolePermissions && canAdmin(role as AdminRole, permission)
 }
 
@@ -146,7 +160,7 @@ const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names
  */
 export function needsRole(permission: BrandPermission | AdminPermission) {
   if (isBrandPermission(permission)) {
-    const roles = (Object.keys(brandRolePermissions) as TeamRole[]).filter((r) => r !== "owner" && r !== "admin" && brandRolePermissions[r].includes(permission))
+    const roles = (Object.keys(teamRoleLabels) as TeamRole[]).filter((r) => r !== "owner" && r !== "admin" && brandRolePermissions[r].includes(permission))
     return `Needs the ${list((roles.length ? roles : (["owner", "admin"] as TeamRole[])).map((r) => teamRoleLabels[r]))} role`
   }
   const roles = (Object.keys(adminRolePermissions) as AdminRole[]).filter((r) => r !== "owner" && adminRolePermissions[r].includes(permission))
@@ -154,6 +168,6 @@ export function needsRole(permission: BrandPermission | AdminPermission) {
 }
 
 /** "Your role (Fulfilment) can't connect social accounts. Ask an owner or admin." */
-export function roleCantSentence(role: TeamRole, permission: BrandPermission) {
-  return `Your role (${teamRoleLabels[role]}) can't ${brandPermissionLabels[permission]}. Ask an owner or admin.`
+export function roleCantSentence(role: MemberRole, permission: BrandPermission) {
+  return `Your role (${memberRoleLabel(role)}) can't ${brandPermissionLabels[permission]}. Ask an owner or admin.`
 }

@@ -13,6 +13,7 @@ export type ErrorCode =
   | "restricted"
   | "suspended"
   | "not_found"
+  | "gone"
   | "conflict"
   | "length_required"
   | "too_large"

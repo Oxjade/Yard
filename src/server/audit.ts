@@ -50,7 +50,19 @@ export function scrubAuditMeta(value: unknown, path = "meta", depth = 0): unknow
   return value
 }
 
-export async function writeAudit(input: AuditInput): Promise<AuditEntryDto> {
+/**
+ * Yard setup (founding brands): Studio writes made by Yard staff in an unclaimed brand are the
+ * admin's own actions. A brand actor with role yard_setup is recorded as actor_kind 'admin' with
+ * the admin's user id (it is the same user) and meta.via = 'yard_setup', so the brand's audit
+ * trail never shows Yard staff as a brand member.
+ */
+function asYardSetup(input: AuditInput): AuditInput {
+  if (input.actor.kind !== "brand" || input.actor.role !== "yard_setup") return input
+  return { ...input, actor: { ...input.actor, kind: "admin", role: "yard_setup" }, meta: { ...(input.meta ?? {}), via: "yard_setup" } }
+}
+
+export async function writeAudit(raw: AuditInput): Promise<AuditEntryDto> {
+  const input = asYardSetup(raw)
   const meta = scrubAuditMeta(input.meta ?? {}) as Record<string, unknown>
   const d = await db()
   const [row] = await d

@@ -30,7 +30,7 @@ export type InviteDto = { id: string; email: string; role: TeamRole; roleLabel: 
 const MANAGERS: TeamRole[] = ["owner", "admin"]
 
 export function assertCanManageTeam(actor: BrandActor) {
-  if (!MANAGERS.includes(actor.role)) throw forbidden("Only owners and admins can manage the team.")
+  if (!(MANAGERS as string[]).includes(actor.role)) throw forbidden("Only owners and admins can manage the team.")
 }
 
 export function assertCanGrant(actor: BrandActor, role: TeamRole) {
@@ -55,7 +55,7 @@ export async function listInvites(actor: BrandActor) {
     .select({ invite: brandInvites, inviterName: users.name })
     .from(brandInvites)
     .leftJoin(users, eq(users.id, brandInvites.invitedBy))
-    .where(eq(brandInvites.brandId, actor.brandId))
+    .where(and(eq(brandInvites.brandId, actor.brandId), eq(brandInvites.kind, "team")))
     .orderBy(desc(brandInvites.createdAt))
     .limit(200)
   return rows.map((r) => toDto({ ...r.invite, inviterName: r.inviterName }))
@@ -83,11 +83,11 @@ export async function createInvite(actor: BrandActor, input: { email: string; ro
     await d
       .update(brandInvites)
       .set({ status: "expired" })
-      .where(and(eq(brandInvites.brandId, actor.brandId), eq(brandInvites.status, "pending"), lt(brandInvites.expiresAt, new Date())))
+      .where(and(eq(brandInvites.brandId, actor.brandId), eq(brandInvites.kind, "team"), eq(brandInvites.status, "pending"), lt(brandInvites.expiresAt, new Date())))
     const [live] = await d
       .select({ id: brandInvites.id })
       .from(brandInvites)
-      .where(and(eq(brandInvites.brandId, actor.brandId), eq(brandInvites.status, "pending"), sql`lower(${brandInvites.email}) = ${email}`))
+      .where(and(eq(brandInvites.brandId, actor.brandId), eq(brandInvites.kind, "team"), eq(brandInvites.status, "pending"), sql`lower(${brandInvites.email}) = ${email}`))
       .limit(1)
     if (live) throw conflict("There's already a pending invite for this email. Revoke it to send a new one.")
     const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000)
@@ -108,7 +108,7 @@ export async function revokeInvite(actor: BrandActor, inviteId: string, meta: Re
     const [row] = await d
       .select()
       .from(brandInvites)
-      .where(and(eq(brandInvites.id, inviteId), eq(brandInvites.brandId, actor.brandId)))
+      .where(and(eq(brandInvites.id, inviteId), eq(brandInvites.brandId, actor.brandId), eq(brandInvites.kind, "team")))
       .limit(1)
     if (!row) throw notFound()
     if (row.status !== "pending") throw conflict(row.status === "accepted" ? "This invite was already accepted." : "This invite isn't pending any more.")
@@ -131,12 +131,13 @@ async function inviteByToken(token: string) {
     .select({ invite: brandInvites, brandName: brands.name, brandHandle: brands.handle, brandStatus: brands.reviewStatus })
     .from(brandInvites)
     .innerJoin(brands, eq(brands.id, brandInvites.brandId))
-    .where(eq(brandInvites.tokenHash, sha256hex(token)))
+    // Team invites only: a founding brand's claim link goes through /api/auth/claim (claims.ts).
+    .where(and(eq(brandInvites.tokenHash, sha256hex(token)), eq(brandInvites.kind, "team")))
     .limit(1)
   return row ?? null
 }
 
-const maskEmail = (email: string) => {
+export const maskEmail = (email: string) => {
   const [local, domain] = email.split("@")
   return `${local.slice(0, 1)}${"•".repeat(Math.max(1, Math.min(6, local.length - 1)))}@${domain}`
 }

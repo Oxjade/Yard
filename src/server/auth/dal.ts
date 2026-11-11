@@ -13,9 +13,9 @@ import {
   type AdminPermission,
   type AdminRole,
   type BrandPermission,
-  type TeamRole,
+  type MemberRole,
 } from "@/lib/permissions"
-import { loadSession, type SessionRow } from "./session"
+import { loadSession, sessionsAllowed, type SessionRow } from "./session"
 import { sessionAuthOf } from "./session-auth"
 
 /**
@@ -35,7 +35,7 @@ export type ShopperActor = {
   demo: boolean
 }
 
-export type BrandSession = { sessionId: string; userId: string; activeBrandId: string; role: TeamRole }
+export type BrandSession = { sessionId: string; userId: string; activeBrandId: string; role: MemberRole }
 
 export type BrandActor = {
   kind: "brand"
@@ -43,8 +43,9 @@ export type BrandActor = {
   userId: string
   name: string
   brandId: string
-  brand: { id: string; handle: string; name: string; reviewStatus: string; currency: string; country: string; city: string; citySlug: string; timeZone: string }
-  role: TeamRole
+  brand: { id: string; handle: string; name: string; reviewStatus: string; currency: string; country: string; city: string; citySlug: string; timeZone: string; claimStatus: string }
+  /** `yard_setup` is Yard staff setting up an unclaimed founding brand (see yardSetupAllowed). */
+  role: MemberRole
   permissions: BrandPermission[]
   demo: boolean
 }
@@ -131,19 +132,36 @@ const getBrandActorInternal = cache(async (): Promise<BrandActor | null> => {
     d.query.brands.findFirst({ where: (br, { eq }) => eq(br.id, s.activeBrandId!) }),
   ])
   if (!u || u.status === "suspended" || !m || !b || b.reviewStatus === "suspended") return null
-  const role = m.role as TeamRole
+  const role = m.role as MemberRole
+  // Yard setup (founding brands): only a session opened by the admin setup route, only while the
+  // user still holds brands.founding as an admin, and only while the brand is unclaimed.
+  if (role === "yard_setup" && !(await yardSetupAllowed(s.id, u, b))) return null
   return {
     kind: "brand",
     sessionId: s.id,
     userId: u.id,
     name: u.name,
     brandId: b.id,
-    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone },
+    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone, claimStatus: b.claimStatus },
     role,
     permissions: brandRolePermissions[role] ?? [],
     demo: u.demo,
   }
 })
+
+async function yardSetupAllowed(sessionId: string, u: { id: string; demo: boolean }, b: { founding: boolean; claimStatus: string; reviewStatus: string }) {
+  if (!b.founding || b.claimStatus !== "unclaimed" || b.reviewStatus === "restricted") return false
+  const how = await sessionAuthOf(sessionId)
+  if (how?.method !== "yard_setup") return false
+  // A demo admin's setup session ends with demo admin sign-in.
+  if (u.demo && !sessionsAllowed("admin")) return false
+  const d = await db()
+  const am = await d.query.adminMembers.findFirst({ where: (x, { eq }) => eq(x.userId, u.id) })
+  return !!am && canAdmin(am.role as AdminRole, "brands.founding")
+}
+
+/** True for Yard staff working in an unclaimed founding brand (Studio "Yard setup"). */
+export const isYardSetup = (a: { kind: string; role?: string } | null | undefined) => a?.kind === "brand" && a.role === "yard_setup"
 
 /** The brand actor without a permission check (GET /api/session). */
 export const getBrandActor = getBrandActorInternal

@@ -1,5 +1,5 @@
 import { index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
-import { TEAM_ROLES } from "../../../lib/api/contracts/enums"
+import { INVITE_KINDS, TEAM_ROLES } from "../../../lib/api/contracts/enums"
 import { brands } from "./brands"
 import { oneOf, raw, tz } from "./columns"
 import { sessions, users } from "./people"
@@ -13,7 +13,7 @@ import { sessions, users } from "./people"
  * password/OAuth session survives YARD_DEMO_AUTH being off while demo sessions do not.
  */
 
-export const AUTH_METHODS = ["demo", "password", "google", "apple", "magic_link", "invite", "email_verification"] as const
+export const AUTH_METHODS = ["demo", "password", "google", "apple", "magic_link", "invite", "email_verification", "yard_setup", "claim"] as const
 export const OAUTH_PROVIDERS = ["google", "apple"] as const
 export const OAUTH_MODES = ["signin", "link", "reauth"] as const
 export const AUTH_TOKEN_PURPOSES = ["verify_email", "reset_password", "magic_link", "mfa_challenge"] as const
@@ -190,9 +190,16 @@ export const brandInvites = pgTable(
     acceptedBy: text("accepted_by").references(() => users.id),
     revokedAt: tz("revoked_at"),
     revokedBy: text("revoked_by").references(() => users.id),
+    /** 'team' (a team invite) or 'founding_claim' (the single-use claim link of a founding brand; role owner). */
+    kind: text("kind").notNull().default("team"),
+    /** founding_claim: the seller agreement version accepted and when (set on accept). */
+    agreementVersion: text("agreement_version"),
+    agreementAcceptedAt: tz("agreement_accepted_at"),
   },
   (t) => [
     uniqueIndex("brand_invites_token_ux").on(t.tokenHash),
+    uniqueIndex("brand_invites_claim_pending_ux").on(t.brandId).where(raw("kind = 'founding_claim' and status = 'pending'")),
+    oneOf("brand_invites_kind_ck", "kind", INVITE_KINDS),
     uniqueIndex("brand_invites_pending_ux").on(t.brandId, raw("lower(email)")).where(raw("status = 'pending'")),
     index("brand_invites_brand_ix").on(t.brandId, t.createdAt.desc()),
     oneOf("brand_invites_role_ck", "role", TEAM_ROLES),

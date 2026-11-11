@@ -183,10 +183,12 @@ export async function rotate(actor: ActorKind, row: SessionRow, patch: { activeB
 }
 
 /** Creates a session row and sets its cookie (Route Handlers only). */
-export async function createSession(actor: ActorKind, userId: string, activeBrandId: string | null, meta: { userAgent?: string | null; ipHash?: string | null }) {
+export async function createSession(actor: ActorKind, userId: string, activeBrandId: string | null, meta: { userAgent?: string | null; ipHash?: string | null }, opts: { absoluteMs?: number } = {}) {
   const token = randomToken(32)
   const now = Date.now()
-  const p = sessionPolicy[actor]
+  const base = sessionPolicy[actor]
+  // A shorter absolute lifetime (Yard setup sessions: 8 h); never longer than the actor's policy.
+  const p = opts.absoluteMs ? { ...base, absoluteMs: Math.min(base.absoluteMs, opts.absoluteMs) } : base
   const idle = new Date(now + Math.min(p.idleMs, p.absoluteMs))
   const d = await db()
   const [row] = await d

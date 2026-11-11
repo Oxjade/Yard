@@ -2,8 +2,8 @@ import { shippingProfileBody } from "@/lib/api/contracts/shipping"
 import { route } from "@/server/http/route"
 import { saveShipping, studioShipping } from "@/server/shipping/profile"
 
-/** GET /api/studio/shipping (any member: inbox.read; 60 a minute per member): the active brand's profile, zones, methods, rates, closures and origin holidays. */
-export const GET = route({ auth: "brand", permission: "inbox.read", rate: { key: "studio.shipping.read", limit: 60, windowSec: 60 } }, async ({ actor }) => studioShipping(actor))
+/** GET /api/studio/shipping (any member; 60 a minute per member): the active brand's profile, zones, methods, rates, closures and origin holidays. */
+export const GET = route({ auth: "brand", permission: "any_member", rate: { key: "studio.shipping.read", limit: 60, windowSec: 60 } }, async ({ actor }) => studioShipping(actor))
 
 /**
  * PUT /api/studio/shipping (shipping.manage). Validates handling, transit, zones, tiers and the

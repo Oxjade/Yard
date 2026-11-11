@@ -4,6 +4,7 @@ import type { CountryCode } from "@/config/markets"
 import { getShopper } from "../auth/dal"
 import { db, withTx, type Executor } from "../db"
 import { cartLines, carts } from "../db/schema/payments"
+import { notForSaleMessage } from "../catalog/sellable"
 import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { clearAnonCartCookie, issueAnonCartCookie, readAnonCartKey } from "./cookie"
@@ -129,7 +130,8 @@ export async function viewCart(owner: CartOwner | null, opts: { currency: string
   const quotes = to ? await Promise.all(groups.map((g) => quoteGroup(g, to, opts.city ?? null, currency, now))) : []
   const issues: string[] = []
   for (const l of lines) {
-    if (l.status === "unavailable") issues.push(`${l.title ?? "A piece in your cart"} isn't available any more.`)
+    if (l.unavailableReason === "not_for_sale") issues.push(`${l.title ?? "A piece in your cart"}: ${notForSaleMessage(l.brandName)}`)
+    else if (l.status === "unavailable") issues.push(`${l.title ?? "A piece in your cart"} isn't available any more.`)
     else if (l.status === "short") issues.push(`Only ${l.available} of ${l.title ?? "a piece"}${l.variantLabel ? ` (${l.variantLabel})` : ""} left.`)
   }
   return {
@@ -148,6 +150,8 @@ async function checkSellable(variantId: string, qty: number) {
   const [line] = await priceLines([{ variantId, qty }], "USD")
   // Unknown or no longer sold (CATALOG leaves it out) → 404; sold out or short → 409.
   if (!line || !line.productId) throw notFound("That piece isn't available.")
+  // Founding brands that aren't selling yet: refused here, whatever the client shows.
+  if (line.unavailableReason === "not_for_sale") throw rule(notForSaleMessage(line.brandName))
   if (line.available <= 0) throw conflict("That piece is sold out.")
   if (line.available < qty) throw conflict(line.available === 1 ? "Only 1 left." : `Only ${line.available} left.`)
 }

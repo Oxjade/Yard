@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, ne } from "drizzle-orm"
 import { db } from "../db"
 import { adminMembers, brandMembers, brands, users } from "../db/schema"
 import { getEnv } from "../env"
@@ -44,7 +44,7 @@ export async function listDemoAccounts(actor: ActorKind): Promise<DemoAccountDto
       .from(brandMembers)
       .innerJoin(users, eq(users.id, brandMembers.userId))
       .innerJoin(brands, eq(brands.id, brandMembers.brandId))
-      .where(and(inArray(brandMembers.userId, ids), eq(brandMembers.status, "active")))
+      .where(and(inArray(brandMembers.userId, ids), eq(brandMembers.status, "active"), ne(brandMembers.role, "yard_setup")))
     return brandPickerAccounts.flatMap((a) => {
       const r = rows.find((x) => x.userId === a.userId && x.brandId === a.brandId)
       if (!r) return []
@@ -104,7 +104,7 @@ export async function eligibleAccount(actor: ActorKind, account: string, brandId
     .select({ brandId: brandMembers.brandId, reviewStatus: brands.reviewStatus })
     .from(brandMembers)
     .innerJoin(brands, eq(brands.id, brandMembers.brandId))
-    .where(and(eq(brandMembers.userId, account), eq(brandMembers.status, "active")))
+    .where(and(eq(brandMembers.userId, account), eq(brandMembers.status, "active"), ne(brandMembers.role, "yard_setup")))
     .orderBy(asc(brandMembers.createdAt), asc(brandMembers.id))
   if (!memberships.length) throw notFound("That account isn't a member of any brand.")
   if (user.status === "suspended") throw suspended()

@@ -61,6 +61,8 @@ export const templates = {
   "abuse.alert": { category: "abuse_alert", build: (v) => ({ title: `Abuse alert: ${s(v.kind, "spam marks")}`, body: `${s(v.count, "0")} signals about ${s(v.subject, "an account")}.` }) },
   "account.restricted": { category: "account_status", build: (v) => ({ title: `${s(v.what, "Messaging")} is paused on your account`, body: `Reason: ${s(v.reason)}.` }) },
   "brand.status": { category: "account_status", build: (v) => ({ title: `Yard ${s(v.status, "updated")} ${s(v.brand, "your brand")}`, body: `Reason: ${s(v.reason)}.` }) },
+  // Founding brands: an owner claimed the store Yard set up.
+  "founding.claimed": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "A founding brand")} was claimed`, body: `${s(v.owner, "Its owner")} is now the owner. Selling starts once a payout account is added.` }) },
   // F1 self-test (dev only)
   selftest: { category: "system_alert", build: (v) => ({ title: "Self-test notification", body: `Transaction self-test ${s(v.run)}.` }) },
 } satisfies Record<string, Template>

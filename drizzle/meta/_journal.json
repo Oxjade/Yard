@@ -64,6 +64,13 @@
       "when": 1794354552042,
       "tag": "0008_storefront_cover_media",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794363286125,
+      "tag": "0009_fantastic_blue_blade",
+      "breakpoints": true
     }
   ]
 }

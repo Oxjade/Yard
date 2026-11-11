@@ -53,6 +53,7 @@ export const authLinks = {
   resetPassword: (token: string) => `${getEnv().publicUrl}/auth/reset?token=${encodeURIComponent(token)}`,
   magicLink: (token: string) => `${getEnv().publicUrl}/auth/magic?token=${encodeURIComponent(token)}`,
   invite: (token: string) => `${getEnv().publicUrl}/auth/invite?token=${encodeURIComponent(token)}`,
+  claim: (token: string) => `${getEnv().publicUrl}/auth/claim?token=${encodeURIComponent(token)}`,
 }
 
 export const oauthRedirectUri = (provider: "google" | "apple") => `${getEnv().publicUrl}/api/auth/oauth/${provider}/callback`

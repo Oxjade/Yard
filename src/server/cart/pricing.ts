@@ -29,6 +29,10 @@ export type PricedCartLine = {
   unitMinor: number
   lineMinor: number
   status: "ok" | "short" | "unavailable"
+  /** Why a line is unavailable: gone from the catalogue, sold out, or the brand isn't selling yet (founding brands). */
+  unavailableReason?: "gone" | "sold_out" | "not_for_sale"
+  /** The brand's name when it isn't selling yet (for "{Brand} isn't selling yet"). */
+  brandName?: string | null
 }
 
 export type BrandGroup = { brandId: string; lines: PricedCartLine[]; subtotalMinor: number }
@@ -57,7 +61,27 @@ export async function priceLines(lines: { variantId: string; qty: number }[], cu
   return lines.map((l) => {
     const s = byId.get(l.variantId)
     if (!s) {
-      return { variantId: l.variantId, productId: null, brandId: null, title: null, variantLabel: null, imagePath: null, qty: l.qty, available: 0, unitPrice: null, unitMinor: 0, lineMinor: 0, status: "unavailable" as const }
+      return { variantId: l.variantId, productId: null, brandId: null, title: null, variantLabel: null, imagePath: null, qty: l.qty, available: 0, unitPrice: null, unitMinor: 0, lineMinor: 0, status: "unavailable" as const, unavailableReason: "gone" as const }
+    }
+    // A brand that isn't selling yet (founding, unclaimed or without a payout account): shown, never
+    // priced, never grouped for shipping or checkout.
+    if (!s.forSale) {
+      return {
+        variantId: s.variantId,
+        productId: s.productId,
+        brandId: s.brandId,
+        title: s.title,
+        variantLabel: s.variantLabel,
+        imagePath: s.imagePath ?? null,
+        qty: l.qty,
+        available: 0,
+        unitPrice: { amountMinor: s.priceMinor, currency: s.currency },
+        unitMinor: 0,
+        lineMinor: 0,
+        status: "unavailable" as const,
+        unavailableReason: "not_for_sale" as const,
+        brandName: s.brandName,
+      }
     }
     const unitMinor = toCurrency(s.priceMinor, s.currency, currency)
     return {
@@ -73,6 +97,7 @@ export async function priceLines(lines: { variantId: string; qty: number }[], cu
       unitMinor,
       lineMinor: unitMinor * l.qty,
       status: s.available <= 0 ? ("unavailable" as const) : s.available < l.qty ? ("short" as const) : ("ok" as const),
+      ...(s.available <= 0 ? { unavailableReason: "sold_out" as const } : {}),
     }
   })
 }

@@ -8,6 +8,7 @@ import { checkDropLimit, releaseDropClaims } from "../drops"
 import { cartLinesOf } from "../cart"
 import { asCountry, asCurrency, groupByBrand, priceLines, quoteGroup } from "../cart/pricing"
 import { holdStock, releaseHold } from "../catalog"
+import { notForSaleMessage } from "../catalog/sellable"
 import { db, withTx, type Executor, type Tx } from "../db"
 import { checkouts, payments } from "../db/schema/payments"
 import { HttpError, badRequest, busy, conflict, notFound, rule } from "../http/errors"
@@ -184,7 +185,8 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
   const lines = await priceLines(raw, currency)
   const problems: Record<string, string> = {}
   for (const l of lines) {
-    if (l.status === "unavailable") problems[`lines.${l.variantId}`] = `${l.title ?? "This piece"} isn't available any more. Remove it to continue.`
+    if (l.unavailableReason === "not_for_sale") problems[`lines.${l.variantId}`] = `${notForSaleMessage(l.brandName)} Remove it to continue.`
+    else if (l.status === "unavailable") problems[`lines.${l.variantId}`] = `${l.title ?? "This piece"} isn't available any more. Remove it to continue.`
     else if (l.status === "short") problems[`lines.${l.variantId}`] = `Only ${l.available} left.`
   }
   if (Object.keys(problems).length) throw new HttpError(409, "conflict", "Some pieces in your cart changed. Check your cart and try again.", problems)

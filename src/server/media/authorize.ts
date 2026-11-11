@@ -1,10 +1,11 @@
 import "server-only"
-import { activeRestriction, assertBrandMayPublish, type BrandActor, type ShopperActor } from "../auth/dal"
+import { activeRestriction, assertBrandMayPublish, type AdminActor, type BrandActor, type ShopperActor } from "../auth/dal"
 import { db } from "../db"
 import { badRequest, forbidden, notFound, restricted } from "../http/errors"
 import { brandCanInteract, shopperCanInteract } from "../inbox/interact"
-import { canBrand } from "@/lib/permissions"
+import { canAdmin, canBrand } from "@/lib/permissions"
 import type { UploadPurpose } from "@/lib/api/contracts/uploads"
+import { brands } from "../db/schema"
 import { brandOnboardings } from "../db/schema/catalog"
 import { desc, eq } from "drizzle-orm"
 
@@ -95,8 +96,29 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
   // Onboarding photos belong to the applicant (shopper scope); the brand gets them through the
   // ownership transfer at approval, never by uploading them itself.
   if (q.purpose === "onboarding_image") throw forbidden("Onboarding photos are uploaded by the applicant, not by a brand.")
+  // Yard setup (founding brands) works on catalogue and storefront photos only.
+  if (actor.role === "yard_setup" && q.purpose !== "social_post" && q.purpose !== "storefront_cover") throw forbidden("Yard setup uploads product and storefront photos only.")
   if ((q.purpose === "social_post" || q.purpose === "storefront_cover") && !canBrand(actor.role, "content.publish")) throw forbidden()
   if (q.purpose === "location_image" && !canBrand(actor.role, "locations.manage")) throw forbidden()
   assertBrandMayPublish(actor)
   return { ...base, purpose: q.purpose, conversationId: null }
+}
+
+/**
+ * Founding brands (admin "Create founding brand"): an admin with brands.founding uploads the logo
+ * and banner of an unclaimed founding brand before any setup session exists. The file belongs to
+ * that brand (owner_kind brand), purpose storefront_cover, so the brand's own rules apply to it
+ * from then on. Any other brand, purpose or state is refused.
+ */
+export async function authorizeAdminUpload(actor: AdminActor, q: Query): Promise<UploadTarget> {
+  if (!canAdmin(actor.role, "brands.founding")) throw forbidden()
+  if (q.purpose !== "storefront_cover") throw forbidden("Admins upload founding brand logos and banners only.")
+  if (q.conversationId) throw badRequest({ conversationId: "Only inbox attachments belong to a conversation." })
+  if (!q.brandId) throw badRequest({ brandId: "Name the founding brand." })
+  const d = await db()
+  const [b] = await d.select({ id: brands.id, founding: brands.founding, claimStatus: brands.claimStatus, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, q.brandId)).limit(1)
+  if (!b || !b.founding) throw notFound()
+  if (b.claimStatus !== "unclaimed") throw forbidden("This brand has been claimed; its owner manages its photos now.")
+  if (b.reviewStatus === "suspended" || b.reviewStatus === "restricted") throw forbidden("Yard has put this brand on hold.")
+  return { purpose: "storefront_cover", ownerKind: "brand", ownerId: b.id, brandId: b.id, conversationId: null, targetBrandId: null }
 }

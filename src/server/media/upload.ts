@@ -3,7 +3,7 @@ import type { Actor } from "../auth/dal"
 import { badRequest, forbidden, HttpError, rateLimited, rule } from "../http/errors"
 import { log } from "../log"
 import type { MediaDto, UploadPurpose } from "@/lib/api/contracts/uploads"
-import { authorizeBrandUpload, authorizeShopperUpload } from "./authorize"
+import { authorizeAdminUpload, authorizeBrandUpload, authorizeShopperUpload } from "./authorize"
 import { toMediaDto } from "./dto"
 import { imageSize, mp4Info, sniff } from "./sniff"
 import { brandBytesToday, BRAND_DAILY_KIB, headerCap, kindCap, storeUpload } from "./store"
@@ -21,8 +21,7 @@ const unsupported = (video: boolean) =>
 /** The whole upload pipeline (§5.4 steps 1–6) after route() has checked CSRF, the actor and the rate limit. */
 export async function handleUpload(actor: Actor, query: { purpose: UploadPurpose; conversationId?: string; brandId?: string }, req: Request): Promise<{ media: MediaDto }> {
   // 1. Authorise from the URL alone.
-  if (actor.kind === "admin") throw forbidden()
-  const target = actor.kind === "shopper" ? await authorizeShopperUpload(actor, query) : await authorizeBrandUpload(actor, query)
+  const target = actor.kind === "shopper" ? await authorizeShopperUpload(actor, query) : actor.kind === "brand" ? await authorizeBrandUpload(actor, query) : await authorizeAdminUpload(actor, query)
   const videoOk = target.purpose === "social_post"
 
   // 2. Size before the body: no Content-Length → 411; over the purpose's cap → 413.

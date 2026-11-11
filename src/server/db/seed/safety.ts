@@ -42,7 +42,7 @@ async function brandActor(userId: string, brandId: string): Promise<Actor> {
     userId: u.id,
     name: u.name,
     brandId: b.id,
-    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone },
+    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone, claimStatus: b.claimStatus },
     role: "owner",
     permissions: brandRolePermissions.owner,
     demo: u.demo,

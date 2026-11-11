@@ -21,6 +21,7 @@ import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { loadBrandShipping, type BrandShipping } from "./profile"
 import { zoneFor } from "./providers"
+import { brandForSale, notForSaleMessage } from "../catalog/sellable"
 import { calendarsFor, citySlugFor, destTimeZone, isCountry, isCurrency, lineKey, quoteBrand, resolveLines, verifyQuote, type PricedLine } from "./quote"
 import { markFor, recordScreen, screenBrandText, screensFor } from "./screen"
 
@@ -261,8 +262,14 @@ export async function registerOrders(actor: ShopperActor, body: RegisterOrderBod
     return { ...r, service: g.service, token: g.quoteToken, index: i }
   })
 
-  // 2. Idempotent per shopper: a retry after a lost response returns the same group unchanged.
+  // Founding brands that aren't selling yet never get orders, whichever path the client takes.
   const d0 = await db()
+  for (const g of groups) {
+    const sale = await brandForSale(d0, g.brandId)
+    if (!sale.forSale) throw rule(notForSaleMessage(sale.name))
+  }
+
+  // 2. Idempotent per shopper: a retry after a lost response returns the same group unchanged.
   const existing = await d0.query.orderGroups.findFirst({ where: (g, { and, eq }) => and(eq(g.customerId, actor.userId), eq(g.idempotencyKey, body.idempotencyKey)) })
   if (existing) return { status: 200, body: await groupResponse(existing.id, true) }
 
