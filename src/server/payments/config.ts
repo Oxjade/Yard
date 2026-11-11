@@ -28,6 +28,24 @@ export const PAYSTACK_CURRENCIES = ["NGN", "GHS", "ZAR", "KES", "USD"] as const
 export type ChargeCurrency = (typeof PAYSTACK_CURRENCIES)[number]
 export const isChargeCurrency = (c: string): c is ChargeCurrency => (PAYSTACK_CURRENCIES as readonly string[]).includes(c)
 
+/**
+ * The currencies this deployment's Paystack account can actually charge in. Paystack enables
+ * currencies per account (a Nigerian account takes NGN; GHS, KES, ZAR and USD each need Paystack
+ * to switch them on), so with a key set this is NGN alone unless PAYSTACK_CHARGE_CURRENCIES lists
+ * more (comma separated, e.g. "NGN,USD"; anything outside PAYSTACK_CURRENCIES is ignored). The stub
+ * charges nothing, so it takes all of them. Read at request time. Checkout refuses any other
+ * currency before it creates an order or holds stock.
+ */
+export function chargeCurrencies(): ChargeCurrency[] {
+  if (paymentsMode() === "stub") return [...PAYSTACK_CURRENCIES]
+  const listed = (process.env.PAYSTACK_CHARGE_CURRENCIES ?? "")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(isChargeCurrency)
+    .filter((c, i, a) => a.indexOf(c) === i)
+  return listed.length ? listed : ["NGN"]
+}
+
 export function paymentsConfig(): PaymentsConfig {
   const secretKey = blank(process.env.PAYSTACK_SECRET_KEY)
   const webhookSecret = blank(process.env.PAYSTACK_WEBHOOK_SECRET)
@@ -38,7 +56,17 @@ export function paymentsConfig(): PaymentsConfig {
     publicKey: blank(process.env.PAYSTACK_PUBLIC_KEY),
     webhookKeys: [webhookSecret, secretKey].filter((k): k is string => !!k).filter((k, i, a) => a.indexOf(k) === i),
     split: process.env.PAYSTACK_SPLIT === "subaccount" ? "subaccount" : "off",
-    callbackUrl: (checkoutId) => `${origin}/checkout/confirm?checkout=${encodeURIComponent(checkoutId)}`,
+    // Straight to the confirmation, which verifies first (paid=1) and then follows the server.
+    callbackUrl: (checkoutId) => `${origin}/checkout/confirmation?group=${encodeURIComponent(checkoutId)}&paid=1`,
     holdMinutes: 30,
   }
+}
+
+/**
+ * Which kind of payments this deployment takes: "stub" (no secret key, nothing is charged),
+ * "test" (a Paystack test key, sk_test_…) or "live". Read at request time.
+ */
+export function paymentsMode(): "stub" | "test" | "live" {
+  const key = paymentsConfig().secretKey
+  return !key ? "stub" : key.startsWith("sk_test_") ? "test" : "live"
 }

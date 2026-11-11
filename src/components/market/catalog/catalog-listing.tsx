@@ -24,6 +24,7 @@ import {
   activeFilterCount,
   buildListingFromResults,
   catalogFacetsFromSearch,
+  CATALOG_SSR_CURRENCY,
   catalogSearchKey,
   catalogSearchQuery,
   EMPTY_CATALOG_FACETS,
@@ -61,7 +62,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
   const state = useMemo(() => parseCatalogParams(params, scope), [params, scope])
   const hydrated = useHydrated()
   const shopperCurrency = useSession((s) => s.currency)
-  const currency = hydrated ? shopperCurrency : "USD"
+  const currency = hydrated ? shopperCurrency : CATALOG_SSR_CURRENCY
   const requestQuery = useMemo(() => catalogSearchQuery(state, currency), [state, currency])
   const searchKey = useMemo(() => catalogSearchKey(requestQuery), [requestQuery])
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(() => initial?.products ?? [])

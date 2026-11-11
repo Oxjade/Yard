@@ -1,6 +1,8 @@
 import "server-only"
+import { eq } from "drizzle-orm"
 import { writeAudit } from "../audit"
-import { withTx } from "../db"
+import { db, withTx } from "../db"
+import { oauthIdentities } from "../db/schema"
 import { getEnv } from "../env"
 import { HttpError, badRequest } from "../http/errors"
 import type { Actor } from "./dal"
@@ -37,6 +39,30 @@ export async function requireRecentReauth(session: { sessionId: string }, maxAge
   if (row?.method === "demo" && !getEnv().dev) throw reauthRequired("Demo sessions can't confirm sensitive actions in production.")
 }
 
+/**
+ * How a shopper or brand session can re-confirm, for the client's re-auth ask:
+ * "demo" (a demo session), "password", or the linked providers ("google", "apple", "apple,google")
+ * for an account with no password. Never names an API path: the client turns it into words.
+ */
+export async function reauthMethodsFor(session: { sessionId: string; userId: string }): Promise<string> {
+  const how = await sessionAuthOf(session.sessionId)
+  if (!how || how.method === "demo") return "demo"
+  const cred = await credentialsOf(session.userId)
+  if (cred?.passwordHash) return "password"
+  return providersOf(session.userId)
+}
+
+async function providersOf(userId: string) {
+  const d = await db()
+  const rows = await d.select({ provider: oauthIdentities.provider }).from(oauthIdentities).where(eq(oauthIdentities.userId, userId))
+  return [...new Set(rows.map((r) => r.provider))].sort().join(",")
+}
+
+const providerWords = (list: string) => {
+  const names = list.split(",").filter(Boolean).map((p) => (p === "apple" ? "Apple" : p === "google" ? "Google" : p))
+  return names.length ? names.join(" or ") : "Google or Apple"
+}
+
 /** Seconds since this session last re-confirmed (null when never). For the UI's countdowns. */
 export async function reauthAge(sessionId: string) {
   const row = await sessionAuthOf(sessionId)
@@ -68,7 +94,12 @@ export async function reauthenticate(actor: Actor, input: ReauthInput, meta: Req
     return { ok: true as const, method: kind }
   }
   const cred = await credentialsOf(actor.userId)
-  if (!cred?.passwordHash) throw new HttpError(422, "rule", "Your account signs in with Google or Apple. Confirm it's you with that provider (POST /api/auth/oauth/{provider}/start, mode reauth).")
+  if (!cred?.passwordHash) {
+    // An OAuth-only account confirms through its provider (POST /api/auth/oauth/{provider}/start,
+    // mode "reauth"); `fields.reauthWith` names the providers so the client can offer the button.
+    const providers = await providersOf(actor.userId)
+    throw new HttpError(422, "rule", `Your account signs in with ${providerWords(providers)}, so it has no password. Confirm it's you with ${providerWords(providers)} instead.`, { reauthWith: providers || "google,apple" })
+  }
   if (!input.password) throw badRequest({ password: "Enter your password." })
   if (!(await verifyPassword(input.password, cred.passwordHash))) throw badRequest({ password: "That password isn't right." })
   await withTx(() => markReauth(actor.sessionId, actor.userId))

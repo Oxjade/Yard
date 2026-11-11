@@ -33,6 +33,8 @@ export const sessionDto = z.object({
   brand: brandProfile.nullable(),
   admin: adminProfile.nullable(),
   demoAuth: demoAuthState,
+  /** The demo switch (getEnv().seedDemo, read at request time): sample-data screens exist only when it is on. */
+  sampleData: z.boolean(),
 })
 export type ShopperProfile = z.infer<typeof shopperProfile>
 export type BrandProfile = z.infer<typeof brandProfile>

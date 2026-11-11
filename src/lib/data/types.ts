@@ -303,6 +303,8 @@ export type MerchantOrder = {
   reference: string
   groupId: string
   brandId: string
+  /** The brand's name and handle as the server sent them (founding and real brands aren't in the sample catalogue). */
+  brand?: { name: string; handle: string }
   customerId: string
   status: MerchantOrderStatus
   paymentStatus: PaymentStatus

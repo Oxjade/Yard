@@ -5,13 +5,14 @@ import { listPublicProducts } from "@/server/catalog/public"
 import { normalizeSearchQuery, searchQuery } from "@/server/follows/contracts"
 import { searchCatalog } from "@/server/search"
 import { CatalogListing } from "./catalog-listing"
-import { catalogSearchKey, catalogSearchQuery, parseCatalogParams, type CatalogInitialPage } from "./catalog-state"
+import { CATALOG_SSR_CURRENCY, catalogSearchKey, catalogSearchQuery, parseCatalogParams, type CatalogInitialPage } from "./catalog-state"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 /**
  * The listing with its first page read on the server from search (the same request the browser
- * would make for page 1, in USD as the browser renders before hydrating), so the HTML carries
+ * would make for page 1, in NGN: the default shopper currency and what the browser renders before
+ * hydrating, so the default shopper's key matches and the grid isn't refetched), so the HTML carries
  * products for crawlers, no-JS visitors and first paint. The browser skips that request while the
  * key still matches, and loads further pages itself. If the read fails, the listing loads it all.
  */
@@ -29,7 +30,7 @@ async function firstPage(category: CategorySlug | undefined, raw: Awaited<Search
     if (first !== undefined) params.set(key, first)
   }
   const state = parseCatalogParams(params, { category })
-  const request = catalogSearchQuery(state, "USD")
+  const request = catalogSearchQuery(state, CATALOG_SSR_CURRENCY)
   const key = catalogSearchKey(request)
   const parsed = searchQuery.safeParse(Object.fromEntries(new URLSearchParams(key)))
   if (!parsed.success) return undefined
@@ -40,7 +41,7 @@ async function firstPage(category: CategorySlug | undefined, raw: Awaited<Search
     subcategory: query.subcategory,
     country: query.country,
     ...normalizeSearchQuery(query),
-    currency: "USD",
+    currency: CATALOG_SSR_CURRENCY,
     inStock: query.inStock,
     sort: query.sort,
     limit: query.limit,

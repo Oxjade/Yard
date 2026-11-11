@@ -10,9 +10,9 @@ import { duration, ease } from "@/lib/motion"
 import { AuthPanel } from "@/components/market/account/auth-panel"
 import { AuthForm } from "@/components/market/auth-prompt"
 import { bagCount } from "@/components/market/bag-count"
-import { Price } from "@/components/market/price"
+import { Price, PriceCurrencyContext } from "@/components/market/price"
 import { Button } from "@/components/ui/button"
-import { type CountryCode } from "@/config/markets"
+import { type CountryCode, type CurrencyCode } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useShippingQuote } from "@/components/market/delivery/use-shipping-quote"
 import { priceCart } from "@/lib/cart"
@@ -27,8 +27,9 @@ import { countries } from "@/config/markets"
 import { Notice } from "./fields"
 import { OrderSummaryAside, OrderSummaryDisclosure, type CheckoutTotals } from "./order-summary"
 import {
-  cardBrand,
+  chargeCurrencyFor,
   cityLine,
+  isChargeCurrency,
   parsePhone,
   paymentSummary,
   paymentMethodsFor,
@@ -41,6 +42,7 @@ import {
   type PaymentDraft,
   type PaymentMethod,
 } from "./rules"
+import { useCheckoutOptions } from "./payment-options"
 import { CheckoutSkeleton } from "./skeletons"
 import { clearCheckoutDraft, readCheckoutDraft, writeCheckoutDraft } from "./draft"
 import { checkoutSteps, StepIndicator } from "./step-indicator"
@@ -150,7 +152,7 @@ const nextLabel = ["Continue to delivery", "Continue to shipping", "Continue to 
 
 function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; userEmail: string; onPlaced: (groupId: string, authorizationUrl: string | null) => void }) {
   const lines = useCart((s) => s.lines)
-  const currency = useSession((s) => s.currency)
+  const displayCurrency = useSession((s) => s.currency)
   const country = useSession((s) => s.shipTo)
   const shipToCity = useSession((s) => s.shipToCity)
   const setShipTo = useSession((s) => s.setShipTo)
@@ -158,15 +160,24 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const removeLine = useCart((s) => s.remove)
   const syncCart = useCart((s) => s.syncFromServer)
   const reduceMotion = useReducedMotion()
+  const { mode: paymentsMode, currencies: chargeable, ready: optionsReady } = useCheckoutOptions()
+  // The checkout charges only in a currency this deployment's Paystack account takes (the server's
+  // list; NGN alone on a live Nigerian account). Browsing in another (GBP, or GHS/USD where the
+  // account doesn't take them), the checkout shows the one it will charge in, so every price here
+  // is what's paid. That currency stays local to the checkout (Price reads it from
+  // PriceCurrencyContext): the shopper's saved choice, and whether they made one, are left as they
+  // were for the rest of the site.
+  const currency = chargeCurrencyFor(displayCurrency, country, chargeable)
+  const switchedFrom = currency === displayCurrency ? null : displayCurrency
 
-  // The draft survives a reload in this tab (sessionStorage). Card number, expiry and
-  // security code are never written anywhere, so they are asked for again.
+  // The draft survives a reload in this tab (sessionStorage). Card details are never asked for
+  // here: the shopper types them on Paystack's page.
   const [saved] = useState(() => readCheckoutDraft(userEmail))
   const [contact, setContact] = useState<ContactDraft>(() => saved?.contact ?? { name: userName, email: userEmail, phone: "" })
   const [address, setAddress] = useState<AddressDraft>(() => saved?.address ?? { line1: "", line2: "", city: "", region: "", postcode: "", landmark: "" })
   const [shipping, setShipping] = useState<Record<string, ShippingMethod>>(() => saved?.shipping ?? {})
-  const [payment, setPayment] = useState<PaymentDraft>(() => ({ cardName: userName, ussdBank: "", momoNetwork: "", momoNumber: "", ...saved?.payment, method: saved?.payment.method ?? "card", cardNumber: "", expiry: "", cvc: "" }))
-  const [step, setStep] = useState(() => resumeStep(saved, country))
+  const [payment, setPayment] = useState<PaymentDraft>(() => ({ method: saved?.payment?.method ?? "card" }))
+  const [step, setStep] = useState(() => resumeStep(saved, country, currency))
   const [dir, setDir] = useState(1)
   const [furthest, setFurthest] = useState(() => saved?.furthest ?? 0)
   const [reviewing, setReviewing] = useState(false)
@@ -181,6 +192,14 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const [attemptKey, setAttemptKey] = useState<string | null>(() => saved?.idempotencyKey ?? null)
   const topRef = useRef<HTMLDivElement>(null)
   const [placeError, setPlaceError] = useState<string | null>(null)
+  // A different charge currency is a different checkout (the server hashes it): once the options
+  // have loaded, a change of currency starts a fresh attempt key, as a change of method does.
+  const keyCurrencyRef = useRef<CurrencyCode | null>(null)
+  useEffect(() => {
+    if (!optionsReady) return
+    if (keyCurrencyRef.current && keyCurrencyRef.current !== currency) setAttemptKey(null)
+    keyCurrencyRef.current = currency
+  }, [optionsReady, currency])
 
   // The delivery city: the address's once the shopper has given it, else the one chosen on a
   // product page (it decides store pickup). The quote follows it.
@@ -202,13 +221,12 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           ? "Shipping isn't ready for every brand yet."
           : null
 
-  const methods = paymentMethodsFor(country)
+  const methods = paymentMethodsFor(country, currency)
   const method: PaymentMethod = methods.includes(payment.method) ? payment.method : methods[0]
 
-  const stepErrors: FieldErrors[] = [validateContact(contact, country), validateAddress(address, country), {}, validatePayment(payment, method, country), {}]
+  const stepErrors: FieldErrors[] = [validateContact(contact, country), validateAddress(address, country), {}, validatePayment({ method }, methods), {}]
   const isValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const shownErrors = attempted[step] ? stepErrors[step] : Object.fromEntries(Object.entries(stepErrors[step]).filter(([id]) => touched[id]))
-  const cardCleared = !!saved && saved.furthest >= 3 && saved.payment.method === "card" && !payment.cardNumber
 
   // The review shows what the server will charge for: reload the bag from the server cart first
   // (another device or an account merge may have changed it since the checkout opened).
@@ -219,9 +237,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const doneRef = useRef(false)
   useEffect(() => {
     if (doneRef.current) return
-    // Card number, expiry and security code stay in memory only.
-    const keep = { method: payment.method, cardName: payment.cardName, ussdBank: payment.ussdBank, momoNetwork: payment.momoNetwork, momoNumber: payment.momoNumber }
-    writeCheckoutDraft({ owner: userEmail, step, furthest, contact, address, shipping, payment: keep, idempotencyKey: attemptKey ?? undefined })
+    writeCheckoutDraft({ owner: userEmail, step, furthest, contact, address, shipping, payment: { method: payment.method }, idempotencyKey: attemptKey ?? undefined })
   }, [userEmail, step, furthest, contact, address, shipping, payment, attemptKey])
 
   function onFieldBlur(e: React.FocusEvent<HTMLFormElement>) {
@@ -287,13 +303,15 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   }
 
   function changeMethod(m: PaymentMethod) {
-    setPayment((p) => ({ ...p, method: m, momoNumber: m === "mobile_money" && !p.momoNumber ? contact.phone : p.momoNumber }))
-    // A newly shown method starts without errors; they appear again on the next continue.
-    setAttempted((a) => ({ ...a, 3: false }))
+    // Paystack's page is fixed to the method chosen when it was first opened (a retry with the same
+    // idempotency key returns that page). Another method gets a fresh key: the server then starts a
+    // new checkout and replaces the earlier unpaid one, so only one is ever live.
+    if (m !== method) setAttemptKey(null)
+    setPayment({ method: m })
   }
 
-  // No payment provider is connected: the server registers the orders unpaid, and the local orders
-  // take its ids. The in-flight guard blocks a second submit while this runs, and the idempotency
+  // The server registers the orders unpaid and returns Paystack's page (or, with payments not
+  // connected, nothing to pay on); the local orders take its ids. The in-flight guard blocks a second submit while this runs, and the idempotency
   // key makes any repeat (here or after a reload) return the same checkout group.
   const submit = useAsyncAction(
     () => {
@@ -301,7 +319,6 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
       if (!attemptKey) setAttemptKey(key)
       setPlaceError(null)
       const phone = parsePhone(contact.phone, country) ?? contact.phone.trim()
-      const digits = payment.cardNumber.replace(/\D/g, "")
       return placeCheckout({
         idempotencyKey: key,
         lines,
@@ -318,12 +335,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
         shipping: Object.fromEntries(bag.groups.map((g) => [g.brand.id, g.option?.service ?? methodFor(g.brand.id)])),
         quotes: quote.quotes ?? {},
         paymentMethod: method,
-        payment: {
-          label: paymentSummary(payment, method, country),
-          holder: method === "card" ? payment.cardName.trim() || contact.name.trim() : contact.name.trim(),
-          cardBrand: method === "card" ? (cardBrand(digits) ?? undefined) : undefined,
-          last4: method === "card" && digits.length >= 4 ? digits.slice(-4) : undefined,
-        },
+        payment: { label: paymentSummary(method, country), holder: contact.name.trim() },
       })
     },
     {
@@ -348,7 +360,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const submitting = submit.pending
 
   function placeOrder() {
-    if (submitting || shippingBlock) return
+    if (submitting || shippingBlock || !optionsReady) return
     const firstInvalid = stepErrors.findIndex((e) => Object.keys(e).length > 0)
     if (firstInvalid !== -1) {
       showErrors(firstInvalid)
@@ -363,14 +375,22 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const summaryProps = { groups: bag.groups, totals, currency, shipTo: country, methodFor, quote }
 
   return (
-    // The summary starts level with the title, so its height cap (viewport minus the
-    // header) keeps the total on screen before and after it sticks.
+    <PriceCurrencyContext.Provider value={currency}>
+    {/* The summary starts level with the title, so its height cap (viewport minus the
+        header) keeps the total on screen before and after it sticks. */}
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start xl:gap-16">
       <div className="min-w-0">
         <CheckoutTitle />
         <div ref={topRef} className="mt-8 md:mt-10">
           <StepIndicator current={step} canJump={canJump} onJump={goTo} />
         </div>
+        {switchedFrom && optionsReady ? (
+          <Notice className="mt-6">
+            {isChargeCurrency(switchedFrom)
+              ? `Payments here are taken in ${listCurrencies(chargeable)} for now, so you'll be charged in ${currency}. Every price in this checkout is shown in ${currency}.`
+              : `Paystack can't charge in ${switchedFrom}, so you'll be charged in ${currency}. Every price in this checkout is shown in ${currency}.`}
+          </Notice>
+        ) : null}
         <div className="mt-6 lg:hidden">
           <OrderSummaryDisclosure {...summaryProps} />
         </div>
@@ -413,9 +433,9 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                       onRemoveBrand={(b) => bag.groups.find((g) => g.brand.id === b)?.lines.forEach((l) => removeLine(l.variant.id))}
                     />
                   ) : step === 3 ? (
-                    <PaymentStep value={payment} method={method} methods={methods} onChange={setPayment} onMethodChange={changeMethod} errors={shownErrors} country={country} cardCleared={cardCleared} />
+                    <PaymentStep method={method} methods={methods} onMethodChange={changeMethod} country={country} />
                   ) : (
-                    <ReviewStep contact={contact} address={address} payment={payment} method={method} groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onEdit={edit} />
+                    <ReviewStep contact={contact} address={address} method={method} groups={bag.groups} currency={currency} country={country} methodFor={methodFor} onEdit={edit} />
                   )}
                 </div>
 
@@ -437,10 +457,15 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                       {bag.groups.length === 1
                         ? `Placing this order creates one order with ${bag.groups[0].brand.name}.`
                         : `Placing this order creates ${bag.groups.length} orders, one for each brand. Each ships and tracks separately.`}{" "}
-                      No payment provider is connected in this development build, so nothing is charged and the orders are recorded as awaiting payment confirmation.
+                      {paymentsMode === "stub"
+                        ? "Payments aren't connected here, so nothing is charged and the orders are recorded as awaiting payment confirmation."
+                        : "Next, Paystack opens to take the payment. Brands start preparing orders once Paystack confirms it."}
                     </Notice>
                     <div className="flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
-                      <span className="text-base text-ink">{totals.total === null ? "Subtotal" : "Total to pay"}</span>
+                      <span className="text-base text-ink">
+                        {totals.total === null ? "Subtotal" : "Total to pay"}
+                        <span className="block text-xs text-ink-3">Charged in {currency}</span>
+                      </span>
                       <Price amount={totals.total ?? totals.subtotal} currency={currency} size="lg" />
                     </div>
                   </div>
@@ -466,7 +491,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                     </Button>
                   )}
                   {step === REVIEW ? (
-                    <Button type="submit" variant="primary" size="xl" loading={submitting} disabled={!!shippingBlock && !submitting} aria-describedby={shippingBlock ? "ship-block-reason" : undefined} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
+                    <Button type="submit" variant="primary" size="xl" loading={submitting} disabled={(!!shippingBlock || !optionsReady) && !submitting} aria-describedby={shippingBlock ? "ship-block-reason" : undefined} className="h-12 flex-1 sm:h-14 sm:min-w-64 sm:flex-none">
                       Place order
                     </Button>
                   ) : (
@@ -483,18 +508,21 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
 
       <OrderSummaryAside {...summaryProps} />
     </div>
+    </PriceCurrencyContext.Provider>
   )
 }
 
-/**
- * Where a restored draft picks up: the step the shopper was on, or the first earlier step
- * that no longer validates (card details are never kept, so a card payment reopens Payment).
- */
-function resumeStep(saved: ReturnType<typeof readCheckoutDraft>, country: CountryCode) {
+/** Where a restored draft picks up: the step the shopper was on, or the first earlier step that no longer validates. */
+/** "NGN", "NGN and USD", "NGN, GHS and USD". */
+function listCurrencies(list: readonly CurrencyCode[]) {
+  return list.length <= 1 ? (list[0] ?? "NGN") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`
+}
+
+function resumeStep(saved: ReturnType<typeof readCheckoutDraft>, country: CountryCode, currency: CurrencyCode) {
   if (!saved) return 0
-  const payment: PaymentDraft = { ...saved.payment, cardNumber: "", expiry: "", cvc: "" }
-  const method = paymentMethodsFor(country).includes(payment.method) ? payment.method : paymentMethodsFor(country)[0]
-  const errors = [validateContact(saved.contact, country), validateAddress(saved.address, country), {}, validatePayment(payment, method, country)]
+  const methods = paymentMethodsFor(country, currency)
+  const method = saved.payment && methods.includes(saved.payment.method) ? saved.payment.method : methods[0]
+  const errors = [validateContact(saved.contact, country), validateAddress(saved.address, country), {}, validatePayment({ method }, methods)]
   const firstInvalid = errors.findIndex((e) => Object.keys(e).length > 0)
   const target = Math.min(saved.step, REVIEW)
   return firstInvalid === -1 ? target : Math.min(target, firstInvalid)

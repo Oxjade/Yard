@@ -7,6 +7,7 @@ import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { adminTeam } from "@/lib/data/admin"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { int } from "../format"
 import { AdminPageHead, PanelRail, StatRow } from "@/components/admin/marketplace/page-head"
 import { useAdminReady } from "../ready"
@@ -35,8 +36,12 @@ export function SecurityView() {
   const fig = useAuditFigures()
   const { revoked, mfaRequired } = useSecurityState()
   const { ask: revoke, dialog: revokeDialog } = useRevoke()
-  const [tab, setTab] = useState<Tab>("audit")
+  const [chosen, setTab] = useState<Tab>("audit")
   const tid = useId()
+  // Team, Sessions and Policy are sample data so far: demo and development only. Production (and
+  // the moment before the session answers) shows the audit log alone, which is the server's.
+  const sampleData = useServerSession((s) => s.sampleData === true)
+  const tab: Tab = sampleData ? chosen : "audit"
 
   const noMfa = adminTeam.filter((m) => !m.mfa)
   const unaddressed = noMfa.filter((m) => !mfaRequired.has(m.id))
@@ -53,16 +58,22 @@ export function SecurityView() {
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <TabParam values={TABS} onChange={setTab} />
-      <AdminPageHead
-        title="Security"
-        description="Who did what and why, who can do what, who is signed in, and which actions need a reason or a second approver."
-        note="Revokes and MFA requirements are recorded now and in the audit log, and take effect once the auth service is connected. Sessions are sample data."
-      />
+      {sampleData ? (
+        <AdminPageHead
+          title="Security"
+          description="Who did what and why, who can do what, who is signed in, and which actions need a reason or a second approver."
+          note="Revokes and MFA requirements are recorded now and in the audit log, and take effect once the auth service is connected. Sessions are sample data."
+        />
+      ) : (
+        <AdminPageHead live title="Security" description="Every decision in the Control Center: who made it, why, and who approved it." />
+      )}
 
       <StatRow label="Security figures">
         <RevealItem className="min-w-0" {...open("audit")}>
           <StatCard surface="admin" icon={ListMagnifyingGlassIcon} label="Audit entries" value={fig.entries} format={int} hint={ready && fig.ready ? `${fig.withApprover} with a second approver` : undefined} href="?tab=audit#security-sections" hrefLabel="Open the audit log" ready={ready && fig.ready} className="h-full" />
         </RevealItem>
+        {sampleData ? (
+        <>
         <RevealItem className="min-w-0" {...open("team")}>
           <StatCard surface="admin" variant={ready && unaddressed.length ? "brand" : "default"} icon={FingerprintIcon} label="Without MFA" value={noMfa.length} format={int} hint={ready ? (mfaRequired.size ? `${mfaRequired.size} required to set it up` : `Of ${adminTeam.length} on the team`) : undefined} href="?tab=team#security-sections" hrefLabel="Open team and roles" ready={ready} className="h-full" />
         </RevealItem>
@@ -72,9 +83,12 @@ export function SecurityView() {
         <RevealItem className="min-w-0" {...open("policy")}>
           <StatCard surface="admin" icon={UsersThreeIcon} label="Second approver" value={sensitivePolicy.filter((p) => p.approver).length} format={int} hint={`Of ${sensitivePolicy.length} sensitive actions`} href="?tab=policy#security-sections" hrefLabel="Open the sensitive-action policy" ready={ready} className="h-full" />
         </RevealItem>
+        </>
+        ) : null}
       </StatRow>
 
-      <Panel id="security-sections" title="Audit, team, sessions and policy" description={description[tab]} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+      <Panel id="security-sections" title={sampleData ? "Audit, team, sessions and policy" : "Audit log"} description={description[tab]} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+        {sampleData ? (
         <PanelRail value={tab}>
           <Segmented
             label="Security sections"
@@ -92,7 +106,8 @@ export function SecurityView() {
             ]}
           />
         </PanelRail>
-        <div id={`${tid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(tid, tab)} className="border-t border-[var(--admin-hairline)] px-4 pt-4 pb-4 md:px-5 md:pb-5">
+        ) : null}
+        <div id={`${tid}-panel`} role={sampleData ? "tabpanel" : undefined} aria-labelledby={sampleData ? segmentedTabId(tid, tab) : undefined} className="border-t border-[var(--admin-hairline)] px-4 pt-4 pb-4 md:px-5 md:pb-5">
           {tab === "audit" ? (
             <AuditLog ready={ready} />
           ) : tab === "team" ? (

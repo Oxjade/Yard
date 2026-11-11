@@ -19,10 +19,12 @@ export type ServerSessionState = {
   brand: BrandProfile | null
   admin: AdminProfile | null
   demoAuth: DemoAuthState | null
+  /** Sample-data screens are on (the demo switch). Null until /api/session answers: treat it as off. */
+  sampleData: boolean | null
   fetchedAt: number
 }
 
-const store = create<ServerSessionState>(() => ({ status: "loading", shopper: null, brand: null, admin: null, demoAuth: null, fetchedAt: 0 }))
+const store = create<ServerSessionState>(() => ({ status: "loading", shopper: null, brand: null, admin: null, demoAuth: null, sampleData: null, fetchedAt: 0 }))
 
 let generation = 0
 let started = false
@@ -34,7 +36,7 @@ export function refreshServerSession(): Promise<void> {
   started = true
   const p = api<SessionDto>("/api/session")
     .then((s) => {
-      if (mine === generation) store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, fetchedAt: Date.now() })
+      if (mine === generation) store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, sampleData: s.sampleData, fetchedAt: Date.now() })
     })
     .catch(() => {
       if (mine === generation) store.setState((st) => ({ status: st.status === "ready" ? "ready" : "error", fetchedAt: Date.now() }))
@@ -86,6 +88,11 @@ export function identityKeyFor(surface: SessionSurface, s: ServerSessionState): 
   if (surface === "market") return s.shopper ? `market:${s.shopper.id}:-` : null
   if (surface === "studio") return s.brand ? `studio:${s.brand.userId}:${s.brand.brand.id}` : null
   return s.admin ? `admin:${s.admin.id}:-` : null
+}
+
+/** True only once /api/session says sample-data screens are on; prod links stay hidden until then (never a flash of sample links). */
+export function useSampleData() {
+  return useServerSession((s) => s.sampleData === true)
 }
 
 export function useIdentityKey(surface: SessionSurface) {

@@ -1,4 +1,4 @@
-import { countries, type CountryCode } from "@/config/markets"
+import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import type { CheckoutInput } from "@/lib/stores/orders"
 
 /*
@@ -42,16 +42,8 @@ export const countryRules: Record<CountryCode, CountryRules> = {
 export type ContactDraft = { name: string; email: string; phone: string }
 export type AddressDraft = { line1: string; line2: string; city: string; region: string; postcode: string; landmark: string }
 export type PaymentMethod = CheckoutInput["paymentMethod"]
-export type PaymentDraft = {
-  method: PaymentMethod
-  cardNumber: string
-  expiry: string
-  cvc: string
-  cardName: string
-  ussdBank: string
-  momoNetwork: string
-  momoNumber: string
-}
+/** Only how the shopper will pay: card details are typed on Paystack's page, never on Yard. */
+export type PaymentDraft = { method: PaymentMethod }
 export type FieldErrors = Record<string, string>
 
 /* ---------- Phone and email ---------- */
@@ -114,22 +106,37 @@ export function cityLine(city: string, region: string) {
 
 /* ---------- Payment ---------- */
 
-export const paymentMethodsFor = (country: CountryCode): PaymentMethod[] =>
-  country === "NG"
-    ? ["card", "bank_transfer", "ussd"]
-    : country === "GH"
-      ? ["card", "mobile_money", "bank_transfer"]
-      : country === "KE"
-        ? ["card", "mobile_money"]
-        : country === "ZA"
-          ? ["card", "bank_transfer"]
-          : ["card"]
+/** Currencies Paystack can charge in at all (the server's PAYSTACK_CURRENCIES). */
+export const CHARGE_CURRENCIES: readonly CurrencyCode[] = ["NGN", "GHS", "ZAR", "KES", "USD"]
+export const isChargeCurrency = (c: CurrencyCode) => CHARGE_CURRENCIES.includes(c)
 
-export const ussdBanks = ["Access Bank", "Fidelity Bank", "First Bank", "GTBank", "Stanbic IBTC", "Sterling Bank", "UBA", "Zenith Bank"]
+/**
+ * What a checkout charges in. `allowed` is what this deployment's Paystack account takes
+ * (GET /api/checkout/options `currencies`; NGN alone on a live Nigerian account). The shopper's
+ * currency when it's allowed, else the delivery country's when that is, else the first allowed
+ * (NGN when it's on the list).
+ */
+export function chargeCurrencyFor(display: CurrencyCode, country: CountryCode, allowed: readonly CurrencyCode[]): CurrencyCode {
+  const list = allowed.length ? allowed : (["NGN"] as const)
+  if (list.includes(display)) return display
+  const local = countries[country].currency as CurrencyCode
+  if (list.includes(local)) return local
+  return list.includes("NGN") ? "NGN" : list[0]
+}
 
-export const mobileMoneyNetworks: Partial<Record<CountryCode, string[]>> = {
-  GH: ["MTN MoMo", "Telecel Cash", "AirtelTigo Money"],
-  KE: ["M-Pesa", "Airtel Money"],
+/**
+ * The methods offered for a delivery country and the currency the checkout charges in. Paystack
+ * takes each channel only in some currencies (bank transfer and USSD: NGN; mobile money: GHS and
+ * KES; Instant EFT: ZAR), so a method is offered only when the charge currency is the country's own
+ * and Paystack takes that channel in it (bank transfer in Ghana isn't offered). Card works in every
+ * charge currency. Mirrors the server's channelsFor (src/server/payments/checkout.ts).
+ */
+export function paymentMethodsFor(country: CountryCode, currency: CurrencyCode): PaymentMethod[] {
+  if (country === "NG" && currency === "NGN") return ["card", "bank_transfer", "ussd"]
+  if (country === "GH" && currency === "GHS") return ["card", "mobile_money"]
+  if (country === "KE" && currency === "KES") return ["card", "mobile_money"]
+  if (country === "ZA" && currency === "ZAR") return ["card", "bank_transfer"]
+  return ["card"]
 }
 
 export function paymentMethodCopy(method: PaymentMethod, country: CountryCode) {
@@ -145,74 +152,31 @@ export function paymentMethodCopy(method: PaymentMethod, country: CountryCode) {
   }
 }
 
-export const digitsOnly = (v: string) => v.replace(/\D/g, "")
-
-export function cardBrand(number: string) {
-  const n = digitsOnly(number)
-  if (/^3[47]/.test(n)) return "American Express"
-  if (/^(506[01]|507[89]|6500)/.test(n)) return "Verve"
-  if (/^4/.test(n)) return "Visa"
-  if (/^(5[1-5]|2[2-7])/.test(n)) return "Mastercard"
-  return null
+/** What Paystack's page asks for with each method, so the shopper knows before they leave Yard. */
+export function paymentMethodNext(method: PaymentMethod, country: CountryCode) {
+  switch (method) {
+    case "card":
+      return "Yard never sees or stores your card number."
+    case "bank_transfer":
+      return country === "ZA"
+        ? "Paystack takes you to your bank to approve the payment. Brands start preparing orders once it clears."
+        : "Paystack shows a one-time account number and the exact amount to send from your banking app."
+    case "ussd":
+      return "Paystack shows the code to dial for your bank. Dial it from the phone number linked to your account."
+    case "mobile_money":
+      return "Paystack asks for your mobile money number and sends a prompt to approve on your phone."
+  }
 }
 
-function luhn(n: string) {
-  let sum = 0
-  for (let i = 0; i < n.length; i++) {
-    let d = Number(n[n.length - 1 - i])
-    if (i % 2 === 1) {
-      d *= 2
-      if (d > 9) d -= 9
-    }
-    sum += d
-  }
-  return sum % 10 === 0
+/** The step has nothing to type: a method from the list is all it needs. */
+export function validatePayment(p: PaymentDraft, methods: PaymentMethod[]): FieldErrors {
+  return methods.includes(p.method) ? {} : { "pay-ring": "Choose how you'd like to pay." }
 }
 
-/** "4242 4242 4242 4242" — groups of four as the shopper types. */
-export const formatCardNumber = (v: string) => digitsOnly(v).slice(0, 19).replace(/(\d{4})(?=\d)/g, "$1 ")
-
-/** "MM/YY" as the shopper types. */
-export function formatExpiry(v: string) {
-  const d = digitsOnly(v).slice(0, 4)
-  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d
-}
-
-/** Reads the clock for the expiry check: client only. */
-export function validatePayment(p: PaymentDraft, method: PaymentMethod, country: CountryCode, now = new Date()): FieldErrors {
-  const e: FieldErrors = {}
-  if (method === "card") {
-    const n = digitsOnly(p.cardNumber)
-    if (!n) e["pay-number"] = "Enter the card number."
-    else if (n.length < 12 || n.length > 19 || !luhn(n)) e["pay-number"] = "Check the card number."
-    const m = /^(\d{2})\/(\d{2})$/.exec(p.expiry.trim())
-    if (!m || Number(m[1]) < 1 || Number(m[1]) > 12) e["pay-expiry"] = "Enter the expiry date as MM/YY."
-    else {
-      const year = 2000 + Number(m[2])
-      const month = Number(m[1])
-      if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1)) e["pay-expiry"] = "This card has expired."
-    }
-    const cvcLength = cardBrand(n) === "American Express" ? 4 : 3
-    if (!new RegExp(`^\\d{${cvcLength}}$`).test(p.cvc.trim())) e["pay-cvc"] = `Enter the ${cvcLength}-digit security code.`
-    if (p.cardName.trim().length < 2) e["pay-name"] = "Enter the name as it appears on the card."
-  }
-  if (method === "ussd" && !ussdBanks.includes(p.ussdBank)) e["pay-bank"] = "Choose your bank."
-  if (method === "mobile_money") {
-    if (!(mobileMoneyNetworks[country] ?? []).includes(p.momoNetwork)) e["pay-network"] = "Choose your mobile money network."
-    const momo = parsePhone(p.momoNumber, country)
-    if (!p.momoNumber.trim()) e["pay-momo"] = "Enter the number registered for mobile money."
-    else if (!momo?.startsWith(`${countryRules[country].dial} `)) e["pay-momo"] = `Enter a ${countries[country].name} number, for example ${countryRules[country].phoneExample}.`
-  }
-  return e
-}
-
-/** One line describing the chosen payment, for the review step. */
-export function paymentSummary(p: PaymentDraft, method: PaymentMethod, country: CountryCode) {
-  if (method === "card") {
-    const n = digitsOnly(p.cardNumber)
-    return `${cardBrand(n) ?? "Card"} ending ${n.slice(-4)}`
-  }
-  if (method === "bank_transfer") return country === "ZA" ? "Instant EFT" : "Bank transfer to a one-time account"
-  if (method === "ussd") return `USSD with ${p.ussdBank}`
-  return `${p.momoNetwork}, ${parsePhone(p.momoNumber, country) ?? p.momoNumber}`
+/** One line describing the chosen payment, for the review step and the receipt. */
+export function paymentSummary(method: PaymentMethod, country: CountryCode) {
+  if (method === "card") return "Card"
+  if (method === "bank_transfer") return country === "ZA" ? "Instant EFT" : "Bank transfer"
+  if (method === "ussd") return "USSD"
+  return "Mobile money"
 }

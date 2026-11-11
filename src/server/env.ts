@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir } from "node:os"
 import path from "node:path"
 import { z } from "zod"
+import { seedDemoFrom } from "./demo-switch"
 import { log } from "./log"
 import { yard } from "./state"
 
@@ -103,7 +104,7 @@ function parse(): Env {
   const dev = nodeEnv !== "production"
   const building = isBuildPhase()
   const problems: string[] = []
-  const seedDemo = dev || on(e.YARD_SEED_DEMO)
+  const seedDemo = seedDemoFrom({ NODE_ENV: nodeEnv, YARD_SEED_DEMO: e.YARD_SEED_DEMO })
   if (!dev && on(e.YARD_DEMO_AUTH) && !seedDemo) problems.push("YARD_DEMO_AUTH=1 requires YARD_SEED_DEMO=1 so demo accounts and fixtures exist")
   if (!dev && on(e.YARD_SEED_DEMO) && !on(e.YARD_DEMO_AUTH)) problems.push("YARD_SEED_DEMO=1 requires YARD_DEMO_AUTH=1; do not seed demo data into a production environment")
 

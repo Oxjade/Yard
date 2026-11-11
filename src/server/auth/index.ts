@@ -16,7 +16,7 @@ import { purgeTokens } from "./tokens"
  */
 export const IMPL = "AUTH-v3-2026-11-08"
 
-export { requireRecentReauth, reauthRequired, REAUTH_REQUIRED_FIELD } from "./reauth"
+export { requireRecentReauth, reauthRequired, reauthMethodsFor, REAUTH_REQUIRED_FIELD } from "./reauth"
 export { requestAccountDeletion, processDueErasures, type EraseHook } from "./erasure"
 export { AUTH_EMAIL_TEMPLATES } from "./identity"
 

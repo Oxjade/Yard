@@ -1,7 +1,7 @@
 import "server-only"
 import { and, eq, ilike, inArray, sql } from "drizzle-orm"
 import { db, withTx } from "../db"
-import { shipmentEvents } from "../db/schema"
+import { rateLimitBuckets, shipmentEvents } from "../db/schema"
 import { orderLines, orderRefunds, orderStates } from "../db/schema/orders-v3"
 import { notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -101,4 +101,27 @@ export async function declineCancelRefund(orderId: string, restock: boolean) {
     await addEvent(tx, id, "refund.failed", { kind: "provider", id: null }, { refundId, amountMinor: state.totalMinor })
     return { refundId }
   })
+}
+
+/**
+ * The demo brand accounts the money kits act as (v3-orders, v3-checkout, v3-ledger), and the durable
+ * daily caps per account those kits spend: brand refunds (studio.refund, 200 a day), payout account
+ * changes (payouts.account, 10 a day) and payout requests (payouts.request, 20 a day), plus the demo
+ * owner admin's founding claim links (admin.founding.claim_link, 100 a day). A few kit runs
+ * a day use them up, after which those checks answer 429. In DEVELOPMENT only (the route is 404 in
+ * production) this clears TODAY's buckets of exactly these keys for exactly these accounts: no other
+ * key or account is touched, and the caps themselves are unchanged.
+ */
+const KIT_BRAND_ACCOUNTS = ["u_b_tobi", "u_b_minji", "u_b_multi", "u_b_kemi", "u_b_orun", "u_b_designer", "u_b_viewer"] as const
+const KIT_DAILY_KEYS = ["studio.refund", "payouts.account", "payouts.request"] as const
+export async function resetKitDailyCaps() {
+  const d = await db()
+  const today = new Date().toISOString().slice(0, 10)
+  const keys = [
+    ...KIT_BRAND_ACCOUNTS.flatMap((u) => KIT_DAILY_KEYS.map((k) => `${k}:day:brand:${u}:${today}`)),
+    // The founding kit and journey generate claim links as the demo owner admin (100 a day).
+    `admin.founding.claim_link:day:admin:adm_1:${today}`,
+  ]
+  const gone = await d.delete(rateLimitBuckets).where(inArray(rateLimitBuckets.key, keys)).returning({ key: rateLimitBuckets.key })
+  return { cleared: gone.map((g) => g.key) }
 }

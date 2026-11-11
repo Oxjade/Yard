@@ -5,7 +5,7 @@ import { verifyCheckout } from "@/server/payments/checkout"
 
 /**
  * POST /api/checkout/{id}/verify (shopper, owner only). Call on return from Paystack (the
- * callback page /checkout/confirm?checkout={id}) and to poll: asks Paystack for the transaction
+ * callback page /checkout/confirmation?group={id}&paid=1) and to poll: asks Paystack for the transaction
  * and applies a final answer exactly as the webhook would. A pending answer changes nothing.
  */
 export const POST = route({ auth: "shopper", rate: { key: "checkout.verify", limit: 30, windowSec: 60 } }, async ({ actor, params }) => {

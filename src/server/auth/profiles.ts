@@ -26,5 +26,6 @@ export async function sessionSnapshot(): Promise<SessionDto> {
     brand: brand ? brandProfileOf(brand) : null,
     admin: admin ? adminProfileOf(admin) : null,
     demoAuth: { ...env.demoAuth },
+    sampleData: env.seedDemo,
   }
 }

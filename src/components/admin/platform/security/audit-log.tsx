@@ -14,6 +14,7 @@ import { adminRoles, type AuditEntry } from "@/lib/data/admin"
 import { canAdmin, needsRole } from "@/lib/permissions"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { useAdmin } from "@/lib/stores/admin"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { anchorDay } from "../../finance/format"
 import { isDayPrecision, recordTime } from "../format"
 import { AUDIT_CSV_HEADER, actionLabel, auditCsvLine, csvCell, entryLabel, LEGACY_NOTE, readable } from "./audit-words"
@@ -57,6 +58,19 @@ function saveCsv(text: string, name: string) {
   URL.revokeObjectURL(url)
 }
 
+const NO_ENTRIES: AuditEntry[] = []
+
+/**
+ * This browser's audit entries (the legacy store, seeded with made-up sample entries): demo and
+ * development only. In production (the demo switch off, or before the session says it is on) the
+ * audit log is the server's alone, so this is empty.
+ */
+export function useBrowserAudit(): AuditEntry[] {
+  const sampleData = usePageSampleData()
+  const audit = useAdmin((s) => s.audit)
+  return sampleData ? audit : NO_ENTRIES
+}
+
 const browserCsv = (rows: Row[]) => rows.map((a) => auditCsvLine({ at: a.at, source: "browser", actor: a.actor, roleName: a.roleName, action: a.action, target: a.target, reason: a.reason, approvedBy: a.approvedBy, ip: a.ip }))
 
 /**
@@ -66,7 +80,8 @@ const browserCsv = (rows: Row[]) => rows.map((a) => auditCsvLine({ at: a.at, sou
  * and `label` says so. Shares the log's own request (same key), so it costs nothing extra.
  */
 export function useAuditFigures() {
-  const audit = useAdmin((s) => s.audit)
+  const audit = useBrowserAudit()
+  const sampleData = usePageSampleData()
   const admin = useServerSession((s) => s.admin)
   const canRead = !!admin && canAdmin(admin.role, "audit.view")
   const server = useApi(canRead ? "admin:audit:feed:admins" : null, () => listAudit({ limit: 200 }), { refreshInterval: 30_000 })
@@ -77,13 +92,14 @@ export function useAuditFigures() {
     withApprover: local.withApprover + (t?.withApprover ?? 0),
     /** False while the server's count is still loading (the card shows its skeleton). */
     ready: !canRead || !!t || !!server.error,
-    label: canRead ? (server.error && !t ? "This browser's entries (the server's couldn't load)" : "Server and this browser") : "This browser's legacy entries",
+    label: !sampleData ? "Server" : canRead ? (server.error && !t ? "This browser's entries (the server's couldn't load)" : "Server and this browser") : "This browser's legacy entries",
   }
 }
 
 /** The audit log: every decision, who made it, why and who approved it. Read-only; exports are logged too. */
 export function AuditLog({ ready }: { ready: boolean }) {
-  const audit = useAdmin((s) => s.audit)
+  const audit = useBrowserAudit()
+  const sampleData = usePageSampleData()
   const now = useNow(60_000)
   const log = useAdmin((s) => s.log)
   const session = useServerSession()
@@ -211,7 +227,15 @@ export function AuditLog({ ready }: { ready: boolean }) {
     setWho("admins")
   }
 
-  const serverNote = !admin
+  const serverNote = !sampleData
+    ? !admin
+      ? "Sign in as an admin to see the audit log."
+      : !canRead
+        ? `The audit log: ${needsRole("audit.view").toLowerCase()}.`
+        : server.error && !server.data
+          ? "Couldn't load the audit log. Try again shortly."
+          : null
+    : !admin
     ? "Server entries need a demo admin session: sign in from the account menu. Only this browser's entries show until then."
     : !canRead
       ? `Server entries: ${needsRole("audit.view").toLowerCase()}. Only this browser's entries show.`
@@ -245,7 +269,8 @@ export function AuditLog({ ready }: { ready: boolean }) {
               results={shown.length}
               onClear={clear}
               filters={[
-                { key: "source", label: "Source", value: source, onChange: setSource, all: { value: ALL, label: `All sources (${rows.length})` }, options: [{ value: "server", label: `Server (${counts.server})` }, { value: "browser", label: `This browser (${counts.browser})` }], width: "w-[176px]" },
+                // Production has the server's entries only, so there is no source to choose.
+                ...(sampleData ? [{ key: "source", label: "Source", value: source, onChange: setSource, all: { value: ALL, label: `All sources (${rows.length})` }, options: [{ value: "server", label: `Server (${counts.server})` }, { value: "browser", label: `This browser (${counts.browser})` }], width: "w-[176px]" }] : []),
                 { key: "who", label: "Who", value: who, onChange: setWho, all: { value: "admins", label: "Admins and Yard" }, options: [{ value: "everyone", label: "Including brand teams" }], width: "w-[190px]" },
                 { key: "actor", label: "Actor", value: actor, onChange: setActor, all: { value: ALL, label: `Everyone (${bySource.length})` }, options: actors.map(([a, n]) => ({ value: a, label: `${a} (${n})` })), width: "w-[176px]" },
                 { key: "action", label: "Action", value: action, onChange: setAction, all: { value: ALL, label: `All actions (${bySource.length})` }, options: actions.map(([a, n]) => ({ value: a, label: `${actionLabel(a)} (${n})` })), width: "w-[220px]" },

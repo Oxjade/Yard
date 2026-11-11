@@ -3,8 +3,8 @@ import type { ShippingMethod } from "./shipping"
 
 /*
  * The checkout draft: what the shopper has typed so far, kept for this tab only
- * (sessionStorage), so a reload or a trip back to the bag doesn't lose it. Card number,
- * expiry and security code are never stored. Storage can be unavailable (private mode,
+ * (sessionStorage), so a reload or a trip back to the bag doesn't lose it. Only the payment
+ * method is kept: card details are typed on Paystack's page, never on Yard. Storage can be unavailable (private mode,
  * blocked site data), so every access is guarded and the checkout works without it.
  */
 
@@ -19,7 +19,7 @@ export type CheckoutDraft = {
   contact: ContactDraft
   address: AddressDraft
   shipping: Record<string, ShippingMethod>
-  payment: Omit<PaymentDraft, "cardNumber" | "expiry" | "cvc">
+  payment: PaymentDraft
   /**
    * The checkout attempt's idempotency key (§6.5): a retry after a reload, when the first answer
    * was lost, registers nothing new and returns the same server group.

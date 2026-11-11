@@ -25,6 +25,9 @@ const DEV_LOG = process.env.YARD_DEV_LOG ?? "/tmp/claude-0/-home-user/e300ec86-3
 const RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const TAG = `t_v3_checkout_${RUN}`
 const BRAND = "b_lagos_static"
+// The dev server trusts one proxy hop: a per-run client address gives this kit its own per-IP
+// rate-limit buckets (sign-up mail, sign-in) instead of sharing loopback with every other kit.
+const IP = `10.${120 + Math.floor(Math.random() * 20)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`
 
 let failed = 0
 let passed = 0
@@ -64,7 +67,7 @@ class Jar {
 }
 
 async function api(method, path, { jar, cookie, body, headers, raw, noOrigin } = {}) {
-  const h = { ...(noOrigin ? {} : { Origin: base, "X-Yard-Client": "1" }), ...(headers ?? {}) }
+  const h = { "X-Forwarded-For": IP, ...(noOrigin ? {} : { Origin: base, "X-Yard-Client": "1" }), ...(headers ?? {}) }
   const ck = jar ? jar.cookie : cookie
   if (ck) h.cookie = ck
   let payload
@@ -110,27 +113,16 @@ async function demo(actor, account, brandId) {
 }
 
 /**
- * The kit's shoppers are long-lived accounts tagged t_v3_checkout_ (sign-up emails are rate limited
- * per IP / globally and shared with every kit on this server, so each run signs in instead of signing
- * up). The first credentials that sign in win; otherwise the canonical account is signed up and
- * verified through the dev log. Every run empties their carts first.
+ * The kit's shoppers are fresh sign-ups owned by this run (t_v3_checkout_<run>_s1/_s2). Checkout
+ * starts carry a durable DAILY cap per shopper (POST /api/checkout: 100 a day) and one run makes
+ * about 20 (S1) and 10 (S2), so long-lived kit accounts ran out after a few runs a day. Sign-up mail
+ * is limited per client address; the per-run address above (IP) gives each run its own budget.
  */
 const KIT_PW = "Kit-checkout-v3-pw!"
-const KNOWN = {
-  s1: [["t_v3_checkout_mw86z93e7qkn_s1@example.com", "Kit-mw86z93e7qkn-pw!"]],
-  s2: [["t_v3_checkout_mw86z93e7qkn_s2@example.com", "Kit-mw86z93e7qkn-pw!"]],
-}
 async function kitShopper(label) {
-  const candidates = [...(KNOWN[label] ?? []), [`t_v3_checkout_kit_${label}@example.com`, KIT_PW]]
-  for (const [email, password] of candidates) {
-    const jar = new Jar()
-    const r = await post("/api/auth/sign-in", { email, password, actor: "shopper" }, { jar })
-    if (r.status === 200) {
-      await del("/api/cart", { jar })
-      return jar
-    }
-  }
-  return signUpShopper(label, `t_v3_checkout_kit_${label}@example.com`, KIT_PW)
+  const jar = await signUpShopper(label, `${TAG}_${label}@example.com`, KIT_PW)
+  await del("/api/cart", { jar })
+  return jar
 }
 
 /** Signs up a new shopper and confirms it through the link the stub email provider prints to the dev log. */
@@ -196,6 +188,12 @@ async function main() {
   if (!quiet) console.log(`# CHECKOUT v3 kit against ${base}, run ${TAG}`)
 
   /* ===== Setup: a product in Lagos Static with controlled stock ===== */
+  // Brand refunds and payout changes carry durable daily caps per account; the kits' demo brand
+  // accounts share them across runs, so clear today's buckets first (dev-only op, those keys only).
+  {
+    const rc = await post("/api/orders/dev", { op: "reset-kit-daily-caps" })
+    if (rc.status !== 200) throw new Error(`reset-kit-daily-caps: ${brief(rc)}`)
+  }
   const OWNER = await demo("brand", "u_b_tobi", BRAND)
   const VIEWER_B = await demo("brand", "u_b_viewer", BRAND)
   const ADM_OWNER = await demo("admin", "adm_1")
@@ -724,6 +722,11 @@ async function main() {
     const so = await get(`/api/studio/orders/${orderId}`, { jar: OWNER })
     const total = so.body?.order?.totalMinor ?? so.body?.totalMinor ?? paidCo.totalMinor
     const refund = (b, jar = OWNER) => post(`/api/studio/orders/${orderId}/refunds`, b, { jar })
+    // Brand refunds need a recent re-auth (demo brand sessions confirm with { demo: true } in development).
+    const noRe = await refund({ amountMinor: 100, reason: TAG, idempotencyKey: key("rfre") })
+    check("refund: without a recent re-auth → 403 fields.reauth=required", noRe.status === 403 && noRe.body?.error?.fields?.reauth === "required", brief(noRe))
+    const ra = await post("/api/auth/reauth?as=brand", { demo: true }, { jar: OWNER })
+    if (ra.status !== 200) throw new Error(`brand re-auth: ${brief(ra)}`)
     check("refund: a viewer can't refund (403)", (await refund({ amountMinor: 100, reason: TAG, idempotencyKey: key("rfv") }, VIEWER_B)).status === 403)
     check("refund: zero amount is 400/422", [400, 422].includes((await refund({ amountMinor: 0, reason: TAG, idempotencyKey: key("rf0") })).status))
     const over = await refund({ amountMinor: total + 1, reason: TAG, idempotencyKey: key("rfover") })

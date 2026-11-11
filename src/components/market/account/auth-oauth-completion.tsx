@@ -4,8 +4,10 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api/client"
+import type { SessionDto } from "@/lib/api/contracts/session"
 import { afterIdentityChange } from "@/lib/session/identity"
-import { clearOnboardingAuthReturn, takeOnboardingAuthReturn } from "@/lib/session/auth-return"
+import { clearOnboardingAuthReturn, OAUTH_REAUTH_CHANNEL, takeOnboardingAuthReturn, takeReauthReturn, type OAuthReauthMessage } from "@/lib/session/auth-return"
 import { refreshServerSession, getServerSessionState } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
 
@@ -25,6 +27,30 @@ const messages = new Map<string, string>(Object.entries({
 
 type Completion = { result: string; message: string; success: boolean }
 
+/**
+ * A reauth round trip usually runs in the small window Studio opened: tell the page that opened it
+ * (postMessage to the opener, and this browser's other tabs on a BroadcastChannel in case the
+ * opener link was lost), then close. Returns true when there was an opener to hand back to.
+ */
+function reportReauth(message: OAuthReauthMessage) {
+  try {
+    const ch = new BroadcastChannel(OAUTH_REAUTH_CHANNEL)
+    ch.postMessage(message)
+    ch.close()
+  } catch {
+    /* no BroadcastChannel: the opener still hears postMessage */
+  }
+  const opener = window.opener as Window | null
+  if (!opener || opener.closed) return false
+  try {
+    opener.postMessage(message, window.location.origin)
+  } catch {
+    return false
+  }
+  window.setTimeout(() => window.close(), 400)
+  return true
+}
+
 export function AuthOAuthCompletion() {
   const params = useSearchParams()
   const provider = params.get("provider") ?? "identity provider"
@@ -39,6 +65,22 @@ export function AuthOAuthCompletion() {
     let active = true
     void (async () => {
       try {
+        if (mode === "reauth") {
+          // The identity didn't change: refresh this tab's session only, then hand the result back.
+          let ok = false
+          if (result === "reauthed") {
+            // Read the session straight from the server (the shared store may be mid-refresh from
+            // its own first load, and would then keep the older answer).
+            const session = await api<SessionDto>("/api/session")
+            ok = actor === "brand" ? !!session.brand && !session.brand.demo : !!session.shopper && !session.shopper.demo
+            void refreshServerSession()
+          }
+          const message = ok ? "Your identity was confirmed." : result === "reauthed" ? "Yard couldn’t confirm this. Close this window and try again." : (messages.get(result) ?? "Your identity couldn’t be confirmed.")
+          const handed = reportReauth({ type: "yard:oauth-reauth", actor, ok, message: ok ? undefined : message })
+          if (!handed && active) setContinueTo(takeReauthReturn() ?? (actor === "brand" ? "/studio" : "/you"))
+          if (active) setCompletion({ result, success: ok, message: ok ? (handed ? "Your identity was confirmed. Returning you to Studio…" : "Your identity was confirmed. Go back and press the button again to finish.") : message })
+          return
+        }
         if (result === "signed_in" || result === "linked" || result === "reauthed") {
           await afterIdentityChange(actor === "brand" ? "studio" : "market")
           await refreshServerSession()
@@ -69,15 +111,15 @@ export function AuthOAuthCompletion() {
       }
     })()
     return () => { active = false }
-  }, [actor, provider, result])
+  }, [actor, mode, provider, result])
 
   return (
     <>
-      <h1 className="font-display text-display-lg text-ink">{current?.success ? "You’re signed in" : "Finishing sign-in"}</h1>
+      <h1 className="font-display text-display-lg text-ink">{mode === "reauth" ? (current?.success ? "Confirmed" : "Confirming it’s you") : current?.success ? "You’re signed in" : "Finishing sign-in"}</h1>
       <p className={current && !current.success ? "mt-5 max-w-xl text-sm leading-relaxed text-danger" : "mt-5 max-w-xl text-sm leading-relaxed text-ink-2"} role={current && !current.success ? "alert" : "status"}>
-        {current?.message ?? `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`}
+        {current?.message ?? (mode === "reauth" ? `Confirming with ${provider}…` : `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`)}
       </p>
-      {current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
+      {mode === "reauth" && current ? <Button asChild variant={current.success ? "primary" : "secondary"} className="mt-6"><Link href={continueTo === "/you/orders" ? (actor === "brand" ? "/studio" : "/you") : continueTo}>{current.success ? "Back to where you were" : "Go back"}</Link></Button> : current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
     </>
   )
 }

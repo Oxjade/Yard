@@ -49,8 +49,8 @@ export type CheckoutInput = {
   /** The server's quote per brand (its signed token goes with the order). */
   quotes: Record<string, QuoteGroupDto>
   paymentMethod: "card" | "bank_transfer" | "ussd" | "mobile_money"
-  /** What the receipt says about payment: words only, never the card number, expiry or code. */
-  payment: { label: string; holder?: string; cardBrand?: string; last4?: string }
+  /** What the receipt says about payment: words only. Card details are typed on Paystack's page, never here. */
+  payment: { label: string; holder?: string }
 }
 
 /**
@@ -106,9 +106,14 @@ function paymentStatus(value: string): PaymentStatus {
 /** True for checkouts kept in this browser's storage: the demo shopper's (and the sample history). */
 const persistable = (customerId: string) => customerId === DEMO_SHOPPER
 
+/** The provider's channel as the receipt's words ("card" → "Card"). */
+const channelWord: Record<string, string> = { card: "Card", bank_transfer: "Bank transfer", bank: "Bank transfer", eft: "Instant EFT", ussd: "USSD", mobile_money: "Mobile money", qr: "QR code" }
+
 function paymentSnapshot(checkout: CheckoutStartResponse, previous?: CheckoutGroup["payment"]): NonNullable<CheckoutGroup["payment"]> {
+  const channel = checkout.payment?.channel ? channelWord[checkout.payment.channel] : undefined
   return {
     ...previous,
+    ...(channel ? { method: channel } : {}),
     status: checkout.status === "paid" ? "captured" : checkout.status === "failed" || checkout.status === "expired" ? "failed" : checkout.payment?.stub ? "not_charged" : "pending",
     note: checkout.failureReason ?? checkout.payment?.message ?? previous?.note ?? undefined,
   }
@@ -154,6 +159,7 @@ export async function loadServerCheckout(checkoutId: string, opts: { verify?: bo
       reference: d.reference,
       groupId: checkout.id,
       brandId: d.brand.id,
+      brand: { name: d.brand.name, handle: d.brand.handle },
       customerId,
       status: merchantStatus(d.states.merchant),
       paymentStatus: paymentStatus(d.states.payment),
@@ -243,6 +249,7 @@ export const useOrders = create<OrdersState>()(
           },
           shipping: bag.groups.map((g) => ({ brandId: g.brand.id, service: g.option!.service })),
           expectedTotalMinor: bag.total ?? undefined,
+          paymentMethod: input.paymentMethod,
         }
         let checkout: CheckoutStartResponse
         let orderPage: CheckoutOrdersPage
@@ -296,6 +303,7 @@ export const useOrders = create<OrdersState>()(
             reference: summary.reference,
             groupId: checkout.id,
             brandId: summary.brand.id,
+            brand: { name: summary.brand.name, handle: summary.brand.handle },
             customerId,
             status: merchantStatus(summary.states.merchant),
             paymentStatus: paymentStatus(summary.states.payment),

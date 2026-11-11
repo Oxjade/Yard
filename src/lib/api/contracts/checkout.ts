@@ -13,6 +13,8 @@ export type StartCheckoutRequest = {
   }
   shipping: { brandId: string; service: "standard" | "express" | "pickup" }[]
   expectedTotalMinor?: number
+  /** How the shopper chose to pay; Paystack's page offers that channel. Card details are typed only there. */
+  paymentMethod?: "card" | "bank_transfer" | "ussd" | "mobile_money"
 }
 
 export type CheckoutStartResponse = {
@@ -39,6 +41,10 @@ export type CheckoutStartResponse = {
     publicKey: string | null
     stub: boolean
     message: string | null
+    /** How it was paid, as the provider reported it once paid ("card", "bank_transfer", "ussd"…). */
+    channel: string | null
+    /** Only on a verify answer while pending: Paystack's own status. "abandoned" = left without paying, nothing charged. */
+    providerStatus?: string | null
   } | null
 }
 
@@ -60,3 +66,5 @@ export type CheckoutOrderSummary = {
 }
 
 export type CheckoutOrdersPage = { items: CheckoutOrderSummary[]; nextCursor: string | null }
+/** GET /api/checkout/options: how this deployment takes payments. */
+export type CheckoutOptions = { mode: "stub" | "test" | "live"; currencies: string[] }

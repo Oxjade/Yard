@@ -108,6 +108,13 @@ export const EMPTY_CATALOG_FACETS: CatalogFacets = {
 }
 
 /** Build the server query from URL state; price bounds stay USD-major in the URL. */
+/**
+ * The currency the server renders the first page in, and the browser uses before hydrating: the
+ * default shopper currency (session.ts defaults to NGN), so for most visitors the hydrated search
+ * key matches the server's and the server-rendered grid stays.
+ */
+export const CATALOG_SSR_CURRENCY = "NGN" satisfies CurrencyCode
+
 export function catalogSearchQuery(state: CatalogState, currency: CurrencyCode, cursor?: string, limit = PAGE_SIZE) {
   return {
     q: state.q || undefined,

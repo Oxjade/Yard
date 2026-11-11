@@ -7,7 +7,7 @@ import { FunnelSimpleIcon as Funnel, PackageIcon as Package } from "@phosphor-ic
 import { AnimatePresence, motion } from "motion/react"
 import { BrandMark } from "@/components/market/brand-mark"
 import { Button } from "@/components/ui/button"
-import { brandById } from "@/lib/data/brands"
+import { orderBrand } from "@/lib/order-brand"
 import { useOrders } from "@/lib/stores/orders"
 import type { CheckoutGroup, MerchantOrder } from "@/lib/data/types"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
@@ -51,7 +51,7 @@ function itemsSummary(o: MerchantOrder) {
 
 /** One brand's part of a checkout: what's in it, where it is, and how to track it. */
 export function OrderRow({ order }: { order: MerchantOrder }) {
-  const brand = brandById.get(order.brandId)
+  const brand = orderBrand(order)
   const count = order.lines.reduce((n, l) => n + l.quantity, 0)
   return (
     <li className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center md:px-6">

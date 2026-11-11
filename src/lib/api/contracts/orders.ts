@@ -39,3 +39,15 @@ export type OrderDetailDto = OrderSummaryDto & {
   timeline: { id: string; kind: string; actorKind: string; at: string; data: Record<string, unknown> }[]
   actions: { canCancel: boolean; canRequestReturn: boolean; returnWindowEndsAt: string | null }
 }
+/** GET /api/studio/overview?days=: the Studio Overview for a real brand (server data only). */
+export type StudioOverviewDto = {
+  days: 7 | 30 | 90
+  /** The brand's own currency (its prices and orders are in it). */
+  currency: string
+  /** Captured orders per currency: the window and the window before it. Net = gross - refunded. */
+  sales: { currency: string; orders: number; grossMinor: number; refundedMinor: number; prevOrders: number; prevGrossMinor: number; prevRefundedMinor: number }[]
+  /** Merchant status Paid or Processing: the Orders page's work not yet shipped. */
+  toShip: { total: number; paid: number; processing: number }
+  recentOrders: OrderSummaryDto[]
+  topProducts: { productId: string; title: string; currency: string; units: number; revenueMinor: number; image: { src: string; alt: string } | null }[]
+}

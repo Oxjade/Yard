@@ -15,6 +15,7 @@ import { ApiError, api } from "@/lib/api/client"
 import type { OrderDetailDto } from "@/lib/api/contracts/orders"
 import { formatMoney, toMajor } from "@/lib/money"
 import { plural } from "./model"
+import { BrandReauthField, useBrandReauth } from "./reauth"
 import { useFocusReturn } from "./shared"
 
 /**
@@ -30,8 +31,6 @@ const idemKey = (prefix: string) => `${prefix}_${crypto.randomUUID().replace(/-/
 const orderPath = (o: ServerOrder, rest: string) => `/api/studio/orders/${encodeURIComponent(o.id)}/${rest}`
 const cur = (o: ServerOrder) => o.currency as CurrencyCode
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
-/** 403 with fields.reauth = "required": the session must confirm the password before a money action. */
-const needsReauth = (e: unknown) => e instanceof ApiError && e.status === 403 && e.fields?.reauth === "required"
 
 /** Resets a dialog's form each time it opens, without an effect. */
 function useResetOnOpen(open: boolean, reset: () => void) {
@@ -65,6 +64,8 @@ export function ServerCancelDialog({ open, onOpenChange, order: o, onDone }: Pro
   const [error, setError] = useState<string | null>(null)
   // One key per opening: a retry after a network error never cancels (or refunds) twice.
   const [key, setKey] = useState(() => idemKey("cancel"))
+  // Cancelling a paid order refunds it, so the server may ask for the password first.
+  const reauth = useBrandReauth("s-cancel-password")
   useResetOnOpen(open, () => {
     setReason("")
     setNote("")
@@ -72,6 +73,7 @@ export function ServerCancelDialog({ open, onOpenChange, order: o, onDone }: Pro
     setSubmitted(false)
     setError(null)
     setKey(idemKey("cancel"))
+    reauth.reset()
   })
   const errors = {
     reason: !reason ? "Choose a reason. The customer sees it with their refund." : undefined,
@@ -95,12 +97,13 @@ export function ServerCancelDialog({ open, onOpenChange, order: o, onDone }: Pro
     setBusy(true)
     setError(null)
     try {
+      if (!(await reauth.verify())) return
       const r = await api<{ order: ServerOrder }>(orderPath(o, "cancel"), { body: { reason: text.slice(0, 200), restock, idempotencyKey: key } })
       toast.success(`#${o.reference} cancelled`, { description: paid ? `A full refund of ${formatMoney(o.totalMinor, cur(o))} goes back to the customer.` : "It was never paid, so there's nothing to refund." })
       onDone(r.order)
       onOpenChange(false)
     } catch (cause) {
-      setError(errorText(cause, "The order wasn't cancelled. Check your connection and try again."))
+      setError(reauth.catches(cause) ? reauth.prompt("cancel the order again") : errorText(cause, "The order wasn't cancelled. Check your connection and try again."))
     } finally {
       setBusy(false)
     }
@@ -140,6 +143,7 @@ export function ServerCancelDialog({ open, onOpenChange, order: o, onDone }: Pro
               </Label>
             </div>
           ) : null}
+          <BrandReauthField reauth={reauth} />
           {error ? <FormError>{error}</FormError> : null}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>Keep order</Button>
@@ -157,8 +161,7 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
   const max = o.refundableMinor
   const [amount, setAmount] = useState("")
   const [reason, setReason] = useState("")
-  const [password, setPassword] = useState("")
-  const [reauth, setReauth] = useState(false)
+  const reauth = useBrandReauth("s-refund-password")
   const [submitted, setSubmitted] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -166,8 +169,7 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
   useResetOnOpen(open, () => {
     setAmount("")
     setReason("")
-    setPassword("")
-    setReauth(false)
+    reauth.reset()
     setSubmitted(false)
     setError(null)
     setKey(idemKey("refund"))
@@ -178,7 +180,6 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
   const errors = {
     amount: !amount.trim() || !Number.isFinite(minor) || minor <= 0 ? "Enter the amount to refund." : minor > max ? `You can refund up to ${formatMoney(max, cur(o))}.` : undefined,
     reason: reason.trim().length < 3 ? "Say what the refund is for. The customer sees it." : undefined,
-    password: reauth && !password ? "Enter your password to confirm." : undefined,
   }
   const shown: Partial<typeof errors> = submitted ? errors : {}
   const focus = useFocusReturn()
@@ -187,7 +188,7 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
     e.preventDefault()
     if (!open || busy) return
     setSubmitted(true)
-    const first = errors.amount ? "s-refund-amount" : errors.reason ? "s-refund-reason" : errors.password ? "s-refund-password" : null
+    const first = errors.amount ? "s-refund-amount" : errors.reason ? "s-refund-reason" : null
     if (first) {
       document.getElementById(first)?.focus()
       return
@@ -195,17 +196,14 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
     setBusy(true)
     setError(null)
     try {
-      if (reauth) await api("/api/auth/reauth", { query: { as: "brand" }, body: { password } })
+      // After a 403 reauth: confirm once, then retry with the same Idempotency-Key (`key` only changes on open).
+      if (!(await reauth.verify())) return
       const r = await api<{ order: ServerOrder; status: string; duplicate: boolean }>(orderPath(o, "refunds"), { body: { amountMinor: minor, reason: reason.trim(), idempotencyKey: key } })
       toast.success(r.status === "succeeded" ? `Refunded ${formatMoney(minor, cur(o))}` : `Refund of ${formatMoney(minor, cur(o))} requested`, { description: r.status === "succeeded" ? "It's on its way back to the customer." : "The payment provider is processing it. The order updates when it lands." })
       onDone(r.order)
       onOpenChange(false)
     } catch (cause) {
-      if (needsReauth(cause)) {
-        setReauth(true)
-        setError("Confirm it's you: enter your Studio password, then refund again.")
-        window.setTimeout(() => document.getElementById("s-refund-password")?.focus(), 0)
-      } else setError(errorText(cause, "The refund wasn't sent. Check your connection and try again."))
+      setError(reauth.catches(cause) ? reauth.prompt("refund again") : errorText(cause, "The refund wasn't sent. Check your connection and try again."))
     } finally {
       setBusy(false)
     }
@@ -227,11 +225,7 @@ export function ServerRefundDialog({ open, onOpenChange, order: o, onDone }: Pro
           <Field id="s-refund-reason" label="Reason" error={shown.reason} hint="The customer sees this with the refund.">
             <Input {...control("s-refund-reason", shown.reason, true)} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} className={inputClass} placeholder="e.g. A button came loose; sorry about that." autoComplete="off" />
           </Field>
-          {reauth ? (
-            <Field id="s-refund-password" label="Your password" error={shown.password}>
-              <Input {...control("s-refund-password", shown.password)} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} autoComplete="current-password" />
-            </Field>
-          ) : null}
+          <BrandReauthField reauth={reauth} />
           {error ? <FormError>{error}</FormError> : null}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>Not now</Button>
@@ -256,6 +250,8 @@ export function ServerReturnDialog({ open, onOpenChange, order: o, returnId, mod
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState(() => idemKey("receive"))
+  // Receiving with a refund sends money back, so the server may ask for the password first.
+  const reauth = useBrandReauth("s-return-password")
   useResetOnOpen(open, () => {
     setReason("")
     setRestock(true)
@@ -263,6 +259,7 @@ export function ServerReturnDialog({ open, onOpenChange, order: o, returnId, mod
     setSubmitted(false)
     setError(null)
     setKey(idemKey("receive"))
+    reauth.reset()
   })
   const len = reason.trim().length
   const reasonError = mode === "decline" ? (len < 15 ? "Give the customer a clear reason (15 characters or more)." : len > 300 ? "Keep it under 300 characters." : undefined) : undefined
@@ -281,6 +278,7 @@ export function ServerReturnDialog({ open, onOpenChange, order: o, returnId, mod
     setBusy(true)
     setError(null)
     try {
+      if (mode === "receive" && !(await reauth.verify())) return
       const r =
         mode === "receive"
           ? await api<{ order: ServerOrder }>(orderPath(o, `returns/${encodeURIComponent(ret.id)}/receive`), { body: { restock, refund, idempotencyKey: key } })
@@ -291,7 +289,7 @@ export function ServerReturnDialog({ open, onOpenChange, order: o, returnId, mod
       onDone(r.order)
       onOpenChange(false)
     } catch (cause) {
-      setError(errorText(cause, "That didn't go through. Check your connection and try again."))
+      setError(mode === "receive" && reauth.catches(cause) ? reauth.prompt("mark it received again") : errorText(cause, "That didn't go through. Check your connection and try again."))
     } finally {
       setBusy(false)
     }
@@ -336,6 +334,7 @@ export function ServerReturnDialog({ open, onOpenChange, order: o, returnId, mod
               </div>
             </div>
           ) : null}
+          {mode === "receive" ? <BrandReauthField reauth={reauth} /> : null}
           {error ? <FormError>{error}</FormError> : null}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>Back</Button>

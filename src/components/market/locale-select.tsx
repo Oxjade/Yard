@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useSession } from "@/lib/stores/session"
 
-/** Ship-to country and display currency. Choosing a country suggests its currency. */
+/** Ship-to country and display currency. The currency follows the country until the shopper picks one. */
 export function LocaleSelect() {
   const hydrated = useHydrated()
   const currency = useSession((s) => s.currency)
@@ -20,9 +20,7 @@ export function LocaleSelect() {
       <Select
         value={hydrated ? shipTo : "NG"}
         onValueChange={(v) => {
-          const c = v as CountryCode
-          setShipTo(c)
-          setCurrency(countries[c].currency as CurrencyCode)
+          setShipTo(v as CountryCode)
         }}
       >
         <SelectTrigger size="sm" className="h-8 min-w-36 border-white/10 bg-transparent text-xs" aria-label="Ship to">
@@ -34,7 +32,7 @@ export function LocaleSelect() {
           ))}
         </SelectContent>
       </Select>
-      <Select value={hydrated ? currency : "USD"} onValueChange={(v) => setCurrency(v as CurrencyCode)}>
+      <Select value={hydrated ? currency : "NGN"} onValueChange={(v) => setCurrency(v as CurrencyCode)}>
         <SelectTrigger size="sm" className="h-8 min-w-24 border-white/10 bg-transparent text-xs" aria-label="Currency">
           <SelectValue />
         </SelectTrigger>

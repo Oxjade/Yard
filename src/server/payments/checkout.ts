@@ -16,12 +16,35 @@ import { newId } from "../ids"
 import { log } from "../log"
 import { createOrdersFromCheckout, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
-import { isChargeCurrency, paymentsConfig, PAYSTACK_CURRENCIES } from "./config"
+import { chargeCurrencies, paymentsConfig } from "./config"
 import { recordProviderEvent, processEvent } from "./events"
 import { getProvider, ProviderError } from "./providers"
 import { randomBytes } from "node:crypto"
 
 /* ---------- Request contracts ---------- */
+
+export const PAYMENT_METHODS = ["card", "bank_transfer", "ussd", "mobile_money"] as const
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+/**
+ * Paystack channels for the method the shopper chose, sent only when Paystack takes that channel
+ * in the charge currency for that country: bank transfer and USSD in NGN (Nigeria), mobile money in
+ * GHS (Ghana) and KES (Kenya). Card works in every charge currency. Anything else — South Africa's
+ * Instant EFT, whose channel name isn't confirmed here, or a method that doesn't fit the currency —
+ * leaves Paystack's page unrestricted rather than risk a rejected initialise. Mirrors the
+ * checkout's paymentMethodsFor (src/components/market/checkout/rules.ts).
+ */
+export function channelsFor(method: PaymentMethod | undefined, country: string, currency: string): string[] | undefined {
+  if (!method) return undefined
+  if (method === "card") return ["card"]
+  const fits =
+    method === "bank_transfer" || method === "ussd"
+      ? country === "NG" && currency === "NGN"
+      : method === "mobile_money"
+        ? (country === "GH" && currency === "GHS") || (country === "KE" && currency === "KES")
+        : false
+  return fits ? [method] : undefined
+}
 
 const country = z.string().regex(/^[A-Z]{2}$/, { error: "Use a two-letter country code." })
 
@@ -57,6 +80,12 @@ export const startCheckoutBody = z
       .max(20),
     /** The total the shopper was shown. When sent and different, the checkout is refused with 409 and the new totals. */
     expectedTotalMinor: z.number().int().nonnegative().optional(),
+    /**
+     * How the shopper chose to pay. Paystack's page offers only that channel; the card number,
+     * expiry and code are typed there, never sent to Yard. Not part of the request hash: a retry
+     * after choosing another method picks up the same checkout.
+     */
+    paymentMethod: z.enum(PAYMENT_METHODS).optional(),
   })
   .strict()
 export type StartCheckoutBody = z.infer<typeof startCheckoutBody>
@@ -93,6 +122,13 @@ export type CheckoutView = {
     /** True for the stub: nothing is charged and the page must say so. */
     stub: boolean
     message: string | null
+    /** How the payment was made, as the provider reported it once paid ("card", "bank_transfer", "ussd"…). */
+    channel: string | null
+    /**
+     * Only on a verify answer: what Paystack itself said while the payment is still pending.
+     * "abandoned" = the shopper left Paystack's page (or cancelled) without paying; nothing was charged.
+     */
+    providerStatus?: string | null
   } | null
 }
 
@@ -128,6 +164,7 @@ function toView(c: CheckoutRow, p: PaymentRow | null): CheckoutView {
             : p.initError && p.status === "initialized" && !p.authorizationUrl
               ? "We couldn't reach the payment provider. Nothing was charged. Try again."
               : null,
+          channel: p.channel ?? null,
         }
       : null,
   }
@@ -156,7 +193,7 @@ export async function getCheckout(actor: ShopperActor, checkoutId: string): Prom
 const paymentReference = () => `yp-${Date.now().toString(36)}-${randomBytes(8).toString("hex")}`
 
 function requestHash(body: StartCheckoutBody) {
-  const norm = { ...body, expectedTotalMinor: undefined, shipping: [...body.shipping].sort((a, b) => a.brandId.localeCompare(b.brandId)) }
+  const norm = { ...body, expectedTotalMinor: undefined, paymentMethod: undefined, shipping: [...body.shipping].sort((a, b) => a.brandId.localeCompare(b.brandId)) }
   return sha256hex(JSON.stringify(norm))
 }
 
@@ -172,11 +209,16 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
   const existing = await findByKey(actor.userId, body.idempotencyKey)
   if (existing) {
     if (existing.requestHash !== hash) throw conflict("This checkout was already started with different details. Reload and try again.")
-    return { status: 200, view: await ensureInitialized(actor, existing) }
+    return { status: 200, view: await ensureInitialized(actor, existing, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
   }
 
   const currency = asCurrency(body.currency)
-  if (!isChargeCurrency(currency)) throw rule(`Checkout can charge in ${PAYSTACK_CURRENCIES.join(", ")}. Switch your currency to one of these to pay.`)
+  // Only what this Paystack account takes: any other currency would create orders and hold stock
+  // for a payment Paystack then refuses on every retry.
+  const allowed = chargeCurrencies()
+  if (!(allowed as string[]).includes(currency)) {
+    throw new HttpError(422, "rule", `Checkout can only charge in ${allowed.join(", ")} right now. Reload the checkout to pay in ${allowed[0]}.`, { currency: `Choose ${allowed.join(" or ")}.` })
+  }
   const to = asCountry(body.shipTo.country)
 
   // 1. Re-price from CATALOG.
@@ -300,9 +342,9 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
     const again = await findByKey(actor.userId, body.idempotencyKey)
     if (!again) throw busy()
     if (again.requestHash !== hash) throw conflict("This checkout was already started with different details. Reload and try again.")
-    return { status: 200, view: await ensureInitialized(actor, again) }
+    return { status: 200, view: await ensureInitialized(actor, again, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
   }
-  return { status: 201, view: await ensureInitialized(actor, created) }
+  return { status: 201, view: await ensureInitialized(actor, created, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
 }
 
 const REPLACED = "Replaced by a newer checkout before payment"
@@ -355,8 +397,11 @@ function splitCodeFor(brandIds: string[]): string | null {
   return null
 }
 
-/** Makes sure the live payment has a provider page (initialise outside any transaction). */
-async function ensureInitialized(actor: ShopperActor, c: CheckoutRow): Promise<CheckoutView> {
+/**
+ * Makes sure the live payment has a provider page (initialise outside any transaction). `channels`
+ * limits Paystack's page to the method the shopper chose; it only matters on the first initialise.
+ */
+async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?: string[]): Promise<CheckoutView> {
   const d = await db()
   const p = await latestPayment(d, c.id)
   if (!p || c.status !== "pending_payment" || p.status !== "initialized" || p.provider !== "paystack" || p.accessCode) return toView(c, p)
@@ -371,6 +416,7 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow): Promise<C
       callbackUrl: paymentsConfig().callbackUrl(c.id),
       metadata: { checkoutId: c.id, paymentId: p.id, reference: c.reference ?? "" },
       splitCode: p.splitCode,
+      channels,
     })
     const [u] = await d.update(payments).set({ accessCode: r.accessCode, authorizationUrl: r.authorizationUrl, initError: null, updatedAt: new Date() }).where(eq(payments.id, p.id)).returning()
     return toView(c, u)
@@ -392,14 +438,33 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow): Promise<C
 export async function verifyCheckout(actor: ShopperActor, checkoutId: string): Promise<CheckoutView> {
   const view = await getCheckout(actor, checkoutId)
   if (view.status !== "pending_payment" || !view.payment || view.payment.provider !== "paystack" || view.payment.status !== "initialized") return view
-  await verifyPaymentReference(view.payment.reference)
-  return getCheckout(actor, checkoutId)
+  // Paystack never opened a page for this payment (its initialise failed): there is nothing to
+  // verify, so this is the confirmation's Retry. Initialise again (Paystack's page unrestricted: the
+  // method chosen at checkout isn't stored); a failure answers 503 with the reason, nothing charged.
+  // (Only after a recorded failure: one still in flight from the checkout's own request is left alone.)
+  if (!view.payment.accessCode && view.payment.message) {
+    const d = await db()
+    const [c] = await d.select().from(checkouts).where(and(eq(checkouts.id, checkoutId), eq(checkouts.customerId, actor.userId))).limit(1)
+    if (!c) throw notFound()
+    return ensureInitialized(actor, c)
+  }
+  const answer = await verifyPayment(view.payment.reference)
+  const after = await getCheckout(actor, checkoutId)
+  // Still pending: pass on Paystack's own word, so the page can tell "left without paying" from "being confirmed".
+  if (answer.status === "pending" && after.status === "pending_payment" && after.payment?.reference === view.payment.reference) {
+    return { ...after, payment: { ...after.payment, providerStatus: answer.providerStatus } }
+  }
+  return after
 }
 
 /** Verifies one payment reference with the provider and applies a final answer. Returns the provider status. */
 export async function verifyPaymentReference(reference: string): Promise<"success" | "failed" | "pending" | "unknown"> {
+  return (await verifyPayment(reference)).status
+}
+
+async function verifyPayment(reference: string): Promise<{ status: "success" | "failed" | "pending" | "unknown"; providerStatus: string | null }> {
   const provider = getProvider()
-  if (provider.kind !== "paystack") return "unknown"
+  if (provider.kind !== "paystack") return { status: "unknown", providerStatus: null }
   let state
   try {
     state = await provider.verify(reference)
@@ -410,12 +475,12 @@ export async function verifyPaymentReference(reference: string): Promise<"succes
     }
     throw e
   }
-  if (!state) return "unknown"
-  if (state.status === "pending") return "pending"
+  if (!state) return { status: "unknown", providerStatus: null }
+  if (state.status === "pending") return { status: "pending", providerStatus: state.providerStatus }
   const payload = { event: state.status === "success" ? "charge.success" : "charge.failed", data: state.raw as Record<string, unknown> }
   const ev = await recordProviderEvent({ provider: "paystack", source: "verify", payload, rawBody: JSON.stringify(payload), signatureValid: true })
   await processEvent(ev.id)
-  return state.status
+  return { status: state.status, providerStatus: state.providerStatus }
 }
 
 /* ---------- Stub completion (development only) ---------- */
