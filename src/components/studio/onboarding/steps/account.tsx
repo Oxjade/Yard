@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,6 +49,7 @@ export function AccountStep({ onNext }: StepProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const [needsVerification, setNeedsVerification] = useState(false)
   const [serverErrors, setServerErrors] = useState<{ name?: string; email?: string; password?: string }>({})
+  const pendingRef = useRef<HTMLDivElement>(null)
   const signedIn = hydrated ? user : null
   const demoSession = serverSession.shopper?.demo === true
 
@@ -96,16 +97,15 @@ export function AccountStep({ onNext }: StepProps) {
       if (mode === "signup") {
         await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
         setOnboardingAuthReturn()
-        setNeedsVerification(true)
-        setNotice(`Check your inbox for a verification link sent to ${email.trim()}.`)
+        // An address that already has an account gets a sign-in link instead, so name neither.
+        showPending(`We sent a link from Yard to ${email.trim()}. Open it on this device to come straight back here.`)
         return
       }
 
       const result = await api<AuthResponse>("/api/auth/sign-in", { body: { actor: "shopper", email: email.trim(), password } })
       if (result.status === "verify_email") {
         setOnboardingAuthReturn()
-        setNeedsVerification(true)
-        setNotice("Verify your email using the link in your inbox, then return to finish setup.")
+        showPending(`Verify ${email.trim()} using the link from Yard in your inbox. Open it on this device to come straight back here.`)
         return
       }
       if (result.status !== "signed_in") {
@@ -127,6 +127,30 @@ export function AccountStep({ onNext }: StepProps) {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** The link is on its way: swap the form for a clear inbox state and bring it into view (the phone action bar would hide a notice at the bottom). */
+  function showPending(message: string) {
+    setNeedsVerification(true)
+    setNotice(message)
+    focusPending()
+  }
+
+  function focusPending() {
+    requestAnimationFrame(() => {
+      const el = pendingRef.current
+      if (!el) return
+      el.focus({ preventScroll: true })
+      el.scrollIntoView({ block: "start", behavior: "smooth" })
+    })
+  }
+
+  function leavePending(next: AuthMode) {
+    setNeedsVerification(false)
+    setNotice(null)
+    setFailure(null)
+    setPassword("")
+    setMode(next)
   }
 
   async function resendVerification() {
@@ -161,7 +185,7 @@ export function AccountStep({ onNext }: StepProps) {
 
   const form = useStepForm(
     () =>
-      signedIn
+      signedIn || needsVerification
         ? {}
         : {
             name: mode === "signup" && name.trim().length < 2 ? "Enter your full name." : undefined,
@@ -174,6 +198,8 @@ export function AccountStep({ onNext }: StepProps) {
         onNext()
         return
       }
+      // Waiting on the emailed link: Continue mustn't sign up a second time.
+      if (needsVerification) return focusPending()
       void authenticate()
     },
   )
@@ -207,6 +233,24 @@ export function AccountStep({ onNext }: StepProps) {
             Use a different account
           </Button>
         </Panel>
+      </StepForm>
+    )
+  }
+
+  if (needsVerification) {
+    return (
+      <StepForm formRef={form.formRef} onSubmit={form.onSubmit} errors={{}}>
+        <div ref={pendingRef} tabIndex={-1} className="scroll-mt-24 outline-none">
+          <Panel title="Check your inbox" description="Your account is almost ready. Finish with the link we emailed, then carry on with your brand.">
+            {notice ? <p role="status" className="text-sm text-ink-2">{notice}</p> : null}
+            {failure ? <p role="alert" className="mt-3 text-sm text-danger">{failure}</p> : null}
+            <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
+              <Button type="button" variant="secondary" size="sm" loading={busy === "resend"} disabled={!!busy} onClick={() => void resendVerification()}>Resend the link</Button>
+              <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => leavePending("signin")}>I’ve verified, sign in</Button>
+              <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => leavePending("signup")}>Use a different email</Button>
+            </div>
+          </Panel>
+        </div>
       </StepForm>
     )
   }
@@ -247,7 +291,6 @@ export function AccountStep({ onNext }: StepProps) {
         </div>
         {mode === "signup" ? <p className="mt-4 text-xs text-ink-3">By continuing you agree to the seller terms and the privacy policy.</p> : null}
         {providers.demo.shopper ? <Button type="button" variant="secondary" size="lg" className="mt-4 w-full" loading={busy === "demo"} disabled={!!busy} onClick={() => void signInDemo()}>Continue as demo shopper</Button> : null}
-        {needsVerification ? <button type="button" className="mt-3 justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => void resendVerification()}>{busy === "resend" ? "Sending verification link…" : "Resend verification email"}</button> : null}
         {failure ? <p role="alert" className="mt-3 text-sm text-danger">{failure}</p> : null}
         {notice ? <p role="status" className="mt-3 text-sm text-ink-2">{notice}</p> : null}
         <button type="button" className="mt-4 justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => { setMode((current) => current === "signup" ? "signin" : "signup"); setFailure(null); setNotice(null); setNeedsVerification(false); setServerErrors({}) }}>

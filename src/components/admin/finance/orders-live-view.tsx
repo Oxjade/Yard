@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { AdminPageHead } from "@/components/admin/marketplace/page-head"
 import { Panel, PanelError } from "@/components/admin/ui/panel"
@@ -199,10 +199,16 @@ function DisputesTab() {
   const [moreBusy, setMoreBusy] = useState(false)
   const [selected, setSelected] = useState<Dispute | null>(null)
   const [note, setNote] = useState("")
+  // Closing is confirmed inline with a reason (rule: no modal), kept on the internal note.
+  const [closing, setClosing] = useState(false)
+  const [closeReason, setCloseReason] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<ActionError | null>(null)
   const rows = older.length ? older : disputes.data?.items ?? []
   const nextCursor = cursor === undefined ? disputes.data?.nextCursor ?? null : cursor
+  // Back from an order opened here: show the disputes as they are now, not the cached list.
+  const { revalidate: refetchDisputes } = disputes
+  useEffect(() => { void refetchDisputes() }, [refetchDisputes])
 
   async function refresh() {
     setOlder([])
@@ -226,7 +232,7 @@ function DisputesTab() {
   }
 
   async function updateDispute(patch: { adminNote?: string; responseSubmitted?: boolean; status?: "under_review" | "closed" }, success: string) {
-    if (!selected || busy) return
+    if (!selected || busy) return false
     setBusy(true)
     setError(null)
     try {
@@ -235,11 +241,25 @@ function DisputesTab() {
       if (patch.adminNote !== undefined) setNote(result.dispute.adminNote ?? "")
       await refresh()
       toast.success(success)
+      return true
     } catch (cause) {
       setError(actionError(cause, "The dispute couldn't be updated."))
+      return false
     } finally {
       setBusy(false)
     }
+  }
+
+  async function close(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selected || busy) return
+    const why = closeReason.trim()
+    if (why.length < 3) { setError({ message: "Record why Yard is closing this dispute.", conflict: false }); return }
+    const kept = (selected.adminNote ?? "").trim()
+    const adminNote = `${kept ? `${kept}\n\n` : ""}Closed by Yard: ${why}`.slice(0, 2000)
+    if (!(await updateDispute({ status: "closed", adminNote }, "Dispute closed"))) return
+    setClosing(false)
+    setCloseReason("")
   }
 
   async function update(event: React.FormEvent<HTMLFormElement>) {
@@ -255,7 +275,7 @@ function DisputesTab() {
   }
 
   const columns: Column<Dispute>[] = [
-    { key: "id", header: "Dispute", sortValue: (item) => item.id, cell: (item) => <button type="button" className="max-w-40 truncate text-left font-medium text-ink hover:text-violet" onClick={() => { setSelected(item); setNote(item.adminNote ?? "") }}>{item.id}</button> },
+    { key: "id", header: "Dispute", sortValue: (item) => item.id, cell: (item) => <button type="button" className="max-w-40 truncate text-left font-medium text-ink hover:text-violet" onClick={() => { setSelected(item); setNote(item.adminNote ?? ""); setClosing(false); setCloseReason(""); setError(null) }}>{item.id}</button> },
     { key: "status", header: "Status", cell: (item) => <span className="flex flex-wrap gap-1"><StatusBadge tone={tone[item.status] ?? "muted"}>{item.status === "awaiting_response" ? "evidence requested" : showStatus(item.status)}</StatusBadge>{item.responseSubmittedAt ? <StatusBadge tone="info">response submitted</StatusBadge> : null}</span> },
     { key: "amount", header: "Amount", align: "right", sortValue: (item) => item.amountMinor, cell: (item) => money(item.amountMinor, item.currency) },
     { key: "provider", header: "Provider", hideBelow: "md", cell: (item) => item.provider ?? "—" },
@@ -273,19 +293,24 @@ function DisputesTab() {
     </Panel>
     {selected ? <Panel title={`Dispute ${selected.id}`} description={`${money(selected.amountMinor, selected.currency)} · ${selected.provider ?? "Provider unknown"}`} className="rounded-[20px]">
       <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={tone[selected.status] ?? "muted"}>{selected.status === "awaiting_response" ? "evidence requested" : showStatus(selected.status)}</StatusBadge>{selected.responseSubmittedAt ? <StatusBadge tone="info">response submitted</StatusBadge> : null}{selected.evidenceDueAt ? <span className="text-xs text-ink-3">Evidence due {time.format(new Date(selected.evidenceDueAt))}</span> : null}</div>
-      <div className="mt-3 grid gap-3">{selected.brandIds?.length ? selected.brandIds.map((brandId) => { const item = evidence.get(brandId); return <section key={brandId} className="min-w-0 border-t border-white/10 pt-2"><p className="text-xs font-medium text-ink">Brand {brandId}</p><p className="mt-1 break-words text-sm text-ink-2">{item?.evidence ?? "No evidence submitted."}</p>{item ? <p className="mt-1 text-[11px] text-ink-3">Submitted {time.format(new Date(item.at))}</p> : null}</section> }) : <p className="break-words text-sm text-ink-2">{selected.brandEvidence || "No brand evidence submitted."}</p>}</div>
+      <div className="mt-3 grid gap-3">{selected.brandIds?.length ? selected.brandIds.map((brandId) => { const item = evidence.get(brandId); return <section key={brandId} className="min-w-0 border-t border-white/10 pt-2"><p className="text-xs font-medium text-ink">Brand {brandId}</p><p className="mt-1 break-words text-sm text-ink-2">{item?.evidence ?? "No evidence submitted."}</p>{item && new Date(item.at).getTime() > 0 ? <p className="mt-1 text-[11px] text-ink-3">Submitted {time.format(new Date(item.at))}</p> : null}</section> }) : <p className="break-words text-sm text-ink-2">{selected.brandEvidence || "No brand evidence submitted."}</p>}{selected.brandIds?.length && !evidence.size && selected.brandEvidence ? <section className="min-w-0 border-t border-white/10 pt-2"><p className="text-xs font-medium text-ink">Evidence not attributed to a brand</p><p className="mt-1 whitespace-pre-line break-words text-sm text-ink-2">{selected.brandEvidence.replace(/^\[unattributed\] /, "")}</p></section> : null}</div>
       {selected.orderRefIds?.length ? <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs text-ink-3">Covered orders</span>{selected.orderRefIds.map((id, index) => <Button key={id} type="button" size="xs" variant="secondary" title={id} onClick={() => writeParams({ view: null, order: id })}>Open order {index + 1}</Button>)}</div> : null}
       {rights.resolve ? <div className="mt-4 grid gap-3 border-t border-white/10 pt-3">
         <p className="text-xs text-ink-3">Evidence requested and won/lost outcomes are set by Paystack. Yard can mark a case under review, record a submitted response, or close it.</p>
-        <div className="flex flex-wrap gap-2">{!terminal && selected.status !== "under_review" ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ status: "under_review" }, "Dispute moved under review")}>Mark under review</Button> : null}{!terminal && !selected.responseSubmittedAt ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ responseSubmitted: true }, "Provider response recorded")}>Mark response submitted</Button> : null}{!terminal ? <Button type="button" size="sm" variant="ghost" loading={busy} disabled={busy} onClick={() => void updateDispute({ status: "closed" }, "Dispute closed")}>Close dispute</Button> : null}</div>
+        <div className="flex flex-wrap gap-2">{!terminal && selected.status !== "under_review" ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ status: "under_review" }, "Dispute moved under review")}>Mark under review</Button> : null}{!terminal && !selected.responseSubmittedAt ? <Button type="button" size="sm" variant="secondary" loading={busy} disabled={busy} onClick={() => void updateDispute({ responseSubmitted: true }, "Provider response recorded")}>Mark response submitted</Button> : null}{!terminal && selected.status !== "awaiting_response" && !closing ? <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => { setClosing(true); setError(null) }}>Close dispute</Button> : null}</div>
+        {!terminal && selected.status === "awaiting_response" ? <p className="text-xs text-ink-3">Paystack is waiting for evidence, so this dispute can’t be closed yet: closing would stop brands submitting it.</p> : null}
+        {closing && !terminal ? <form className="grid gap-2 rounded-md border border-white/10 p-3" onSubmit={(event) => void close(event)}><Label htmlFor="dispute-close-reason">Why is Yard closing this dispute?</Label><Input id="dispute-close-reason" value={closeReason} onChange={(event) => setCloseReason(event.target.value)} minLength={3} maxLength={300} required /><p className="text-xs text-ink-3">Closing marks it resolved and clears the dispute flag on its orders. The reason is added to the internal note.</p><div className="flex flex-wrap gap-2"><Button type="submit" size="sm" loading={busy} disabled={busy || closeReason.trim().length < 3}>Confirm close</Button><Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => { setClosing(false); setCloseReason(""); setError(null) }}>Keep open</Button></div></form> : null}
         <form className="grid gap-2" onSubmit={(event) => void update(event)}><Label htmlFor="dispute-note">Internal note</Label><Textarea id="dispute-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} rows={3} /><p className="text-xs text-ink-3">Leave it empty and save to remove the note.</p><ActionErrorNote error={error} onReload={() => { setError(null); setSelected(null); void refresh() }} /><div className="flex gap-2"><Button type="submit" loading={busy} disabled={busy}>Save note</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setSelected(null)}>Close</Button></div></form>
-      </div> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3"><p className="text-xs text-ink-3">Updates need the Support or Owner role.</p><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Close</Button></div>}
+      </div> : <div className="mt-3 grid gap-3 border-t border-white/10 pt-3"><div className="min-w-0"><p className="text-xs font-medium text-ink">Internal note</p><p className="mt-1 whitespace-pre-line break-words text-sm text-ink-2">{selected.adminNote || "No internal note."}</p></div><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-ink-3">Updates need the Support or Owner role.</p><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Close</Button></div></div>}
     </Panel> : null}
   </div>
 }
 
 function ExceptionsTab() {
   const exceptions = useApi<ExceptionsPage>("admin.orders.exceptions:first", () => api("/api/orders/admin/exceptions", { query: { limit: 50 } }), { keepPrevious: false })
+  // Opening an item leaves this tab to act on the order; coming back must show the queue as it is now, not the cached one.
+  const { revalidate: refetchExceptions } = exceptions
+  useEffect(() => { void refetchExceptions() }, [refetchExceptions])
   const [older, setOlder] = useState<{ base: ExceptionsPage; items: OrderException[]; cursor: string | null } | null>(null)
   const [busy, setBusy] = useState(false)
   const first = exceptions.data
@@ -307,12 +332,12 @@ function ExceptionsTab() {
       const page = await api<ExceptionsPage>("/api/orders/admin/exceptions", { query: { limit: 50, cursor } })
       setOlder({ base: first, items: [...(extra?.items ?? []), ...page.items], cursor: page.nextCursor })
     } catch (cause) {
-      toast.error(errorMessage(cause, "Couldn't load older refunds and returns."))
+      toast.error(errorMessage(cause, "Couldn't load more refunds and returns."))
     } finally {
       setBusy(false)
     }
   }
-  return <Panel title="Refund and return exceptions" description="Pending return requests and pending or failed refunds, oldest first. Open an order to review or act on it." className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{exceptions.error ? <PanelError message={errorMessage(exceptions.error, "Couldn't load refund and return exceptions.")} onRetry={() => void exceptions.revalidate()} /> : null}<DataTable label="Refund and return exceptions" rows={rows} columns={columns} getId={(item) => `${item.kind}:${item.id}`} loading={exceptions.isLoading} search={{ placeholder: "Search order, brand, status or reason", text: (item) => `${item.orderReference} ${item.brandName} ${item.status} ${item.reason} ${item.failureReason ?? ""}` }} empty={{ title: "No refund or return exceptions", body: "Pending return requests and pending or failed refunds will appear here." }} initialSort={{ key: "created", dir: "asc" }} pageSizes={[10, 25, 50]} minWidth={360} />{cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={busy} disabled={busy} onClick={() => void loadMore()}>Load older exceptions</Button></div> : null}</Panel>
+  return <Panel title="Refund and return exceptions" description="Pending return requests and pending or failed refunds, oldest first. Open an order to review or act on it." className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{exceptions.error ? <PanelError message={errorMessage(exceptions.error, "Couldn't load refund and return exceptions.")} onRetry={() => void exceptions.revalidate()} /> : null}<DataTable label="Refund and return exceptions" rows={rows} columns={columns} getId={(item) => `${item.kind}:${item.id}`} loading={exceptions.isLoading} search={{ placeholder: "Search order, brand, status or reason", text: (item) => `${item.orderReference} ${item.brandName} ${item.status} ${item.reason} ${item.failureReason ?? ""}` }} empty={{ title: "No refund or return exceptions", body: "Pending return requests and pending or failed refunds will appear here." }} initialSort={{ key: "created", dir: "asc" }} pageSizes={[10, 25, 50]} minWidth={360} />{cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={busy} disabled={busy} onClick={() => void loadMore()}>Load more exceptions</Button></div> : null}</Panel>
 }
 
 function EventsTab() {

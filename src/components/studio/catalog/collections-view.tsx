@@ -121,14 +121,15 @@ function LiveCollectionsView({ brandId, canManage }: { brandId: string; canManag
     )
   }
 
-  return <CollectionsContent collections={collections} products={products} ready={ready} canManage={canManage} onCreate={() => { setEditing(null); setOpen(true) }} onEdit={(collection) => { setEditing(collection); setOpen(true) }} dialog={{ open, onOpenChange: setOpen, collection: editing, onSave: save, onDelete: remove, onConflict: reloadAfterConflict }} />
+  return <CollectionsContent collections={collections} products={products} ready={ready} canManage={canManage} onCreate={() => { setEditing(null); setOpen(true) }} onEdit={(collection) => { setEditing(collection); setOpen(true) }} dialog={{ open, onOpenChange: setOpen, collection: editing, uploadedCoversOnly: true, onSave: save, onDelete: remove, onConflict: reloadAfterConflict }} />
 }
 
 type DialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   collection: Collection | null
-  onSave: (draft: CollectionDraft) => Promise<void>
+  uploadedCoversOnly?: boolean
+  onSave: (draft: CollectionDraft, idempotencyKey?: string) => Promise<void>
   onDelete: (collection: Collection) => Promise<void>
   onConflict: () => void
 }
@@ -160,7 +161,7 @@ function CollectionsContent({ collections, products, ready, canManage, onCreate,
                 <CardItem key={collection.id}>
                   <button type="button" onClick={() => onEdit(collection)} disabled={!canManage} className="group block w-full overflow-hidden rounded-lg border border-line-soft bg-card text-left outline-none transition-colors hover:border-line focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian disabled:cursor-default" aria-label={canManage ? `Edit ${collection.name}` : collection.name}>
                     <span className="relative block aspect-[16/10] overflow-hidden bg-surface">
-                      <Image src={collection.image.src} alt="" fill sizes="(min-width: 1280px) 360px, (min-width: 640px) 45vw, 100vw" loading={index < 3 ? "eager" : undefined} className="object-cover transition-transform duration-200 ease-out-quint group-hover:scale-[1.02]" />
+                      <Image src={collection.image.src} alt="" fill sizes="(min-width: 1280px) 360px, (min-width: 640px) 45vw, 100vw" unoptimized={collection.image.src.startsWith("/api/")} loading={index < 3 ? "eager" : undefined} className="object-cover transition-transform duration-200 ease-out-quint group-hover:scale-[1.02]" />
                       {canManage ? <span className="glass absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 pointer-coarse:opacity-100"><Pencil className="size-3.5 text-ink" aria-hidden /></span> : null}
                     </span>
                     <span className="grid gap-1 p-4">

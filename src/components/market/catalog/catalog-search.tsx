@@ -7,7 +7,8 @@ import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
-import type { CatalogState } from "./catalog-state"
+import type { CurrencyCode } from "@/config/markets"
+import { catalogSearchKey, catalogSearchQuery, type CatalogState } from "./catalog-state"
 
 /* ---------- recent searches (this browser only) ---------- */
 
@@ -41,7 +42,8 @@ const coarsePointer = () => typeof window !== "undefined" && window.matchMedia("
 
 /**
  * Search within the listing, as a combobox. Typing settles for a moment before it touches the
- * URL; Enter applies at once. While the field is focused it offers server-backed completions or, when it is
+ * URL; Enter applies at once. While the field is focused it offers server-backed completions (only
+ * those that list something under the listing's category and filters, each with that count) or, when it is
  * empty, this browser's recent searches. Arrow keys move through them, Enter picks, Escape closes
  * the list and then clears the field. If the URL changes from elsewhere (Clear all, the search
  * overlay), the field follows it without overwriting what the shopper is typing.
@@ -58,6 +60,7 @@ export function CatalogSearch({
   placeholder,
   label,
   className,
+  currency = "USD",
 }: {
   value: string
   onCommit: (q: string) => void
@@ -68,6 +71,8 @@ export function CatalogSearch({
   placeholder: string
   label: string
   className?: string
+  /** The shopper's currency, for the listing's price filter in the completion counts. */
+  currency?: CurrencyCode
 }) {
   const recentKey = recentKeyProp === undefined ? (state ? RECENT_KEY : null) : recentKeyProp
   const id = useId()
@@ -80,7 +85,7 @@ export function CatalogSearch({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const [recent, setRecent] = useState<string[]>([])
-  const [remote, setRemote] = useState<{ term: string; options: Option[] } | null>(null)
+  const [remote, setRemote] = useState<{ key: string; options: Option[] } | null>(null)
   const [remoteError, setRemoteError] = useState<{ term: string; message: string } | null>(null)
   if (value !== synced) {
     setSynced(value)
@@ -101,37 +106,34 @@ export function CatalogSearch({
   }, [draft, committed, onCommit])
 
   const typed = draft.trim()
+  // The listing's filters without its words, sort or paging: completions are counted within them.
+  const scopeKey = state ? catalogSearchKey({ ...catalogSearchQuery({ ...state, q: "" }, currency), sort: undefined, limit: undefined, cursor: undefined }) : ""
+  const remoteKey = `${typed}\n${scopeKey}`
   useEffect(() => {
-    if (!state || typed.length < 2) return
+    if (!scopeKey || typed.length < 2) return
     const controller = new AbortController()
+    const key = `${typed}\n${scopeKey}`
     const timeout = window.setTimeout(() => {
-      void api<{ products: { title: string }[]; brands: { name: string }[] }>("/api/search/suggest", { query: { q: typed }, signal: controller.signal })
+      void api<{ terms?: { term: string; count: number }[] }>(`/api/search/suggest?${scopeKey}`, { query: { q: typed, scoped: "1" }, signal: controller.signal })
         .then((result) => {
-          const seen = new Set<string>()
-          const options = [...result.products.map((item) => item.title), ...result.brands.map((brand) => brand.name)]
-            .filter((term) => {
-              const normalized = term.trim().toLowerCase()
-              if (!normalized || normalized === typed.toLowerCase() || seen.has(normalized)) return false
-              seen.add(normalized)
-              return true
-            })
+          const options = (result.terms ?? [])
+            .filter(({ term, count }) => count > 0 && term.trim().toLowerCase() !== typed.toLowerCase())
             .slice(0, 6)
-            .map((term) => ({ term }))
-          setRemote({ term: typed, options })
+          setRemote({ key, options })
           setRemoteError(null)
         })
         .catch((error: unknown) => {
-          if (!controller.signal.aborted) setRemoteError({ term: typed, message: errorMessage(error, "Search suggestions couldn't be loaded.") })
+          if (!controller.signal.aborted) setRemoteError({ term: key, message: errorMessage(error, "Search suggestions couldn't be loaded.") })
         })
     }, 140)
     return () => {
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [state, typed])
+  }, [scopeKey, typed])
 
-  const suggestions = state && typed.length >= 2 && remote?.term === typed ? remote.options : []
-  const suggestionError = remoteError?.term === typed ? remoteError.message : null
+  const suggestions = state && typed.length >= 2 && remote?.key === remoteKey ? remote.options : []
+  const suggestionError = remoteError?.term === remoteKey ? remoteError.message : null
   /** Nothing to offer at all: a plain search field, not a combobox. */
   const plain = !state && !recentKey
   const mode: "suggest" | "recent" | null = typed.length >= 2 ? (suggestions.length || suggestionError ? "suggest" : null) : typed.length === 0 && recent.length ? "recent" : null

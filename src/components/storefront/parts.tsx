@@ -263,7 +263,8 @@ export type BrandFact = "founded" | "followers" | "pieces" | "shipsFrom"
  */
 export function brandFacts(brand: Brand, show: BrandFact[], { pieces }: { pieces?: number } = {}) {
   const all: Record<BrandFact, { label: string; value: string } | null> = {
-    founded: { label: "Founded", value: String(brand.founded) },
+    // Server brands don't say when they were founded (0): leave the fact out rather than guess.
+    founded: brand.founded ? { label: "Founded", value: String(brand.founded) } : null,
     followers: { label: "Followers", value: formatNumber(brand.followers, { compact: true }) },
     pieces: pieces === undefined ? null : { label: pieces === 1 ? "Piece" : "Pieces", value: formatNumber(pieces) },
     shipsFrom: { label: "Ships from", value: countries[brand.shipsFrom].name },

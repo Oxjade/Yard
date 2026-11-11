@@ -52,6 +52,21 @@ async function complete(mode: LinkMode, token: string): Promise<LinkResult> {
   }
 }
 
+const ONBOARDING_PATH = "/studio/onboarding"
+
+/**
+ * The return path lives only in the browser that started the sign-up. A link opened on another
+ * device still finds its way back when the account has a brand application to finish.
+ */
+async function resumableApplication() {
+  try {
+    const { onboarding } = await api<{ onboarding: { status: string } | null }>("/api/studio/onboarding")
+    return onboarding?.status === "draft" || onboarding?.status === "rejected"
+  } catch {
+    return false
+  }
+}
+
 function completeOnce(mode: LinkMode, token: string) {
   const key = `${mode}:${token}`
   let pending = completions.get(key)
@@ -77,7 +92,13 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
     void completeOnce(mode, token).then((outcome) => {
       if (!active) return
       setResult(outcome)
-      if (mode === "verify" && outcome.signedIn) setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
+      // Either kind of link can finish a sign-up started on the brand wizard: an address that
+      // already has an account is sent a sign-in link instead of a verification one.
+      if (outcome.state === "success" && outcome.signedIn) {
+        const back = takeOnboardingAuthReturn()
+        if (back) setContinueTo(back)
+        else void resumableApplication().then((resume) => { if (active && resume) setContinueTo(ONBOARDING_PATH) })
+      }
       // Keep the spent token out of history, screenshots and shared URLs.
       const url = new URL(window.location.href)
       if (url.searchParams.get("token") === token) {
@@ -98,7 +119,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
       {current?.state === "error" ? (
         <Button asChild variant="primary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button>
       ) : current?.state === "success" ? (
-        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : continueTo}>{current.signedIn === false ? "Sign in" : "Continue to your account"}</Link></Button>
+        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : continueTo}>{current.signedIn === false ? "Sign in" : continueTo === ONBOARDING_PATH ? "Continue your brand application" : "Continue to your account"}</Link></Button>
       ) : null}
     </>
   )

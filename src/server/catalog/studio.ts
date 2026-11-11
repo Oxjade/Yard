@@ -193,11 +193,27 @@ async function writeImages(d: Executor, brandId: string, productId: string, imag
   if (rows.length) await d.insert(catalogImages).values(rows)
 }
 
+/**
+ * Sets which collections a product is in. Collections it stays in keep its position; each
+ * collection whose membership changes gets a new version, so a Collections tray opened before
+ * this edit gets a 409 instead of silently replacing the product list.
+ */
 async function writeCollectionLinks(d: Executor, brandId: string, productId: string, collectionIds: string[]) {
   await assertCollections(d, brandId, collectionIds)
-  await d.delete(catalogCollectionProducts).where(eq(catalogCollectionProducts.productId, productId))
-  if (!collectionIds.length) return
-  for (const collectionId of [...new Set(collectionIds)]) {
+  const wanted = new Set(collectionIds)
+  const current = new Set(
+    (await d.select({ id: catalogCollectionProducts.collectionId }).from(catalogCollectionProducts).where(eq(catalogCollectionProducts.productId, productId))).map((row) => row.id),
+  )
+  const removed = [...current].filter((id) => !wanted.has(id))
+  const added = [...wanted].filter((id) => !current.has(id))
+  const changed = [...removed, ...added]
+  if (!changed.length) return
+  await d
+    .update(catalogCollections)
+    .set({ version: sql`${catalogCollections.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(catalogCollections.brandId, brandId), inArray(catalogCollections.id, changed)))
+  if (removed.length) await d.delete(catalogCollectionProducts).where(and(eq(catalogCollectionProducts.productId, productId), inArray(catalogCollectionProducts.collectionId, removed)))
+  for (const collectionId of added) {
     const [{ n }] = await d
       .select({ n: sql<number>`coalesce(max(${catalogCollectionProducts.position}), -1) + 1`.mapWith(Number) })
       .from(catalogCollectionProducts)

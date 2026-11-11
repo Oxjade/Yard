@@ -53,7 +53,8 @@ export function AuthOAuthCompletion() {
           const shopper = session.shopper
           if (result === "signed_in" && actor === "shopper" && shopper) {
             useSession.getState().signIn({ id: shopper.id, name: shopper.name, email: shopper.email, provider: provider === "apple" ? "apple" : "google" })
-            setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
+            // Strict Mode runs this effect twice; only the live run may take (and so spend) the return.
+            if (active) setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
           } else {
             clearOnboardingAuthReturn()
           }
@@ -76,7 +77,7 @@ export function AuthOAuthCompletion() {
       <p className={current && !current.success ? "mt-5 max-w-xl text-sm leading-relaxed text-danger" : "mt-5 max-w-xl text-sm leading-relaxed text-ink-2"} role={current && !current.success ? "alert" : "status"}>
         {current?.message ?? `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`}
       </p>
-      {current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>Continue</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
+      {current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
     </>
   )
 }

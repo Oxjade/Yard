@@ -10,7 +10,7 @@ import { referencedAtAll } from "./visibility"
 /**
  * The hourly media purge (§1.3 Schedulers, §5.4 step 8). Deletes:
  *  - inbox attachments never attached to a message, older than 24 h;
- *  - post, import and place files that nothing references (no post of any visibility, no place,
+ *  - post, import, place and storefront cover files that nothing references (no post of any visibility, no place,
  *    no event, no account avatar) 7 days after they were last referenced (`unreferenced_at`, kept
  *    by refreshVisibility), or 7 days after upload for a file that was never used;
  *  - temp files of interrupted uploads older than an hour.
@@ -19,7 +19,7 @@ import { referencedAtAll } from "./visibility"
 const orphan = sql`(
   (m.purpose = 'inbox_attachment' and m.attached_at is null and m.created_at < now() - interval '24 hours'
      and not exists (select 1 from message_attachments ma where ma.media_id = m.id))
-  or (m.purpose in ('social_post', 'social_import', 'location_image', 'onboarding_image')
+  or (m.purpose in ('social_post', 'social_import', 'location_image', 'onboarding_image', 'storefront_cover')
      and coalesce(m.unreferenced_at, m.created_at) < now() - interval '7 days' and not ${referencedAtAll})
 )`
 

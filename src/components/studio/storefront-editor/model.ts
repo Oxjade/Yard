@@ -176,14 +176,13 @@ export function cleanWebsite(raw: string) {
   return raw.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "")
 }
 
-/** Announcement links: a page on the marketplace (/drops) or a full https address. */
+/** Announcement links: a page on the marketplace (/drops). Matches the server's rule for config.announcement.href. */
 export function linkError(href: string) {
   const v = href.trim()
   if (!v) return undefined
-  if (v.startsWith("/")) return /^\/[^\s]*$/.test(v) && !v.startsWith("//") ? undefined : "Use a path without spaces, like /drops."
-  if (/^https:\/\/[^\s/$.?#].[^\s]*$/i.test(v)) return undefined
-  if (/^http:\/\//i.test(v)) return "Use a secure address that starts with https://."
-  return `Start with / for a page on ${site.name}, or https:// for another site.`
+  if (/^https?:\/\//i.test(v)) return `Links must stay on ${site.name}. Use a path that starts with /, like /drops.`
+  if (!v.startsWith("/")) return "Start the link with /, like /drops."
+  return /^\/(?![/\\])[\w\-./?=&%#]*$/.test(v) ? undefined : "Use a path with letters, numbers and / only, like /drops."
 }
 
 export function validate(config: EditorConfig, brand: Brand): FieldErrors {

@@ -31,6 +31,8 @@ type HeroProps = {
   section: StorefrontSection
   intro: string
   products: Product[]
+  /** How many pieces the brand has published, when `products` is only the first page of them. */
+  pieces?: number
   /** True when the hero is the first thing on the page (no announcement above it). */
   first: boolean
   /** True when the hero is the first section, even with the announcement bar above it. */
@@ -134,6 +136,8 @@ function ProfileBanner({ ctx, placement, treatment, tint }: { ctx: StorefrontCon
           preload={!preview}
           loading={preview ? "eager" : undefined}
           sizes={preview ? "(min-width: 1024px) 60vw, 100vw" : "100vw"}
+          // Uploaded covers are served by /api/media (with ?as=brand in Studio): the optimizer can't fetch those.
+          unoptimized={brand.cover.src.startsWith("/api/")}
           className={cn("object-cover", treatment)}
         />
       </motion.div>
@@ -369,13 +373,13 @@ const pill = "rounded-full @3xl:h-11 @3xl:px-5"
 
 /* ---------- The hero ---------- */
 
-export function HeroSection({ ctx, intro, products, first, opening, shopHref }: HeroProps) {
+export function HeroSection({ ctx, intro, products, pieces, first, opening, shopHref }: HeroProps) {
   const { brand } = ctx
   const look = looks[ctx.template] ?? looks.editorial
   const statsRow = "flex flex-wrap items-center justify-between gap-x-10 gap-y-5"
   const stats = (
     <>
-      <ProfileStats ctx={ctx} pieces={products.length} onPlate={look.stats === "plate"} />
+      <ProfileStats ctx={ctx} pieces={pieces ?? products.length} onPlate={look.stats === "plate"} />
       <SocialLinks brand={brand} />
     </>
   )
@@ -403,8 +407,8 @@ export function HeroSection({ ctx, intro, products, first, opening, shopHref }: 
         </div>
 
         <div className="mt-6 max-w-2xl">
-          <p className={cn("text-pretty", look.tagline, look.accentTagline && !quietAccent[ctx.accent] ? "text-(color:--sf-accent)" : "text-ink")}>{brand.tagline}</p>
-          {intro ? <p className="mt-2.5 text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{intro}</p> : null}
+          {brand.tagline ? <p className={cn("text-pretty", look.tagline, look.accentTagline && !quietAccent[ctx.accent] ? "text-(color:--sf-accent)" : "text-ink")}>{brand.tagline}</p> : null}
+          {intro ? <p className={cn(brand.tagline && "mt-2.5", "text-pretty text-[0.9375rem] leading-relaxed text-ink-2")}>{intro}</p> : null}
         </div>
         <ProfileMeta ctx={ctx} className="mt-5" />
 

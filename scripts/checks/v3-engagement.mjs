@@ -316,7 +316,7 @@ async function main() {
     const usd = await get(`/api/search?q=${WORD}&currency=USD`)
     const u = usd.body?.items?.[0]
     check("search: currency=USD converts the display price (smaller), keeps the brand price", usd.status === 200 && u?.display?.currency === "USD" && u.display.amount > 0 && u.display.amount < 20_000 && u.price.amount === 20_000, JSON.stringify(u))
-    check("search: bucket edges are converted into the shopper's currency", usd.body?.facets?.price?.buckets?.[1]?.minMinor === 2500 && s.body?.facets?.price?.buckets?.[1]?.minMinor > 2500, JSON.stringify([usd.body?.facets?.price?.buckets?.[1], s.body?.facets?.price?.buckets?.[1]]))
+    check("search: bucket edges are converted into the shopper's currency", usd.body?.facets?.price?.buckets?.[1]?.minMinor === 5000 && s.body?.facets?.price?.buckets?.[1]?.minMinor > 5000, JSON.stringify([usd.body?.facets?.price?.buckets?.[1], s.body?.facets?.price?.buckets?.[1]]))
     const inRange = await get(`/api/search?q=${WORD}&currency=NGN&minPrice=15000&maxPrice=25000`)
     const above = await get(`/api/search?q=${WORD}&currency=NGN&minPrice=25000`)
     const below = await get(`/api/search?q=${WORD}&currency=NGN&maxPrice=15000`)
@@ -347,6 +347,9 @@ async function main() {
     check("suggest: a prefix suggests the product", sug.status === 200 && sug.body.products?.some((p) => p.productId === P.id), brief(sug))
     const sb = await get("/api/search/suggest?q=lagos")
     check("suggest: brands are suggested", sb.status === 200 && sb.body.brands?.some((b) => b.brandId === BRAND), brief(sb))
+    const scoped = await get(`/api/search/suggest?q=${WORD.slice(0, -2)}&scoped=1&category=fashion&currency=NGN`)
+    const scopedOut = await get(`/api/search/suggest?q=${WORD.slice(0, -2)}&scoped=1&category=streetwear&currency=NGN`)
+    check("suggest: scoped=1 counts each completion within the listing's filters", scoped.status === 200 && scoped.body.terms?.some((t) => t.count === 1) && scopedOut.body?.terms?.every((t) => t.count === 0), JSON.stringify([scoped.body?.terms, scopedOut.body?.terms]))
     const empty = await get("/api/search/suggest?q=")
     check("suggest: empty q gives nothing", empty.status === 200 && empty.body.products.length === 0 && empty.body.brands.length === 0, brief(empty))
     check("suggest: q over 100 chars is 400", (await get(`/api/search/suggest?q=${"a".repeat(101)}`)).status === 400)

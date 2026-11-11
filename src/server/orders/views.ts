@@ -1,5 +1,6 @@
 import "server-only"
-import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
+import { and, asc, desc, eq, gt, ilike, inArray, lt, notExists, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
+import { alias } from "drizzle-orm/pg-core"
 import type { z } from "zod"
 import { db, type Executor } from "../db"
 import { brands, orderGroups, orderRefs } from "../db/schema"
@@ -127,25 +128,37 @@ export async function adminOrders(q: { before?: string; limit: number }) {
   return page(await db(), q.before ? beforeOrderCursor(q.before) : undefined, q.limit)
 }
 
-/** Oldest unresolved return requests and refunds needing attention, merged into one server-paged queue. */
+/** Full microsecond precision as an ISO string: a JS Date keeps only milliseconds, so a cursor built from one would repeat the boundary row. */
+const isoMicros = (at: SQLWrapper) => sql<string>`to_char(${at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+/** Plain byte order for ids, the same as JS `<`, so the SQL page and the merge below agree on ties. */
+const byteOrder = (id: SQLWrapper) => sql`${id} collate "C"`
+const laterRefunds = alias(orderRefunds, "later_refunds")
+
+/**
+ * Oldest unresolved return requests and refunds needing attention, merged into one server-paged
+ * queue. A failed refund drops out once a later refund on the same order is under way or went
+ * through (an admin re-issue or a cancellation retry), so handled failures don't sit at the top.
+ */
 export async function adminOrderExceptions(q: { cursor?: string; limit: number }) {
   const d = await db()
   const cursor = q.cursor ? (() => {
     const [at, kind, id] = q.cursor!.split("|")
-    return { at: new Date(at), kind: kind as "refund" | "return", id }
+    return { at, kind: kind as "refund" | "return", id }
   })() : null
   const after = (at: SQLWrapper, kind: "refund" | "return", id: SQLWrapper) => {
     if (!cursor) return undefined
-    const typeOrder = kind.localeCompare(cursor.kind)
-    if (typeOrder > 0) return or(gt(at, cursor.at), eq(at, cursor.at))
-    if (typeOrder < 0) return gt(at, cursor.at)
-    return or(gt(at, cursor.at), and(eq(at, cursor.at), gt(id, cursor.id)))
+    const atTs = sql`${cursor.at}::timestamptz`
+    const later = sql`${at} > ${atTs}`
+    const same = sql`${at} = ${atTs}`
+    if (kind > cursor.kind) return or(later, same)
+    if (kind < cursor.kind) return later
+    return or(later, and(same, sql`${byteOrder(id)} > ${cursor.id}`))
   }
   const pageSize = q.limit + 1
   const [returns, refunds] = await Promise.all([
     d.select({
       id: orderReturns.id,
-      createdAt: orderReturns.requestedAt,
+      createdAt: isoMicros(orderReturns.requestedAt),
       status: orderReturns.status,
       reason: orderReturns.reason,
       note: orderReturns.note,
@@ -158,11 +171,11 @@ export async function adminOrderExceptions(q: { cursor?: string; limit: number }
       .innerJoin(orderRefs, eq(orderRefs.id, orderReturns.orderRefId))
       .innerJoin(brands, eq(brands.id, orderReturns.brandId))
       .where(and(eq(orderReturns.status, "requested"), after(orderReturns.requestedAt, "return", orderReturns.id)))
-      .orderBy(asc(orderReturns.requestedAt), asc(orderReturns.id))
+      .orderBy(asc(orderReturns.requestedAt), asc(byteOrder(orderReturns.id)))
       .limit(pageSize),
     d.select({
       id: orderRefunds.id,
-      createdAt: orderRefunds.createdAt,
+      createdAt: isoMicros(orderRefunds.createdAt),
       status: orderRefunds.status,
       reason: orderRefunds.reason,
       failureReason: orderRefunds.failureReason,
@@ -175,14 +188,31 @@ export async function adminOrderExceptions(q: { cursor?: string; limit: number }
     }).from(orderRefunds)
       .innerJoin(orderRefs, eq(orderRefs.id, orderRefunds.orderRefId))
       .innerJoin(brands, eq(brands.id, orderRefunds.brandId))
-      .where(and(inArray(orderRefunds.status, ["pending", "failed"]), after(orderRefunds.createdAt, "refund", orderRefunds.id)))
-      .orderBy(asc(orderRefunds.createdAt), asc(orderRefunds.id))
+      .where(and(
+        or(
+          eq(orderRefunds.status, "pending"),
+          and(
+            eq(orderRefunds.status, "failed"),
+            notExists(
+              d.select({ id: laterRefunds.id }).from(laterRefunds).where(and(
+                eq(laterRefunds.orderRefId, orderRefunds.orderRefId),
+                eq(laterRefunds.brandId, orderRefunds.brandId),
+                inArray(laterRefunds.status, ["pending", "succeeded"]),
+                gt(laterRefunds.createdAt, orderRefunds.createdAt),
+              )),
+            ),
+          ),
+        ),
+        after(orderRefunds.createdAt, "refund", orderRefunds.id),
+      ))
+      .orderBy(asc(orderRefunds.createdAt), asc(byteOrder(orderRefunds.id)))
       .limit(pageSize),
   ])
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
   const items = [
-    ...returns.map((item) => ({ ...item, kind: "return" as const, createdAt: item.createdAt.toISOString(), amountMinor: null, failureReason: null })),
-    ...refunds.map((item) => ({ ...item, kind: "refund" as const, createdAt: item.createdAt.toISOString(), note: null })),
-  ].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id))
+    ...returns.map((item) => ({ ...item, kind: "return" as const, amountMinor: null, failureReason: null })),
+    ...refunds.map((item) => ({ ...item, kind: "refund" as const, note: null })),
+  ].sort((a, b) => cmp(a.createdAt, b.createdAt) || cmp(a.kind, b.kind) || cmp(a.id, b.id))
   const hasMore = items.length > q.limit
   const pageItems = items.slice(0, q.limit)
   const last = pageItems[pageItems.length - 1]

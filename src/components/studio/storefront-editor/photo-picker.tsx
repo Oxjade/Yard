@@ -105,7 +105,7 @@ export function PhotoPicker({
 
         {shown.map((p) => (
           <Tile key={p.src} value={p.src} on={value === p.src} ring={`${id}-ring`} label={p.alt || "Brand photo"}>
-            <Image src={p.src} alt="" fill sizes={TILE_SIZES} className="object-cover transition-transform duration-500 ease-out-quint group-hover/tile:scale-[1.04]" />
+            <Image src={p.src} alt="" fill sizes={TILE_SIZES} unoptimized={p.src.startsWith("/api/")} className="object-cover transition-transform duration-500 ease-out-quint group-hover/tile:scale-[1.04]" />
           </Tile>
         ))}
       </RadioGroupPrimitive.Root>

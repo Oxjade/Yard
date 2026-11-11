@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, count, desc, eq, gt, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { brandById } from "@/lib/data/brands"
 import { categoryBySlug } from "@/lib/data/catalog"
@@ -7,6 +7,7 @@ import { products as sampleProducts } from "@/lib/data/products"
 import { convert } from "@/lib/money"
 import { db } from "../db"
 import { brands } from "../db/schema"
+import { shopperWishlist } from "../db/schema/charts"
 import { searchBrands, searchProducts } from "../db/schema/engagement"
 import { log } from "../log"
 import { productDoc, type SearchProductDoc } from "./catalog-port"
@@ -145,10 +146,22 @@ export type SearchParams = {
   maxPrice?: number
   currency: CurrencyCode
   inStock?: boolean
-  sort?: "relevance" | "price_asc" | "price_desc" | "newest"
+  sort?: "relevance" | "price_asc" | "price_desc" | "newest" | "trending"
   limit?: number
   offset?: number
+  /** Offset into the brand facet (it is paged, BRAND_FACET_PAGE brands at a time). */
+  brandOffset?: number
 }
+
+/** The scope a search runs in, without the words: what the listing's filters narrow to. */
+export type SearchScope = Omit<SearchParams, "q" | "sort" | "limit" | "offset" | "brandOffset">
+
+/** The deepest a listing pages (offset); past it a shopper is asked to narrow the search. */
+export const MAX_SEARCH_OFFSET = 2000
+/** Brands per page of the brand facet. */
+export const BRAND_FACET_PAGE = 100
+/** How far back saves count towards "trending". */
+const TRENDING_DAYS = 30
 
 /** Price filter bands in USD minor units, matching the catalog's visible controls. */
 const PRICE_BANDS_USD = [
@@ -159,31 +172,56 @@ const PRICE_BANDS_USD = [
   { min: 30000, max: null },
 ]
 
-export async function searchCatalog(p: SearchParams) {
-  const d = await db()
-  const tsq = toTsQuery(p.q)
-  const query = tsq ? sql`to_tsquery('simple', ${tsq})` : null
-  const limit = Math.min(Math.max(p.limit ?? 24, 1), 48)
-  const offset = Math.max(p.offset ?? 0, 0)
-
-  const base: SQL[] = [eq(searchProducts.visible, true)]
-  if (query) base.push(sql`${searchProducts.tsv} @@ ${query}`)
+/** The filter conditions of a scope, one per facet so each facet can leave its own out. */
+function scopeConditions(p: SearchScope) {
   const byStock = p.inStock ? gt(searchProducts.available, 0) : undefined
   const byCategory = p.category ? eq(searchProducts.category, p.category) : undefined
   const bySubcategory = p.subcategory ? eq(searchProducts.subcategory, p.subcategory) : undefined
   const byBrand = p.brandIds?.length ? inArray(searchProducts.brandId, p.brandIds.slice(0, 20)) : undefined
   const byBrandHandle = p.brandHandles?.length ? inArray(searchProducts.brandHandle, p.brandHandles.slice(0, 20)) : undefined
-  const bySize = p.sizes?.length ? or(...p.sizes.slice(0, 12).map((size) => sql`${size} = any(${searchProducts.sizes})`)) : undefined
+  // Array overlap (&&) so the GIN index on sizes can serve it.
+  const sizes = p.sizes?.slice(0, 12) ?? []
+  const bySize = sizes.length ? sql`${searchProducts.sizes} && ${sql`array[${sql.join(sizes.map((size) => sql`${size}`), sql`, `)}]::text[]`}` : undefined
   const byCountry = p.country ? eq(searchProducts.country, p.country) : undefined
   const priceConds: SQL[] = []
   if (p.minPrice != null) priceConds.push(gte(searchProducts.priceUsdMinor, convert(p.minPrice, p.currency, "USD")))
-  if (p.maxPrice != null) priceConds.push(lte(searchProducts.priceUsdMinor, convert(p.maxPrice, p.currency, "USD")))
+  // Half-open, like the bands: a max that is a band edge belongs to the band above it, so a $50.00
+  // piece is in "$50–$100" only. A custom max typed off a band edge stays inclusive.
+  if (p.maxPrice != null) {
+    const maxUsd = convert(p.maxPrice, p.currency, "USD")
+    // Within a cent of an edge counts as the edge: the shopper's currency round trip can move it by one.
+    const edge = PRICE_BANDS_USD.find((band) => band.max != null && Math.abs(band.max - maxUsd) <= 1)?.max
+    priceConds.push(edge != null ? lt(searchProducts.priceUsdMinor, edge) : lte(searchProducts.priceUsdMinor, maxUsd))
+  }
   const byPrice = priceConds.length ? and(...priceConds) : undefined
+  return { byStock, byCategory, bySubcategory, byBrand, byBrandHandle, bySize, byCountry, byPrice }
+}
+
+export async function searchCatalog(p: SearchParams) {
+  const d = await db()
+  const tsq = toTsQuery(p.q)
+  const query = tsq ? sql`to_tsquery('simple', ${tsq})` : null
+  const limit = Math.min(Math.max(p.limit ?? 24, 1), 48)
+  const offset = Math.min(Math.max(p.offset ?? 0, 0), MAX_SEARCH_OFFSET)
+  const brandOffset = Math.max(p.brandOffset ?? 0, 0)
+
+  const base: SQL[] = [eq(searchProducts.visible, true)]
+  if (query) base.push(sql`${searchProducts.tsv} @@ ${query}`)
+  const { byStock, byCategory, bySubcategory, byBrand, byBrandHandle, bySize, byCountry, byPrice } = scopeConditions(p)
 
   const where = and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)
   const rank = query ? sql<number>`ts_rank(${searchProducts.tsv}, ${query})` : sql<number>`0`
+  // Trending: saves in the last TRENDING_DAYS days (real shopper signals), then relevance, then newest.
+  const recentSaves = d
+    .select({ productId: shopperWishlist.productId, saves: sql<number>`count(*)`.as("saves") })
+    .from(shopperWishlist)
+    .where(sql`${shopperWishlist.createdAt} > now() - make_interval(days => ${TRENDING_DAYS})`)
+    .groupBy(shopperWishlist.productId)
+    .as("recent_saves")
   const order =
-    p.sort === "price_asc"
+    p.sort === "trending"
+      ? [sql`coalesce(${recentSaves.saves}, 0) desc`, ...(query ? [desc(rank)] : []), sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
+      : p.sort === "price_asc"
       ? [asc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
       : p.sort === "price_desc"
         ? [desc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
@@ -191,28 +229,29 @@ export async function searchCatalog(p: SearchParams) {
           ? [sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
           : [desc(rank), desc(searchProducts.available), asc(searchProducts.productId)]
 
-  const [rows, [{ total }], [{ brandCount }], categoryFacet, brandFacet, [priceCounts], sizeFacet, countryFacet, [{ inStockCount }]] = await Promise.all([
-    d
-      .select({
-        productId: searchProducts.productId,
-        brandId: searchProducts.brandId,
-        brandName: searchProducts.brandName,
-        slug: searchProducts.slug,
-        title: searchProducts.title,
-        category: searchProducts.category,
-        subcategory: searchProducts.subcategory,
-        priceMinor: searchProducts.priceMinor,
-        compareAtMinor: searchProducts.compareAtMinor,
-        currency: searchProducts.currency,
-        available: searchProducts.available,
-        image: searchProducts.image,
-        rank,
-      })
-      .from(searchProducts)
-      .where(where)
-      .orderBy(...order)
-      .limit(limit)
-      .offset(offset),
+  const rowFields = {
+    productId: searchProducts.productId,
+    brandId: searchProducts.brandId,
+    brandName: searchProducts.brandName,
+    slug: searchProducts.slug,
+    title: searchProducts.title,
+    category: searchProducts.category,
+    subcategory: searchProducts.subcategory,
+    priceMinor: searchProducts.priceMinor,
+    compareAtMinor: searchProducts.compareAtMinor,
+    currency: searchProducts.currency,
+    available: searchProducts.available,
+    image: searchProducts.image,
+    rank,
+  }
+  const rowsQuery =
+    p.sort === "trending"
+      ? d.select(rowFields).from(searchProducts).leftJoin(recentSaves, eq(recentSaves.productId, searchProducts.productId)).where(where).orderBy(...order).limit(limit).offset(offset)
+      : d.select(rowFields).from(searchProducts).where(where).orderBy(...order).limit(limit).offset(offset)
+  const selectedHandles = p.brandHandles?.slice(0, 20) ?? []
+
+  const [rows, [{ total }], [{ brandCount }], categoryFacet, brandFacetPage, [priceCounts], sizeFacet, countryFacet, [{ inStockCount }], selectedBrands] = await Promise.all([
+    rowsQuery,
     d.select({ total: count() }).from(searchProducts).where(where),
     d.select({ brandCount: sql<number>`count(distinct ${searchProducts.brandId})`.mapWith(Number) }).from(searchProducts).where(where),
     d
@@ -226,14 +265,16 @@ export async function searchCatalog(p: SearchParams) {
       .from(searchProducts)
       .where(and(...base, byStock, byCategory, bySubcategory, byPrice, bySize, byCountry))
       .groupBy(searchProducts.brandId, searchProducts.brandHandle, searchProducts.brandName)
-      .orderBy(desc(count()))
-      .limit(100),
+      .orderBy(desc(count()), asc(searchProducts.brandName), asc(searchProducts.brandId))
+      .limit(BRAND_FACET_PAGE + 1)
+      .offset(brandOffset),
     d
       .select({
-        under50: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} <= 5000)`.mapWith(Number),
-        from50To100: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 5000 and ${searchProducts.priceUsdMinor} <= 10000)`.mapWith(Number),
-        from100To200: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 10000 and ${searchProducts.priceUsdMinor} <= 20000)`.mapWith(Number),
-        from200To300: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 20000 and ${searchProducts.priceUsdMinor} <= 30000)`.mapWith(Number),
+        // Half-open bands [min, max): every price is in exactly one band.
+        under50: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} < 5000)`.mapWith(Number),
+        from50To100: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 5000 and ${searchProducts.priceUsdMinor} < 10000)`.mapWith(Number),
+        from100To200: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 10000 and ${searchProducts.priceUsdMinor} < 20000)`.mapWith(Number),
+        from200To300: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 20000 and ${searchProducts.priceUsdMinor} < 30000)`.mapWith(Number),
         over300: sql<number>`count(*) filter (where ${searchProducts.priceUsdMinor} >= 30000)`.mapWith(Number),
       })
       .from(searchProducts)
@@ -250,8 +291,14 @@ export async function searchCatalog(p: SearchParams) {
       .where(and(...base, byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize))
       .groupBy(searchProducts.country)
       .orderBy(desc(count())),
-    d.select({ inStockCount: count() }).from(searchProducts).where(and(...base, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)),
+    d.select({ inStockCount: count() }).from(searchProducts).where(and(...base, gt(searchProducts.available, 0), byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry)),
+    // Names of the brands the shopper filtered on, so their chips read right even with no matches here.
+    selectedHandles.length
+      ? d.select({ value: searchBrands.brandId, handle: searchBrands.handle, label: searchBrands.name }).from(searchBrands).where(inArray(searchBrands.handle, selectedHandles))
+      : Promise.resolve([] as { value: string; handle: string; label: string }[]),
   ])
+  const brandFacet = brandFacetPage.slice(0, BRAND_FACET_PAGE)
+  const brandsNextCursor = brandFacetPage.length > BRAND_FACET_PAGE ? String(brandOffset + BRAND_FACET_PAGE) : null
 
   const priceFacet = PRICE_BANDS_USD.map((band, index) => ({
     minMinor: convert(band.min, "USD", p.currency),
@@ -276,17 +323,23 @@ export async function searchCatalog(p: SearchParams) {
   }))
 
   const brandHits = query && offset === 0 ? await searchBrandsQuery(p.q ?? "", 6) : []
-  const next = offset + items.length < total ? String(offset + items.length) : null
+  // Paging stops at MAX_SEARCH_OFFSET; `capped` tells the listing to ask for a narrower search.
+  const nextOffset = offset + items.length
+  const next = nextOffset < total && nextOffset <= MAX_SEARCH_OFFSET ? String(nextOffset) : null
+  const capped = nextOffset < total && next === null
 
   return {
     items,
     total,
     brandCount,
     nextCursor: next,
+    capped,
     brands: brandHits,
     facets: {
       categories: categoryFacet.filter((c) => c.value).map((c) => ({ value: c.value!, label: categoryBySlug.get(c.value as never)?.name ?? c.value!, count: c.count })),
       brands: brandFacet.map((b) => ({ value: b.value, handle: b.handle, label: b.label, count: b.count })),
+      brandsNextCursor,
+      selectedBrands,
       price: { currency: p.currency, buckets: priceFacet },
       sizes: sizeFacet.filter((facet) => facet.count > 0),
       countries: countryFacet.filter((facet) => facet.value).map((facet) => ({ value: facet.value!, count: facet.count })),
@@ -309,8 +362,12 @@ export async function searchBrandsQuery(q: string, limit = 10) {
   return rows
 }
 
-/** Type-ahead: a few product titles and brands for a prefix. */
-export async function suggest(q: string) {
+/**
+ * Type-ahead: a few product titles and brands for a prefix. With a `scope` (a listing's category
+ * and filters), `terms` also says how many pieces each completion would list there, so a listing
+ * only offers completions that find something in it.
+ */
+export async function suggest(q: string, scope?: SearchScope) {
   const tsq = toTsQuery(q)
   if (!tsq) return { products: [], brands: [] }
   const d = await db()
@@ -324,7 +381,24 @@ export async function suggest(q: string) {
       .limit(6),
     searchBrandsQuery(q, 4),
   ])
-  return { products: productsHit, brands: brandsHit }
+  if (!scope) return { products: productsHit, brands: brandsHit }
+
+  const seen = new Set<string>()
+  const candidates = [...productsHit.map((item) => item.title), ...brandsHit.map((brand) => brand.name)].flatMap((term) => {
+    const key = term.trim().toLowerCase()
+    const termQuery = toTsQuery(term)
+    if (!key || !termQuery || seen.has(key)) return []
+    seen.add(key)
+    return [{ term, termQuery }]
+  })
+  if (!candidates.length) return { products: productsHit, brands: brandsHit, terms: [] }
+  const { byStock, byCategory, bySubcategory, byBrand, byBrandHandle, bySize, byCountry, byPrice } = scopeConditions(scope)
+  // One pass over the scope, one count per completion (the same match a search for it would make).
+  const [counts] = await d
+    .select(Object.fromEntries(candidates.map((c, i) => [`t${i}`, sql<number>`count(*) filter (where ${searchProducts.tsv} @@ to_tsquery('simple', ${c.termQuery}))`.mapWith(Number)])))
+    .from(searchProducts)
+    .where(and(eq(searchProducts.visible, true), byStock, byCategory, bySubcategory, byBrand, byBrandHandle, byPrice, bySize, byCountry))
+  return { products: productsHit, brands: brandsHit, terms: candidates.map((c, i) => ({ term: c.term, count: Number(counts?.[`t${i}`] ?? 0) })) }
 }
 
 /** Index rows for products (used by follows/drops to learn a product's brand and variants without CATALOG's tables). */

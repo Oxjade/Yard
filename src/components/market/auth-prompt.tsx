@@ -10,6 +10,7 @@ import { api } from "@/lib/api/client"
 import { errorMessage, fieldErrors } from "@/lib/api/errors"
 import { useSession, type AuthIntent, type SessionUser } from "@/lib/stores/session"
 import { useServerSession } from "@/lib/session/use-server-session"
+import { clearOnboardingAuthReturn } from "@/lib/session/auth-return"
 import { site } from "@/config/site"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
@@ -134,6 +135,8 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     try {
       if (mode === "signup") {
         await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
+        // A sign-up from here isn't the brand wizard's: its link mustn't return to onboarding.
+        clearOnboardingAuthReturn()
         setSignupSent(true)
         return
       }
@@ -194,6 +197,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     setNotice(null)
     try {
       await api<{ ok: true }>("/api/auth/magic-link", { body: { email: email.trim() } })
+      clearOnboardingAuthReturn()
       setNotice("If an account exists for that address, a sign-in link has been sent.")
     } catch (e) {
       setFailure(errorMessage(e, "Couldn't request a sign-in link. Try again."))
@@ -208,6 +212,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     setFailure(null)
     try {
       const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "signin", actor: "shopper" } })
+      clearOnboardingAuthReturn()
       window.location.assign(url)
     } catch (e) {
       setFailure(errorMessage(e, `Couldn't start ${provider} sign-in. Try again.`))

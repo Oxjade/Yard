@@ -2,8 +2,8 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { CollectionView } from "@/components/storefront/collection-view"
 import { toCatalogProduct, type PublicCatalogProduct } from "@/lib/api/catalog-products"
-import type { CountryCode, CurrencyCode } from "@/config/markets"
-import type { Brand, CategorySlug, Collection, Product, StorefrontConfig } from "@/lib/data/types"
+import { storefrontBrandFromApi, storefrontConfigFromDto, type StorefrontConfigDto } from "@/lib/api/storefront"
+import type { Brand, Collection, Product, StorefrontConfig } from "@/lib/data/types"
 import { listPublicProducts, publicCollection, publicStorefront } from "@/server/catalog/public"
 import { HttpError } from "@/server/http/errors"
 
@@ -24,33 +24,14 @@ async function loadCollectionPage(handle: string, collectionHandle: string) {
     return product ? [product] : []
   })
 
-  const brandRow = storefront.brand
-  const config = (storefront.storefront?.config as StorefrontConfig | null) ?? fallbackConfig
+  const configDto = (storefront.storefront?.config as StorefrontConfigDto | undefined) ?? null
+  const config = configDto ? storefrontConfigFromDto(configDto) : fallbackConfig
+  // The same brand the storefront shows (its published mark, social links), under this collection's cover.
+  const storefrontBrand = storefrontBrandFromApi(storefront.brand as Parameters<typeof storefrontBrandFromApi>[0], configDto, products)
   const brand: Brand = {
-    id: brandRow.id,
-    handle: brandRow.handle,
-    name: brandRow.name,
-    tagline: `Independent pieces from ${brandRow.name}.`,
-    description: "",
-    story: [],
-    mark: { text: brandRow.name.slice(0, 2).toUpperCase(), style: "condensed" },
-    cover: { src: row.imageSrc ?? products[0]?.images[0]?.src ?? "/media/missing.svg", alt: brandRow.name, width: 1200, height: 1500 },
-    country: brandRow.country as CountryCode,
-    city: brandRow.city,
-    currency: brandRow.currency as CurrencyCode,
-    categories: brandRow.categories as CategorySlug[],
-    aesthetics: ["contemporary"],
-    founded: brandRow.joinedAt ? Number(brandRow.joinedAt.slice(0, 4)) : new Date().getFullYear(),
-    founder: { name: brandRow.name, role: "Independent brand" },
-    followers: brandRow.followersBase,
-    followerGrowth30d: 0,
-    verified: brandRow.verified,
-    joinedAt: brandRow.joinedAt ?? new Date().toISOString().slice(0, 10),
-    social: {},
+    ...storefrontBrand,
+    cover: { src: row.imageSrc ?? products[0]?.images[0]?.src ?? storefrontBrand.cover.src, alt: storefrontBrand.name, width: 1200, height: 1500 },
     storefront: config,
-    shipsFrom: brandRow.country as CountryCode,
-    processingDays: [2, 5],
-    returnsDays: 14,
   }
   const collection: Collection = {
     id: row.id,

@@ -10,7 +10,7 @@ import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Panel, PanelError } from "@/components/admin/ui/panel"
 import { currencies, type CurrencyCode } from "@/config/markets"
-import { api } from "@/lib/api/client"
+import { api, ApiError } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
 import { formatMoney } from "@/lib/money"
@@ -109,6 +109,27 @@ const LEDGER_PAGE = 200
 function Ledger() {
   const [brandIdDraft, setBrandIdDraft] = useState("")
   const [brandFilter, setBrandFilter] = useState("")
+  // The filter only applies to a brand that exists, so an unknown ID can't read as "no activity".
+  const [brandName, setBrandName] = useState<string | null>(null)
+  const [filterError, setFilterError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  async function applyBrandFilter(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const id = brandIdDraft.trim()
+    setFilterError(null)
+    if (!id) { setBrandFilter(""); setBrandName(null); return }
+    if (checking) return
+    setChecking(true)
+    try {
+      const result = await api<{ brand: { id: string; name: string } }>(`/api/admin/finance/brands/${encodeURIComponent(id)}`)
+      setBrandName(result.brand.name)
+      setBrandFilter(result.brand.id)
+    } catch (cause) {
+      setFilterError(cause instanceof ApiError && cause.status === 404 ? `No brand with the ID ${id}. Check the ID and try again.` : errorMessage(cause, "Couldn't check that brand. Try again."))
+    } finally {
+      setChecking(false)
+    }
+  }
   const ledger = useApi<LedgerPage>(`admin.finance.ledger:${brandFilter}`, () => api("/api/admin/finance/ledger", { query: { limit: LEDGER_PAGE, ...(brandFilter ? { brandId: brandFilter } : {}) } }), { keepPrevious: false })
   // Older pages belong to the first page they were loaded under: when that page revalidates (a new
   // adjustment, say), they're dropped and paging starts again from the fresh first page.
@@ -136,7 +157,7 @@ function Ledger() {
       setOlder({ base: first, entries: [...(extra?.entries ?? []), ...page.entries.filter((entry) => !seen.has(entry.id))], cursor: page.entries.length >= LEDGER_PAGE ? page.nextBefore : null })
     } catch (cause) { toast.error(errorMessage(cause, "Couldn't load older ledger entries.")) } finally { setBusy(false) }
   }
-  return <Panel title="Ledger" description={brandFilter ? `Brand ${brandFilter} journal entries, newest first. Amounts retain their original currency.` : "Platform journal entries, newest first. Amounts retain their original currency."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{ledger.error ? <PanelError message={errorMessage(ledger.error, "Couldn't load ledger entries.")} onRetry={() => void ledger.revalidate()} /> : null}<form className="mb-3 flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); setBrandFilter(brandIdDraft.trim()) }}><div className="grid min-w-0 max-w-sm flex-1 gap-1.5"><Label htmlFor="ledger-brand-filter">Brand ID</Label><Input id="ledger-brand-filter" value={brandIdDraft} onChange={(event) => setBrandIdDraft(event.target.value)} maxLength={80} placeholder="Leave empty for platform ledger" /></div><Button type="submit" variant="secondary">Apply filter</Button>{brandFilter ? <Button type="button" variant="ghost" onClick={() => { setBrandIdDraft(""); setBrandFilter("") }}>Clear brand</Button> : null}</form><DataTable label="Finance ledger entries" rows={rows} columns={columns} getId={(entry) => entry.id} loading={ledger.isLoading} search={{ placeholder: "Search ledger entries", text: (entry) => `${entry.id} ${entry.transactionId} ${entry.kind} ${entry.memo ?? ""} ${entry.orderId ?? ""} ${entry.payoutId ?? ""}` }} empty={{ title: "No ledger entries", body: brandFilter ? "No journal entries were found for this brand." : "Finance activity appears here as it is posted." }} initialSort={{ key: "at", dir: "desc" }} pageSizes={[25, 50]} initialPageSize={25} minWidth={360} />{cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={busy} disabled={busy} onClick={() => void loadOlder()}>Load older entries</Button></div> : extra ? <p className="mt-3 text-xs text-ink-3">That&apos;s the start of the ledger.</p> : null}</Panel>
+  return <Panel title="Ledger" description={brandFilter ? `${brandName ?? "Brand"} (${brandFilter}) journal entries, newest first. Amounts retain their original currency.` : "Platform journal entries, newest first. Amounts retain their original currency."} className="rounded-[20px]" bodyClassName="px-3 sm:px-4 md:px-5">{ledger.error ? <PanelError message={errorMessage(ledger.error, "Couldn't load ledger entries.")} onRetry={() => void ledger.revalidate()} /> : null}<form className="mb-3 flex flex-wrap items-end gap-2" onSubmit={(event) => void applyBrandFilter(event)}><div className="grid min-w-0 max-w-sm flex-1 gap-1.5"><Label htmlFor="ledger-brand-filter">Brand ID</Label><Input id="ledger-brand-filter" value={brandIdDraft} onChange={(event) => { setBrandIdDraft(event.target.value); setFilterError(null) }} maxLength={80} placeholder="Leave empty for platform ledger" aria-invalid={filterError ? true : undefined} aria-describedby={filterError ? "ledger-brand-filter-error" : undefined} /></div><Button type="submit" variant="secondary" loading={checking} disabled={checking}>Apply filter</Button>{brandFilter ? <Button type="button" variant="ghost" onClick={() => { setBrandIdDraft(""); setBrandFilter(""); setBrandName(null); setFilterError(null) }}>Clear brand</Button> : null}{filterError ? <p id="ledger-brand-filter-error" role="alert" className="basis-full text-xs text-danger">{filterError}</p> : null}</form><DataTable label="Finance ledger entries" rows={rows} columns={columns} getId={(entry) => entry.id} loading={ledger.isLoading} search={{ placeholder: "Search ledger entries", text: (entry) => `${entry.id} ${entry.transactionId} ${entry.kind} ${entry.memo ?? ""} ${entry.orderId ?? ""} ${entry.payoutId ?? ""}` }} empty={{ title: "No ledger entries", body: brandFilter ? `${brandName ?? "This brand"} has no journal entries yet.` : "Finance activity appears here as it is posted." }} initialSort={{ key: "at", dir: "desc" }} pageSizes={[25, 50]} initialPageSize={25} minWidth={360} />{cursor ? <div className="mt-3"><Button type="button" variant="secondary" loading={busy} disabled={busy} onClick={() => void loadOlder()}>Load older entries</Button></div> : extra ? <p className="mt-3 text-xs text-ink-3">That&apos;s the start of the ledger.</p> : null}</Panel>
 }
 
 function Adjustments() {

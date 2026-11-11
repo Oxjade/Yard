@@ -163,14 +163,26 @@ export function restoreStudioStorefrontVersion(version: number, baseRevision: nu
   })
 }
 
+/** Every published product of the brand, page by page, so the editor can pick and preview any of them. */
+async function loadBrandProducts(brandId: string) {
+  const rows: PublicCatalogProduct[] = []
+  for (let offset: number | null = 0; offset != null; ) {
+    const page: { products: PublicCatalogProduct[]; nextOffset: number | null } = await api(`/api/catalog/products`, { query: { brand: brandId, limit: 60, offset, sort: "new" } })
+    rows.push(...page.products)
+    // The API pages up to offset 5000, like loadPublicCatalog.
+    offset = page.nextOffset != null && page.nextOffset > offset && page.nextOffset <= 5000 ? page.nextOffset : null
+  }
+  return rows
+}
+
 export async function loadStorefrontEditorContext(handle: string, brandId: string): Promise<StorefrontEditorContext> {
-  const [studio, published, productPage, dropPage] = await Promise.all([
+  const [studio, published, productRows, dropPage] = await Promise.all([
     getStudioStorefront(),
     api<PublicStorefrontDto>(`/api/catalog/storefronts/${encodeURIComponent(handle)}`),
-    api<{ products: PublicCatalogProduct[] }>(`/api/catalog/products?brand=${encodeURIComponent(brandId)}&limit=60&offset=0`),
+    loadBrandProducts(brandId),
     api<{ items: PublicDropDto[] }>(`/api/drops?phase=all&brandId=${encodeURIComponent(brandId)}&limit=50`),
   ])
-  const products = productPage.products.map(toCatalogProduct)
+  const products = productRows.map(toCatalogProduct)
   const collections = published.collections.map((collection) => ({
     id: collection.id,
     brandId,
@@ -214,7 +226,9 @@ export function storefrontBrandFromApi(
     id: profile.id,
     handle: profile.handle,
     name: profile.name,
-    tagline: `${profile.name} on Yard`,
+    // No tagline, founding year or founder on the server profile: leave them empty (the hero hides
+    // an empty tagline and a 0 founding year) rather than show made-up facts.
+    tagline: "",
     description: "",
     story: [],
     mark: config?.mark ?? { text: profile.name.slice(0, 2).toUpperCase(), style: "condensed" },
@@ -224,8 +238,8 @@ export function storefrontBrandFromApi(
     currency,
     categories: profile.categories as Brand["categories"],
     aesthetics: ["contemporary"],
-    founded: Number(joinedAt.slice(0, 4)) || new Date().getFullYear(),
-    founder: { name: profile.name, role: "Independent brand" },
+    founded: 0,
+    founder: { name: "", role: "" },
     followers: profile.followersBase,
     followerGrowth30d: 0,
     verified: profile.verified,
@@ -265,11 +279,17 @@ export function editorConfigFromDto(dto: StorefrontConfigDto, brand: Brand): Sto
 
 export function editorConfigToDto(config: StorefrontEditorConfig, brand: Brand): StorefrontConfigDto {
   const cover = config.cover
-  const { cover: _cover, logo, social, ...base } = config
+  const { cover: _cover, logo, social, announcement: rawAnnouncement, ...base } = config
   const coverMediaId = cover?.mediaId ?? null
   const coverPath = cover && !cover.mediaId && cover.src.startsWith("/media/") && cover.src !== brand.cover.src ? cover.src : null
+  // A bar switched on but not written yet is saved as off: the server requires its text, and
+  // publishing is blocked by the editor's own check until it's written or switched off.
+  const text = rawAnnouncement?.text.trim() ?? ""
+  const href = rawAnnouncement?.href?.trim()
+  const announcement = rawAnnouncement === undefined ? undefined : text ? { text, ...(href ? { href } : {}) } : null
   return {
     ...base,
+    ...(announcement !== undefined ? { announcement } : {}),
     coverMediaId,
     coverAlt: cover?.alt ?? null,
     coverPath,

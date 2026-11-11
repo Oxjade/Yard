@@ -160,7 +160,7 @@ export function ContentControls({
               ) : null}
             </div>
             <figure className="relative aspect-[16/7] overflow-hidden rounded-md border border-line-soft bg-surface">
-              {cover.src ? <Image src={cover.src} alt="" fill sizes="(min-width: 1024px) 340px, 100vw" className="object-cover" /> : null}
+              {cover.src ? <Image src={cover.src} alt="" fill sizes="(min-width: 1024px) 340px, 100vw" unoptimized={cover.src.startsWith("/api/")} className="object-cover" /> : null}
             </figure>
             <PhotoPicker
               id="sf-cover"
@@ -225,7 +225,7 @@ export function ContentControls({
               {config.logo?.kind === "image" ? (
                 <motion.div key="image" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-2 flex items-center gap-3 rounded-md border border-line-soft bg-surface/50 p-3">
                   <span className="relative size-11 shrink-0 overflow-hidden rounded-md border border-white/12 bg-obsidian">
-                    {config.logo.image.src ? <Image src={config.logo.image.src} alt="" fill sizes="44px" className="object-cover" /> : null}
+                    {config.logo.image.src ? <Image src={config.logo.image.src} alt="" fill sizes="44px" unoptimized={config.logo.image.src.startsWith("/api/")} className="object-cover" /> : null}
                   </span>
                   <p className="min-w-0 text-xs text-ink-2">
                     Saved with your draft. Storefronts show your text mark until image logos are switched on, so the preview keeps it too.
@@ -311,7 +311,7 @@ export function ContentControls({
                   }}
                 />
               </Field>
-              <Field id="sf-announcement-href" label="Link" optional error={errors["announcement-href"]} hint="A page on the marketplace, like /drops, or a full https:// address.">
+              <Field id="sf-announcement-href" label="Link" optional error={errors["announcement-href"]} hint="A page on the marketplace, like /drops.">
                 <Input
                   {...control("sf-announcement-href", errors["announcement-href"], true)}
                   value={announcement.href ?? ""}

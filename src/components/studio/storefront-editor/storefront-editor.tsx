@@ -50,6 +50,7 @@ import {
   normalize,
   validate,
   type EditorConfig,
+  type FieldErrors,
   type FieldKey,
 } from "./model"
 import { DeviceToggle, EDITOR_DESCRIPTION, EDITOR_TITLE, EditorSkeleton, editorFrame, storefrontStatusMeta, type SaveState } from "./parts"
@@ -82,6 +83,27 @@ function withoutStaleUploads(config: EditorConfig): EditorConfig {
 
 function hasTemporaryUpload(config: EditorConfig) {
   return config.cover?.src.startsWith("blob:") || (config.logo?.kind === "image" && config.logo.image.src.startsWith("blob:"))
+}
+
+/** The server's field paths (config.announcement.href, …) as the editor's fields, so a rejected save highlights them. */
+function serverFieldErrors(fields: Record<string, string> | undefined): FieldErrors {
+  const out: FieldErrors = {}
+  for (const [path, message] of Object.entries(fields ?? {})) {
+    const key: FieldKey | undefined =
+      path.startsWith("config.announcement.href") ? "announcement-href"
+      : path.startsWith("config.announcement") ? "announcement-text"
+      : path.startsWith("config.intro") ? "intro"
+      : path.startsWith("config.coverAlt") ? "cover-alt"
+      : path.startsWith("config.mark") ? "mark-text"
+      : path.startsWith("config.social.instagram") ? "instagram"
+      : path.startsWith("config.social.tiktok") ? "tiktok"
+      : path.startsWith("config.social.x") ? "x"
+      : path.startsWith("config.social.website") ? "website"
+      : path.startsWith("config.sections") ? "sections"
+      : undefined
+    if (key && !out[key]) out[key] = message
+  }
+  return out
 }
 
 function listJoin(items: string[]) {
@@ -128,7 +150,7 @@ export function StorefrontEditor() {
           </>
         ) : (
           <div className="grid gap-3 rounded-md border border-line-soft bg-card p-5" role="alert">
-            <p className="text-sm text-ink">The storefront editor couldn't load your session.</p>
+            <p className="text-sm text-ink">The storefront editor couldn&apos;t load your session.</p>
             <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => void refreshServerSession()}>Try again</Button>
           </div>
         )
@@ -260,10 +282,14 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
   const latest = useRef(config)
   const timer = useRef<number | null>(null)
   const inFlightSave = useRef<Promise<boolean> | null>(null)
+  /** The exact working copy the server's draft (at revision.current) holds. */
+  const savedSnapshot = useRef<EditorConfig>(initialConfig)
   const conflictRef = useRef(false)
   /** The last autosave failed: the edit exists only on this page until a save succeeds. */
   const [saveFailed, setSaveFailed] = useState(false)
   const [conflictMessage, setConflictMessage] = useState<string | null>(null)
+  /** Fields the server rejected on the last save; cleared by the next successful one. */
+  const [serverErrors, setServerErrors] = useState<FieldErrors>({})
 
   const flush = useCallback((keepalive = false): Promise<boolean> => {
     if (timer.current) window.clearTimeout(timer.current)
@@ -286,9 +312,11 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
       try {
         const result = await saveStudioStorefrontDraft(editorConfigToDto(snapshot, brand), revision.current, { keepalive })
         revision.current = result.draft.revision
+        savedSnapshot.current = snapshot
         setServerDraft(result.draft)
         setSavedConfig(snapshot)
         setSaveFailed(false)
+        setServerErrors({})
         return true
       } catch (error) {
         setSaveFailed(true)
@@ -296,9 +324,12 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
           conflictRef.current = true
           setConflictMessage(error.message)
         } else {
+          const fieldErrors = error instanceof ApiError ? serverFieldErrors(error.fields) : {}
+          setServerErrors(fieldErrors)
+          const first = errorOrder.find((key) => fieldErrors[key])
           toast.error("Your draft couldn't be saved", {
             id: "sf-save-failed",
-            description: error instanceof ApiError ? error.message : "Check your connection and try again.",
+            description: first ? fieldErrors[first] : error instanceof ApiError ? error.message : "Check your connection and try again.",
           })
         }
         return false
@@ -358,7 +389,7 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
   /* ---------- Validation: on publish, then live while fixing ---------- */
 
   const [submitted, setSubmitted] = useState(false)
-  const errors = useMemo(() => (submitted ? validate(config, brand) : {}), [submitted, config, brand])
+  const errors = useMemo<FieldErrors>(() => ({ ...serverErrors, ...(submitted ? validate(config, brand) : {}) }), [serverErrors, submitted, config, brand])
   const tabErrors = useMemo(() => {
     const out: Partial<Record<Tab, number>> = {}
     for (const k of Object.keys(errors) as FieldKey[]) out[fieldTab[k]] = (out[fieldTab[k]] ?? 0) + 1
@@ -412,18 +443,35 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
     if (state === "saving" || state === "unsaved") void saveNow.run()
   }
 
+  /** Stops the autosave timer and waits out a save already on its way, so the next request has the current revision. */
+  async function settleSaves() {
+    for (;;) {
+      if (timer.current) window.clearTimeout(timer.current)
+      timer.current = null
+      if (!inFlightSave.current) return
+      await inFlightSave.current
+    }
+  }
+
   const publish = useAsyncAction(async () => {
     const changed = changeSummary(config, live)
-    if (!(await flush())) throw new Error("Draft save failed")
     if (mode === "demo") {
+      if (!(await flush())) throw new Error("Draft save failed")
       publishLocalStorefront!()
     } else {
-      const publishedConfig = editorConfigToDto(normalize(withoutStaleUploads(latest.current), brand), brand)
+      // flush() may hand back a save of an older copy that was already on its way: keep saving
+      // until the stored draft is the working copy, then publish exactly that revision.
+      for (let attempt = 0; ; attempt++) {
+        if (!(await flush())) throw new Error("Draft save failed")
+        if (fingerprint(normalize(withoutStaleUploads(latest.current), brand)) === fingerprint(savedSnapshot.current)) break
+        if (attempt >= 4) throw new Error("Draft save failed")
+      }
+      const published = savedSnapshot.current
       const result = await publishStudioStorefront(revision.current, liveVersion.current)
       liveVersion.current = result.version
-      setLiveDocument({ version: result.version, config: publishedConfig, publishedAt: result.publishedAt })
+      setLiveDocument({ version: result.version, config: editorConfigToDto(published, brand), publishedAt: result.publishedAt })
       setServerDraft((current) => current ? { ...current, baseVersion: result.version, behindLive: false } : current)
-      setSavedConfig(normalize(latest.current, brand))
+      setSavedConfig(published)
       setVersions((current) => [{ version: result.version, publishedAt: result.publishedAt, note: null }, ...current.filter((v) => v.version !== result.version)].slice(0, 30))
     }
     setSubmitted(false)
@@ -461,6 +509,8 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
   function applyServerDraft(next: StorefrontDraftDto) {
     const nextConfig = normalize(editorConfigFromDto(next.config, brand), brand)
     revision.current = next.revision
+    savedSnapshot.current = nextConfig
+    setServerErrors({})
     setServerDraft(next)
     setSavedConfig(nextConfig)
     latest.current = nextConfig
@@ -475,6 +525,9 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
   async function restoreVersion(version: number) {
     if (!canEdit || conflictRef.current) return
     try {
+      // The restore replaces the draft: let this tab's own save finish first, or its new revision reads as someone else's edit.
+      await settleSaves()
+      if (conflictRef.current) return
       const result = await restoreStudioStorefrontVersion(version, revision.current)
       applyServerDraft(result.draft)
       setHistoryOpen(false)
@@ -544,7 +597,8 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
           { id: "all", type: "all-products", enabled: true },
         ],
       }
-      void saveStudioStorefrontDraft(editorConfigToDto(defaultConfig, brand), revision.current)
+      void settleSaves()
+        .then(() => saveStudioStorefrontDraft(editorConfigToDto(defaultConfig, brand), revision.current))
         .then((result) => applyServerDraft(result.draft))
         .catch((error: unknown) => {
           if (error instanceof ApiError && error.status === 409) {
@@ -646,7 +700,7 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
           <Button type="button" variant="secondary" size="sm" loading={reloadPending} onClick={() => void reloadServerDraft()}>Reload</Button>
         </div>
       ) : null}
-      {!canEdit ? <p className="text-sm text-ink-2">Your role can view this storefront but can't edit or publish it.</p> : null}
+      {!canEdit ? <p className="text-sm text-ink-2">Your role can view this storefront but can&apos;t edit or publish it.</p> : null}
 
       <div className="grid min-h-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] xl:gap-6">
         <TabsPrimitive.Root value={tab} onValueChange={(v) => setTab(v as Tab)} asChild>
@@ -680,7 +734,7 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
               })}
             </TabsPrimitive.List>
 
-            <fieldset disabled={!canEdit} className="min-h-0 min-w-0 flex-1 border-0 p-0">
+            <fieldset disabled={!canEdit || publish.pending} className="min-h-0 min-w-0 flex-1 border-0 p-0">
             <motion.div layoutScroll className="min-h-0 lg:overflow-y-auto lg:overscroll-contain">
               {/* Not tab stops themselves: every panel opens with its own controls. */}
               <TabsPrimitive.Content value="design" forceMount tabIndex={-1} className="outline-none data-[state=inactive]:hidden">

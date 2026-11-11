@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: "Every piece from every independent brand on the marketplace, with search, filters and sorting.",
 }
 
-export default function ShopPage() {
+export default function ShopPage({ searchParams }: PageProps<"/shop">) {
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
       <header className="grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end lg:gap-12">
@@ -18,7 +18,7 @@ export default function ShopPage() {
       <div className="mt-10 md:mt-12">
         {/* The listing reads the URL (useSearchParams) and its first page is read at request time, so it streams in behind this skeleton. */}
         <Suspense fallback={<CatalogListingSkeleton chips={11} />}>
-          <CatalogListingServer />
+          <CatalogListingServer searchParams={searchParams} />
         </Suspense>
       </div>
     </div>

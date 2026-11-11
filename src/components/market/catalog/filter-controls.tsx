@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { currencies, type CurrencyCode } from "@/config/markets"
+import { api } from "@/lib/api/client"
+import { errorMessage } from "@/lib/api/errors"
 import { convert, formatMoney, toMajor, toMinor } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { Chip, ChipRadioGroup } from "./chip"
-import { priceBands, sortOptions, type CatalogFacets, type CatalogState } from "./catalog-state"
+import { brandFacetEntries, catalogSearchKey, catalogSearchQuery, priceBands, sortOptions, type CatalogBrandFacet, type CatalogFacets, type CatalogSearchResponse, type CatalogState } from "./catalog-state"
 
 /* ---------- price labels in the shopper's currency ---------- */
 
@@ -66,7 +68,31 @@ export function FilterControls({
 }) {
   const [allBrands, setAllBrands] = useState(false)
   const id = useId()
-  const brandRows = allBrands ? facets.brandFacet : facets.brandFacet.slice(0, 6)
+  // The brand facet is paged on the server: "More brands" loads the next page for these filters.
+  const brandQuery = catalogSearchQuery(state, currency, undefined, 1)
+  const brandKey = catalogSearchKey({ ...brandQuery, sort: undefined })
+  const [moreBrands, setMoreBrands] = useState<{ key: string; base: string | null; rows: CatalogBrandFacet[]; next: string | null } | null>(null)
+  const [brandsLoading, setBrandsLoading] = useState(false)
+  const [brandsError, setBrandsError] = useState<string | null>(null)
+  const extra = moreBrands?.key === brandKey && moreBrands.base === facets.brandsNextCursor ? moreBrands : null
+  const brandList = extra ? [...facets.brandFacet.filter(({ brand }) => !extra.rows.some((row) => row.brand.handle === brand.handle)), ...extra.rows] : facets.brandFacet
+  const brandsNext = extra ? extra.next : facets.brandsNextCursor
+  const brandRows = allBrands ? brandList : brandList.slice(0, 6)
+
+  async function loadMoreBrands() {
+    if (!brandsNext) return
+    setBrandsLoading(true)
+    setBrandsError(null)
+    try {
+      const result = await api<CatalogSearchResponse>("/api/search", { query: { ...brandQuery, brandCursor: brandsNext } })
+      setMoreBrands({ key: brandKey, base: facets.brandsNextCursor, rows: [...(extra?.rows ?? []), ...brandFacetEntries(result.facets.brands)], next: result.facets.brandsNextCursor ?? null })
+      setAllBrands(true)
+    } catch (error) {
+      setBrandsError(errorMessage(error, "More brands couldn't be loaded."))
+    } finally {
+      setBrandsLoading(false)
+    }
+  }
 
   const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
 
@@ -116,7 +142,7 @@ export function FilterControls({
         />
       </FilterSection>
 
-      {facets.brandFacet.length ? (
+      {brandList.length ? (
         <FilterSection title="Brands" count={state.brands.length || undefined}>
           <ul className="grid gap-0.5">
             {brandRows.map(({ brand, count }) => {
@@ -136,10 +162,20 @@ export function FilterControls({
               )
             })}
           </ul>
-          {facets.brandFacet.length > 6 ? (
+          {brandList.length > 6 ? (
             <button type="button" onClick={() => setAllBrands((v) => !v)} className="mt-2 min-h-10 rounded-md px-1 text-sm text-violet underline-offset-4 hover:underline lg:min-h-9" aria-expanded={allBrands}>
-              {allBrands ? "Show fewer brands" : `Show all ${facets.brandFacet.length} brands`}
+              {allBrands ? "Show fewer brands" : brandsNext ? `Show ${brandList.length} brands` : `Show all ${brandList.length} brands`}
             </button>
+          ) : null}
+          {brandsNext && (allBrands || brandList.length <= 6) ? (
+            <button type="button" onClick={() => void loadMoreBrands()} disabled={brandsLoading} className="mt-1 block min-h-10 rounded-md px-1 text-sm text-violet underline-offset-4 hover:underline disabled:opacity-60 lg:min-h-9">
+              {brandsLoading ? "Loading brands…" : brandsError ? "Retry loading more brands" : "Load more brands"}
+            </button>
+          ) : null}
+          {brandsError ? (
+            <p role="alert" className="mt-1 px-1 text-sm text-danger">
+              {brandsError}
+            </p>
           ) : null}
         </FilterSection>
       ) : null}

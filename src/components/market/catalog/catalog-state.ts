@@ -9,6 +9,11 @@ import type { Brand, CategorySlug, Product } from "@/lib/data/types"
  */
 
 export const PAGE_SIZE = 24
+/**
+ * The deepest page a listing loads (a shared ?page= link included); past it the shopper is asked
+ * to narrow the search. 50 × 24 = 1200 pieces, inside the search API's offset ceiling.
+ */
+export const MAX_CATALOG_PAGES = 50
 
 export type CatalogState = {
   q: string
@@ -60,6 +65,10 @@ export function sizeChipLabel(size: string) {
 export type SearchFacetPayload = {
   categories: { value: string; label: string; count: number }[]
   brands: { value: string; handle: string; label: string; count: number }[]
+  /** The next page of `brands` (/api/search?brandCursor=), or null when that was all of them. */
+  brandsNextCursor?: string | null
+  /** Names of the brands filtered on (they may have no matches, or be on a later facet page). */
+  selectedBrands?: { value: string; handle: string; label: string }[]
   price: { currency: string; buckets: { minMinor: number; maxMinor: number | null; count: number }[] }
   sizes: { value: string; count: number }[]
   countries: { value: string; count: number }[]
@@ -74,8 +83,15 @@ export type CatalogSearchResponse = {
   facets: SearchFacetPayload
 }
 
+/** The listing's server first page: its products and the search response they came from. */
+export type CatalogInitialPage = { key: string; products: Product[]; response: CatalogSearchResponse }
+
+export type CatalogBrandFacet = { brand: Pick<Brand, "id" | "handle" | "name" | "mark">; count: number }
+
 export type CatalogFacets = {
-  brandFacet: { brand: Pick<Brand, "id" | "handle" | "name" | "mark">; count: number }[]
+  brandFacet: CatalogBrandFacet[]
+  /** More brands match than brandFacet holds: load them with /api/search?brandCursor=. */
+  brandsNextCursor: string | null
   priceFacet: { min?: number; max?: number; count: number }[]
   sizeFacet: { id: string; label: string; values: { value: string; count: number }[] }[]
   countryFacet: { code: CountryCode; name: string; count: number }[]
@@ -84,6 +100,7 @@ export type CatalogFacets = {
 
 export const EMPTY_CATALOG_FACETS: CatalogFacets = {
   brandFacet: [],
+  brandsNextCursor: null,
   priceFacet: [],
   sizeFacet: [],
   countryFacet: [],
@@ -103,14 +120,22 @@ export function catalogSearchQuery(state: CatalogState, currency: CurrencyCode, 
     inStock: state.inStock ? "1" : undefined,
     sizes: state.sizes.length ? state.sizes.join(",") : undefined,
     country: state.country,
-    sort: state.sort === "price-asc" ? "price_asc" : state.sort === "price-desc" ? "price_desc" : state.sort === "newest" ? "newest" : state.q ? "relevance" : "newest",
+    sort: state.sort === "price-asc" ? "price_asc" : state.sort === "price-desc" ? "price_desc" : state.sort === "newest" ? "newest" : "trending",
     limit,
     cursor,
   }
 }
 
-export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: CatalogState): CatalogFacets {
-  const brandFacet = payload.brands.map(({ value, handle, label, count }) => {
+/** A stable key for one search request (its defined fields, in order): the server and the browser build the same one. */
+export function catalogSearchKey(query: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value))
+  return params.toString()
+}
+
+/** The facet's brands as the panel lists them. The mark is the sample brand's where there is one; the name is always the server's. */
+export function brandFacetEntries(brands: SearchFacetPayload["brands"]): CatalogBrandFacet[] {
+  return brands.map(({ value, handle, label, count }) => {
     const known = brandById.get(value) ?? brandByHandle.get(handle)
     return {
       brand: {
@@ -122,14 +147,16 @@ export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: Cata
       count,
     }
   })
+}
+
+export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: CatalogState): CatalogFacets {
+  const brandFacet = brandFacetEntries(payload.brands)
+  // A brand filtered on stays in the list (with 0) even when nothing here matches it; its name is the server's.
   for (const handle of state.brands) {
     if (brandFacet.some(({ brand }) => brand.handle === handle)) continue
-    const known = brandByHandle.get(handle)
-    const name = known?.name ?? handle
-    brandFacet.push({
-      brand: { id: known?.id ?? handle, handle, name, mark: known?.mark ?? { text: name.slice(0, 2).toUpperCase(), style: "condensed" } },
-      count: 0,
-    })
+    const selected = payload.selectedBrands?.find((b) => b.handle === handle)
+    const [entry] = brandFacetEntries([{ value: selected?.value ?? handle, handle, label: selected?.label ?? handle, count: 0 }])
+    brandFacet.push(entry)
   }
 
   const sizeCounts = new Map(payload.sizes.map(({ value, count }) => [value, count]))
@@ -152,6 +179,7 @@ export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: Cata
 
   return {
     brandFacet,
+    brandsNextCursor: payload.brandsNextCursor ?? null,
     priceFacet: priceBands.map((band, index) => ({ ...band, count: payload.price.buckets[index]?.count ?? 0 })),
     sizeFacet,
     countryFacet,
@@ -204,7 +232,7 @@ export function parseCatalogParams(params: ParamsLike, scope: CatalogScope, know
     inStock: params.get("stock") === "1",
     country: rawCountry && rawCountry in countries ? rawCountry : undefined,
     sort: rawSort && sortOptions.some((o) => o.value === rawSort) ? rawSort : "trending",
-    page: Number.isFinite(page) && page >= 1 ? page : 1,
+    page: Number.isFinite(page) && page >= 1 ? Math.min(page, MAX_CATALOG_PAGES) : 1,
   }
 }
 

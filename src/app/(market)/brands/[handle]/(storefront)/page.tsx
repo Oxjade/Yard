@@ -69,9 +69,17 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
       listPublicProducts({ brand: data.brand.id, limit: 60, offset: 0, sort: "new" }),
       listPublicDrops({ phase: "all", brandId: data.brand.id, limit: 50 }),
     ])
-    const products = productPage.products.map((product) => toCatalogProduct(product as PublicCatalogProduct))
-    const brandDto = data.brand as Parameters<typeof storefrontBrandFromApi>[0]
     const configDto = (data.storefront?.config as StorefrontConfigDto | undefined) ?? null
+    // The newest page lists in All products (with Load more for the rest); products a Featured
+    // section names but that page doesn't hold are fetched by id, so older picks still show.
+    const listed = new Set(productPage.products.map((product) => product.id))
+    const named = [...new Set((configDto?.sections ?? []).flatMap((section) => section.productIds ?? []))].filter((id) => !listed.has(id))
+    const namedPages = await Promise.all(
+      Array.from({ length: Math.ceil(named.length / 60) }, (_, index) => listPublicProducts({ ids: named.slice(index * 60, index * 60 + 60), limit: 60, offset: 0, sort: "new" })),
+    )
+    const products = [...productPage.products, ...namedPages.flatMap((page) => page.products)].map((product) => toCatalogProduct(product as PublicCatalogProduct))
+    const productPaging = { brandId: data.brand.id, total: productPage.total, listed: productPage.products.length, nextOffset: productPage.nextOffset }
+    const brandDto = data.brand as Parameters<typeof storefrontBrandFromApi>[0]
     const brand = storefrontBrandFromApi(brandDto, configDto, products)
     const collections = data.collections.map((collection) => ({
       id: collection.id,
@@ -94,7 +102,7 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
     return (
       <>
         <ViewBeacon kind="storefront_view" brandId={brand.id} />
-        <LiveStorefront brand={brand} config={storefrontConfigFromDto(configDto)} products={products} collections={collections} drops={drops} stories={[]} serverPublished />
+        <LiveStorefront brand={brand} config={storefrontConfigFromDto(configDto)} products={products} productPaging={productPaging} collections={collections} drops={drops} stories={[]} serverPublished />
         {similar.length ? (
           <div className="mx-auto max-w-page px-4 md:px-8">
             <section aria-labelledby="similar-title" className="mt-24 md:mt-32">

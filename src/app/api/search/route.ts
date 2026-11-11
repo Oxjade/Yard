@@ -4,8 +4,9 @@ import { searchCatalog } from "@/server/search"
 import { route } from "@/server/http/route"
 
 /**
- * GET /api/search?q=&category=&brand=&min=&max=&currency=&inStock=&sort=&limit=&cursor=
+ * GET /api/search?q=&category=&brand=&min=&max=&currency=&inStock=&sort=&limit=&cursor=&brandCursor=
  * Full-text product search with server-backed catalog filters and facets in the shopper's currency.
+ * `sort=trending` orders by saves in the last 30 days. `brandCursor` pages the brand facet.
  * `brand` is one brand ID; `min` and `max` are minor units of `currency`. Legacy `brandIds`, `minPrice`,
  * and `maxPrice` names remain accepted. Brand matches come back in `brands` on the first page.
  */
@@ -22,5 +23,6 @@ export const GET = route({ auth: "public", query: searchQuery, rate: { key: "sea
     sort: query.sort,
     limit: query.limit,
     offset: query.cursor ? Number(query.cursor) : 0,
+    brandOffset: query.brandCursor ? Number(query.brandCursor) : 0,
   })
 })

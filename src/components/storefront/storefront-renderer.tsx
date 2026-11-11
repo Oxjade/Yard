@@ -5,7 +5,7 @@ import { ShopProductCard } from "@/components/market/editorial/use-drop-add-bloc
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, Drop, Product, Story, StorefrontConfig, StorefrontSection } from "@/lib/data/types"
 import { AnnouncementBar, CollectionIndex, Container, PreviewPlaceholder, StorefrontFooter, headerClearance, type StorefrontContext } from "./parts"
-import { AllProductsSection } from "./sections/all-products"
+import { AllProductsSection, type ProductPaging } from "./sections/all-products"
 import { CollectionsSection, collectionHref } from "./sections/collections"
 import { DropsSection, groupDrops } from "./sections/drops"
 import { FeaturedProductsSection } from "./sections/featured-products"
@@ -21,6 +21,12 @@ export type StorefrontRendererProps = {
   config: StorefrontConfig
   /** The brand's published products, in the brand's own order. */
   products: Product[]
+  /**
+   * Live server storefronts: `products` starts with the newest `listed` products (one API page),
+   * followed by older ones a section names. All products pages through the rest with Load more,
+   * and the hero counts `total`.
+   */
+  productPaging?: ProductPaging
   collections: Collection[]
   drops: Drop[]
   stories: Story[]
@@ -49,7 +55,7 @@ const SOCIAL_EMPTY = "Connect Instagram or TikTok, or upload posts in Content St
  * live page and the Studio editor render exactly the same thing. Layouts use container
  * queries, so a draft renders correctly in an editor pane of any width.
  */
-export function StorefrontRenderer({ brand, config, products, collections, drops, stories, preview = false, socialPosts, socialPreviewState, className }: StorefrontRendererProps) {
+export function StorefrontRenderer({ brand, config, products, productPaging, collections, drops, stories, preview = false, socialPosts, socialPreviewState, className }: StorefrontRendererProps) {
   const ctx: StorefrontContext = {
     brand,
     template: config.template,
@@ -82,7 +88,7 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
     const common = { ctx, section, first, index }
     switch (section.type) {
       case "hero":
-        return <HeroSection ctx={ctx} section={section} first={first} opening={opening} intro={config.intro || brand.description} products={products} shopHref={shopHref} />
+        return <HeroSection ctx={ctx} section={section} first={first} opening={opening} intro={config.intro || brand.description} products={products} pieces={productPaging?.total} shopHref={shopHref} />
       case "featured-products": {
         const featured = resolveFeatured(section, products, featuredCount)
         if (!featured.length) return placeholder(section, first, index, "Add products in Brand Studio, or pick some for this section.")
@@ -113,7 +119,7 @@ export function StorefrontRenderer({ brand, config, products, collections, drops
       }
       case "all-products":
         if (!products.length) return placeholder(section, first, index, "Publish a product to show it here.")
-        return <AllProductsSection {...common} products={products} />
+        return <AllProductsSection {...common} products={products} paging={productPaging} />
       case "social-feed": {
         // Preview: the editor passes the brand's published posts. Live: the section fetches its own,
         // so the storefront page stays prerendered with no server data dependency.

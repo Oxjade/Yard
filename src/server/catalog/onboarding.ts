@@ -87,6 +87,12 @@ async function currentRow(d: Executor, userId: string) {
   return row ?? null
 }
 
+/** Handle availability for this applicant: their own application (a draft, or a rejected one that already created a brand) doesn't count against them. */
+export async function applicantHandleStatus(actor: ShopperActor, handle: string) {
+  const row = await currentRow(await db(), actor.userId)
+  return handleStatus(handle, row?.id, row?.brandId)
+}
+
 export async function getOnboarding(actor: ShopperActor) {
   const row = await currentRow(await db(), actor.userId)
   return { onboarding: row ? dto(row) : null, steps: ONBOARDING_STEPS }

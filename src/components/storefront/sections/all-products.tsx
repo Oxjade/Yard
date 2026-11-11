@@ -4,12 +4,21 @@ import { useId, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { ProductCard } from "@/components/market/product-card"
+import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api/client"
+import { toCatalogProduct, type PublicCatalogProduct } from "@/lib/api/catalog-products"
+import { errorMessage } from "@/lib/api/errors"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import type { Product, StorefrontSection } from "@/lib/data/types"
 import { Container, SectionHeading, SectionShell, type StorefrontContext } from "../parts"
 
-type Props = { ctx: StorefrontContext; section: StorefrontSection; index: number; first: boolean; products: Product[] }
+/** A live server storefront's products arrive one API page at a time (see StorefrontRendererProps). */
+export type ProductPaging = { brandId: string; total: number; listed: number; nextOffset: number | null }
+
+type Props = { ctx: StorefrontContext; section: StorefrontSection; index: number; first: boolean; products: Product[]; paging?: ProductPaging }
+
+const PAGE = 60
 
 /** The standard product grid; templates differ in columns and card variant, not in gaps. */
 const grid: Record<StorefrontContext["template"], string> = {
@@ -20,9 +29,35 @@ const grid: Record<StorefrontContext["template"], string> = {
 }
 
 /** Every published piece, in the brand's own order, with a small category filter. */
-export function AllProductsSection({ ctx, section, index, first, products }: Props) {
+export function AllProductsSection({ ctx, section, index, first, products: given, paging }: Props) {
   const layoutId = useId()
   const [active, setActive] = useState<string>("all")
+  const [more, setMore] = useState<{ products: Product[]; nextOffset: number | null }>({ products: [], nextOffset: paging?.nextOffset ?? null })
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Paged: the first page in its order, then each page loaded since (skipping any already shown).
+  const products = useMemo(() => {
+    if (!paging) return given
+    const seen = new Set<string>()
+    return [...given.slice(0, paging.listed), ...more.products].filter((p) => !seen.has(p.id) && !!seen.add(p.id))
+  }, [given, paging, more.products])
+
+  async function loadMore() {
+    if (!paging || more.nextOffset == null || loading) return
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const page = await api<{ products: PublicCatalogProduct[]; nextOffset: number | null }>("/api/catalog/products", {
+        query: { brand: paging.brandId, limit: PAGE, offset: more.nextOffset, sort: "new" },
+      })
+      setMore((current) => ({ products: [...current.products, ...page.products.map(toCatalogProduct)], nextOffset: page.nextOffset }))
+    } catch (error) {
+      setLoadError(errorMessage(error, "More pieces couldn't be loaded. Check your connection and try again."))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const groups = useMemo(() => {
     const counts = new Map<string, number>()
@@ -62,7 +97,9 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
             </ChipRadioGroup>
           ) : null}
           <p className="text-sm text-ink-2 tabular" aria-live="polite">
-            {shown.length} {shown.length === 1 ? "piece" : "pieces"}
+            {paging && current === "all" && paging.total > shown.length
+              ? `${shown.length} of ${paging.total} pieces`
+              : `${shown.length} ${shown.length === 1 ? "piece" : "pieces"}`}
           </p>
         </div>
 
@@ -80,6 +117,15 @@ export function AllProductsSection({ ctx, section, index, first, products }: Pro
             ))}
           </motion.div>
         </AnimatePresence>
+
+        {paging && more.nextOffset != null ? (
+          <div className="mt-10 grid justify-items-center gap-3">
+            {loadError ? <p role="alert" className="text-sm text-danger">{loadError}</p> : null}
+            <Button type="button" variant="secondary" loading={loading} onClick={() => void loadMore()} disabled={ctx.preview}>
+              Load more pieces
+            </Button>
+          </div>
+        ) : null}
       </Container>
     </SectionShell>
   )

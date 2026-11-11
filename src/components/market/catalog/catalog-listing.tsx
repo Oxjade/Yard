@@ -14,7 +14,7 @@ import { loadPublicProductsByIds } from "@/lib/api/catalog-products"
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { registerLiveProducts } from "@/lib/api/live-catalog"
-import { brandByHandle, categories, categoryBySlug, type ProductSort } from "@/lib/data"
+import { categories, categoryBySlug, type ProductSort } from "@/lib/data"
 import { duration, ease, spring } from "@/lib/motion"
 import { useSession } from "@/lib/stores/session"
 import type { CategorySlug, Product } from "@/lib/data/types"
@@ -24,14 +24,17 @@ import {
   activeFilterCount,
   buildListingFromResults,
   catalogFacetsFromSearch,
+  catalogSearchKey,
   catalogSearchQuery,
   EMPTY_CATALOG_FACETS,
   emptyState,
+  MAX_CATALOG_PAGES,
   panelFilterCount,
   parseCatalogParams,
   serializeCatalogParams,
   sizeChipLabel,
   sortOptions,
+  type CatalogInitialPage,
   type CatalogSearchResponse,
   type CatalogScope,
   type CatalogState,
@@ -48,8 +51,10 @@ const NO_PANEL_FILTERS = { brands: [], min: undefined, max: undefined, sizes: []
  * (q, category, sub, brands, min, max, size, stock, country, sort, page), read with
  * useSearchParams, so this must render inside <Suspense>. Search results and facets come from
  * the search API; changes are written with history.replaceState to keep the URL authoritative.
+ * `initial` is the first page read on the server (CatalogListingServer), so the HTML carries
+ * products; the browser skips that request while its search key still matches.
  */
-export function CatalogListing({ category }: { category?: CategorySlug }) {
+export function CatalogListing({ category, initial }: { category?: CategorySlug; initial?: CatalogInitialPage }) {
   const scope: CatalogScope = useMemo(() => ({ category }), [category])
   const pathname = usePathname()
   const params = useSearchParams()
@@ -58,19 +63,20 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   const shopperCurrency = useSession((s) => s.currency)
   const currency = hydrated ? shopperCurrency : "USD"
   const requestQuery = useMemo(() => catalogSearchQuery(state, currency), [state, currency])
-  const searchKey = useMemo(() => {
-    const query = new URLSearchParams()
-    for (const [key, value] of Object.entries(requestQuery)) if (value !== undefined) query.set(key, String(value))
-    return query.toString()
-  }, [requestQuery])
-  const [catalogProducts, setCatalogProducts] = useState<Product[]>([])
-  const [searchResponse, setSearchResponse] = useState<CatalogSearchResponse | null>(null)
-  const [resultKey, setResultKey] = useState("")
-  const [loadedPages, setLoadedPages] = useState(0)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const searchKey = useMemo(() => catalogSearchKey(requestQuery), [requestQuery])
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(() => initial?.products ?? [])
+  const [searchResponse, setSearchResponse] = useState<CatalogSearchResponse | null>(() => initial?.response ?? null)
+  const [resultKey, setResultKey] = useState(() => initial?.key ?? "")
+  const [loadedPages, setLoadedPages] = useState(() => (initial ? 1 : 0))
+  const [nextCursor, setNextCursor] = useState<string | null>(() => initial?.response.nextCursor ?? null)
   const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [loadedNote, setLoadedNote] = useState("")
+
+  useEffect(() => {
+    // Quick add from the grid can then show a server-rendered piece in the bag without another fetch.
+    if (initial) registerLiveProducts(initial.products)
+  }, [initial])
 
   useEffect(() => {
     const sameQuery = resultKey === searchKey
@@ -194,7 +200,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
   if (state.q) chips.push({ key: "q", label: `“${state.q}”`, without: { q: "" } })
   if (state.category && !scope.category) chips.push({ key: "category", label: categoryBySlug.get(state.category)!.name, without: { category: undefined, sub: undefined } })
   if (state.sub) chips.push({ key: "sub", label: state.sub, without: { sub: undefined } })
-  for (const h of state.brands) chips.push({ key: `b-${h}`, label: brandByHandle.get(h)?.name ?? catalogProducts.find((p) => p.brandSummary?.handle === h)?.brandSummary?.name ?? h, without: { brands: state.brands.filter((x) => x !== h) } })
+  for (const h of state.brands) chips.push({ key: `b-${h}`, label: facets.brandFacet.find(({ brand }) => brand.handle === h)?.brand.name ?? catalogProducts.find((p) => p.brandSummary?.handle === h)?.brandSummary?.name ?? h, without: { brands: state.brands.filter((x) => x !== h) } })
   if (state.min !== undefined || state.max !== undefined) chips.push({ key: "price", label: priceLabel(state.min, state.max, currency), without: { min: undefined, max: undefined } })
   for (const s of state.sizes) chips.push({ key: `s-${s}`, label: sizeChipLabel(s), without: { sizes: state.sizes.filter((x) => x !== s) } })
   if (state.inStock) chips.push({ key: "stock", label: "In stock", without: { inStock: false } })
@@ -212,6 +218,7 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
           value={state.q}
           onCommit={onSearch}
           state={state}
+          currency={currency}
           label={cat ? `Search ${cat.name}` : "Search the shop"}
           placeholder={cat ? `Search ${cat.name.toLowerCase()}` : "Search pieces, brands and materials"}
           className="md:max-w-xl"
@@ -411,7 +418,9 @@ export function CatalogListing({ category }: { category?: CategorySlug }) {
                   <motion.div className="h-full origin-left bg-violet" initial={false} animate={{ scaleX: progress }} transition={{ duration: duration.chart, ease: ease.out }} />
                 </div>
               ) : null}
-              {listing.hasMore ? (
+              {listing.hasMore && state.page >= MAX_CATALOG_PAGES ? (
+                <p className="max-w-sm text-center text-pretty text-sm text-ink-2">That&apos;s as far as the shop pages. Narrow your search or add a filter to see the rest.</p>
+              ) : listing.hasMore ? (
                 <Button variant="secondary" size="lg" onClick={loadMore} disabled={requestLoading} className="mt-2 min-w-48">
                   Load {listing.nextCount} more
                 </Button>
