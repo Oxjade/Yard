@@ -1,4 +1,4 @@
-import { commissionLabel } from "@/lib/commission"
+import { commissionTerms } from "@/lib/commission"
 import Link from "next/link"
 import { site } from "@/config/site"
 import { LocaleSelect } from "./locale-select"
@@ -20,7 +20,7 @@ export function MarketFooter() {
             <YardLogo className="block h-10" />
             <p className="mt-4 text-sm leading-relaxed text-ink-2">{site.description}</p>
             <p className="mt-4 text-sm leading-relaxed text-ink-2">
-              Brands join free and keep their storefront free. Commission is {commissionLabel()} on completed sales — nothing before.
+              Brands join free and keep their storefront free. Commission is {commissionTerms} on completed sales — nothing before.
             </p>
           </div>
           {columns.map((col) => (
