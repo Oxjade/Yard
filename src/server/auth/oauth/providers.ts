@@ -8,7 +8,7 @@ import { signEs256, truthy, verifyIdToken } from "./jwt"
  * throws ProviderNotConfigured (the routes answer 503 not_configured). It never pretends to sign
  * anyone in.
  */
-export type ProviderId = "google" | "apple"
+export type ProviderId = "google" | "apple" | "auth0"
 
 export type ProviderProfile = { subject: string; email: string | null; emailVerified: boolean; name: string | null }
 
@@ -17,7 +17,7 @@ export interface SignInProvider {
   impl: "live" | "stub"
   configured: boolean
   /** The authorize URL for this round trip. */
-  authorizeUrl(input: { state: string; nonce: string; codeChallenge: string | null }): string
+  authorizeUrl(input: { state: string; nonce: string; codeChallenge: string | null; connection?: string | null }): string
   /** Code → verified profile (network I/O; never inside a transaction). */
   exchange(input: { code: string; codeVerifier: string | null; nonce: string; appleUser?: string | null }): Promise<ProviderProfile>
   usesPkce: boolean
@@ -29,7 +29,7 @@ export class ProviderNotConfigured extends Error {
   }
 }
 
-const label: Record<ProviderId, string> = { google: "Google", apple: "Apple" }
+const label: Record<ProviderId, string> = { google: "Google", apple: "Apple", auth0: "Auth0" }
 export const providerLabel = (p: ProviderId) => label[p]
 
 function stub(id: ProviderId): SignInProvider {
@@ -144,10 +144,57 @@ function apple(cfg: { clientId: string; teamId: string; keyId: string; privateKe
   }
 }
 
+/**
+ * Auth0 as a generic OIDC provider: code + PKCE + state/nonce, `connection` picks the social
+ * connection (Google, Facebook, …) so the button goes straight there. The ID token is verified
+ * against the tenant's JWKS; issuer is "{issuerBase}/". Only verified emails are accepted
+ * (the flow refuses `email_verified` false or missing with result email_unverified).
+ */
+function auth0(cfg: NonNullable<ReturnType<typeof authEnv>["auth0"]>): SignInProvider {
+  const allowed = new Set(cfg.connections.map((c) => c.name))
+  return {
+    id: "auth0",
+    impl: "live",
+    configured: true,
+    usesPkce: true,
+    authorizeUrl({ state, nonce, codeChallenge, connection }) {
+      const u = new URL(`${cfg.issuerBase}/authorize`)
+      u.searchParams.set("client_id", cfg.clientId)
+      u.searchParams.set("redirect_uri", oauthRedirectUri("auth0"))
+      u.searchParams.set("response_type", "code")
+      u.searchParams.set("scope", "openid email profile")
+      u.searchParams.set("state", state)
+      u.searchParams.set("nonce", nonce)
+      if (connection && allowed.has(connection)) u.searchParams.set("connection", connection)
+      if (codeChallenge) {
+        u.searchParams.set("code_challenge", codeChallenge)
+        u.searchParams.set("code_challenge_method", "S256")
+      }
+      return u.toString()
+    },
+    async exchange({ code, codeVerifier, nonce }) {
+      const idToken = await postForm(`${cfg.issuerBase}/oauth/token`, {
+        code,
+        client_id: cfg.clientId,
+        client_secret: cfg.clientSecret,
+        redirect_uri: oauthRedirectUri("auth0"),
+        grant_type: "authorization_code",
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
+      })
+      const c = await verifyIdToken(idToken, { jwksUrl: `${cfg.issuerBase}/.well-known/jwks.json`, issuers: [`${cfg.issuerBase}/`], audience: cfg.clientId, nonce })
+      return { subject: c.sub, email: c.email?.toLowerCase() ?? null, emailVerified: truthy(c.email_verified), name: c.name ?? null }
+    },
+  }
+}
+
 export function getProvider(id: ProviderId): SignInProvider {
   const env = authEnv()
   if (id === "google") return env.google ? google(env.google) : stub("google")
+  if (id === "auth0") return env.auth0 ? auth0(env.auth0) : stub("auth0")
   return env.apple ? apple(env.apple) : stub("apple")
 }
 
-export const providerStatus = () => ({ google: getProvider("google").configured, apple: getProvider("apple").configured })
+/** The Auth0 connections offered as buttons (empty when Auth0 isn't configured). */
+export const auth0Connections = () => authEnv().auth0?.connections ?? []
+
+export const providerStatus = () => ({ google: getProvider("google").configured, apple: getProvider("apple").configured, auth0: getProvider("auth0").configured })

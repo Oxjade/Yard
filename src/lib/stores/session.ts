@@ -23,7 +23,7 @@ export type SessionUser = {
   id: string
   name: string
   email: string
-  provider: "google" | "apple" | "email"
+  provider: "google" | "apple" | "auth0" | "email"
 }
 
 export type PasswordSignInResult =

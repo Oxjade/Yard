@@ -5,7 +5,8 @@ import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
-import { AppleMark, GoogleMark, useDemoSignIn } from "@/components/market/auth-prompt"
+import { SocialMark, startSocialSignIn, useDemoSignIn } from "@/components/market/auth-prompt"
+import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { api } from "@/lib/api/client"
 import { errorMessage, fieldErrors } from "@/lib/api/errors"
@@ -18,10 +19,10 @@ import { StepForm, useStepForm, type StepProps } from "../step-form"
 import { useOnboarding } from "../store"
 import { isEmail } from "../validation"
 
-const providerLabel: Record<SessionUser["provider"], string> = { google: "Google", apple: "Apple", email: "email" }
+const providerLabel: Record<SessionUser["provider"], string> = { google: "Google", apple: "Apple", auth0: "Social", email: "email" }
 
 type AuthMode = "signup" | "signin"
-type ProviderStatus = { google: boolean; apple: boolean; demo: { shopper: boolean } }
+type ProviderStatus = ProvidersStatus & { demo: { shopper: boolean } }
 type AuthResponse =
   | { status: "signed_in"; actor: "shopper"; profile: { id: string; name: string; email: string } }
   | { status: "verify_email" }
@@ -44,7 +45,7 @@ export function AccountStep({ onNext }: StepProps) {
   const [email, setEmail] = useState(account.email)
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [busy, setBusy] = useState<"email" | "google" | "apple" | "demo" | "resend" | null>(null)
+  const [busy, setBusy] = useState<"email" | "demo" | "resend" | `social:${string}` | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [needsVerification, setNeedsVerification] = useState(false)
@@ -71,17 +72,17 @@ export function AccountStep({ onNext }: StepProps) {
     if (!business.contactEmail) update("business", { contactEmail: u.email })
   }
 
-  async function social(provider: "google" | "apple") {
+  async function social(button: SocialButton) {
     if (busy) return
-    setBusy(provider)
+    setBusy(`social:${button.key}`)
     setFailure(null)
     setOnboardingAuthReturn()
     try {
-      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "signin", actor: "shopper" } })
+      const url = await startSocialSignIn(button)
       window.location.assign(url)
     } catch (error) {
       clearOnboardingAuthReturn()
-      setFailure(errorMessage(error, `Couldn't start ${provider} sign-in. Try again.`))
+      setFailure(errorMessage(error, `Couldn't start ${button.label} sign-in. Try again.`))
       setBusy(null)
     }
   }
@@ -259,8 +260,7 @@ export function AccountStep({ onNext }: StepProps) {
     <StepForm formRef={form.formRef} onSubmit={form.onSubmit} errors={e}>
       <Panel title={mode === "signup" ? "Sign up" : "Sign in"} description="Use one Yard account for your brand and shopping.">
         <div className="grid gap-2 sm:grid-cols-2">
-          {providers.google ? <Button type="button" variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy} onClick={() => void social("google")}><GoogleMark /> Continue with Google</Button> : null}
-          {providers.apple ? <Button type="button" variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy} onClick={() => void social("apple")}><AppleMark /> Continue with Apple</Button> : null}
+          {socialButtons(providers).map((b) => <Button key={b.key} type="button" variant="secondary" size="lg" className="w-full" loading={busy === `social:${b.key}`} disabled={!!busy} onClick={() => void social(b)}><SocialMark mark={b.mark} /> Continue with {b.label}</Button>)}
         </div>
         <div className="my-5 flex items-center gap-3 text-xs text-ink-3">
           <span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" />

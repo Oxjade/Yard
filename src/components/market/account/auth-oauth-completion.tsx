@@ -20,6 +20,7 @@ const messages = new Map<string, string>(Object.entries({
   already_linked: "That provider is already connected to this account.",
   link_required: "Sign in with your password before connecting this provider.",
   email_required: "The provider didn’t share an email address. Try another sign-in method.",
+  email_unverified: "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way.",
   no_brand: "This account doesn’t have access to a brand workspace.",
   suspended: "This account is currently unavailable.",
   reauth_mismatch: "The provider account didn’t match the account being confirmed.",
@@ -53,7 +54,9 @@ function reportReauth(message: OAuthReauthMessage) {
 
 export function AuthOAuthCompletion() {
   const params = useSearchParams()
-  const provider = params.get("provider") ?? "identity provider"
+  const rawProvider = params.get("provider") ?? "identity provider"
+  // Auth0 fronts the social logins; the person picked Google, Facebook, … not "Auth0".
+  const provider = rawProvider === "auth0" ? "your social sign-in" : rawProvider
   const mode = params.get("mode") ?? "signin"
   const actor = params.get("actor") === "brand" ? "brand" : "shopper"
   const result = params.get("result") ?? "error"
@@ -94,7 +97,7 @@ export function AuthOAuthCompletion() {
           }
           const shopper = session.shopper
           if (result === "signed_in" && actor === "shopper" && shopper) {
-            useSession.getState().signIn({ id: shopper.id, name: shopper.name, email: shopper.email, provider: provider === "apple" ? "apple" : "google" })
+            useSession.getState().signIn({ id: shopper.id, name: shopper.name, email: shopper.email, provider: rawProvider === "apple" ? "apple" : rawProvider === "auth0" ? "auth0" : "google" })
             // Strict Mode runs this effect twice; only the live run may take (and so spend) the return.
             if (active) setContinueTo(takeOnboardingAuthReturn() ?? "/you/orders")
           } else {
@@ -111,7 +114,7 @@ export function AuthOAuthCompletion() {
       }
     })()
     return () => { active = false }
-  }, [actor, mode, provider, result])
+  }, [actor, mode, rawProvider, result])
 
   return (
     <>

@@ -39,7 +39,7 @@ export const actorQuery = z.object({ actor: signInActor })
 export const asQuery = z.object({ as: z.enum(["shopper", "brand", "admin"]) })
 
 export const oauthStartBody = z
-  .object({ mode: z.enum(["signin", "link", "reauth"]).default("signin"), actor: z.enum(["shopper", "brand"]).default("shopper"), brandId: id.optional() })
+  .object({ mode: z.enum(["signin", "link", "reauth"]).default("signin"), actor: z.enum(["shopper", "brand"]).default("shopper"), brandId: id.optional(), connection: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional() })
   .strict()
 
 export const brandSwitchBody = z.object({ brandId: id }).strict()

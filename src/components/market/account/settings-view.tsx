@@ -35,7 +35,7 @@ const channels: { key: keyof NotificationPrefs; label: string; body: string }[] 
   { key: "push", label: "Push", body: "On this device, once you allow it. Not connected in this development build." },
 ]
 
-const providerName = { google: "Google", apple: "Apple", email: "email and password" } as const
+const providerName = { google: "Google", apple: "Apple", auth0: "social sign-in", email: "email and password" } as const
 
 function Row({ id, label, body, checked, onChange }: { id: string; label: string; body: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (

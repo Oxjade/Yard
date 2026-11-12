@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useId, useRef, useState } from "react"
+import { UserCircleIcon } from "@phosphor-icons/react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { bagButton } from "@/components/market/bag-drawer"
 import { Button } from "@/components/ui/button"
@@ -12,6 +13,7 @@ import { useSession, type AuthIntent, type SessionUser } from "@/lib/stores/sess
 import { useServerSession } from "@/lib/session/use-server-session"
 import { clearOnboardingAuthReturn } from "@/lib/session/auth-return"
 import { site } from "@/config/site"
+import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
   follow: { title: "Sign in to follow brands", body: "Following puts their new products, drops and stories in your Following feed." },
@@ -40,6 +42,21 @@ export function AppleMark() {
       <path fill="currentColor" d="M16.37 12.6c-.02-2.24 1.83-3.31 1.91-3.37-1.04-1.52-2.66-1.73-3.24-1.75-1.38-.14-2.69.81-3.39.81-.7 0-1.78-.79-2.92-.77-1.5.02-2.89.87-3.66 2.21-1.56 2.71-.4 6.72 1.12 8.92.74 1.08 1.63 2.29 2.79 2.24 1.12-.04 1.54-.72 2.89-.72 1.35 0 1.73.72 2.91.7 1.2-.02 1.96-1.1 2.7-2.18.85-1.25 1.2-2.46 1.22-2.52-.03-.01-2.33-.9-2.33-3.57zM14.14 6.04c.62-.75 1.03-1.78.92-2.82-.89.04-1.96.59-2.6 1.34-.57.66-1.07 1.71-.94 2.73.99.08 2-.5 2.62-1.25z" />
     </svg>
   )
+}
+
+/** The mark on a social sign-in button: Google and Apple have their own, anything else a person. */
+export function SocialMark({ mark }: { mark: SocialButton["mark"] }) {
+  if (mark === "google") return <GoogleMark />
+  if (mark === "apple") return <AppleMark />
+  return <UserCircleIcon className="size-4" aria-hidden />
+}
+
+/** POST /api/auth/oauth/{provider}/start for a social button; resolves to the provider URL. */
+export async function startSocialSignIn(button: SocialButton) {
+  const body: Record<string, string> = { mode: "signin", actor: "shopper" }
+  if (button.connection) body.connection = button.connection
+  const { url } = await api<{ url: string }>(`/api/auth/oauth/${button.provider}/start`, { body })
+  return url
 }
 
 /** Signs in to the server's demo shopper while keeping the name and email entered in onboarding. */
@@ -78,8 +95,9 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
   const signInDemo = useSession((s) => s.signInDemo)
   const signInWithPassword = useSession((s) => s.signInWithPassword)
   const demoEnabled = useServerSession((s) => s.demoAuth?.shopper === true)
-  const [oauthProviders, setOauthProviders] = useState<{ google: boolean; apple: boolean; magicLink: boolean }>({ google: false, apple: false, magicLink: false })
-  const [busy, setBusy] = useState<"demo" | "email" | "signup" | "forgot" | "magic" | "google" | "apple" | null>(null)
+  const [oauthProviders, setOauthProviders] = useState<{ buttons: SocialButton[]; magicLink: boolean }>({ buttons: [], magicLink: false })
+  /** A social button's key ("google", "auth0:facebook", …) while its round trip starts. */
+  const [busy, setBusy] = useState<"demo" | "email" | "signup" | "forgot" | "magic" | `social:${string}` | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [mode, setMode] = useState<AuthMode>("signin")
@@ -96,8 +114,8 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
 
   useEffect(() => {
     let active = true
-    void api<{ google: boolean; apple: boolean; magicLink: boolean }>("/api/auth/providers").then((providers) => {
-      if (active) setOauthProviders({ google: providers.google, apple: providers.apple, magicLink: providers.magicLink })
+    void api<ProvidersStatus & { magicLink: boolean }>("/api/auth/providers").then((providers) => {
+      if (active) setOauthProviders({ buttons: socialButtons(providers), magicLink: providers.magicLink })
     }).catch(() => {})
     return () => { active = false }
   }, [])
@@ -206,16 +224,16 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     }
   }
 
-  async function startOAuth(provider: "google" | "apple") {
+  async function startOAuth(button: SocialButton) {
     if (busy) return
-    setBusy(provider)
+    setBusy(`social:${button.key}`)
     setFailure(null)
     try {
-      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "signin", actor: "shopper" } })
+      const url = await startSocialSignIn(button)
       clearOnboardingAuthReturn()
       window.location.assign(url)
     } catch (e) {
-      setFailure(errorMessage(e, `Couldn't start ${provider} sign-in. Try again.`))
+      setFailure(errorMessage(e, `Couldn't start ${button.label} sign-in. Try again.`))
       setBusy(null)
     }
   }
@@ -223,9 +241,8 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
   return (
     <div className="grid gap-3">
       {demoEnabled ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "demo"} disabled={!!busy && busy !== "demo"} onClick={() => void handleDemoSignIn()}>Continue as demo shopper</Button> : null}
-      {mode === "signin" && oauthProviders.google ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} disabled={!!busy && busy !== "google"} onClick={() => void startOAuth("google")}><GoogleMark /> Continue with Google</Button> : null}
-      {mode === "signin" && oauthProviders.apple ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "apple"} disabled={!!busy && busy !== "apple"} onClick={() => void startOAuth("apple")}><AppleMark /> Continue with Apple</Button> : null}
-      {demoEnabled || (mode === "signin" && (oauthProviders.google || oauthProviders.apple)) ? <div className="my-1 flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
+      {mode === "signin" ? oauthProviders.buttons.map((b) => <Button key={b.key} variant="secondary" size="lg" className="w-full" loading={busy === `social:${b.key}`} disabled={!!busy && busy !== `social:${b.key}`} onClick={() => void startOAuth(b)}><SocialMark mark={b.mark} /> Continue with {b.label}</Button>) : null}
+      {demoEnabled || (mode === "signin" && oauthProviders.buttons.length > 0) ? <div className="my-1 flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
       {signupSent ? (
         <p role="status" className="rounded-md border border-line-soft bg-card px-4 py-3 text-sm leading-relaxed text-ink-2">
           We sent a verification link to {email.trim()}. Open it to finish creating your account.

@@ -16,7 +16,8 @@ import { getBrandActor, getShopper } from "../dal"
 import { assertEligible, credentialsOf, deletionPending, findUserByEmail, openSession, upsertCredentials, userById, type RequestMeta, type UserRow } from "../identity"
 import { limitOauthStart } from "../limits"
 import { markReauth } from "../session-auth"
-import { getProvider, ProviderNotConfigured, providerLabel, type ProviderId, type ProviderProfile } from "./providers"
+import { auth0ConnectionOfSubject } from "../../../lib/auth/auth0"
+import { auth0Connections, getProvider, ProviderNotConfigured, providerLabel, type ProviderId, type ProviderProfile } from "./providers"
 
 /**
  * Google / Apple sign-in, linking and re-auth (v3).
@@ -50,6 +51,7 @@ export const OAUTH_RESULTS = [
   "already_linked",
   "link_required",
   "email_required",
+  "email_unverified",
   "no_brand",
   "suspended",
   "reauth_mismatch",
@@ -67,8 +69,14 @@ function pkce() {
   return { verifier, challenge: sha256b64url(verifier) }
 }
 
-export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode; actor: OAuthActor; brandId?: string | null }, meta: RequestMeta) {
+export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode; actor: OAuthActor; brandId?: string | null; connection?: string | null }, meta: RequestMeta) {
   await limitOauthStart(meta.ipHash)
+  // Auth0: the button names the social connection; only the configured ones are accepted.
+  let connection: string | null = null
+  if (input.provider === "auth0" && input.connection) {
+    if (!auth0Connections().some((c) => c.name === input.connection)) throw badRequest({ connection: "That sign-in option isn't available on this Yard." })
+    connection = input.connection
+  }
   let userId: string | null = null
   let sessionId: string | null = null
   if (input.mode !== "signin") {
@@ -106,7 +114,7 @@ export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode;
   })
   const jar = await cookies()
   jar.set(bindingCookie(), binding, { httpOnly: true, sameSite: "lax", secure: getEnv().cookieSecure, path: "/", maxAge: STATE_TTL_MS / 1000 })
-  const url = provider.authorizeUrl({ state: `${id}.${stateMac(id, input.provider)}`, nonce, codeChallenge: p?.challenge ?? null })
+  const url = provider.authorizeUrl({ state: `${id}.${stateMac(id, input.provider)}`, nonce, codeChallenge: p?.challenge ?? null, connection })
   return { url }
 }
 
@@ -144,6 +152,21 @@ async function claimState(provider: ProviderId, state: string | null) {
 
 const nameFrom = (p: ProviderProfile) => (p.name?.trim() || p.email?.split("@")[0] || "Yard shopper").slice(0, 80)
 
+/**
+ * One identity per provider per user, except Auth0, which fronts several social connections:
+ * there it's one identity per connection (the `sub` prefix, e.g. "google-oauth2|…").
+ */
+async function sameProviderIdentity(provider: ProviderId, userId: string, subject: string) {
+  const d = await db()
+  const rows = await d
+    .select({ id: oauthIdentities.id, subject: oauthIdentities.subject })
+    .from(oauthIdentities)
+    .where(and(eq(oauthIdentities.userId, userId), eq(oauthIdentities.provider, provider)))
+  if (provider !== "auth0") return rows[0] ?? null
+  const conn = auth0ConnectionOfSubject(subject)
+  return rows.find((r) => auth0ConnectionOfSubject(r.subject) === conn) ?? null
+}
+
 async function identityBySubject(provider: ProviderId, subject: string) {
   const d = await db()
   const [row] = await d
@@ -178,11 +201,7 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile): Prom
     if (existing.demo || (await deletionPending(existing.id))) return "link_required"
     const cred = await credentialsOf(existing.id)
     if (!p.emailVerified || !cred?.emailVerifiedAt) return "link_required"
-    const [already] = await d
-      .select({ id: oauthIdentities.id })
-      .from(oauthIdentities)
-      .where(and(eq(oauthIdentities.userId, existing.id), eq(oauthIdentities.provider, provider)))
-      .limit(1)
+    const already = await sameProviderIdentity(provider, existing.id, p.subject)
     if (already) return "link_required" // a different account of the same provider is linked already
     await linkIdentity(provider, existing.id, p)
     return existing
@@ -219,6 +238,12 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     log.error(`[yard] auth: ${provider} exchange failed`, e)
     return done("error")
   }
+  // Auth0 fronts many social connections; only a provider-verified email is trusted (no
+  // account is created or linked, and no session opened, on an unverified or missing one).
+  if (provider === "auth0") {
+    if (!profile.email) return done("email_required")
+    if (!profile.emailVerified) return done("email_unverified")
+  }
 
   try {
     // link / reauth must land in the same session that started it.
@@ -234,12 +259,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
           return done("reauthed")
         }
         if (known) return done(known.userId === current.userId ? "linked" : "identity_in_use")
-        const d = await db()
-        const [same] = await d
-          .select({ id: oauthIdentities.id })
-          .from(oauthIdentities)
-          .where(and(eq(oauthIdentities.userId, current.userId), eq(oauthIdentities.provider, provider)))
-          .limit(1)
+        const same = await sameProviderIdentity(provider, current.userId, profile.subject)
         if (same) return done("already_linked")
         await linkIdentity(provider, current.userId, profile)
         await writeAudit({ actor: { kind: actor === "brand" ? "brand" : "shopper", id: current.userId, name: current.name }, action: "auth.identity_linked", target: providerLabel(provider), subjectType: "user", subjectId: current.userId, ipHash: meta.ipHash, meta: { provider } })
@@ -289,6 +309,6 @@ export async function unlinkIdentity(actor: { userId: string; name: string; kind
 }
 
 export const parseProvider = (v: string | undefined): ProviderId => {
-  if (v === "google" || v === "apple") return v
-  throw badRequest({ provider: "Use google or apple." })
+  if (v === "google" || v === "apple" || v === "auth0") return v
+  throw badRequest({ provider: "Use google, apple or auth0." })
 }

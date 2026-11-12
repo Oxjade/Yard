@@ -1,4 +1,5 @@
 import "server-only"
+import { auth0ConnectionLabel, auth0ConnectionOfSubject } from "../../lib/auth/auth0"
 import { eq } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import { db, withTx } from "../db"
@@ -41,7 +42,8 @@ export async function requireRecentReauth(session: { sessionId: string }, maxAge
 
 /**
  * How a shopper or brand session can re-confirm, for the client's re-auth ask:
- * "demo" (a demo session), "password", or the linked providers ("google", "apple", "apple,google")
+ * "demo" (a demo session), "password", or the linked providers ("google", "apple", "apple,google",
+ * "auth0:google-oauth2")
  * for an account with no password. Never names an API path: the client turns it into words.
  */
 export async function reauthMethodsFor(session: { sessionId: string; userId: string }): Promise<string> {
@@ -54,12 +56,14 @@ export async function reauthMethodsFor(session: { sessionId: string; userId: str
 
 async function providersOf(userId: string) {
   const d = await db()
-  const rows = await d.select({ provider: oauthIdentities.provider }).from(oauthIdentities).where(eq(oauthIdentities.userId, userId))
-  return [...new Set(rows.map((r) => r.provider))].sort().join(",")
+  const rows = await d.select({ provider: oauthIdentities.provider, subject: oauthIdentities.subject }).from(oauthIdentities).where(eq(oauthIdentities.userId, userId))
+  // Auth0 identities are named by their connection ("auth0:google-oauth2"), so the client can
+  // send the owner straight back through the same social login.
+  return [...new Set(rows.map((r) => (r.provider === "auth0" ? `auth0:${auth0ConnectionOfSubject(r.subject)}` : r.provider)))].sort().join(",")
 }
 
 const providerWords = (list: string) => {
-  const names = list.split(",").filter(Boolean).map((p) => (p === "apple" ? "Apple" : p === "google" ? "Google" : p))
+  const names = [...new Set(list.split(",").filter(Boolean).map((p) => (p === "apple" ? "Apple" : p === "google" ? "Google" : p.startsWith("auth0:") ? auth0ConnectionLabel(p.slice(6)) : p)))]
   return names.length ? names.join(" or ") : "Google or Apple"
 }
 

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, control, inputClass } from "@/components/studio/catalog/fields"
 import { ApiError, api } from "@/lib/api/client"
+import { parseReauthProviders, type ReauthProvider } from "@/lib/auth/auth0"
 import { fieldErrors } from "@/lib/api/errors"
 import { OAUTH_REAUTH_CHANNEL, setReauthReturn, type OAuthReauthMessage } from "@/lib/session/auth-return"
 import { useServerSession } from "@/lib/session/use-server-session"
@@ -13,18 +14,19 @@ import { cn } from "@/lib/utils"
 /** 403 with fields.reauth = "required": the session must confirm it's them before a money action. */
 export const needsBrandReauth = (e: unknown) => e instanceof ApiError && e.status === 403 && e.fields?.reauth === "required"
 
-type Provider = "google" | "apple"
+type Provider = ReauthProvider
 /** How this account confirms: the server says so with the ask (fields.reauthWith). */
 type Method = { kind: "password" } | { kind: "demo" } | { kind: "provider"; providers: Provider[] }
 
-const providerLabel = (p: Provider) => (p === "apple" ? "Apple" : "Google")
-const providersIn = (v: string | undefined): Provider[] => (v ?? "").split(",").filter((p): p is Provider => p === "google" || p === "apple")
+const providerLabel = (p: Provider) => p.label
+/** "google", "apple", "auth0:google-oauth2", … (comma-separated) → one button each. */
+const providersIn = (v: string | undefined): Provider[] => parseReauthProviders(v)
 
 function methodOf(cause: unknown, demo: boolean): Method {
   const raw = cause instanceof ApiError ? cause.fields?.reauthWith : undefined
   if (raw === "demo" || (!raw && demo)) return { kind: "demo" }
   const providers = providersIn(raw)
-  if (raw && raw !== "password") return { kind: "provider", providers: providers.length ? providers : ["google", "apple"] }
+  if (raw && raw !== "password") return { kind: "provider", providers: providers.length ? providers : parseReauthProviders("google,apple") }
   return { kind: "password" }
 }
 
@@ -49,7 +51,8 @@ export function useBrandReauth(fieldId: string) {
   const [error, setError] = useState<string | null>(null)
   /** The provider round trip came back confirmed: the next submit goes ahead without asking. */
   const [confirmed, setConfirmed] = useState(false)
-  const [opening, setOpening] = useState<Provider | null>(null)
+  /** The key of the provider button whose round trip is starting. */
+  const [opening, setOpening] = useState<string | null>(null)
   const listening = useRef<(() => void) | null>(null)
   /** The latest ask's method: the dialog reads prompt() in the same handler that called catches(). */
   const askedRef = useRef<Method>({ kind: "password" })
@@ -124,7 +127,7 @@ export function useBrandReauth(fieldId: string) {
   async function confirmWith(provider: Provider) {
     if (opening) return
     setError(null)
-    setOpening(provider)
+    setOpening(provider.key)
     // Open the window inside the click (browsers block a window opened after an await), then
     // point it at the provider once the server has the state ready.
     let popup: Window | null = null
@@ -134,7 +137,9 @@ export function useBrandReauth(fieldId: string) {
       popup = null
     }
     try {
-      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider}/start`, { body: { mode: "reauth", actor: "brand" } })
+      const body: Record<string, string> = { mode: "reauth", actor: "brand" }
+      if (provider.connection) body.connection = provider.connection
+      const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider.provider}/start`, { body })
       if (!popup || popup.closed) {
         // Blocked: run the round trip in this tab; the completion page brings the owner back here.
         // The 403 recorded nothing, so pressing the button again there is safe.
@@ -247,7 +252,7 @@ export function BrandReauthField({ reauth, className }: { reauth: BrandReauth; c
             <p className="text-sm text-ink-2">Your account signs in with {providers.map(providerLabel).join(" or ")}. Money actions need you to confirm it&apos;s you every few minutes.</p>
             <div className="flex flex-wrap gap-2">
               {providers.map((p, i) => (
-                <Button key={p} id={i === 0 ? id : undefined} type="button" variant="secondary" loading={reauth.opening === p} disabled={!!reauth.opening && reauth.opening !== p} onClick={() => void reauth.confirmWith(p)}>
+                <Button key={p.key} id={i === 0 ? id : undefined} type="button" variant="secondary" loading={reauth.opening === p.key} disabled={!!reauth.opening && reauth.opening !== p.key} onClick={() => void reauth.confirmWith(p)}>
                   Confirm with {providerLabel(p)}
                 </Button>
               ))}

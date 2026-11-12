@@ -13,8 +13,8 @@ import { sessions, users } from "./people"
  * password/OAuth session survives YARD_DEMO_AUTH being off while demo sessions do not.
  */
 
-export const AUTH_METHODS = ["demo", "password", "google", "apple", "magic_link", "invite", "email_verification", "yard_setup", "claim"] as const
-export const OAUTH_PROVIDERS = ["google", "apple"] as const
+export const AUTH_METHODS = ["demo", "password", "google", "apple", "auth0", "magic_link", "invite", "email_verification", "yard_setup", "claim"] as const
+export const OAUTH_PROVIDERS = ["google", "apple", "auth0"] as const
 export const OAUTH_MODES = ["signin", "link", "reauth"] as const
 export const AUTH_TOKEN_PURPOSES = ["verify_email", "reset_password", "magic_link", "mfa_challenge"] as const
 export const INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const
@@ -43,7 +43,7 @@ export const userCredentials = pgTable(
   (t) => [index("user_credentials_locked_ix").on(t.lockedUntil)],
 )
 
-/** Google / Apple accounts linked to a Yard user. `subject` is the provider's stable `sub`. */
+/** Google / Apple / Auth0 accounts linked to a Yard user. `subject` is the provider's stable `sub`. */
 export const oauthIdentities = pgTable(
   "oauth_identities",
   {
@@ -60,7 +60,9 @@ export const oauthIdentities = pgTable(
   },
   (t) => [
     uniqueIndex("oauth_identities_provider_subject_ux").on(t.provider, t.subject),
-    uniqueIndex("oauth_identities_user_provider_ux").on(t.userId, t.provider),
+    // One Google / Apple identity per user. Auth0 fronts several social connections, so a user
+    // may hold one Auth0 identity per connection (enforced in the flow by the `sub` prefix).
+    uniqueIndex("oauth_identities_user_provider_ux").on(t.userId, t.provider).where(raw("provider <> 'auth0'")),
     index("oauth_identities_user_ix").on(t.userId),
     oneOf("oauth_identities_provider_ck", "provider", OAUTH_PROVIDERS),
   ],
