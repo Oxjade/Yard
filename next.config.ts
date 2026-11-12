@@ -31,6 +31,9 @@ const nextConfig = (phase: string): NextConfig => {
     },
     partialPrefetching: true,
     poweredByHeader: false,
+    // Small servers (1-2 GB) run out of memory on the type check during `next build`. The code is
+    // type-checked before every merge, so YARD_SKIP_TYPECHECK=1 lets a server build skip it.
+    typescript: { ignoreBuildErrors: process.env.YARD_SKIP_TYPECHECK === "1" },
     // A self-contained server (.next/standalone/server.js plus the node_modules it traces), so a
     // deployment needs no npm install and no build on the server. The release packager copies
     // public/, .next/static and drizzle/ next to it (deploy/).
