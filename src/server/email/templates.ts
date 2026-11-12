@@ -214,7 +214,8 @@ export const templates = {
       heading: "Your store is ready, claim it",
       greeting: hey(x),
       paragraphs: [
-        `You're one of Yard's founding brands. We've set up ${v(x, "brand")} on Yard with your products, photos and storefront, so it's ready the day you arrive.`,
+        `Thank you for being one of the first brands on Yard. Founding brands like ${v(x, "brand")} are the reason Yard exists, and we're proud to launch with you.`,
+        `We've set up ${v(x, "brand")} on Yard with your products, photos and storefront, so it's ready the day you arrive.`,
         "Claim it to become its owner: sign in or create your account, accept the seller agreement, then add your payout account. Selling switches on as soon as your payout account is in.",
       ],
       facts: facts(
@@ -225,7 +226,7 @@ export const templates = {
       action: { label: "Claim my store", url: v(x, "url") },
       note: "This link works once and only for this email address. Not expecting it? Ignore this email and nothing changes.",
       showUrl: true,
-      why: "You're getting this because Yard set up a store for your brand and named this address as its owner.",
+      why: "You're getting this because Yard set up a store for your brand and named this address as its owner. Thank you for building Yard with us.",
     }),
   },
   account_deleted: {

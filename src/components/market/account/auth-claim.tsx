@@ -140,7 +140,7 @@ export function AuthClaim() {
           You&apos;re one of Yard&apos;s founding brands
         </p>
         <h1 className="mt-3 font-display text-display-lg text-balance break-words text-ink">Claim {p.brand.name}</h1>
-        <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Your store is ready: Yard set it up for you. Claim it to become its owner, then add your payout account in Studio to start selling.</p>
+        <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Thank you for being one of the first brands on Yard. Your store is ready: we set it up for you. Claim it to become its owner, then add your payout account in Studio to start selling.</p>
       </header>
 
       <dl className="grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
