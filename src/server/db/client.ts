@@ -1,24 +1,33 @@
 import "server-only"
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs"
 import path from "node:path"
-import { PGlite } from "@electric-sql/pglite"
-import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import type { PGlite } from "@electric-sql/pglite"
+import type { PgliteDatabase } from "drizzle-orm/pglite"
 import { getEnv, isBuildPhase } from "../env"
 import { log } from "../log"
 import { yard } from "../state"
-import { acquireLock } from "./lock"
+import { acquireLock, acquireServerAdvisoryLock } from "./lock"
 import * as schema from "./schema"
 
 export type Schema = typeof schema
-export type Root = PgliteDatabase<Schema> & { $client: PGlite }
+/**
+ * The drizzle database. Two drivers sit behind it (§1.3, hosting A.1): node-postgres when
+ * DATABASE_URL is set (a real deployment), the embedded PGlite otherwise (development, tests, the
+ * local demo). Both are drizzle's pg-core database; the type is PGlite's because that is what the
+ * code was written against, and everything the code uses (query builder, relational queries,
+ * transactions, execute() → { rows }) behaves the same on both (see pg.ts for the value types).
+ */
+export type Root = PgliteDatabase<Schema>
+
+/** Which database this process uses. */
+export const dbKind = (): "postgres" | "pglite" => (getEnv().databaseUrl ? "postgres" : "pglite")
 
 /**
  * The single PGlite instance for this process (§1.3). Only src/server/db/** may import this
  * (ESLint no-restricted-imports); everything else uses db()/withTx() from "@/server/db".
  */
 export function getDb(): Promise<Root> {
-  const pending = checkJournal()
+  const pending = yard.migrations ? checkJournal() : null
   if (pending) return pending
   return (yard.db ??= boot().catch((e) => {
     yard.db = undefined
@@ -26,8 +35,14 @@ export function getDb(): Promise<Root> {
   })) as Promise<Root>
 }
 
-const journalFile = () => path.join(process.cwd(), "drizzle", "meta", "_journal.json")
-const journalCount = () => (JSON.parse(readFileSync(journalFile(), "utf8")) as { entries: unknown[] }).entries.length
+export const migrationsFolder = () => path.join(/*turbopackIgnore: true*/ process.cwd(), "drizzle")
+const journalFile = () => path.join(migrationsFolder(), "meta", "_journal.json")
+/** The migrations this build ships (drizzle/meta/_journal.json): how many, and the newest one's timestamp. */
+export function journal(): { count: number; lastWhen: number } {
+  const entries = (JSON.parse(readFileSync(journalFile(), "utf8")) as { entries: { when: number }[] }).entries
+  return { count: entries.length, lastWhen: entries.reduce((m, e) => Math.max(m, Number(e.when) || 0), 0) }
+}
+const journalCount = () => journal().count
 
 /**
  * A long-lived server and new migrations (§1.3). In development, a migration added to drizzle/
@@ -60,7 +75,8 @@ function checkJournal(): Promise<Root> | null {
   const from = m.applied
   const applying = (yard.db as Promise<Root>)
     .then(async (root) => {
-      await migrate(root, { migrationsFolder: path.join(process.cwd(), "drizzle") })
+      const { migrate } = await import("drizzle-orm/pglite/migrator")
+      await migrate(root, { migrationsFolder: migrationsFolder() })
       m.applied = journalCount()
       log.info(`[yard] applied ${m.applied - from} new migration${m.applied - from === 1 ? "" : "s"} in-process (journal ${from} → ${m.applied})`)
       return root
@@ -127,20 +143,68 @@ export function privatiseTree(dir: string): number {
   return changed
 }
 
+/** The schema state of a Postgres database: migrations recorded by drizzle vs those this build ships. */
+export type MigrationState = { applied: number; expected: number; pending: boolean }
+
+/** Thrown by getDb() on Postgres while the database is behind this build's migrations. */
+export class MigrationsPendingError extends Error {
+  constructor(public state: MigrationState) {
+    super(`The database is behind this build's migrations (${state.applied} applied, ${state.expected} expected). Run npm run db:migrate first.`)
+    this.name = "MigrationsPendingError"
+  }
+}
+
+/**
+ * Reads drizzle's migration table on Postgres through `query` (one statement, no parameters). A
+ * database the migrator never touched has no drizzle schema yet: everything is pending.
+ */
+export async function readMigrationState(query: (text: string) => Promise<{ rows: Record<string, unknown>[] }>): Promise<MigrationState> {
+  const j = journal()
+  const exists = await query(`select to_regclass('drizzle.__drizzle_migrations') is not null as present`)
+  if (!exists.rows[0]?.present) return { applied: 0, expected: j.count, pending: j.count > 0 }
+  const r = await query(`select count(*)::int as n, coalesce(max(created_at), 0)::text as last from drizzle.__drizzle_migrations`)
+  const applied = Number(r.rows[0]?.n ?? 0)
+  // drizzle applies every journal entry newer than the last recorded created_at (its `when`).
+  const last = Number(r.rows[0]?.last ?? 0)
+  return { applied, expected: j.count, pending: last < j.lastWhen }
+}
+
+/** For /api/health: the migration state of the open database. PGlite migrates at boot, so it is always current there. */
+export async function migrationState(): Promise<MigrationState> {
+  if (dbKind() === "pglite") {
+    const n = yard.migrations?.applied ?? journalCount()
+    return { applied: n, expected: journalCount(), pending: n < journalCount() }
+  }
+  const pool = (yard as { pgPool?: import("pg").Pool }).pgPool
+  if (!pool) {
+    const { getPool } = await import("./pg")
+    return readMigrationState((t) => getPool().query(t))
+  }
+  return readMigrationState((t) => pool.query(t))
+}
+
+/** Closes the database this process opened (scripts; the server leaves it to process exit). */
+export async function closeDb() {
+  const close = (yard as { closeDb?: () => Promise<void> }).closeDb
+  if (close) await close()
+}
+
 async function boot(): Promise<Root> {
   // 1. Any accidental build-time read is loud.
   if (isBuildPhase()) throw new Error("DB access during next build")
-  const started = Date.now()
-  const env = getEnv()
+  return dbKind() === "postgres" ? bootPostgres() : bootPglite()
+}
 
+/** Common to both drivers: the private data directory and its uploads folder. */
+function prepareDataDir() {
+  const env = getEnv()
   // New files this process creates (database, uploads, secrets) are private to this user.
   try {
     process.umask(0o077)
   } catch {
     /* worker threads can't change the umask; privatiseTree below still applies */
   }
-
-  // 2. The data directory: outside the repo by default, private to this user. Production refuses
+  // The data directory: outside the repo by default, private to this user. Production refuses
   // to open a database other local users can reach; development warns.
   mkdirSync(env.dataDir, { recursive: true, mode: 0o700 })
   if ((statSync(env.dataDir).mode & 0o077) !== 0) {
@@ -148,6 +212,57 @@ async function boot(): Promise<Root> {
     if (!env.dev) throw new Error(`${msg}. Yard won't open its database there in production.`)
     log.warn(msg)
   }
+}
+
+/**
+ * Postgres (DATABASE_URL). The schema is migrated and seeded by `npm run db:migrate` before a
+ * release goes live, never here: boot only checks the database is current and refuses to serve an
+ * older schema (health answers 503 and the release rolls back). One server per database: the
+ * schedulers and live streams are in-process, so a second server is refused (advisory lock).
+ */
+async function bootPostgres(): Promise<Root> {
+  const started = Date.now()
+  const env = getEnv()
+  prepareDataDir()
+  mkdirSync(env.envDir, { recursive: true, mode: 0o700 })
+  mkdirSync(path.join(env.envDir, "uploads"), { recursive: true, mode: 0o700 })
+  const loosened = privatiseTree(path.join(env.envDir, "uploads"))
+  if (loosened) log.info(`[yard] made ${loosened} upload ${loosened === 1 ? "entry" : "entries"} private (go-rwx)`)
+
+  const { getPool, closePool } = await import("./pg")
+  const pool = getPool()
+  const { drizzle } = await import("drizzle-orm/node-postgres")
+  const root = drizzle(pool, { schema }) as unknown as Root
+
+  const state = await readMigrationState((t) => pool.query(t))
+  if (state.pending) throw new MigrationsPendingError(state)
+
+  // The server process (not a script: scripts set the schedulers flag first) holds the one-server lock.
+  const server = !yard.schedulers
+  if (server) await acquireServerAdvisoryLock(env.databaseUrl!)
+  ;(yard as { closeDb?: () => Promise<void> }).closeDb = closePool
+
+  // No SIGTERM handler that ends the pool: Next's standalone server answers SIGTERM by closing the
+  // listener and waiting for in-flight requests (realtime/streams.ts ends the live streams so that
+  // wait is short), then exits. Ending the pool first would make every one of those requests fail
+  // ("Cannot use a pool after calling end"). The sockets close when the process exits, which also
+  // releases the server advisory lock. Scripts call closeDb() themselves.
+
+  if (server && !env.seedDemo) {
+    const { warnEmptyCatalogue } = await import("./seed")
+    await warnEmptyCatalogue(root)
+  }
+  const { startSchedulers } = await import("../schedulers")
+  startSchedulers()
+
+  log.info(`[yard] database ready in ${Date.now() - started} ms (Postgres, ${state.applied} migrations, pool ${env.pgPoolMax})`)
+  return root
+}
+
+async function bootPglite(): Promise<Root> {
+  const started = Date.now()
+  const env = getEnv()
+  prepareDataDir()
 
   // 3. One process per data directory and NODE_ENV.
   acquireLock(env.dataDir, env.nodeEnv)
@@ -162,17 +277,22 @@ async function boot(): Promise<Root> {
   mkdirSync(env.envDir, { recursive: true, mode: 0o700 })
   mkdirSync(path.join(env.envDir, "uploads"), { recursive: true, mode: 0o700 })
 
-  // 5. Open (first boot runs initdb, ~5 s; a reopen takes ~180 ms).
+  // 5. Open (first boot runs initdb, ~5 s; a reopen takes ~180 ms). Loaded only here, so a
+  // Postgres deployment never loads the wasm.
+  const { PGlite } = await import("@electric-sql/pglite")
   const client = new PGlite(pgDir)
   await client.waitReady
   const loosened = privatiseTree(env.envDir)
   if (loosened) log.info(`[yard] made ${loosened} database and upload ${loosened === 1 ? "entry" : "entries"} private (go-rwx)`)
 
   // 6. Drizzle over the watched client, with the runtime schema (no social_tokens).
+  const { drizzle } = await import("drizzle-orm/pglite")
   const root = drizzle(watch(client), { schema }) as Root
+  ;(yard as { closeDb?: () => Promise<void> }).closeDb = () => client.close()
 
   // 7. Migrations, in-process only.
-  await migrate(root, { migrationsFolder: path.join(process.cwd(), "drizzle") })
+  const { migrate } = await import("drizzle-orm/pglite/migrator")
+  await migrate(root, { migrationsFolder: migrationsFolder() })
   yard.migrations = { applied: journalCount(), checkedAt: Date.now(), warned: false }
 
   // 8. Seeds (each module in its own transaction on this root).

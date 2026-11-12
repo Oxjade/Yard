@@ -319,10 +319,18 @@ export function PaymentStep({
 }
 
 /**
- * What this deployment does with the payment. Stub: nothing is charged. Test: Paystack's test mode,
- * pointing to Paystack's own test details. Live, loading or unknown: nothing extra.
+ * What this deployment does with the payment. Off: no provider is connected yet, so orders can't be
+ * placed (the cart and the details entered are kept). Stub: nothing is charged. Test: Paystack's
+ * test mode, pointing to Paystack's own test details. Live, loading or unknown: nothing extra.
  */
 export function PaymentModeNote({ mode, className }: { mode: ReturnType<typeof usePaymentsMode>; className?: string }) {
+  if (mode === "off") {
+    return (
+      <p className={cn("text-xs leading-relaxed text-ink-3", className)}>
+        Payments open soon. You can browse, save pieces to your cart and get everything ready here; placing orders opens when payments do.
+      </p>
+    )
+  }
   if (mode === "stub") {
     return (
       <p className={cn("text-xs leading-relaxed text-ink-3", className)}>

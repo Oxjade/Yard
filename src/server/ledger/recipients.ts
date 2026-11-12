@@ -1,10 +1,11 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { log } from "../log"
+import { paymentsConfig } from "../payments/config"
 
 /**
  * Transfer recipients (the provider-side handle a payout is sent to). Behind an interface: the
- * live Paystack implementation is used when PAYSTACK_SECRET_KEY is set; otherwise the STUB, which
+ * live Paystack implementation is used when YARD_PAYMENTS=paystack; otherwise the STUB, which
  * returns a clearly-labelled `RCP_stub_…` code and `provider: "stub"`. Stub recipients are shown
  * as "test account" in Studio and are never sent to a live provider. Network I/O: call outside a
  * transaction.
@@ -55,6 +56,8 @@ function paystack(secret: string): RecipientProvider {
 }
 
 export function recipientProvider(): RecipientProvider {
-  const secret = process.env.PAYSTACK_SECRET_KEY
+  // Only when payments run on Paystack (YARD_PAYMENTS=paystack): with payments off, payout details
+  // still save (a stub recipient) and nothing is sent to a provider.
+  const secret = paymentsConfig().secretKey
   return secret ? paystack(secret) : stub
 }

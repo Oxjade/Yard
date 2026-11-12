@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { pgDataException, pgErrorCode } from "./pg-errors"
+import { pgDataException, pgErrorCode, pgTransient } from "./pg-errors"
 
 /** drizzle's DrizzleQueryError carries the postgres-js error as `cause`. */
 const wrapped = (code: string, message = "x") => Object.assign(new Error("Failed query: …\nparams: …"), { cause: Object.assign(new Error(message), { code, severity: "ERROR" }) })
@@ -27,4 +27,13 @@ test("every class-22 data exception is a 400 with fixed words, never the driver'
 test("other errors are left for the 500 path", () => {
   for (const code of ["23505", "40001", "42P01", "08006", "XX000"]) assert.equal(pgDataException(wrapped(code)), null, code)
   assert.equal(pgDataException(new Error("boom")), null)
+})
+
+test("busy-database errors are transient (503), including a pool ended at shutdown", () => {
+  for (const code of ["40001", "40P01", "55P03", "57014", "53300", "57P01"]) assert.equal(pgTransient(wrapped(code)), code)
+  assert.equal(pgTransient(new Error("Cannot use a pool after calling end on the pool")), "pool")
+  assert.equal(pgTransient(Object.assign(new Error("Failed query"), { cause: new Error("Cannot use a pool after calling end on the pool") })), "pool")
+  assert.equal(pgTransient(new Error("timeout exceeded when trying to connect")), "pool")
+  assert.equal(pgTransient(wrapped("23505")), null)
+  assert.equal(pgTransient(new Error("boom")), null)
 })
