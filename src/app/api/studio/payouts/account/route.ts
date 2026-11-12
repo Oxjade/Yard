@@ -5,7 +5,7 @@ import { getPayoutAccount } from "@/server/ledger/read"
 import { payoutAccountBody } from "@/server/ledger/schemas"
 
 /** GET /api/studio/payouts/account: the masked payout account (last 4 digits only), or null. */
-export const GET = route({ auth: "brand", permission: "any_member" }, async ({ actor }) => {
+export const GET = route({ rate: { key: "payouts.read", limit: 120, windowSec: 60 }, auth: "brand", permission: "any_member" }, async ({ actor }) => {
   assertBrandFinanceView(actor)
   return { account: await getPayoutAccount(actor.brandId) }
 })

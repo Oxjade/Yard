@@ -1,5 +1,52 @@
+import { randomBytes } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { seedDemoFrom } from "./server/demo-switch"
+import { guardConfigFrom, guardRequest, TokenBuckets, type GuardConfig } from "./server/http/api-guard"
+import { logRequest } from "./server/http/request-log"
+
+/**
+ * The global per-IP safety net for /api/* (src/server/http/api-guard.ts): YARD_RATE_API_PER_MIN
+ * (default 300) requests a minute per client IP, and YARD_RATE_AUTH_PER_MIN (default 60) for
+ * /api/auth/*, both ten times roomier by default in development (the acceptance kits); a declared JSON body over YARD_MAX_JSON_BODY_BYTES (default 1 MB) is refused before
+ * it is read. Refusals use the app's error shape ({ error: { code, message } }) with Retry-After.
+ * Not matched at all: /api/uploads (multipart, its own caps, and a proxy would buffer the body),
+ * /api/webhooks/* (the provider signs the raw body) and /api/health (monitors). Image reads
+ * (GET /api/media/*) pass the shared bucket and count against their own route limit instead.
+ * Buckets live in this process (one server per deployment, by design); globalThis keeps them
+ * across development reloads.
+ */
+type GuardState = { buckets: TokenBuckets; cfg: GuardConfig; sweep?: ReturnType<typeof setInterval> }
+const G = globalThis as typeof globalThis & { __yardApiGuard?: GuardState }
+
+function guardState(): GuardState {
+  if (!G.__yardApiGuard) {
+    const state: GuardState = { buckets: new TokenBuckets(), cfg: guardConfigFrom(process.env) }
+    state.sweep = setInterval(() => state.buckets.sweep((k) => (k.startsWith("auth|") ? state.cfg.authPerMin : state.cfg.apiPerMin)), 60_000)
+    state.sweep.unref?.()
+    G.__yardApiGuard = state
+  }
+  return G.__yardApiGuard
+}
+
+function guardApi(request: NextRequest): NextResponse {
+  const started = Date.now()
+  const { buckets, cfg } = guardState()
+  const path = request.nextUrl.pathname
+  const verdict = guardRequest(buckets, cfg, {
+    method: request.method,
+    path,
+    forwardedFor: request.headers.get("x-forwarded-for"),
+    contentLength: request.headers.get("content-length"),
+    contentType: request.headers.get("content-type"),
+  })
+  if (verdict.ok) return NextResponse.next()
+  const id = randomBytes(6).toString("hex")
+  const headers: Record<string, string> = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "X-Request-Id": id }
+  if (verdict.status === 429) headers["Retry-After"] = String(verdict.retryAfter)
+  const code = verdict.status === 429 ? "rate_limited" : "too_large"
+  logRequest({ id, method: request.method, path, status: verdict.status, ms: Date.now() - started, by: "proxy" })
+  return NextResponse.json({ error: { code, message: verdict.message } }, { status: verdict.status, headers })
+}
 
 /**
  * Sample-data screens in production. These pages have only made-up data so far (Studio analytics,
@@ -82,6 +129,7 @@ async function checkPage(request: NextRequest, check: PageCheck): Promise<NextRe
 
 export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
+  if (path.startsWith("/api/")) return guardApi(request)
   const check = pageCheck(path)
   if (check) return checkPage(request, check)
   if (seedDemoFrom(process.env)) return NextResponse.next()
@@ -107,5 +155,7 @@ export const config = {
     "/products/:slug",
     "/brands/:handle",
     "/brands/:handle/collections/:collection",
+    // Every API route except uploads, webhooks and the health check (see guardApi).
+    "/api/((?!uploads(?:/|$)|webhooks/|health(?:/|$)).*)",
   ],
 }

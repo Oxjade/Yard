@@ -9,7 +9,7 @@ import { route } from "@/server/http/route"
  * POST /api/auth/brand/switch { brandId } → { actor: "brand", profile }. Switches the active
  * brand of this brand session to another active membership; the token rotates (§2.1).
  */
-export const POST = route({ auth: "brand", permission: "any_member", body: brandSwitchBody, maxBody: 1024 }, async ({ actor, body }) => {
+export const POST = route({ rate: { key: "auth.brand_switch", limit: 30, windowSec: 60 }, auth: "brand", permission: "any_member", body: brandSwitchBody, maxBody: 1024 }, async ({ actor, body }) => {
   const brandId = await brandForUser(actor.userId, body.brandId)
   const row = await loadSession("brand")
   if (!row) throw notFound()

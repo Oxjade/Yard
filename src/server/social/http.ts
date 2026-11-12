@@ -49,7 +49,7 @@ const toStudio = (result: string, provider: ProviderId) =>
  * anywhere else. Any failure lands on result=invalid_state (or denied / error).
  */
 export function callbackRoute(provider: ProviderId) {
-  const inner = route({ auth: "public", query: callbackQuery }, async ({ query, ipHash }) => {
+  const inner = route({ auth: "public", query: callbackQuery, rate: { key: "social.callback", limit: 30, windowSec: 60, anonGlobal: 600 } }, async ({ query, ipHash }) => {
     const code = one(query.code)
     const state = one(query.state)
     const error = one(query.error)

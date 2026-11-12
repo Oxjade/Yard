@@ -14,7 +14,7 @@ import { brandSettingsBody } from "@/server/ledger/schemas"
  * `overrides` holds the stored tier and commission overrides (null when none), apart from the effective `rules`, so the
  * settings form can start from them and leave them alone on a save that doesn't touch them.
  */
-export const GET = route({ auth: "admin", permission: "any_admin" }, async ({ actor, params }) => {
+export const GET = route({ rate: { key: "finance.read", limit: 240, windowSec: 60 }, auth: "admin", permission: "any_admin" }, async ({ actor, params }) => {
   assertAdminFinance(actor)
   const d = await db()
   const [b] = await d.select({ id: brands.id, name: brands.name, currency: brands.currency }).from(brands).where(eq(brands.id, params.brandId))

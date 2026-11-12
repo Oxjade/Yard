@@ -19,7 +19,7 @@ const simulateBody = z
  * webhook, stored with source 'simulated' and provider 'stub' — e.g. completing a stub payout
  * with { event: "transfer.success", data: { reference } }. 404 in production or with Paystack keys.
  */
-export const POST = route({ auth: "admin", permission: "audit.view", body: simulateBody, maxBody: 16 * 1024 }, async ({ actor, body, ipHash }) => {
+export const POST = route({ rate: { key: "payments.simulate", limit: 30, windowSec: 60 }, auth: "admin", permission: "audit.view", body: simulateBody, maxBody: 16 * 1024 }, async ({ actor, body, ipHash }) => {
   if (!getEnv().dev || paymentsConfig().provider !== "stub") throw notFound()
   if (actor.role !== "owner" && actor.role !== "engineering") throw forbidden()
   const payload = { event: body.event, data: { ...body.data, simulated: true, nonce: Date.now() } }

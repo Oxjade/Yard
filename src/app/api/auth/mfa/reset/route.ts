@@ -9,7 +9,7 @@ import { route } from "@/server/http/route"
  * Removes another admin's TOTP and recovery codes and ends their admin sessions; they enrol again
  * at their next sign-in. Audited as admin.mfa_reset.
  */
-export const POST = route({ auth: "admin", permission: "any_admin", body: mfaResetBody, maxBody: 2 * 1024 }, async ({ req, actor, body, ipHash }) => {
+export const POST = route({ rate: { key: "auth.mfa.reset", limit: 10, windowSec: 600 }, auth: "admin", permission: "any_admin", body: mfaResetBody, maxBody: 2 * 1024 }, async ({ req, actor, body, ipHash }) => {
   await requireRecentReauth(actor, 300)
   return resetAdminMfa(actor, body.userId, body.reason, metaOf(req, ipHash))
 })

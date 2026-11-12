@@ -3,7 +3,7 @@ import { brandWriteRate, createLocation, listLocations } from "@/server/around/s
 import { json, route } from "@/server/http/route"
 
 /** GET /api/studio/locations: the active brand's places, drafts included (§6.4). */
-export const GET = route({ auth: "brand", permission: "any_member" }, async ({ actor }) => {
+export const GET = route({ rate: { key: "studio.locations.read", limit: 120, windowSec: 60 }, auth: "brand", permission: "any_member" }, async ({ actor }) => {
   const b = actor.brand
   return {
     locations: await listLocations(actor),

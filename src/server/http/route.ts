@@ -8,11 +8,13 @@ import { withBeforeCommit, type BeforeCommit } from "../db"
 import { getEnv } from "../env"
 import { log } from "../log"
 import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
+import { isDraining, trackRequest } from "../shutdown"
 import type { AdminPermission, BrandPermission } from "@/lib/permissions"
 import { assertSameOrigin } from "./csrf"
 import { badRequest, errorBody, forbidden, HttpError, NotImplemented, rateLimited } from "./errors"
 import { pgDataException, pgTransient } from "./pg-errors"
 import { clientIp, ipHash as hashIp } from "./request"
+import { logRequest } from "./request-log"
 
 /**
  * The one wrapper every v2 Route Handler goes through (§1.10). Options are a discriminated union,
@@ -265,6 +267,8 @@ function finish(res: Response, opts: RouteOpts, requestId: string) {
     }
     res.headers.set("X-Content-Type-Options", "nosniff")
     res.headers.set("X-Request-Id", requestId)
+    // Shutting down: let this kept-alive socket go once the response is out (src/server/shutdown.ts).
+    if (isDraining()) res.headers.set("Connection", "close")
   } catch {
     /* immutable headers (a proxied Response): leave them */
   }
@@ -306,6 +310,20 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
     const requestId = randomBytes(6).toString("hex")
     // 1. Request time only: nothing here may be prerendered (§1.6 rule 3).
     await connection()
+    // Counted until the response is built, so a SIGTERM waits for it before closing the database.
+    const started = performance.now()
+    const done = trackRequest()
+    let res: Response
+    try {
+      res = await respond(req, context, requestId)
+    } finally {
+      done()
+    }
+    logRequest({ id: requestId, method: req.method.toUpperCase(), path: new URL(req.url).pathname, status: res.status, ms: performance.now() - started })
+    return res
+  }
+
+  async function respond(req: NextRequest, context: { params?: Promise<Record<string, string | string[]>> } | undefined, requestId: string): Promise<Response> {
     try {
       // 2. Configuration (lazy; throws in production without secrets).
       getEnv()

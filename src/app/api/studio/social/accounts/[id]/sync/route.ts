@@ -4,7 +4,7 @@ import { requestSync } from "@/server/social/service"
 import { syncAccount } from "@/server/social/sync"
 
 /** POST …/accounts/{id}/sync (social.connect): 202 and the sync runs after the response; 429 within 5 min. */
-export const POST = route({ auth: "brand", permission: "social.connect" }, async ({ params, ipHash }) => {
+export const POST = route({ rate: { key: "studio.social.sync", limit: 20, windowSec: 60 }, auth: "brand", permission: "social.connect" }, async ({ params, ipHash }) => {
   const { accountId } = await requestSync(params.id ?? "", ipHash)
   after(() => syncAccount(accountId, { trigger: "manual" }).then(() => undefined))
   return json({ accountId, syncing: true }, 202)

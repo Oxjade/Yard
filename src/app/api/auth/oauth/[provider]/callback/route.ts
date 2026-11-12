@@ -23,7 +23,7 @@ const CONTROL = /[\u0000-\u001f\u007f]/
 
 const providerOf = (v: string | undefined) => (v === "apple" ? "apple" : "google")
 
-const inner = route({ auth: "public", query: callbackQuery }, async ({ req, query, params, ipHash }) => {
+const inner = route({ auth: "public", query: callbackQuery, rate: { key: "auth.oauth.callback", limit: 30, windowSec: 60, anonGlobal: 1200 } }, async ({ req, query, params, ipHash }) => {
   const provider = providerOf(params.provider)
   if (params.provider !== "google" && params.provider !== "apple") return Response.redirect(completeUrl(provider, "invalid_state"), 302)
   const vals = [query.code, query.state, query.error, query.user]

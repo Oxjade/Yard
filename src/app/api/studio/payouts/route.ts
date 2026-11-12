@@ -5,7 +5,7 @@ import { brandPayoutSummary } from "@/server/ledger/read"
 import { requestPayoutBody } from "@/server/ledger/schemas"
 
 /** GET /api/studio/payouts: balances per currency, payout rules, the masked payout account and recent payouts. */
-export const GET = route({ auth: "brand", permission: "any_member" }, async ({ actor }) => {
+export const GET = route({ rate: { key: "payouts.read", limit: 120, windowSec: 60 }, auth: "brand", permission: "any_member" }, async ({ actor }) => {
   assertBrandFinanceView(actor)
   return brandPayoutSummary(actor.brandId, actor.brand.currency)
 })

@@ -6,4 +6,4 @@ import { listDelivery } from "@/server/moderation"
 const query = z.object({ tab: z.enum(DELIVERY_TABS).default("late"), country: z.string().regex(/^[A-Z]{2}$/).optional() })
 
 /** GET /api/admin/delivery?tab=late|complaints|exceptions|resolved|holidays */
-export const GET = route({ auth: "admin", permission: "shipping.view", query }, async ({ query }) => listDelivery(query.tab, query.country))
+export const GET = route({ rate: { key: "admin.delivery", limit: 120, windowSec: 60 }, auth: "admin", permission: "shipping.view", query }, async ({ query }) => listDelivery(query.tab, query.country))

@@ -7,7 +7,7 @@ import { contentCounts, listIntegrations, listPlaces, listPosts } from "@/server
  * GET /api/admin/content?tab=posts|uploads|places|integrations. The page opens for any of the three
  * view permissions; each tab checks its own (content.moderate, places.moderate, social.manage).
  */
-export const GET = route({ auth: "admin", permission: "any_admin", query: contentQuery }, async ({ actor, query }): Promise<ContentListDto> => {
+export const GET = route({ rate: { key: "admin.content", limit: 120, windowSec: 60 }, auth: "admin", permission: "any_admin", query: contentQuery }, async ({ actor, query }): Promise<ContentListDto> => {
   const tab = query.tab
   if (tab === "places") {
     assertCan(actor, "places.moderate")

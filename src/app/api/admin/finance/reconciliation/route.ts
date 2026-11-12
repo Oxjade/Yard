@@ -4,7 +4,7 @@ import { assertAdminFinance } from "@/server/ledger/access"
 import { listRuns, runReconciliation } from "@/server/ledger/reconcile"
 
 /** GET /api/admin/finance/reconciliation: recent reconciliation runs. */
-export const GET = route({ auth: "admin", permission: "any_admin" }, async ({ actor }) => {
+export const GET = route({ rate: { key: "finance.read", limit: 240, windowSec: 60 }, auth: "admin", permission: "any_admin" }, async ({ actor }) => {
   assertAdminFinance(actor)
   return { runs: await listRuns() }
 })

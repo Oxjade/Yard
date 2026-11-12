@@ -4,7 +4,7 @@ import { createBatch, listBatches } from "@/server/ledger/payouts"
 import { createBatchBody } from "@/server/ledger/schemas"
 
 /** GET /api/admin/finance/batches: recent payout batches. */
-export const GET = route({ auth: "admin", permission: "any_admin" }, async ({ actor }) => {
+export const GET = route({ rate: { key: "finance.read", limit: 240, windowSec: 60 }, auth: "admin", permission: "any_admin" }, async ({ actor }) => {
   assertAdminFinance(actor)
   return { batches: await listBatches() }
 })

@@ -3,7 +3,7 @@ import { json, route } from "@/server/http/route"
 import { createPosts, listStudioPosts } from "@/server/social/posts"
 
 /** GET /api/studio/social/posts?source=&visibility= (any member): the active brand's posts (with importLocked) and per-status counts. */
-export const GET = route({ auth: "brand", permission: "inbox.read", query: studioPostsQuery }, async ({ actor, query }) => listStudioPosts(actor, query))
+export const GET = route({ rate: { key: "studio.social.read", limit: 120, windowSec: 60 }, auth: "brand", permission: "inbox.read", query: studioPostsQuery }, async ({ actor, query }) => listStudioPosts(actor, query))
 
 /** POST /api/studio/social/posts (content.publish): upload posts from the brand's own media ids. */
 export const POST = route(

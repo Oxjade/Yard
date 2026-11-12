@@ -9,7 +9,7 @@ import { route } from "@/server/http/route"
  * POST /api/auth/sign-out?actor=shopper|brand|admin. Ends this browser's session of that kind
  * (demo or real) and clears its cookie. Always succeeds, so nobody is left holding a session.
  */
-export const POST = route({ auth: "public", query: actorQuery }, async ({ query, ipHash }) => {
+export const POST = route({ rate: { key: "auth.sign_out", limit: 60, windowSec: 60 }, auth: "public", query: actorQuery }, async ({ query, ipHash }) => {
   const actor: ActorKind = query.actor
   const admin = actor === "admin" ? await getAdmin() : null
   await withTx(async () => {

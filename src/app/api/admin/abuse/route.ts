@@ -6,7 +6,7 @@ import { notFound } from "@/server/http/errors"
 const query = z.object({ cursor: z.string().max(200).optional(), user: z.string().max(80).optional() })
 
 /** GET /api/admin/abuse[?user=]: accounts with abuse signals in the last 7 days (§8.1 Users › Abuse). */
-export const GET = route({ auth: "admin", permission: "abuse.view", query }, async ({ query }) => {
+export const GET = route({ rate: { key: "admin.abuse", limit: 120, windowSec: 60 }, auth: "admin", permission: "abuse.view", query }, async ({ query }) => {
   if (query.user) {
     const row = await abuseRowFor(query.user)
     if (!row) throw notFound()

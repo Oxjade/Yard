@@ -9,7 +9,7 @@ import { serveMedia } from "@/server/media/serve"
  */
 const query = z.object({ as: z.enum(["shopper", "brand", "admin"]).optional() })
 
-const handler = route({ auth: "public", query }, async ({ req, params, query: q }) => serveMedia(req, params.id ?? "", q.as ?? null))
+const handler = route({ auth: "public", query, rate: { key: "media.read", limit: 1200, windowSec: 60 } }, async ({ req, params, query: q }) => serveMedia(req, params.id ?? "", q.as ?? null))
 
 export const GET = handler
 export const HEAD = handler

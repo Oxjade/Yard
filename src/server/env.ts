@@ -211,6 +211,20 @@ function parse(): Env {
     problems.push("YARD_PG_POOL_MAX must be an integer from 1 to 50")
     pgPoolMax = 5
   }
+  // Operations knobs read where they're used (src/proxy.ts, shutdown.ts): checked here so a typo is
+  // reported at boot instead of silently falling back to the default.
+  const ops = [
+    ["YARD_RATE_API_PER_MIN", 1, 100_000],
+    ["YARD_RATE_AUTH_PER_MIN", 1, 100_000],
+    ["YARD_MAX_JSON_BODY_BYTES", 1024, 64 * 1024 * 1024],
+    ["YARD_SHUTDOWN_GRACE_MS", 1000, 600_000],
+  ] as const
+  for (const [name, min, max] of ops) {
+    const v = blank(process.env[name])
+    if (v !== undefined && !(Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max)) problems.push(`${name} must be an integer from ${min} to ${max}`)
+  }
+  const reqLog = blank(process.env.YARD_REQUEST_LOG)
+  if (reqLog !== undefined && reqLog !== "0" && reqLog !== "1") problems.push("YARD_REQUEST_LOG must be 0 or 1 (empty = on in production)")
   const envName = blank(e.YARD_ENV_NAME) ?? nodeEnv
   if (!/^[a-z][a-z0-9-]{0,31}$/.test(envName)) problems.push("YARD_ENV_NAME must be lowercase letters, digits and dashes (e.g. production, staging)")
 

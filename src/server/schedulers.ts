@@ -5,6 +5,7 @@ import { oauthStates, rateLimitBuckets, realtimeEvents, sessions } from "./db/sc
 import { isBuildPhase } from "./env"
 import { NotImplemented } from "./http/errors"
 import { log } from "./log"
+import { runJob } from "./shutdown"
 import { yard } from "./state"
 
 /**
@@ -69,12 +70,15 @@ async function runFeatureJob(feature: string, job: string) {
 /** Schedules `run` every `everyMs`, the first time after `firstMs`. */
 function every(firstMs: number, everyMs: number | (() => number), run: () => Promise<unknown>) {
   const tick = async () => {
+    // A draining process (SIGTERM, src/server/shutdown.ts) starts no new job and stops the chain;
+    // shutdown waits for a job that is already running.
     try {
-      await run()
-    } finally {
-      const next = typeof everyMs === "function" ? everyMs() : everyMs
-      setTimeout(tick, next).unref()
+      if (!(await runJob(run))) return
+    } catch (e) {
+      log.error("[yard] scheduled job failed", e)
     }
+    const next = typeof everyMs === "function" ? everyMs() : everyMs
+    setTimeout(tick, next).unref()
   }
   setTimeout(tick, firstMs).unref()
 }

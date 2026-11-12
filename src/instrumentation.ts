@@ -1,10 +1,14 @@
 /**
  * Warms the embedded server before the first request (§1.3): env, the production demo-auth
- * warning, then the database (boot, migrations, seeds, schedulers). Next skips register() during
+ * warning, then the database (boot, migrations, seeds, schedulers). Installs the SIGTERM/SIGINT
+ * drain first (src/server/shutdown.ts). Next skips register() during
  * `next build`, and the Edge runtime never loads the database.
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Graceful shutdown first, so the database boot below knows the server closes it (shutdown.ts).
+    const { installShutdown } = await import("@/server/shutdown")
+    installShutdown()
     const { warmUp } = await import("@/server/db")
     try {
       await warmUp()

@@ -5,7 +5,7 @@ import { statement } from "@/server/ledger/read"
 import { ledgerQuery } from "@/server/ledger/schemas"
 
 /** GET /api/admin/finance/ledger?brandId&currency&account&before&limit: journal lines for a brand, or the platform accounts without brandId. */
-export const GET = route({ auth: "admin", permission: "any_admin", query: ledgerQuery }, async ({ actor, query }) => {
+export const GET = route({ rate: { key: "finance.read", limit: 240, windowSec: 60 }, auth: "admin", permission: "any_admin", query: ledgerQuery }, async ({ actor, query }) => {
   assertAdminFinance(actor)
   const entries = await statement({
     ownerKind: query.brandId ? "brand" : "platform",

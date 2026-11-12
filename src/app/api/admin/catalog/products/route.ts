@@ -14,4 +14,4 @@ const query = z.object({
  * GET /api/admin/catalog/products?q=&moderation=hidden|ok&category=&cursor=&limit=: every non-archived
  * product, including hidden ones, for moderation. Newest edit first, paged by nextCursor.
  */
-export const GET = route({ auth: "admin", permission: "content.moderate", query }, async ({ query }) => listAdminCatalogProducts(query))
+export const GET = route({ rate: { key: "admin.products", limit: 120, windowSec: 60 }, auth: "admin", permission: "content.moderate", query }, async ({ query }) => listAdminCatalogProducts(query))

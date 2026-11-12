@@ -11,7 +11,7 @@ import { route } from "@/server/http/route"
  * GET /api/auth/security?as=shopper|brand|admin: the account's sign-in state for settings pages.
  * { method, demo, emailVerified, hasPassword, identities, providers, mfa (admins), reauthAgeSec, deletion (shoppers) }
  */
-export const GET = route({ auth: "multi", as: ["shopper", "brand", "admin"] }, async ({ actor }) => {
+export const GET = route({ rate: { key: "auth.security", limit: 120, windowSec: 60 }, auth: "multi", as: ["shopper", "brand", "admin"] }, async ({ actor }) => {
   const [cred, how, identities, age] = await Promise.all([credentialsOf(actor.userId), sessionAuthOf(actor.sessionId), listIdentities(actor.userId), reauthAge(actor.sessionId)])
   return {
     method: how?.method ?? "demo",

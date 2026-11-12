@@ -11,7 +11,7 @@ import { route } from "@/server/http/route"
  * trip, or the fresh sign-in itself), so a borrowed session cookie can't plant a password and
  * lock the owner out. Ends the account's other sessions.
  */
-export const POST = route({ auth: "multi", as: ["shopper", "brand"], body: changePasswordBody, maxBody: 2 * 1024 }, async ({ req, actor, body, ipHash }) => {
+export const POST = route({ rate: { key: "auth.password.change", limit: 20, windowSec: 600 }, auth: "multi", as: ["shopper", "brand"], body: changePasswordBody, maxBody: 2 * 1024 }, async ({ req, actor, body, ipHash }) => {
   // Demo accounts are refused by changePassword (422) either way.
   if (!actor.demo && !(await credentialsOf(actor.userId))?.passwordHash) await requireRecentReauth(actor, 300)
   return changePassword({ userId: actor.userId, sessionId: actor.sessionId, current: body.currentPassword ?? null, next: body.newPassword }, metaOf(req, ipHash))

@@ -11,4 +11,4 @@ const eventsQuery = z.object({
 })
 
 /** GET /api/webhooks/paystack/events?status=failed&type=charge.success&ref=… (admin, audit.view): the raw provider event log, newest first. */
-export const GET = route({ auth: "admin", permission: "audit.view", query: eventsQuery }, async ({ query }) => ({ events: await listEvents(query) }))
+export const GET = route({ rate: { key: "payments.events.read", limit: 120, windowSec: 60 }, auth: "admin", permission: "audit.view", query: eventsQuery }, async ({ query }) => ({ events: await listEvents(query) }))

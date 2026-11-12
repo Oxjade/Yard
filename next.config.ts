@@ -23,6 +23,12 @@ const nextConfig = (phase: string): NextConfig => {
     cacheComponents: true,
     // The dev-mode badge sits over the Studio/Admin sidebar footer and the phone tab bar.
     devIndicators: false,
+    experimental: {
+      // src/proxy.ts runs in front of /api/* (not uploads or webhooks), and Next buffers a proxied
+      // request's body in memory: cap that buffer at the JSON API limit (the proxy refuses a larger
+      // Content-Length outright; each route's own cap is lower still, 64 KB by default).
+      proxyClientMaxBodySize: "1mb",
+    },
     partialPrefetching: true,
     poweredByHeader: false,
     // A self-contained server (.next/standalone/server.js plus the node_modules it traces), so a

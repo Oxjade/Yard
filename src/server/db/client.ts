@@ -5,6 +5,7 @@ import type { PGlite } from "@electric-sql/pglite"
 import type { PgliteDatabase } from "drizzle-orm/pglite"
 import { getEnv, isBuildPhase } from "../env"
 import { log } from "../log"
+import { shutdownInstalled } from "../shutdown"
 import { yard } from "../state"
 import { acquireLock, acquireServerAdvisoryLock } from "./lock"
 import * as schema from "./schema"
@@ -242,11 +243,12 @@ async function bootPostgres(): Promise<Root> {
   if (server) await acquireServerAdvisoryLock(env.databaseUrl!)
   ;(yard as { closeDb?: () => Promise<void> }).closeDb = closePool
 
-  // No SIGTERM handler that ends the pool: Next's standalone server answers SIGTERM by closing the
-  // listener and waiting for in-flight requests (realtime/streams.ts ends the live streams so that
-  // wait is short), then exits. Ending the pool first would make every one of those requests fail
-  // ("Cannot use a pool after calling end"). The sockets close when the process exits, which also
-  // releases the server advisory lock. Scripts call closeDb() themselves.
+  // No SIGTERM handler here that ends the pool: Next's standalone server answers SIGTERM by closing
+  // the listener and waiting for in-flight requests (realtime/streams.ts ends the live streams so
+  // that wait is short), then exits. Ending the pool first would make every one of those requests
+  // fail ("Cannot use a pool after calling end"). src/server/shutdown.ts holds that exit until our
+  // API requests and jobs are done, then calls closeDb() (pool.end()); the advisory lock's own
+  // connection closes when the process exits. Scripts call closeDb() themselves.
 
   if (server && !env.seedDemo) {
     const { warnEmptyCatalogue } = await import("./seed")
@@ -299,8 +301,10 @@ async function bootPglite(): Promise<Root> {
   const { runSeeds } = await import("./seed")
   await runSeeds(root)
 
-  // 9. Close cleanly on shutdown without swallowing the default signal behaviour.
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  // 9. Close cleanly on shutdown without swallowing the default signal behaviour. The server
+  // process closes it from src/server/shutdown.ts instead, after in-flight requests have finished
+  // (closing here at the signal would fail them); this handler is for scripts.
+  if (!shutdownInstalled()) for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.once(sig, () => {
       void client.close().finally(() => {
         if (process.listenerCount(sig) === 0) process.kill(process.pid, sig)

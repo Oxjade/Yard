@@ -4,11 +4,13 @@ import { connection } from "next/server"
 import { dbHealthCached } from "@/server/db"
 import { getEnv } from "@/server/env"
 import { paymentsMode } from "@/server/payments/config"
+import { isDraining } from "@/server/shutdown"
 
 /**
  * GET /api/health (public, no session, never cached): what a deploy checks before it switches
  * traffic over, and what it polls after (deploy/release.sh). 200 when the database answers and its
- * schema matches this build; 503 otherwise, with the same shape and status "degraded". Says which
+ * schema matches this build; 503 otherwise, with the same shape and status "degraded" (or
+ * "draining" while the process shuts down). Says which
  * release is running (release.json, written by the release packager; "dev" without one), the
  * environment, the payments mode and the uptime; never a secret, a path or a count of anything.
  */
@@ -36,6 +38,9 @@ export async function GET() {
     // Invalid configuration: the server log lists every problem; here only that it is one.
     return Response.json({ status: "degraded", config: "invalid", ...readRelease() }, { status: 503, headers })
   }
+  // Shutting down (SIGTERM): finishing in-flight requests, about to close the database. A 503 tells
+  // a load balancer or monitor to stop sending work here; the replacement process answers next.
+  if (isDraining()) return Response.json({ status: "draining", ...readRelease(), env: env.envName, uptimeSec: Math.round(process.uptime()) }, { status: 503, headers })
   const h = await dbHealthCached()
   const ok = h.db === "ok"
   return Response.json(

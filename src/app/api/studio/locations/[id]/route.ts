@@ -3,7 +3,7 @@ import { brandWriteRate, deleteLocation, getLocation, updateLocation } from "@/s
 import { route } from "@/server/http/route"
 
 /** GET /api/studio/locations/{id}: one of the active brand's places (another brand's is 404). */
-export const GET = route({ auth: "brand", permission: "any_member" }, async ({ params }) => {
+export const GET = route({ rate: { key: "studio.locations.read", limit: 120, windowSec: 60 }, auth: "brand", permission: "any_member" }, async ({ params }) => {
   const { location } = await getLocation(params.id ?? "")
   return { location }
 })

@@ -3,10 +3,10 @@ import { noContent, route } from "@/server/http/route"
 import { deletePost, patchPost } from "@/server/social/posts"
 
 /** PATCH …/posts/{id} (content.publish) { visibility?, featured?, productIds?, caption? }. A removed post → 422. */
-export const PATCH = route({ auth: "brand", permission: "content.publish", body: patchPostBody }, async ({ params, body }) => ({ post: await patchPost(params.id ?? "", body) }))
+export const PATCH = route({ rate: { key: "studio.social.write", limit: 60, windowSec: 60 }, auth: "brand", permission: "content.publish", body: patchPostBody }, async ({ params, body }) => ({ post: await patchPost(params.id ?? "", body) }))
 
 /** DELETE …/posts/{id} (content.publish): uploads only, removed ones included. Imports can only be hidden. */
-export const DELETE = route({ auth: "brand", permission: "content.publish" }, async ({ params }) => {
+export const DELETE = route({ rate: { key: "studio.social.write", limit: 60, windowSec: 60 }, auth: "brand", permission: "content.publish" }, async ({ params }) => {
   await deletePost(params.id ?? "")
   return noContent()
 })
