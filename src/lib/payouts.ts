@@ -1,4 +1,4 @@
-import { site } from "@/config/site"
+import { commissionRateAt } from "@/lib/commission"
 import type { CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { payoutAmountIn, type Payout } from "@/lib/data/admin"
@@ -14,7 +14,7 @@ import type { MerchantOrder } from "@/lib/data/types"
 export const PAYOUT_HOLD_DAYS = 7
 /** The prototype's fixed "today", so the hold window is stable between server and client. */
 export const PAYOUT_TODAY = new Date("2026-11-05T12:00:00Z").getTime()
-export const COMMISSION_RATE = site.commissionRate
+export const COMMISSION_RATE = commissionRateAt()
 
 export function payoutBlockedReason(input: {
   hasSummary: boolean

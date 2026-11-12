@@ -1,5 +1,6 @@
 "use client"
 
+import { commissionLabel, commissionRateAt } from "@/lib/commission"
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ApiError, api } from "@/lib/api/client"
@@ -26,7 +27,6 @@ import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
 import { duration, ease } from "@/lib/motion"
 import { currencies } from "@/config/markets"
-import { site } from "@/config/site"
 import { products as seedProducts } from "@/lib/data"
 import { brandById, STUDIO_BRAND_ID } from "@/lib/data/brands"
 import { categories, categoryBySlug } from "@/lib/data/catalog"
@@ -895,7 +895,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
                 id="pf-price"
                 label="Price"
                 error={errors.price}
-                hint={price ? `You receive ${formatMoney(Math.round(price * (1 - site.commissionRate)), currency)} per sale after the ${Math.round(site.commissionRate * 100)}% commission.` : "What shoppers pay, before shipping."}
+                hint={price ? `You receive ${formatMoney(Math.round(price * (1 - commissionRateAt())), currency)} per sale (commission: ${commissionLabel()}).` : "What shoppers pay, before shipping."}
               >
                 <InputGroup className={inputClass}>
                   <InputGroupAddon className="font-normal text-ink-3">{symbol}</InputGroupAddon>

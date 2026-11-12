@@ -1,3 +1,4 @@
+import { inLaunchOffer } from "@/lib/commission"
 import "server-only"
 import { and, count, eq, gt, inArray, isNull, lte } from "drizzle-orm"
 import { withTx, type Executor, type Tx } from "../db"
@@ -27,7 +28,8 @@ export async function brandTier(tx: Executor, brandId: string): Promise<BrandTie
 
 export async function commissionBpsFor(tx: Executor, brandId: string): Promise<number> {
   const [s] = await tx.select({ bps: ledgerBrandSettings.commissionBpsOverride }).from(ledgerBrandSettings).where(eq(ledgerBrandSettings.brandId, brandId))
-  return s?.bps ?? ledgerConfig.commissionBps
+  if (s?.bps !== null && s?.bps !== undefined) return s.bps
+  return inLaunchOffer() ? 0 : ledgerConfig.commissionBps
 }
 
 /**

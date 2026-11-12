@@ -1,5 +1,6 @@
 "use client"
 
+import { commissionLabel, commissionRateAt } from "@/lib/commission"
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import { CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, PlusIcon as Plus, StarIcon as Star, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
@@ -11,7 +12,6 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Textarea } from "@/components/ui/textarea"
 import { errorMessage } from "@/lib/api/errors"
 import { currencies } from "@/config/markets"
-import { site } from "@/config/site"
 import { formatMoney, formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { control, Field, FieldMessage, inputClass, Panel, Segmented } from "@/components/studio/growth/form"
@@ -180,7 +180,7 @@ export function ProductStep({ onNext }: StepProps) {
             id="ob-price"
             label="Price"
             error={e.price}
-            hint={price !== null ? `You receive ${formatMoney(Math.round(price * (1 - site.commissionRate)), currency)} per sale, after the ${Math.round(site.commissionRate * 100)}% commission.` : `In ${currency}. Shoppers see it converted to their currency.`}
+            hint={price !== null ? `You receive ${formatMoney(Math.round(price * (1 - commissionRateAt())), currency)} per sale (commission: ${commissionLabel()}).` : `In ${currency}. Shoppers see it converted to their currency.`}
           >
             <InputGroup className={cn(inputClass, "sm:max-w-xs")}>
               <InputGroupAddon className="font-normal text-ink-3">{symbol}</InputGroupAddon>

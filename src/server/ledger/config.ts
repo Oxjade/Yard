@@ -3,13 +3,13 @@ import { site } from "@/config/site"
 import type { BRAND_TIERS } from "../db/schema/ledger"
 
 /**
- * Finance rules (LEDGER). Commission comes from the site config (site.commissionRate, 5%) unless
- * an admin set a per-brand override. Reserves depend on the brand's tier.
+ * Finance rules (LEDGER). Commission comes from the site config (site.commissionRate, 3.5%; 0% during the launch
+ * offer, see src/lib/commission.ts) unless an admin set a per-brand override. Reserves depend on the brand's tier.
  */
 export type BrandTier = (typeof BRAND_TIERS)[number]
 
 export const ledgerConfig = {
-  /** Basis points of the captured gross taken as commission (5% → 500). */
+  /** Basis points of the captured gross taken as commission (3.5% → 350). */
   commissionBps: Math.round(site.commissionRate * 10_000),
   /** Rolling reserve by tier: a share of the brand's net held for `days` after the order completes. */
   reserves: {

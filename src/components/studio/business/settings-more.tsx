@@ -1,5 +1,6 @@
 "use client"
 
+import { commissionLabel, commissionRateAt } from "@/lib/commission"
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import Link from "next/link"
@@ -332,7 +333,7 @@ export function TeamSection() {
 export function FeesPanel() {
   const cur = useBrandSettings((s) => s.profile.currency)
   const example = convert(10_000, "USD", cur)
-  const pct = `${Math.round(site.commissionRate * 100)}%`
+  const pct = commissionLabel()
   return (
     <Panel id="fees" title="Fees" description={`What selling on ${site.name} costs.`}>
       <div className="grid gap-4 md:grid-cols-[auto_1fr] md:items-center">
@@ -342,7 +343,7 @@ export function FeesPanel() {
         <div>
           <p className="text-sm text-ink">{pct} commission on completed sales. No monthly fees, no listing fees.</p>
           <p className="mt-1 text-xs text-ink-2">
-            Commission is taken from the item subtotal when an order completes, and returned if it&apos;s cancelled or refunded. On a {formatMoney(example, cur)} sale you keep {formatMoney(example - Math.round(example * site.commissionRate), cur)}. Advertising is optional and billed separately.
+            Commission is taken from the item subtotal when an order completes, and returned if it&apos;s cancelled or refunded. On a {formatMoney(example, cur)} sale you keep {formatMoney(example - Math.round(example * commissionRateAt()), cur)}. Advertising is optional and billed separately.
           </p>
         </div>
       </div>

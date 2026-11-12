@@ -11,7 +11,10 @@ export const site = {
   tagline: "Independent brands, found first.",
   description:
     "A global destination for discovering, following and shopping independent brands.",
-  commissionRate: 0.05,
+  /** Commission on each completed sale (3.5%). */
+  commissionRate: 0.035,
+  /** Launch offer: no commission on sales placed before this moment (UTC), for every brand. */
+  launchFreeUntil: "2027-02-12T00:00:00Z",
 } as const
 
 export type NavItem = { href: string; label: string }
