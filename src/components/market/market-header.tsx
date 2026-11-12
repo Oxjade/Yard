@@ -14,6 +14,7 @@ import { YardLogo } from "@/components/brand/yard-logo"
 import { NotificationBell } from "@/components/feedback/notification-bell"
 import { InboxHeaderButton } from "@/components/inbox/entry"
 import { bagCount } from "./bag-count"
+import { useChromeAutohide, useChromeAutohideDriver } from "./chrome-autohide"
 import { BagPop, useLgUp } from "./bag-pop"
 import { SearchCapsule } from "./search-capsule"
 
@@ -91,10 +92,23 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
 
+  // Phones: slides away while the page scrolls down, back on any scroll up (chrome-autohide.ts).
+  useChromeAutohideDriver(!solid)
+  const hidden = useChromeAutohide((s) => s.hidden) && !solid
+  const show = useChromeAutohide((s) => s.show)
+
   const backdrops = scrolled && !solid
 
   return (
-    <header className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 print:hidden", solid && "pointer-events-auto border-b border-line-soft bg-obsidian", className)}>
+    <header
+      onFocusCapture={show}
+      className={cn(
+        "pointer-events-none fixed inset-x-0 top-0 z-40 transition-transform duration-300 ease-out-quint motion-reduce:transition-none print:hidden",
+        hidden && "-translate-y-full",
+        solid && "pointer-events-auto border-b border-line-soft bg-obsidian",
+        className,
+      )}
+    >
       {/* Legibility fade — sits behind the floating items, never boxes them */}
       {solid ? null : <div aria-hidden className={cn("absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-obsidian/80 via-obsidian/35 to-transparent transition-opacity duration-300", scrolled ? "opacity-100" : "opacity-60")} />}
 

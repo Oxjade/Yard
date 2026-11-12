@@ -215,7 +215,7 @@ export function BagView() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0, transition: { duration: duration.dropdown, ease: ease.out } }}
             exit={{ opacity: 0, y: 12, transition: { duration: duration.press, ease: ease.in } }}
-            className="fixed inset-x-4 bottom-(--tabbar-clear) z-30 flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
+            className="fixed inset-x-4 bottom-(--tabbar-clear) z-30 transition-[bottom] duration-300 ease-out-quint motion-reduce:transition-none flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-obsidian/92 py-2 pr-2 pl-4 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
           >
             <p className="min-w-0 text-xs text-ink-2">
               {bag.total === null ? "Subtotal" : "Total"}, {plural(bagCount(lines), "item")}

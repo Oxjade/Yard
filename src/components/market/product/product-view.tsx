@@ -436,7 +436,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={spring.snappy}
-            className="fixed inset-x-0 bottom-(--tabbar-clear) z-30 px-3 lg:hidden"
+            className="fixed inset-x-0 bottom-(--tabbar-clear) z-30 transition-[bottom] duration-300 ease-out-quint motion-reduce:transition-none px-3 lg:hidden"
           >
             <div className="glass glass-sheen mx-auto flex max-w-md items-center gap-3 rounded-2xl p-2">
               <div className="relative h-12 w-10 shrink-0 overflow-hidden rounded-md bg-card">

@@ -12,6 +12,7 @@ import { useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import { bagCount } from "./bag-count"
 import { BagPop, useLgUp } from "./bag-pop"
+import { useChromeAutohide } from "./chrome-autohide"
 import { cartLabel } from "./market-header"
 import { useSearchOverlay } from "./search-overlay"
 
@@ -56,6 +57,9 @@ export function MobileTabBar() {
   const pulse = useCart((s) => s.pulse)
   const signedIn = useServerSession((s) => !!s.shopper)
   const unread = useUnread("market")
+  // Phones: slides away with the header while the page scrolls down (chrome-autohide.ts).
+  const hidden = useChromeAutohide((s) => s.hidden)
+  const show = useChromeAutohide((s) => s.show)
   const capsule = useRef<HTMLDivElement>(null)
   const cartRef = useRef<HTMLButtonElement>(null)
 
@@ -74,9 +78,15 @@ export function MobileTabBar() {
 
   return (
     // Above the search overlay's scrim (z-50) while it's open, so Explore shows its pressed state and a second tap closes it.
+    // Hidden, it drops by its own height plus the pin's rise and shadow, so nothing peeks over the edge.
     <nav
       aria-label="Primary"
-      className={cn("pointer-events-none fixed inset-x-0 bottom-0 flex justify-center pb-[max(0.875rem,env(safe-area-inset-bottom))] lg:hidden print:hidden", overlayOpen ? "z-[60]" : "z-40")}
+      onFocusCapture={show}
+      className={cn(
+        "pointer-events-none fixed inset-x-0 bottom-0 flex justify-center pb-[max(0.875rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out-quint motion-reduce:transition-none lg:hidden print:hidden",
+        overlayOpen ? "z-[60]" : "z-40",
+        hidden && "translate-y-[calc(100%+2rem)]",
+      )}
     >
       <div
         ref={capsule}

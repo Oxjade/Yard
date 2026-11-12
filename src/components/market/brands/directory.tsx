@@ -357,7 +357,7 @@ function DirectoryView({ filters, onChange, children }: { filters: BrandFilters;
       <AnimatePresence>
         {(inView || sheetOpen) && onChange ? (
           <motion.div
-            className="pointer-events-none fixed inset-x-0 bottom-(--tabbar-clear) z-30 flex justify-center lg:hidden"
+            className="pointer-events-none fixed inset-x-0 bottom-(--tabbar-clear) z-30 transition-[bottom] duration-300 ease-out-quint motion-reduce:transition-none flex justify-center lg:hidden"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
