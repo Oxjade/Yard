@@ -251,6 +251,17 @@
   }
 }
 
+/* Phones: iOS Safari zooms the page in when a field under 16px gets focus, and doesn't zoom back
+   out, which leaves the layout cut off on the right. Every text field is at least 16px on phones.
+   Outside any layer so it wins over the text-size utilities. */
+@media (max-width: 47.99rem) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/60;
