@@ -20,7 +20,7 @@ import { methodFromLabel } from "./shipping"
 export const receiptLine = {
   paid: "Your order has been placed.",
   awaiting: "Order received — awaiting payment confirmation. Nothing was charged.",
-  confirming: "Order received — Paystack is confirming your payment.",
+  confirming: "Order received — the payment provider is confirming your payment.",
   notPaid: "Order received — payment not completed. Nothing was charged.",
   sample: "Sample order history for the demo account.",
 } as const

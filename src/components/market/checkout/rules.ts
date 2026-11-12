@@ -42,7 +42,7 @@ export const countryRules: Record<CountryCode, CountryRules> = {
 export type ContactDraft = { name: string; email: string; phone: string }
 export type AddressDraft = { line1: string; line2: string; city: string; region: string; postcode: string; landmark: string }
 export type PaymentMethod = CheckoutInput["paymentMethod"]
-/** Only how the shopper will pay: card details are typed on Paystack's page, never on Yard. */
+/** Only how the shopper will pay: card details are typed on the provider's page (Paystack or Bachs), never on Yard. */
 export type PaymentDraft = { method: PaymentMethod }
 export type FieldErrors = Record<string, string>
 
@@ -131,11 +131,23 @@ export function chargeCurrencyFor(display: CurrencyCode, country: CountryCode, a
  * and Paystack takes that channel in it (bank transfer in Ghana isn't offered). Card works in every
  * charge currency. Mirrors the server's channelsFor (src/server/payments/checkout.ts).
  */
-export function paymentMethodsFor(country: CountryCode, currency: CurrencyCode): PaymentMethod[] {
+export function paymentMethodsFor(country: CountryCode, currency: CurrencyCode, provider: "paystack" | "bachs" = "paystack"): PaymentMethod[] {
+  if (provider === "bachs") return bachsPaymentMethodsFor(currency)
   if (country === "NG" && currency === "NGN") return ["card", "bank_transfer", "ussd"]
   if (country === "GH" && currency === "GHS") return ["card", "mobile_money"]
   if (country === "KE" && currency === "KES") return ["card", "mobile_money"]
   if (country === "ZA" && currency === "ZAR") return ["card", "bank_transfer"]
+  return ["card"]
+}
+
+/**
+ * Bachs takes each method in set currencies whatever the delivery country (card: NGN and USD; bank
+ * transfer: NGN; mobile money: GHS and KES — no card in GHS or KES). Mirrors the server's
+ * bachsMethodsFor / bachsCorridorsFor (src/server/payments/bachs-core.ts).
+ */
+export function bachsPaymentMethodsFor(currency: CurrencyCode): PaymentMethod[] {
+  if (currency === "NGN") return ["card", "bank_transfer"]
+  if (currency === "GHS" || currency === "KES") return ["mobile_money"]
   return ["card"]
 }
 
@@ -152,19 +164,19 @@ export function paymentMethodCopy(method: PaymentMethod, country: CountryCode) {
   }
 }
 
-/** What Paystack's page asks for with each method, so the shopper knows before they leave Yard. */
-export function paymentMethodNext(method: PaymentMethod, country: CountryCode) {
+/** What the provider's page (Paystack's or Bachs') asks for with each method, so the shopper knows before they leave Yard. */
+export function paymentMethodNext(method: PaymentMethod, country: CountryCode, providerName = "Paystack") {
   switch (method) {
     case "card":
       return "Yard never sees or stores your card number."
     case "bank_transfer":
-      return country === "ZA"
+      return country === "ZA" && providerName === "Paystack"
         ? "Paystack takes you to your bank to approve the payment. Brands start preparing orders once it clears."
-        : "Paystack shows a one-time account number and the exact amount to send from your banking app."
+        : `${providerName} shows a one-time account number and the exact amount to send from your banking app.`
     case "ussd":
-      return "Paystack shows the code to dial for your bank. Dial it from the phone number linked to your account."
+      return `${providerName} shows the code to dial for your bank. Dial it from the phone number linked to your account.`
     case "mobile_money":
-      return "Paystack asks for your mobile money number and sends a prompt to approve on your phone."
+      return `${providerName} asks for your mobile money number and sends a prompt to approve on your phone.`
   }
 }
 

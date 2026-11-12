@@ -11,7 +11,7 @@ import { handleTransferEvent, postPaymentCaptured } from "../ledger"
 import { log } from "../log"
 import { getOrderForMoney, handleDisputeEvent, handleRefundOutcome, markCheckoutPaid, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
-import { chargeStateFromPaystack } from "./providers"
+import { chargeStateFromBachs, chargeStateFromPaystack, getProvider, type BachsCheckoutSession, type ChargeState } from "./providers"
 import { refundEventChange, refundIdFromNote } from "./refund-recovery"
 
 /**
@@ -21,12 +21,20 @@ import { refundEventChange, refundIdFromNote } from "./refund-recovery"
  */
 
 type EventRow = typeof providerEvents.$inferSelect
-type Payload = { event?: unknown; data?: Record<string, unknown> }
+/** Paystack: { event, data }. Bachs: { id: "evt_…", type, created_at, data }. */
+type Payload = { event?: unknown; type?: unknown; id?: unknown; data?: Record<string, unknown> }
 
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v))
 
-/** The dedupe key for a provider event: Paystack has no event id, so event + object id + status. */
+/** The event type: Paystack's `event`, or Bachs' `type`. */
+const eventTypeOf = (payload: Payload) => str(payload.event) || str(payload.type)
+
+/**
+ * The dedupe key for a provider event. Bachs events carry their own id (evt_…), so a redelivery of
+ * the same event is the same row. Paystack has no event id, so event + object id + status.
+ */
 export function eventKeyOf(payload: Payload, source: "webhook" | "verify" | "simulated") {
+  if (!payload.event && typeof payload.id === "string" && payload.id) return source === "webhook" ? `evt:${payload.id}` : `${source}:evt:${payload.id}`
   const d = payload.data ?? {}
   const objectId = str(d.id) || str(d.transfer_code) || str(d.reference)
   const base = `${str(payload.event)}:${objectId}:${str(d.status)}`
@@ -42,7 +50,7 @@ function subjectRefOf(payload: Payload): string | null {
 }
 
 /** Stores a raw provider event (or returns the stored one for a retry of the same event). */
-export async function recordProviderEvent(input: { provider: "paystack" | "stub"; source: "webhook" | "verify" | "simulated"; payload: Payload; rawBody: string; signatureValid: boolean }): Promise<EventRow> {
+export async function recordProviderEvent(input: { provider: "paystack" | "bachs" | "stub"; source: "webhook" | "verify" | "simulated"; payload: Payload; rawBody: string; signatureValid: boolean }): Promise<EventRow> {
   const d = await db()
   const eventKey = eventKeyOf(input.payload, input.source)
   const [row] = await d
@@ -51,7 +59,7 @@ export async function recordProviderEvent(input: { provider: "paystack" | "stub"
       id: newId("pe"),
       provider: input.provider,
       source: input.source,
-      eventType: str(input.payload.event).slice(0, 80) || "unknown",
+      eventType: eventTypeOf(input.payload).slice(0, 80) || "unknown",
       eventKey: eventKey.slice(0, 300),
       bodySha256: sha256hex(input.rawBody),
       rawBody: input.rawBody,
@@ -83,8 +91,10 @@ export async function processEvent(eventId: string, opts: { force?: boolean } = 
   if (!ev) return { status: "failed", error: "event not found" }
   if (!opts.force && (ev.status === "processed" || ev.status === "ignored")) return { status: "skipped" }
   try {
+    // Bachs charge events are checked with Bachs first (network, so outside the transaction).
+    const checked = ev.provider === "bachs" ? await checkBachsEvent(ev) : null
     const r = await withTx(async (tx) => {
-      const out = await dispatch(tx, ev)
+      const out = ev.provider === "bachs" ? await dispatchBachs(tx, ev, checked) : await dispatch(tx, ev)
       await tx
         .update(providerEvents)
         .set({ status: out.status, error: out.note ?? null, attempts: sql`${providerEvents.attempts} + 1`, processedAt: new Date() })
@@ -133,9 +143,88 @@ async function dispatch(tx: Tx, ev: EventRow): Promise<{ status: "processed" | "
   }
 }
 
+/* ---------- Bachs ---------- */
+
+/** Bachs events that say something about a checkout's payment: each is checked with Bachs before anything is applied. */
+const BACHS_CHARGE_EVENTS = new Set(["checkout.completed", "collection.succeeded", "checkout.expired"])
+
+/** What Bachs' own API said about the checkout a charge event names (null when there is nothing to check). */
+type BachsChecked = { state: ChargeState | null; checkoutId: string } | null
+
+/**
+ * Bachs' docs: treat the webhook as the trigger, then read the checkout back from Bachs and act on
+ * what the API says (not on the webhook body). Runs outside the transaction. A completion event the
+ * API doesn't confirm yet throws, so the event is left 'failed' and the route answers 5xx: Bachs
+ * delivers it again later (or an admin replays it). A deployment that isn't on Bachs can't check, so
+ * it throws too (nothing is applied from an unchecked body).
+ */
+async function checkBachsEvent(ev: EventRow): Promise<BachsChecked> {
+  if (ev.source !== "webhook" || !BACHS_CHARGE_EVENTS.has(ev.eventType)) return null
+  const data = ((ev.payload as Payload).data ?? {}) as Record<string, unknown>
+  const checkoutId = str(data.checkout_id)
+  if (!checkoutId) return null
+  const provider = getProvider()
+  if (provider.kind !== "bachs") throw new Error("Bachs isn't the payment provider on this deployment, so this event can't be checked with Bachs")
+  const state = await provider.verify(checkoutId)
+  if (!state) throw new Error(`Bachs has no checkout ${checkoutId}`)
+  if (ev.eventType !== "checkout.expired" && state.status === "pending") throw new Error(`Bachs doesn't report checkout ${checkoutId} as paid yet (${state.providerStatus ?? "pending"}); waiting for the next delivery`)
+  return { state: { ...state, reference: state.reference || str(data.reference) }, checkoutId }
+}
+
+/**
+ * Bachs events (stored as Bachs sent them; `checked` is what the Bachs API said, for charge events):
+ *  - checkout.completed / collection.succeeded / checkout.expired → the checked state, through the
+ *    same applyCharge as Paystack (paid → orders paid, stock committed, ledger posted; failed or
+ *    expired → hold released; a payment after expiry → late capture, refunded by ORDERS).
+ *  - checkout.verified → a verify answer Yard asked Bachs for itself (its data IS the API's checkout).
+ *  - collection.failed / collection.underpaid → recorded only: the checkout stays open and the shopper can try again.
+ *  - refund.created / refund.paid / refund.failed → the refund paths Paystack's refund events use.
+ *  - dispute.* → recorded only; disputes are answered in the Bachs dashboard.
+ */
+async function dispatchBachs(tx: Tx, ev: EventRow, checked: BachsChecked): Promise<{ status: "processed" | "ignored"; note?: string }> {
+  const data = ((ev.payload as Payload).data ?? {}) as Record<string, unknown>
+  switch (ev.eventType) {
+    case "checkout.completed":
+    case "collection.succeeded":
+    case "checkout.expired": {
+      if (!checked?.state) return { status: "ignored", note: "no checkout to check (not a checkout payment)" }
+      if (checked.state.status === "pending") return { status: "ignored", note: `Bachs still reports checkout ${checked.checkoutId} as ${checked.state.providerStatus ?? "open"}` }
+      return applyBachsCharge(tx, checked.state, checked.checkoutId)
+    }
+    case "checkout.verified": {
+      const state = chargeStateFromBachs(data as BachsCheckoutSession)
+      if (state.status === "pending") return { status: "ignored", note: "not final" }
+      return applyBachsCharge(tx, state, str(data.checkout_id))
+    }
+    case "collection.failed":
+    case "collection.underpaid":
+      return { status: "ignored", note: "attempt not final: the Bachs checkout stays open" }
+    case "refund.created":
+    case "refund.paid":
+    case "refund.failed": {
+      const type = ev.eventType === "refund.paid" ? "refund.processed" : ev.eventType === "refund.failed" ? "refund.failed" : "refund.pending"
+      const reference = str(data.reference)
+      // Yard sends its refund id as the Bachs refund's reference: hand it to the shared matcher as the note tag.
+      return applyRefundEvent(tx, type, { id: str(data.refund_id), merchant_note: reference ? `[yard:${reference}]` : null, reason: data.reason ?? null, amount: -1 })
+    }
+    default:
+      return { status: "ignored", note: ev.eventType.startsWith("dispute.") ? "Bachs disputes are answered in the Bachs dashboard" : `unhandled event type ${ev.eventType}` }
+  }
+}
+
+/** applyCharge for a Bachs checkout, after checking the checkout belongs to that Bachs payment. */
+async function applyBachsCharge(tx: Tx, state: ChargeState, checkoutId: string) {
+  if (state.reference) {
+    const [pay] = await tx.select({ provider: payments.provider, accessCode: payments.accessCode }).from(payments).where(eq(payments.reference, state.reference)).limit(1)
+    if (pay && pay.provider !== "bachs") return { status: "ignored" as const, note: `payment ${state.reference} isn't a Bachs payment` }
+    if (pay?.accessCode && checkoutId && pay.accessCode !== checkoutId) return { status: "ignored" as const, note: `checkout ${checkoutId} isn't the one opened for payment ${state.reference}` }
+  }
+  return applyCharge(tx, state)
+}
+
 /* ---------- Charges ---------- */
 
-type Charge = ReturnType<typeof chargeStateFromPaystack>
+type Charge = ChargeState
 
 /**
  * Applies a final charge outcome to its payment. Success: payment → succeeded, ORDERS
@@ -167,8 +256,9 @@ export async function applyCharge(tx: Tx, charge: Charge): Promise<{ status: "pr
   if (pay.status === "succeeded") return { status: "processed", note: "already succeeded" }
 
   // The amount and currency must be exactly what we asked for.
-  if (charge.amountMinor !== pay.amountMinor || charge.currency.toUpperCase() !== pay.currency) {
-    const note = `amount mismatch: charged ${charge.amountMinor} ${charge.currency}, expected ${pay.amountMinor} ${pay.currency}`
+  // A provider that took the money on other terms (Bachs `accepted`) also waits for a person.
+  if (charge.review || charge.amountMinor !== pay.amountMinor || charge.currency.toUpperCase() !== pay.currency) {
+    const note = charge.review ? `${charge.review}: charged ${charge.amountMinor} ${charge.currency}, expected ${pay.amountMinor} ${pay.currency}` : `amount mismatch: charged ${charge.amountMinor} ${charge.currency}, expected ${pay.amountMinor} ${pay.currency}`
     await tx.update(payments).set({ status: "review", failureReason: note, providerTxnId: charge.providerTxnId, updatedAt: new Date() }).where(eq(payments.id, pay.id))
     await tx.update(checkouts).set({ status: "review", failureReason: "Payment needs review", updatedAt: new Date() }).where(eq(checkouts.id, co.id))
     await writeAudit({ actor: { kind: "system", name: "Yard" }, action: "payment.review", subjectType: "payment", subjectId: pay.id, target: co.id, reason: note })
@@ -364,7 +454,28 @@ export async function listEvents(q: { status?: string; type?: string; ref?: stri
  * contact details; none of that is needed to read an event, so it is withheld for every role.
  * Card brand, last 4 digits and bank stay, so a payment can still be recognised.
  */
-const REDACT_KEYS = new Set(["authorization_code", "signature", "bin", "exp_month", "exp_year", "account_name", "email", "customer_email", "phone", "first_name", "last_name", "international_format_phone", "receiver_bank_account_number", "account_number"])
+const REDACT_KEYS = new Set([
+  "authorization_code",
+  "signature",
+  "bin",
+  "exp_month",
+  "exp_year",
+  "account_name",
+  "email",
+  "customer_email",
+  "phone",
+  "first_name",
+  "last_name",
+  "international_format_phone",
+  "receiver_bank_account_number",
+  "account_number",
+  // Bachs: the buyer's identity and the sending bank account.
+  "customer_details",
+  "billing_address",
+  "phone_number",
+  "sender_name",
+  "sender_account_number",
+])
 export function redactProviderPayload(v: unknown, depth = 0): unknown {
   if (depth > 12) return "[redacted]"
   if (Array.isArray(v)) return v.map((x) => redactProviderPayload(x, depth + 1))

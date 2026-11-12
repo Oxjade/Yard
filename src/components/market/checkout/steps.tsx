@@ -25,7 +25,7 @@ import {
   type FieldErrors,
   type PaymentMethod,
 } from "./rules"
-import { usePaymentsMode } from "./payment-options"
+import { useCheckoutOptions, usePaymentsMode } from "./payment-options"
 import { Bone } from "@/components/feedback/skeletons"
 import { RetryButton } from "@/components/market/delivery/delivery-bits"
 import { businessDays, formatDay } from "@/lib/shipping/format"
@@ -292,7 +292,7 @@ export function PaymentStep({
   onMethodChange: (m: PaymentMethod) => void
   country: CountryCode
 }) {
-  const mode = usePaymentsMode()
+  const { mode, provider, providerName } = useCheckoutOptions()
   return (
     <div className="grid grid-cols-1 gap-5">
       <OptionGroup value={method} onValueChange={(v) => onMethodChange(v as PaymentMethod)} label="Payment method" className={cn(methods.length === 2 && "sm:grid-cols-2", methods.length === 3 && "md:grid-cols-3")}>
@@ -302,13 +302,15 @@ export function PaymentStep({
         })}
       </OptionGroup>
       {methods.length === 1 ? (
-        <p className="-mt-2 text-xs text-ink-3">Bank transfer, USSD and mobile money appear for addresses in the countries that use them.</p>
+        <p className="-mt-2 text-xs text-ink-3">
+          {provider === "bachs" ? "Bank transfer is offered for payments in NGN, and mobile money for payments in GHS and KES." : "Bank transfer, USSD and mobile money appear for addresses in the countries that use them."}
+        </p>
       ) : null}
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={method} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
           <Notice icon={ShieldCheck} className="text-sm">
-            <span className="text-ink">{method === "card" ? "You'll enter your card details securely on Paystack." : "You'll finish paying securely on Paystack."}</span> {paymentMethodNext(method, country)}
+            <span className="text-ink">{method === "card" ? `You'll enter your card details securely on ${providerName}.` : `You'll finish paying securely on ${providerName}.`}</span> {paymentMethodNext(method, country, providerName)}
           </Notice>
         </motion.div>
       </AnimatePresence>
@@ -339,13 +341,18 @@ export function PaymentModeNote({ mode, className }: { mode: ReturnType<typeof u
     )
   }
   if (mode === "test") {
-    return (
-      <p className={cn("text-xs leading-relaxed text-ink-3", className)}>
-        Test mode: no real money moves. On Paystack&apos;s page, use one of the test cards or test bank details Paystack lists in its test payments guide.
-      </p>
-    )
+    return <TestModeNote className={className} />
   }
   return null
+}
+
+function TestModeNote({ className }: { className?: string }) {
+  const { providerName } = useCheckoutOptions()
+  return (
+    <p className={cn("text-xs leading-relaxed text-ink-3", className)}>
+      Test mode: no real money moves. On {providerName}&apos;s page, use one of the test cards or test details {providerName} lists in its testing guide.
+    </p>
+  )
 }
 
 /* ---------- 5. Review ---------- */
@@ -384,6 +391,7 @@ export function ReviewStep({
   onEdit: (step: number) => void
 }) {
   const rules = countryRules[country]
+  const { providerName } = useCheckoutOptions()
   return (
     <div className="divide-y divide-line-soft overflow-hidden rounded-lg border border-line-soft bg-card">
       <ReviewBlock title="Contact" onChange={() => onEdit(0)}>
@@ -421,7 +429,7 @@ export function ReviewStep({
       </ReviewBlock>
       <ReviewBlock title="Payment" onChange={() => onEdit(3)}>
         <p>{paymentSummary(method, country)}</p>
-        <p className="text-ink-2">Paid on Paystack after you place the order</p>
+        <p className="text-ink-2">Paid on {providerName} after you place the order</p>
       </ReviewBlock>
     </div>
   )

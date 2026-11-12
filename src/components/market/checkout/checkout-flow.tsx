@@ -160,7 +160,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const removeLine = useCart((s) => s.remove)
   const syncCart = useCart((s) => s.syncFromServer)
   const reduceMotion = useReducedMotion()
-  const { mode: paymentsMode, currencies: chargeable, ready: optionsReady } = useCheckoutOptions()
+  const { mode: paymentsMode, provider: payProvider, providerName, currencies: chargeable, ready: optionsReady } = useCheckoutOptions()
   // No payment provider yet (YARD_PAYMENTS=off): everything up to Review works and is saved, but
   // Place order stays off; the server refuses with the same words if it's reached anyway.
   const paymentsClosed = paymentsMode === "off"
@@ -224,7 +224,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           ? "Shipping isn't ready for every brand yet."
           : null
 
-  const methods = paymentMethodsFor(country, currency)
+  const methods = paymentMethodsFor(country, currency, payProvider)
   const method: PaymentMethod = methods.includes(payment.method) ? payment.method : methods[0]
 
   const stepErrors: FieldErrors[] = [validateContact(contact, country), validateAddress(address, country), {}, validatePayment({ method }, methods), {}]
@@ -391,7 +391,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           <Notice className="mt-6">
             {isChargeCurrency(switchedFrom)
               ? `Payments here are taken in ${listCurrencies(chargeable)} for now, so you'll be charged in ${currency}. Every price in this checkout is shown in ${currency}.`
-              : `Paystack can't charge in ${switchedFrom}, so you'll be charged in ${currency}. Every price in this checkout is shown in ${currency}.`}
+              : `${providerName} can't charge in ${switchedFrom}, so you'll be charged in ${currency}. Every price in this checkout is shown in ${currency}.`}
           </Notice>
         ) : null}
         <div className="mt-6 lg:hidden">
@@ -464,7 +464,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
                         ? "Payments open soon, so orders can't be placed yet. Your cart and these details are saved for when they do."
                         : paymentsMode === "stub"
                           ? "Payments aren't connected here, so nothing is charged and the orders are recorded as awaiting payment confirmation."
-                          : "Next, Paystack opens to take the payment. Brands start preparing orders once Paystack confirms it."}
+                          : `Next, ${providerName} opens to take the payment. Brands start preparing orders once ${providerName} confirms it.`}
                     </Notice>
                     <div className="flex items-baseline justify-between gap-4 border-t border-line-soft pt-4">
                       <span className="text-base text-ink">
