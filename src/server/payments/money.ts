@@ -8,7 +8,7 @@ import { newId } from "../ids"
 import { log } from "../log"
 import { getOrderForMoney } from "../orders"
 import { applyTransferOutcome, refundOutcome } from "./events"
-import { getProvider, ProviderError } from "./providers"
+import { BACHS_ONE_REFUND_MESSAGE, getProvider, ProviderError } from "./providers"
 import { decideResend, refundNote } from "./refund-recovery"
 
 /* ---------- Refunds (PAYMENTS contract) ---------- */
@@ -57,6 +57,16 @@ export async function requestRefund(
     .where(and(live, eq(refunds.orderId, input.orderId)))
   if (Number(orderTotal) + input.amountMinor > order.totalMinor) throw new RefundRefused("That's more than is left to refund on this order.")
   if (Number(paymentTotal) + input.amountMinor > pay.amountMinor) throw new RefundRefused("That's more than is left to refund on this payment.")
+  if (pay.provider === "bachs") {
+    // Bachs takes ONE refund per charge (a failed one doesn't count), so a second refund on the
+    // same payment would only be refused later. Several orders paid in one checkout share a charge.
+    if (Number(paymentTotal) > 0) throw new RefundRefused(BACHS_ONE_REFUND_MESSAGE)
+    // A partial refund is asked for in the currency the payment settled in; Bachs holds only NGN and
+    // USD, so a GHS or KES payment settled in USD can only be refunded in full here.
+    if (input.amountMinor !== pay.amountMinor && pay.currency !== "NGN" && pay.currency !== "USD") {
+      throw new RefundRefused(`Bachs settles ${pay.currency} payments in USD, so only a full refund can be sent from Yard. Refund part of it by hand from the Bachs dashboard and record it.`)
+    }
+  }
 
   const stub = pay.provider === "stub"
   const refundId = newId("rf")
@@ -68,7 +78,7 @@ export async function requestRefund(
     amountMinor: input.amountMinor,
     currency: input.currency,
     reason: input.reason.slice(0, 300),
-    provider: stub ? "stub" : "paystack",
+    provider: stub ? "stub" : pay.provider === "bachs" ? "bachs" : "paystack",
     status: stub ? "succeeded" : "pending",
     providerRef: stub ? `stub-${refundId}` : null,
   })
@@ -124,7 +134,7 @@ export async function submitRefund(refundId: string) {
   }
 
   try {
-    const r = await provider.refund({ transactionReference: pay.reference, amountMinor: rf.amountMinor, currency: rf.currency, note: refundNote(rf.reason, rf.id) })
+    const r = await provider.refund({ transactionReference: pay.reference, amountMinor: rf.amountMinor, currency: rf.currency, note: refundNote(rf.reason, rf.id), providerTxnId: pay.providerTxnId, paymentAmountMinor: pay.amountMinor, refundId: rf.id })
     await settle(r)
   } catch (e) {
     const message = (e instanceof Error ? e.message : String(e)).slice(0, 300)
@@ -288,7 +298,7 @@ export async function eraseCustomerData(tx: Tx, userId: string): Promise<{ erase
   if (refs.length) {
     const rows = await tx
       .update(providerEvents)
-      .set({ payload: sql`(${providerEvents.payload} #- '{data,customer}') #- '{data,authorization}'`, rawBody: "[erased]" })
+      .set({ payload: sql`(((${providerEvents.payload} #- '{data,customer}') #- '{data,authorization}') #- '{data,customer_details}') #- '{data,payment_method_details}'`, rawBody: "[erased]" })
       .where(inArray(providerEvents.subjectRef, refs.map((r) => r.reference)))
       .returning({ id: providerEvents.id })
     events = rows.length

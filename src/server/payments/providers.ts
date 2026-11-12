@@ -1,7 +1,8 @@
 import "server-only"
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { log } from "../log"
-import { paymentsConfig } from "./config"
+import { bachsAmountToMinor, channelFromBachs, isPrivateOrigin, mapBachsChargeStatus, mapBachsRefundStatus, minorToBachsAmount, verifyBachsSignatureV2 } from "./bachs-core"
+import { paymentsConfig, type BachsConfig } from "./config"
 import type { ProviderRefund } from "./refund-recovery"
 
 /**
@@ -21,7 +22,23 @@ export class ProviderError extends Error {
   }
 }
 
-export type InitInput = { reference: string; email: string; amountMinor: number; currency: string; callbackUrl: string; metadata: Record<string, string>; splitCode?: string | null; channels?: string[] }
+/**
+ * `channels`: Paystack channels, or Bachs `payment_method_types` corridors (NGN_CARD…), limiting the
+ * hosted page to the method the shopper chose. `idempotencyKey` / `expiresInMinutes`: Bachs only
+ * (Paystack's reference is its idempotency).
+ */
+export type InitInput = {
+  reference: string
+  email: string
+  amountMinor: number
+  currency: string
+  callbackUrl: string
+  metadata: Record<string, string>
+  splitCode?: string | null
+  channels?: string[]
+  idempotencyKey?: string
+  expiresInMinutes?: number
+}
 export type InitResult = { authorizationUrl: string | null; accessCode: string | null }
 
 /** A transaction's state as the provider reports it. `pending` covers Paystack's abandoned/ongoing/processing/queued. */
@@ -37,17 +54,25 @@ export type ChargeState = {
   channel: string | null
   reason: string | null
   raw: unknown
+  /** Set when the money arrived but a person must look before the order is fulfilled (Bachs `accepted`: a short or long payment accepted as final). */
+  review?: string | null
 }
 
-export type RefundInput = { transactionReference: string; amountMinor: number; currency: string; note: string }
+/**
+ * `providerTxnId`: the provider's id for the charge (Bachs refunds by `charge_id`).
+ * `paymentAmountMinor`: what the payment collected (Bachs: a refund of all of it omits `amount`).
+ * `refundId`: Yard's refund id (Bachs: sent as the refund's unique `reference` and idempotency key).
+ */
+export type RefundInput = { transactionReference: string; amountMinor: number; currency: string; note: string; providerTxnId?: string | null; paymentAmountMinor?: number; refundId?: string }
 export type RefundResult = { providerRef: string; status: "pending" | "succeeded" | "failed" }
 
 export type TransferInput = { reference: string; amountMinor: number; currency: string; recipientCode: string; reason: string }
 export type TransferResult = { providerRef: string; status: "pending" | "succeeded" | "failed"; reason: string | null }
 
 export interface PaymentProvider {
-  kind: "paystack" | "stub"
+  kind: "paystack" | "bachs" | "stub"
   initialize(input: InitInput): Promise<InitResult>
+  /** Paystack: our payment reference. Bachs: the checkout session id (chk_…, stored as the payment's access code). Null = the provider has no such payment. */
   verify(reference: string): Promise<ChargeState | null>
   refund(input: RefundInput): Promise<RefundResult>
   /** Refunds the provider already holds for a transaction (Paystack GET /refund?transaction=…). Throws ProviderError when it can't tell. */
@@ -183,6 +208,235 @@ function paystackProvider(secret: string): PaymentProvider {
   }
 }
 
+/* ---------- Bachs ---------- */
+
+/** Yard refuses a second refund on one Bachs charge before anything is sent (requestRefund); this is Bachs' own word if one gets there. */
+export const BACHS_ONE_REFUND_MESSAGE =
+  "Bachs allows only one refund per payment, and this payment already has one. Refund the rest by hand (from the Bachs dashboard or by bank transfer) and record it."
+
+type BachsError = { error_code?: string; code?: string; message?: string; detail?: string; error?: string | { message?: string; code?: string } }
+
+async function bachs<T>(cfg: BachsConfig, method: "GET" | "POST", path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(cfg.apiBase + path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${cfg.secretKey}`,
+        Accept: "application/json",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    })
+  } catch (e) {
+    throw new ProviderError(`Bachs unreachable: ${(e as Error).message}`, false)
+  }
+  const json = (await res.json().catch(() => null)) as (T & BachsError) | null
+  if (!res.ok || !json) {
+    const err = json && typeof json.error === "object" ? json.error : null
+    const code = json?.error_code ?? json?.code ?? err?.code ?? null
+    const message = json?.detail ?? json?.message ?? err?.message ?? (typeof json?.error === "string" ? json.error : null) ?? `HTTP ${res.status}`
+    // 4xx (other than 408/429): Bachs read the request and refused it. 5xx, 408, 429, unparseable: unknown outcome.
+    const definitive = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
+    throw new ProviderError(`Bachs ${method} ${path.split("?")[0]}: ${code ? `${code}: ` : ""}${String(message).slice(0, 200)}`, definitive, res.status)
+  }
+  return json as T
+}
+
+type BachsCharge = {
+  id?: string
+  amount?: string
+  currency?: string
+  status?: string
+  substatus?: string | null
+  payment_method?: string | null
+  payment_method_details?: { type?: string } | null
+  created_at?: string
+  updated_at?: string
+  succeeded_at?: string | null
+  reason?: string | null
+}
+
+/** The fields Yard reads from a Bachs checkout session (GET /v1/checkout-sessions/{id}); everything else is kept raw. */
+export type BachsCheckoutSession = {
+  checkout_id?: string
+  status?: string
+  payment_status?: string | null
+  amount?: string
+  currency?: string | null
+  reference?: string | null
+  metadata?: Record<string, unknown> | null
+  charge?: BachsCharge | null
+  completed_at?: string | null
+  checkout_url?: string
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : v === null || v === undefined ? "" : String(v))
+
+/**
+ * A Bachs checkout session (with its charge) as Yard's ChargeState. The charge decides when there
+ * is one (mapBachsChargeStatus); a completed session that reports a payment but carries no charge
+ * object is a success for the session amount; an open session is pending; an expired one failed.
+ * Amounts are converted from Bachs decimal strings to minor units; one that can't be converted
+ * leaves the payment for review instead of guessing.
+ */
+export function chargeStateFromBachs(s: BachsCheckoutSession, fallbackReference = ""): ChargeState {
+  const sessionStatus = str(s.status).toLowerCase()
+  const charge = s.charge ?? null
+  const meta = (s.metadata ?? {}) as Record<string, unknown>
+  const reference = str(s.reference) || str(meta.paymentReference) || fallbackReference
+  let status: ChargeState["status"]
+  let review: string | null = null
+  let providerStatus: string
+  if (charge && charge.status) {
+    const m = mapBachsChargeStatus(charge.status)
+    status = m.status
+    if (m.review) review = `Bachs accepted the payment as ${str(charge.status).toLowerCase()} (not the exact amount asked for)`
+    providerStatus = str(charge.substatus) && m.status !== "success" ? str(charge.substatus).toLowerCase() : str(charge.status).toLowerCase()
+    // The session ended without payment while the charge still reads open: it's over.
+    if (status === "pending" && sessionStatus === "expired") {
+      status = "failed"
+      providerStatus = "expired"
+    }
+  } else if (sessionStatus === "completed" && ["paid", "succeeded"].includes(str(s.payment_status).toLowerCase())) {
+    status = "success"
+    providerStatus = "succeeded"
+  } else if (sessionStatus === "expired") {
+    status = "failed"
+    providerStatus = "expired"
+  } else {
+    status = "pending"
+    providerStatus = sessionStatus || "open"
+  }
+  const currency = str(charge?.currency || s.currency).toUpperCase()
+  let amountMinor = 0
+  try {
+    amountMinor = bachsAmountToMinor(charge?.amount ?? s.amount, currency)
+  } catch (e) {
+    if (status === "success") review = `Bachs reported an amount Yard can't read (${(e as Error).message})`
+  }
+  const paid = charge?.succeeded_at ?? (status === "success" ? (s.completed_at ?? charge?.updated_at ?? null) : null)
+  return {
+    reference,
+    status,
+    providerStatus,
+    amountMinor,
+    currency,
+    providerTxnId: charge?.id ? String(charge.id) : null,
+    paidAt: paid ? new Date(paid) : null,
+    channel: channelFromBachs(charge?.payment_method, charge?.payment_method_details?.type),
+    reason: status === "failed" ? str(charge?.reason) || (providerStatus === "expired" ? "The payment page expired before payment" : `Payment ${providerStatus}`) : null,
+    raw: s,
+    review,
+  }
+}
+
+type BachsRefund = { refund_id?: string; charge_id?: string; reference?: string | null; status?: string; requested_amount?: string | null; refunded_amount?: string | null; created_at?: string | null; reason?: string | null }
+
+function bachsProvider(cfg: BachsConfig): PaymentProvider {
+  return {
+    kind: "bachs",
+    async initialize(input) {
+      const amount = minorToBachsAmount(input.amountMinor, input.currency)
+      // Bachs refuses localhost and private addresses as return URLs: leave them out on a local
+      // machine (the shopper comes back on their own), as the Bachs docs advise.
+      const returnUrls = isPrivateOrigin(input.callbackUrl) ? {} : { success_url: input.callbackUrl, cancel_url: input.callbackUrl }
+      const d = await bachs<{ checkout_id?: string; checkout_url?: string }>(
+        cfg,
+        "POST",
+        "/v1/checkout-sessions",
+        {
+          pricing: { currency: input.currency, amount },
+          customer: { email: input.email },
+          reference: input.reference,
+          metadata: { ...input.metadata, paymentReference: input.reference },
+          ...returnUrls,
+          ...(input.channels?.length ? { payment_method_types: input.channels } : {}),
+          ...(input.expiresInMinutes ? { expires_in_minutes: Math.min(1440, Math.max(1, Math.round(input.expiresInMinutes))) } : {}),
+        },
+        input.idempotencyKey,
+      )
+      if (!d.checkout_id || !d.checkout_url) throw new ProviderError("Bachs POST /v1/checkout-sessions: no checkout_id / checkout_url in the reply", false)
+      return { authorizationUrl: d.checkout_url, accessCode: d.checkout_id }
+    },
+    async verify(checkoutId) {
+      if (!/^[\w-]{1,128}$/.test(checkoutId)) return null
+      try {
+        const s = await bachs<BachsCheckoutSession>(cfg, "GET", `/v1/checkout-sessions/${encodeURIComponent(checkoutId)}`)
+        return chargeStateFromBachs(s)
+      } catch (e) {
+        if (e instanceof ProviderError && e.httpStatus === 404) return null
+        throw e
+      }
+    },
+    async refund(input) {
+      if (!input.providerTxnId) throw new ProviderError("This Bachs payment has no charge id on record, so it can't be refunded automatically. Refund it from the Bachs dashboard.", true)
+      const full = input.paymentAmountMinor !== undefined && input.amountMinor === input.paymentAmountMinor
+      const ref = input.refundId ?? input.transactionReference
+      const d = await bachs<BachsRefund>(
+        cfg,
+        "POST",
+        "/v1/refunds",
+        {
+          charge_id: input.providerTxnId,
+          reference: ref,
+          reason: input.note.slice(0, 200),
+          idempotency_key: `yard-refund-${ref}`,
+          // A full refund omits the amount; a partial one is in the settlement currency (refused
+          // before this point unless the charge is in a currency Bachs settles in: NGN or USD).
+          ...(full ? {} : { amount: minorToBachsAmount(input.amountMinor, input.currency) }),
+        },
+        `yard-refund-${ref}`,
+      )
+      if (!d.refund_id) throw new ProviderError("Bachs POST /v1/refunds: no refund_id in the reply", false)
+      return { providerRef: d.refund_id, status: mapBachsRefundStatus(d.status) }
+    },
+    async listRefunds(chargeId) {
+      // Bachs takes one refund per charge: the by-charge lookup is the whole list.
+      let r: BachsRefund
+      try {
+        r = await bachs<BachsRefund>(cfg, "GET", `/v1/refunds/by-charge/${encodeURIComponent(chargeId)}`)
+      } catch (e) {
+        if (e instanceof ProviderError && e.httpStatus === 404) return []
+        throw e
+      }
+      if (!r.refund_id) return []
+      return [
+        {
+          id: r.refund_id,
+          transactionId: r.charge_id ?? chargeId,
+          // In the settlement currency, which Yard doesn't record: the match is by reference (note) only.
+          amountMinor: 0,
+          currency: "",
+          status: mapBachsRefundStatus(r.status),
+          // Yard sends its refund id as the Bachs reference: present it as the note tag the matcher reads.
+          note: r.reference ? `[yard:${r.reference}]` : null,
+          createdAt: r.created_at ? new Date(r.created_at) : null,
+        },
+      ]
+    },
+    async transfer() {
+      // Payout model A: Bachs collects into Yard's account and Yard pays brands from its own payout
+      // runs. Payout batches don't send through Bachs (ledger runPayoutBatch keeps them approved).
+      throw new ProviderError("Payouts aren't sent through Bachs. Pay this brand by hand and record it.", false)
+    },
+    async verifyTransfer() {
+      return null
+    },
+  }
+}
+
+/**
+ * Bachs webhook signature (X-Bachs-Signature-V2: t=…,v1=…) on the exact raw body under
+ * BACHS_WEBHOOK_SECRET, with a 5-minute timestamp tolerance (bachs-core.ts). No secret → refused.
+ */
+export function verifyBachsSignature(rawBody: string, header: string | null): ReturnType<typeof verifyBachsSignatureV2> {
+  return verifyBachsSignatureV2(rawBody, header, paymentsConfig().bachs?.webhookSecrets ?? [])
+}
+
 /* ---------- Stub (no keys) ---------- */
 
 /**
@@ -223,7 +477,9 @@ const stubProvider: PaymentProvider = {
  */
 export function getProvider(): PaymentProvider {
   const cfg = paymentsConfig()
-  return cfg.provider === "paystack" && cfg.secretKey ? paystackProvider(cfg.secretKey) : stubProvider
+  if (cfg.provider === "paystack" && cfg.secretKey) return paystackProvider(cfg.secretKey)
+  if (cfg.provider === "bachs" && cfg.bachs) return bachsProvider(cfg.bachs)
+  return stubProvider
 }
 
 /**

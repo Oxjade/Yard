@@ -24,6 +24,7 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { formatRange } from "@/lib/shipping/format"
 import { methodFromLabel, shippingMethodLabel } from "./shipping"
 import { ReceiptTicket } from "./receipt-ticket"
+import { useCheckoutOptions } from "./payment-options"
 import { ConfirmationSkeleton } from "./skeletons"
 import { useStoresReady } from "./use-stores-ready"
 
@@ -46,7 +47,7 @@ const isAbandoned = (d: ServerCheckout) => isPending(d) && d.checkout.payment?.p
  */
 const initFailed = (d: ServerCheckout) => {
   const p = d.checkout.payment
-  return isPending(d) && !!p && p.provider === "paystack" && !p.stub && !p.authorizationUrl && !!p.message
+  return isPending(d) && !!p && p.provider !== "stub" && !p.stub && !p.authorizationUrl && !!p.message
 }
 
 /**
@@ -266,6 +267,7 @@ function Confirmation({
   const holdTime = hydrated && holdUntil ? new Date(holdUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : null
   const allPaid = orders.every((o) => o.status === "paid")
   const sample = isSampleCheckout(group.id)
+  const { providerName } = useCheckoutOptions()
 
   return (
     <>
@@ -284,8 +286,8 @@ function Confirmation({
               ? "The payment provider couldn’t complete this payment. No payment was taken, and the order won’t be prepared. You can try placing it again."
               : notPaid
               ? payUrl
-                ? `Paystack didn’t receive a payment: it was cancelled or the page was closed, so nothing was charged. Your ${single ? "order is" : "orders are"} held${holdTime ? ` until ${holdTime}` : " for a short while"}; pay now to complete ${single ? "it" : "them"}.`
-                : "Paystack didn’t receive a payment: it was cancelled or the page was closed, so nothing was charged. The hold on these pieces has ended; return to your cart to check out again."
+                ? `${providerName} didn’t receive a payment: it was cancelled or the page was closed, so nothing was charged. Your ${single ? "order is" : "orders are"} held${holdTime ? ` until ${holdTime}` : " for a short while"}; pay now to complete ${single ? "it" : "them"}.`
+                : `${providerName} didn’t receive a payment: it was cancelled or the page was closed, so nothing was charged. The hold on these pieces has ended; return to your cart to check out again.`
               : awaitingPayment
               ? single
                 ? `Your order${brandsOf[0] ? ` with ${brandsOf[0].name}` : ""} is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it.`
@@ -296,7 +298,7 @@ function Confirmation({
           </p>
           <p className="mt-3 max-w-2xl text-xs leading-relaxed text-ink-3">
             {notStarted
-              ? `Your ${single ? "order is" : "orders are"} held${holdTime ? ` until ${holdTime}` : " for a short while"}. Retry opens Paystack’s page. `
+              ? `Your ${single ? "order is" : "orders are"} held${holdTime ? ` until ${holdTime}` : " for a short while"}. Retry opens ${providerName}’s page. `
               : paymentFailed
               ? "The checkout is closed. Start a new checkout to try another payment method. "
               : notPaid
@@ -305,8 +307,8 @@ function Confirmation({
               ? "Payments aren’t connected in this environment, so nothing was charged and these orders stay awaiting payment confirmation. "
               : awaitingPayment
                 ? confirming === "timed_out"
-                  ? "Paystack hasn’t confirmed the payment yet. Some payments take a few minutes; we’ll email you as soon as it’s confirmed. "
-                  : "Paystack is confirming the payment. This page updates on its own. "
+                  ? `${providerName} hasn’t confirmed the payment yet. Some payments take a few minutes; we’ll email you as soon as it’s confirmed. `
+                  : `${providerName} is confirming the payment. This page updates on its own. `
               : sample
                 ? "This is sample order history for the demo account. It shows how a paid checkout reads; no payment was taken. "
                 : ""}
@@ -318,7 +320,7 @@ function Confirmation({
               {confirming === "polling" ? (
                 <>
                   <Loader2 className="size-4 shrink-0 animate-spin text-violet" aria-hidden />
-                  <span className="min-w-0 flex-1">Checking your payment with Paystack…</span>
+                  <span className="min-w-0 flex-1">Checking your payment with {providerName}…</span>
                 </>
               ) : (
                 <>

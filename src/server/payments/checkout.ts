@@ -18,6 +18,7 @@ import { createOrdersFromCheckout, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
 import { chargeCurrencies, PAYMENTS_OFF_MESSAGE, paymentsConfig } from "./config"
 import { recordProviderEvent, processEvent } from "./events"
+import { bachsCorridorsFor } from "./bachs-core"
 import { getProvider, ProviderError } from "./providers"
 import { randomBytes } from "node:crypto"
 
@@ -45,6 +46,25 @@ export function channelsFor(method: PaymentMethod | undefined, country: string, 
         : false
   return fits ? [method] : undefined
 }
+
+/**
+ * What limits the provider's hosted page to the method the shopper chose: Paystack channels
+ * (channelsFor), or Bachs `payment_method_types` corridors (card: NGN_CARD / USD_CARD; bank
+ * transfer: NGN_BANK_TRANSFER; mobile money: MOMO_GHS / MOMO_KES). A method that doesn't fit the
+ * charge currency leaves the page unrestricted.
+ */
+function providerChannelsFor(body: Pick<StartCheckoutBody, "paymentMethod" | "shipTo" | "currency">): string[] | undefined {
+  if (paymentsConfig().provider === "bachs") return bachsCorridorsFor(body.paymentMethod, body.currency)
+  return channelsFor(body.paymentMethod, body.shipTo.country, body.currency)
+}
+
+/** A payment a provider has opened a hosted page for (so it can be asked about), on the provider this deployment uses. */
+function isLivePayment(p: PaymentRow | null): p is PaymentRow {
+  return !!p && (p.provider === "paystack" || p.provider === "bachs") && p.status === "initialized" && !!p.accessCode
+}
+
+/** "Paystack" / "Bachs", for logs. */
+const providerLabel = (kind: string) => (kind === "bachs" ? "Bachs" : kind === "paystack" ? "Paystack" : kind)
 
 const country = z.string().regex(/^[A-Z]{2}$/, { error: "Use a two-letter country code." })
 
@@ -113,7 +133,7 @@ export type CheckoutView = {
   failureReason: string | null
   payment: {
     id: string
-    provider: "paystack" | "stub"
+    provider: "paystack" | "bachs" | "stub"
     status: PaymentRow["status"]
     reference: string
     authorizationUrl: string | null
@@ -152,7 +172,7 @@ function toView(c: CheckoutRow, p: PaymentRow | null): CheckoutView {
     payment: p
       ? {
           id: p.id,
-          provider: p.provider as "paystack" | "stub",
+          provider: p.provider as "paystack" | "bachs" | "stub",
           status: p.status,
           reference: p.reference,
           authorizationUrl: p.status === "initialized" ? p.authorizationUrl : null,
@@ -217,7 +237,7 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
   const existing = await findByKey(actor.userId, body.idempotencyKey)
   if (existing) {
     if (existing.requestHash !== hash) throw conflict("This checkout was already started with different details. Reload and try again.")
-    return { status: 200, view: await ensureInitialized(actor, existing, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
+    return { status: 200, view: await ensureInitialized(actor, existing, providerChannelsFor(body)) }
   }
 
   const currency = asCurrency(body.currency)
@@ -352,9 +372,9 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
     const again = await findByKey(actor.userId, body.idempotencyKey)
     if (!again) throw busy()
     if (again.requestHash !== hash) throw conflict("This checkout was already started with different details. Reload and try again.")
-    return { status: 200, view: await ensureInitialized(actor, again, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
+    return { status: 200, view: await ensureInitialized(actor, again, providerChannelsFor(body)) }
   }
-  return { status: 201, view: await ensureInitialized(actor, created, channelsFor(body.paymentMethod, body.shipTo.country, body.currency)) }
+  return { status: 201, view: await ensureInitialized(actor, created, providerChannelsFor(body)) }
 }
 
 const REPLACED = "Replaced by a newer checkout before payment"
@@ -365,7 +385,7 @@ async function settleLivePendingCheckouts(customerId: string) {
   const pending = await d.select({ id: checkouts.id }).from(checkouts).where(and(eq(checkouts.customerId, customerId), eq(checkouts.status, "pending_payment")))
   for (const c of pending) {
     const p = await latestPayment(d, c.id)
-    if (p?.provider === "paystack" && p.status === "initialized" && p.accessCode) await verifyPaymentReference(p.reference) // busy (503) when Paystack can't answer
+    if (isLivePayment(p)) await verifyPaymentReference(p.reference) // busy (503) when Paystack can't answer
   }
 }
 
@@ -415,9 +435,10 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?:
   assertPaymentsOpen()
   const d = await db()
   const p = await latestPayment(d, c.id)
-  if (!p || c.status !== "pending_payment" || p.status !== "initialized" || p.provider !== "paystack" || p.accessCode) return toView(c, p)
+  if (!p || c.status !== "pending_payment" || p.status !== "initialized" || p.provider === "stub" || p.accessCode) return toView(c, p)
   const provider = getProvider()
-  if (provider.kind !== "paystack") return toView(c, p)
+  // A payment opened under another provider (the deployment switched) is never sent to this one.
+  if (provider.kind !== p.provider) return toView(c, p)
   try {
     const r = await provider.initialize({
       reference: p.reference,
@@ -428,12 +449,15 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?:
       metadata: { checkoutId: c.id, paymentId: p.id, reference: c.reference ?? "" },
       splitCode: p.splitCode,
       channels,
+      // Bachs: a retried create returns the same session; the hosted page lasts as long as the stock hold.
+      idempotencyKey: `yard-checkout-${p.id}`,
+      expiresInMinutes: Math.max(1, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000)),
     })
     const [u] = await d.update(payments).set({ accessCode: r.accessCode, authorizationUrl: r.authorizationUrl, initError: null, updatedAt: new Date() }).where(eq(payments.id, p.id)).returning()
     return toView(c, u)
   } catch (e) {
     const message = e instanceof Error ? e.message.slice(0, 300) : "initialise failed"
-    log.warn(`[yard] Paystack initialise failed for checkout ${c.id}: ${message}`)
+    log.warn(`[yard] ${providerLabel(provider.kind)} initialise failed for checkout ${c.id}: ${message}`)
     await d.update(payments).set({ initError: message, updatedAt: new Date() }).where(eq(payments.id, p.id))
     throw busy(10, "We couldn't reach the payment provider. Nothing was charged. Try again in a moment.")
   }
@@ -449,7 +473,7 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?:
 export async function verifyCheckout(actor: ShopperActor, checkoutId: string): Promise<CheckoutView> {
   assertPaymentsOpen()
   const view = await getCheckout(actor, checkoutId)
-  if (view.status !== "pending_payment" || !view.payment || view.payment.provider !== "paystack" || view.payment.status !== "initialized") return view
+  if (view.status !== "pending_payment" || !view.payment || view.payment.provider === "stub" || view.payment.status !== "initialized") return view
   // Paystack never opened a page for this payment (its initialise failed): there is nothing to
   // verify, so this is the confirmation's Retry. Initialise again (Paystack's page unrestricted: the
   // method chosen at checkout isn't stored); a failure answers 503 with the reason, nothing charged.
@@ -476,19 +500,33 @@ export async function verifyPaymentReference(reference: string): Promise<"succes
 
 async function verifyPayment(reference: string): Promise<{ status: "success" | "failed" | "pending" | "unknown"; providerStatus: string | null }> {
   const provider = getProvider()
-  if (provider.kind !== "paystack") return { status: "unknown", providerStatus: null }
+  if (provider.kind === "stub") return { status: "unknown", providerStatus: null }
+  const d = await db()
+  const [pay] = await d.select({ provider: payments.provider, accessCode: payments.accessCode }).from(payments).where(eq(payments.reference, reference)).limit(1)
+  // Only the provider that opened the payment can be asked about it.
+  if (!pay || pay.provider !== provider.kind) return { status: "unknown", providerStatus: null }
+  // Paystack is asked by our reference; Bachs by its checkout session id (kept as the access code).
+  const lookup = provider.kind === "bachs" ? pay.accessCode : reference
+  if (!lookup) return { status: "unknown", providerStatus: null }
   let state
   try {
-    state = await provider.verify(reference)
+    state = await provider.verify(lookup)
   } catch (e) {
     if (e instanceof ProviderError) {
-      log.warn(`[yard] Paystack verify failed for ${reference}: ${e.message}`)
+      log.warn(`[yard] ${providerLabel(provider.kind)} verify failed for ${reference}: ${e.message}`)
       throw busy(10, "We couldn't check your payment just now. If you paid, it will show here shortly.")
     }
     throw e
   }
   if (!state) return { status: "unknown", providerStatus: null }
   if (state.status === "pending") return { status: "pending", providerStatus: state.providerStatus }
+  if (provider.kind === "bachs") {
+    // The API's own checkout object, stored and applied as a Bachs "checkout.verified" event.
+    const payload = { id: `${lookup}:${state.providerStatus ?? state.status}`, type: "checkout.verified", data: state.raw as Record<string, unknown> }
+    const ev = await recordProviderEvent({ provider: "bachs", source: "verify", payload, rawBody: JSON.stringify(payload), signatureValid: true })
+    await processEvent(ev.id)
+    return { status: state.status, providerStatus: state.providerStatus }
+  }
   const payload = { event: state.status === "success" ? "charge.success" : "charge.failed", data: state.raw as Record<string, unknown> }
   const ev = await recordProviderEvent({ provider: "paystack", source: "verify", payload, rawBody: JSON.stringify(payload), signatureValid: true })
   await processEvent(ev.id)
@@ -544,7 +582,7 @@ export async function expireCheckouts(now = new Date(), opts: { checkoutId?: str
   let paid = 0
   for (const c of due) {
     const p = await latestPayment(d, c.id)
-    if (p?.provider === "paystack" && p.status === "initialized" && p.accessCode) {
+    if (isLivePayment(p)) {
       try {
         const r = await verifyPaymentReference(p.reference)
         if (r === "success") {

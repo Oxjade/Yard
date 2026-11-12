@@ -16,18 +16,25 @@ export function usePaymentsMode(): CheckoutOptions["mode"] | null {
 
 const useOptions = () => useApi<CheckoutOptions>("checkout.options", () => api<CheckoutOptions>("/api/checkout/options"), { revalidateOnFocus: false })
 
-/** NGN is what every Paystack account can charge in: the safe answer until the server says more. */
+/** NGN is what every Paystack or Bachs account can charge in: the safe answer until the server says more. */
 const SAFE_CURRENCIES: readonly CurrencyCode[] = ["NGN"]
 
+/** Whose hosted page takes the payment: "paystack" or "bachs" (Paystack until the options load or for an older server). */
+export type PaymentProviderId = "paystack" | "bachs"
+
+/** The provider's name for the shopper: "Paystack" or "Bachs". */
+export const providerDisplayName = (p: PaymentProviderId) => (p === "bachs" ? "Bachs" : "Paystack")
+
 /**
- * The deployment's payment mode and the currencies its Paystack account can charge in. Until the
- * options load (or if they fail) the mode is null and the currencies are NGN alone, the live-safe
- * answer; the server refuses any other currency anyway. `ready` is true once the request has settled
- * (loaded or failed).
+ * The deployment's payment mode, provider and the currencies its provider account can charge in.
+ * Until the options load (or if they fail) the mode is null and the currencies are NGN alone, the
+ * live-safe answer; the server refuses any other currency anyway. `ready` is true once the request
+ * has settled (loaded or failed).
  */
-export function useCheckoutOptions(): { mode: CheckoutOptions["mode"] | null; currencies: readonly CurrencyCode[]; ready: boolean } {
+export function useCheckoutOptions(): { mode: CheckoutOptions["mode"] | null; provider: PaymentProviderId; providerName: string; currencies: readonly CurrencyCode[]; ready: boolean } {
   const q = useOptions()
   const data = q.error ? undefined : q.data
   const currencies = data?.currencies?.length ? (data.currencies as CurrencyCode[]) : SAFE_CURRENCIES
-  return { mode: data?.mode ?? null, currencies, ready: !!data || !!q.error }
+  const provider: PaymentProviderId = data?.provider === "bachs" ? "bachs" : "paystack"
+  return { mode: data?.mode ?? null, provider, providerName: providerDisplayName(provider), currencies, ready: !!data || !!q.error }
 }

@@ -13,7 +13,7 @@ export type StartCheckoutRequest = {
   }
   shipping: { brandId: string; service: "standard" | "express" | "pickup" }[]
   expectedTotalMinor?: number
-  /** How the shopper chose to pay; Paystack's page offers that channel. Card details are typed only there. */
+  /** How the shopper chose to pay; the provider's hosted page (Paystack or Bachs) offers that method. Card details are typed only there. */
   paymentMethod?: "card" | "bank_transfer" | "ussd" | "mobile_money"
 }
 
@@ -33,7 +33,7 @@ export type CheckoutStartResponse = {
   failureReason: string | null
   payment: {
     id: string
-    provider: "paystack" | "stub"
+    provider: "paystack" | "bachs" | "stub"
     status: string
     reference: string
     authorizationUrl: string | null
@@ -67,4 +67,5 @@ export type CheckoutOrderSummary = {
 
 export type CheckoutOrdersPage = { items: CheckoutOrderSummary[]; nextCursor: string | null }
 /** GET /api/checkout/options: how this deployment takes payments. */
-export type CheckoutOptions = { mode: "off" | "stub" | "test" | "live"; currencies: string[] }
+/** `provider`: whose hosted page takes the payment (absent from an older server: treat as Paystack). */
+export type CheckoutOptions = { mode: "off" | "stub" | "test" | "live"; provider?: "paystack" | "bachs" | "stub" | "off"; currencies: string[] }

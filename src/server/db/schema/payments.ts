@@ -12,7 +12,7 @@ import { users } from "./people"
 
 export const CHECKOUT_STATUSES = ["pending_payment", "paid", "failed", "expired", "review"] as const
 export const PAYMENT_STATUSES = ["initialized", "succeeded", "failed", "abandoned", "review"] as const
-export const PAYMENT_PROVIDERS = ["paystack", "stub"] as const
+export const PAYMENT_PROVIDERS = ["paystack", "bachs", "stub"] as const
 export const REFUND_STATUSES = ["pending", "succeeded", "failed"] as const
 export const TRANSFER_STATUSES = ["pending", "succeeded", "failed"] as const
 export const PROVIDER_EVENT_STATUSES = ["received", "processed", "ignored", "failed"] as const

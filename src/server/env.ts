@@ -49,9 +49,10 @@ export type Env = {
   /**
    * Which payment provider checkout uses (YARD_PAYMENTS): "off" = checkout is closed ("Payments
    * open soon"), "stub" = nothing is charged (development, or an isolated demo deployment),
-   * "paystack" = PAYSTACK_SECRET_KEY. Production defaults to off.
+   * "paystack" = PAYSTACK_SECRET_KEY, "bachs" = BACHS_SECRET_KEY + BACHS_WEBHOOK_SECRET (Bachs
+   * collects into Yard's own account; Yard's ledger pays brands). Production defaults to off.
    */
-  payments: "off" | "stub" | "paystack"
+  payments: "off" | "stub" | "paystack" | "bachs"
 }
 
 const raw = z.object({
@@ -82,6 +83,10 @@ const raw = z.object({
   YARD_ALLOW_PGLITE_PRODUCTION: z.string().optional(),
   YARD_ALLOW_HTTP: z.string().optional(),
   PAYSTACK_SECRET_KEY: z.string().optional(),
+  BACHS_SECRET_KEY: z.string().optional(),
+  BACHS_WEBHOOK_SECRET: z.string().optional(),
+  BACHS_API_BASE: z.string().optional(),
+  BACHS_CHARGE_CURRENCIES: z.string().optional(),
 })
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined)
@@ -219,14 +224,21 @@ function parse(): Env {
   const paystackKey = blank(e.PAYSTACK_SECRET_KEY)
   const paymentsRaw = blank(e.YARD_PAYMENTS)?.toLowerCase()
   let payments: Env["payments"]
-  if (paymentsRaw && paymentsRaw !== "off" && paymentsRaw !== "stub" && paymentsRaw !== "paystack") {
-    problems.push("YARD_PAYMENTS must be off, stub or paystack")
+  if (paymentsRaw && paymentsRaw !== "off" && paymentsRaw !== "stub" && paymentsRaw !== "paystack" && paymentsRaw !== "bachs") {
+    problems.push("YARD_PAYMENTS must be off, stub, paystack or bachs")
     payments = "off"
   } else if (paymentsRaw) payments = paymentsRaw as Env["payments"]
   else payments = dev ? (paystackKey ? "paystack" : "stub") : "off"
   if (payments === "paystack" && (!paystackKey || paystackKey.length < 16)) {
     if (dev || building) payments = "stub"
     problems.push("YARD_PAYMENTS=paystack needs PAYSTACK_SECRET_KEY (sk_live_… or sk_test_…)")
+  }
+  if (payments === "bachs") {
+    const bachsProblems = bachsConfigProblems(e, { dev, building })
+    if (bachsProblems.length) {
+      if (dev || building) payments = "stub"
+      problems.push(...bachsProblems)
+    }
   }
   if (payments === "stub" && !dev && !seedDemo) problems.push("YARD_PAYMENTS=stub is for development or an isolated demo deployment (YARD_SEED_DEMO=1) only; use off until a provider is connected")
   if (!dev && !building && !paymentsRaw && paystackKey) log.once("env:paystack-off", "warn", "[yard] PAYSTACK_SECRET_KEY is set but YARD_PAYMENTS isn't: payments stay off. Set YARD_PAYMENTS=paystack to take payments.")
@@ -274,6 +286,46 @@ function parse(): Env {
     envName,
     payments,
   }
+}
+
+/**
+ * YARD_PAYMENTS=bachs needs (every problem is listed at once):
+ *  - BACHS_SECRET_KEY: sk_live_… (real payments) or sk_sandbox_…, at least 16 characters.
+ *  - BACHS_WEBHOOK_SECRET: the webhook endpoint's signing secret (whsec_…). Without it no Bachs
+ *    webhook can be verified, so payments would only be confirmed when the shopper comes back:
+ *    required in production.
+ *  - BACHS_API_BASE (optional): defaults to https://api.bachs.io for sk_live_ keys and
+ *    https://sandbox-api.bachs.io for sk_sandbox_ keys. Must be https:// in production
+ *    (YARD_ALLOW_HTTP=1 allows http:// for a local test against a mock).
+ *  - BACHS_CHARGE_CURRENCIES (optional, default NGN): comma separated, from NGN, GHS, KES, USD.
+ */
+function bachsConfigProblems(e: z.infer<typeof raw>, ctx: { dev: boolean; building: boolean }): string[] {
+  const out: string[] = []
+  const key = blank(e.BACHS_SECRET_KEY)
+  if (!key || key.length < 16) out.push("YARD_PAYMENTS=bachs needs BACHS_SECRET_KEY (sk_live_… for real payments)")
+  else if (!/^sk_(live|sandbox)_\S+$/.test(key)) out.push("BACHS_SECRET_KEY must be a Bachs secret key (sk_live_… or sk_sandbox_…)")
+  const hook = blank(e.BACHS_WEBHOOK_SECRET)
+  if (!hook || hook.length < 16) {
+    if (!ctx.dev && !ctx.building) out.push("YARD_PAYMENTS=bachs needs BACHS_WEBHOOK_SECRET (the whsec_… signing secret of the webhook endpoint registered at https://<domain>/api/webhooks/bachs)")
+    else log.once("env:bachs-webhook", "warn", "[yard] BACHS_WEBHOOK_SECRET is not set: Bachs webhooks are refused, so payments are confirmed only when the shopper returns.")
+  }
+  const base = blank(e.BACHS_API_BASE)
+  if (base) {
+    let u: URL | null = null
+    try {
+      u = new URL(base)
+    } catch {
+      out.push("BACHS_API_BASE must be a URL (default https://api.bachs.io)")
+    }
+    if (u && u.protocol !== "https:" && !(u.protocol === "http:" && (ctx.dev || on(e.YARD_ALLOW_HTTP)))) out.push("BACHS_API_BASE must start with https://")
+  }
+  const listed = (blank(e.BACHS_CHARGE_CURRENCIES) ?? "")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean)
+  const bad = listed.filter((c) => !["NGN", "GHS", "KES", "USD"].includes(c))
+  if (bad.length) out.push(`BACHS_CHARGE_CURRENCIES can only list NGN, GHS, KES and USD (not ${bad.join(", ")})`)
+  return out
 }
 
 /** The parsed configuration, memoised on globalThis. */

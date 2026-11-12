@@ -387,6 +387,15 @@ export async function runBatch(actor: AdminActor, batchId: string, ipHash: strin
 
   const results: { payoutId: string; status: string }[] = claimed.skipped.map((payoutId) => ({ payoutId, status: "on_hold" }))
   for (const p of claimed.rows) {
+    if (paymentsConfig().provider === "bachs") {
+      // Bachs collects into Yard's account (payout model A) and has no transfer to a brand's
+      // recipient: nothing is sent. The payout stays approved for the team to pay by hand.
+      await withTx(async (tx) => {
+        await tx.update(payouts).set({ status: "approved", lastError: "manual_payout_required", updatedAt: new Date() }).where(eq(payouts.id, p.id))
+      })
+      results.push({ payoutId: p.id, status: "approved" })
+      continue
+    }
     if (p.recipientProvider === "stub" && paymentsConfig().provider === "paystack") {
       // A stub recipient can never be paid by the live provider: send it back for a real account.
       await withTx(async (tx) => {
