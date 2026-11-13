@@ -29,14 +29,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import space.yardstore.app.core.models.Product
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.yard
 
 /**
- * A two-column masonry (Home, brand grids, saved, shop). Mirrors `MasonryGrid.swift`.
+ * A masonry grid (Home, brand grids, saved, shop). Mirrors `MasonryGrid.swift`. Two columns on
+ * phones, 3 on medium and 4 on expanded windows ([columns] defaults to
+ * `LocalYardWindow.current.gridColumns`; pass a number to override).
  *
  * Android: this IS the scroll container (a lazy staggered grid; each tile goes to the shorter
  * column by its measured height, in order, so new pages append without reshuffling). Put
@@ -66,10 +70,11 @@ fun <T> MasonryGrid(
     header: (LazyStaggeredGridScope.() -> Unit)? = null,
     footer: (LazyStaggeredGridScope.() -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
+    columns: Int = LocalYardWindow.current.gridColumns,
     content: @Composable (T) -> Unit,
 ) {
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = StaggeredGridCells.Fixed(columns.coerceAtLeast(1)),
         modifier = modifier,
         state = state,
         contentPadding = contentPadding,
@@ -103,6 +108,7 @@ fun MasonryGrid(
     header: (LazyStaggeredGridScope.() -> Unit)? = null,
     footer: (LazyStaggeredGridScope.() -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
+    columns: Int = LocalYardWindow.current.gridColumns,
     content: @Composable (Product) -> Unit,
 ) = MasonryGrid(
     items = products,
@@ -114,13 +120,15 @@ fun MasonryGrid(
     header = header,
     footer = footer,
     onLoadMore = onLoadMore,
+    columns = columns,
     content = content,
 )
 
 /**
- * A NON-lazy two-column masonry with the iOS greedy placement (each item goes to the column that
- * is shorter by estimated height: `heightRatio` × width + `extraHeight`). For short grids inside
- * a scrolling Column. For long lists use [MasonryGrid].
+ * A NON-lazy masonry with the iOS greedy placement (each item goes to the column that is
+ * shorter by estimated height: `heightRatio` × width + `extraHeight`). For short grids inside
+ * a scrolling Column. For long lists use [MasonryGrid]. [columns] defaults to
+ * `LocalYardWindow.current.gridColumns` (2 / 3 / 4).
  */
 @Composable
 fun <T> MasonryColumns(
@@ -132,11 +140,12 @@ fun <T> MasonryColumns(
     extraHeight: Dp = 0.dp,
     /** Tile image height ÷ width for an item (e.g. 1.25 for a 4:5 photo). */
     heightRatio: (T) -> Float,
+    columns: Int = LocalYardWindow.current.gridColumns,
     content: @Composable (T) -> Unit,
 ) {
-    val (left, right) = distributeMasonry(items, extraHeight.value, spacing.value, heightRatio)
+    val distributed = distributeMasonryColumns(items, columns, extraHeight.value, spacing.value, heightRatio)
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing), verticalAlignment = Alignment.Top) {
-        for (column in listOf(left, right)) {
+        for (column in distributed) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing)) {
                 for (item in column) {
                     androidx.compose.runtime.key(key(item)) { content(item) }
@@ -153,6 +162,7 @@ fun MasonryColumns(
     modifier: Modifier = Modifier,
     spacing: Dp = Spacing.gridGap,
     extraHeight: Dp = ProductTileDefaults.captionHeight,
+    columns: Int = LocalYardWindow.current.gridColumns,
     content: @Composable (Product) -> Unit,
 ) = MasonryColumns(
     items = products,
@@ -161,29 +171,41 @@ fun MasonryColumns(
     spacing = spacing,
     extraHeight = extraHeight,
     heightRatio = { 1f / ProductTileDefaults.clampedAspect(it.tileAspectRatio) },
+    columns = columns,
     content = content,
 )
 
-/** Greedy shortest-column placement, in order (the iOS `distribute()`), exposed for tests. */
+/** Greedy shortest-column placement into two columns, in order (the iOS `distribute()`), exposed for tests. */
 fun <T> distributeMasonry(items: List<T>, extraHeight: Float, spacing: Float, heightRatio: (T) -> Float): Pair<List<T>, List<T>> {
+    val (left, right) = distributeMasonryColumns(items, 2, extraHeight, spacing, heightRatio)
+    return left to right
+}
+
+/**
+ * Greedy shortest-column placement into [columns] columns, in order: each item goes to the
+ * shortest column (leftmost on ties). Always returns exactly `max(columns, 1)` lists.
+ */
+fun <T> distributeMasonryColumns(
+    items: List<T>,
+    columns: Int,
+    extraHeight: Float,
+    spacing: Float,
+    heightRatio: (T) -> Float,
+): List<List<T>> {
+    val n = columns.coerceAtLeast(1)
     val nominalWidth = 180f
-    val left = ArrayList<T>(items.size / 2 + 1)
-    val right = ArrayList<T>(items.size / 2 + 1)
-    var leftHeight = 0f
-    var rightHeight = 0f
+    val lists = List(n) { ArrayList<T>(items.size / n + 1) }
+    val heights = FloatArray(n)
     for (item in items) {
         val ratio = heightRatio(item)
         val safe = if (ratio.isFinite() && ratio > 0f) ratio else 1f
         val h = nominalWidth * safe + extraHeight + spacing
-        if (leftHeight <= rightHeight) {
-            left += item
-            leftHeight += h
-        } else {
-            right += item
-            rightHeight += h
-        }
+        var target = 0
+        for (c in 1 until n) if (heights[c] < heights[target]) target = c
+        lists[target] += item
+        heights[target] += h
     }
-    return left to right
+    return lists
 }
 
 private data class PreviewBlock(val id: Int, val ratio: Float)
@@ -211,3 +233,7 @@ private fun MasonryDarkPreview() = YardPreview(darkTheme = true) { MasonryPrevie
 @Preview(name = "Masonry — light")
 @Composable
 private fun MasonryLightPreview() = YardPreview(darkTheme = false) { MasonryPreviewContent() }
+
+@YardTabletPreviews
+@Composable
+private fun MasonryTabletPreview() = YardPreview(darkTheme = true) { MasonryPreviewContent() }

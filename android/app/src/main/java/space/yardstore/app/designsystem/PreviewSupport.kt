@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.app.Router
@@ -55,6 +56,7 @@ fun YardPreview(darkTheme: Boolean, signedIn: Boolean = true, content: @Composab
             LocalSavedStore provides saved,
             LocalRouter provides router,
             LocalToastCenter provides toast,
+            LocalYardWindow provides configurationYardWindow(),
         ) {
             YardToastHost(toast, Modifier.background(Color.yard.bg)) {
                 Box(content = content)
@@ -62,6 +64,16 @@ fun YardPreview(darkTheme: Boolean, signedIn: Boolean = true, content: @Composab
         }
     }
 }
+
+/**
+ * Tablet previews (840×1200dp portrait, 1280×800dp landscape). Every main screen adds these next to
+ * its phone previews (`YardPreview` provides `LocalYardWindow` from the preview size):
+ *
+ *   @YardTabletPreviews @Composable private fun OrdersTablet() = YardPreview(darkTheme = true) { OrdersListView() }
+ */
+@Preview(name = "Tablet portrait 840×1200", widthDp = 840, heightDp = 1200)
+@Preview(name = "Tablet landscape 1280×800", widthDp = 1280, heightDp = 800)
+annotation class YardTabletPreviews
 
 /** Small inline fixture values for previews. */
 object PreviewFixtures {

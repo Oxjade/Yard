@@ -42,6 +42,7 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.yard
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -173,3 +174,8 @@ private fun ProductTileDarkPreview() = YardPreview(darkTheme = true) { ProductTi
 @Preview(name = "ProductTile — light")
 @Composable
 private fun ProductTileLightPreview() = YardPreview(darkTheme = false) { ProductTilePreviewContent() }
+
+/** 3 columns at 840dp, 4 at 1280dp (`LocalYardWindow.gridColumns`). */
+@YardTabletPreviews
+@Composable
+private fun ProductTileTabletPreview() = YardPreview(darkTheme = false) { ProductTilePreviewContent() }

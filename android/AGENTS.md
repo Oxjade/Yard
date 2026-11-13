@@ -28,7 +28,9 @@ and behaviour (`src/app/api/**/route.ts`, `src/lib/api/**`, `src/server/**`).
 ## Hard facts
 
 - **Kotlin 2.1, Jetpack Compose (BOM 2025.06), Material 3 underneath but Yard's own look — never
-  stock Material styling.** minSdk 26, target/compile SDK 35, portrait, phone.
+  stock Material styling.** minSdk 26, target/compile SDK 35. Phones (smallest width < 600dp) are
+  portrait-only; tablets, foldables and large windows rotate and resize — every screen must adapt
+  (see **Tablet & large screens**).
 - **Libraries are fixed** (`gradle/libs.versions.toml`): Compose, material3 + material-icons-extended,
   navigation-compose, lifecycle-viewmodel-compose, kotlinx-serialization-json, OkHttp, Coil 3,
   DataStore, androidx.browser (Custom Tabs), core-splashscreen. **Do not add dependencies or edit
@@ -206,6 +208,7 @@ WebPages.open(context, Config.webUrl(page.path), darkTheme = Color.yard.isDark) 
 - Tab pill: visible only on tab roots with no sheet. Tab roots: bottom padding `LocalTabPillClearance.current`;
   `Modifier.tabPillScrollSensor()` on the root's scrolling container collapses the pill while scrolling
   down; `router.isTabPillSuppressed = true` hides it (reset in `DisposableEffect` onDispose).
+  On wide windows a vertical `TabRail` replaces the pill on every tab screen (`isTabPillSuppressed` hides it too).
 - Sign-in gate: `if (!session.isSignedIn) { router.present(Route.SignIn); return }`. SignInView calls
   `session.didSignIn()` then `router.dismissSheet()`; the root reloads cart/follows/saved when the shopper changes.
 
@@ -275,8 +278,8 @@ Components (`designsystem/components/`, trailing lambda = action):
 - `Chip(title, modifier, icon, isSelected, isEnabled, count) { }`; `ChipRow { Chip(…) }` (horizontal scroll with gutters)
 - `Tag(text, modifier, style = TagStyle.Neutral|Acid|Violet|Danger|Success|OnPhoto, icon)`
 - `RemoteImage(url /* absolute or /api/media path */, modifier /* size it! */, contentScale = Crop, maxPixelSize = 1200, contentDescription) { failure placeholder }` — shimmer, fade-in, Coil caches (~700 px tiles, 1600 full screen)
-- `MasonryGrid(products, modifier, spacing, state, contentPadding, header = { item(span = StaggeredGridItemSpan.FullLine) { … } }, footer, onLoadMore) { product -> … }` and generic `MasonryGrid(items, key = { it.id }, …)` — the grid IS the lazy scroll container; `MasonryColumns(products) { }` non-lazy for short grids inside a scrolling Column
-- `MasonrySkeleton(count = 8)`, `Skeleton(modifier, cornerRadius, shape = SkeletonShape.Rounded|Circle|Capsule)`, `Modifier.shimmering()`
+- `MasonryGrid(products, modifier, spacing, state, contentPadding, header = { item(span = StaggeredGridItemSpan.FullLine) { … } }, footer, onLoadMore, columns) { product -> … }` and generic `MasonryGrid(items, key = { it.id }, …)` — the grid IS the lazy scroll container; `MasonryColumns(products, columns = …) { }` non-lazy for short grids inside a scrolling Column. `columns` defaults to `LocalYardWindow.current.gridColumns` (2 / 3 / 4)
+- `MasonrySkeleton(count, columns)` (defaults follow `gridColumns`), `Skeleton(modifier, cornerRadius, shape = SkeletonShape.Rounded|Circle|Capsule)`, `Modifier.shimmering()`
 - `ProductTile(product, modifier, showsBrand, showsPrice, showsSaveButton, maxPixelSize = 700)` — save heart wired to SavedStore (signed-out → Sign in sheet); navigate with `Modifier.pressableClick { router.push(Route.Product(product.slug)) }`. `ProductTileDefaults.captionHeight / clampedAspect`
 - `BrandAvatar(name, modifier, logoUrl, size = 40.dp, verified)`
 - `PriceText(minor, currency, modifier, compareAtMinor, style, color)`, `PriceText(money = …)`, `PriceText(product = …)`
@@ -288,7 +291,8 @@ Components (`designsystem/components/`, trailing lambda = action):
 - `QuantityStepper(value, modifier, range = 0..10, isBusy) { newQty -> }`
 - `Card(modifier, padding = 16.dp, background) { }`, `Modifier.yardCard()`, `Modifier.yardScreenBackground()`, `YardDivider()`
 - `SettingsRow(title, icon, modifier, value, tint, showsChevron) { optional accessory }`, `YardSwitch(checked, onCheckedChange)`
-- `YardSheet(onDismissRequest, skipPartiallyExpanded = false) { YardSheetHeader(title, subtitle) { close } … }`
+- `YardSheet(onDismissRequest, skipPartiallyExpanded = false, presentAsDialogOnWide = false) { YardSheetHeader(title, subtitle) { close } … }`; `YardDialogSheet(onDismissRequest, maxWidth = 560.dp) { }` (centered dialog surface for wide windows)
+- `AdaptiveContent(modifier, maxWidth = LocalYardWindow.current.contentMaxWidth) { }`, `Modifier.adaptiveContentWidth()`, `ListDetailLayout(list = { }, detail = { }, twoPane = isExpanded)` — see **Tablet & large screens**
 - `YardTopBar(title, back = LocalBackAction.current) { actions }` (Android-only), `LocalBackAction`
 - `YardLogo(modifier.height(28.dp), color = Color.yard.acid)`, `YardLogoShape`
 - `FeaturePlaceholder(title)` — placeholders only
@@ -304,11 +308,82 @@ Components (`designsystem/components/`, trailing lambda = action):
 `.shopper` are preview-only. One light and one dark preview per main screen (previews of screens that
 load from the network show their loading/empty state — that's fine; preview sub-components with fixtures).
 
+## Tablet & large screens
+
+The app runs on phones, tablets, foldables and resizable windows. Phones stay portrait; everything
+else rotates and resizes **in place** (the activity handles size changes itself, so state is kept —
+still keep user input in `rememberSaveable` and screen data in a `ViewModel`, which also survive
+process death / dark-mode switches). Design for width, never for "phone vs tablet".
+
+**`LocalYardWindow.current`** (`designsystem/YardWindow.kt`) is the only source of size decisions:
+
+| | Compact < 600dp | Medium 600–839dp | Expanded ≥ 840dp |
+|---|---|---|---|
+| `widthClass` | `YardWidthClass.Compact` | `.Medium` | `.Expanded` |
+| `isWide` | false | true | true |
+| `isExpanded` | false | false | true |
+| `gridColumns` | 2 | 3 | 4 |
+| `contentMaxWidth` | `Dp.Unspecified` (fill) | 720dp | 960dp |
+| `sheetIsDialog` (route sheets) | false (bottom sheet) | true (centered, ≤ 560dp) | true |
+| Tabs | floating bottom pill | vertical rail at the start | vertical rail |
+
+Also `heightClass` (Compact < 480, Medium < 900, Expanded), `width`, `height`, `isLandscape`.
+Never read `LocalConfiguration` or screen metrics for layout yourself.
+
+The shell handles: the tab rail (content is already offset so nothing sits under it — don't add a
+start padding for it), `LocalTabPillClearance` (only the nav-bar inset on wide windows — keep adding
+it as before), route sheets as centered dialogs, centered toasts.
+
+Rules every screen follows:
+
+1. **Grids** — `MasonryGrid` / `MasonryColumns` / `MasonrySkeleton` already use `gridColumns`. Any
+   other grid (`LazyVerticalGrid` of brands, categories, drops) uses `GridCells.Fixed(window.gridColumns)`
+   (or `+ 1` for small cards), never a hard-coded 2. Horizontal rails (`LazyRow`) keep their item
+   width; they just show more items.
+2. **Forms, detail and reading screens** (sign in, checkout, addresses, settings rows, legal,
+   notification prefs, order detail, drop detail, conversation thread) wrap their content in
+   `AdaptiveContent(Modifier.weight(1f) /* or fillMaxSize */) { … }` (or `Modifier.adaptiveContentWidth()` on
+   a single child) so lines never stretch to 1280dp. Backgrounds and hero photos stay full-bleed;
+   only the readable content is capped.
+3. **List → detail** uses `ListDetailLayout(list = { … }, detail = { … })`: two panes on Expanded,
+   list only otherwise (then push the detail route as on phones). Keep the selection in
+   `rememberSaveable`; show an honest `EmptyState` in the detail pane when nothing is selected; the
+   detail pane hides its back button (provide `LocalBackAction provides null` around it). Required for:
+   **Inbox → Conversation**, **Orders → Order detail**, **Settings (You › Settings) → its sub-pages** on Expanded.
+4. **Product detail** on Medium+ (`isWide`): two columns — gallery on the left (≈ 55–60%, sticky or
+   its own scroll), buy box (title, price, options, add to bag, details) on the right in its own
+   scroll; one column on Compact.
+5. **Brand profile** on Medium+: a shorter hero (≈ 280–320dp instead of the phone's tall hero,
+   content max width for the brand info) and the product grid at `gridColumns` (3–4).
+6. **Home / Search / Shop / Saved / Drops / Charts**: grids at `gridColumns`; section headers and
+   carousels keep their gutters; full-width hero cards cap their height (don't scale a 4:5 phone hero to 1280dp wide —
+   use `heightIn(max = 420.dp)` or a wider aspect on `isWide`).
+7. **Sheets**: `router.present(…)` already becomes a centered dialog on wide windows. Your own
+   `YardSheet`s are bottom sheets capped at 640dp; pass `presentAsDialogOnWide = true` for tall,
+   screen-like sheets.
+8. **Previews**: every main screen adds tablet previews next to the phone ones —
+   `@YardTabletPreviews` (840×1200dp portrait + 1280×800dp landscape), e.g.
+   `@YardTabletPreviews @Composable private fun OrdersTablet() = YardPreview(darkTheme = true) { OrdersListView() }`.
+   `YardPreview` provides `LocalYardWindow` from the preview size.
+
+```kotlin
+val window = LocalYardWindow.current
+if (window.isWide) {
+    Row(Modifier.fillMaxSize()) {
+        ProductGallery(product, Modifier.weight(0.58f).fillMaxHeight())
+        BuyBox(product, Modifier.weight(0.42f).fillMaxHeight().verticalScroll(rememberScrollState()))
+    }
+} else {
+    LazyColumn { … }
+}
+```
+
 ## Done means
 
 - Every screen in your package mirrors its iOS counterpart, works in light and dark mode, has loading
   (skeleton), empty, error and (where relevant) signed-out states, uses only theme tokens and shared
-  components, calls the real API, and has light + dark `@Preview`s.
+  components, calls the real API, follows **Tablet & large screens**, and has light + dark phone
+  `@Preview`s plus `@YardTabletPreviews`.
 - `cd android && ./gradlew :app:compileDebugKotlin` passes (and `:app:testDebugUnitTest` if you added tests).
 - Write `android/Docs/<your-folder>.md` (short): screens, endpoints used, anything not mirrored or unfinished.
 - Don't commit or push; the orchestrator does.

@@ -291,6 +291,12 @@ class Router {
     val isTabPillVisible: Boolean get() = depth == 0 && !isTabPillSuppressed && sheet == null
 
     /**
+     * Whether the vertical tab rail (wide windows) is visible: on every screen of every tab (the
+     * shell keeps content clear of it), hidden only while [isTabPillSuppressed].
+     */
+    val isTabRailVisible: Boolean get() = !isTabPillSuppressed
+
+    /**
      * Opens a deep link. Tab roots switch tabs; other routes push on the current tab.
      * Returns false when the URL isn't an app destination (open it in a Custom Tab instead).
      */

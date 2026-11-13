@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
@@ -41,6 +42,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +51,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import space.yardstore.app.core.networking.APIError
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
@@ -153,9 +156,15 @@ fun YardToastHost(center: ToastCenter, modifier: Modifier = Modifier, content: @
         val toast = center.current
         var last by remember { mutableStateOf<Toast?>(null) }
         if (toast != null) last = toast
+        // Wide windows: a centered capsule capped at 480dp instead of one that can span the window.
+        val maxToastWidth = if (LocalYardWindow.current.isWide) 480.dp else Dp.Unspecified
         AnimatedVisibility(
             visible = toast != null,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = Spacing.gutter, vertical = Spacing.s),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = Spacing.gutter, vertical = Spacing.s)
+                .widthIn(max = maxToastWidth),
             enter = slideInVertically { -it } + fadeIn(),
             exit = slideOutVertically { -it } + fadeOut(),
         ) {

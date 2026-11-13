@@ -39,7 +39,29 @@ back handlers are detached). `router.present(route)` shows a `YardSheet` with it
 has not been opened yet are queued and replayed. Android back pops the current tab; on a non-Home
 tab root it returns to Home first. Push/pop animate like iOS (slide from the right).
 
-Tests (`app/src/test/…`): `RouteTest` (every `Route.fromUrl` case + Router queueing), `FormattersTest`
+Large screens: `designsystem/YardWindow.kt` (`YardWidthClass` / `YardHeightClass` with Material
+breakpoints 600/840 and 480/900dp, `YardWindow` with `isWide`, `isExpanded`, `gridColumns` 2/3/4,
+`contentMaxWidth` unspecified/720/960, `sheetIsDialog`; `LocalYardWindow`; `ProvideYardWindow`
+measures the root with `BoxWithConstraints`, so it follows rotation, resize and fold/unfold) — no
+window-size-class dependency. `designsystem/components/AdaptiveLayout.kt`: `AdaptiveContent`,
+`Modifier.adaptiveContentWidth()`, `ListDetailLayout` (two panes on Expanded; each pane re-provides
+`LocalYardWindow` with its own width but keeps the window's `sheetIsDialog`). The manifest has no
+orientation lock; `MainActivity.applyOrientationPolicy` keeps smallest-width < 600dp portrait (not
+in multi-window) and re-checks on fold/unfold. `configChanges` covers orientation / size / layout /
+keyboard, so rotation recomposes in place (back stacks, sheet, ViewModels, `remember` all kept);
+dark-mode changes still recreate (state restored by `rememberSaveable` / `rememberNavController`).
+Shell on wide windows: `TabRail` (vertical twin of `TabPill`, visible on every tab screen unless
+`isTabPillSuppressed`; `router.isTabRailVisible`), the tab stacks are offset by
+`TabRailDefaults.reservedWidth` + the start inset, `LocalTabPillClearance` = nav-bar inset only,
+`router.present` sheets render through `YardDialogSheet` (≤ 560 × 820dp, centered), toasts cap at
+480dp. Tab stacks keep one position in the tree for every size so switching classes never
+recreates them; the route sheet's content is recreated when it switches between bottom sheet and
+dialog (fold/unfold while a sheet is up). `MasonryGrid`/`MasonryColumns`/`MasonrySkeleton` take
+`columns` (default `gridColumns`); `distributeMasonryColumns` is the n-column greedy placement.
+`@YardTabletPreviews` = 840×1200 + 1280×800dp previews.
+
+Tests (`app/src/test/…`): `YardWindowTest` (size-class thresholds, gridColumns, contentMaxWidth,
+pane windows, list-pane width, n-column masonry, phone orientation policy, rail visibility), `RouteTest` (every `Route.fromUrl` case + Router queueing), `FormattersTest`
 (money for USD/NGN/MXN/KES/JPY/GBP, counts, countdown, relative/future dates, YardDate, Config URLs),
 `APIErrorTest`, `ModelDecodingTest` (realistic JSON for products, brands, session, cart, drops,
 follows/wishlist, storefront), `APIClientTest` (MockWebServer: headers, Origin/Content-Type, query
@@ -49,6 +71,8 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
 
 - **Material blur**: `.ultraThinMaterial` (tab pill, glass buttons, toasts, save heart) is a
   translucent `surface` fill with a hairline; Compose has no backdrop blur below API 31.
+- **iPad vs Android tablets**: iOS uses size classes + a sidebar/split view; Android uses
+  `LocalYardWindow` + `TabRail` + `ListDetailLayout` (no material3-adaptive dependency).
 - **Fonts**: SF Pro Compressed Black → the device's `sans-serif-condensed` at Black/Bold (no bundled
   font). Continuous ("squircle") corners → plain rounded corners. Dynamic Type → `sp` font scaling.
 - **matchedGeometryEffect** (tab-pill selection, tile → detail): the pill indicator slides with a spring;

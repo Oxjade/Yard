@@ -14,6 +14,18 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalLayoutDirection
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.ProvideYardWindow
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +36,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -102,8 +115,20 @@ import kotlin.math.sign
  * Bottom space a screen must leave for the floating tab pill: `Spacing.tabPillClearance` + the
  * navigation-bar inset on tab roots, 0 on pushed screens and sheets. Add it to your scrolling
  * content's bottom padding (iOS gets this from `.safeAreaPadding(.bottom, …)` on tab roots).
+ * On wide windows there is no bottom pill (the vertical [TabRail] is used), so tab roots get only
+ * the navigation-bar inset; the shell already keeps every tab screen clear of the rail at the start.
  */
 val LocalTabPillClearance = compositionLocalOf { 0.dp }
+
+/** Sizes of the vertical tab rail shown on wide windows. */
+object TabRailDefaults {
+    /** The rail capsule's width (5dp padding + 58dp buttons + 5dp padding). */
+    val railWidth: Dp = 68.dp
+    /** Space between the window's start edge (after insets) and the rail, and between the rail and content. */
+    val margin: Dp = Spacing.m
+    /** Start space the shell reserves for the rail (content starts after it), excluding the start inset. */
+    val reservedWidth: Dp = margin + railWidth + margin
+}
 
 /**
  * The app shell: one NavHost (back stack) per tab, the floating tab pill, the route sheet and the
@@ -130,23 +155,52 @@ fun RootView(container: AppContainer) {
         var visitedTabs by rememberSaveable { mutableStateOf(setOf(AppTab.Home.name)) }
         LaunchedEffect(router.selectedTab) { visitedTabs = visitedTabs + router.selectedTab.name }
 
-        YardToastHost(toast, Modifier.fillMaxSize().background(Color.yard.bg)) {
-            for (tab in AppTab.entries) {
-                if (tab.name in visitedTabs) {
-                    key(tab) { TabStack(tab, router, selected = router.selectedTab == tab) }
+        ProvideYardWindow {
+            val wide = LocalYardWindow.current.isWide
+            val railVisible = wide && router.isTabRailVisible
+            val startInset = WindowInsets.safeDrawing.only(WindowInsetsSides.Start).asPaddingValues()
+                .calculateStartPadding(LocalLayoutDirection.current)
+            // Content always starts after the rail on wide windows, so no screen sits under it.
+            val railReserve by animateDpAsState(
+                if (railVisible) TabRailDefaults.reservedWidth + startInset else 0.dp,
+                Motion.spring(),
+                label = "rail-reserve",
+            )
+
+            YardToastHost(toast, Modifier.fillMaxSize().background(Color.yard.bg)) {
+                // The tab stacks keep the same position in the tree for every window size, so
+                // rotating or unfolding never recreates a back stack.
+                Box(Modifier.fillMaxSize().padding(start = railReserve)) {
+                    for (tab in AppTab.entries) {
+                        if (tab.name in visitedTabs) {
+                            key(tab) { TabStack(tab, router, selected = router.selectedTab == tab, wide = wide) }
+                        }
+                    }
+                }
+                AnimatedVisibility(
+                    visible = !wide && router.isTabPillVisible,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut(),
+                ) {
+                    TabPill(Modifier.navigationBarsPadding().padding(bottom = Spacing.s))
+                }
+                AnimatedVisibility(
+                    visible = railVisible,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    enter = slideInHorizontally { -it } + fadeIn(),
+                    exit = slideOutHorizontally { -it } + fadeOut(),
+                ) {
+                    TabRail(
+                        Modifier
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
+                            .padding(start = TabRailDefaults.margin),
+                    )
                 }
             }
-            AnimatedVisibility(
-                visible = router.isTabPillVisible,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut(),
-            ) {
-                TabPill(Modifier.navigationBarsPadding().padding(bottom = Spacing.s))
-            }
-        }
 
-        RouteSheetHost(router)
+            RouteSheetHost(router)
+        }
 
         // Android back on a non-Home tab root goes to Home first (then leaves the app).
         BackHandler(enabled = router.sheet == null && router.depth == 0 && router.selectedTab != AppTab.Home) {
@@ -186,7 +240,7 @@ private class DetachedBackOwner(override val lifecycle: Lifecycle) : OnBackPress
 }
 
 @Composable
-private fun TabStack(tab: AppTab, router: Router, selected: Boolean) {
+private fun TabStack(tab: AppTab, router: Router, selected: Boolean, wide: Boolean) {
     val controller: NavHostController = rememberNavController()
     DisposableEffect(controller) {
         router.attach(tab, controller)
@@ -195,7 +249,10 @@ private fun TabStack(tab: AppTab, router: Router, selected: Boolean) {
     val realOwner = LocalOnBackPressedDispatcherOwner.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val detached = remember(lifecycle) { DetachedBackOwner(lifecycle) }
-    val clearance = Spacing.tabPillClearance + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Read through a State inside the NavHost builder so a change (rotation, wide ↔ compact) never
+    // rebuilds the nav graph.
+    val clearance = rememberUpdatedState(if (wide) navBarBottom else Spacing.tabPillClearance + navBarBottom)
 
     Box(
         Modifier
@@ -219,7 +276,7 @@ private fun TabStack(tab: AppTab, router: Router, selected: Boolean) {
                 popExitTransition = popExit,
             ) {
                 composable<TabRoot> {
-                    CompositionLocalProvider(LocalBackAction provides null, LocalTabPillClearance provides clearance) {
+                    CompositionLocalProvider(LocalBackAction provides null, LocalTabPillClearance provides clearance.value) {
                         when (tab) {
                             AppTab.Home -> HomeView()
                             AppTab.Search -> SearchView(query = "")
@@ -245,12 +302,13 @@ private fun TabStack(tab: AppTab, router: Router, selected: Boolean) {
 private fun RouteSheetHost(router: Router) {
     var shown by remember { mutableStateOf<Route?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val dialog = LocalYardWindow.current.sheetIsDialog
     LaunchedEffect(router.sheet) {
         val target = router.sheet
         if (target != null) {
             shown = target
         } else if (shown != null) {
-            runCatching { sheetState.hide() }
+            if (!dialog) runCatching { sheetState.hide() }
             shown = null
         }
     }
@@ -259,6 +317,8 @@ private fun RouteSheetHost(router: Router) {
     YardSheet(
         onDismissRequest = { router.dismissSheet(); shown = null },
         sheetState = sheetState,
+        // Wide windows: a centered dialog surface (max 560dp) instead of a full-width bottom sheet.
+        presentAsDialogOnWide = true,
     ) {
         key(route) {
             YardToastHost(toast, Modifier.fillMaxSize()) {
@@ -359,6 +419,64 @@ fun TabPill(modifier: Modifier = Modifier) {
                     Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                     if (tab == AppTab.Bag) {
                         BagBadge(cart.count, Modifier.align(Alignment.TopEnd).offset(x = (-6).dp, y = 4.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The wide-window version of [TabPill]: the same translucent capsule, icons, acid selection and
+ * Bag badge, stacked vertically and floating at the start edge (centered vertically). Shown on
+ * Medium/Expanded windows instead of the bottom pill; it does not collapse on scroll.
+ */
+@Composable
+fun TabRail(modifier: Modifier = Modifier) {
+    val router = LocalRouter.current
+    val cart = LocalCartStore.current
+    val haptics = LocalHapticFeedback.current
+    val buttonSize = 58.dp
+    val gap = 6.dp
+    val index = AppTab.entries.indexOf(router.selectedTab)
+    val indicatorY by animateDpAsState((buttonSize + gap) * index, Motion.spring(), label = "rail-indicator")
+
+    Box(
+        modifier
+            .width(TabRailDefaults.railWidth)
+            .shadow(18.dp, YardShapes.pill, ambientColor = Color.yard.scrim.copy(alpha = 0.22f), spotColor = Color.yard.scrim.copy(alpha = 0.22f))
+            .background(Color.yard.surface.copy(alpha = 0.9f), YardShapes.pill)
+            .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
+            .padding(5.dp)
+            .selectableGroup(),
+    ) {
+        Box(
+            Modifier
+                .offset(y = indicatorY)
+                .size(buttonSize)
+                .background(Color.yard.acid, YardShapes.pill),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            for (tab in AppTab.entries) {
+                val isSelected = router.selectedTab == tab
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.ink, Motion.snappy(), label = "rail-tint")
+                val label = if (tab == AppTab.Bag && cart.count > 0) "Bag, ${cart.count} item${if (cart.count == 1) "" else "s"}" else tab.title
+                Box(
+                    Modifier
+                        .size(buttonSize)
+                        .semantics {
+                            contentDescription = label
+                            this.selected = isSelected
+                        }
+                        .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+                            if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            router.select(tab)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                    if (tab == AppTab.Bag) {
+                        BagBadge(cart.count, Modifier.align(Alignment.TopEnd).offset(x = (-6).dp, y = 6.dp))
                     }
                 }
             }

@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardPreview
@@ -112,16 +113,25 @@ fun Modifier.shimmering(active: Boolean = true): Modifier = composed {
 
 /**
  * A loading placeholder shaped like a `MasonryGrid` of product tiles (non-lazy; put it where the grid goes).
+ * [columns] defaults to `LocalYardWindow.current.gridColumns` (2 / 3 / 4); [count] defaults to
+ * four rows' worth (8 on phones).
  *
- *   if (isLoading) MasonrySkeleton(count = 8)
+ *   if (isLoading) MasonrySkeleton()
  */
 @Composable
-fun MasonrySkeleton(modifier: Modifier = Modifier, count: Int = 8, spacing: Dp = Spacing.gridGap, showsCaption: Boolean = true) {
+fun MasonrySkeleton(
+    modifier: Modifier = Modifier,
+    count: Int = LocalYardWindow.current.gridColumns * 4,
+    spacing: Dp = Spacing.gridGap,
+    showsCaption: Boolean = true,
+    columns: Int = LocalYardWindow.current.gridColumns,
+) {
     val aspects = floatArrayOf(0.75f, 0.62f, 0.8f, 0.7f, 0.66f, 0.85f, 0.72f, 0.6f)
+    val n = columns.coerceAtLeast(1)
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing), verticalAlignment = Alignment.Top) {
-        for (offset in 0..1) {
+        for (offset in 0 until n) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing + if (showsCaption) 4.dp else 0.dp)) {
-                for (i in offset until count step 2) {
+                for (i in offset until count step n) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Skeleton(Modifier.fillMaxWidth().aspectRatio(aspects[i % aspects.size]))
                         if (showsCaption) {

@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
@@ -13,11 +14,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Yard.Starting">
 
+        <!-- No orientation lock: MainActivity keeps phones (smallest width < 600dp) portrait and lets
+             tablets / foldables rotate. Size changes are handled in place (configChanges) so state is kept. -->
         <activity
             android:name=".app.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="portrait"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Yard.Starting">
             <intent-filter>

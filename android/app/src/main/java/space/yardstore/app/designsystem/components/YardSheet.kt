@@ -1,6 +1,25 @@
 package space.yardstore.app.designsystem.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.Radius
+import space.yardstore.app.designsystem.YardWindow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,8 +66,18 @@ fun YardSheet(
     skipPartiallyExpanded: Boolean = false,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded),
     showsGrabber: Boolean = true,
+    /**
+     * On wide windows (`LocalYardWindow.current.sheetIsDialog`) show a centered [YardDialogSheet]
+     * instead of a bottom sheet ([sheetState] is then unused). Route sheets (`router.present`) do this.
+     * Off by default: a plain YardSheet on a tablet is a bottom sheet capped at 640dp, centered.
+     */
+    presentAsDialogOnWide: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (presentAsDialogOnWide && LocalYardWindow.current.sheetIsDialog) {
+        YardDialogSheet(onDismissRequest = onDismissRequest, modifier = modifier, content = content)
+        return
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
@@ -61,6 +90,49 @@ fun YardSheet(
         dragHandle = if (showsGrabber) ({ YardSheetGrabber() }) else null,
         content = content,
     )
+}
+
+/**
+ * A sheet presented as a centered dialog surface on wide windows (iPad form sheet): `bg`
+ * background, 28dp corners, at most [maxWidth] wide and [maxHeight] tall (and 32dp clear of the
+ * window edges), over a scrim. Tapping the scrim or Android back calls [onDismissRequest].
+ * The content gets a bounded height, so `fillMaxSize()` content (a NavHost, a screen) works.
+ */
+@Composable
+fun YardDialogSheet(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    maxWidth: Dp = YardWindow.dialogSheetMaxWidth,
+    maxHeight: Dp = 820.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        BoxWithConstraints(
+            Modifier
+                .fillMaxSize()
+                .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val w = minOf(this.maxWidth, maxWidth)
+            val h = minOf(this.maxHeight, maxHeight)
+            Column(
+                modifier
+                    .size(width = w, height = h)
+                    .shadow(24.dp, RoundedCornerShape(Radius.sheet), ambientColor = Color.yard.scrim.copy(alpha = 0.3f), spotColor = Color.yard.scrim.copy(alpha = 0.3f))
+                    .clip(RoundedCornerShape(Radius.sheet))
+                    .background(Color.yard.bg)
+                    // Swallow taps so they don't reach the scrim's dismiss.
+                    .clickable(remember { MutableInteractionSource() }, indication = null) {},
+            ) {
+                CompositionLocalProvider(LocalContentColor provides Color.yard.ink) { content() }
+            }
+        }
+    }
 }
 
 /** The sheet grabber (36 × 5 pill in `ink3`). */
