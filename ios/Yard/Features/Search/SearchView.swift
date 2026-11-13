@@ -39,8 +39,8 @@ struct SearchHomeView: View {
     @State private var recents: [String] = []
     @FocusState private var isFieldFocused: Bool
 
-    init(model: SearchLiveModel = SearchLiveModel(), initialText: String = "", recents: [String]? = nil) {
-        _model = State(initialValue: model)
+    init(model: SearchLiveModel? = nil, initialText: String = "", recents: [String]? = nil) {
+        _model = State(initialValue: model ?? SearchLiveModel())
         _text = State(initialValue: initialText)
         _recents = State(initialValue: recents ?? SearchRecents.load())
     }
