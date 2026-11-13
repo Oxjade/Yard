@@ -58,13 +58,9 @@ const nextConfig = (phase: string): NextConfig => {
     // our own origin (the Studio PreviewFrame is a div), so frame-ancestors 'none' breaks nothing.
     // HSTS is set by the reverse proxy (deploy/), so a local http:// run isn't pinned to https.
     async headers() {
-      // Site photos and brand art in public/ change only with a deploy: browsers keep them a week
-      // instead of re-checking on every visit (Next's default for public/ is max-age=0).
-      const longLived = { key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=86400" };
+      // Cache-Control for public/ files can't be set here (Next overwrites it in production): Caddy
+      // sets it for /site, /brand and /media (server-scripts/yard-quickstart.sh).
       return [
-        { source: "/site/:path*", headers: [longLived] },
-        { source: "/brand/:path*", headers: [longLived] },
-        { source: "/media/:path*", headers: [longLived] },
         {
           source: "/((?!api/media/).*)",
           headers: [

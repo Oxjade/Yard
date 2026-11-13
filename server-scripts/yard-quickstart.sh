@@ -117,6 +117,9 @@ EOF
 cat > /etc/caddy/Caddyfile <<EOF
 $HOST {
 	encode zstd gzip
+	# Site photos and brand art change only with a deploy: browsers keep them a week.
+	@longlived path /site/* /brand/* /media/*
+	header @longlived >Cache-Control "public, max-age=604800, stale-while-revalidate=86400"
 	request_body {
 		max_size 25MB
 	}
