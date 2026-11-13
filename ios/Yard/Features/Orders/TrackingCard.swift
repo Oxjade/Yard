@@ -52,6 +52,8 @@ struct OrderTrackingSnapshot: Hashable, Sendable {
         let delivered = states.fulfilment == "delivered" || order.status == .delivered || deliveredOn != nil
         let estimate = delivery?.estimate
         let range = OrderText.range(estimate?.arrivalFrom, estimate?.arrivalTo)
+        let deliveredAtDay: String? = YardDate.parse(order.deliveredAt).map { (d: Date) -> String in Formatters.shortDate(d) }
+        let deliveredDay: String? = OrderText.day(deliveredOn) ?? deliveredAtDay
 
         let statusLabel: String
         let etaTitle: String
@@ -60,7 +62,7 @@ struct OrderTrackingSnapshot: Hashable, Sendable {
         if delivered {
             statusLabel = "Delivered"
             etaCaption = "Delivered"
-            etaTitle = OrderText.day(deliveredOn) ?? YardDate.parse(order.deliveredAt).map { Formatters.shortDate($0) } ?? "Delivered"
+            etaTitle = deliveredDay ?? "Delivered"
             progress = 1
         } else if out {
             statusLabel = "Out for delivery"
@@ -77,9 +79,12 @@ struct OrderTrackingSnapshot: Hashable, Sendable {
         let destinationCity = OrderText.nonEmpty(delivery?.shipTo?.city) ?? OrderText.nonEmpty(order.shipTo?.city) ?? OrderText.nonEmpty(order.summary.shipToPreview.city)
         let destination = destinationCity ?? OrderText.countryName(order.summary.shipToPreview.country) ?? "You"
         let shipped = OrderText.day(delivery?.shippedOn).map { "Shipped \($0)" }
-        let destinationDetail: String? = delivered
-            ? (OrderText.day(deliveredOn) ?? YardDate.parse(order.deliveredAt).map { Formatters.shortDate($0) }).map { "Delivered \($0)" }
-            : OrderText.day(estimate?.arrivalTo).map { "Est. \($0)" }
+        let destinationDetail: String?
+        if delivered {
+            destinationDetail = deliveredDay.map { (d: String) -> String in "Delivered \(d)" }
+        } else {
+            destinationDetail = OrderText.day(estimate?.arrivalTo).map { (d: String) -> String in "Est. \(d)" }
+        }
         let tracking = order.tracking
 
         return OrderTrackingSnapshot(

@@ -73,8 +73,8 @@ final class CheckoutModel {
     private var keyMethod: BagPaymentMethod?
     private var pollTask: Task<Void, Never>?
 
-    init(quotes: BagQuoteLoader = BagQuoteLoader()) {
-        self.quotes = quotes
+    init(quotes: BagQuoteLoader? = nil) {
+        self.quotes = quotes ?? BagQuoteLoader()
         self.country = BagMarkets.shipTo
         if let draft = CheckoutDraft.load() {
             name = draft.name

@@ -75,13 +75,24 @@ enum OrderTimelineBuilder {
         let estimate = delivery?.estimate
         let arrival: String? = OrderText.range(estimate?.arrivalFrom, estimate?.arrivalTo)
         let lastScan: String? = delivery?.events.last.flatMap { OrderText.nonEmpty($0.locationText) }
+        let paidDetail: String = reached >= 0
+            ? "Payment confirmed. The brand has your order and will start preparing it soon."
+            : "Not charged yet. The brand starts preparing it once the payment provider confirms payment."
+        let shippedDetail: String
+        if let lastScan {
+            shippedDetail = "Your parcel is with the carrier. Last seen in \(lastScan)."
+        } else if let arrival {
+            shippedDetail = "Your parcel is with the carrier. Estimated arrival \(arrival)."
+        } else {
+            shippedDetail = "Your parcel is with the carrier."
+        }
         let defs: [Def] = [
             Def(id: "paid", title: "Paid", date: paidDate, doneDetail: nil,
-                currentDetail: reached >= 0 ? "Payment confirmed. The brand has your order and will start preparing it soon." : "Not charged yet. The brand starts preparing it once the payment provider confirms payment."),
+                currentDetail: paidDetail),
             Def(id: "packed", title: "Packed", date: packedDate, doneDetail: nil,
                 currentDetail: "The brand is packing your order. Tracking follows when it ships."),
             Def(id: "shipped", title: "Shipped", date: shippedDate, doneDetail: nil,
-                currentDetail: lastScan.map { "Your parcel is with the carrier. Last seen in \($0)." } ?? (arrival.map { "Your parcel is with the carrier. Estimated arrival \($0)." } ?? "Your parcel is with the carrier.")),
+                currentDetail: shippedDetail),
             Def(id: "out", title: "Out for delivery", date: outDate, doneDetail: nil,
                 currentDetail: "Your parcel is on the last stretch and should arrive today."),
             Def(id: "delivered", title: "Delivered", date: deliveredDate, doneDetail: "Something not right? You can request a return.",
@@ -115,7 +126,11 @@ enum OrderTimelineBuilder {
             case .done: detail = index == defs.count - 1 ? def.doneDetail : nil
             case .upcoming, .stopped: detail = nil
             }
-            result.append(OrderTimelineStep(id: def.id, title: index == 0 && reached < 0 && !paymentFailed ? "Awaiting payment" : def.title, date: state == .done || state == .current ? def.date : nil, detail: detail, state: state))
+            let awaitingPayment: Bool = index == 0 && reached < 0 && !paymentFailed
+            let title: String = awaitingPayment ? "Awaiting payment" : def.title
+            let showsDate: Bool = state == .done || state == .current
+            let date: Date? = showsDate ? def.date : nil
+            result.append(OrderTimelineStep(id: def.id, title: title, date: date, detail: detail, state: state))
         }
 
         if paymentFailed {

@@ -207,6 +207,8 @@ struct OrderConfirmationView: View {
     private func header(_ checkout: OrderCheckout, outcome: Outcome) -> some View {
         let single = model.orders.count == 1
         let brandName = model.orders.first?.brand.name
+        let withBrand: String = brandName.map { (name: String) -> String in " with \(name)" } ?? ""
+        let brandCount: Int = model.orders.count
         let title: String
         let subtitle: String
         let tone: OrderSuccessBadge.Tone
@@ -216,13 +218,13 @@ struct OrderConfirmationView: View {
             tone = .success
             subtitle = single
                 ? "Your payment went through and \(brandName ?? "the brand") is preparing your order."
-                : "Your payment went through and \(model.orders.count) brands are preparing their orders, each one shipping separately."
+                : "Your payment went through and \(brandCount) brands are preparing their orders, each one shipping separately."
         case .placed:
             title = "Order placed"
             tone = .success
             subtitle = single
-                ? "Your order\(brandName.map { " with \($0)" } ?? "") is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it."
-                : "Your checkout created \(model.orders.count) orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it."
+                ? "Your order\(withBrand) is in. Payment confirmation is pending: the brand starts preparing your order once the payment provider confirms it."
+                : "Your checkout created \(brandCount) orders, one per brand. Payment confirmation is pending: each brand starts preparing its order once the payment provider confirms it."
         case .notPaid:
             title = "Payment wasn’t completed"
             tone = .pending
