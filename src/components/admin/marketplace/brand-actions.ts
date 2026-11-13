@@ -125,13 +125,13 @@ export const brandAllowed: Record<BrandReviewStatus, BrandActionKey[]> = {
  * row offers what that status allows (Reinstate first) and Reject, not Approve.
  */
 export function allowedBrandActions(a: BrandApplication): BrandActionKey[] {
-  if (!a.onboardingId) return brandAllowed[a.status]
+  if (!a.onboardingId || a.reviewed) return brandAllowed[a.status]
   if (a.status === "pending_review") return ["approve", "reject"]
   return [...brandAllowed[a.status].filter((k) => k === "reinstate" || k === "suspend"), "reject"]
 }
 
 /** The keys a submitted application's own review endpoint decides; every other action changes the brand's status. */
-const reviewsApplication = (key: BrandActionKey, a: BrandApplication) => !!a.onboardingId && (key === "approve" || key === "reject")
+const reviewsApplication = (key: BrandActionKey, a: BrandApplication) => !!a.onboardingId && !a.reviewed && (key === "approve" || key === "reject")
 
 const plural = (n: number) => `${n} ${n === 1 ? "brand" : "brands"}`
 

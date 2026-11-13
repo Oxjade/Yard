@@ -28,13 +28,14 @@ export function fromOnboardingApplication(o: OnboardingApplicationDto): BrandApp
     country: business?.country ?? "—",
     category: brand?.category ?? "—",
     submittedAt: o.submittedAt ?? o.updatedAt,
-    status: "pending_review",
+    status: o.status === "approved" ? "verified" : "pending_review",
     kyc: "not_started",
     risk: "medium",
-    notes: `Submitted from Brand Studio onboarding. ${product?.name ? `First product: ${product.name}. ` : ""}${payout}`,
+    notes: `${o.status === "approved" ? "Approved" : "Submitted"} from Brand Studio onboarding. ${product?.name ? `First product: ${product.name}. ` : ""}${payout}`,
     products: product ? 1 : 0,
     brandId: o.brandId ?? undefined,
     onboardingId: o.id,
+    reviewed: o.status === "approved",
     application: o.data,
   }
 }

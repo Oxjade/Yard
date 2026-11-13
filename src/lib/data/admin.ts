@@ -52,6 +52,8 @@ export type BrandApplication = {
   products: number
   brandId?: string
   onboardingId?: string
+  /** The application was already approved: the brand is acted on by its status, not reviewed again. */
+  reviewed?: boolean
   /** What a submitted Studio application says (brand, business, first product, payout), for the review sheet. */
   application?: OnboardingApplicationDto["data"]
 }

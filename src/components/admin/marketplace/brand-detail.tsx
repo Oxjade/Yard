@@ -146,7 +146,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
 
       <DetailSection title="Links">
         <ul className="grid gap-1.5">
-          {app.brandId && !app.onboardingId ? (
+          {app.brandId && (!app.onboardingId || app.reviewed) ? (
             <li>
               <LinkRow href={`/brands/${app.handle}`} label="View storefront" hint={`/brands/${app.handle}`} />
             </li>
@@ -160,7 +160,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
               hint={cases.length ? `${plural(cases.length, "case")} for this brand, ${openCases} open` : "No cases for this brand"}
             />
           </li>
-          {app.brandId && !app.onboardingId ? (
+          {app.brandId && (!app.onboardingId || app.reviewed) ? (
             <li>
               <LinkRow href={`/admin/finance?tab=payouts&focus=po_${app.handle}`} label="Payouts and ledger" hint="This brand's payout in Finance" />
             </li>

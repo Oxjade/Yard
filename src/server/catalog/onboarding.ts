@@ -304,8 +304,11 @@ export async function submitOnboarding(actor: ShopperActor, body: { revision: nu
 /** Admin queue: submitted applications, oldest first. For the admin area's route. */
 export async function listSubmittedOnboardings(limit = 50) {
   const d = await db()
-  const rows = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "submitted")).orderBy(brandOnboardings.submittedAt).limit(Math.min(200, limit))
-  return { onboardings: rows.map(dto) }
+  const cap = Math.min(200, limit)
+  const submitted = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "submitted")).orderBy(brandOnboardings.submittedAt).limit(cap)
+  // Approved applications too (newest first), so a brand stays in Admin › Brands after it's approved.
+  const approved = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "approved")).orderBy(desc(brandOnboardings.reviewedAt)).limit(cap)
+  return { onboardings: [...submitted, ...approved].map(dto) }
 }
 
 /** A first-product SKU within Studio's 40-character limit (a longer one would block every later save in the editor); the size stays whole. */
