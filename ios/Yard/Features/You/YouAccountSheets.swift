@@ -14,6 +14,11 @@ struct YouAccountDetailsSheet: View {
     let security: YouSecurity?
     let onHelp: () -> Void
 
+    init(security: YouSecurity?, onHelp: @escaping () -> Void) {
+        self.security = security
+        self.onHelp = onHelp
+    }
+
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
 
@@ -64,6 +69,11 @@ struct YouAccountDetailsSheet: View {
 struct YouChangePasswordSheet: View {
     let hasPassword: Bool
     let onChanged: () -> Void
+
+    init(hasPassword: Bool, onChanged: @escaping () -> Void) {
+        self.hasPassword = hasPassword
+        self.onChanged = onChanged
+    }
 
     @Environment(ToastCenter.self) private var toast
     @Environment(\.dismiss) private var dismiss
@@ -155,6 +165,10 @@ private struct YouChangePasswordBody: Encodable, Sendable {
 @MainActor
 struct YouDeleteAccountSheet: View {
     let security: YouSecurity?
+
+    init(security: YouSecurity?) {
+        self.security = security
+    }
 
     @Environment(SessionStore.self) private var session
     @Environment(Router.self) private var router

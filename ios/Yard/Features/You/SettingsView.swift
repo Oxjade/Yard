@@ -330,6 +330,11 @@ struct YouRegionSheet: View {
     let mode: Mode
     let onChange: () -> Void
 
+    init(mode: Mode, onChange: @escaping () -> Void) {
+        self.mode = mode
+        self.onChange = onChange
+    }
+
     @Environment(CartStore.self) private var cart
     @Environment(\.dismiss) private var dismiss
     @State private var selected: String? = nil
