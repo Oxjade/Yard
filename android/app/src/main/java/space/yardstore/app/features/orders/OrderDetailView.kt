@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,7 +26,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +47,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -66,6 +65,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -94,7 +94,10 @@ import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.LocalBackAction
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.LocalToastCenter
 import space.yardstore.app.designsystem.components.PriceText
 import space.yardstore.app.designsystem.components.QuantityStepper
@@ -188,9 +191,30 @@ private suspend fun orderDetailReload(id: String, model: OrderDetailModel) {
     }
 }
 
+/**
+ * The order in the detail pane of Orders on Expanded windows (`OrdersListView`'s
+ * `ListDetailLayout`): no back button, "Back to orders" clears the selection via [onClose], and
+ * [onOrderChanged] lets the list beside it refresh after a cancel or a return request.
+ */
+@Composable
+internal fun OrderDetailPane(id: String, onClose: () -> Unit, onOrderChanged: () -> Unit) {
+    val model: OrderDetailModel = viewModel(key = "order-detail-$id") { OrderDetailModel() }
+    CompositionLocalProvider(LocalBackAction provides null) {
+        OrderDetailScreen(id, model, isPreview = false, onClose = onClose, onOrderChanged = onOrderChanged)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: Boolean) {
+internal fun OrderDetailScreen(
+    id: String,
+    model: OrderDetailModel,
+    isPreview: Boolean,
+    /** Replaces `router.pop()` for "Back to orders" (the detail pane clears its selection). */
+    onClose: (() -> Unit)? = null,
+    /** Called after the order changed here (cancelled, return requested). */
+    onOrderChanged: (() -> Unit)? = null,
+) {
     val router = LocalRouter.current
     val session = LocalSessionStore.current
     val toast = LocalToastCenter.current
@@ -209,6 +233,7 @@ internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: B
                 model.cancel(id)
                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                 toast.show("Order cancelled", Toast.Style.Success)
+                onOrderChanged?.invoke()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -224,7 +249,9 @@ internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: B
         when {
             !isPreview && !session.isSignedIn -> {
                 if (session.hasLoaded) {
-                    EmptyState.SignedOut(message = "Sign in to see your orders.") { router.present(Route.SignIn) }
+                    EmptyState.SignedOut(message = "Sign in to see your orders.", modifier = Modifier.adaptiveContentWidth()) {
+                        router.present(Route.SignIn)
+                    }
                 } else {
                     OrderDetailSkeleton()
                 }
@@ -241,12 +268,13 @@ internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: B
                 if (error is APIError && error.isNotFound) {
                     EmptyState(
                         "Order unavailable",
+                        modifier = Modifier.adaptiveContentWidth(),
                         message = "We couldn’t find this order.",
                         icon = Icons.Outlined.Inventory2,
                         actionTitle = "Back to orders",
-                    ) { router.pop() }
+                    ) { onClose?.invoke() ?: router.pop() }
                 } else {
-                    EmptyState.Error(error) { orderDetailReload(id, model) }
+                    EmptyState.Error(error, Modifier.adaptiveContentWidth()) { orderDetailReload(id, model) }
                 }
             }
             else -> OrderDetailSkeleton()
@@ -255,11 +283,13 @@ internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: B
 
     val order = model.order
     if (showsReturnSheet && order != null) {
-        YardSheet(onDismissRequest = { showsReturnSheet = false }, skipPartiallyExpanded = true) {
+        // A tall, screen-like form: a centered dialog on wide windows.
+        YardSheet(onDismissRequest = { showsReturnSheet = false }, skipPartiallyExpanded = true, presentAsDialogOnWide = true) {
             OrderReturnSheet(order, onClose = { showsReturnSheet = false }) { updated ->
                 model.order = updated
                 showsReturnSheet = false
                 toast.show("Return requested. The brand will review it.", Toast.Style.Success)
+                onOrderChanged?.invoke()
             }
         }
     }
@@ -269,7 +299,7 @@ internal fun OrderDetailScreen(id: String, model: OrderDetailModel, isPreview: B
         YardSheet(onDismissRequest = { showsCancelConfirm = false }, skipPartiallyExpanded = true) {
             Column(
                 Modifier
-                    .fillMaxWidth()
+                    .adaptiveContentWidth()
                     .navigationBarsPadding()
                     .padding(horizontal = Spacing.gutter, vertical = Spacing.l),
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -309,10 +339,12 @@ private fun OrderDetailLoaded(
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     OrderRefreshBox(onRefresh = onRefresh) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.s, bottom = Spacing.xxxl + bottom),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+        // Reading screen: content capped at the window's contentMaxWidth (720 / 960dp), centred.
+        OrderReadableList(
+            horizontal = Spacing.gutter,
+            top = Spacing.s,
+            bottom = Spacing.xxxl + bottom,
+            spacing = Spacing.xl,
         ) {
             item(key = "header") { OrderDetailHeader(order) }
             if (snapshot != null) {
@@ -596,6 +628,7 @@ private fun OrderDetailsTab(order: OrderDetail, isCancelling: Boolean, onCancel:
                                 .height(34.dp)
                                 .clip(YardShapes.pill)
                                 .background(Color.yard.surface2, YardShapes.pill)
+                                .semantics(mergeDescendants = true) { contentDescription = "Copy tracking number" }
                                 .pressableClick {
                                     copy("Tracking number", tracking.number)
                                     toast.show("Tracking number copied", Toast.Style.Success, Icons.Outlined.ContentCopy)
@@ -859,6 +892,7 @@ private fun OrderDetailSkeleton() {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState(), enabled = false)
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
@@ -881,5 +915,11 @@ private fun OrderDetailDarkPreview() = YardPreview(darkTheme = true) {
 @Preview(name = "OrderDetailView — light")
 @Composable
 private fun OrderDetailLightPreview() = YardPreview(darkTheme = false) {
+    OrderDetailScreen("or_1", OrderDetailModel(OrderPreviewData.detail, brandCity = "Lagos"), isPreview = true)
+}
+
+@YardTabletPreviews
+@Composable
+private fun OrderDetailTabletPreview() = YardPreview(darkTheme = true) {
     OrderDetailScreen("or_1", OrderDetailModel(OrderPreviewData.detail, brandCity = "Lagos"), isPreview = true)
 }

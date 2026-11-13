@@ -22,6 +22,20 @@ References: `06-order-confirmed-ticket.jpg`, `07-order-status-timeline.jpg`.
 - **TrackingCard** + `OrderTrackingSnapshot.from(order, brandCity)`: acid card, big ETA, route arc
   (dashed, solid travelled part via `PathMeasure`, marker at progress), Details / Track.
 
+## Tablet & large screens
+
+- **Orders → Order detail** (`OrdersListDetail`): `ListDetailLayout` on Expanded (≥ 840dp). The list
+  pane opens an order in the detail pane (selected row highlighted, selection in `rememberSaveable`);
+  nothing selected → "Pick an order" `EmptyState`. The pane hides back (`LocalBackAction provides null`),
+  "Back to orders" (not found) clears the selection, and a cancel / return request reloads the list.
+  Below Expanded a row pushes `Route.Order`; shrinking to Medium with an order open pushes it
+  (`OrdersPanes.handOff`). Medium: the single list is capped at 720dp, centred.
+- **Order detail**, **Order confirmation**: reading screens capped at `contentMaxWidth` via
+  `OrderReadableList` (a full-width `LazyColumn` whose side padding centres the content, so the
+  margins still scroll and pull to refresh); skeletons / empty states use `adaptiveContentWidth()`.
+  The return request is a dialog sheet on wide windows (`presentAsDialogOnWide`).
+- `@YardTabletPreviews` on the list (with and without a selection), detail and confirmation.
+
 ## Endpoints
 
 `GET /api/orders?limit=50&before=`, `GET /api/orders/{id}`, `GET /api/orders/checkouts/{checkoutId}`,
@@ -45,4 +59,4 @@ References: `06-order-confirmed-ticket.jpg`, `07-order-status-timeline.jpg`.
 `app/src/test/java/space/yardstore/app/features/orders/`: `OrderHelpersTest` (DTO decoding,
 text helpers, timeline, tracking snapshot, grouping/filtering) and `OrderModelsTest`
 (view models + OrdersAPI against MockWebServer: paging, errors, polling/verify/timeout, cancel,
-returns, path encoding). 34 tests.
+returns, path encoding), `OrdersTabletTest` (pane open/hand-off, readable inset, pane widths). 39 tests.

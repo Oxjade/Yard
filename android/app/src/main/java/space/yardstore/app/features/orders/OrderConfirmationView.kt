@@ -3,7 +3,6 @@ package space.yardstore.app.features.orders
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +25,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,8 +68,10 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.GlassIconButton
 import space.yardstore.app.designsystem.components.LocalToastCenter
 import space.yardstore.app.designsystem.components.Skeleton
@@ -236,18 +237,21 @@ internal fun OrderConfirmationScreen(checkoutId: String, model: OrderConfirmatio
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar(title = null, back = null) {
             Spacer(Modifier.weight(1f))
-            GlassIconButton(Icons.Filled.Close, "Close", size = 36.dp) { router.popToRoot() }
+            GlassIconButton(Icons.Filled.Close, "Close", Modifier.minimumInteractiveComponentSize(), size = 36.dp) { router.popToRoot() }
         }
         val checkout = model.checkout
         val error = model.error
         when {
             !session.isSignedIn && session.hasLoaded && !isPreview ->
-                EmptyState.SignedOut(message = "Sign in to see this order.") { router.present(Route.SignIn) }
+                EmptyState.SignedOut(message = "Sign in to see this order.", modifier = Modifier.adaptiveContentWidth()) {
+                    router.present(Route.SignIn)
+                }
             model.isLoading && checkout == null -> OrderConfirmationSkeleton()
-            error != null && checkout == null -> EmptyState.Error(error) { model.start(checkoutId).join() }
+            error != null && checkout == null -> EmptyState.Error(error, Modifier.adaptiveContentWidth()) { model.start(checkoutId).join() }
             checkout != null -> OrderConfirmationLoaded(checkoutId, checkout, model)
             else -> EmptyState(
                 "Order unavailable",
+                modifier = Modifier.adaptiveContentWidth(),
                 message = "We couldn’t find this checkout.",
                 icon = Icons.Outlined.Inventory2,
                 actionTitle = "See your orders",
@@ -261,11 +265,8 @@ private fun OrderConfirmationLoaded(checkoutId: String, checkout: OrderCheckout,
     val outcome = model.outcome(checkout)
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     OrderRefreshBox(onRefresh = { model.load(checkoutId) }) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.xxxl + bottom),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-        ) {
+        // Reading screen: the ticket and buttons stay at the window's contentMaxWidth, centred.
+        OrderReadableList(horizontal = Spacing.gutter, bottom = Spacing.xxxl + bottom, spacing = Spacing.xl) {
             item(key = "header") { OrderConfirmationHeader(model.orders, outcome) }
             if (outcome == OrderConfirmationOutcome.Placed && model.confirming != OrderConfirmationModel.Confirming.Idle) {
                 item(key = "confirming") { OrderConfirmingRow(model.confirming) { model.start(checkoutId) } }
@@ -393,7 +394,7 @@ private fun OrderConfirmationTicket(checkout: OrderCheckout, orders: List<OrderS
                         color = Color.yard.ink2,
                     )
                 }
-                GlassIconButton(Icons.Outlined.ContentCopy, "Copy order ID", size = 36.dp) {
+                GlassIconButton(Icons.Outlined.ContentCopy, "Copy order ID", Modifier.minimumInteractiveComponentSize(), size = 36.dp) {
                     copy("Order ID", reference)
                     toast.show("Order ID copied", Toast.Style.Success, Icons.Outlined.ContentCopy)
                 }
@@ -483,6 +484,7 @@ private fun OrderConfirmationSkeleton() {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState(), enabled = false)
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
@@ -555,6 +557,12 @@ private fun OrderConfirmationDarkPreview() = YardPreview(darkTheme = true) {
 @Preview(name = "OrderConfirmationView — light")
 @Composable
 private fun OrderConfirmationLightPreview() = YardPreview(darkTheme = false) {
+    OrderConfirmationScreen("co_1", OrderConfirmationModel(OrderPreviewData.checkout, OrderPreviewData.summaries), isPreview = true)
+}
+
+@YardTabletPreviews
+@Composable
+private fun OrderConfirmationTabletPreview() = YardPreview(darkTheme = true) {
     OrderConfirmationScreen("co_1", OrderConfirmationModel(OrderPreviewData.checkout, OrderPreviewData.summaries), isPreview = true)
 }
 

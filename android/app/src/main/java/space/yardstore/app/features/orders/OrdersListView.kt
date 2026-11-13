@@ -1,9 +1,9 @@
 package space.yardstore.app.features.orders
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +25,7 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -50,14 +51,20 @@ import space.yardstore.app.core.Formatters
 import space.yardstore.app.core.models.YardDate
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.Chip
 import space.yardstore.app.designsystem.components.ChipRow
 import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.ListDetailLayout
+import space.yardstore.app.designsystem.components.LocalBackAction
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.Skeleton
 import space.yardstore.app.designsystem.components.SkeletonShape
 import space.yardstore.app.designsystem.components.YardButton
@@ -182,17 +189,115 @@ class OrdersListModel() : ViewModel() {
     }
 }
 
-/** The shopper's orders, one card per checkout, one row per brand order with its status chip. */
+/**
+ * The shopper's orders, one card per checkout, one row per brand order with its status chip.
+ * On Expanded windows the list sits beside the selected order (`ListDetailLayout`); otherwise a
+ * row pushes `Route.Order` as on phones.
+ */
 @Composable
 fun OrdersListView() {
     val model: OrdersListModel = viewModel { OrdersListModel() }
-    OrdersListScreen(model, isPreview = false)
+    OrdersListDetail(model, isPreview = false)
+}
+
+/** How Orders → Order detail behaves with one pane (phones, Medium) or two (Expanded). */
+internal object OrdersPanes {
+    sealed interface Open {
+        /** Show it in the detail pane. */
+        data class Select(val id: String) : Open
+        /** Push `Route.Order` over the list. */
+        data class Push(val id: String) : Open
+    }
+
+    fun open(id: String, twoPane: Boolean): Open = if (twoPane) Open.Select(id) else Open.Push(id)
+
+    /** The order to push when the window drops below Expanded with one open in the pane, else null. */
+    fun handOff(twoPane: Boolean, selectedId: String?): String? = if (twoPane) null else selectedId
+}
+
+/** List → detail: two panes on Expanded (selection kept in `rememberSaveable`), list only otherwise. */
+@Composable
+internal fun OrdersListDetail(model: OrdersListModel, isPreview: Boolean, initialSelection: String? = null) {
+    val router = LocalRouter.current
+    val session = LocalSessionStore.current
+    val scope = rememberCoroutineScope()
+    val twoPane = LocalYardWindow.current.isExpanded
+    var selectedId by rememberSaveable { mutableStateOf(initialSelection) }
+
+    // Shrunk below Expanded (rotation, fold, resize) with an order open: keep it open as a pushed
+    // screen, the way a phone shows it.
+    LaunchedEffect(twoPane) {
+        val handOff = OrdersPanes.handOff(twoPane, selectedId)
+        if (handOff != null && !isPreview) {
+            selectedId = null
+            router.push(Route.Order(handOff))
+        }
+    }
+    // Signed out or switched account: the selected order isn't theirs any more.
+    LaunchedEffect(session.shopper?.id) {
+        if (!isPreview && !session.isSignedIn) selectedId = null
+    }
+
+    ListDetailLayout(
+        twoPane = twoPane,
+        list = {
+            OrdersListScreen(
+                model,
+                isPreview = isPreview,
+                selectedId = if (twoPane) selectedId else null,
+                onOpen = { id ->
+                    when (val open = OrdersPanes.open(id, twoPane)) {
+                        is OrdersPanes.Open.Select -> selectedId = open.id
+                        is OrdersPanes.Open.Push -> router.push(Route.Order(open.id))
+                    }
+                },
+            )
+        },
+        detail = {
+            val id = selectedId
+            if (id == null) {
+                OrdersDetailPlaceholder()
+            } else if (isPreview) {
+                CompositionLocalProvider(LocalBackAction provides null) {
+                    OrderDetailScreen(id, OrderDetailModel(OrderPreviewData.detail, brandCity = "Lagos"), isPreview = true)
+                }
+            } else {
+                OrderDetailPane(
+                    id,
+                    onClose = { selectedId = null },
+                    onOrderChanged = { scope.launch { model.load() } },
+                )
+            }
+        },
+    )
+}
+
+/** The detail pane before an order is picked. */
+@Composable
+private fun OrdersDetailPlaceholder() {
+    Column(Modifier.fillMaxSize().yardScreenBackground()) {
+        YardTopBar(title = null, back = null)
+        AdaptiveContent(Modifier.weight(1f)) {
+            EmptyState(
+                "Pick an order",
+                modifier = Modifier.padding(top = Spacing.xxxl),
+                message = "Its status, tracking, items and returns show here.",
+                icon = Icons.Outlined.Inventory2,
+            )
+        }
+    }
 }
 
 @Composable
-internal fun OrdersListScreen(model: OrdersListModel, isPreview: Boolean) {
+internal fun OrdersListScreen(
+    model: OrdersListModel,
+    isPreview: Boolean,
+    selectedId: String? = null,
+    onOpen: ((String) -> Unit)? = null,
+) {
     val session = LocalSessionStore.current
     val router = LocalRouter.current
+    val open: (String) -> Unit = onOpen ?: { id -> router.push(Route.Order(id)) }
 
     LaunchedEffect(session.shopper?.id) {
         if (isPreview) return@LaunchedEffect
@@ -210,6 +315,7 @@ internal fun OrdersListScreen(model: OrdersListModel, isPreview: Boolean) {
             !isPreview && !session.isSignedIn -> {
                 if (session.hasLoaded) {
                     EmptyState.SignedOut(
+                        modifier = Modifier.adaptiveContentWidth(),
                         title = "Orders",
                         message = "Sign in to see every order you've placed. Each brand's part of a checkout has its own status, tracking and returns.",
                     ) { router.present(Route.SignIn) }
@@ -218,25 +324,26 @@ internal fun OrdersListScreen(model: OrdersListModel, isPreview: Boolean) {
                 }
             }
             !model.hasLoaded || (model.isLoading && model.items.isEmpty() && error == null) -> OrdersListSkeleton()
-            error != null && model.items.isEmpty() -> EmptyState.Error(error) { model.load() }
+            error != null && model.items.isEmpty() -> EmptyState.Error(error, Modifier.adaptiveContentWidth()) { model.load() }
             model.items.isEmpty() -> OrderRefreshBox(onRefresh = { model.load() }) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Spacer(Modifier.height(Spacing.xxxl))
                     EmptyState(
                         "No orders yet",
+                        modifier = Modifier.adaptiveContentWidth(),
                         message = "When you check out, every brand order and its tracking appears here.",
                         icon = Icons.Outlined.Inventory2,
                         actionTitle = "Start shopping",
                     ) { router.select(AppTab.Home) }
                 }
             }
-            else -> OrdersList(model)
+            else -> OrdersList(model, selectedId, open)
         }
     }
 }
 
 @Composable
-private fun OrdersList(model: OrdersListModel) {
+private fun OrdersList(model: OrdersListModel, selectedId: String?, onOpen: (String) -> Unit) {
     var filterName by rememberSaveable { mutableStateOf(OrdersListFilter.All.name) }
     val filter = OrdersListFilter.valueOf(filterName)
     val groups = model.groups
@@ -247,11 +354,9 @@ private fun OrdersList(model: OrdersListModel) {
     fun select(next: OrdersListFilter) { filterName = next.name }
 
     OrderRefreshBox(onRefresh = { model.load() }) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = Spacing.s, bottom = Spacing.xxxl + bottom),
-            verticalArrangement = Arrangement.spacedBy(Spacing.l),
-        ) {
+        // Capped at contentMaxWidth on Medium (one column of cards, centred); the list pane on
+        // Expanded is narrow enough to fill.
+        OrderReadableList(top = Spacing.s, bottom = Spacing.xxxl + bottom, spacing = Spacing.l) {
             item(key = "intro") {
                 Text(
                     "Orders from every brand you’ve checked out with. Each brand ships its own order, with its own tracking and returns.",
@@ -280,7 +385,12 @@ private fun OrdersList(model: OrdersListModel) {
                 }
             } else {
                 items(visible, key = { "group-${it.id}" }) { group ->
-                    OrderCheckoutGroupCard(group, Modifier.padding(horizontal = Spacing.gutter).animateItem())
+                    OrderCheckoutGroupCard(
+                        group,
+                        Modifier.padding(horizontal = Spacing.gutter).animateItem(),
+                        selectedId = selectedId,
+                        onOpen = onOpen,
+                    )
                 }
             }
             if (model.nextCursor != null) {
@@ -308,8 +418,16 @@ private fun OrdersList(model: OrdersListModel) {
 
 /** One checkout card: reference, date, brand count, payment line, total; one row per brand order. */
 @Composable
-fun OrderCheckoutGroupCard(group: OrderCheckoutGroup, modifier: Modifier = Modifier) {
+fun OrderCheckoutGroupCard(
+    group: OrderCheckoutGroup,
+    modifier: Modifier = Modifier,
+    /** The order open in the detail pane (two-pane only), highlighted. */
+    selectedId: String? = null,
+    /** Opens a brand order; defaults to pushing `Route.Order`. */
+    onOpen: ((String) -> Unit)? = null,
+) {
     val router = LocalRouter.current
+    val open: (String) -> Unit = onOpen ?: { id -> router.push(Route.Order(id)) }
     val placed = group.placedDate?.let { "Placed ${OrderText.longDate(it)}" } ?: "Placed"
     val brands = if (group.orders.size == 1) "1 brand" else "${group.orders.size} brands shipping separately"
     Column(modifier.fillMaxWidth().yardCard().animateContentSize()) {
@@ -325,7 +443,14 @@ fun OrderCheckoutGroupCard(group: OrderCheckoutGroup, modifier: Modifier = Modif
         }
         group.orders.forEach { order ->
             YardDivider()
-            OrderSummaryRow(order, Modifier.pressableClick { router.push(Route.Order(order.id)) })
+            val isSelected = order.id == selectedId
+            OrderSummaryRow(
+                order,
+                Modifier
+                    .then(if (isSelected) Modifier.background(Color.yard.surface2) else Modifier)
+                    .semantics { selected = isSelected }
+                    .pressableClick { open(order.id) },
+            )
         }
     }
 }
@@ -373,6 +498,7 @@ private fun OrdersListSkeleton() {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState(), enabled = false)
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter)
             .padding(top = Spacing.s),
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
@@ -395,4 +521,16 @@ private fun OrdersListDarkPreview() = YardPreview(darkTheme = true) {
 @Composable
 private fun OrdersListLightPreview() = YardPreview(darkTheme = false) {
     OrdersListScreen(OrdersListModel(OrderPreviewData.summaries), isPreview = true)
+}
+
+@YardTabletPreviews
+@Composable
+private fun OrdersListTabletPreview() = YardPreview(darkTheme = true) {
+    OrdersListDetail(OrdersListModel(OrderPreviewData.summaries), isPreview = true, initialSelection = "or_1")
+}
+
+@YardTabletPreviews
+@Composable
+private fun OrdersListTabletEmptySelectionPreview() = YardPreview(darkTheme = false) {
+    OrdersListDetail(OrdersListModel(OrderPreviewData.summaries), isPreview = true)
 }
