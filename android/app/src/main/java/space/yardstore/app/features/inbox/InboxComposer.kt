@@ -156,8 +156,8 @@ fun InboxComposer(
             }
         } else {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = Spacing.m, vertical = Spacing.s),
-                verticalArrangement = Arrangement.spacedBy(Spacing.s),
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.m - Spacing.xs, vertical = Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
                 if (photos.isNotEmpty() || isPreparing) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
@@ -169,19 +169,27 @@ fun InboxComposer(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.size(64.dp).clip(RoundedCornerShape(Radius.small)),
                                 )
+                                // 48dp touch area centred on the 22dp badge at the photo's corner.
                                 Box(
                                     Modifier
                                         .align(Alignment.TopEnd)
-                                        .offset(x = 6.dp, y = (-6).dp)
-                                        .size(22.dp)
+                                        .offset(x = 19.dp, y = (-19).dp)
+                                        .size(48.dp)
                                         .clip(CircleShape)
-                                        .background(Color.yard.surface2)
-                                        .border(1.dp, Color.yard.line, CircleShape)
                                         .clickable { photos.remove(photo) }
                                         .semantics { contentDescription = "Remove photo" },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(Icons.Filled.Close, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(12.dp))
+                                    Box(
+                                        Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.yard.surface2)
+                                            .border(1.dp, Color.yard.line, CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(Icons.Filled.Close, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(12.dp))
+                                    }
                                 }
                             }
                         }
@@ -192,26 +200,28 @@ fun InboxComposer(
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                // Buttons: 40dp circles inside 48dp touch areas; the field gets 4dp vertical padding to line up.
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     if (allowsPhotos) {
                         val photoEnabled = photos.size < InboxComposerMaxPhotos && !isPreparing
                         Box(
                             Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
-                                .background(Color.yard.surface2)
                                 .clickable(enabled = photoEnabled) {
                                     if (InboxComposerMaxPhotos - photos.size >= 2) pickMany.launch(request) else pickOne.launch(request)
                                 }
                                 .semantics { contentDescription = "Add a photo" },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                Icons.Outlined.AddPhotoAlternate,
-                                contentDescription = null,
-                                tint = if (photoEnabled) Color.yard.ink else Color.yard.ink3,
-                                modifier = Modifier.size(20.dp),
-                            )
+                            Box(Modifier.size(40.dp).clip(CircleShape).background(Color.yard.surface2), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = if (photoEnabled) Color.yard.ink else Color.yard.ink3,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     }
                     BasicTextField(
@@ -223,6 +233,7 @@ fun InboxComposer(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         modifier = Modifier
                             .weight(1f)
+                            .padding(vertical = Spacing.xs)
                             .heightIn(min = 40.dp)
                             .focusRequester(focus)
                             .onFocusChanged { onFocusChanged(it.isFocused) },
@@ -247,14 +258,15 @@ fun InboxComposer(
                     val sendFg by animateColorAsState(if (canSend) Color.yard.onAcid else Color.yard.ink3, Motion.snappy(), label = "sendFg")
                     Box(
                         Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
-                            .background(sendBg)
                             .clickable(enabled = canSend) { send() }
                             .semantics { contentDescription = "Send message" },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.ArrowUpward, contentDescription = null, tint = sendFg, modifier = Modifier.size(20.dp))
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(sendBg), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = null, tint = sendFg, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
                 if (text.length > InboxComposerMaxLength - 200) {

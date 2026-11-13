@@ -43,6 +43,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +66,8 @@ import space.yardstore.app.app.Route
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.GlassIconButton
@@ -76,21 +80,30 @@ import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
 import java.time.Instant
 
-/** Photos opened in the lightbox. */
-private data class InboxPhotoSelection(val attachments: List<InboxAttachment>, val index: Int)
+/** Photos opened in the lightbox: which message, which photo (saveable, so it survives recreation). */
+private data class InboxPhotoSelection(val messageId: String, val index: Int) {
+    companion object {
+        val Saver = listSaver<InboxPhotoSelection?, Any>(
+            save = { s -> if (s == null) emptyList() else listOf(s.messageId, s.index) },
+            restore = { l -> if (l.size == 2) InboxPhotoSelection(l[0] as String, l[1] as Int) else null },
+        )
+    }
+}
 
 /**
  * The thread UI shared by `ConversationView(id)` and `BrandConversationView(brandId)`:
  * header (brand + menu), pinned order context, bubbles with day separators, composer.
- * Polls every 5 s while the screen is resumed; polls once on coming back; marks read on open and
- * as replies arrive. Mirrors `InboxThreadScreen.swift`.
+ * Polls every 5 s while the screen is resumed; polls once on coming back (and on reopening a thread
+ * whose model is cached, e.g. in the inbox's detail pane); marks read on open and as replies arrive.
+ * Wide windows: header full width, bubbles + composer capped by `AdaptiveContent`.
+ * Mirrors `InboxThreadScreen.swift`.
  */
 @Composable
 fun InboxThreadScreen(model: InboxThreadModel, autoLoad: Boolean = true) {
     val router = LocalRouter.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var photoSelection by remember { mutableStateOf<InboxPhotoSelection?>(null) }
-    var confirmBlock by remember { mutableStateOf(false) }
+    var photoSelection by rememberSaveable(stateSaver = InboxPhotoSelection.Saver) { mutableStateOf<InboxPhotoSelection?>(null) }
+    var confirmBlock by rememberSaveable { mutableStateOf(false) }
 
     if (autoLoad) LaunchedEffect(Unit) { model.load() }
 
@@ -98,10 +111,9 @@ fun InboxThreadScreen(model: InboxThreadModel, autoLoad: Boolean = true) {
     val conversationId = model.conversationId
     LaunchedEffect(conversationId, lifecycle, autoLoad) {
         if (conversationId == null || !autoLoad) return@LaunchedEffect
-        var first = true
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!first) model.poll().join()
-            first = false
+            // No-op while the first load runs (poll needs Ready); catches up a cached thread at once.
+            model.poll().join()
             while (isActive) {
                 delay(5_000)
                 model.poll().join()
@@ -111,27 +123,32 @@ fun InboxThreadScreen(model: InboxThreadModel, autoLoad: Boolean = true) {
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         InboxThreadHeader(model, onBlockTapped = { confirmBlock = true })
-        when (val phase = model.phase) {
-            InboxThreadModel.Phase.Loading -> InboxThreadSkeleton()
-            is InboxThreadModel.Phase.Failed -> EmptyState(
-                title = "Couldn't load this conversation.",
-                modifier = Modifier.weight(1f),
-                message = phase.message,
-                icon = Icons.Outlined.WifiOff,
-                actionTitle = "Retry",
-                action = { model.load() },
-            )
-            InboxThreadModel.Phase.Ready -> InboxThreadBody(
-                model,
-                modifier = Modifier.weight(1f),
-                onOpenOrder = { router.push(Route.Order(it)) },
-                onOpenPhotos = { a, i -> photoSelection = InboxPhotoSelection(a, i) },
-            )
+        AdaptiveContent(Modifier.weight(1f)) {
+            Column(Modifier.fillMaxSize()) {
+                when (val phase = model.phase) {
+                    InboxThreadModel.Phase.Loading -> InboxThreadSkeleton()
+                    is InboxThreadModel.Phase.Failed -> EmptyState(
+                        title = "Couldn't load this conversation.",
+                        modifier = Modifier.weight(1f),
+                        message = phase.message,
+                        icon = Icons.Outlined.WifiOff,
+                        actionTitle = "Retry",
+                        action = { model.load() },
+                    )
+                    InboxThreadModel.Phase.Ready -> InboxThreadBody(
+                        model,
+                        modifier = Modifier.weight(1f),
+                        onOpenOrder = { router.push(Route.Order(it)) },
+                        onOpenPhotos = { messageId, i -> photoSelection = InboxPhotoSelection(messageId, i) },
+                    )
+                }
+            }
         }
     }
 
     photoSelection?.let { s ->
-        InboxPhotoViewer(s.attachments, s.index) { photoSelection = null }
+        val attachments = model.messages.firstOrNull { it.id == s.messageId }?.attachments.orEmpty()
+        if (attachments.isNotEmpty()) InboxPhotoViewer(attachments, s.index) { photoSelection = null }
     }
 
     if (confirmBlock) {
@@ -277,9 +294,10 @@ private fun InboxThreadBody(
     model: InboxThreadModel,
     modifier: Modifier,
     onOpenOrder: (String) -> Unit,
-    onOpenPhotos: (List<InboxAttachment>, Int) -> Unit,
+    /** (message id, photo index). */
+    onOpenPhotos: (String, Int) -> Unit,
 ) {
-    val items = model.items()
+    val items = remember(model.messages, model.pending) { model.items() }
     val listState = rememberLazyListState()
     val lastId = items.lastOrNull()?.id
     // New message (sent or received): bring the newest into view. reverseLayout = index 0 is the bottom.
@@ -304,7 +322,7 @@ private fun InboxThreadBody(
                             item.message,
                             item.showsTime,
                             item.message.product?.let { model.productImages[it.productId] },
-                            onOpenPhotos = onOpenPhotos,
+                            onOpenPhotos = { _, i -> onOpenPhotos(item.message.id, i) },
                         )
                         is InboxThreadItem.Pending -> InboxPendingRow(
                             item.pending,
@@ -384,6 +402,12 @@ private fun InboxThreadDark() = YardPreview(darkTheme = true) {
 @Preview(name = "Thread — light")
 @Composable
 private fun InboxThreadLight() = YardPreview(darkTheme = false) {
+    InboxThreadScreen(remember { InboxThreadPreviewData.model() }, autoLoad = false)
+}
+
+@YardTabletPreviews
+@Composable
+private fun InboxThreadTablet() = YardPreview(darkTheme = true) {
     InboxThreadScreen(remember { InboxThreadPreviewData.model() }, autoLoad = false)
 }
 

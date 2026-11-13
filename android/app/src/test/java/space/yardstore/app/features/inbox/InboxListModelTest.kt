@@ -136,4 +136,52 @@ class InboxListModelTest {
         val b = InboxConversation("b", InboxBrandRef("b"), createdAt = "2026-11-01")
         assertEquals(listOf("b", "a"), InboxListModel.sorted(listOf(a, b)).map { it.id })
     }
+
+    // Two-pane inbox: the open thread's conversation flows back into the list.
+
+    private suspend fun loadedTwo(): InboxListModel {
+        t.on("GET", "/api/inbox/conversations", body = page(
+            InboxJson.conversation("cv_1", unread = 2, at = "2026-11-12T10:00:00.000Z"),
+            InboxJson.conversation("cv_2", at = "2026-11-13T10:00:00.000Z"),
+        ))
+        val m = InboxListModel()
+        m.load().join()
+        assertEquals(listOf("cv_2", "cv_1"), m.items.map { it.id })
+        return m
+    }
+
+    @Test fun threadUpdateClearsUnreadAndResorts() = runBlocking {
+        val m = loadedTwo()
+        val row = m.items.first { it.id == "cv_1" }
+        val fromThread = row.markingRead().copy(
+            lastMessage = InboxLastMessage("Thanks!", "2026-11-13T11:00:00.000Z", "customer"),
+            interaction = InboxInteraction(canSend = true),
+        )
+        m.applyThreadUpdate(fromThread)
+        assertEquals(listOf("cv_1", "cv_2"), m.items.map { it.id })
+        val updated = m.items.first()
+        assertFalse(updated.isUnread)
+        assertEquals("You: Thanks!", updated.previewText)
+        assertNull(updated.interaction)
+    }
+
+    @Test fun threadUpdateKeepsListPreviewWhenThreadHasNone() = runBlocking {
+        val m = loadedTwo()
+        val row = m.items.first { it.id == "cv_1" }
+        m.applyThreadUpdate(row.copy(lastMessage = null, muted = true))
+        val updated = m.items.first { it.id == "cv_1" }
+        assertTrue(updated.muted)
+        assertEquals(row.lastMessage, updated.lastMessage)
+        assertEquals(listOf("cv_2", "cv_1"), m.items.map { it.id })
+    }
+
+    @Test fun threadUpdateRemovesRowsThatLeaveTheFilterAndIgnoresUnknown() = runBlocking {
+        val m = loadedTwo()
+        m.applyThreadUpdate(m.items.first { it.id == "cv_2" }.copy(archived = true))
+        assertEquals(listOf("cv_1"), m.items.map { it.id })
+        m.applyThreadUpdate(InboxConversation("cv_9", InboxBrandRef("b"), createdAt = "2026-11-13"))
+        assertEquals(listOf("cv_1"), m.items.map { it.id })
+        m.applyThreadUpdate(m.items.first().copy(blocked = InboxBlocked(byMe = true)))
+        assertTrue(m.items.isEmpty())
+    }
 }

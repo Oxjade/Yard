@@ -1,5 +1,18 @@
 package space.yardstore.app.features.inbox
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
+import androidx.compose.ui.semantics.selected
+import kotlinx.coroutines.flow.filterNotNull
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.ListDetailLayout
+import space.yardstore.app.designsystem.components.LocalBackAction
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -263,6 +276,22 @@ class InboxListModel : ViewModel() {
         items = items.map { if (it.id == c.id) it.markingRead() else it }
     }
 
+    /**
+     * Two-pane inbox (Expanded): the thread open beside the list reports its conversation here, so
+     * the row's unread dot, preview, mute/archive/block state and position follow without a refresh.
+     * A row that no longer belongs in the current filter leaves the list; rows not in the list are
+     * not added (they may not match the search). The list read's `lastMessage` is kept when the
+     * thread's copy has none.
+     */
+    fun applyThreadUpdate(c: InboxConversation) {
+        val i = items.indexOfFirst { it.id == c.id }
+        if (i < 0) return
+        val old = items[i]
+        val merged = c.copy(lastMessage = c.lastMessage ?: old.lastMessage, interaction = null)
+        if (merged == old) return
+        items = if (belongs(merged)) sorted(items.map { if (it.id == c.id) merged else it }) else items.filterNot { it.id == c.id }
+    }
+
     suspend fun unblock(c: InboxConversation) = busy(c.id) {
         InboxAPI.setBlocked(false, c.brand.id)
         items = items.filterNot { it.id == c.id }
@@ -278,7 +307,14 @@ class InboxListModel : ViewModel() {
 
 // region View
 
-/** Inbox: the shopper's conversations with brands. Swipe to mark read or archive; long-press for every action. */
+/**
+ * Inbox: the shopper's conversations with brands. Swipe to mark read or archive; long-press for every action.
+ *
+ * Expanded windows (≥ 840dp): list + thread side by side (`ListDetailLayout`). The open thread is kept
+ * in `rememberSaveable`; the detail pane shows "Pick a conversation" until one is chosen, and back
+ * closes the open thread first. When the window shrinks below Expanded with a thread open, that
+ * thread is pushed as on phones. Narrower windows: list only, rows push `Route.Conversation`.
+ */
 @Composable
 fun InboxView() {
     val session = LocalSessionStore.current
@@ -286,6 +322,8 @@ fun InboxView() {
     val model: InboxListModel = viewModel { InboxListModel() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var searchText by rememberSaveable { mutableStateOf("") }
+    val expanded = LocalYardWindow.current.isExpanded
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(session.shopper?.id) {
         if (session.isSignedIn) model.load()
@@ -304,42 +342,115 @@ fun InboxView() {
             first = false
         }
     }
+    // Signed out: nothing stays open.
+    LaunchedEffect(session.hasLoaded, session.isSignedIn) {
+        if (session.hasLoaded && !session.isSignedIn) selectedId = null
+    }
+    // Window shrank below Expanded with a thread open: carry on in the pushed thread, as on phones.
+    LaunchedEffect(expanded) {
+        val id = selectedId
+        if (!expanded && id != null) {
+            selectedId = null
+            router.push(Route.Conversation(id))
+        }
+    }
+    BackHandler(enabled = expanded && selectedId != null) { selectedId = null }
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        YardTopBar("Inbox") {
-            if (session.isSignedIn) InboxFilterMenu(model.filter) { model.setFilter(it) }
-        }
         if (!session.isSignedIn) {
+            YardTopBar("Inbox")
             if (session.hasLoaded) {
                 EmptyState.SignedOut(
                     message = "Sign in to message brands about sizing, stock and delivery.",
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).adaptiveContentWidth(),
                     title = "Your inbox",
                 ) { router.present(Route.SignIn) }
             } else {
-                InboxListSkeleton()
+                AdaptiveContent { InboxListSkeleton() }
             }
             return@Column
         }
-        InboxSearchField(searchText, onChange = { searchText = it })
-        when (val phase = model.phase) {
-            InboxListModel.Phase.Idle, InboxListModel.Phase.Loading -> InboxListSkeleton()
-            is InboxListModel.Phase.Failed -> EmptyState(
-                title = "Couldn't load your messages.",
-                modifier = Modifier.weight(1f),
-                message = phase.message,
-                icon = Icons.Outlined.WifiOff,
-                actionTitle = "Retry",
-                action = { model.load() },
+        ListDetailLayout(
+            twoPane = expanded,
+            modifier = Modifier.weight(1f),
+            list = {
+                InboxListPane(
+                    model,
+                    searchText = searchText,
+                    onSearchChange = { searchText = it },
+                    selectedId = if (expanded) selectedId else null,
+                    onOpen = { id -> if (expanded) selectedId = id else router.push(Route.Conversation(id)) },
+                )
+            },
+            detail = { InboxDetailPane(selectedId, model) },
+        )
+    }
+}
+
+/** Top bar with the filter menu, search, then the list (or its skeleton / error). */
+@Composable
+private fun InboxListPane(
+    model: InboxListModel,
+    searchText: String,
+    onSearchChange: (String) -> Unit,
+    selectedId: String?,
+    onOpen: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        YardTopBar("Inbox") {
+            InboxFilterMenu(model.filter) { model.setFilter(it) }
+        }
+        AdaptiveContent(Modifier.weight(1f)) {
+            Column(Modifier.fillMaxSize()) {
+                InboxSearchField(searchText, onChange = onSearchChange)
+                when (val phase = model.phase) {
+                    InboxListModel.Phase.Idle, InboxListModel.Phase.Loading -> InboxListSkeleton()
+                    is InboxListModel.Phase.Failed -> EmptyState(
+                        title = "Couldn't load your messages.",
+                        modifier = Modifier.weight(1f),
+                        message = phase.message,
+                        icon = Icons.Outlined.WifiOff,
+                        actionTitle = "Retry",
+                        action = { model.load() },
+                    )
+                    InboxListModel.Phase.Loaded -> InboxList(model, selectedId, onOpen, Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The thread beside the list (Expanded only). No back button (the list is right there); the
+ * thread's conversation flows back into the list row as it changes (read, mute, archive, new message).
+ */
+@Composable
+private fun InboxDetailPane(selectedId: String?, list: InboxListModel) {
+    if (selectedId == null) {
+        Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+            EmptyState(
+                "Pick a conversation",
+                modifier = Modifier.adaptiveContentWidth(),
+                message = "Choose a brand on the left to read and reply to your messages.",
+                icon = Icons.Outlined.Forum,
             )
-            InboxListModel.Phase.Loaded -> InboxList(model, Modifier.weight(1f))
+        }
+        return
+    }
+    key(selectedId) {
+        val thread: InboxThreadModel = viewModel(key = "inbox-thread-$selectedId") { InboxThreadModel.forConversation(selectedId) }
+        LaunchedEffect(thread) {
+            snapshotFlow { thread.conversation }.filterNotNull().collect { list.applyThreadUpdate(it) }
+        }
+        CompositionLocalProvider(LocalBackAction provides null) {
+            InboxThreadScreen(thread)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InboxList(model: InboxListModel, modifier: Modifier) {
+private fun InboxList(model: InboxListModel, selectedId: String?, onOpen: (String) -> Unit, modifier: Modifier) {
     val router = LocalRouter.current
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -378,7 +489,7 @@ private fun InboxList(model: InboxListModel, modifier: Modifier) {
                 if (model.filter != InboxAPI.Filter.Inbox) {
                     item(key = "banner") {
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter, vertical = Spacing.s),
+                            Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.gutter - Spacing.s),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
@@ -391,14 +502,18 @@ private fun InboxList(model: InboxListModel, modifier: Modifier) {
                                 "Back to inbox",
                                 style = YardFonts.captionEmphasis,
                                 color = Color.yard.ink,
-                                modifier = Modifier.clip(CircleShape).combinedClickableCompat { model.setFilter(InboxAPI.Filter.Inbox) }.padding(Spacing.xs),
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .combinedClickableCompat { model.setFilter(InboxAPI.Filter.Inbox) }
+                                    .minimumInteractiveComponentSize()
+                                    .padding(horizontal = Spacing.s),
                             )
                         }
                     }
                 }
                 items(model.items, key = { it.id }) { c ->
                     Column(Modifier.animateItem()) {
-                        InboxSwipeRow(model, c) { router.push(Route.Conversation(c.id)) }
+                        InboxSwipeRow(model, c, selected = c.id == selectedId) { onOpen(c.id) }
                         YardDivider(Modifier.padding(start = 64.dp + Spacing.gutter))
                     }
                 }
@@ -421,7 +536,7 @@ private fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier = th
  *  Long-press opens every action (incl. Mute / Unmute, which iOS keeps as a second trailing swipe button). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun InboxSwipeRow(model: InboxListModel, c: InboxConversation, onOpen: () -> Unit) {
+private fun InboxSwipeRow(model: InboxListModel, c: InboxConversation, selected: Boolean, onOpen: () -> Unit) {
     val toast = LocalToastCenter.current
     val haptics = LocalHapticFeedback.current
     var menuOpen by remember { mutableStateOf(false) }
@@ -484,7 +599,8 @@ private fun InboxSwipeRow(model: InboxListModel, c: InboxConversation, onOpen: (
     ) {
         Box(
             Modifier
-                .background(Color.yard.bg)
+                .background(if (selected) Color.yard.surface2 else Color.yard.bg)
+                .semantics { this.selected = selected }
                 .combinedClickable(
                     onClick = onOpen,
                     onLongClick = {
@@ -738,5 +854,34 @@ private fun InboxViewDark() = YardPreview(darkTheme = true) { InboxView() }
 @Preview(name = "InboxView — light")
 @Composable
 private fun InboxViewLight() = YardPreview(darkTheme = false, signedIn = false) { InboxView() }
+
+@YardTabletPreviews
+@Composable
+private fun InboxViewTablet() = YardPreview(darkTheme = true) { InboxView() }
+
+/** The Expanded two-pane look with fixtures: list (first row selected) beside its thread. */
+@YardTabletPreviews
+@Composable
+private fun InboxTwoPaneTablet() = YardPreview(darkTheme = false) {
+    val thread = remember { InboxThreadPreviewData.model() }
+    ListDetailLayout(
+        list = {
+            Column(Modifier.fillMaxSize().yardScreenBackground()) {
+                YardTopBar("Inbox", back = null)
+                InboxPreviewData.rows.forEachIndexed { i, c ->
+                    InboxConversationRow(
+                        c,
+                        Modifier
+                            .background(if (i == 0) Color.yard.surface2 else Color.yard.bg)
+                            .padding(horizontal = Spacing.gutter, vertical = Spacing.m),
+                    )
+                }
+            }
+        },
+        detail = {
+            CompositionLocalProvider(LocalBackAction provides null) { InboxThreadScreen(thread, autoLoad = false) }
+        },
+    )
+}
 
 // endregion

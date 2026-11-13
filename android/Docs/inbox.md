@@ -14,6 +14,14 @@ Package `features/inbox/`. Mirrors `ios/Yard/Features/Inbox/` file for file (see
 
 Polling: every 5 s while the screen's lifecycle is RESUMED (`repeatOnLifecycle`), once immediately on returning; stops when the screen is covered, popped or the app is backgrounded. Mark-read on open and when brand messages arrive.
 
+## Tablet & large screens
+
+- **Inbox → thread** is a `ListDetailLayout` on Expanded (≥ 840dp): list pane (top bar + filter, search, rows; the open row is highlighted on `surface2`) beside the thread (`InboxThreadScreen` with no back button). The open conversation id lives in `rememberSaveable`; nothing selected = "Pick a conversation" `EmptyState`. System back closes the open thread first. The thread's conversation streams into the list (`InboxListModel.applyThreadUpdate`): unread dot, preview, mute/archive/block and order update live, since the list never resumes while both panes show. If the window shrinks below Expanded with a thread open, that thread is pushed as `Route.Conversation`. Compact/Medium: list only, rows push as on phones.
+- List content is capped by `AdaptiveContent` on Medium (720dp); inside the Expanded list pane it fills the pane.
+- Thread (`ConversationView`, `BrandConversationView`, detail pane): header full width; bubbles, order bar and composer capped by `AdaptiveContent`.
+- `@YardTabletPreviews` on `InboxView` (live + a two-pane fixture preview) and on the thread.
+- Touch targets: composer photo/send are 40dp circles inside 48dp touch areas; the remove-photo badge has a 48dp area; "Back to inbox" uses `minimumInteractiveComponentSize`.
+
 ## Endpoints
 
 Same as iOS: `GET /api/inbox/conversations`, `GET /api/inbox/conversations/{id}/messages`, `GET /api/inbox/conversations/by-brand/{brandId}`, `POST /api/inbox/messages`, `POST /api/inbox/conversations/{id}/read`, `PATCH /api/inbox/conversations/{id}`, `POST`/`DELETE /api/inbox/blocks`, `POST /api/uploads?purpose=inbox_attachment&as=shopper&conversationId=|brandId=`, `GET /api/catalog/storefronts/{brandId}`, `GET /api/catalog/products?ids=…`.
@@ -24,12 +32,13 @@ Same as iOS: `GET /api/inbox/conversations`, `GET /api/inbox/conversations/{id}/
 - Thread list uses `reverseLayout` so the newest message stays anchored above the composer/keyboard (iOS `defaultScrollAnchor(.bottom)`); scrolls to the newest on new items.
 - Context menu "Copy" → long-press dropdown. `.searchable` → an inline search pill under the top bar. Confirmation dialog → `AlertDialog`.
 - Photo EXIF rotation is applied on API 28+ (`ImageDecoder`); on API 26–27 the `BitmapFactory` path does not rotate (no exifinterface dependency).
-- Composer photos/text: text survives configuration changes (`rememberSaveable`); picked-but-unsent photos do not.
+- Composer photos/text: text is `rememberSaveable`; picked-but-unsent photos survive rotation/resize (the activity handles those in place) but not process death. The lightbox selection (message id + index) and the block confirmation are `rememberSaveable`.
+- Polling also runs once as soon as the thread is shown (a no-op during the first load), so a thread reopened from a cached model (detail pane) catches up at once instead of after 5 s.
 - `InboxAPI.client` is an internal test hook (null = `APIClient.shared`).
 
 ## Tests
 
-`app/src/test/java/space/yardstore/app/features/inbox/` (33 tests, MockWebServer): DTO decoding/encoding (`InboxModelsTest`), formatting and disabled-composer copy (`InboxFormatTest`), `InboxThreadModel` (load, mark read, storefront/product reads, polling, new-thread first send, blocked reason, failed send + retry with same clientId, discard, older pages, mute/block, day grouping) and `InboxListModel` (sorting, paging, filter/search params, error vs refresh, archive/mute/mark-read/unblock, busy state, photo upload query).
+`app/src/test/java/space/yardstore/app/features/inbox/` (36 tests, MockWebServer): DTO decoding/encoding (`InboxModelsTest`), formatting and disabled-composer copy (`InboxFormatTest`), `InboxThreadModel` (load, mark read, storefront/product reads, polling, new-thread first send, blocked reason, failed send + retry with same clientId, discard, older pages, mute/block, day grouping) and `InboxListModel` (sorting, paging, filter/search params, error vs refresh, archive/mute/mark-read/unblock, busy state, photo upload query, two-pane thread → list sync).
 
 ## Not done
 
