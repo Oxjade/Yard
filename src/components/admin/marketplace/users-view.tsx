@@ -19,14 +19,16 @@ import { userStatusMeta } from "./meta"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 import { NO_ADMIN_SESSION, userActions, userAllowed, userDecision, useUserStatusBlock, type UserActionKey } from "./user-actions"
-import { UserDetail } from "./user-detail"
+import { UserDetail, methodLabel, type LiveUserExtras } from "./user-detail"
+import { useApi } from "@/lib/api/use-api"
+import { adminKeys, listAdminUsers } from "@/lib/api/admin"
 import { AbusePanel } from "@/components/admin/trust/abuse-panel"
 import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
 import { sampleOnly, useAdminSampleData } from "../sample"
 
 type Filter = "all" | "reported" | PlatformUser["status"] | "abuse"
 const FILTERS: { value: Filter; label: string; empty: string }[] = [
-  { value: "all", label: "All", empty: "No shopper accounts yet" },
+  { value: "all", label: "All", empty: "No accounts yet" },
   { value: "reported", label: "Reported", empty: "No reported accounts are still active" },
   { value: "active", label: "Active", empty: "No active accounts" },
   { value: "restricted", label: "Restricted", empty: "No restricted accounts" },
@@ -65,14 +67,23 @@ export function UsersView() {
   // there is no account directory yet, so the list is empty, the figures say so, and the page opens
   // on Abuse (Yard's server signals).
   const sample = useAdminSampleData()
-  const ready = adminReady && sample.known
   const live = sample.known && !sample.on
   const storeUsers = useAdmin((s) => s.users)
-  const users = sampleOnly(sample.on, storeUsers)
+  // Live: every real account from Yard's server (name, email, how they sign in), newest first.
+  const directory = useApi(live ? adminKeys.users : null, () => listAdminUsers(), { refreshInterval: 60_000 })
+  const liveUsers = useMemo<(PlatformUser & LiveUserExtras)[] | undefined>(
+    () =>
+      live
+        ? (directory.data?.items ?? []).map((u) => ({ id: u.id, name: u.name, email: u.email, country: u.country ?? "", joinedAt: u.joinedAt, orders: u.orders, status: u.status, reports: 0, lastActive: u.lastActive, kind: u.kind, methods: u.methods, emailVerified: u.emailVerified, brands: u.brands, adminRole: u.adminRole }))
+        : undefined,
+    [live, directory.data],
+  )
+  const users: PlatformUser[] = liveUsers ?? sampleOnly(sample.on, storeUsers)
+  const ready = adminReady && sample.known && (!live || directory.data !== undefined || !!directory.error)
   const linked = useSearchParam("status")
   // Users › Abuse is ?tab=abuse (§8.1); the account filters stay on ?status=.
   const abuseTab = useSearchParam("tab") === "abuse"
-  const filter: Filter = abuseTab ? "abuse" : isFilter(linked) ? linked : live ? "abuse" : "all"
+  const filter: Filter = abuseTab ? "abuse" : isFilter(linked) ? linked : "all"
   // Status decisions run on Yard's server: without an admin session (or the role) they're disabled.
   const block = useUserStatusBlock()
   useMirrorServerStatuses("user", useMemo(() => users.map((u) => u.id), [users]))
@@ -127,7 +138,14 @@ export function UsersView() {
       ),
     },
     { key: "email", header: "Email", hideBelow: "md", cell: (u) => <span className="block max-w-[220px] truncate text-ink-2">{u.email}</span> },
-    { key: "country", header: "Country", hideBelow: "lg", sortValue: (u) => countryName(u.country), cell: (u) => <span className="whitespace-nowrap text-ink-2">{countryName(u.country)}</span> },
+    ...(liveUsers
+      ? [
+          { key: "methods", header: "Signs in with", hideBelow: "lg" as const, cell: (u: PlatformUser) => { const x = liveUsers.find((l) => l.id === u.id); return <span className="whitespace-nowrap text-ink-2">{x?.methods.length ? x.methods.map(methodLabel).join(", ") : "—"}</span> } },
+          { key: "verified", header: "Email", hideBelow: "lg" as const, cell: (u: PlatformUser) => { const x = liveUsers.find((l) => l.id === u.id); return <StatusBadge tone={x?.emailVerified ? "success" : "muted"}>{x?.emailVerified ? "Verified" : "Unverified"}</StatusBadge> } },
+          { key: "type", header: "Type", hideBelow: "xl" as const, cell: (u: PlatformUser) => { const x = liveUsers.find((l) => l.id === u.id); return <span className="whitespace-nowrap text-ink-2">{x?.adminRole ? "Admin" : x?.kind === "brand_staff" || x?.brands.length ? `Brand${x.brands.length ? `: ${x.brands.join(", ")}` : ""}` : "Shopper"}</span> } },
+        ]
+      : []),
+    { key: "country", header: "Country", hideBelow: "lg", sortValue: (u) => countryName(u.country), cell: (u) => <span className="whitespace-nowrap text-ink-2">{u.country ? countryName(u.country) : "—"}</span> },
     { key: "joined", header: "Joined", hideBelow: "lg", sortValue: (u) => u.joinedAt, cell: (u) => <time dateTime={u.joinedAt} className="whitespace-nowrap text-ink-2">{formatDate(u.joinedAt)}</time> },
     { key: "orders", header: "Orders", align: "right", hideBelow: "md", sortValue: (u) => u.orders, cell: (u) => <span className="text-ink">{u.orders}</span> },
     { key: "reports", header: "Reports", align: "right", hideBelow: "sm", sortValue: (u) => u.reports, cell: (u) => <span className={u.reports ? "font-medium text-danger" : "text-ink-3"}>{u.reports}</span> },
@@ -158,16 +176,16 @@ export function UsersView() {
       <InPageLinks>
         <StatRow label="Account figures">
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={UsersIcon} label="Shopper accounts" value={counts.all} format={live ? () => "—" : n} hint={live ? "No account directory yet" : "In this sample"} href="/admin/users#accounts" hrefLabel="Show all accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={UsersIcon} label="Accounts" value={counts.all} format={n} hint={live ? "Signed up on Yard" : "In this sample"} href="/admin/users#accounts" hrefLabel="Show all accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, active" value={counts.reported} format={live ? () => "—" : n} hint={live ? "Reports are under Abuse" : "Worth a look first"} href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={live ? () => "—" : n} hint="Pauses are set under Abuse" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={n} hint="Pauses are set under Abuse" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ProhibitIcon} label="Suspended" value={counts.suspended} format={live ? () => "—" : n} hint="Can't sign in" href="/admin/users?status=suspended#accounts" hrefLabel="Show suspended accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ProhibitIcon} label="Suspended" value={counts.suspended} format={n} hint="Can't sign in" href="/admin/users?status=suspended#accounts" hrefLabel="Show suspended accounts" ready={ready} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>
@@ -182,7 +200,7 @@ export function UsersView() {
           ) : (
           <DataTable
             key={filter}
-            label={`${current.label} shopper accounts`}
+            label={`${current.label} accounts`}
             rows={rows}
             columns={columns}
             getId={(u) => u.id}
@@ -190,7 +208,7 @@ export function UsersView() {
             search={{ placeholder: "Search by name or email", text: (u) => `${u.name} ${u.email}` }}
             rowActions={rowActions}
             bulkActions={phone || !bulkActions.length ? undefined : bulkActions}
-            empty={live ? { title: "No accounts listed yet", body: "Shopper accounts aren't listed in the Control Center yet. Reports, rate-limit hits and spam marks from Yard's server are under Abuse." } : { title: current.empty, body: "Accounts appear here as their status changes." }}
+            empty={live ? (directory.error ? { title: "Couldn't load accounts", body: "Yard's server didn't answer. Refresh the page to try again." } : { title: current.empty, body: "Accounts appear here as people sign up." }) : { title: current.empty, body: "Accounts appear here as their status changes." }}
             initialPageSize={25}
             minWidth={300}
           />
@@ -198,7 +216,7 @@ export function UsersView() {
         </div>
       </Panel>
 
-      <UserDetail id={open ? userId : null} open={open} onOpenChange={(o) => !o && writeParams({ user: null })} />
+      <UserDetail id={open ? userId : null} open={open} onOpenChange={(o) => !o && writeParams({ user: null })} liveUsers={liveUsers} />
       {dialog}
     </Reveal>
   )

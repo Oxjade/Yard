@@ -38,20 +38,31 @@ const unattributable = (e: AuditEntry, user: PlatformUser) => !e.subjectId && e.
  * A shopper's account: reports, recent orders and the decisions taken on it. Self-contained
  * (its own decision dialog), because the shell's command palette opens it over any page.
  */
-export function UserDetail({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+/** Extra facts a live (server) account carries: how it signs in, whether its email is verified, its brands. */
+/** "google" → "Google", "password" → "Password", "facebook" → "Facebook". */
+export const methodLabel = (m: string) => (m === "password" ? "Password" : m === "auth0" ? "Social" : m.charAt(0).toUpperCase() + m.slice(1))
+
+export type LiveUserExtras = { kind: string; methods: string[]; emailVerified: boolean; brands: string[]; adminRole: string | null }
+
+export function UserDetail({ id, open, onOpenChange, liveUsers }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void; liveUsers?: (PlatformUser & LiveUserExtras)[] }) {
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const shown = useLast(id)
-  const user = useAdmin((s) => s.users.find((u) => u.id === shown))
-  const audit = useAdmin((s) => s.audit)
-  const users = useAdmin((s) => s.users)
+  const storeUser = useAdmin((s) => s.users.find((u) => u.id === shown))
+  const storeAudit = useAdmin((s) => s.audit)
+  const storeUsers = useAdmin((s) => s.users)
+  // Live (sample data off): the account comes from Yard's server, with no sample reports, orders or audit.
+  const liveUser = liveUsers?.find((u) => u.id === shown)
+  const user: (PlatformUser & Partial<LiveUserExtras>) | undefined = liveUsers ? liveUser : storeUser
+  const audit = liveUsers ? [] : storeAudit
+  const users = liveUsers ?? storeUsers
   const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('[data-slot="sheet-content"]'))
   const block = useUserStatusBlock()
 
   if (!user) return null
 
-  const reports = reportsFor(user)
-  const orders = merchantOrders.filter((o) => o.customerId === user.id).sort((a, b) => b.placedAt.localeCompare(a.placedAt))
+  const reports = liveUsers ? [] : reportsFor(user)
+  const orders = liveUsers ? [] : merchantOrders.filter((o) => o.customerId === user.id).sort((a, b) => b.placedAt.localeCompare(a.placedAt))
   const sharesName = users.some((u) => u.name === user.name && u.id !== user.id)
   const entries = audit.filter((e) => isAbout(e, user, sharesName))
   const unattributed = sharesName ? audit.filter((e) => unattributable(e, user)).length : 0
@@ -90,7 +101,15 @@ export function UserDetail({ id, open, onOpenChange }: { id: string | null; open
       >
         <Facts
           items={[
-            { label: "Country", value: countryName(user.country) },
+            ...(user.methods
+              ? [
+                  { label: "Account", value: user.adminRole ? `Admin (${user.adminRole.replace("_", " ")})` : user.kind === "brand_staff" ? "Brand team" : "Shopper" },
+                  { label: "Email", value: user.emailVerified ? "Verified" : "Not verified" },
+                  { label: "Signs in with", value: user.methods.length ? user.methods.map(methodLabel).join(", ") : "—" },
+                  ...(user.brands?.length ? [{ label: "Brands", value: user.brands.join(", ") }] : []),
+                ]
+              : []),
+            { label: "Country", value: user.country ? countryName(user.country) : "—" },
             { label: "Joined", value: <time dateTime={user.joinedAt}>{formatDate(user.joinedAt)}</time> },
             { label: "Orders", value: <span className="tabular">{user.orders}</span> },
             { label: "Last active", value: relDays(user.lastActive, now) },

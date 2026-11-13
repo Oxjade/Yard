@@ -33,6 +33,7 @@ import type {
 
 export const adminKeys = {
   counts: "admin:counts",
+  users: "admin:users",
   onboardings: "admin:catalog:onboardings",
   catalogProducts: (f: AdminCatalogProductsFilter = {}) => `admin:catalog:products:${f.moderation ?? "all"}:${f.category ?? "all"}:${f.q ?? ""}`,
   messages: (tab: MessageTab) => `admin:messages:${tab}`,
@@ -61,6 +62,8 @@ export const listDelivery = (tab: DeliveryTab, country?: string) => api<Delivery
 /** POST: a held brand note's text (audited delivery_note.viewed; Support, Trust & safety and owners). */
 export const viewHeldNote = (id: string) => api<HeldNoteViewResult>(`/api/admin/delivery/notes/${encodeURIComponent(id)}/view`, { method: "POST" })
 export const listHolidays = (country?: string) => api<{ items: HolidayDto[] }>("/api/admin/holidays", { query: { country } })
+export type AdminUserDto = { id: string; name: string; email: string; kind: "shopper" | "brand_staff" | "admin"; status: "active" | "restricted" | "suspended"; country: string | null; city: string | null; joinedAt: string; lastActive: string; emailVerified: boolean; methods: string[]; orders: number; brands: string[]; adminRole: string | null; demo: boolean }
+export const listAdminUsers = () => api<{ items: AdminUserDto[]; total: number }>("/api/admin/users", { query: { limit: 500 } })
 export const listAbuse = (user?: string) => api<AbuseListDto>("/api/admin/abuse", { query: { user } })
 export const listRestrictions = (subject?: string) => api<{ items: RestrictionDto[] }>("/api/admin/restrictions", { query: { subject } })
 export const listAudit = (q: { subjectType?: string; subjectId?: string; actorKind?: string; cursor?: string; limit?: number } = {}) => api<AuditListResult>("/api/admin/audit", { query: q })
