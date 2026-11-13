@@ -241,8 +241,8 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
   return (
     <div className="grid gap-3">
       {demoEnabled ? <Button variant="secondary" size="lg" className="w-full" loading={busy === "demo"} disabled={!!busy && busy !== "demo"} onClick={() => void handleDemoSignIn()}>Continue as demo shopper</Button> : null}
-      {mode === "signin" ? oauthProviders.buttons.map((b) => <Button key={b.key} variant="secondary" size="lg" className="w-full" loading={busy === `social:${b.key}`} disabled={!!busy && busy !== `social:${b.key}`} onClick={() => void startOAuth(b)}><SocialMark mark={b.mark} /> Continue with {b.label}</Button>) : null}
-      {demoEnabled || (mode === "signin" && oauthProviders.buttons.length > 0) ? <div className="my-1 flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
+      {mode === "signin" || mode === "signup" ? oauthProviders.buttons.map((b) => <Button key={b.key} variant="secondary" size="lg" className="w-full" loading={busy === `social:${b.key}`} disabled={!!busy && busy !== `social:${b.key}`} onClick={() => void startOAuth(b)}><SocialMark mark={b.mark} /> Continue with {b.label}</Button>) : null}
+      {demoEnabled || ((mode === "signin" || mode === "signup") && oauthProviders.buttons.length > 0) ? <div className="my-1 flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
       {signupSent ? (
         <p role="status" className="rounded-md border border-line-soft bg-card px-4 py-3 text-sm leading-relaxed text-ink-2">
           We sent a verification link to {email.trim()}. Open it to finish creating your account.
