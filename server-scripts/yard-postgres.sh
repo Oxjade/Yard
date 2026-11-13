@@ -47,20 +47,9 @@ cat > /etc/cron.d/yard-backup <<'EOF'
 15 3 * * * postgres pg_dump -Fc yard > /var/backups/yard/yard-$(date +\%F).dump && find /var/backups/yard -name 'yard-*.dump' -mtime +14 -delete
 EOF
 # yard-update now also runs migrations after each build.
-cat > /usr/local/bin/yard-update <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_PUBLIC_URL=$(grep -m1 ^YARD_PUBLIC_URL= /etc/yard.env | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
-sudo -u postgres pg_dump -Fc yard > /var/backups/yard/pre-update-$(date +%F-%H%M).dump
-sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run db:migrate'
-sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run geoip:update' || true
-systemctl restart yard
-sleep 8
-curl -fsS http://127.0.0.1:3000/api/health && echo || { echo "Health check failed: journalctl -u yard -n 50"; exit 1; }
-# Warm the main pages so the first visitor after a deploy does not wait for them to render.
-for p in / /brands /drops /charts /around /sell /categories; do curl -s -o /dev/null http://127.0.0.1:3000$p || true; done
-EOF
-chmod 755 /usr/local/bin/yard-update
+# yard-update builds the next release beside the live one and switches over only once it's built
+# (server-scripts/yard-update.sh), so deploys no longer take the site down.
+install -m 755 /home/yard/app/server-scripts/yard-update.sh /usr/local/bin/yard-update
 systemctl restart yard
 sleep 10
 curl -fsS http://127.0.0.1:3000/api/health && echo && echo "Done: Yard is on Postgres." || echo "Not healthy yet: run journalctl -u yard -n 50 and send me the output."

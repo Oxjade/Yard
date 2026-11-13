@@ -82,16 +82,7 @@ EOF
 fi
 
 say "8/9 Install and build (10-20 minutes on 1 CPU)"
-cat > /usr/local/bin/yard-update <<'EOF'
-#!/usr/bin/env bash
-# Pull the latest code, rebuild and restart Yard.
-set -euo pipefail
-sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && NODE_OPTIONS=--max-old-space-size=1536 npm run build'
-systemctl restart yard
-sleep 5
-systemctl --no-pager --lines=5 status yard
-EOF
-chmod 755 /usr/local/bin/yard-update
+install -m 755 "$APP/server-scripts/yard-update.sh" /usr/local/bin/yard-update
 sudo -u yard bash -c 'cd ~/app && npm ci --no-audit --no-fund && NODE_OPTIONS=--max-old-space-size=1536 npm run build'
 
 cat > /etc/systemd/system/yard.service <<'EOF'
@@ -125,6 +116,9 @@ $HOST {
 	}
 	reverse_proxy 127.0.0.1:3000 {
 		flush_interval -1
+		# During a deploy's restart, hold requests (up to 30 s) instead of answering 502.
+		lb_try_duration 30s
+		lb_try_interval 250ms
 	}
 }
 EOF

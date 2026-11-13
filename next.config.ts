@@ -23,6 +23,9 @@ const nextConfig = (phase: string): NextConfig => {
     cacheComponents: true,
     // The dev-mode badge sits over the Studio/Admin sidebar footer and the phone tab bar.
     devIndicators: false,
+    // Version skew protection: yard-update builds with the commit as the deployment id, so a tab
+    // opened before a deploy does a full reload on its next navigation instead of breaking.
+    deploymentId: process.env.YARD_DEPLOYMENT_ID || undefined,
     experimental: {
       // src/proxy.ts runs in front of /api/* (not uploads or webhooks), and Next buffers a proxied
       // request's body in memory: cap that buffer at the JSON API limit (the proxy refuses a larger
