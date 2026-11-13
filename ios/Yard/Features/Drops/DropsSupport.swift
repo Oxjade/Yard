@@ -302,6 +302,7 @@ enum DropLocalReminder {
         content.sound = UNNotificationSound.default
         content.userInfo = [
             "path": drop.webPath,
+            "href": drop.webPath,
             "url": Config.webURL(drop.webPath).absoluteString,
             "dropId": drop.id,
         ]
