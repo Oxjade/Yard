@@ -103,6 +103,7 @@ struct BrandsStorefrontExtras: Decodable, Sendable {
 // MARK: - Glass circle (for Menu labels, which can't be a Button)
 
 /// The same look as `GlassIconButton`, as a plain label (used inside `Menu`).
+@MainActor
 struct BrandsGlassCircle: View {
     let systemImage: String
     var size: CGFloat = 40
@@ -122,6 +123,7 @@ struct BrandsGlassCircle: View {
 // MARK: - Founding badge
 
 /// "Founding brand" (the website's FoundingBadge: sparkle + text, violet tint).
+@MainActor
 struct BrandsFoundingBadge: View {
     var onPhoto: Bool = false
 

@@ -39,22 +39,24 @@ final class ShopListingModel {
     private let fetches: Bool
 
     init(category: String?) {
+        // `let`s first: assigning an @Observable property uses its setter, which needs every
+        // stored property initialized.
         self.fixedCategory = category
-        self.category = category
         self.fetches = true
+        self.category = category
         if let cached = ShopCategoryCache.shared.current { self.categories = cached }
     }
 
     /// Previews only: fixed products, no network.
     init(previewCategory: String?, categories: [ShopCategory], products: [Product]) {
         self.fixedCategory = previewCategory
+        self.fetches = false
         self.category = previewCategory
         self.categories = categories
         self.products = products
         self.total = products.count
         self.nextOffset = nil
         self.phase = .loaded
-        self.fetches = false
         self.hasStarted = true
     }
 

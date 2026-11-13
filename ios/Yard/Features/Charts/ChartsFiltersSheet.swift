@@ -3,6 +3,7 @@ import SwiftUI
 /// The website's phone Filters sheet: Category and Location (City on City charts) as chips.
 /// It edits a draft; "Show chart" applies it, closing discards it. Options under the minimum
 /// cohort are listed but can't be chosen, so two choices never combine into an empty board.
+@MainActor
 struct ChartsFiltersSheet: View {
     let scopes: ChartScopes?
     /// The city a City chart currently shows (the server's or the shopper's default).

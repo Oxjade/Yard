@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - Movement chip
 
 /// ▲n violet, ▼n red, "—" for no change, "New" and "Re-entry" spelled out (website RankMove).
+@MainActor
 struct ChartsRankMove: View {
     let movement: ChartMovement
     let delta: Int
@@ -50,6 +51,7 @@ struct ChartsRankMove: View {
 // MARK: - Reason (stat) chip
 
 /// Why the entry is here: "+1.2K new followers". Public-safe stats only (never revenue).
+@MainActor
 struct ChartsStatChip: View {
     let stat: ChartStat
     var compact: Bool = false
@@ -82,6 +84,7 @@ struct ChartsStatChip: View {
 // MARK: - Edition line
 
 /// "● Live  Weekly edition, 31 Oct – 6 Nov. Updated 2 min ago" ("Final" for a closed edition).
+@MainActor
 struct ChartsEditionLine: View {
     let edition: ChartEditionInfo
     let period: ChartPeriod
@@ -123,6 +126,7 @@ struct ChartsEditionLine: View {
 /// Ranks 1–3 as editorial cards: #1 full width, #2 and #3 side by side beneath (one card full
 /// width, two cards side by side). Words sit on the card's solid panel, never on the photo; the
 /// rank sits on a solid tab in the photo's corner (acid for #1).
+@MainActor
 struct ChartsPodium: View {
     let entries: [ChartEntry]
     let period: ChartPeriod
@@ -152,6 +156,7 @@ struct ChartsPodium: View {
     }
 }
 
+@MainActor
 struct ChartsPodiumCard: View {
     let entry: ChartEntry
     let period: ChartPeriod
@@ -254,6 +259,7 @@ struct ChartsPodiumCard: View {
 
 /// One ranked row: big rank numeral in the display face, movement, avatar, name, origin,
 /// reason chip and history line. The whole row opens the storefront (or the drop).
+@MainActor
 struct ChartsRow: View {
     let entry: ChartEntry
     let period: ChartPeriod
@@ -339,6 +345,7 @@ struct ChartsRow: View {
 // MARK: - Callouts
 
 /// Biggest climber and Highest debut, above row 4; hidden when the subject is on the podium.
+@MainActor
 struct ChartsCallouts: View {
     let callouts: ChartCallouts
     let period: ChartPeriod
@@ -389,6 +396,7 @@ struct ChartsCallouts: View {
 // MARK: - Sponsored strip
 
 /// Paid placements, after rank 10 (or after the list): labelled, never inside the ranking.
+@MainActor
 struct ChartsSponsoredStrip: View {
     let items: [ChartSponsored]
 
@@ -420,7 +428,7 @@ struct ChartsSponsoredStrip: View {
                                     .font(.yardHeadline)
                                     .foregroundStyle(Color.yard.ink)
                                     .lineLimit(1)
-                                Text(item.drop.map { "\(item.brand.name), \($0.statusLabel.lowercased())" } ?? [item.brand.city, item.brand.countryName].filter { !$0.isEmpty }.joined(separator: ", "))
+                                Text(subtitle(for: item))
                                     .font(.yardCaption)
                                     .foregroundStyle(Color.yard.ink2)
                                     .lineLimit(1)
@@ -437,10 +445,18 @@ struct ChartsSponsoredStrip: View {
             .yardCard(background: Color.yard.surface, radius: Radius.image)
         }
     }
+
+    private func subtitle(for item: ChartSponsored) -> String {
+        if let drop = item.drop {
+            return "\(item.brand.name), \(drop.statusLabel.lowercased())"
+        }
+        return [item.brand.city, item.brand.countryName].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
 }
 
 // MARK: - Skeleton
 
+@MainActor
 struct ChartsBoardSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {

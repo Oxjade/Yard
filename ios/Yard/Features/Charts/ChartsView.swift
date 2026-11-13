@@ -336,6 +336,7 @@ struct ChartsView: View {
 
 /// A scope with too few eligible brands (website SmallCohortState): says why and offers only
 /// actions that lead to a board that has a chart.
+@MainActor
 struct ChartsSmallCohortView: View {
     let board: ChartBoard
     let query: ChartsQuery

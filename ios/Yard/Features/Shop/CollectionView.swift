@@ -40,12 +40,14 @@ final class CollectionModel {
     init(previewCollection: StorefrontCollection, brand: ShopCollectionResponse.Brand, products: [Product], others: [StorefrontCollection]) {
         self.brandHandle = brand.handle
         self.collectionHandle = previewCollection.handle
+        // `let`s first: assigning an @Observable property uses its setter, which needs every
+        // stored property initialized.
+        self.fetches = false
         self.collection = previewCollection
         self.brand = brand
         self.products = products
         self.others = others
         self.phase = .loaded
-        self.fetches = false
     }
 
     var isLoaded: Bool {
@@ -377,6 +379,7 @@ struct CollectionView: View {
 // MARK: - Collection card
 
 /// A 4:3 photo card for a collection: name, description and piece count over a bottom scrim.
+@MainActor
 struct CollectionCard: View {
     let collection: StorefrontCollection
 
@@ -415,6 +418,7 @@ struct CollectionCard: View {
 
 // MARK: - Skeleton
 
+@MainActor
 private struct CollectionSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {

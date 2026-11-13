@@ -19,12 +19,12 @@ final class CategoriesModel {
     private let fetches: Bool
 
     init(categories: [ShopCategory]? = nil) {
+        // `let` first: assigning an @Observable property uses its setter, which needs every
+        // stored property initialized.
+        self.fetches = categories == nil
         if let categories {
             self.categories = categories
             self.phase = .loaded
-            self.fetches = false
-        } else {
-            self.fetches = true
         }
     }
 
@@ -213,6 +213,7 @@ struct CategoriesView: View {
 // MARK: - Category card
 
 /// A photo card: the category image, a bottom scrim, "01", the name in display type and the live count.
+@MainActor
 struct CategoryCard: View {
     let category: ShopCategory
     let index: Int
@@ -273,6 +274,7 @@ struct CategoryCard: View {
 
 // MARK: - Skeleton
 
+@MainActor
 private struct CategoriesSkeleton: View {
     var body: some View {
         VStack(spacing: Spacing.s) {

@@ -557,6 +557,7 @@ struct BrandProfileView: View {
 
 /// The sharp cover on top (stretches when pulled down, parallax when scrolled), fading into a
 /// blurred copy of itself that fills the identity block, then into the page background.
+@MainActor
 struct BrandHeroBackdrop: View {
     let url: URL?
     let heroHeight: CGFloat
@@ -631,6 +632,7 @@ struct BrandHeroBackdrop: View {
 // MARK: - Story card
 
 /// The brand's story in a frosted card on the photo; long stories expand on tap.
+@MainActor
 struct BrandStoryCard: View {
     let text: String
     @State private var expanded = false
@@ -661,6 +663,7 @@ struct BrandStoryCard: View {
 
 // MARK: - Collection card
 
+@MainActor
 struct BrandCollectionCard: View {
     let collection: StorefrontCollection
     let fallbackURL: URL?
@@ -708,6 +711,7 @@ struct BrandCollectionCard: View {
 
 // MARK: - Drop row
 
+@MainActor
 struct BrandDropRow: View {
     let drop: Drop
 
