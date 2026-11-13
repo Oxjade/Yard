@@ -85,6 +85,7 @@ import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.YardDisplayText
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.GlassIconButton
 import space.yardstore.app.designsystem.components.LocalToastCenter
@@ -93,6 +94,15 @@ import space.yardstore.app.designsystem.components.YardTopBar
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Dp
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.ListDetailDefaults
+import space.yardstore.app.designsystem.components.YardDivider
 import java.time.Instant
 
 /**
@@ -115,6 +125,9 @@ internal fun AroundScreen(model: AroundViewModel) {
     val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val inPreview = LocalInspectionMode.current
+    val window = LocalYardWindow.current
+    /** Expanded windows: the list / detail sit in a fixed panel beside the map instead of the sheet. */
+    val sidePanel = window.isExpanded
 
     val locator = remember { AroundLocationManager(context) }
     val map = remember { AroundMapController() }
@@ -142,12 +155,7 @@ internal fun AroundScreen(model: AroundViewModel) {
         detailId = place.id
         if (sheet.detent == AroundDetent.Peek) sheet.animateTo(AroundDetent.Medium)
         focus.clearFocus()
-        // Keep the zoom when already close; pull the pin into the upper half, above the sheet.
-        val currentLat = region?.latitudeDelta ?: 0.05
-        val currentLng = region?.longitudeDelta ?: 0.05
-        val (latSpan, lngSpan) = if (currentLat > 0.5) 0.04 to 0.04 else currentLat to currentLng
-        val center = AroundCoordinate(place.lat - latSpan * 0.22, place.lng)
-        map.flyTo(AroundRegion(center, latSpan, lngSpan))
+        map.flyTo(aroundSelectionRegion(place, region, sheetBelow = !sidePanel))
     }
 
     fun showAll() {
@@ -248,8 +256,7 @@ internal fun AroundScreen(model: AroundViewModel) {
 
     val visiblePlaces = remember(model.places, region, locator.location) { model.visiblePlaces(region, locator.location) }
 
-    Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        YardTopBar("Around")
+    val searchBar: @Composable () -> Unit = {
         AroundSearchBar(
             query = query,
             onQueryChange = { query = it },
@@ -258,61 +265,102 @@ internal fun AroundScreen(model: AroundViewModel) {
             onSearch = { runSearch() },
             onLocate = { locate() },
         )
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AroundMap(
-                controller = map,
-                places = model.places,
-                logoUrl = { model.logoUrl(it) },
-                selectedId = selectedId,
-                now = now,
-                userLocation = if (locator.isAuthorized) locator.location else null,
-                onSelect = { select(it) },
-                modifier = Modifier.fillMaxSize(),
-            )
-            AroundSheet(sheet, Modifier.fillMaxSize()) {
-                AnimatedContent(
-                    targetState = detailId,
-                    transitionSpec = {
-                        val forward = targetState != null
-                        if (forward) {
-                            (slideInHorizontally(tween(300)) { it } + fadeIn()) togetherWith (slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut())
-                        } else {
-                            (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn()) togetherWith (slideOutHorizontally(tween(300)) { it } + fadeOut())
-                        }
-                    },
-                    label = "around-sheet",
-                ) { id ->
-                    if (id == null) {
-                        AroundPlacesList(
-                            places = visiblePlaces,
-                            totalCount = model.places.size,
-                            isLoading = model.isLoading || !(model.hasLoaded || model.error != null),
-                            error = if (model.places.isEmpty()) model.error else null,
-                            isLocated = locator.location != null,
-                            selectedId = selectedId,
-                            now = now,
-                            logo = { model.logoUrl(it) },
-                            distanceText = { p -> locator.location?.let { AroundTime.distance(p.coordinate.distanceTo(it)) } },
-                            onSelect = { select(it) },
-                            onRetry = { model.loadNow() },
-                            onShowAll = { showAll() },
-                            onBrowseBrands = { leave(AroundExit.Push(Route.BrandsDirectory)) },
-                        )
-                    } else {
-                        val summary = model.place(id)
-                        PlaceDetailView(
-                            placeId = id,
-                            summary = summary,
-                            distanceMeters = summary?.let { s -> locator.location?.let { s.coordinate.distanceTo(it) } },
-                            logoUrl = summary?.let { model.logoUrl(it) },
-                            onBack = { detailId = null },
-                            onExit = { leave(it) },
-                        )
+    }
+
+    // The sheet's one-deep stack (list ⇄ place), shown in the bottom sheet or the side panel.
+    val panelContent: @Composable () -> Unit = {
+        AnimatedContent(
+            targetState = detailId,
+            transitionSpec = {
+                val forward = targetState != null
+                if (forward) {
+                    (slideInHorizontally(tween(300)) { it } + fadeIn()) togetherWith (slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut())
+                } else {
+                    (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn()) togetherWith (slideOutHorizontally(tween(300)) { it } + fadeOut())
+                }
+            },
+            label = "around-sheet",
+        ) { id ->
+            if (id == null) {
+                AroundPlacesList(
+                    places = visiblePlaces,
+                    totalCount = model.places.size,
+                    isLoading = model.isLoading || !(model.hasLoaded || model.error != null),
+                    error = if (model.places.isEmpty()) model.error else null,
+                    isLocated = locator.location != null,
+                    selectedId = selectedId,
+                    now = now,
+                    logo = { model.logoUrl(it) },
+                    distanceText = { p -> locator.location?.let { AroundTime.distance(p.coordinate.distanceTo(it)) } },
+                    onSelect = { select(it) },
+                    onRetry = { model.loadNow() },
+                    onShowAll = { showAll() },
+                    onBrowseBrands = { leave(AroundExit.Push(Route.BrandsDirectory)) },
+                )
+            } else {
+                val summary = model.place(id)
+                PlaceDetailView(
+                    placeId = id,
+                    summary = summary,
+                    distanceMeters = summary?.let { s -> locator.location?.let { s.coordinate.distanceTo(it) } },
+                    logoUrl = summary?.let { model.logoUrl(it) },
+                    onBack = { detailId = null },
+                    onExit = { leave(it) },
+                )
+            }
+        }
+    }
+
+    // One tree for every width (the map keeps its position in it), so rotating, resizing or
+    // unfolding never recreates the MapView or loses the camera.
+    Column(Modifier.fillMaxSize().yardScreenBackground()) {
+        YardTopBar("Around")
+        if (!sidePanel) searchBar()
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            if (sidePanel) {
+                val panelWidth = aroundPanelWidth(window.width)
+                Column(Modifier.width(panelWidth).fillMaxHeight().background(Color.yard.bg)) {
+                    CompositionLocalProvider(LocalYardWindow provides window.copy(width = panelWidth)) {
+                        searchBar()
+                        YardDivider()
+                        Box(Modifier.weight(1f).fillMaxWidth()) { panelContent() }
                     }
+                }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color.yard.line))
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                AroundMap(
+                    controller = map,
+                    places = model.places,
+                    logoUrl = { model.logoUrl(it) },
+                    selectedId = selectedId,
+                    now = now,
+                    userLocation = if (locator.isAuthorized) locator.location else null,
+                    onSelect = { select(it) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (!sidePanel) {
+                    AroundSheet(sheet, Modifier.fillMaxSize()) { panelContent() }
                 }
             }
         }
     }
+}
+
+/** Width of the Expanded side panel: the list-pane width (38% of the window, 320–420dp). */
+internal fun aroundPanelWidth(windowWidth: Dp): Dp = ListDetailDefaults.listWidth(windowWidth)
+
+/**
+ * Where the camera goes when a place is picked: keep the zoom when already close (else ~4 km).
+ * With the bottom sheet over the map's lower half the pin is pulled into the upper half; with the
+ * side panel the map is all visible, so the pin is centred.
+ */
+internal fun aroundSelectionRegion(place: AroundPlace, current: AroundRegion?, sheetBelow: Boolean): AroundRegion {
+    val currentLat = current?.latitudeDelta ?: 0.05
+    val currentLng = current?.longitudeDelta ?: 0.05
+    val (latSpan, lngSpan) = if (currentLat > 0.5) 0.04 to 0.04 else currentLat to currentLng
+    val lat = if (sheetBelow) place.lat - latSpan * 0.22 else place.lat
+    return AroundRegion(AroundCoordinate(lat, place.lng), latSpan, lngSpan)
 }
 
 @Composable
@@ -360,12 +408,14 @@ private fun AroundSearchBar(
             if (isSearching) {
                 CircularProgressIndicator(Modifier.size(16.dp), color = Color.yard.ink2, strokeWidth = 2.dp)
             } else if (query.isNotEmpty()) {
-                Icon(
-                    Icons.Filled.Cancel,
-                    contentDescription = "Clear search",
-                    tint = Color.yard.ink3,
-                    modifier = Modifier.size(20.dp).pressableClick { onQueryChange("") },
-                )
+                Box(
+                    Modifier
+                        .minimumInteractiveComponentSize()
+                        .pressableClick(onClickLabel = "Clear search") { onQueryChange("") },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Cancel, contentDescription = "Clear search", tint = Color.yard.ink3, modifier = Modifier.size(20.dp))
+                }
             }
         }
         GlassIconButton(
@@ -398,8 +448,27 @@ fun AroundPlacesList(
     onBrowseBrands: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    AdaptiveContent(modifier.fillMaxSize()) { AroundPlacesLazyList(places, totalCount, isLoading, error, isLocated, selectedId, now, logo, distanceText, onSelect, onRetry, onShowAll, onBrowseBrands) }
+}
+
+@Composable
+private fun AroundPlacesLazyList(
+    places: List<AroundPlace>,
+    totalCount: Int,
+    isLoading: Boolean,
+    error: Throwable?,
+    isLocated: Boolean,
+    selectedId: String?,
+    now: Instant,
+    logo: (AroundPlace) -> String?,
+    distanceText: (AroundPlace) -> String?,
+    onSelect: (AroundPlace) -> Unit,
+    onRetry: suspend () -> Unit,
+    onShowAll: () -> Unit,
+    onBrowseBrands: () -> Unit,
+) {
     LazyColumn(
-        modifier.fillMaxSize(),
+        Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.l, bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
@@ -492,3 +561,7 @@ private fun AroundListLight() = YardPreview(darkTheme = false) {
         logo = { null }, distanceText = { "1.2 km" }, onSelect = {}, onRetry = {}, onShowAll = {}, onBrowseBrands = {},
     )
 }
+
+@YardTabletPreviews
+@Composable
+private fun AroundTablet() = YardPreview(darkTheme = true) { AroundScreen(AroundViewModel(AroundFixtures.places)) }

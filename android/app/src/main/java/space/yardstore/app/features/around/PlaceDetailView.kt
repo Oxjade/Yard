@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -51,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -61,7 +61,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.minimumInteractiveComponentSize
+import space.yardstore.app.designsystem.YardTabletPreviews
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -83,6 +86,7 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.Card
 import space.yardstore.app.designsystem.components.EmptyState
@@ -182,7 +186,9 @@ fun PlaceDetailView(
     val place = detail?.summary ?: summary
     val error = model.loadError
 
-    Column(modifier.fillMaxSize()) {
+    // Capped to the content width on a Medium-width sheet; the Expanded side panel is narrower anyway.
+    AdaptiveContent(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
         // Bar: back, title, share (iOS navigation bar inside the sheet's NavigationStack).
         Box(Modifier.fillMaxWidth().padding(horizontal = Spacing.s).height(48.dp), contentAlignment = Alignment.Center) {
             Text(
@@ -195,9 +201,9 @@ fun PlaceDetailView(
                 modifier = Modifier.padding(horizontal = 56.dp),
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", size = 38.dp, onClick = onBack)
+                GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.minimumInteractiveComponentSize(), size = 40.dp, onClick = onBack)
                 Spacer(Modifier.weight(1f))
-                GlassIconButton(Icons.Outlined.Share, "Share this place", size = 38.dp) {
+                GlassIconButton(Icons.Outlined.Share, "Share this place", Modifier.minimumInteractiveComponentSize(), size = 40.dp) {
                     sharePlace(context, Config.webUrl("/around?place=$placeId"))
                 }
             }
@@ -219,6 +225,7 @@ fun PlaceDetailView(
                 else -> PlaceDetailSkeleton()
             }
         }
+    }
     }
 }
 
@@ -272,13 +279,12 @@ private fun PlacePhotos(p: AroundPlace, detail: AroundPlaceDetail?) {
         else -> emptyList()
     }
     if (images.isEmpty()) return
-    val screen = LocalConfiguration.current.screenWidthDp.dp
-    val full = screen - Spacing.gutter * 2
-    val width = if (images.size > 1) full * 0.88f else full
+    // Sized to the container (the sheet or the side panel), like iOS `containerRelativeFrame`.
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = Spacing.s)) {
+    val width = aroundPhotoWidth(maxWidth, images.size)
     LazyRow(
         contentPadding = PaddingValues(horizontal = Spacing.gutter),
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
-        modifier = Modifier.padding(top = Spacing.s),
     ) {
         itemsIndexed(images, key = { i, im -> "$i-${im.src}" }) { _, image ->
             RemoteImage(
@@ -291,6 +297,13 @@ private fun PlacePhotos(p: AroundPlace, detail: AroundPlaceDetail?) {
             }
         }
     }
+    }
+}
+
+/** A photo's width in the place's carousel: the container minus gutters, 88% of that when there are more. */
+internal fun aroundPhotoWidth(containerWidth: Dp, count: Int): Dp {
+    val full = (containerWidth - Spacing.gutter * 2).coerceAtLeast(0.dp)
+    return if (count > 1) full * 0.88f else full
 }
 
 @Composable
@@ -661,6 +674,20 @@ private fun PlaceDetailLight() = YardPreview(darkTheme = false) {
         placeId = AroundFixtures.store.id,
         summary = AroundFixtures.store,
         distanceMeters = null,
+        logoUrl = null,
+        onBack = {},
+        onExit = {},
+        previewDetail = AroundFixtures.detail,
+    )
+}
+
+@YardTabletPreviews
+@Composable
+private fun PlaceDetailTablet() = YardPreview(darkTheme = true) {
+    PlaceDetailView(
+        placeId = AroundFixtures.store.id,
+        summary = AroundFixtures.store,
+        distanceMeters = 1200.0,
         logoUrl = null,
         onBack = {},
         onExit = {},

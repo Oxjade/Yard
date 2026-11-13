@@ -16,6 +16,17 @@ exhibitions on a map, with a sheet listing the places in view, nearest first.
   "Happening here" (See {drop} → `Route.Drop(slug)`), "Pieces here" (→ `Route.Product`), Share
   (`/around?place={id}`, Android share sheet). 404 → "Not on Around any more".
 
+## Tablet & large screens
+- **Expanded (≥ 840dp)**: no bottom sheet. The list / place detail sit in a fixed side panel at the
+  start (list-pane width, 320–420dp, hairline divider) with the search bar at its top; the map fills
+  the rest. Picking a place centres its pin (the phone pulls it above the sheet). The panel keeps
+  the same one-deep list ⇄ detail stack (back button + system back).
+- **Compact / Medium**: map + three-detent sheet as on phones; on Medium the list and place detail
+  are capped at `contentMaxWidth` inside the sheet.
+- One composition tree for every width, so rotate / resize / fold never recreates the MapView.
+- Place photos size to their container (sheet or panel), not the screen.
+- `@YardTabletPreviews` on `AroundScreen` and `PlaceDetailView`.
+
 ## Endpoints
 - `GET /api/around/places?scope=world` (decoded row by row; bad rows dropped), filtered/sorted on device.
 - `GET /api/around/places/{id}`.
@@ -26,8 +37,9 @@ AroundView.kt (screen, search bar, `AroundPlacesList`), PlaceDetailView.kt (+ `P
 `AroundExit`), AroundViewModel.kt, AroundModels.kt, AroundTime.kt, AroundLocationManager.kt,
 AroundComponents.kt (pin, user dot, row, status text, skeleton), AroundMap.kt (osmdroid wrapper),
 AroundSheet.kt (three-detent sheet), AroundFixtures.kt (previews only).
-Tests: `app/src/test/java/space/yardstore/app/features/around/` (37: DTO decoding, hours/dates/
-distance helpers, view-model load/error/refresh/logo paging/filter/search, detail model incl. 404).
+Tests: `app/src/test/java/space/yardstore/app/features/around/` (42: DTO decoding, hours/dates/
+distance helpers, view-model load/error/refresh/logo paging/filter/search, detail model incl. 404,
+tablet layout helpers: side-panel width, selection framing, photo width).
 
 ## Different from iOS (on purpose)
 - **Map**: MapKit → osmdroid 6.1.20 (`org.osmdroid:osmdroid-android`, OpenStreetMap tiles, no key;
