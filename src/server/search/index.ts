@@ -9,6 +9,7 @@ import { convert } from "@/lib/money"
 import { db } from "../db"
 import { brandListed } from "../auth/dal"
 import { brands } from "../db/schema"
+import { catalogProducts } from "../db/schema/catalog"
 import { shopperWishlist } from "../db/schema/charts"
 import { searchBrands, searchProducts } from "../db/schema/engagement"
 import { log } from "../log"
@@ -131,8 +132,10 @@ export async function reindexAll(): Promise<{ brands: number; products: number }
   const brandRows = await d.select({ id: brands.id }).from(brands)
   for (const b of brandRows) await reindexBrand(b.id)
   const known = await d.select({ id: searchProducts.productId }).from(searchProducts)
+  // Every catalogue product too, so one that was never indexed (or dropped out) comes back.
+  const catalogue = await d.select({ id: catalogProducts.id }).from(catalogProducts)
   // The sample catalogue joins the index only in demo and development.
-  const ids = new Set([...known.map((r) => r.id), ...(sampleOff() ? [] : sampleProducts.map((p) => p.id))])
+  const ids = new Set([...known.map((r) => r.id), ...catalogue.map((r) => r.id), ...(sampleOff() ? [] : sampleProducts.map((p) => p.id))])
   for (const id of ids) await reindexProduct(id)
   return { brands: brandRows.length, products: ids.size }
 }

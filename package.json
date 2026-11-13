@@ -14,6 +14,7 @@
     "start:demo": "node scripts/start-demo.mjs",
     "admin:create": "node --conditions=react-server --import tsx scripts/create-admin.mjs",
     "maintenance:approved-brand-setup": "node --conditions=react-server --import tsx scripts/fix-approved-brand-setup.mjs",
+    "search:reindex": "node --conditions=react-server --import tsx scripts/search-reindex.mjs",
     "geoip:update": "node scripts/geoip-update.mjs",
     "db:migrate": "node --conditions=react-server --import tsx scripts/db-migrate.mjs",
     "build:tools": "node scripts/bundle-tools.mjs"

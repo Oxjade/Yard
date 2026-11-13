@@ -56,17 +56,20 @@ export function catalogChanged(change: Change) {
       const rows = await d.select({ productId: catalogVariants.productId }).from(catalogVariants).where(inArray(catalogVariants.id, change.variants))
       for (const r of rows) ids.add(r.productId)
     }
-    if (change.reindexBrands?.length) {
+    // Any brand-level change (approval, launch, status) re-indexes the brand AND its products: an
+    // unlisted brand's products are hidden in the index, and only a product re-index brings them back.
+    const reindexBrands = [...new Set([...(change.brands ?? []), ...(change.reindexBrands ?? [])])]
+    if (reindexBrands.length) {
       const d = await db()
       const rows = await d
         .select({ id: catalogProducts.id })
         .from(catalogProducts)
-        .where(and(inArray(catalogProducts.brandId, change.reindexBrands), ne(catalogProducts.status, "archived")))
+        .where(and(inArray(catalogProducts.brandId, reindexBrands), ne(catalogProducts.status, "archived")))
       for (const r of rows) ids.add(r.id)
     }
-    if (!ids.size && !change.reindexBrands?.length) return
+    if (!ids.size && !reindexBrands.length) return
     const search = await loadSearch()
-    for (const b of change.reindexBrands ?? []) {
+    for (const b of reindexBrands) {
       if (typeof search?.reindexBrand === "function") await search.reindexBrand(b).catch((e: unknown) => log.error(`[yard] catalog: reindexBrand(${b}) failed`, e))
     }
     if (typeof search?.reindexProduct !== "function") return

@@ -98,6 +98,8 @@ if command -v pg_dump >/dev/null && [ -d /var/backups/yard ]; then
 fi
 as_yard "set -a; . $ENV_FILE; cd '$NEXT' && npm run db:migrate"
 as_yard "set -a; . $ENV_FILE; cd '$NEXT' && npm run geoip:update" || true
+# Shop and Search list from the index: rebuild it so it matches every brand's current status.
+as_yard "set -a; . $ENV_FILE; cd '$NEXT' && npm run search:reindex" || true
 
 say "Switching to $NEXT and restarting"
 switch_to "$NEXT"
