@@ -14,6 +14,7 @@ import { assertSameOrigin } from "./csrf"
 import { badRequest, errorBody, forbidden, HttpError, NotImplemented, rateLimited } from "./errors"
 import { pgDataException, pgTransient } from "./pg-errors"
 import { clientIp, ipHash as hashIp } from "./request"
+import { record as recordMetric } from "../monitoring/metrics"
 import { logRequest } from "./request-log"
 
 /**
@@ -319,7 +320,10 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
     } finally {
       done()
     }
-    logRequest({ id: requestId, method: req.method.toUpperCase(), path: new URL(req.url).pathname, status: res.status, ms: performance.now() - started })
+    const ms = performance.now() - started
+    const path = new URL(req.url).pathname
+    logRequest({ id: requestId, method: req.method.toUpperCase(), path, status: res.status, ms })
+    recordMetric(req.method, path, res.status, ms, requestId)
     return res
   }
 

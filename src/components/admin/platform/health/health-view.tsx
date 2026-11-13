@@ -13,6 +13,8 @@ import { Bone } from "@/components/feedback/skeletons"
 import { AdminAreaChart } from "@/components/admin/ui/area-chart"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
+import { LiveMonitoring } from "@/components/admin/overview/live-monitoring"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
@@ -87,6 +89,7 @@ function useRecorded() {
 
 export function HealthView() {
   const ready = useAdminReady()
+  const sample = usePageSampleData()
   const { retried, replayed } = useRecorded()
   useLinkedPanel(ready)
 
@@ -101,7 +104,7 @@ export function HealthView() {
       <AdminPageHead
         title="Health"
         description="Service status, the API's latency and errors, and the background work that needs an engineer."
-        note="Retries and replays are recorded here and in the audit log; they run once the job runner and the payments service are connected. Latency, queue, storage and sign-in figures are sample data."
+        note={`Retries and replays are recorded here and in the audit log; they run once the job runner and the payments service are connected. ${sample ? "Latency, queue, storage and sign-in figures are sample data." : "Live monitoring counts API requests since the server last started."}`}
       />
 
       <StatRow label="Health figures">
@@ -120,18 +123,20 @@ export function HealthView() {
       </StatRow>
 
       <Services />
-      <Trend />
+      {sample ? <Trend /> : <LiveMonitoring />}
 
       <div className="grid gap-3 @5xl:grid-cols-2">
         <FailedJobs retried={retried} ready={ready} />
         <WebhookFailures replayed={replayed} ready={ready} />
       </div>
 
-      <div className="grid gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
-        <QueueDepth />
-        <Storage />
-        <AuthFailures className="@3xl:col-span-2 @5xl:col-span-1" />
-      </div>
+      {sample ? (
+        <div className="grid gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
+          <QueueDepth />
+          <Storage />
+          <AuthFailures className="@3xl:col-span-2 @5xl:col-span-1" />
+        </div>
+      ) : null}
     </Reveal>
   )
 }

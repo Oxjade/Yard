@@ -1,6 +1,8 @@
 "use client"
 
-/** Where the live server monitoring sits on the Overview (filled in once the monitoring panel lands). */
+import { LiveMonitoring } from "./live-monitoring"
+
+/** The live server monitoring on the Overview (the Health page shows the same panel). */
 export function LiveMonitoringSlot() {
-  return null
+  return <LiveMonitoring />
 }
