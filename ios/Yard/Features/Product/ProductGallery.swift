@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Full-width swipeable photo pager with page dots, an overlay tag (top-left) and a thumbnail
 /// strip underneath. Tapping a photo opens `ProductPhotoViewer` at that photo.
+@MainActor
 struct ProductGallery<Overlay: View>: View {
     let images: [ProductImage]
     @Binding var index: Int
@@ -125,6 +126,7 @@ struct ProductGallery<Overlay: View>: View {
 
 /// Full-screen photo viewer: swipe between photos, pinch or double-tap to zoom, drag to pan when
 /// zoomed, swipe down to close.
+@MainActor
 struct ProductPhotoViewer: View {
     let images: [ProductImage]
     @State private var index: Int
@@ -201,6 +203,7 @@ struct ProductPhotoViewer: View {
 }
 
 /// One photo that zooms (pinch / double-tap) and pans while zoomed.
+@MainActor
 private struct ProductZoomableImage: View {
     let url: URL?
     @Binding var isZoomed: Bool

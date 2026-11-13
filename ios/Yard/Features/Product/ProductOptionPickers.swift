@@ -120,6 +120,14 @@ struct ProductSizeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsInvalid: Bool = false
 
+    // Explicit: the private @State would make the memberwise init fileprivate (used from ProductDetailView.swift).
+    init(model: ProductDetailModel, isAdding: Bool, onAdd: @escaping () -> Void, onNotify: @escaping () -> Void) {
+        self.model = model
+        self.isAdding = isAdding
+        self.onAdd = onAdd
+        self.onNotify = onNotify
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             YardSheetHeader("Select a size", subtitle: subtitle) { dismiss() }

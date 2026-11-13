@@ -132,6 +132,7 @@ private struct FlowChips: View {
 }
 
 /// A drop card for the Following feed rail.
+@MainActor
 struct FollowingDropCard: View {
     let drop: Drop
     let brandName: String
