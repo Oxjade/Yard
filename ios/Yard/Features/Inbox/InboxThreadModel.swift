@@ -400,7 +400,7 @@ enum InboxPhotoPrep {
             quality -= 0.15
             out = resized.jpegData(compressionQuality: quality)
         }
-        guard let final = out, final.count <= maxBytes else { return nil }
-        return final
+        guard let result = out, result.count <= maxBytes else { return nil }
+        return result
     }
 }

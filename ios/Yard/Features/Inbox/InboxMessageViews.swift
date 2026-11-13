@@ -35,6 +35,7 @@ private struct InboxBubble<Content: View>: View {
 }
 
 /// One message from the server: text, photos, shared product or order, held/removed states.
+@MainActor
 struct InboxMessageRow: View {
     let message: InboxMessage
     let showsTime: Bool

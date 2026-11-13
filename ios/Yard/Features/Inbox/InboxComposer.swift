@@ -4,6 +4,7 @@ import UIKit
 
 /// The pill composer: photo button (shopper inbox attachments), growing text field, acid send.
 /// When the shopper can't send, it shows why instead (blocked, paused, closed…).
+@MainActor
 struct InboxComposer: View {
     let placeholder: String
     let disabledReason: String?
@@ -88,7 +89,9 @@ struct InboxComposer: View {
                 .frame(minHeight: 40)
                 .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.yard.surface2))
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.yard.line, lineWidth: 1))
-            Button(action: send) {
+            Button {
+                send()
+            } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(canSend ? Color.yard.onAcid : Color.yard.ink3)
