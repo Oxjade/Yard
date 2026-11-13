@@ -66,7 +66,11 @@ import space.yardstore.app.core.models.DropEntry
 import space.yardstore.app.core.models.DropViewerState
 import space.yardstore.app.core.models.YardDate
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.PreviewFixtures
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
@@ -116,11 +120,9 @@ private fun DropDetailScreen(model: DropDetailViewModel) {
     val context = LocalContext.current
     val signedIn = session.isSignedIn
 
-    LaunchedEffect(Unit) { model.loadIfNeeded() }
-    LaunchedEffect(signedIn) {
-        // .onChange(of: session.isSignedIn): the viewer state depends on who is signed in.
-        if (model.drop != null) model.reload()
-    }
+    LaunchedEffect(Unit) { model.loadIfNeeded(signedIn) }
+    // .onChange(of: session.isSignedIn): the viewer state depends on who is signed in.
+    LaunchedEffect(signedIn) { model.sessionChanged(signedIn) }
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar(null) {
@@ -171,59 +173,62 @@ private fun DropDetailLoaded(model: DropDetailViewModel, drop: Drop) {
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Column(Modifier.fillMaxSize()) {
-        MasonryGrid(
-            products = model.products,
-            modifier = Modifier.weight(1f),
-            state = grid,
-            contentPadding = PaddingValues(
-                start = Spacing.gridGap,
-                end = Spacing.gridGap,
-                bottom = Spacing.xxxl + if (showsBar) 0.dp else navBottom,
-            ),
-            header = {
-                item(key = "hero", span = full) { DropHero(drop, phase) }
-                item(key = "title", span = full) {
-                    Box(bleed.padding(top = Spacing.xl - Spacing.gridGap)) {
-                        DropTitleBlock(drop) { handle -> router.push(Route.Brand(handle)) }
-                    }
-                }
-                item(key = "release", span = full) {
-                    Box(bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap)) {
-                        DropReleaseCard(model, drop, phase, now, scrollToPieces)
-                    }
-                }
-                if (drop.description.isNotEmpty()) {
-                    item(key = "description", span = full) {
-                        Text(
-                            drop.description,
-                            style = YardFonts.body,
-                            color = Color.yard.ink2,
-                            modifier = bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap),
-                        )
-                    }
-                }
-                item(key = "facts", span = full) {
-                    Box(bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap)) { DropFacts(drop, phase) }
-                }
-                item(key = "pieces", span = full) {
-                    Column(bleed.padding(top = Spacing.xl - Spacing.gridGap, bottom = Spacing.s), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                        SectionHeader("In this drop", subtitle = "Checkout confirms availability and enforces the drop's purchase rules.", display = true)
-                        if (phase == DropLivePhase.Upcoming) {
-                            DropNote("Pieces can be bought once the drop opens. Set a reminder so you don't miss it.", Modifier.padding(horizontal = Spacing.gutter))
+        // A reading page: on wide windows the column is capped (720 / 960dp) and centered.
+        AdaptiveContent(Modifier.weight(1f)) {
+            MasonryGrid(
+                products = model.products,
+                modifier = Modifier.fillMaxSize(),
+                state = grid,
+                contentPadding = PaddingValues(
+                    start = Spacing.gridGap,
+                    end = Spacing.gridGap,
+                    bottom = Spacing.xxxl + if (showsBar) 0.dp else navBottom,
+                ),
+                header = {
+                    item(key = "hero", span = full) { DropHero(drop, phase) }
+                    item(key = "title", span = full) {
+                        Box(bleed.padding(top = Spacing.xl - Spacing.gridGap)) {
+                            DropTitleBlock(drop) { handle -> router.push(Route.Brand(handle)) }
                         }
-                        if (model.products.isEmpty()) {
+                    }
+                    item(key = "release", span = full) {
+                        Box(bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap)) {
+                            DropReleaseCard(model, drop, phase, now, scrollToPieces)
+                        }
+                    }
+                    if (drop.description.isNotEmpty()) {
+                        item(key = "description", span = full) {
                             Text(
-                                "The pieces in this drop aren't available to view right now.",
-                                style = YardFonts.callout,
+                                drop.description,
+                                style = YardFonts.body,
                                 color = Color.yard.ink2,
-                                modifier = Modifier.padding(horizontal = Spacing.gutter),
+                                modifier = bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap),
                             )
                         }
                     }
-                }
-            },
-        ) { product ->
-            ProductTile(product, Modifier.pressableClick { router.push(Route.Product(product.slug)) }, showsBrand = false)
+                    item(key = "facts", span = full) {
+                        Box(bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl - Spacing.gridGap)) { DropFacts(drop, phase) }
+                    }
+                    item(key = "pieces", span = full) {
+                        Column(bleed.padding(top = Spacing.xl - Spacing.gridGap, bottom = Spacing.s), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                            SectionHeader("In this drop", subtitle = "Checkout confirms availability and enforces the drop's purchase rules.", display = true)
+                            if (phase == DropLivePhase.Upcoming) {
+                                DropNote("Pieces can be bought once the drop opens. Set a reminder so you don't miss it.", Modifier.padding(horizontal = Spacing.gutter))
+                            }
+                            if (model.products.isEmpty()) {
+                                Text(
+                                    "The pieces in this drop aren't available to view right now.",
+                                    style = YardFonts.callout,
+                                    color = Color.yard.ink2,
+                                    modifier = Modifier.padding(horizontal = Spacing.gutter),
+                                )
+                            }
+                        }
+                    }
+                },
+            ) { product ->
+                ProductTile(product, Modifier.pressableClick { router.push(Route.Product(product.slug)) }, showsBrand = false)
+            }
         }
         if (showsBar) {
             Box(
@@ -233,7 +238,7 @@ private fun DropDetailLoaded(model: DropDetailViewModel, drop: Drop) {
                     .navigationBarsPadding()
                     .padding(horizontal = Spacing.gutter, vertical = Spacing.s),
             ) {
-                YardButton("Shop this drop", icon = Icons.Outlined.ArrowDownward, onClick = scrollToPieces)
+                YardButton("Shop this drop", Modifier.adaptiveContentWidth(), icon = Icons.Outlined.ArrowDownward, onClick = scrollToPieces)
             }
         }
     }
@@ -241,10 +246,12 @@ private fun DropDetailLoaded(model: DropDetailViewModel, drop: Drop) {
 
 @Composable
 private fun DropHero(drop: Drop, phase: DropLivePhase) {
+    // 4:5 on phones; a fixed-height banner on wide windows (a 4:5 photo would be taller than the screen).
+    val wide = LocalYardWindow.current.isWide
     Box(
         Modifier
             .fillMaxWidth()
-            .aspectRatio(4f / 5f)
+            .then(if (wide) Modifier.height(DropsWideHeroHeight) else Modifier.aspectRatio(4f / 5f))
             .clip(YardShapes.image)
             .semantics { contentDescription = drop.name },
     ) {
@@ -458,11 +465,18 @@ fun DropCountdown(label: String, target: Instant, hot: Boolean = false) {
 /** Loading placeholder for the drop page. */
 @Composable
 fun DropDetailSkeleton() {
+    val wide = LocalYardWindow.current.isWide
     Column(
-        Modifier.fillMaxWidth().semantics { contentDescription = "Loading drop" },
+        Modifier.adaptiveContentWidth().semantics { contentDescription = "Loading drop" },
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
-        Skeleton(Modifier.padding(horizontal = Spacing.gridGap).fillMaxWidth().aspectRatio(4f / 5f), cornerRadius = Radius.image)
+        Skeleton(
+            Modifier
+                .padding(horizontal = Spacing.gridGap)
+                .fillMaxWidth()
+                .then(if (wide) Modifier.height(DropsWideHeroHeight) else Modifier.aspectRatio(4f / 5f)),
+            cornerRadius = Radius.image,
+        )
         Column(Modifier.padding(horizontal = Spacing.gutter), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
             Skeleton(Modifier.size(width = 120.dp, height = 18.dp), cornerRadius = Radius.small)
             Skeleton(Modifier.fillMaxWidth().height(44.dp), cornerRadius = Radius.small)
@@ -481,4 +495,10 @@ private fun DropDetailDarkPreview() = YardPreview(darkTheme = true) {
 @Composable
 private fun DropDetailLightPreview() = YardPreview(darkTheme = false, signedIn = false) {
     DropDetailScreen(DropDetailViewModel(previewDrop = DropsPreviewFixtures.upcoming, products = PreviewFixtures.products.take(3)))
+}
+
+@YardTabletPreviews
+@Composable
+private fun DropDetailTabletPreview() = YardPreview(darkTheme = true) {
+    DropDetailScreen(DropDetailViewModel(previewDrop = DropsPreviewFixtures.draw, products = PreviewFixtures.products.take(6)))
 }

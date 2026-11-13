@@ -47,6 +47,8 @@ class DropDetailViewModel(
     /** The phase the last load saw, and the phase a reload was last requested for. */
     var loadedPhase: DropLivePhase? = null; private set
     private var requestedPhase: DropLivePhase? = null
+    /** The sign-in state the viewer state was last read for (null until the screen reports one). */
+    private var signedIn: Boolean? = null
 
     /** Previews only. */
     constructor(previewDrop: Drop, products: List<Product>, me: DropViewerState? = null) : this(previewDrop.id) {
@@ -57,8 +59,24 @@ class DropDetailViewModel(
         state = LoadState.Loaded
     }
 
-    fun loadIfNeeded() {
+    fun loadIfNeeded(signedIn: Boolean? = null) {
+        if (this.signedIn == null) this.signedIn = signedIn
         if (drop == null) viewModelScope.launch { load() }
+    }
+
+    /**
+     * `.onChange(of: session.isSignedIn)`: the viewer state (reminder, entry, canBuy) depends on
+     * who is signed in, so reload — but only when it really changed, not on every re-entry.
+     */
+    fun sessionChanged(signedIn: Boolean) {
+        if (noteSignedIn(signedIn)) viewModelScope.launch { load() }
+    }
+
+    /** Records the sign-in state; true when it differs from the one the page was last loaded for. */
+    internal fun noteSignedIn(signedIn: Boolean): Boolean {
+        val previous = this.signedIn
+        this.signedIn = signedIn
+        return previous != null && previous != signedIn
     }
 
     fun reload() {

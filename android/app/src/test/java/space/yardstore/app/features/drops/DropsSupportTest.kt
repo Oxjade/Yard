@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import space.yardstore.app.designsystem.YardWindow
+import androidx.compose.ui.unit.dp
 import space.yardstore.app.core.models.Drop
 import space.yardstore.app.core.models.YardDate
 import space.yardstore.app.designsystem.components.TagStyle
@@ -122,5 +124,17 @@ class DropsSupportTest {
         assertTrue(DropActions.reminderMessage(true, DropLocalReminder.Outcome.Denied).text.startsWith("Reminder set. Turn on notifications"))
         assertEquals("Reminder set", DropActions.reminderMessage(true, DropLocalReminder.Outcome.TooSoon).text)
         assertEquals("yard.drop-reminder.drp_1", DropLocalReminder.identifier("drp_1"))
+    }
+
+    @Test fun largeScreenColumns() {
+        val phone = YardWindow(width = 411.dp, height = 891.dp)
+        val medium = YardWindow(width = 700.dp, height = 1000.dp)
+        val expanded = YardWindow(width = 1280.dp, height = 800.dp)
+        assertEquals(1, dropsCardColumns(phone))
+        assertEquals(2, dropsCardColumns(medium))
+        assertEquals(3, dropsCardColumns(expanded))
+        assertEquals(1, dropsCalendarColumns(phone))
+        assertEquals(2, dropsCalendarColumns(medium))
+        assertEquals(2, dropsCalendarColumns(expanded))
     }
 }

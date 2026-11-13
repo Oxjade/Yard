@@ -124,4 +124,12 @@ class DropDetailViewModelTest {
         assertEquals("Reminder removed", model.toggleReminder(context = null, permission = null).text)
         assertFalse(model.me!!.reminder)
     }
+
+    @Test fun sessionChangeReloadsOnlyOnRealChanges() {
+        val model = DropDetailViewModel("drp_up", api = api)
+        assertFalse(model.noteSignedIn(true))
+        assertFalse(model.noteSignedIn(true))
+        assertTrue(model.noteSignedIn(false))
+        assertTrue(model.noteSignedIn(true))
+    }
 }

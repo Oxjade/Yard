@@ -146,4 +146,15 @@ class DropsViewModelTest {
         assertEquals("DELETE", server.takeRequest().method)
         assertTrue(model.busyIds.isEmpty())
     }
+
+    @Test fun sessionChangeOnlyCountsRealChanges() {
+        val model = DropsViewModel(api)
+        // First report: nothing loaded yet, so nothing to refresh.
+        assertFalse(model.noteSignedIn(false))
+        // Re-entering the screen with the same state must not re-read the bells.
+        assertFalse(model.noteSignedIn(false))
+        assertTrue(model.noteSignedIn(true))
+        assertFalse(model.noteSignedIn(true))
+        assertTrue(model.noteSignedIn(false))
+    }
 }

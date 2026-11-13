@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -45,7 +48,9 @@ import space.yardstore.app.app.LocalTabPillClearance
 import space.yardstore.app.app.Route
 import space.yardstore.app.core.models.Drop
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
@@ -84,10 +89,8 @@ private fun DropsScreen(model: DropsViewModel) {
     val signedIn = session.isSignedIn
 
     LaunchedEffect(Unit) { model.loadIfNeeded(signedIn) }
-    LaunchedEffect(signedIn) {
-        // .onChange(of: session.isSignedIn): reload the bells (the first load already does it).
-        if (model.state is DropsViewModel.LoadState.Loaded) model.participationChanged(signedIn)
-    }
+    // .onChange(of: session.isSignedIn): reload the bells when the shopper signs in or out.
+    LaunchedEffect(signedIn) { model.sessionChanged(signedIn) }
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar("Drops") {
@@ -119,6 +122,9 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
     val scope = rememberCoroutineScope()
     val permission = rememberDropNotificationPermission()
     val bottom = Spacing.xxxl + LocalTabPillClearance.current + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val window = LocalYardWindow.current
+    val cardColumns = dropsCardColumns(window)
+    val calendarColumns = dropsCalendarColumns(window)
 
     fun toggleReminder(drop: Drop) {
         if (!session.isSignedIn) {
@@ -174,6 +180,7 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
                     more = DropsViewModel.Source.Live,
                     model = model,
                     bleed = bleed,
+                    columns = cardColumns,
                     onOpen = { router.push(Route.Drop(it.slug)) },
                 )
             }
@@ -187,6 +194,7 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
                     more = null,
                     model = model,
                     bleed = bleed,
+                    columns = cardColumns,
                     onOpen = { router.push(Route.Drop(it.slug)) },
                 )
             }
@@ -207,17 +215,19 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
                             Box(Modifier.weight(1f).height(1.dp).background(Color.yard.line))
                         }
                     }
-                    for (drop in day.drops) {
-                        item(key = "up-${drop.id}", span = full) {
-                            DropCalendarRow(
-                                drop = drop,
-                                now = now,
-                                reminderOn = drop.id in model.reminderIds,
-                                isBusy = drop.id in model.busyIds,
-                                onOpen = { router.push(Route.Drop(drop.slug)) },
-                                onToggleReminder = { toggleReminder(drop) },
-                                modifier = bleed.padding(horizontal = Spacing.gutter),
-                            )
+                    // One row per line on phones; side by side on wide windows.
+                    for (line in day.drops.chunked(calendarColumns)) {
+                        item(key = "up-${line.first().id}", span = full) {
+                            DropsLine(line, calendarColumns, bleed.padding(horizontal = Spacing.gutter)) { drop ->
+                                DropCalendarRow(
+                                    drop = drop,
+                                    now = now,
+                                    reminderOn = drop.id in model.reminderIds,
+                                    isBusy = drop.id in model.busyIds,
+                                    onOpen = { router.push(Route.Drop(drop.slug)) },
+                                    onToggleReminder = { toggleReminder(drop) },
+                                )
+                            }
                         }
                     }
                 }
@@ -233,7 +243,7 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
         },
         footer = {
             if (groups.past.isNotEmpty()) loadMoreItem(model, DropsViewModel.Source.Ended, "Load more past drops", bleed)
-            item(key = "how", span = full) { Box(bleed.padding(top = Spacing.xxl - Spacing.gridGap)) { HowDropsWork() } }
+            item(key = "how", span = full) { Box(bleed.padding(top = Spacing.xxl - Spacing.gridGap)) { HowDropsWork(sideBySide = window.isWide) } }
         },
     ) { drop ->
         DropPastTile(drop, Modifier.pressableClick { router.push(Route.Drop(drop.slug)) })
@@ -249,6 +259,7 @@ private fun LazyStaggeredGridScope.bigCardSection(
     more: DropsViewModel.Source?,
     model: DropsViewModel,
     bleed: Modifier,
+    columns: Int,
     onOpen: (Drop) -> Unit,
 ) {
     val full = StaggeredGridItemSpan.FullLine
@@ -257,13 +268,12 @@ private fun LazyStaggeredGridScope.bigCardSection(
             SectionHeader(title, subtitle = subtitle, display = true)
         }
     }
-    for (drop in drops) {
-        item(key = "$key-${drop.id}", span = full) {
-            DropLiveCard(
-                drop,
-                drop.livePhase(now),
-                bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.m - Spacing.gridGap).pressableClick { onOpen(drop) },
-            )
+    // One 4:5 card per line on phones; 2–3 side by side on wide windows (never a 4:5 card 1200dp wide).
+    for (line in drops.chunked(columns)) {
+        item(key = "$key-${line.first().id}", span = full) {
+            DropsLine(line, columns, bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.m - Spacing.gridGap)) { drop ->
+                DropLiveCard(drop, drop.livePhase(now), Modifier.pressableClick { onOpen(drop) })
+            }
         }
     }
     if (more != null) loadMoreItem(model, more, "Load more drops", bleed)
@@ -286,6 +296,19 @@ private fun LazyStaggeredGridScope.loadMoreItem(model: DropsViewModel, source: D
     }
 }
 
+/** [items] laid out [columns] per line with equal widths (a short last line keeps the same widths). */
+@Composable
+private fun DropsLine(items: List<Drop>, columns: Int, modifier: Modifier = Modifier, content: @Composable (Drop) -> Unit) {
+    if (columns <= 1 && items.size == 1) {
+        Box(modifier.fillMaxWidth()) { content(items.first()) }
+        return
+    }
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+        for (drop in items) Box(Modifier.weight(1f)) { content(drop) }
+        repeat(columns - items.size) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
 @Composable
 private fun DropsHeader() {
     Column(
@@ -297,29 +320,45 @@ private fun DropsHeader() {
             "Limited releases from independent brands, on a schedule. Small runs, clear rules, and a reminder when each one opens.",
             style = YardFonts.callout,
             color = Color.yard.ink2,
+            // Readable line length on wide windows.
+            modifier = Modifier.widthIn(max = 640.dp),
         )
     }
 }
 
+private val HowDropsRules = listOf(
+    "First come" to "Opens to everyone at release. Pieces go to whoever checks out first.",
+    "Draw" to "Enter before release. Winners are picked at random and only winners pay.",
+    "Early access" to "Followers who were following before early access opened get the first window. Everyone can buy at the public release.",
+)
+
 @Composable
-private fun HowDropsWork() {
+private fun HowDropsWork(sideBySide: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
         SectionHeader(
             "How drops work",
             subtitle = "The rules are on every drop before it opens, and they don't change once it's scheduled.",
             display = true,
         )
-        Column(Modifier.padding(horizontal = Spacing.gutter), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            HowRow("First come", "Opens to everyone at release. Pieces go to whoever checks out first.")
-            HowRow("Draw", "Enter before release. Winners are picked at random and only winners pay.")
-            HowRow("Early access", "Followers who were following before early access opened get the first window. Everyone can buy at the public release.")
+        if (sideBySide) {
+            // Wide windows: the three rules side by side, equal heights.
+            Row(
+                Modifier.padding(horizontal = Spacing.gutter).height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+            ) {
+                for ((title, body) in HowDropsRules) HowRow(title, body, Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(Modifier.padding(horizontal = Spacing.gutter), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                for ((title, body) in HowDropsRules) HowRow(title, body)
+            }
         }
     }
 }
 
 @Composable
-private fun HowRow(title: String, body: String) {
-    Card {
+private fun HowRow(title: String, body: String, modifier: Modifier = Modifier) {
+    Card(modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             YardDisplayText(title, size = 22.sp)
             Text(body, style = YardFonts.callout, color = Color.yard.ink2)
@@ -353,3 +392,16 @@ private fun DropsViewLightPreview() = YardPreview(darkTheme = false) {
 @Preview(name = "DropsView — loading (network)")
 @Composable
 private fun DropsViewLoadingPreview() = YardPreview(darkTheme = true, signedIn = false) { DropsView() }
+
+@YardTabletPreviews
+@Composable
+private fun DropsViewTabletPreview() = YardPreview(darkTheme = true) {
+    DropsScreen(
+        DropsViewModel(
+            previewDrops = listOf(
+                DropsPreviewFixtures.live, DropsPreviewFixtures.draw, DropsPreviewFixtures.upcoming,
+                DropsPreviewFixtures.tomorrow, DropsPreviewFixtures.past,
+            ),
+        ),
+    )
+}

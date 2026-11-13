@@ -43,6 +43,7 @@ import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.components.RemoteImage
@@ -166,11 +167,10 @@ fun DropCalendarRow(
                 Text("${drop.accessLabel} · ${drop.runText}", style = YardFonts.caption, color = Color.yard.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        // 40dp circle (as on iOS) inside a 48dp touch target.
         Box(
             Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(if (reminderOn) Color.yard.acid else Color.yard.surface2)
+                .size(48.dp)
                 .pressableClick(
                     enabled = !isBusy,
                     role = Role.Button,
@@ -180,16 +180,24 @@ fun DropCalendarRow(
                 .semantics { contentDescription = if (reminderOn) "Reminder set for ${drop.name}" else "Remind me about ${drop.name}" },
             contentAlignment = Alignment.Center,
         ) {
-            val fg = if (reminderOn) Color.yard.onAcid else Color.yard.ink
-            if (isBusy) {
-                CircularProgressIndicator(Modifier.size(16.dp), color = fg, strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    if (reminderOn) Icons.Filled.Notifications else Icons.Outlined.Notifications,
-                    contentDescription = null,
-                    tint = fg,
-                    modifier = Modifier.size(18.dp),
-                )
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (reminderOn) Color.yard.acid else Color.yard.surface2),
+                contentAlignment = Alignment.Center,
+            ) {
+                val fg = if (reminderOn) Color.yard.onAcid else Color.yard.ink
+                if (isBusy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = fg, strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        if (reminderOn) Icons.Filled.Notifications else Icons.Outlined.Notifications,
+                        contentDescription = null,
+                        tint = fg,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }
@@ -267,8 +275,18 @@ fun DropsSkeleton(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
         Skeleton(Modifier.size(width = 160.dp, height = 34.dp), cornerRadius = Radius.small)
-        Skeleton(Modifier.fillMaxWidth().aspectRatio(4f / 5f), cornerRadius = Radius.card)
-        repeat(3) { Skeleton(Modifier.fillMaxWidth().height(100.dp), cornerRadius = Radius.card) }
+        // Big cards: one 4:5 card on phones; a row of them on wide windows (as the loaded page lays them out).
+        val window = LocalYardWindow.current
+        val cards = dropsCardColumns(window)
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            repeat(cards) { Skeleton(Modifier.weight(1f).aspectRatio(4f / 5f), cornerRadius = Radius.card) }
+        }
+        val perLine = dropsCalendarColumns(window)
+        repeat(3) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                repeat(perLine) { Skeleton(Modifier.weight(1f).height(100.dp), cornerRadius = Radius.card) }
+            }
+        }
         Spacer(Modifier.height(Spacing.l))
     }
 }

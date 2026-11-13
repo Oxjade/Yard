@@ -52,6 +52,8 @@ import space.yardstore.app.core.models.YardDate
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.stores.LocalSessionStore
 import space.yardstore.app.designsystem.Spacing
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
@@ -98,14 +100,17 @@ private fun MyDropsScreen(model: MyDropsViewModel) {
             ) { router.present(Route.SignIn) }
             return@Column
         }
-        when (val state = model.state) {
-            MyDropsViewModel.LoadState.Loading -> DropsSkeleton()
-            is MyDropsViewModel.LoadState.Failed -> EmptyState.Error(state.error) { model.loadNow() }
-            MyDropsViewModel.LoadState.Loaded -> {
-                val response = model.response
-                if (response != null) {
-                    PullToRefreshBox(isRefreshing = model.isRefreshing, onRefresh = { model.refresh() }, modifier = Modifier.fillMaxSize()) {
-                        MyDropsList(model, response)
+        // A reading list: capped (720 / 960dp) and centered on wide windows.
+        AdaptiveContent(Modifier.weight(1f)) {
+            when (val state = model.state) {
+                MyDropsViewModel.LoadState.Loading -> DropsSkeleton()
+                is MyDropsViewModel.LoadState.Failed -> EmptyState.Error(state.error) { model.loadNow() }
+                MyDropsViewModel.LoadState.Loaded -> {
+                    val response = model.response
+                    if (response != null) {
+                        PullToRefreshBox(isRefreshing = model.isRefreshing, onRefresh = { model.refresh() }, modifier = Modifier.fillMaxSize()) {
+                            MyDropsList(model, response)
+                        }
                     }
                 }
             }
@@ -358,3 +363,19 @@ private fun MyDropsLightPreview() = YardPreview(darkTheme = false) {
 @Preview(name = "MyDropsView — signed out")
 @Composable
 private fun MyDropsSignedOutPreview() = YardPreview(darkTheme = true, signedIn = false) { MyDropsView() }
+
+@YardTabletPreviews
+@Composable
+private fun MyDropsTabletPreview() = YardPreview(darkTheme = true) {
+    MyDropsScreen(
+        MyDropsViewModel(
+            preview = MyDropsResponse(
+                entries = listOf(MyDropsResponse.Entry(drop = DropsPreviewFixtures.draw, status = "won", windowEndsAt = "2026-11-14T18:00:00.000Z")),
+                reminders = listOf(
+                    MyDropsResponse.Reminder(dropId = DropsPreviewFixtures.upcoming.id, setAt = "2026-11-12T10:00:00.000Z", drop = DropsPreviewFixtures.upcoming),
+                    MyDropsResponse.Reminder(dropId = DropsPreviewFixtures.tomorrow.id, setAt = "2026-11-12T11:00:00.000Z", drop = DropsPreviewFixtures.tomorrow),
+                ),
+            ),
+        ),
+    )
+}

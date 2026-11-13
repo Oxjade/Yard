@@ -35,6 +35,7 @@ import space.yardstore.app.core.models.Drop
 import space.yardstore.app.core.models.YardDate
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardWindow
 import space.yardstore.app.designsystem.components.Tag
 import space.yardstore.app.designsystem.components.TagStyle
 import space.yardstore.app.designsystem.components.Toast
@@ -245,6 +246,21 @@ fun rememberDropsNow(periodMillis: Long): State<Instant> = produceState(Instant.
     }
 }
 
+// MARK: - Large screens
+
+/** Big live / entries-open cards per line: 1 on phones, 2 on medium windows, 3 on expanded ones. */
+fun dropsCardColumns(window: YardWindow): Int = when {
+    window.isExpanded -> 3
+    window.isWide -> 2
+    else -> 1
+}
+
+/** Upcoming calendar rows per line: 1 on phones, 2 side by side on wide windows. */
+fun dropsCalendarColumns(window: YardWindow): Int = if (window.isWide) 2 else 1
+
+/** Hero photo height on wide windows (a 4:5 phone hero would be taller than the screen). */
+val DropsWideHeroHeight: Dp = 440.dp
+
 /** Widens a full-line item in a padded lazy grid back to the screen edges. */
 internal fun Modifier.dropsBleed(horizontal: Dp): Modifier = layout { measurable, constraints ->
     val extra = horizontal.roundToPx() * 2
@@ -298,7 +314,7 @@ fun DropStatusBadge(drop: Drop, phase: DropLivePhase, onPhoto: Boolean = false) 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { DropLivePulse(Color.yard.onAcid, 4.dp) }
+            Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { DropLivePulse(Color.yard.onAcid, 6.dp) }
             Text(
                 drop.statusLabel(phase).uppercase(),
                 style = YardFonts.micro,

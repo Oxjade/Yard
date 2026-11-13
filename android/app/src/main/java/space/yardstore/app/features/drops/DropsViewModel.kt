@@ -61,6 +61,8 @@ class DropsViewModel(private val api: APIClient = APIClient.shared) : ViewModel(
     var busyIds by mutableStateOf<Set<String>>(emptySet()); private set
     var isRefreshing by mutableStateOf(false); private set
     private var hasLoaded = false
+    /** The sign-in state the bells were last read for (null until the screen reports one). */
+    private var signedIn: Boolean? = null
 
     /** Preview-only: a model that already holds drops. */
     constructor(previewDrops: List<Drop>) : this() {
@@ -97,6 +99,7 @@ class DropsViewModel(private val api: APIClient = APIClient.shared) : ViewModel(
     }
 
     suspend fun reload(signedIn: Boolean) {
+        this.signedIn = signedIn
         if (!hasLoaded) state = LoadState.Loading
         try {
             val pages = coroutineScope {
@@ -118,7 +121,8 @@ class DropsViewModel(private val api: APIClient = APIClient.shared) : ViewModel(
             // A failed pull-to-refresh keeps what is on screen; only the first load shows the error.
             if (!hasLoaded) state = LoadState.Failed(e)
         }
-        loadParticipation(signedIn)
+        // The session may have resolved while the feeds were loading: read the bells for the latest state.
+        loadParticipation(this.signedIn ?: signedIn)
     }
 
     fun loadMore(source: Source) {
@@ -165,8 +169,19 @@ class DropsViewModel(private val api: APIClient = APIClient.shared) : ViewModel(
         }
     }
 
-    fun participationChanged(signedIn: Boolean) {
-        viewModelScope.launch { loadParticipation(signedIn) }
+    /**
+     * `.onChange(of: session.isSignedIn)`: re-reads the bells only when the sign-in state really
+     * changed since the last load (not every time the screen re-enters composition).
+     */
+    fun sessionChanged(signedIn: Boolean) {
+        if (noteSignedIn(signedIn)) viewModelScope.launch { loadParticipation(signedIn) }
+    }
+
+    /** Records the sign-in state; true when it differs from the one the screen last loaded for. */
+    internal fun noteSignedIn(signedIn: Boolean): Boolean {
+        val previous = this.signedIn
+        this.signedIn = signedIn
+        return previous != null && previous != signedIn
     }
 
     /** Toggles the reminder for [drop] and returns the toast to show. */

@@ -31,13 +31,26 @@ Exact alarm when the app may schedule one, else `setAndAllowWhileIdle` (may be a
 Android 12+). Turning a reminder on asks for `POST_NOTIFICATIONS` on Android 13+; the drop page and
 Your drops re-sync alarms from the server state without prompting.
 
-**Integrator (manifest is foundation, not edited):** add inside `<application>`
-`<receiver android:name=".features.drops.DropReminderReceiver" android:exported="false" />`
-and at top level `<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`.
-Without the permission line, Android 13+ denies the request instantly and the toast says to turn on
-notifications. Optional: `SCHEDULE_EXACT_ALARM` for exact timing on Android 12+.
+The manifest (foundation) declares the `DropReminderReceiver` and `POST_NOTIFICATIONS`. Optional,
+not added: `SCHEDULE_EXACT_ALARM` for exact timing on Android 12+.
+
+## Tablet & large screens
+All decisions come from `LocalYardWindow` (helpers `dropsCardColumns`, `dropsCalendarColumns`,
+`DropsWideHeroHeight` in `DropsSupport.kt`).
+- **DropsView**: Live now / Entries open cards sit 1 / 2 / 3 per line (Compact / Medium / Expanded)
+  instead of one 4:5 card the full width; Upcoming calendar rows 2 per line on wide windows; past
+  drops masonry at `gridColumns`; "How drops work" cards side by side on wide windows; header copy
+  capped at 640dp. The loading skeleton follows the same layout.
+- **DropDetailView**: reading page — the grid (hero, release card, facts, pieces) sits in
+  `AdaptiveContent` (720 / 960dp); the hero is a 440dp-high banner on wide windows instead of 4:5;
+  the "Shop this drop" bar stays full width with the button capped.
+- **MyDropsView**: list wrapped in `AdaptiveContent`.
+- `@YardTabletPreviews` on all three screens.
 
 ## Not mirrored / differences
+- Sign-in changes: iOS `.onChange(of: isSignedIn)`; Android reloads only when the state actually
+  changed since the last load (`sessionChanged` / `noteSignedIn`), so re-entering a screen doesn't refetch.
+- The upcoming-row bell is a 40dp circle (as on iOS) inside a 48dp touch target.
 - Alarms are cleared by a reboot (iOS keeps pending notifications); they come back the next time the
   drop page or Your drops loads. A `BOOT_COMPLETED` receiver was not added.
 - Draw fairness block (`GET /api/drops/{id}/draw`) is not ported (not on iOS either).
@@ -45,5 +58,6 @@ notifications. Optional: `SCHEDULE_EXACT_ALARM` for exact timing on Android 12+.
 - Notification small icon is the system `ic_popup_reminder` (no monochrome Yard icon in res/).
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/drops/`: phase/wording helpers, MyDropsResponse
-decoding, captions, and the three ViewModels against MockWebServer.
+`app/src/test/java/space/yardstore/app/features/drops/`: phase/wording helpers, large-screen column
+helpers, MyDropsResponse decoding, captions, sign-in change detection, and the three ViewModels
+against MockWebServer.
