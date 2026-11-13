@@ -53,7 +53,7 @@ final class LiveActivityManager {
     }
 
     func isTracking(orderId: String) -> Bool {
-        activity(for: orderId) != nil
+        runningActivity(for: orderId) != nil
     }
 
     // MARK: Start / update / end
@@ -63,7 +63,7 @@ final class LiveActivityManager {
     @discardableResult
     func start(for order: LiveActivityOrder) -> Bool {
         guard let state = order.state else { return false }
-        if let existing = activity(for: order.orderId) {
+        if let existing = runningActivity(for: order.orderId) {
             Task { @MainActor in await self.update(existing, state: state) }
             return true
         }
@@ -92,14 +92,14 @@ final class LiveActivityManager {
 
     /// Updates the running activity of `orderId` with `state` (no-op when none is running).
     func update(orderId: String, state: State) async {
-        guard let activity = activity(for: orderId) else { return }
+        guard let activity = runningActivity(for: orderId) else { return }
         await update(activity, state: state)
     }
 
     /// Ends the activity of `orderId`. With a final state it stays on the Lock Screen a while
     /// (delivered: 2 hours) unless `immediately`.
     func end(orderId: String, finalState: State? = nil, immediately: Bool = false) async {
-        guard let activity = activity(for: orderId) else { return }
+        guard let activity = runningActivity(for: orderId) else { return }
         let content: ActivityContent<State>? = finalState.map { ActivityContent(state: $0, staleDate: nil) }
         let policy: ActivityUIDismissalPolicy = immediately ? .immediate : .after(Date().addingTimeInterval(2 * 3_600))
         await activity.end(content, dismissalPolicy: policy)
@@ -141,7 +141,7 @@ final class LiveActivityManager {
             return
         }
         guard let state = order.state else { return }
-        let running = activity(for: order.orderId)
+        let running = runningActivity(for: order.orderId)
         switch state.step {
         case .delivered:
             if running != nil { await end(orderId: order.orderId, finalState: state) }
@@ -173,7 +173,7 @@ final class LiveActivityManager {
 
     // MARK: Private
 
-    private func activity(for orderId: String) -> Activity<Attributes>? {
+    private func runningActivity(for orderId: String) -> Activity<Attributes>? {
         Activity<Attributes>.activities.first { $0.attributes.orderId == orderId && isLive($0) }
     }
 
