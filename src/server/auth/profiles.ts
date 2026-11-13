@@ -9,7 +9,7 @@ export const shopperProfileOf = (a: ShopperActor): ShopperProfile => ({ id: a.us
 export const brandProfileOf = (a: BrandActor): BrandProfile => ({
   userId: a.userId,
   name: a.name,
-  brand: { id: a.brand.id, handle: a.brand.handle, name: a.brand.name, reviewStatus: a.brand.reviewStatus as BrandProfile["brand"]["reviewStatus"] },
+  brand: { id: a.brand.id, handle: a.brand.handle, name: a.brand.name, reviewStatus: a.brand.reviewStatus as BrandProfile["brand"]["reviewStatus"], logoSrc: a.brand.logoMediaId ? `/api/media/${encodeURIComponent(a.brand.logoMediaId)}?as=brand` : null },
   role: a.role,
   permissions: a.permissions,
   // Yard setup works on a real founding brand: Studio reads its live data, even for a demo admin.

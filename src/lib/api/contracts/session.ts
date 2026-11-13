@@ -13,7 +13,7 @@ export const shopperProfile = z.object({
 export const brandProfile = z.object({
   userId: z.string(),
   name: z.string(),
-  brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), reviewStatus: z.enum(["pending_review", "verified", "restricted", "suspended"]) }),
+  brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), reviewStatus: z.enum(["pending_review", "verified", "restricted", "suspended"]), /** The brand's uploaded logo for Studio's own header (read as a brand member), or null. */ logoSrc: z.string().nullable().optional() }),
   /** "yard_setup": Yard staff setting up an unclaimed founding brand (Studio shows the Yard setup banner and limits its nav). */
   role: z.enum(["owner", "admin", "designer", "fulfilment", "finance", "viewer", "yard_setup"]),
   permissions: z.array(z.enum(BRAND_PERMISSIONS)),

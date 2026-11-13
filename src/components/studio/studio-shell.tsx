@@ -394,7 +394,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   // A brand that joined through onboarding isn't in the sample map: the header shows its own name,
   // mark and storefront, never the sample brand's.
   const workspaceBrand = useMemo(
-    () => sessionBrand ?? (member ? { ...brand, id: member.brand.id, name: member.brand.name, handle: member.brand.handle, mark: { text: member.brand.name.slice(0, 2).toUpperCase(), style: "condensed" as const } } : brand),
+    () => sessionBrand ?? (member ? { ...brand, id: member.brand.id, name: member.brand.name, handle: member.brand.handle, mark: { text: member.brand.name.slice(0, 2).toUpperCase(), style: "condensed" as const }, logoSrc: member.brand.logoSrc ?? null } : brand),
     [sessionBrand, member, brand],
   )
   const mismatch = !!sessionBrand && sessionBrand.id !== brand.id

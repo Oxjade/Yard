@@ -166,25 +166,19 @@ export function restoreStudioStorefrontVersion(version: number, baseRevision: nu
   })
 }
 
-/** Every published product of the brand, page by page, so the editor can pick and preview any of them. */
-async function loadBrandProducts(brandId: string) {
-  const rows: PublicCatalogProduct[] = []
-  for (let offset: number | null = 0; offset != null; ) {
-    const page: { products: PublicCatalogProduct[]; nextOffset: number | null } = await api(`/api/catalog/products`, { query: { brand: brandId, limit: 60, offset, sort: "new" } })
-    rows.push(...page.products)
-    // The API pages up to offset 5000, like loadPublicCatalog.
-    offset = page.nextOffset != null && page.nextOffset > offset && page.nextOffset <= 5000 ? page.nextOffset : null
-  }
-  return rows
-}
-
 export async function loadStorefrontEditorContext(handle: string, brandId: string): Promise<StorefrontEditorContext> {
-  const [studio, published, productRows, dropPage] = await Promise.all([
+  // The brand's own storefront, collections and products come from Studio's endpoint (not the public
+  // catalogue), so the editor also opens for a founding brand that hasn't launched yet. `handle`
+  // stays in the signature for callers; the server reads the brand from the session.
+  void handle
+  const [studio, own, dropPage] = await Promise.all([
     getStudioStorefront(),
-    api<PublicStorefrontDto>(`/api/catalog/storefronts/${encodeURIComponent(handle)}`),
-    loadBrandProducts(brandId),
-    api<{ items: PublicDropDto[] }>(`/api/drops?phase=all&brandId=${encodeURIComponent(brandId)}&limit=50`),
+    api<{ published: PublicStorefrontDto; products: PublicCatalogProduct[] }>("/api/studio/storefront/context"),
+    // Drops are optional here (Yard setup can't read them, and an unlaunched brand has none public).
+    api<{ items: PublicDropDto[] }>(`/api/drops?phase=all&brandId=${encodeURIComponent(brandId)}&limit=50`).catch(() => ({ items: [] as PublicDropDto[] })),
   ])
+  const published = own.published
+  const productRows = own.products
   const products = productRows.map(toCatalogProduct)
   const collections = published.collections.map((collection) => ({
     id: collection.id,

@@ -43,7 +43,7 @@ export type BrandActor = {
   userId: string
   name: string
   brandId: string
-  brand: { id: string; handle: string; name: string; reviewStatus: string; currency: string; country: string; city: string; citySlug: string; timeZone: string; claimStatus: string }
+  brand: { id: string; handle: string; name: string; reviewStatus: string; currency: string; country: string; city: string; citySlug: string; timeZone: string; claimStatus: string; logoMediaId: string | null }
   /** `yard_setup` is Yard staff setting up an unclaimed founding brand (see yardSetupAllowed). */
   role: MemberRole
   permissions: BrandPermission[]
@@ -142,7 +142,7 @@ const getBrandActorInternal = cache(async (): Promise<BrandActor | null> => {
     userId: u.id,
     name: u.name,
     brandId: b.id,
-    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone, claimStatus: b.claimStatus },
+    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus, currency: b.currency, country: b.country, city: b.city, citySlug: b.citySlug, timeZone: b.timeZone, claimStatus: b.claimStatus, logoMediaId: b.logoMediaId ?? null },
     role,
     permissions: brandRolePermissions[role] ?? [],
     demo: u.demo,

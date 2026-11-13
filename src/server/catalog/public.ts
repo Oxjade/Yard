@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, exists, inArray, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, exists, inArray, lte, or, sql, type SQL } from "drizzle-orm"
 import { requestScope } from "../auth/dal"
 import { memo } from "../cache"
 import { db } from "../db"
@@ -145,8 +145,8 @@ async function listedBrandByHandle(handleOrId: string) {
   return { ...(pub as Omit<typeof b, (typeof PRIVATE_BRAND_FIELDS)[number]>), forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}` : null }
 }
 
-/** A brand's published collections (with product ids that are public). */
-async function publicCollectionsOf(brandId: string) {
+/** A brand's published collections (with product ids that are public, or that pass `productWhere`). */
+async function publicCollectionsOf(brandId: string, productWhere: SQL | undefined = productPublicWhere()) {
   const d = await db()
   const cols = await d
     .select()
@@ -165,7 +165,7 @@ async function publicCollectionsOf(brandId: string) {
           catalogCollectionProducts.collectionId,
           cols.map((c) => c.id),
         ),
-        productPublicWhere(),
+        productWhere,
       ),
     )
     .orderBy(asc(catalogCollectionProducts.position))
@@ -291,4 +291,46 @@ export async function listPublicBrands(q: PublicBrandsQuery): Promise<PublicBran
     }))
     return { brands: list, total, nextOffset: q.offset + rows.length < total ? q.offset + rows.length : null }
   })
+}
+
+
+/** A brand's own live-ready products: published (or scheduled and due) and not hidden by moderation. No launch check. */
+function ownProductWhere(now = new Date()) {
+  return and(or(eq(catalogProducts.status, "published"), and(eq(catalogProducts.status, "scheduled"), lte(catalogProducts.publishAt, now))), eq(catalogProducts.moderationStatus, "ok"))
+}
+
+/**
+ * GET /api/studio/storefront/context: what the Studio storefront editor needs about the session's
+ * OWN brand: the same shape as the public storefront plus its publishable products. Unlike the
+ * public reads it has no "launched" check, so a founding brand's storefront can be edited (and
+ * first published) before the brand is public. Never memoised: the editor must see fresh data.
+ */
+export async function ownStorefrontContext(brandId: string) {
+  const d = await db()
+  const [b] = await d.select().from(brands).where(eq(brands.id, brandId)).limit(1)
+  if (!b) throw notFound("That brand isn't on Yard.")
+  const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}` }).from(brands).where(eq(brands.id, b.id)).limit(1)
+  const pub: Partial<typeof b> = { ...b }
+  for (const k of PRIVATE_BRAND_FIELDS) delete pub[k]
+  const brand = { ...(pub as Omit<typeof b, (typeof PRIVATE_BRAND_FIELDS)[number]>), forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}?as=brand` : null }
+  const [v] = await d.select().from(storefrontVersions).where(eq(storefrontVersions.brandId, b.id)).orderBy(desc(storefrontVersions.version)).limit(1)
+  const rows = await d
+    .select({ p: catalogProducts, brand: brandSummary })
+    .from(catalogProducts)
+    .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+    .where(and(eq(catalogProducts.brandId, b.id), ownProductWhere()))
+    .orderBy(desc(sql`coalesce(${catalogProducts.publishedAt}, ${catalogProducts.createdAt})`), asc(catalogProducts.id))
+    .limit(2000)
+  const kids = await loadChildren(
+    d,
+    rows.map((r) => r.p.id),
+  )
+  return {
+    published: {
+      brand: { ...brand, joinedAt: brand.joinedAt },
+      storefront: v ? { version: v.version, publishedAt: v.publishedAt.toISOString(), config: { ...v.config } } : null,
+      collections: await publicCollectionsOf(b.id, ownProductWhere()),
+    },
+    products: rows.map((r) => ({ ...toPublicProduct(r.p, kids), brand: r.brand })),
+  }
 }
