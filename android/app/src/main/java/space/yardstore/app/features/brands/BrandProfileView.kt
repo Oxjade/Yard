@@ -64,6 +64,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -122,6 +123,9 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.yard
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.GlassIconButton
@@ -151,7 +155,14 @@ import space.yardstore.app.designsystem.components.yardScreenBackground
 // drops list is complete); the story card; then Products / Collections / Drops.
 // Data: BrandProfileModel.
 
+/** The phone's tall hero. */
 private val HeroHeight: Dp = 470.dp
+/** Medium+ windows (tablets, landscape, unfolded): a shorter hero so the grid shows sooner. */
+private val WideHeroHeight: Dp = 300.dp
+
+/** Hero height for the current window. */
+@Composable
+private fun brandHeroHeight(): Dp = if (LocalYardWindow.current.isWide) WideHeroHeight else HeroHeight
 /** Grid tiles sit 6dp from the screen edge; full-width rows add this to reach the 16dp gutter. */
 private val InnerGutter: Dp = Spacing.gutter - Spacing.gridGap
 
@@ -280,6 +291,7 @@ private fun BrandProfileLoaded(model: BrandProfileModel, brand: StorefrontBrand)
     var tab by rememberSaveable { mutableStateOf(BrandProfileTab.Products) }
     var refreshing by remember { mutableStateOf(false) }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Spacing.xxxl
+    val isWide = LocalYardWindow.current.isWide
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -303,7 +315,7 @@ private fun BrandProfileLoaded(model: BrandProfileModel, brand: StorefrontBrand)
                 }
                 item(key = "sections", span = StaggeredGridItemSpan.FullLine) {
                     Column(
-                        Modifier.padding(horizontal = InnerGutter).padding(top = Spacing.xs, bottom = Spacing.l),
+                        Modifier.adaptiveContentWidth().padding(horizontal = InnerGutter).padding(top = Spacing.xs, bottom = Spacing.l),
                         verticalArrangement = Arrangement.spacedBy(Spacing.l),
                     ) {
                         val announcement = model.storefront?.storefront?.config?.announcement
@@ -332,7 +344,7 @@ private fun BrandProfileLoaded(model: BrandProfileModel, brand: StorefrontBrand)
                             }
                         }
                     }
-                    BrandProfileTab.Collections -> collectionsSection(model, brand, onOpen = { router.push(it) })
+                    BrandProfileTab.Collections -> collectionsSection(model, brand, isWide, onOpen = { router.push(it) })
                     BrandProfileTab.Drops -> dropsSection(model, brand, onOpen = { router.push(it) })
                 }
             },
@@ -368,6 +380,7 @@ private fun BrandProductsState(model: BrandProfileModel, brand: StorefrontBrand)
 private fun androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope.collectionsSection(
     model: BrandProfileModel,
     brand: StorefrontBrand,
+    isWide: Boolean,
     onOpen: (Route) -> Unit,
 ) {
     val collections = model.collections
@@ -383,13 +396,18 @@ private fun androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScop
         return
     }
     val fallback = model.heroUrl
+    // Phones: one full-width card per row. Medium+: one card per grid lane (3–4 across) instead of
+    // 16:10 cards stretched to the window width.
     collections.forEach { collection ->
-        item(key = "collection-${collection.id}", span = StaggeredGridItemSpan.FullLine) {
+        item(
+            key = "collection-${collection.id}",
+            span = if (isWide) StaggeredGridItemSpan.SingleLane else StaggeredGridItemSpan.FullLine,
+        ) {
             BrandCollectionCard(
                 collection,
                 fallbackUrl = fallback,
                 modifier = Modifier
-                    .padding(horizontal = InnerGutter)
+                    .padding(horizontal = if (isWide) 0.dp else InnerGutter)
                     .padding(bottom = Spacing.l)
                     .pressableClick { onOpen(Route.Collection(brand = brand.handle, handle = collection.handle)) },
             )
@@ -406,7 +424,7 @@ private fun androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScop
     val error = model.dropsError
     when {
         model.dropsLoading && drops.isEmpty() -> item(key = "drops-loading", span = StaggeredGridItemSpan.FullLine) {
-            Column(Modifier.padding(horizontal = InnerGutter), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            Column(Modifier.adaptiveContentWidth().padding(horizontal = InnerGutter), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
                 repeat(3) { Skeleton(Modifier.fillMaxWidth().height(96.dp), cornerRadius = Radius.card) }
             }
         }
@@ -426,6 +444,7 @@ private fun androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScop
                 BrandDropRow(
                     drop,
                     Modifier
+                        .adaptiveContentWidth()
                         .padding(horizontal = InnerGutter)
                         .padding(bottom = Spacing.m)
                         .pressableClick { onOpen(Route.Drop(id = drop.slug.ifEmpty { drop.id })) },
@@ -447,17 +466,20 @@ private fun BrandProfileIdentity(
     modifier: Modifier = Modifier,
 ) {
     val c = Color.yard
+    val heroHeight = brandHeroHeight()
     Box(modifier.fillMaxWidth()) {
         BrandHeroBackdrop(
             url = model.heroUrl,
-            heroHeight = HeroHeight,
+            heroHeight = heroHeight,
             scrollOffset = { if (gridState.firstVisibleItemIndex == 0) gridState.firstVisibleItemScrollOffset.toFloat() else 0f },
             modifier = Modifier.matchParentSize(),
         )
+        // The photo stays full-bleed; the brand info is capped to the reading width on Medium+.
         Column(
             Modifier
-                .fillMaxWidth()
-                .padding(top = HeroHeight - 150.dp, bottom = 64.dp),
+                .align(Alignment.TopCenter)
+                .adaptiveContentWidth()
+                .padding(top = heroHeight - 150.dp, bottom = 64.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.m),
         ) {
@@ -670,6 +692,7 @@ private fun BrandOpeningSoon(model: BrandProfileModel, brand: StorefrontBrand, m
         if (!following) {
             Box(
                 Modifier
+                    .minimumInteractiveComponentSize()
                     .height(34.dp)
                     .clip(YardShapes.pill)
                     .background(c.acid, YardShapes.pill)
@@ -787,7 +810,9 @@ fun BrandStoryCard(text: String, modifier: Modifier = Modifier) {
                 if (expanded) "Show less" else "Read more",
                 style = YardFonts.captionEmphasis,
                 color = c.onPhoto.copy(alpha = 0.75f),
-                modifier = Modifier.clickable { expanded = !expanded },
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .clickable { expanded = !expanded },
             )
         }
     }
@@ -925,11 +950,11 @@ private fun BrandProfileLoading() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
-        Skeleton(Modifier.fillMaxWidth().height(HeroHeight), cornerRadius = 0.dp)
+        Skeleton(Modifier.fillMaxWidth().height(brandHeroHeight()), cornerRadius = 0.dp)
         Skeleton(Modifier.width(220.dp).height(40.dp), cornerRadius = 8.dp)
         Skeleton(Modifier.width(120.dp).height(16.dp), cornerRadius = 6.dp)
-        Skeleton(Modifier.padding(horizontal = Spacing.gutter).fillMaxWidth().height(54.dp), shape = SkeletonShape.Capsule)
-        Skeleton(Modifier.padding(horizontal = Spacing.gutter).fillMaxWidth().height(80.dp), cornerRadius = Radius.card)
+        Skeleton(Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter).height(54.dp), shape = SkeletonShape.Capsule)
+        Skeleton(Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter).height(80.dp), cornerRadius = Radius.card)
     }
 }
 
@@ -958,6 +983,14 @@ private fun BrandProfileDark() = YardPreview(darkTheme = true) { BrandProfileCon
 @Preview(name = "BrandProfileView — light", heightDp = 1100)
 @Composable
 private fun BrandProfileLight() = YardPreview(darkTheme = false) { BrandProfileContent(remember { brandProfilePreviewModel() }) }
+
+@YardTabletPreviews
+@Composable
+private fun BrandProfileTablet() = YardPreview(darkTheme = true) { BrandProfileContent(remember { brandProfilePreviewModel() }) }
+
+@YardTabletPreviews
+@Composable
+private fun BrandProfileTabletLight() = YardPreview(darkTheme = false) { BrandProfileContent(remember { brandProfilePreviewModel() }) }
 
 @Preview(name = "BrandDropRow + collection — dark")
 @Composable

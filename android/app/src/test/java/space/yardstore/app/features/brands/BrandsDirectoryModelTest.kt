@@ -1,5 +1,6 @@
 package space.yardstore.app.features.brands
 
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -127,5 +128,45 @@ class BrandsDirectoryModelTest {
         brandsWaitUntil { !m.isLoadingMore }
         assertTrue(m.loadMoreFailed)
         assertEquals(3, m.brands.size)
+    }
+
+    @Test fun filtersAreWrittenToSavedState() {
+        val saved = SavedStateHandle()
+        val m = BrandsDirectoryModel(t.api, saved)
+        m.query = "lagos"
+        m.category = "beauty"
+        m.foundingOnly = true
+        m.sort = BrandsDirectoryModel.Sort.New
+        assertEquals("lagos", saved.get<String>("brands.query"))
+        assertEquals("beauty", saved.get<String>("brands.category"))
+        assertEquals(true, saved.get<Boolean>("brands.founding"))
+        assertEquals("new", saved.get<String>("brands.sort"))
+    }
+
+    @Test fun filtersAreRestoredAfterProcessDeath() = runBlocking {
+        val saved = SavedStateHandle(mapOf("brands.query" to "acc", "brands.category" to "streetwear", "brands.founding" to true, "brands.sort" to "new"))
+        val m = BrandsDirectoryModel(t.api, saved)
+        assertEquals("acc", m.query)
+        assertEquals("streetwear", m.category)
+        assertTrue(m.foundingOnly)
+        assertEquals(BrandsDirectoryModel.Sort.New, m.sort)
+        assertTrue(m.isNarrowing)
+        m.reload()
+        val url = t.requests.last().requestUrl!!
+        assertEquals("acc", url.queryParameter("q"))
+        assertEquals("streetwear", url.queryParameter("category"))
+        assertEquals("1", url.queryParameter("founding"))
+        assertEquals("new", url.queryParameter("sort"))
+        m.clearFilters()
+        assertEquals("", saved.get<String>("brands.query"))
+        assertNull(saved.get<String>("brands.category"))
+        assertEquals(false, saved.get<Boolean>("brands.founding"))
+    }
+
+    @Test fun unknownSavedSortFallsBackToName() {
+        val m = BrandsDirectoryModel(t.api, SavedStateHandle(mapOf("brands.sort" to "bogus")))
+        assertEquals(BrandsDirectoryModel.Sort.Name, m.sort)
+        assertEquals("", m.query)
+        assertFalse(m.isNarrowing)
     }
 }

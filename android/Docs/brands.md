@@ -6,11 +6,13 @@ Mirrors `ios/Yard/Features/Brands` (see `ios/Docs/brands.md`).
 
 - **BrandsDirectoryView()** (`Route.BrandsDirectory`): title bar + pill search field (debounced
   250 ms; name, handle or city), sort chips (A–Z / New on Yard), Founding chip, category chips (only
-  categories present among listed brands, website order). Two-column `LazyVerticalGrid` of
+  categories present among listed brands, website order). `LazyVerticalGrid` at
+  `LocalYardWindow.gridColumns` (2 / 3 / 4; skeleton too) of
   `BrandDirectoryCard` (cover + logo + "Opening soon", name + verified, "City, Country · Category",
   Founding badge, Follow/Following pill). Infinite scroll, pull to refresh, skeleton, "No brands
   match" + Clear search, error + Retry, "Load more brands" after a failed page, and the
-  "Brands are joining Yard" state (→ Drops).
+  "Brands are joining Yard" state (→ Drops). Search text, category, Founding and sort live in the
+  ViewModel and are mirrored to its `SavedStateHandle`, so they survive rotation and process death.
 - **BrandProfileView(handle)** (`Route.Brand`), reference 02: full-bleed hero (storefront cover,
   else first product photo, else purple gradient) under the status bar, parallax on scroll, fading
   into a blurred copy then `bg`. Huge condensed name + verified, @handle, Founding badge, place,
@@ -19,6 +21,16 @@ Mirrors `ios/Yard/Features/Brands` (see `ios/Docs/brands.md`).
   Real stats only. "Opening soon on Yard" banner with Notify me. Story card (Read more).
   Announcement row. Products (masonry, paged) / Collections / Drops tabs with loading / empty /
   error states. Not-found state. Whole page is one `LazyVerticalStaggeredGrid` (via `MasonryGrid`).
+
+## Tablet & large screens
+
+- Directory: grid and skeleton at `gridColumns`; search field and chip rows stay full width.
+- Profile on Medium+ (`isWide`): hero 300dp instead of 470dp (skeleton too); the photo and blurred
+  backdrop stay full-bleed while the identity block (name, actions, stats, opening-soon, story),
+  the announcement + tab pill, drop rows and the drops skeleton are capped at `contentMaxWidth`;
+  products at `gridColumns` (3–4); collection cards take one grid lane each (3–4 across) instead
+  of full-width 16:10 cards.
+- `@YardTabletPreviews` on both screens.
 
 ## Endpoints
 
@@ -37,8 +49,9 @@ Mirrors `ios/Yard/Features/Brands` (see `ios/Docs/brands.md`).
   backdrop soft.
 - The name auto-shrinks by length steps (58/48/40 sp) instead of `minimumScaleFactor`.
 - Directory search is an in-page pill field (no `.searchable` navigation drawer on Android).
+- The storefront JSON is decoded twice (`PublicStorefront` + story extras) on `Dispatchers.Default`.
 
 ## Tests
 
 `app/src/test/java/space/yardstore/app/features/brands/`: `BrandProfileModelTest` (12),
-`BrandsDirectoryModelTest` (6), `BrandsSupportTest` (7) — MockWebServer with website-shaped JSON.
+`BrandsDirectoryModelTest` (9, incl. saved-state restore), `BrandsSupportTest` (7) — MockWebServer with website-shaped JSON.

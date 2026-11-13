@@ -66,7 +66,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
@@ -87,6 +89,8 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.yard
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.Chip
@@ -114,16 +118,33 @@ import space.yardstore.app.designsystem.components.yardScreenBackground
 
 // region Model
 
-class BrandsDirectoryModel(private val api: APIClient = APIClient.shared) : ViewModel() {
+class BrandsDirectoryModel(
+    private val api: APIClient = APIClient.shared,
+    /** Keeps the search and filters across process death (the ViewModel covers rotation). */
+    private val savedState: SavedStateHandle = SavedStateHandle(),
+) : ViewModel() {
     enum class Sort(val raw: String, val title: String) {
         Name("name", "A–Z"),
         New("new", "New on Yard"),
     }
 
-    var query: String by mutableStateOf("")
-    var category: String? by mutableStateOf(null)
-    var foundingOnly: Boolean by mutableStateOf(false)
-    var sort: Sort by mutableStateOf(Sort.Name)
+    private var queryState by mutableStateOf(savedState.get<String>(KEY_QUERY).orEmpty())
+    private var categoryState by mutableStateOf(savedState.get<String>(KEY_CATEGORY))
+    private var foundingOnlyState by mutableStateOf(savedState.get<Boolean>(KEY_FOUNDING) ?: false)
+    private var sortState by mutableStateOf(Sort.entries.firstOrNull { it.raw == savedState.get<String>(KEY_SORT) } ?: Sort.Name)
+
+    var query: String
+        get() = queryState
+        set(value) { queryState = value; savedState[KEY_QUERY] = value }
+    var category: String?
+        get() = categoryState
+        set(value) { categoryState = value; savedState[KEY_CATEGORY] = value }
+    var foundingOnly: Boolean
+        get() = foundingOnlyState
+        set(value) { foundingOnlyState = value; savedState[KEY_FOUNDING] = value }
+    var sort: Sort
+        get() = sortState
+        set(value) { sortState = value; savedState[KEY_SORT] = value.raw }
 
     var brands: List<BrandCard> by mutableStateOf(emptyList()); private set
     var total: Int by mutableStateOf(0); private set
@@ -229,6 +250,10 @@ class BrandsDirectoryModel(private val api: APIClient = APIClient.shared) : View
 
     companion object {
         const val PAGE_SIZE = 24
+        private const val KEY_QUERY = "brands.query"
+        private const val KEY_CATEGORY = "brands.category"
+        private const val KEY_FOUNDING = "brands.founding"
+        private const val KEY_SORT = "brands.sort"
     }
 }
 
@@ -239,7 +264,7 @@ class BrandsDirectoryModel(private val api: APIClient = APIClient.shared) : View
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrandsDirectoryView() {
-    val model: BrandsDirectoryModel = viewModel { BrandsDirectoryModel() }
+    val model: BrandsDirectoryModel = viewModel { BrandsDirectoryModel(savedState = createSavedStateHandle()) }
     val router = LocalRouter.current
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -287,12 +312,13 @@ fun BrandsDirectoryView() {
 private fun BrandsDirectoryList(model: BrandsDirectoryModel, gridState: androidx.compose.foundation.lazy.grid.LazyGridState) {
     val scope = rememberCoroutineScope()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Spacing.xxl
+    val columns = LocalYardWindow.current.gridColumns
     val listAlpha by animateFloatAsState(if (model.isLoading) 0.55f else 1f, Motion.fade(), label = "brands-alpha")
     val error = model.loadError
     val showsError = error != null && (model.brands.isEmpty() || !model.isLoading)
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.s, bottom = bottom),
@@ -404,13 +430,14 @@ private fun BrandsFooter(model: BrandsDirectoryModel) {
 
 @Composable
 private fun BrandsLoadingGrid(modifier: Modifier = Modifier, inset: Boolean = true) {
+    val columns = LocalYardWindow.current.gridColumns
     Column(
         modifier.fillMaxWidth().padding(horizontal = if (inset) Spacing.gutter else 0.dp).semantics { contentDescription = "Loading brands" },
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
         repeat(3) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                repeat(2) {
+                repeat(columns) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
                         Skeleton(Modifier.fillMaxWidth().aspectRatio(0.8f), cornerRadius = Radius.image)
                         Skeleton(Modifier.width(110.dp).height(14.dp), cornerRadius = 6.dp)
@@ -446,7 +473,7 @@ private fun BrandsSearchField(value: String, onValueChange: (String) -> Unit, mo
             .height(44.dp)
             .background(c.surface2, YardShapes.pill)
             .border(BorderStroke(1.dp, c.line), YardShapes.pill)
-            .padding(horizontal = Spacing.m),
+            .padding(start = Spacing.m, end = if (value.isEmpty()) Spacing.m else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
@@ -465,12 +492,17 @@ private fun BrandsSearchField(value: String, onValueChange: (String) -> Unit, mo
             )
         }
         if (value.isNotEmpty()) {
-            Icon(
-                Icons.Filled.Cancel,
-                contentDescription = "Clear search",
-                tint = c.ink3,
-                modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onValueChange("") },
-            )
+            // 44dp inside the 44dp pill; the touch target is extended to 48dp.
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Clear search") { onValueChange("") }
+                    .semantics { contentDescription = "Clear search" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Cancel, contentDescription = null, tint = c.ink3, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -598,6 +630,10 @@ private fun BrandsDirectoryDark() = YardPreview(darkTheme = true) { BrandsDirect
 @Preview(name = "BrandsDirectoryView — light")
 @Composable
 private fun BrandsDirectoryLight() = YardPreview(darkTheme = false) { BrandsDirectoryView() }
+
+@YardTabletPreviews
+@Composable
+private fun BrandsDirectoryTablet() = YardPreview(darkTheme = true) { BrandsDirectoryView() }
 
 @Preview(name = "Brand card — dark")
 @Composable

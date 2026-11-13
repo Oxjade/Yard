@@ -6,8 +6,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.models.Drop
 import space.yardstore.app.core.models.DropsPage
@@ -99,12 +101,8 @@ class BrandProfileModel(
         if (storefront == null) phase = Phase.Loading
         try {
             val text = api.data(HTTPMethod.GET, "/api/catalog/storefronts/${Config.encodePath(handle)}")
-            val decoded = try {
-                YardJson.decodeFromString<PublicStorefront>(text)
-            } catch (e: Exception) {
-                throw APIError.decoding(e)
-            }
-            val extras = try { YardJson.decodeFromString<BrandsStorefrontExtras>(text) } catch (e: Exception) { null }
+            // Two decodes of a whole storefront: keep them off the main thread.
+            val (decoded, extras) = withContext(Dispatchers.Default) { decodeStorefront(text) }
             storefront = decoded
             val rawStory = extras?.brand?.story?.trim().orEmpty()
             val intro = decoded.storefront?.config?.intro?.trim().orEmpty()
@@ -204,6 +202,16 @@ class BrandProfileModel(
     /** After a follow/unfollow the server returns the new count. */
     fun apply(result: FollowResult) {
         followers = result.followers
+    }
+
+    private fun decodeStorefront(text: String): Pair<PublicStorefront, BrandsStorefrontExtras?> {
+        val decoded = try {
+            YardJson.decodeFromString<PublicStorefront>(text)
+        } catch (e: Exception) {
+            throw APIError.decoding(e)
+        }
+        val extras = try { YardJson.decodeFromString<BrandsStorefrontExtras>(text) } catch (e: Exception) { null }
+        return decoded to extras
     }
 
     private fun productQuery(brandId: String, offset: Int): List<Pair<String, String?>> = listOf(
