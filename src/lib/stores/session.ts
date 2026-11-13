@@ -53,6 +53,8 @@ type SessionState = {
    */
   currencyChosen: boolean
   shipTo: CountryCode
+  /** True once the shopper picked a delivery country; until then it follows where they visit from. */
+  shipToChosen?: boolean
   /** The delivery city chosen with the destination picker (optional; never a precise location). */
   shipToCity: string | null
   interests: CategorySlug[]
@@ -88,6 +90,8 @@ type SessionState = {
   setCurrency: (c: CurrencyCode) => void
   /** Changes the delivery country; the currency follows it unless the shopper chose one. */
   setShipTo: (c: CountryCode) => void
+  /** The visitor's country (from their connection): applied only while they haven't chosen one. */
+  detectShipTo: (c: CountryCode) => void
   setShipToCity: (city: string | null) => void
   setInterests: (interests: CategorySlug[], aesthetics: Aesthetic[]) => void
   finishOnboarding: () => void
@@ -182,7 +186,11 @@ export const useSession = create<SessionState>()(
         return true
       },
       setCurrency: (currency) => set({ currency, currencyChosen: true }),
-      setShipTo: (shipTo) => set(get().currencyChosen ? { shipTo } : { shipTo, currency: countryCurrency(shipTo) }),
+      setShipTo: (shipTo) => set(get().currencyChosen ? { shipTo, shipToChosen: true } : { shipTo, shipToChosen: true, currency: countryCurrency(shipTo) }),
+      detectShipTo: (shipTo) => {
+        if (get().shipToChosen || get().shipTo === shipTo) return
+        set(get().currencyChosen ? { shipTo, shipToCity: null } : { shipTo, shipToCity: null, currency: countryCurrency(shipTo) })
+      },
       setShipToCity: (shipToCity) => set({ shipToCity: shipToCity?.trim() ? shipToCity.trim().slice(0, 60) : null }),
       setInterests: (interests, aesthetics) => set({ interests, aesthetics }),
       finishOnboarding: () => set({ onboarded: true }),
@@ -199,7 +207,7 @@ export const useSession = create<SessionState>()(
       storage: createJSONStorage(() => localStorage),
       // Everything but the sign-in prompt (it holds a callback and only lives for this visit) and
       // the in-flight flag.
-      partialize: ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }) => ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToCity, interests, aesthetics, onboarded, notifications }),
+      partialize: ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToChosen, shipToCity, interests, aesthetics, onboarded, notifications }) => ({ user, signedOutAt, currency, currencyChosen, shipTo, shipToChosen, shipToCity, interests, aesthetics, onboarded, notifications }),
       skipHydration: true,
       // v1: the currency follows the delivery country until the shopper picks one. Sessions saved
       // before then defaulted to USD whatever the country, so only that old default moves to the

@@ -9,6 +9,7 @@ import { DemoAuthBanner } from "@/components/session/demo-auth-banner"
 import { RealtimeProvider } from "@/lib/realtime/provider"
 import { SessionSync } from "@/lib/session/session-sync"
 import { VisitBeacon } from "@/components/signals/visit-beacon"
+import { GeoDefault } from "@/components/signals/geo-default"
 
 /** The customer marketplace shell: floating nav, the phone home bar, the cart drawer, search. Checkout gets a focused header instead. */
 export default function MarketLayout({ children }: LayoutProps<"/">) {
@@ -35,6 +36,7 @@ export default function MarketLayout({ children }: LayoutProps<"/">) {
         <AuthPrompt />
         <SessionSync />
         <VisitBeacon />
+        <GeoDefault />
         <Toaster tone="comic" />
       </div>
     </RealtimeProvider>
