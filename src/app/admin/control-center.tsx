@@ -54,6 +54,8 @@ import { useBrandApplications } from "@/components/admin/marketplace/onboarding"
 import { useLiveMoney } from "@/components/admin/finance/live-counts"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { SessionGate } from "@/components/session/session-gate"
+import { BusinessFigures } from "@/components/admin/overview/business-figures"
+import { LiveMonitoringSlot } from "@/components/admin/overview/monitoring-slot"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { useBrowserAudit } from "@/components/admin/platform/security/audit-log"
 
@@ -736,10 +738,12 @@ export function ControlCenter() {
       <SessionGate surface="admin" feature="the Control Center">
         <Reveal ssrVisible className="@container grid gap-3">
           <CommandStrip />
+          <BusinessFigures />
           <div className="grid gap-3 @5xl:grid-cols-12">
             <DecisionQueue className="@5xl:col-span-8" />
             <AuditTrail className="@5xl:col-span-4" />
           </div>
+          <LiveMonitoringSlot />
         </Reveal>
       </SessionGate>
     )
