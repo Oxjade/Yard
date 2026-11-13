@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
 import { SocialMark, startSocialSignIn } from "@/components/auth/social-sign-in"
+import { AuthenticatorQr } from "@/components/auth/authenticator-qr"
 
 type Surface = "studio" | "admin"
 type ChallengeMode = "enrol" | "verify"
@@ -168,9 +169,9 @@ export function ServerActorSignIn({ surface, onSignedIn, onHold }: Props) {
       <form onSubmit={submitCode} className="grid gap-4 rounded-lg border border-line-soft bg-card p-5">
         <div>
           <h2 className="text-base font-medium text-ink">{challengeMode === "enrol" ? "Set up two-factor authentication" : "Verify your sign-in"}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-ink-2">{challengeMode === "enrol" ? "Add this key to an authenticator app, then enter its six-digit code." : useRecovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication. Each code works once." : "Enter the six-digit code from your authenticator app."}</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">{challengeMode === "enrol" ? "Scan the QR code with an authenticator app, then enter its six-digit code." : useRecovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication. Each code works once." : "Enter the six-digit code from your authenticator app."}</p>
         </div>
-        {authenticator ? <p className="break-all rounded-md bg-obsidian px-3 py-2 font-mono text-xs text-ink" aria-label="Authenticator setup key">{authenticator.secret}</p> : null}
+        {authenticator ? <AuthenticatorQr otpauthUrl={authenticator.otpauthUrl} secret={authenticator.secret} /> : null}
         {challengeMode === "verify" && useRecovery ? (
           <div className="grid gap-1.5">
             <Label htmlFor="admin-mfa-recovery">Recovery code</Label>
