@@ -266,5 +266,29 @@ class SearchViewModelsTest {
         assertEquals(2, model.products.size)
     }
 
+    @Test fun loadMoreWaitsWhileRefreshing() {
+        server.enqueue(json(SearchFixtures.searchPage1))
+        server.enqueue(json(SearchFixtures.productsAB))
+        server.enqueue(json(SearchFixtures.searchPage1).setBodyDelay(300, TimeUnit.MILLISECONDS))
+        server.enqueue(json(SearchFixtures.productsAB))
+        val model = SearchResultsModel("hoodie", api)
+        model.ensureLoaded("USD")
+        waitFor { model.phase == SearchResultsModel.Phase.Loaded }
+        take(); take()
+
+        model.load("USD", refreshing = true)
+        assertTrue(model.isRefreshing)
+        // The old cursor must not append a stale page while the first page reloads.
+        model.loadMore("USD")
+        assertFalse(model.isLoadingMore)
+        waitFor { !model.isRefreshing }
+        assertTrue(take().query("cursor").isEmpty())
+        assertEquals("/api/catalog/products", take().requestUrl!!.encodedPath)
+        Thread.sleep(100)
+        assertEquals(4, server.requestCount)
+        assertEquals(2, model.products.size)
+        assertEquals("2", model.nextCursor)
+    }
+
     // endregion
 }

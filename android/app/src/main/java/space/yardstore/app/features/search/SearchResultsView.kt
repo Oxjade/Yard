@@ -37,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -74,6 +75,7 @@ import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.Chip
 import space.yardstore.app.designsystem.components.ChipRow
@@ -85,6 +87,7 @@ import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardTopBar
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.yard
 import space.yardstore.app.designsystem.components.yardScreenBackground
@@ -168,13 +171,13 @@ fun SearchResultsView(model: SearchResultsModel) {
                             MasonrySkeleton(count = 8)
                         }
                         is SearchResultsModel.Phase.Failed -> item(key = "error", span = StaggeredGridItemSpan.FullLine) {
-                            EmptyState.Error(message = phase.message, modifier = Modifier.padding(top = Spacing.xxl)) {
+                            EmptyState.Error(message = phase.message, modifier = Modifier.adaptiveContentWidth().padding(top = Spacing.xxl)) {
                                 model.load(currency)
                             }
                         }
                         SearchResultsModel.Phase.Loaded -> if (model.products.isEmpty()) {
                             item(key = "no-results", span = StaggeredGridItemSpan.FullLine) {
-                                SearchNoResults(model, Modifier.searchFullBleed(Spacing.gridGap)) { router.push(it) }
+                                SearchNoResults(model, Modifier.searchFullBleed(Spacing.gridGap).adaptiveContentWidth()) { router.push(it) }
                             }
                         }
                     }
@@ -237,6 +240,7 @@ private fun SearchResultsBrandsRow(brands: List<SearchBrandHit>, modifier: Modif
             items(brands, key = { it.brandId }) { brand ->
                 Row(
                     Modifier
+                        .minimumInteractiveComponentSize()
                         .clip(YardShapes.pill)
                         .background(Color.yard.surface, YardShapes.pill)
                         .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
@@ -296,8 +300,7 @@ private fun SearchResultsFilterChips(model: SearchResultsModel, modifier: Modifi
 /** The categories the words fall into; keeps a selected one visible even with 0 left. */
 fun searchCategoryOptions(facets: List<SearchCategoryFacet>, selected: String?): List<SearchCategoryFacet> {
     if (selected == null || facets.any { it.value == selected }) return facets
-    val label = selected.split(" ").joinToString(" ") { word -> word.lowercase().replaceFirstChar { it.uppercase() } }
-    return listOf(SearchCategoryFacet(value = selected, label = label, count = 0)) + facets
+    return listOf(SearchCategoryFacet(value = selected, label = searchCapitalized(selected), count = 0)) + facets
 }
 
 @Composable
@@ -306,6 +309,7 @@ private fun SearchSortMenu(sort: SearchSort, onSelect: (SearchSort) -> Unit) {
     Box {
         Row(
             Modifier
+                .minimumInteractiveComponentSize()
                 .height(32.dp)
                 .clip(YardShapes.pill)
                 .background(Color.yard.surface2, YardShapes.pill)
@@ -421,6 +425,7 @@ private fun SearchNoResults(model: SearchResultsModel, modifier: Modifier = Modi
 private fun SearchSuggestion(title: String, icon: ImageVector, onClick: () -> Unit) {
     Row(
         Modifier
+            .minimumInteractiveComponentSize()
             .clip(YardShapes.pill)
             .background(Color.yard.surface2, YardShapes.pill)
             .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
@@ -438,6 +443,25 @@ private fun SearchSuggestion(title: String, icon: ImageVector, onClick: () -> Un
 // endregion
 
 // region Previews
+
+@YardTabletPreviews
+@Composable
+private fun SearchResultsTabletPreview() = YardPreview(darkTheme = true) {
+    SearchResultsView(
+        SearchResultsModel.preview(
+            query = "hoodie",
+            products = PreviewFixtures.products,
+            brands = SearchPreviewData.brands,
+            facets = listOf(SearchCategoryFacet("tops", "Tops", 8), SearchCategoryFacet("outerwear", "Outerwear", 2)),
+        ),
+    )
+}
+
+@YardTabletPreviews
+@Composable
+private fun SearchResultsEmptyTabletPreview() = YardPreview(darkTheme = false) {
+    SearchResultsView(SearchResultsModel.preview(query = "zzzz", products = emptyList()))
+}
 
 @Preview(name = "Results — dark")
 @Composable

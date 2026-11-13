@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,7 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import space.yardstore.app.core.Formatters
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
@@ -59,6 +62,33 @@ fun SearchFlowLayout(
     ) { content() }
 }
 
+/**
+ * The side inset that centers the Search home's header and rows at [maxWidth] on wide windows
+ * (`LocalYardWindow.contentMaxWidth`; unspecified on compact = no inset). The list itself stays
+ * full width so it scrolls from anywhere.
+ */
+fun searchSideInset(available: Dp, maxWidth: Dp): Dp =
+    if (!maxWidth.isSpecified || !available.isSpecified) 0.dp else ((available - maxWidth) / 2).coerceAtLeast(0.dp)
+
+/**
+ * Swift's `String.capitalized` for a category slug ("t-shirts" → "T-Shirts", "OUTER wear" → "Outer Wear"):
+ * the first letter of each word (after a space, hyphen or underscore) upper case, the rest lower case.
+ */
+fun searchCapitalized(value: String): String {
+    val out = StringBuilder(value.length)
+    var startOfWord = true
+    for (ch in value) {
+        if (ch.isLetterOrDigit()) {
+            out.append(if (startOfWord) ch.uppercaseChar() else ch.lowercaseChar())
+            startOfWord = false
+        } else {
+            out.append(ch)
+            startOfWord = ch.isWhitespace() || ch == '-' || ch == '_'
+        }
+    }
+    return out.toString()
+}
+
 /** A small caption-style section label ("Recent", "Browse", "Brands"), with an optional action. */
 @Composable
 fun SearchSectionLabel(
@@ -84,6 +114,7 @@ fun SearchSectionLabel(
                 style = YardFonts.captionEmphasis,
                 color = Color.yard.ink2,
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(YardShapes.pill)
                     .clickable(onClick = action)
                     .padding(horizontal = Spacing.s, vertical = Spacing.xs),

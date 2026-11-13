@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import space.yardstore.app.core.models.Money
 import space.yardstore.app.core.models.YardJson
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import java.util.Locale
 
 class SearchModelsTest {
@@ -95,6 +97,25 @@ class SearchModelsTest {
         val withSelected = searchCategoryOptions(facets, "outerwear")
         assertEquals(SearchCategoryFacet("outerwear", "Outerwear", 0), withSelected.first())
         assertEquals(2, withSelected.size)
+    }
+
+    @Test fun categoryOptionLabelCapitalizesLikeSwift() {
+        assertEquals("T-Shirts", searchCapitalized("t-shirts"))
+        assertEquals("Outer Wear", searchCapitalized("OUTER wear"))
+        assertEquals("Knit_Tops", searchCapitalized("knit_tops"))
+        assertEquals("", searchCapitalized(""))
+        assertEquals("T-Shirts", searchCategoryOptions(emptyList(), "t-shirts").single().label)
+    }
+
+    @Test fun sideInsetCentersOnlyOnWideWindows() {
+        // Compact: contentMaxWidth unspecified → no inset.
+        assertEquals(0.dp, searchSideInset(400.dp, Dp.Unspecified))
+        // Medium 720dp cap on an 800dp-wide area → 40dp each side.
+        assertEquals(40.dp, searchSideInset(800.dp, 720.dp))
+        // Expanded 960dp cap on 1200dp → 120dp each side.
+        assertEquals(120.dp, searchSideInset(1200.dp, 960.dp))
+        // Narrower than the cap (e.g. a rail eats the width) → never negative.
+        assertEquals(0.dp, searchSideInset(700.dp, 720.dp))
     }
 
     @Test fun countText() {

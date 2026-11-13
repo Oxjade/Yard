@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,12 +84,14 @@ import space.yardstore.app.app.tabPillScrollSensor
 import space.yardstore.app.core.Formatters
 import space.yardstore.app.core.models.Money
 import space.yardstore.app.core.stores.LocalCartStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.Chip
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.pressableClick
@@ -191,184 +195,191 @@ fun SearchHomeView(
         if (listState.isScrollInProgress) dismissKeyboard()
     }
 
-    Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        // Header
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(top = Spacing.s, bottom = Spacing.s),
-            verticalArrangement = Arrangement.spacedBy(Spacing.m),
-        ) {
-            YardDisplayText(
-                "Search",
-                size = 44.sp,
-                modifier = Modifier.padding(horizontal = Spacing.gutter).semantics { heading() },
-            )
-            SearchField(
-                text = text,
-                onTextChange = { text = it },
-                isFocused = isFieldFocused,
-                focusRequester = focusRequester,
-                onFocusChange = { isFieldFocused = it },
-                onSubmit = { submit(term) },
-                onClear = {
-                    text = ""
-                    runCatching { focusRequester.requestFocus() }
-                },
-                modifier = Modifier.padding(horizontal = Spacing.gutter),
-            )
-        }
+    val contentMaxWidth = LocalYardWindow.current.contentMaxWidth
+    // Wide windows: header and rows are centered at the content max width (no 1280dp-long rows);
+    // the list itself stays full width so it scrolls from anywhere.
+    BoxWithConstraints(Modifier.fillMaxSize().yardScreenBackground()) {
+        val inset = searchSideInset(maxWidth, contentMaxWidth)
+        Column(Modifier.fillMaxSize()) {
+            // Header
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = inset)
+                    .padding(top = Spacing.s, bottom = Spacing.s),
+                verticalArrangement = Arrangement.spacedBy(Spacing.m),
+            ) {
+                YardDisplayText(
+                    "Search",
+                    size = 44.sp,
+                    modifier = Modifier.padding(horizontal = Spacing.gutter).semantics { heading() },
+                )
+                SearchField(
+                    text = text,
+                    onTextChange = { text = it },
+                    isFocused = isFieldFocused,
+                    focusRequester = focusRequester,
+                    onFocusChange = { isFieldFocused = it },
+                    onSubmit = { submit(term) },
+                    onClear = {
+                        text = ""
+                        runCatching { focusRequester.requestFocus() }
+                    },
+                    modifier = Modifier.padding(horizontal = Spacing.gutter),
+                )
+            }
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().imePadding().tabPillScrollSensor(),
-            contentPadding = PaddingValues(top = Spacing.m, bottom = LocalTabPillClearance.current + Spacing.xl),
-        ) {
-            val sections = SearchSectionGaps(this)
-            if (isTyping) {
-                // region Typing: live results
-                val categories = model.matchingCategories(term)
-                val isCurrent = model.term == term
-                val phase = model.phase
-                val isLoading = !isCurrent || phase == SearchLiveModel.Phase.Loading
-                val hasRemote = isCurrent && (model.brands.isNotEmpty() || model.products.isNotEmpty())
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().imePadding().tabPillScrollSensor(),
+                contentPadding = PaddingValues(start = inset, end = inset, top = Spacing.m, bottom = LocalTabPillClearance.current + Spacing.xl),
+            ) {
+                val sections = SearchSectionGaps(this)
+                if (isTyping) {
+                    // region Typing: live results
+                    val categories = model.matchingCategories(term)
+                    val isCurrent = model.term == term
+                    val phase = model.phase
+                    val isLoading = !isCurrent || phase == SearchLiveModel.Phase.Loading
+                    val hasRemote = isCurrent && (model.brands.isNotEmpty() || model.products.isNotEmpty())
 
-                if (phase is SearchLiveModel.Phase.Failed && isCurrent) {
-                    sections.gap()
-                    item(key = "error", contentType = "error") {
-                        SearchInlineError(phase.message) { model.retry(term, cart.currency) }
+                    if (phase is SearchLiveModel.Phase.Failed && isCurrent) {
+                        sections.gap()
+                        item(key = "error", contentType = "error") {
+                            SearchInlineError(phase.message) { model.retry(term, cart.currency) }
+                        }
+                    } else if (isLoading && !hasRemote) {
+                        sections.gap()
+                        item(key = "skeleton", contentType = "skeleton") { SearchRowsSkeleton() }
                     }
-                } else if (isLoading && !hasRemote) {
-                    sections.gap()
-                    item(key = "skeleton", contentType = "skeleton") { SearchRowsSkeleton() }
-                }
 
-                if (isCurrent && model.brands.isNotEmpty()) {
-                    sections.gap()
-                    item(key = "brands-label", contentType = "label") {
-                        SearchSectionLabel("Brands", Modifier.padding(bottom = Spacing.xs))
+                    if (isCurrent && model.brands.isNotEmpty()) {
+                        sections.gap()
+                        item(key = "brands-label", contentType = "label") {
+                            SearchSectionLabel("Brands", Modifier.padding(bottom = Spacing.xs))
+                        }
+                        items(model.brands, key = { "brand-${it.brandId}" }, contentType = { "brand" }) { brand ->
+                            SearchBrandRow(
+                                brand,
+                                Modifier.animateItem().clickable {
+                                    recordRecent(term)
+                                    dismissKeyboard()
+                                    router.push(Route.Brand(handle = brand.handle))
+                                },
+                            )
+                        }
                     }
-                    items(model.brands, key = { "brand-${it.brandId}" }, contentType = { "brand" }) { brand ->
-                        SearchBrandRow(
-                            brand,
-                            Modifier.animateItem().clickable {
-                                recordRecent(term)
-                                dismissKeyboard()
-                                router.push(Route.Brand(handle = brand.handle))
-                            },
-                        )
-                    }
-                }
 
-                if (categories.isNotEmpty()) {
-                    sections.gap()
-                    item(key = "categories", contentType = "chips") {
-                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                            SearchSectionLabel("Categories")
-                            SearchFlowLayout(Modifier.padding(horizontal = Spacing.gutter)) {
-                                categories.forEach { category ->
-                                    Chip(category.name, icon = Icons.Outlined.GridView) {
-                                        recordRecent(term)
-                                        dismissKeyboard()
-                                        router.push(Route.Category(slug = category.slug))
+                    if (categories.isNotEmpty()) {
+                        sections.gap()
+                        item(key = "categories", contentType = "chips") {
+                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                                SearchSectionLabel("Categories")
+                                SearchFlowLayout(Modifier.padding(horizontal = Spacing.gutter)) {
+                                    categories.forEach { category ->
+                                        Chip(category.name, icon = Icons.Outlined.GridView) {
+                                            recordRecent(term)
+                                            dismissKeyboard()
+                                            router.push(Route.Category(slug = category.slug))
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                if (isCurrent && model.products.isNotEmpty()) {
-                    sections.gap()
-                    item(key = "products-label", contentType = "label") {
-                        SearchSectionLabel("Products", Modifier.padding(bottom = Spacing.xs))
-                    }
-                    items(model.products, key = { "product-${it.productId}" }, contentType = { "product" }) { item ->
-                        SearchProductRow(
-                            item,
-                            Modifier.animateItem().clickable {
-                                recordRecent(term)
-                                dismissKeyboard()
-                                router.push(productRoute(item))
-                            },
-                        )
-                    }
-                }
-
-                sections.gap()
-                if (isCurrent && phase == SearchLiveModel.Phase.Loaded && !hasRemote && categories.isEmpty()) {
-                    item(key = "no-matches", contentType = "empty") {
-                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.l)) {
-                            EmptyState(
-                                "No matches",
-                                message = "Nothing matches “$term”. Try a brand name, a city or a material.",
-                                icon = Icons.Outlined.Search,
-                            )
-                            if (model.tries.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                                    SearchSectionLabel("Try")
-                                    SearchTryChips(model.tries) { text = it }
-                                }
-                            }
+                    if (isCurrent && model.products.isNotEmpty()) {
+                        sections.gap()
+                        item(key = "products-label", contentType = "label") {
+                            SearchSectionLabel("Products", Modifier.padding(bottom = Spacing.xs))
                         }
-                    }
-                } else {
-                    item(key = "see-all", contentType = "see-all") {
-                        val count = if (model.term == term && phase == SearchLiveModel.Phase.Loaded && model.total > 0) model.total else null
-                        SearchSeeAllRow(term, count) { submit(term) }
-                    }
-                }
-                // endregion
-            } else {
-                // region Idle: recents, browse, try
-                if (recents.isNotEmpty()) {
-                    sections.gap()
-                    item(key = "recent-label", contentType = "label") {
-                        SearchSectionLabel(
-                            "Recent",
-                            Modifier.padding(bottom = Spacing.xs),
-                            actionTitle = "Clear",
-                        ) {
-                            SearchRecents.clear()
-                            recents = emptyList()
-                        }
-                    }
-                    items(recents, key = { "recent-$it" }, contentType = { "recent" }) { recent ->
-                        SearchRecentRow(
-                            recent,
-                            modifier = Modifier.animateItem(),
-                            onSelect = { submit(recent) },
-                            onRemove = { recents = SearchRecents.remove(recent) },
-                        )
-                    }
-                }
-
-                sections.gap()
-                item(key = "browse", contentType = "chips") {
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                        SearchSectionLabel("Browse")
-                        SearchFlowLayout(Modifier.padding(horizontal = Spacing.gutter)) {
-                            searchBrowseLinks.forEach { link ->
-                                Chip(link.title, icon = link.icon) {
+                        items(model.products, key = { "product-${it.productId}" }, contentType = { "product" }) { item ->
+                            SearchProductRow(
+                                item,
+                                Modifier.animateItem().clickable {
+                                    recordRecent(term)
                                     dismissKeyboard()
-                                    router.push(link.route)
+                                    router.push(productRoute(item))
+                                },
+                            )
+                        }
+                    }
+
+                    sections.gap()
+                    if (isCurrent && phase == SearchLiveModel.Phase.Loaded && !hasRemote && categories.isEmpty()) {
+                        item(key = "no-matches", contentType = "empty") {
+                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.l)) {
+                                EmptyState(
+                                    "No matches",
+                                    message = "Nothing matches “$term”. Try a brand name, a city or a material.",
+                                    icon = Icons.Outlined.Search,
+                                )
+                                if (model.tries.isNotEmpty()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                                        SearchSectionLabel("Try")
+                                        SearchTryChips(model.tries) { text = it }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        item(key = "see-all", contentType = "see-all") {
+                            val count = if (model.term == term && phase == SearchLiveModel.Phase.Loaded && model.total > 0) model.total else null
+                            SearchSeeAllRow(term, count) { submit(term) }
+                        }
+                    }
+                    // endregion
+                } else {
+                    // region Idle: recents, browse, try
+                    if (recents.isNotEmpty()) {
+                        sections.gap()
+                        item(key = "recent-label", contentType = "label") {
+                            SearchSectionLabel(
+                                "Recent",
+                                Modifier.padding(bottom = Spacing.xs),
+                                actionTitle = "Clear",
+                            ) {
+                                SearchRecents.clear()
+                                recents = emptyList()
+                            }
+                        }
+                        items(recents, key = { "recent-$it" }, contentType = { "recent" }) { recent ->
+                            SearchRecentRow(
+                                recent,
+                                modifier = Modifier.animateItem(),
+                                onSelect = { submit(recent) },
+                                onRemove = { recents = SearchRecents.remove(recent) },
+                            )
+                        }
+                    }
+
+                    sections.gap()
+                    item(key = "browse", contentType = "chips") {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                            SearchSectionLabel("Browse")
+                            SearchFlowLayout(Modifier.padding(horizontal = Spacing.gutter)) {
+                                searchBrowseLinks.forEach { link ->
+                                    Chip(link.title, icon = link.icon) {
+                                        dismissKeyboard()
+                                        router.push(link.route)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (model.tries.isNotEmpty()) {
-                    sections.gap()
-                    item(key = "try", contentType = "chips") {
-                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                            SearchSectionLabel("Try")
-                            SearchTryChips(model.tries) { text = it }
+                    if (model.tries.isNotEmpty()) {
+                        sections.gap()
+                        item(key = "try", contentType = "chips") {
+                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                                SearchSectionLabel("Try")
+                                SearchTryChips(model.tries) { text = it }
+                            }
                         }
                     }
+                    // endregion
                 }
-                // endregion
             }
         }
     }
@@ -449,12 +460,17 @@ private fun SearchField(
             },
         )
         if (text.isNotEmpty()) {
-            Icon(
-                Icons.Filled.Cancel,
-                contentDescription = "Clear search",
-                tint = Color.yard.ink3,
-                modifier = Modifier.size(22.dp).clip(CircleShape).clickable(onClick = onClear),
-            )
+            // 48dp touch target around the 22dp glyph.
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onClear)
+                    .semantics { contentDescription = "Clear search" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Cancel, contentDescription = null, tint = Color.yard.ink3, modifier = Modifier.size(22.dp))
+            }
         }
     }
 }
@@ -469,7 +485,7 @@ private fun SearchRecentRow(recent: String, modifier: Modifier = Modifier, onSel
         Row(
             Modifier
                 .weight(1f)
-                .heightIn(min = 44.dp)
+                .heightIn(min = 48.dp)
                 .clip(YardShapes.small)
                 .clickable(onClick = onSelect),
             horizontalArrangement = Arrangement.spacedBy(Spacing.m),
@@ -482,7 +498,7 @@ private fun SearchRecentRow(recent: String, modifier: Modifier = Modifier, onSel
         }
         Box(
             Modifier
-                .size(44.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .clickable(onClick = onRemove)
                 .semantics { contentDescription = "Remove $recent from recent searches" },
@@ -516,6 +532,7 @@ private fun SearchInlineError(message: String, onRetry: () -> Unit) {
             style = YardFonts.callout.copy(fontWeight = FontWeight.SemiBold),
             color = Color.yard.ink,
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(YardShapes.pill)
                 .clickable(onClick = onRetry)
                 .padding(horizontal = Spacing.s, vertical = Spacing.xs),
@@ -579,6 +596,18 @@ private fun SearchTypingDarkPreview() = YardPreview(darkTheme = true) {
 @Preview(name = "Search typing — light")
 @Composable
 private fun SearchTypingLightPreview() = YardPreview(darkTheme = false) {
+    SearchHomeView(model = SearchPreviewData.typingModel, initialText = "hood", initialRecents = emptyList())
+}
+
+@YardTabletPreviews
+@Composable
+private fun SearchTabletPreview() = YardPreview(darkTheme = true) {
+    SearchHomeView(model = SearchLiveModel.preview("", emptyList(), emptyList(), SearchPreviewData.categories), initialRecents = listOf("hoodie", "lagos"))
+}
+
+@YardTabletPreviews
+@Composable
+private fun SearchTypingTabletPreview() = YardPreview(darkTheme = false) {
     SearchHomeView(model = SearchPreviewData.typingModel, initialText = "hood", initialRecents = emptyList())
 }
 

@@ -109,10 +109,13 @@ class SearchResultsModel(query: String, private val api: APIClient = APIClient.s
         }
     }
 
-    /** Appends the next page, if there is one. */
+    /**
+     * Appends the next page, if there is one. Not while pull to refresh reloads the first page:
+     * the old cursor would append a stale page to the fresh list.
+     */
     fun loadMore(currency: String) {
         val cursor = nextCursor
-        if (skipsNetwork || phase != Phase.Loaded || isLoadingMore || cursor == null) return
+        if (skipsNetwork || phase != Phase.Loaded || isLoadingMore || isRefreshing || cursor == null) return
         val current = generation
         isLoadingMore = true
         loadMoreError = null
