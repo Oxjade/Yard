@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -140,7 +142,7 @@ fun AuthPasswordField(
                         .clip(AuthFieldShape)
                         .background(Color.yard.surface2, AuthFieldShape)
                         .border(1.dp, if (error == null) Color.yard.line else Color.yard.danger, AuthFieldShape)
-                        .padding(start = 14.dp, end = Spacing.xs),
+                        .padding(start = 14.dp, end = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Spacing.s),
                 ) {
@@ -148,7 +150,7 @@ fun AuthPasswordField(
                     val eyeLabel = if (isRevealed) "Hide password" else "Show password"
                     Box(
                         Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .semantics { contentDescription = eyeLabel }
                             .pressableClick(pressedScale = 0.9f) { onRevealedChange(!isRevealed) },
                         contentAlignment = Alignment.Center,
@@ -185,7 +187,9 @@ fun AuthTextLink(title: String, modifier: Modifier = Modifier, enabled: Boolean 
         modifier = modifier
             .alpha(if (enabled) 1f else 0.4f)
             .pressableClick(enabled = enabled, onClick = onClick)
-            .padding(vertical = Spacing.xs),
+            // 48dp touch target; the text stays centred in it.
+            .heightIn(min = 48.dp)
+            .wrapContentHeight(Alignment.CenterVertically),
     )
 }
 

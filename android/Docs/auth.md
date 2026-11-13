@@ -23,6 +23,21 @@ social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / Welcome
   Android back steps back through the steps.
 - **AuthWebSheet** — full-screen dialog with the WebView for social sign-in.
 
+## Tablets & large screens
+- **SignInView**: the form column is capped at a reading width (`signInReadingWidth`: full width on
+  phones, `min(contentMaxWidth, 560dp)` on Medium/Expanded) and centred with `AdaptiveContent`;
+  background and top bar stay full-bleed. As a route sheet it already sits in the ≤ 560dp dialog.
+- **WelcomeView**: steps in `AdaptiveContent` (720/960dp), the bottom bar's buttons capped the same
+  way (its surface stays full width); suggested brands two per row on `isWide` (`welcomeBrandColumns`).
+- **AuthWebSheet**: stays full-screen (provider pages are responsive).
+- `@YardTabletPreviews` on SignIn and Welcome.
+
+## State
+- Sign-in name, email, mode and the "check your email" address live in the ViewModel's
+  `SavedStateHandle` (survive process death); the password never does. Welcome picks
+  (categories / looks), step and the follow baseline use `rememberSaveable`.
+- Touch targets: password eye, text links and "Skip setup" are ≥ 48dp.
+
 ## Endpoints
 GET /api/auth/providers · POST /api/auth/sign-in · POST /api/auth/sign-up · POST /api/auth/magic-link ·
 POST /api/auth/password/forgot · POST /api/auth/oauth/{provider}/start · POST /api/auth/demo ·
@@ -67,5 +82,6 @@ SharedPreferences `yard` (`Config.preferences`), same keys as iOS `@AppStorage`:
 
 ## Tests
 `app/src/test/java/space/yardstore/app/features/auth/`: AuthModelsTest (8), SignInModelTest (13,
-MockWebServer), WelcomeModelTest (9, MockWebServer), AuthCookieBridgeTest (3). `AuthAPI.clientOverride`
+MockWebServer), WelcomeModelTest (9, MockWebServer), AuthCookieBridgeTest (3), AuthAdaptiveTest (6:
+reading width, brand columns, picks saver, SavedStateHandle restore without password). `AuthAPI.clientOverride`
 / `baseOverride` and `WelcomeModel(api, base)` are the test hooks.

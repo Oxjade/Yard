@@ -3,6 +3,7 @@ package space.yardstore.app.features.auth
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -16,7 +17,14 @@ import kotlin.coroutines.cancellation.CancellationException
  * The actions that end in a sign-in ([submit], [signInDemo]) are suspend functions the view calls
  * from its coroutine scope, because the view then refreshes the session and navigates.
  */
-class SignInModel(previewProviders: AuthProviders? = null) : ViewModel() {
+class SignInModel(
+    previewProviders: AuthProviders? = null,
+    /**
+     * Keeps what the shopper typed (name, email, mode, the sign-up "check your email" address)
+     * across process death. Never the password.
+     */
+    private val savedState: SavedStateHandle? = null,
+) : ViewModel() {
     enum class Mode { SignIn, SignUp }
 
     sealed interface Busy {
@@ -30,9 +38,21 @@ class SignInModel(previewProviders: AuthProviders? = null) : ViewModel() {
 
     enum class Field { Name, Email, Password }
 
-    var mode by mutableStateOf(Mode.SignIn); private set
-    var name by mutableStateOf("")
-    var email by mutableStateOf("")
+    private var modeState by mutableStateOf(if (savedState?.get<Boolean>(KEY_SIGN_UP) == true) Mode.SignUp else Mode.SignIn)
+    var mode: Mode
+        get() = modeState
+        private set(value) { modeState = value; savedState?.set(KEY_SIGN_UP, value == Mode.SignUp) }
+
+    private var nameState by mutableStateOf(savedState?.get<String>(KEY_NAME) ?: "")
+    var name: String
+        get() = nameState
+        set(value) { nameState = value; savedState?.set(KEY_NAME, value) }
+
+    private var emailState by mutableStateOf(savedState?.get<String>(KEY_EMAIL) ?: "")
+    var email: String
+        get() = emailState
+        set(value) { emailState = value; savedState?.set(KEY_EMAIL, value) }
+
     var password by mutableStateOf("")
     var isPasswordRevealed by mutableStateOf(false)
 
@@ -44,7 +64,10 @@ class SignInModel(previewProviders: AuthProviders? = null) : ViewModel() {
     /** A neutral notice ("If an account exists… a sign-in link has been sent."). */
     var notice by mutableStateOf<String?>(null); private set
     /** Set after sign-up: the address the verification link went to. */
-    var signUpSentTo by mutableStateOf<String?>(null); private set
+    private var signUpSentToState by mutableStateOf(savedState?.get<String>(KEY_SENT_TO))
+    var signUpSentTo: String?
+        get() = signUpSentToState
+        private set(value) { signUpSentToState = value; savedState?.set(KEY_SENT_TO, value) }
 
     var busy by mutableStateOf<Busy?>(null); private set
     /** The social sign-in being shown in the web sheet. */
@@ -334,7 +357,11 @@ class SignInModel(previewProviders: AuthProviders? = null) : ViewModel() {
 
     // endregion
 
-    private companion object {
+    internal companion object {
         val EMAIL_REGEX = Regex("^\\S+@\\S+\\.\\S+$")
+        const val KEY_SIGN_UP = "signIn.signUp"
+        const val KEY_NAME = "signIn.name"
+        const val KEY_EMAIL = "signIn.email"
+        const val KEY_SENT_TO = "signIn.sentTo"
     }
 }

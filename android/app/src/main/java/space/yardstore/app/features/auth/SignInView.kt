@@ -54,20 +54,27 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.WebPages
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardLogo
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.YardWindow
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import space.yardstore.app.designsystem.components.Card
 import space.yardstore.app.designsystem.components.LocalBackAction
 import space.yardstore.app.designsystem.components.LocalToastCenter
@@ -98,7 +105,7 @@ import space.yardstore.app.designsystem.yard
  */
 @Composable
 fun SignInView() {
-    val model: SignInModel = viewModel { SignInModel() }
+    val model: SignInModel = viewModel { SignInModel(savedState = createSavedStateHandle()) }
     SignInScreen(model)
 }
 
@@ -188,72 +195,89 @@ internal fun SignInScreen(model: SignInModel) {
         }
         Column(Modifier.fillMaxSize().yardScreenBackground()) {
             YardTopBar(title = null)
-            Column(
-                Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = Spacing.gutter)
-                    .padding(top = Spacing.s, bottom = Spacing.xxxl)
-                    .animateContentSize(Motion.spring()),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-            ) {
-                val signedInPanel = session.isSignedIn && !justSignedIn
-                val sentTo = model.signUpSentTo
-                SignInHeader(
-                    title = when {
-                        showIntentChoice -> "You're signed in"
-                        signedInPanel -> "You're signed in"
-                        sentTo != null -> "Check your email"
-                        model.mode == SignInModel.Mode.SignUp -> "Create your account"
-                        else -> "Sign in or join"
-                    },
-                    body = when {
-                        showIntentChoice -> "Your account is connected."
-                        signedInPanel -> session.shopper?.let { s ->
-                            val demo = if (s.demo) " This is the shared demo shopper account." else ""
-                            "Signed in as ${s.name}, ${s.email}.$demo"
-                        } ?: ""
-                        else -> "One account for every brand: follow studios, save pieces, get drop alerts and track each brand's order from one place."
-                    },
-                    isDark = isDark,
-                )
-                when {
-                    showIntentChoice -> SignInIntentChoice(
-                        onShop = { if (AuthOnboarding.onboarded) close() else showWelcome = true },
-                        onSell = { WebPages.open(context, Config.webUrl(SELL_ONBOARDING_PATH), darkTheme = isDark) },
+            // Tablets / large windows: the form keeps a reading width, centred (the background
+            // and the top bar stay full width).
+            AdaptiveContent(Modifier.weight(1f), maxWidth = signInReadingWidth(LocalYardWindow.current)) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .imePadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = Spacing.gutter)
+                        .padding(top = Spacing.s, bottom = Spacing.xxxl)
+                        .animateContentSize(Motion.spring()),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                ) {
+                    val signedInPanel = session.isSignedIn && !justSignedIn
+                    val sentTo = model.signUpSentTo
+                    SignInHeader(
+                        title = when {
+                            showIntentChoice -> "You're signed in"
+                            signedInPanel -> "You're signed in"
+                            sentTo != null -> "Check your email"
+                            model.mode == SignInModel.Mode.SignUp -> "Create your account"
+                            else -> "Sign in or join"
+                        },
+                        body = when {
+                            showIntentChoice -> "Your account is connected."
+                            signedInPanel -> session.shopper?.let { s ->
+                                val demo = if (s.demo) " This is the shared demo shopper account." else ""
+                                "Signed in as ${s.name}, ${s.email}.$demo"
+                            } ?: ""
+                            else -> "One account for every brand: follow studios, save pieces, get drop alerts and track each brand's order from one place."
+                        },
+                        isDark = isDark,
                     )
-                    signedInPanel -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                        YardButton("Continue") { close() }
-                        YardButton("Sign out", style = YardButtonStyle.Secondary, isLoading = signingOut) {
-                            scope.launch {
-                                signingOut = true
-                                session.signOut()
-                                signingOut = false
-                                toast.show("Signed out", Toast.Style.Info)
+                    when {
+                        showIntentChoice -> SignInIntentChoice(
+                            onShop = { if (AuthOnboarding.onboarded) close() else showWelcome = true },
+                            onSell = { WebPages.open(context, Config.webUrl(SELL_ONBOARDING_PATH), darkTheme = isDark) },
+                        )
+                        signedInPanel -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                            YardButton("Continue") { close() }
+                            YardButton("Sign out", style = YardButtonStyle.Secondary, isLoading = signingOut) {
+                                scope.launch {
+                                    signingOut = true
+                                    session.signOut()
+                                    signingOut = false
+                                    toast.show("Signed out", Toast.Style.Info)
+                                }
                             }
                         }
-                    }
-                    justSignedIn -> SignInStatusLine("Signed in. Taking you there now.")
-                    sentTo != null -> SignUpSentPanel(sentTo) { model.backToSignIn() }
-                    else -> {
-                        SignInSocialSection(model, onDemo = {
-                            scope.launch { if (model.signInDemo()) completeSignIn(social = false) }
-                        })
-                        SignInFormCard(model, nameFocus, emailFocus, passwordFocus, setFocus, onSubmit = { submit() })
-                        AuthTextLink(
-                            if (model.mode == SignInModel.Mode.SignUp) "I already have an account" else "Create an account",
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
-                        ) {
-                            model.toggleMode()
-                            focusManager.clearFocus()
+                        justSignedIn -> SignInStatusLine("Signed in. Taking you there now.")
+                        sentTo != null -> SignUpSentPanel(sentTo) { model.backToSignIn() }
+                        else -> {
+                            SignInSocialSection(model, onDemo = {
+                                scope.launch { if (model.signInDemo()) completeSignIn(social = false) }
+                            })
+                            SignInFormCard(model, nameFocus, emailFocus, passwordFocus, setFocus, onSubmit = { submit() })
+                            AuthTextLink(
+                                if (model.mode == SignInModel.Mode.SignUp) "I already have an account" else "Create an account",
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            ) {
+                                model.toggleMode()
+                                focusManager.clearFocus()
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+/** Widest the sign-in column gets on wide windows (a comfortable reading / form width). */
+internal val SIGN_IN_READING_WIDTH = 560.dp
+
+/**
+ * The sign-in column's max width: the full width on phones, otherwise the window's
+ * `contentMaxWidth` capped at [SIGN_IN_READING_WIDTH].
+ */
+internal fun signInReadingWidth(window: YardWindow): Dp {
+    val cap = window.contentMaxWidth
+    if (!cap.isSpecified) return Dp.Unspecified
+    return if (cap < SIGN_IN_READING_WIDTH) cap else SIGN_IN_READING_WIDTH
 }
 
 /** The website's seller application (opened in a Custom Tab from the shop / sell choice). */
@@ -476,6 +500,12 @@ private fun SignInLightPreview() = YardPreview(darkTheme = false, signedIn = fal
 @Composable
 private fun SignInSignedInPreview() = YardPreview(darkTheme = true, signedIn = true) {
     SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
+}
+
+@YardTabletPreviews
+@Composable
+private fun SignInTabletPreview() = YardPreview(darkTheme = true, signedIn = false) {
+    SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview(demoShopper = true)) })
 }
 
 @Preview(name = "Shop or sell — light")

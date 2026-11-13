@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,6 +42,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +74,7 @@ import space.yardstore.app.app.Route
 import space.yardstore.app.core.models.BrandCard
 import space.yardstore.app.core.stores.LocalFollowStore
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.PreviewFixtures
 import space.yardstore.app.designsystem.Radius
@@ -78,6 +83,10 @@ import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.YardWindow
+import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.LocalBackAction
@@ -117,6 +126,15 @@ private val welcomeSteps = listOf(
     WelcomeStepCopy("Brands to start with", "Picked from your answers. Follow a few and their new pieces, drops and stories fill your Following feed."),
 )
 
+/** Saves a list of picked slugs (categories / looks) for `rememberSaveable`. */
+internal val WelcomePicksSaver: Saver<SnapshotStateList<String>, Any> = listSaver(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
+/** Suggested brand cards per row: one on phones, two on tablets / large windows. */
+internal fun welcomeBrandColumns(window: YardWindow): Int = if (window.isWide) 2 else 1
+
 /** Pure copy helpers (unit-tested). */
 internal object WelcomeCopy {
     fun followingText(n: Int): String =
@@ -151,10 +169,11 @@ internal fun WelcomeScreen(model: WelcomeModel, initialStep: Int = 0, onFinish: 
     val scope = rememberCoroutineScope()
 
     var step by rememberSaveable { mutableIntStateOf(initialStep) }
-    var forward by remember { mutableStateOf(true) }
-    val cats = remember { mutableStateListOf<String>().apply { addAll(AuthOnboarding.split(AuthOnboarding.interests)) } }
-    val looks = remember { mutableStateListOf<String>().apply { addAll(AuthOnboarding.split(AuthOnboarding.aesthetics)) } }
-    val followingAtStart = remember { follows.followedIds.size }
+    var forward by rememberSaveable { mutableStateOf(true) }
+    // Picks survive rotation, dark-mode switches and process death.
+    val cats = rememberSaveable(saver = WelcomePicksSaver) { AuthOnboarding.split(AuthOnboarding.interests).toMutableStateList() }
+    val looks = rememberSaveable(saver = WelcomePicksSaver) { AuthOnboarding.split(AuthOnboarding.aesthetics).toMutableStateList() }
+    val followingAtStart = rememberSaveable { follows.followedIds.size }
     val followBusy = remember { mutableStateListOf<String>() }
 
     LaunchedEffect(Unit) { if (!model.categoriesLoaded) model.loadCategories() }
@@ -233,48 +252,54 @@ internal fun WelcomeScreen(model: WelcomeModel, initialStep: Int = 0, onFinish: 
         }
         // The back button is hidden while signed in (iOS `.navigationBarBackButtonHidden`).
         YardTopBar(title = null, back = null) {
-            Text(
-                "Skip setup",
-                style = YardFonts.callout,
-                color = Color.yard.ink2,
-                modifier = Modifier.pressableClick { finish(save = false) }.padding(Spacing.s),
-            )
-        }
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.gutter)
-                .padding(top = Spacing.s, bottom = Spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-        ) {
-            WelcomeProgressHeader(session.shopper?.firstName, step)
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                YardDisplayText(welcomeSteps[step].title, size = 40.sp, modifier = Modifier.semantics { heading() })
-                Text(welcomeSteps[step].body, style = YardFonts.callout, color = Color.yard.ink2)
+            Box(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .pressableClick(onClickLabel = "Skip setup") { finish(save = false) }
+                    .padding(horizontal = Spacing.s),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Skip setup", style = YardFonts.callout, color = Color.yard.ink2)
             }
-            AnimatedContent(
-                targetState = step,
-                transitionSpec = {
-                    (slideInHorizontally(Motion.spring()) { if (forward) it else -it } + fadeIn(Motion.fade()))
-                        .togetherWith(fadeOut(Motion.fade()))
-                },
-                label = "welcome-step",
-            ) { s ->
-                when (s) {
-                    0 -> WelcomeCategoriesStep(model, cats) { toggle(it, cats) }
-                    1 -> WelcomeChips {
-                        for (look in WelcomeLook.all) {
-                            WelcomePickChip(look.label, imageUrl = null, showsImage = false, isSelected = look.slug in looks) { toggle(look.slug, looks) }
+        }
+        // Tablets / large windows: the steps keep a reading width, centred.
+        AdaptiveContent(Modifier.weight(1f)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Spacing.gutter)
+                    .padding(top = Spacing.s, bottom = Spacing.xl),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+            ) {
+                WelcomeProgressHeader(session.shopper?.firstName, step)
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                    YardDisplayText(welcomeSteps[step].title, size = 40.sp, modifier = Modifier.semantics { heading() })
+                    Text(welcomeSteps[step].body, style = YardFonts.callout, color = Color.yard.ink2)
+                }
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = {
+                        (slideInHorizontally(Motion.spring()) { if (forward) it else -it } + fadeIn(Motion.fade()))
+                            .togetherWith(fadeOut(Motion.fade()))
+                    },
+                    label = "welcome-step",
+                ) { s ->
+                    when (s) {
+                        0 -> WelcomeCategoriesStep(model, cats) { toggle(it, cats) }
+                        1 -> WelcomeChips {
+                            for (look in WelcomeLook.all) {
+                                WelcomePickChip(look.label, imageUrl = null, showsImage = false, isSelected = look.slug in looks) { toggle(look.slug, looks) }
+                            }
                         }
+                        else -> WelcomeBrandsStep(
+                            suggestions = model.suggestions,
+                            isFollowing = { follows.isFollowing(it) },
+                            isBusy = { it in followBusy },
+                            followingCount = follows.followedIds.size,
+                            onFollow = { follow(it) },
+                        )
                     }
-                    else -> WelcomeBrandsStep(
-                        suggestions = model.suggestions,
-                        isFollowing = { follows.isFollowing(it) },
-                        isBusy = { it in followBusy },
-                        followingCount = follows.followedIds.size,
-                        onFollow = { follow(it) },
-                    )
                 }
             }
         }
@@ -357,9 +382,20 @@ private fun WelcomeBrandsStep(
                 message = "Independent studios are setting up their storefronts now. Their pieces, drops and stories appear here the day they open.",
                 icon = Icons.Outlined.Storefront,
             )
-            else -> for (brand in suggestions) {
-                androidx.compose.runtime.key(brand.id) {
-                    WelcomeBrandRow(brand, isFollowing(brand.id), isBusy(brand.id)) { onFollow(brand) }
+            else -> {
+                // Two cards per row on tablets / large windows, one on phones.
+                val perRow = welcomeBrandColumns(LocalYardWindow.current)
+                for (row in suggestions.chunked(perRow)) {
+                    androidx.compose.runtime.key(row.first().id) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                            for (brand in row) {
+                                androidx.compose.runtime.key(brand.id) {
+                                    WelcomeBrandRow(brand, isFollowing(brand.id), isBusy(brand.id), Modifier.weight(1f)) { onFollow(brand) }
+                                }
+                            }
+                            repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             }
         }
@@ -384,7 +420,7 @@ private fun WelcomeBottomBar(
     ) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color.yard.line))
         Column(
-            Modifier.padding(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.m, bottom = Spacing.s),
+            Modifier.adaptiveContentWidth().padding(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.m, bottom = Spacing.s),
             verticalArrangement = Arrangement.spacedBy(Spacing.s),
         ) {
             if (step < 2 && picks == 0) {
@@ -446,8 +482,8 @@ private fun WelcomePickChip(title: String, imageUrl: String?, showsImage: Boolea
 
 /** A suggested brand: cover (when it has one), avatar, name, place, Follow. */
 @Composable
-private fun WelcomeBrandRow(brand: BrandCard, isFollowing: Boolean, isBusy: Boolean, onFollow: () -> Unit) {
-    Column(Modifier.fillMaxWidth().yardCard()) {
+private fun WelcomeBrandRow(brand: BrandCard, isFollowing: Boolean, isBusy: Boolean, modifier: Modifier = Modifier, onFollow: () -> Unit) {
+    Column(modifier.fillMaxWidth().yardCard()) {
         if (brand.coverUrl != null) {
             RemoteImage(brand.coverUrl, Modifier.fillMaxWidth().height(120.dp), maxPixelSize = 900)
         }
@@ -500,6 +536,20 @@ private fun WelcomeDarkPreview() = YardPreview(darkTheme = true) {
 @Composable
 private fun WelcomeLightPreview() = YardPreview(darkTheme = false) {
     WelcomeScreen(remember { WelcomeModel(previewCategories = emptyList(), previewSuggestions = listOf(PreviewFixtures.brandCard)) }, initialStep = 2)
+}
+
+@YardTabletPreviews
+@Composable
+private fun WelcomeTabletPreview() = YardPreview(darkTheme = true) {
+    WelcomeScreen(
+        remember {
+            WelcomeModel(
+                previewCategories = emptyList(),
+                previewSuggestions = listOf(PreviewFixtures.brandCard, PreviewFixtures.brandCard.copy(id = "brd_preview_2", name = "Second Studio"), PreviewFixtures.brandCard.copy(id = "brd_preview_3", name = "Third Studio")),
+            )
+        },
+        initialStep = 2,
+    )
 }
 
 @Preview(name = "WelcomeView signed out — dark")
