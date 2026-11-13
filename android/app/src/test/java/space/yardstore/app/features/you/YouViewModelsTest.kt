@@ -17,6 +17,7 @@ import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.designsystem.components.Toast
 import space.yardstore.app.designsystem.components.ToastCenter
@@ -44,8 +45,14 @@ class YouViewModelsTest {
 
     @After fun tearDown() {
         server.shutdown()
+        // The toast's 2.6s auto-dismiss coroutine runs on Dispatchers.Main. Left alone, its delay
+        // can fire after resetMain() (during a later test) and hit the missing Android Main
+        // dispatcher, which runTest then reports in whichever test runs next. Cancel it, let the
+        // main executor finish the cancellation, and only then reset Main.
+        toast.dismiss()
+        mainExecutor.shutdown()
+        check(mainExecutor.awaitTermination(5, TimeUnit.SECONDS)) { "main executor didn't drain" }
         Dispatchers.resetMain()
-        mainExecutor.shutdownNow()
     }
 
     private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)

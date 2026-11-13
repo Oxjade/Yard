@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -233,7 +235,10 @@ fun YouToggleRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .youRowClick(enabled = isEnabled) { onChange(!isOn) }
+            // One accessible switch for the whole row (title + detail read with its state),
+            // instead of a clickable row with a second, unlabeled switch inside it.
+            .clip(RoundedCornerShape(Radius.card - Spacing.xs))
+            .toggleable(value = isOn, enabled = isEnabled, role = Role.Switch, onValueChange = onChange)
             .heightIn(min = 52.dp)
             .padding(horizontal = Spacing.m, vertical = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
@@ -250,7 +255,7 @@ fun YouToggleRow(
             if (detail != null) Text(detail, style = YardFonts.caption, color = Color.yard.ink2)
         }
         Spacer(Modifier.width(Spacing.xs))
-        YardSwitch(checked = isOn, onCheckedChange = onChange, enabled = isEnabled)
+        YardSwitch(checked = isOn, onCheckedChange = null, enabled = isEnabled)
     }
 }
 

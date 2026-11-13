@@ -37,8 +37,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import space.yardstore.app.app.AppTab
-import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.core.networking.HTTPMethod
@@ -132,7 +130,7 @@ fun YouChangePasswordSheet(hasPassword: Boolean, onChanged: () -> Unit, onDismis
     var formError by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
-    YouSheet(onDismiss = onDismiss) { close ->
+    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isSaving }) { close ->
         fun save() {
             val next = youPasswordErrors(hasPassword, current, newPassword, confirm)
             errors = next
@@ -172,7 +170,7 @@ fun YouChangePasswordSheet(hasPassword: Boolean, onChanged: () -> Unit, onDismis
             YardSheetHeader(
                 if (hasPassword) "Change password" else "Set a password",
                 subtitle = "Use at least 10 characters. Your other sessions end when it changes.",
-                onClose = close,
+                onClose = { if (!isSaving) close() },
             )
             Column(
                 Modifier
@@ -214,10 +212,7 @@ internal fun youCanSubmitDelete(security: YouSecurity?, confirmText: String, pas
 private data class YouDeleteBody(val confirm: String)
 
 @Composable
-fun YouDeleteAccountSheet(security: YouSecurity?, onDismiss: () -> Unit) {
-    val session = LocalSessionStore.current
-    val router = LocalRouter.current
-    val toast = LocalToastCenter.current
+fun YouDeleteAccountSheet(security: YouSecurity?, onDeleted: () -> Unit, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var confirmText by rememberSaveable { mutableStateOf("") }
@@ -230,7 +225,7 @@ fun YouDeleteAccountSheet(security: YouSecurity?, onDismiss: () -> Unit) {
     val cannotConfirm = youDeleteCannotConfirm(security)
     val canSubmit = youCanSubmitDelete(security, confirmText, password) && !isDeleting
 
-    YouSheet(onDismiss = onDismiss, canDismiss = { !isDeleting }) { close ->
+    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isDeleting }) { close ->
         fun delete() {
             if (!canSubmit) return
             passwordError = null
@@ -244,9 +239,9 @@ fun YouDeleteAccountSheet(security: YouSecurity?, onDismiss: () -> Unit) {
                     APIClient.shared.send(HTTPMethod.POST, "/api/auth/account/delete", body = YouDeleteBody(confirm = "DELETE"))
                     isDeleting = false
                     close()
-                    session.refresh()
-                    router.popToRoot(AppTab.You)
-                    toast.show("Your account is being deleted. Every session has ended.", Toast.Style.Info)
+                    // Refresh, pop to You and toast happen in the caller's scope: this sheet's
+                    // scope is cancelled as soon as it leaves the composition.
+                    onDeleted()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: APIError) {
@@ -327,7 +322,7 @@ fun YouDeleteAccountSheet(security: YouSecurity?, onDismiss: () -> Unit) {
 @Preview(name = "Delete account — dark")
 @Composable
 private fun DeleteAccountDark() = YardPreview(darkTheme = true) {
-    Column(Modifier.fillMaxWidth()) { YouDeleteAccountSheet(security = null, onDismiss = {}) }
+    Column(Modifier.fillMaxWidth()) { YouDeleteAccountSheet(security = null, onDeleted = {}, onDismiss = {}) }
 }
 
 @Preview(name = "Change password — light")

@@ -1,5 +1,7 @@
 package space.yardstore.app.features.you
 
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
@@ -260,6 +262,7 @@ fun NotificationSettingsView() {
                 YouNotificationsModel.Phase.Loading -> Column(
                     Modifier
                         .verticalScroll(rememberScrollState())
+                        .adaptiveContentWidth()
                         .padding(horizontal = Spacing.gutter)
                         .padding(top = Spacing.m),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -291,6 +294,7 @@ private fun NotificationSettingsLoaded(model: YouNotificationsModel) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter)
             .padding(top = Spacing.m, bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -389,3 +393,7 @@ private fun NotificationSettingsDark() = YardPreview(darkTheme = true) { Notific
 @Preview(name = "NotificationSettingsView — light")
 @Composable
 private fun NotificationSettingsLight() = YardPreview(darkTheme = false, signedIn = false) { NotificationSettingsView() }
+
+@YardTabletPreviews
+@Composable
+private fun NotificationSettingsTablet() = YardPreview(darkTheme = true) { NotificationSettingsView() }

@@ -1,5 +1,7 @@
 package space.yardstore.app.features.you
 
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.webkit.WebResourceError
@@ -65,7 +67,8 @@ fun LegalView(page: LegalPage) {
                 WebPages.open(context, url, dark)
             }
         })
-        Box(Modifier.fillMaxSize()) {
+        // Reading screen: the page's text column is capped on wide windows (Tablet rule 2).
+        AdaptiveContent(Modifier.fillMaxSize()) {
             val error = errorMessage
             if (error != null) {
                 EmptyState.Error(message = error) {
@@ -150,3 +153,7 @@ private fun LegalDark() = YardPreview(darkTheme = true) { LegalView(LegalPage.Te
 @Preview(name = "LegalView — light")
 @Composable
 private fun LegalLight() = YardPreview(darkTheme = false) { LegalView(LegalPage.Privacy) }
+
+@YardTabletPreviews
+@Composable
+private fun LegalTablet() = YardPreview(darkTheme = true) { LegalView(LegalPage.Terms) }

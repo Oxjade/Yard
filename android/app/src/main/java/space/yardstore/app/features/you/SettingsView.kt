@@ -1,5 +1,16 @@
 package space.yardstore.app.features.you
 
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.ListDetailLayout
+import space.yardstore.app.designsystem.components.LocalBackAction
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -197,79 +208,101 @@ fun SettingsView() {
         }
     }
 
-    Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        YardTopBar("Settings")
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = Spacing.gutter)
-                .padding(top = Spacing.m, bottom = Spacing.xxl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-        ) {
-            // General
-            YouSettingsGroup("General") {
-                SettingsRow("Appearance", Icons.Outlined.Contrast, Modifier.youRowClick { router.push(Route.Appearance) }, value = appearance.title)
-                SettingsRow("Notifications", Icons.Outlined.Notifications, Modifier.youRowClick { router.push(Route.NotificationSettings) })
-                SettingsRow(
-                    "Ship to", Icons.Outlined.Inventory2,
-                    Modifier.youRowClick { regionSheet = YouRegionSheetMode.Country },
-                    value = YouMarkets.country(shipTo)?.name ?: "Not set",
-                )
-                SettingsRow(
-                    "Currency", Icons.Outlined.Paid,
-                    Modifier.youRowClick { regionSheet = YouRegionSheetMode.Currency },
-                    value = YouMarkets.currency(cart.currency)?.label ?: cart.currency,
-                )
-            }
+    // Expanded windows: settings list on the left, the selected sub-page on the right
+    // (AGENTS › Tablet rule 3). Otherwise sub-pages are pushed as on phones.
+    val twoPane = LocalYardWindow.current.isExpanded
+    var selectedPage by rememberSaveable { mutableStateOf<YouSettingsPage?>(null) }
+    fun open(page: YouSettingsPage) {
+        if (twoPane) selectedPage = page else router.push(page.route)
+    }
+    @Composable
+    fun Modifier.pageRow(page: YouSettingsPage): Modifier =
+        youRowClick { open(page) }.youSelectedRow(twoPane && selectedPage == page)
 
-            if (session.isSignedIn) {
-                SettingsAccount(
-                    model = security,
-                    shopperName = session.shopper?.name,
-                    onDetails = { showsDetails = true },
-                    onAddresses = { router.push(Route.Addresses) },
-                    onPassword = { showsPassword = true },
-                    onDelete = { showsDelete = true },
-                    onUnlink = { pendingUnlink = it },
-                    onConnectOnWeb = { YouWebPage.WebSettings.open(context, dark) },
-                )
-            } else if (session.hasLoaded) {
-                Card {
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                        YardDisplayText("Settings", size = 28.sp)
-                        Text(
-                            "Sign in to change your details, the notifications you get, where you ship to and what you're into.",
-                            style = YardFonts.callout,
-                            color = Color.yard.ink2,
-                        )
-                        YardButton("Sign in", size = YardButtonSize.Medium) { router.present(Route.SignIn) }
+    ListDetailLayout(
+        twoPane = twoPane,
+        list = {
+            Column(Modifier.fillMaxSize().yardScreenBackground()) {
+                YardTopBar("Settings")
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .navigationBarsPadding(),
+                ) {
+                    Column(
+                        Modifier
+                            .adaptiveContentWidth()
+                            .padding(horizontal = Spacing.gutter)
+                            .padding(top = Spacing.m, bottom = Spacing.xxl),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                    ) {
+                        // General
+                        YouSettingsGroup("General") {
+                            SettingsRow("Appearance", Icons.Outlined.Contrast, Modifier.pageRow(YouSettingsPage.Appearance), value = appearance.title)
+                            SettingsRow("Notifications", Icons.Outlined.Notifications, Modifier.pageRow(YouSettingsPage.Notifications))
+                            SettingsRow(
+                                "Ship to", Icons.Outlined.Inventory2,
+                                Modifier.youRowClick { regionSheet = YouRegionSheetMode.Country },
+                                value = YouMarkets.country(shipTo)?.name ?: "Not set",
+                            )
+                            SettingsRow(
+                                "Currency", Icons.Outlined.Paid,
+                                Modifier.youRowClick { regionSheet = YouRegionSheetMode.Currency },
+                                value = YouMarkets.currency(cart.currency)?.label ?: cart.currency,
+                            )
+                        }
+
+                        if (session.isSignedIn) {
+                            SettingsAccount(
+                                model = security,
+                                shopperName = session.shopper?.name,
+                                onDetails = { showsDetails = true },
+                                addressesModifier = Modifier.pageRow(YouSettingsPage.Addresses),
+                                onPassword = { showsPassword = true },
+                                onDelete = { showsDelete = true },
+                                onUnlink = { pendingUnlink = it },
+                                onConnectOnWeb = { YouWebPage.WebSettings.open(context, dark) },
+                            )
+                        } else if (session.hasLoaded) {
+                            Card {
+                                Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                                    YardDisplayText("Settings", size = 28.sp)
+                                    Text(
+                                        "Sign in to change your details, the notifications you get, where you ship to and what you're into.",
+                                        style = YardFonts.callout,
+                                        color = Color.yard.ink2,
+                                    )
+                                    YardButton("Sign in", size = YardButtonSize.Medium) { router.present(Route.SignIn) }
+                                }
+                            }
+                        }
+
+                        // Help and legal
+                        YouSettingsGroup("Help and legal") {
+                            SettingsRow("Help", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
+                            LegalPage.entries.forEach { page ->
+                                SettingsRow(page.title, YouLegalIcon.icon(page), Modifier.pageRow(YouSettingsPage.legal(page)))
+                            }
+                        }
+
+                        if (session.isSignedIn) {
+                            YouSettingsGroup(null, footer = "Sign out of Yard on this phone. Your bag stays here for next time.") {
+                                SettingsRow(
+                                    "Sign out", Icons.AutoMirrored.Outlined.Logout,
+                                    Modifier.youRowClick(enabled = !isSigningOut) { signOut() },
+                                    tint = Color.yard.danger,
+                                    showsChevron = false,
+                                    accessory = if (isSigningOut) ({ YouSpinner() }) else null,
+                                )
+                            }
+                        }
                     }
                 }
             }
-
-            // Help and legal
-            YouSettingsGroup("Help and legal") {
-                SettingsRow("Help", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
-                LegalPage.entries.forEach { page ->
-                    SettingsRow(page.title, YouLegalIcon.icon(page), Modifier.youRowClick { router.push(Route.Legal(page)) })
-                }
-            }
-
-            if (session.isSignedIn) {
-                YouSettingsGroup(null, footer = "Sign out of Yard on this phone. Your bag stays here for next time.") {
-                    SettingsRow(
-                        "Sign out", Icons.AutoMirrored.Outlined.Logout,
-                        Modifier.youRowClick(enabled = !isSigningOut) { signOut() },
-                        tint = Color.yard.danger,
-                        showsChevron = false,
-                        accessory = if (isSigningOut) ({ YouSpinner() }) else null,
-                    )
-                }
-            }
-        }
-    }
+        },
+        detail = { YouSettingsDetail(selectedPage) },
+    )
 
     regionSheet?.let { mode ->
         YouRegionSheet(mode = mode, onChange = { shipTo = YouRegion.storedShipTo }, onDismiss = { regionSheet = null })
@@ -294,7 +327,18 @@ fun SettingsView() {
         )
     }
     if (showsDelete) {
-        YouDeleteAccountSheet(security = security.security, onDismiss = { showsDelete = false })
+        YouDeleteAccountSheet(
+            security = security.security,
+            // Runs in this screen's scope: the sheet's own scope ends as soon as it closes.
+            onDeleted = {
+                scope.launch {
+                    session.refresh()
+                    router.popToRoot(AppTab.You)
+                    toast.show("Your account is being deleted. Every session has ended.", Toast.Style.Info)
+                }
+            },
+            onDismiss = { showsDelete = false },
+        )
     }
     pendingUnlink?.let { identity ->
         AlertDialog(
@@ -322,7 +366,7 @@ private fun SettingsAccount(
     model: YouSecurityModel,
     shopperName: String?,
     onDetails: () -> Unit,
-    onAddresses: () -> Unit,
+    addressesModifier: Modifier,
     onPassword: () -> Unit,
     onDelete: () -> Unit,
     onUnlink: (YouIdentity) -> Unit,
@@ -331,7 +375,7 @@ private fun SettingsAccount(
     val s = model.security
     YouSettingsGroup("Account", footer = "Your name goes on your orders.") {
         SettingsRow("Your details", Icons.Outlined.Badge, Modifier.youRowClick(onClick = onDetails), value = shopperName)
-        SettingsRow("Addresses", Icons.Outlined.Place, Modifier.youRowClick(onClick = onAddresses))
+        SettingsRow("Addresses", Icons.Outlined.Place, addressesModifier)
         when (model.phase) {
             YouSecurityModel.Phase.Idle, YouSecurityModel.Phase.Loading -> YouSkeletonRow()
             is YouSecurityModel.Phase.Failed -> SettingsRow(
@@ -384,6 +428,65 @@ private fun youDeletionValue(s: YouSecurity): String {
     return Formatters.relative(date)
 }
 
+// MARK: - Two-pane detail (Expanded windows)
+
+/** A Settings sub-page: pushed as [route] on phones, shown in the detail pane on Expanded windows. */
+enum class YouSettingsPage {
+    Appearance, Notifications, Addresses, Terms, Privacy, Refunds, DataDeletion;
+
+    val route: Route
+        get() = when (this) {
+            Appearance -> Route.Appearance
+            Notifications -> Route.NotificationSettings
+            Addresses -> Route.Addresses
+            Terms -> Route.Legal(LegalPage.Terms)
+            Privacy -> Route.Legal(LegalPage.Privacy)
+            Refunds -> Route.Legal(LegalPage.Refunds)
+            DataDeletion -> Route.Legal(LegalPage.DataDeletion)
+        }
+
+    companion object {
+        fun legal(page: LegalPage): YouSettingsPage = when (page) {
+            LegalPage.Terms -> Terms
+            LegalPage.Privacy -> Privacy
+            LegalPage.Refunds -> Refunds
+            LegalPage.DataDeletion -> DataDeletion
+        }
+    }
+}
+
+/** The detail pane: the selected sub-page without a back button, or an honest empty state. */
+@Composable
+private fun YouSettingsDetail(page: YouSettingsPage?) {
+    CompositionLocalProvider(LocalBackAction provides null) {
+        key(page) {
+            when (page) {
+                null -> Column(Modifier.fillMaxSize().yardScreenBackground()) {
+                    YardTopBar(null)
+                    EmptyState(
+                        title = "Pick a setting",
+                        message = "Choose something on the left to see it here.",
+                        icon = Icons.Outlined.Settings,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                YouSettingsPage.Appearance -> AppearanceView()
+                YouSettingsPage.Notifications -> NotificationSettingsView()
+                YouSettingsPage.Addresses -> AddressesView()
+                YouSettingsPage.Terms -> LegalView(LegalPage.Terms)
+                YouSettingsPage.Privacy -> LegalView(LegalPage.Privacy)
+                YouSettingsPage.Refunds -> LegalView(LegalPage.Refunds)
+                YouSettingsPage.DataDeletion -> LegalView(LegalPage.DataDeletion)
+            }
+        }
+    }
+}
+
+/** Marks the row whose page shows in the detail pane (two-pane Settings). */
+@Composable
+private fun Modifier.youSelectedRow(isSelected: Boolean): Modifier =
+    if (!isSelected) this else this.semantics { selected = true }.background(Color.yard.surface2)
+
 /** Small inline progress spinner for row accessories (iOS `ProgressView().tint(ink2)`). */
 @Composable
 internal fun YouSpinner() {
@@ -401,6 +504,8 @@ internal fun YouSpinner() {
 internal fun YouSheet(
     onDismiss: () -> Unit,
     skipPartiallyExpanded: Boolean = true,
+    /** Tall, screen-like sheets show as a centered dialog on wide windows (AGENTS › Tablet rule 7). */
+    presentAsDialogOnWide: Boolean = false,
     canDismiss: () -> Boolean = { true },
     content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
 ) {
@@ -410,13 +515,16 @@ internal fun YouSheet(
         skipPartiallyExpanded = skipPartiallyExpanded,
         confirmValueChange = { it != SheetValue.Hidden || canDismissNow() },
     )
+    val asDialog = presentAsDialogOnWide && LocalYardWindow.current.sheetIsDialog
     val close: () -> Unit = {
-        scope.launch { state.hide() }.invokeOnCompletion { onDismiss() }
+        // The dialog form has no sheet state to animate; it just goes.
+        if (asDialog) onDismiss() else scope.launch { state.hide() }.invokeOnCompletion { onDismiss() }
     }
     YardSheet(
         onDismissRequest = { if (canDismissNow()) onDismiss() },
         skipPartiallyExpanded = skipPartiallyExpanded,
         sheetState = state,
+        presentAsDialogOnWide = presentAsDialogOnWide,
     ) {
         YardToastHost(LocalToastCenter.current) {
             Column(Modifier.fillMaxWidth()) { content(close) }
@@ -437,7 +545,7 @@ fun YouRegionSheet(mode: YouRegionSheetMode, onChange: () -> Unit, onDismiss: ()
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    YouSheet(onDismiss = onDismiss, canDismiss = { !isSaving }) { close ->
+    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isSaving }) { close ->
         YardSheetHeader(
             if (mode == YouRegionSheetMode.Country) "Ship to" else "Currency",
             subtitle = if (mode == YouRegionSheetMode.Country)
@@ -513,3 +621,7 @@ private fun SettingsViewDark() = YardPreview(darkTheme = true) { SettingsView() 
 @Preview(name = "SettingsView — light")
 @Composable
 private fun SettingsViewLight() = YardPreview(darkTheme = false, signedIn = false) { SettingsView() }
+
+@YardTabletPreviews
+@Composable
+private fun SettingsViewTablet() = YardPreview(darkTheme = true) { SettingsView() }

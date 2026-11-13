@@ -1,5 +1,7 @@
 package space.yardstore.app.features.you
 
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +87,7 @@ fun AppearanceView() {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
+                .adaptiveContentWidth()
                 .padding(horizontal = Spacing.gutter)
                 .padding(top = Spacing.m, bottom = Spacing.xxl),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -177,3 +180,7 @@ private fun AppearanceDark() = YardPreview(darkTheme = true) { AppearanceView() 
 @Preview(name = "AppearanceView — light")
 @Composable
 private fun AppearanceLight() = YardPreview(darkTheme = false) { AppearanceView() }
+
+@YardTabletPreviews
+@Composable
+private fun AppearanceTablet() = YardPreview(darkTheme = true) { AppearanceView() }

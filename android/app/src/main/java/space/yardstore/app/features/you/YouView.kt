@@ -1,6 +1,12 @@
 package space.yardstore.app.features.you
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.YardWindow
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,11 +116,16 @@ fun YouView() {
                 .fillMaxSize()
                 .tabPillScrollSensor()
                 .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
+                .statusBarsPadding(),
+        ) {
+          // The whole width scrolls; the readable column is capped on wide windows (Tablet rule 2).
+          Column(
+            Modifier
+                .adaptiveContentWidth()
                 .padding(horizontal = Spacing.gutter)
                 .padding(top = Spacing.s, bottom = Spacing.xl + LocalTabPillClearance.current),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-        ) {
+          ) {
             YouTopBar { router.push(Route.Settings) }
             when {
                 session.isSignedIn && shopper != null -> {
@@ -136,6 +147,7 @@ fun YouView() {
                     SettingsRow(page.title, YouLegalIcon.icon(page), Modifier.youRowClick { router.push(Route.Legal(page)) })
                 }
             }
+          }
         }
     }
 }
@@ -191,6 +203,9 @@ private fun YouLoadingHeader() {
     }
 }
 
+/** Quick tiles per row: 3 on phones (iOS), all 6 in one row on wide windows. */
+internal fun youTileColumns(window: YardWindow): Int = if (window.isWide) 6 else 3
+
 private data class YouTileItem(val title: String, val icon: ImageVector, val count: Int?, val route: Route)
 
 @Composable
@@ -205,10 +220,11 @@ private fun YouTiles() {
         YouTileItem("Drop reminders", Icons.Outlined.NotificationsActive, null, Route.MyDrops),
         YouTileItem("Updates", Icons.Outlined.Notifications, null, Route.Notifications),
     )
+    val columns = youTileColumns(LocalYardWindow.current)
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-        tiles.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                row.forEach { YouTile(it, Modifier.weight(1f)) }
+        tiles.chunked(columns).forEach { row ->
+            Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                row.forEach { YouTile(it, Modifier.weight(1f).fillMaxHeight()) }
             }
         }
     }
@@ -276,3 +292,7 @@ private fun YouViewDark() = YardPreview(darkTheme = true) { YouView() }
 @Preview(name = "YouView — light")
 @Composable
 private fun YouViewLight() = YardPreview(darkTheme = false, signedIn = false) { YouView() }
+
+@YardTabletPreviews
+@Composable
+private fun YouViewTablet() = YardPreview(darkTheme = true) { YouView() }

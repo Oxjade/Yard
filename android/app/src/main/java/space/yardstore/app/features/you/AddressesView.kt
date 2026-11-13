@@ -1,5 +1,7 @@
 package space.yardstore.app.features.you
 
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,6 +54,7 @@ fun AddressesView() {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
+                .adaptiveContentWidth()
                 .padding(horizontal = Spacing.gutter)
                 .padding(top = Spacing.m, bottom = Spacing.xxl),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -92,3 +95,7 @@ private fun AddressesDark() = YardPreview(darkTheme = true) { AddressesView() }
 @Preview(name = "AddressesView — light")
 @Composable
 private fun AddressesLight() = YardPreview(darkTheme = false) { AddressesView() }
+
+@YardTabletPreviews
+@Composable
+private fun AddressesTablet() = YardPreview(darkTheme = true) { AddressesView() }
