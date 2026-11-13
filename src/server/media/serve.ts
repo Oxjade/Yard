@@ -189,7 +189,9 @@ export async function serveMedia(req: Request, id: string, as: As | null): Promi
     "Content-Security-Policy": "default-src 'none'; sandbox",
     "Content-Disposition": `inline; filename="${m.id}.${m.ext}"`,
     "Accept-Ranges": "bytes",
-    "Cache-Control": isPublic ? "public, max-age=300, must-revalidate" : "private, max-age=300",
+    // Uploads never change under their id: browsers keep public ones a day (then revalidate by ETag),
+    // so a removed upload stops being served within a day at most.
+    "Cache-Control": isPublic ? "public, max-age=86400, must-revalidate" : "private, max-age=300",
     "Referrer-Policy": "no-referrer",
   })
   if (isPublic) {

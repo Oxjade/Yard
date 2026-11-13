@@ -57,6 +57,8 @@ sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run geoip:update'
 systemctl restart yard
 sleep 8
 curl -fsS http://127.0.0.1:3000/api/health && echo || { echo "Health check failed: journalctl -u yard -n 50"; exit 1; }
+# Warm the main pages so the first visitor after a deploy does not wait for them to render.
+for p in / /brands /drops /charts /around /sell /categories; do curl -s -o /dev/null http://127.0.0.1:3000$p || true; done
 EOF
 chmod 755 /usr/local/bin/yard-update
 systemctl restart yard

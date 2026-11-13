@@ -29,6 +29,9 @@ const nextConfig = (phase: string): NextConfig => {
       // Content-Length outright; each route's own cap is lower still, 64 KB by default).
       proxyClientMaxBodySize: "1mb",
     },
+    // Optimised images are kept 30 days (the default is 4 hours): the photos behind them rarely
+    // change, and re-encoding them is the most CPU a visit costs on a small server.
+    images: { minimumCacheTTL: 2_592_000 },
     partialPrefetching: true,
     poweredByHeader: false,
     // Small servers (1-2 GB) run out of memory on the type check during `next build`. The code is
@@ -55,7 +58,13 @@ const nextConfig = (phase: string): NextConfig => {
     // our own origin (the Studio PreviewFrame is a div), so frame-ancestors 'none' breaks nothing.
     // HSTS is set by the reverse proxy (deploy/), so a local http:// run isn't pinned to https.
     async headers() {
+      // Site photos and brand art in public/ change only with a deploy: browsers keep them a week
+      // instead of re-checking on every visit (Next's default for public/ is max-age=0).
+      const longLived = { key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=86400" };
       return [
+        { source: "/site/:path*", headers: [longLived] },
+        { source: "/brand/:path*", headers: [longLived] },
+        { source: "/media/:path*", headers: [longLived] },
         {
           source: "/((?!api/media/).*)",
           headers: [
