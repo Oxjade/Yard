@@ -119,6 +119,10 @@ struct YardPillButtonStyle: ButtonStyle {
     var style: YardButton.Style = .primary
     @Environment(\.isEnabled) private var isEnabled
 
+    init(style: YardButton.Style = .primary) {
+        self.style = style
+    }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(YardButton.foreground(for: style))
