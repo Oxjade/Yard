@@ -30,7 +30,7 @@ import { CategoryKind, StatusText } from "./place-card"
 
 export function directionsHref(p: Pick<PlaceDetailDto, "pinPrecision" | "lat" | "lng" | "addressLine" | "neighbourhood" | "city" | "country">) {
   if (p.pinPrecision === "street") return `https://www.openstreetmap.org/directions?to=${p.lat.toFixed(6)},${p.lng.toFixed(6)}`
-  const q = [p.addressLine, p.neighbourhood, p.city, countryLabel(p.country)].filter(Boolean).join(", ")
+  const q = [p.addressLine, "postcode" in p ? (p as { postcode?: string | null }).postcode : null, p.neighbourhood, p.city, countryLabel(p.country)].filter(Boolean).join(", ")
   return `https://www.openstreetmap.org/search?query=${encodeURIComponent(q)}`
 }
 
@@ -139,7 +139,7 @@ export function PlaceDetail({ summary, detail, loading, error, onRetry, onBack, 
           {p.sample ? <SampleChip label="Sample place" /> : null}
         </div>
         <div className="grid min-w-0 gap-1 text-sm">
-          {detail ? <p className="text-ink">{detail.addressLine}</p> : null}
+          {detail ? <p className="text-ink">{detail.postcode ? `${detail.addressLine}, ${detail.postcode}` : detail.addressLine}</p> : null}
           <p className="text-ink-2">{where}</p>
           {distance ? <p className="text-xs text-ink-2 tabular">{formatDistance(distance.km)} from {distance.from}</p> : null}
           <StatusText place={p} now={now} className="text-xs text-ink-2" />

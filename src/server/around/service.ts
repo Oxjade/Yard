@@ -268,6 +268,7 @@ type PlaceDraft = {
   name: string
   description: string | null
   addressLine: string
+  postcode: string | null
   lat: number
   lng: number
   pinPrecision: string
@@ -311,6 +312,7 @@ export async function createLocation(actor: BrandActor, body: LocationWriteBody 
       name: body.name.trim(),
       description: body.description?.trim() || null,
       addressLine: body.addressLine.trim(),
+      postcode: body.postcode?.trim() || null,
       lat: body.lat,
       lng: body.lng,
       pinPrecision: body.pinPrecision ?? "area",
@@ -394,6 +396,7 @@ export async function updateLocation(id: string, body: LocationPatchBody, ipHash
       name: pick("name", prev.name),
       description: pick("description", prev.description),
       addressLine: pick("addressLine", prev.addressLine),
+      postcode: body.postcode !== undefined ? body.postcode?.trim() || null : prev.postcode,
       lat: pick("lat", prev.lat),
       lng: pick("lng", prev.lng),
       pinPrecision: pick("pinPrecision", prev.pinPrecision),

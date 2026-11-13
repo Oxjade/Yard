@@ -594,7 +594,7 @@ function SetupBar({ brand: b, disabledReason }: { brand: FoundingBrandRow; disab
   }
   return (
     <div className="grid gap-2.5">
-      <p className="text-[11.5px] leading-snug text-ink-3">{disabledReason ?? "Yard setup opens Studio on this brand for 8 hours: products, photos, collections, storefront and shipping only. Every change is recorded under your name. It ends when the owner claims the brand."}</p>
+      <p className="text-[11.5px] leading-snug text-ink-3">{disabledReason ?? "Yard setup opens Studio on this brand for 8 hours: products, photos, collections, storefront, shipping and store locations (the Around map) only. Every change is recorded under your name. It ends when the owner claims the brand."}</p>
       <ActionErrorNote error={failure} onReload={() => window.location.reload()} />
       <div className="flex flex-wrap items-center justify-end gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
         <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-9" loading={busy === "end"} disabled={!!busy} onClick={() => void endSetup()}>

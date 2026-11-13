@@ -228,7 +228,7 @@ async function resolveActor(opts: RouteOpts, asParam: string | null): Promise<Ac
  * invites, brand switch, realtime, notifications and every other path answer 403. A new Studio
  * area must be added here on purpose.
  */
-const YARD_SETUP_PATHS = [/^\/api\/studio\/catalog(\/|$)/, /^\/api\/studio\/storefront(\/|$)/, /^\/api\/studio\/shipping$/, /^\/api\/studio\/setup$/, /^\/api\/uploads$/, /^\/api\/media(\/|$)/]
+const YARD_SETUP_PATHS = [/^\/api\/studio\/catalog(\/|$)/, /^\/api\/studio\/storefront(\/|$)/, /^\/api\/studio\/shipping$/, /^\/api\/studio\/locations(\/|$)/, /^\/api\/studio\/setup$/, /^\/api\/uploads$/, /^\/api\/media(\/|$)/]
 // Dev-only helpers under these prefixes stay closed to Yard setup.
 const YARD_SETUP_DENY = [/\/dev(\/|$)/]
 

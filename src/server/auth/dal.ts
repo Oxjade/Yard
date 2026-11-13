@@ -175,7 +175,7 @@ export const getBrandActor = getBrandActorInternal
 export async function requireActiveBrand(permission: BrandPermission | "any_member", opts: { allowYardSetup?: boolean } = {}): Promise<BrandActor> {
   const a = await getBrandActorInternal()
   if (!a) throw unauthenticated("Sign in to Brand Studio to continue.")
-  if (a.role === "yard_setup" && !opts.allowYardSetup) throw forbidden("Yard setup covers products, photos, collections, storefront and shipping only.")
+  if (a.role === "yard_setup" && !opts.allowYardSetup) throw forbidden("Yard setup covers products, photos, collections, storefront, shipping and locations only.")
   if (!canBrand(a.role, permission)) throw forbidden()
   return a
 }

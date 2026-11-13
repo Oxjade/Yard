@@ -47,9 +47,9 @@ export const brandRolePermissions: Record<MemberRole, BrandPermission[]> = {
   fulfilment: ["inbox.read", "inbox.reply", "inbox.manage", "orders.fulfil", "shipping.manage"],
   finance: ["inbox.read"],
   viewer: ["inbox.read"],
-  // Catalogue, photos, collections, storefront and shipping only; the route allow-list
+  // Catalogue, photos, collections, storefront, shipping and locations only; the route allow-list
   // (src/server/http/route.ts) keeps it out of everything else, including orders and payouts.
-  yard_setup: ["content.publish", "shipping.manage", "orders.fulfil"],
+  yard_setup: ["content.publish", "shipping.manage", "orders.fulfil", "locations.manage"],
 }
 
 export const adminRolePermissions: Record<AdminRole, AdminPermission[]> = {

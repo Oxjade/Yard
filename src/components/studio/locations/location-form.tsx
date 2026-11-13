@@ -58,6 +58,7 @@ type FormState = {
   cityName: string
   country: CountryCode
   addressLine: string
+  postcode: string
   lat: number
   lng: number
   latText: string
@@ -128,6 +129,7 @@ function initialFor(loc: StudioLocationDto | null, brand: StudioLocationsResult[
       cityName: loc.inGazetteer ? "" : loc.city,
       country: loc.country as CountryCode,
       addressLine: loc.addressLine,
+      postcode: loc.postcode ?? "",
       lat: loc.lat,
       lng: loc.lng,
       latText: String(loc.lat),
@@ -157,6 +159,7 @@ function initialFor(loc: StudioLocationDto | null, brand: StudioLocationsResult[
     cityName: "",
     country: city.country as CountryCode,
     addressLine: "",
+    postcode: "",
     lat: city.lat,
     lng: city.lng,
     latText: String(city.lat),
@@ -365,6 +368,7 @@ function LocationForm({ loc: initialLoc, brand }: { loc: StudioLocationDto | nul
       cityName: other ? f.cityName.trim() : null,
       country: other ? f.country : null,
       addressLine: f.addressLine.trim(),
+      postcode: f.postcode.trim() || null,
       lat: r6(f.lat),
       lng: r6(f.lng),
       pinPrecision,
@@ -571,6 +575,9 @@ function LocationForm({ loc: initialLoc, brand }: { loc: StudioLocationDto | nul
               </div>
               <Field id="loc-addressLine" label="Address line" error={errors.addressLine}>
                 <Input {...control("loc-addressLine", errors.addressLine)} value={f.addressLine} maxLength={140} onChange={(e) => set("addressLine", e.target.value)} className={inputClass} autoComplete="street-address" />
+              </Field>
+              <Field id="loc-postcode" label="Postcode (optional)" error={errors.postcode}>
+                <Input {...control("loc-postcode", errors.postcode)} value={f.postcode} maxLength={16} onChange={(e) => set("postcode", e.target.value)} className={inputClass} autoComplete="postal-code" />
               </Field>
               <PickMap
                 // A bare city opens at 12, so its neighbourhood rings and names show around the pin.

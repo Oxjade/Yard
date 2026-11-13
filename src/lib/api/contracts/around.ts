@@ -94,6 +94,7 @@ export const featuredProductDto = z.object({ id: z.string(), slug: z.string(), n
 
 export const placeDetailDto = placeSummaryDto.extend({
   addressLine: z.string(),
+  postcode: z.string().nullable().optional(),
   hoursNote: z.string().nullable(),
   description: z.string().nullable(),
   images: z.array(placeImageDto),
@@ -162,6 +163,7 @@ export const locationWriteBody = z
     cityName: z.string().trim().max(60).nullable().optional(),
     country: z.enum(MARKET_COUNTRIES).nullable().optional(),
     addressLine: z.string().trim().min(1, { error: "Add the street address." }).max(140),
+    postcode: z.string().trim().max(16).nullable().optional(),
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
     pinPrecision: z.enum(PIN_PRECISIONS).default("area"),
@@ -190,6 +192,7 @@ export const locationPatchBody = z
     cityName: z.string().trim().max(60).nullable().optional(),
     country: z.enum(MARKET_COUNTRIES).nullable().optional(),
     addressLine: z.string().trim().min(1, { error: "Add the street address." }).max(140).optional(),
+    postcode: z.string().trim().max(16).nullable().optional(),
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
     pinPrecision: z.enum(PIN_PRECISIONS).optional(),
@@ -261,6 +264,7 @@ export const studioLocationDto = z.object({
   name: z.string(),
   description: z.string().nullable(),
   addressLine: z.string(),
+  postcode: z.string().nullable(),
   neighbourhood: z.string().nullable(),
   /** The gazetteer neighbourhood slug when the neighbourhood is one of the gazetteer's. */
   neighbourhoodSlug: z.string().nullable(),

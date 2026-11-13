@@ -308,6 +308,7 @@ const yardSetupGroups: ShellNavGroup[] = [
     items: [
       { href: "/studio/storefront", label: "Storefront", icon: LayoutIcon },
       { href: "/studio/shipping", label: "Shipping & fulfilment", icon: TruckIcon },
+      { href: "/studio/locations", label: "Locations", icon: MapPinIcon },
     ],
   },
 ]

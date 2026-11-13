@@ -19,6 +19,8 @@ export const brandLocations = pgTable(
     kind: text("kind").notNull(),
     name: text("name").notNull(),
     addressLine: text("address_line").notNull(),
+    /** Postal code, when the place has one (optional; many markets don't use them). */
+    postcode: text("postcode"),
     neighbourhood: text("neighbourhood"),
     city: text("city").notNull(),
     citySlug: text("city_slug").notNull(),

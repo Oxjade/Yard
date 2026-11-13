@@ -122,7 +122,21 @@ export function AuthOAuthCompletion() {
       <p className={current && !current.success ? "mt-5 max-w-xl text-sm leading-relaxed text-danger" : "mt-5 max-w-xl text-sm leading-relaxed text-ink-2"} role={current && !current.success ? "alert" : "status"}>
         {current?.message ?? (mode === "reauth" ? `Confirming with ${provider}…` : `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`)}
       </p>
-      {mode === "reauth" && current ? <Button asChild variant={current.success ? "primary" : "secondary"} className="mt-6"><Link href={continueTo === "/you/orders" ? (actor === "brand" ? "/studio" : "/you") : continueTo}>{current.success ? "Back to where you were" : "Go back"}</Link></Button> : current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current?.result === "no_brand" ? <Button asChild variant="primary" className="mt-6"><Link href="/studio/onboarding">Apply to sell on Yard</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href={actor === "brand" ? "/studio" : "/sign-in"}>Return to sign in</Link></Button> : null}
+      {mode === "signin" && actor === "shopper" && current?.success && continueTo === "/you/orders" ? (
+        // A shopper sign-in with nowhere to return to (a new Google account lands here): ask what
+        // brought them, so a brand isn't left in a shopper account with no way to start selling.
+        <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
+          <p className="text-sm text-ink sm:col-span-2">What brings you to Yard?</p>
+          <Link href={useSession.getState().onboarded ? "/" : "/welcome"} className="group rounded-lg border border-line-soft bg-card p-5 transition-colors hover:border-ink-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet">
+            <span className="block text-base text-ink">I’m here to shop</span>
+            <span className="mt-1.5 block text-sm leading-relaxed text-ink-2">Discover independent brands, follow them and catch their drops.</span>
+          </Link>
+          <Link href="/studio/onboarding" className="group rounded-lg border border-line-soft bg-card p-5 transition-colors hover:border-ink-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet">
+            <span className="block text-base text-ink">I want to sell on Yard</span>
+            <span className="mt-1.5 block text-sm leading-relaxed text-ink-2">Apply with your brand, set up your storefront and start selling. You can still shop with this account.</span>
+          </Link>
+        </div>
+      ) : mode === "reauth" && current ? <Button asChild variant={current.success ? "primary" : "secondary"} className="mt-6"><Link href={continueTo === "/you/orders" ? (actor === "brand" ? "/studio" : "/you") : continueTo}>{current.success ? "Back to where you were" : "Go back"}</Link></Button> : current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current?.result === "no_brand" ? <Button asChild variant="primary" className="mt-6"><Link href="/studio/onboarding">Apply to sell on Yard</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href={actor === "brand" ? "/studio" : "/sign-in"}>Return to sign in</Link></Button> : null}
     </>
   )
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "brand_locations" ADD COLUMN "postcode" text;

@@ -121,6 +121,7 @@ export function toPlaceDetail(p: PublicPlaceRow, events: PublicEventRow[], now: 
   return {
     ...toPlaceSummary(p, live, now),
     addressLine: p.addressLine,
+    postcode: p.postcode ?? null,
     hoursNote: p.hoursNote,
     description: p.description,
     images: cleanImages(p.images),
@@ -182,6 +183,7 @@ export function toStudioLocation(p: PlaceRow, events: EventRow[], now: number): 
     name: p.name,
     description: p.description,
     addressLine: p.addressLine,
+    postcode: p.postcode ?? null,
     neighbourhood: p.neighbourhood,
     neighbourhoodSlug: hood?.slug ?? null,
     city: p.city,
