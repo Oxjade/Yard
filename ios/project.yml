@@ -66,28 +66,42 @@ targets:
           - CFBundleURLName: space.yardstore.app
             CFBundleURLSchemes:
               - yard
-    # dependencies:
-    #   - target: YardLiveActivity   # live-activity agent: uncomment when the extension target exists
+    dependencies:
+      - target: YardLiveActivity   # embeds the Live Activity widget extension
 
   # ---------------------------------------------------------------------------------------------
-  # Live Activity widget extension: the live-activity agent adds it here. Expected shape:
-  #
-  # YardLiveActivity:
-  #   type: app-extension
-  #   platform: iOS
-  #   deploymentTarget: "17.0"
-  #   sources:
-  #     - path: YardLiveActivity
-  #     - path: Yard/Features/LiveActivity/Shared   # the ActivityAttributes shared with the app
-  #   settings:
-  #     base:
-  #       PRODUCT_BUNDLE_IDENTIFIER: space.yardstore.app.LiveActivity
-  #       TARGETED_DEVICE_FAMILY: "1"
-  #   info:
-  #     path: YardLiveActivity/Info.plist
-  #     properties:
-  #       CFBundleDisplayName: Yard
-  #       NSExtension:
-  #         NSExtensionPointIdentifier: com.apple.widgetkit-extension
-  # ...and in the Yard target: `dependencies: - target: YardLiveActivity` (embeds it).
+  # Live Activity widget extension (owner: live-activity agent). Order tracking on the Lock Screen
+  # and in the Dynamic Island. It compiles its own folder, the ActivityAttributes shared with the
+  # app, and the few self-contained design-system files it draws with (theme tokens, type, metrics,
+  # logo) so it uses the same tokens as the app without duplicating them.
   # ---------------------------------------------------------------------------------------------
+  YardLiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: YardLiveActivity
+      - path: Yard/Features/LiveActivity/Shared   # YardOrderActivityAttributes, shared with the app
+      - path: Yard/DesignSystem/Theme.swift
+      - path: Yard/DesignSystem/Typography.swift
+      - path: Yard/DesignSystem/Metrics.swift
+      - path: Yard/DesignSystem/YardLogo.swift
+      - path: Yard/DesignSystem/SVGPathParser.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.yardstore.app.LiveActivity
+        PRODUCT_NAME: YardLiveActivity
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_PREVIEWS: YES
+        SWIFT_STRICT_CONCURRENCY: minimal
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+    info:
+      path: YardLiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Yard
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
