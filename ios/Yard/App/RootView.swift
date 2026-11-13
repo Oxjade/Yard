@@ -179,29 +179,28 @@ struct TabPillScrollSensor: View {
     @State private var lastOffset: CGFloat = 0
 
     var body: some View {
+        // `.onChange` (main actor) rather than `.onPreferenceChange`, whose action is `@Sendable`
+        // in newer SDKs and can't touch the main-actor Router.
         GeometryReader { geo in
+            let offset = geo.frame(in: .global).minY
             Color.clear
-                .preference(key: TabPillScrollOffsetKey.self, value: geo.frame(in: .global).minY)
+                .onChange(of: offset) { _, newOffset in
+                    update(newOffset)
+                }
         }
         .frame(height: 0)
-        .onPreferenceChange(TabPillScrollOffsetKey.self) { offset in
-            let delta = offset - lastOffset
-            if offset > -40 {
-                if router.isTabPillCollapsed { router.isTabPillCollapsed = false }
-            } else if delta < -14 {
-                if !router.isTabPillCollapsed { router.isTabPillCollapsed = true }
-            } else if delta > 14 {
-                if router.isTabPillCollapsed { router.isTabPillCollapsed = false }
-            }
-            if abs(delta) > 14 || offset > -40 { lastOffset = offset }
-        }
     }
-}
 
-private struct TabPillScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    private func update(_ offset: CGFloat) {
+        let delta = offset - lastOffset
+        if offset > -40 {
+            if router.isTabPillCollapsed { router.isTabPillCollapsed = false }
+        } else if delta < -14 {
+            if !router.isTabPillCollapsed { router.isTabPillCollapsed = true }
+        } else if delta > 14 {
+            if router.isTabPillCollapsed { router.isTabPillCollapsed = false }
+        }
+        if abs(delta) > 14 || offset > -40 { lastOffset = offset }
     }
 }
 

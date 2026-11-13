@@ -329,6 +329,7 @@ final class Router {
 
 /// Maps a `Route` to its feature view. Feature agents implement the named views; never change a
 /// type name or initializer used here.
+@MainActor
 struct RouteView: View {
     let route: Route
 
@@ -377,6 +378,7 @@ struct RouteView: View {
 
 extension View {
     /// Registers `Route` destinations on a NavigationStack's root content.
+    @MainActor
     func yardRouteDestinations() -> some View {
         navigationDestination(for: Route.self) { route in
             RouteView(route: route)

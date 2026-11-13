@@ -3,6 +3,7 @@ import UIKit
 
 /// App entry: creates the shared stores once, injects them, applies the appearance choice.
 @main
+@MainActor
 struct YardApp: App {
     @State private var session = SessionStore()
     @State private var cart = CartStore()

@@ -128,6 +128,7 @@ private struct ToastHostModifier: ViewModifier {
 
 extension View {
     /// Shows `center`'s toasts over this view. The root applies it once; sheets apply it too.
+    @MainActor
     func yardToastHost(_ center: ToastCenter) -> some View {
         modifier(ToastHostModifier(center: center))
     }

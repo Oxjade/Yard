@@ -118,6 +118,8 @@ struct RemoteImage<Placeholder: View>: View {
             .accessibilityHidden(true)
     }
 
+    /// Main actor: it writes `@State` (the `.task` closure is `@Sendable` on the iOS 17 SDK).
+    @MainActor
     private func load() async {
         guard let url else { return }
         if let cached = ImagePipeline.shared.cachedImage(for: url, maxPixelSize: maxPixelSize) {
