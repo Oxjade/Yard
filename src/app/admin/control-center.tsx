@@ -118,8 +118,10 @@ function CommandStrip() {
   // A real admin's payouts come from the finance service (Owner and Finance roles); the sample
   // payouts and refunds never count for them, and the live Finance page has no Refunds tab.
   const money = useLiveMoney()
-  const payouts = money.live ? (money.payoutsToDecide ?? 0) : samplePayouts
-  const refunds = money.live ? 0 : sampleRefunds
+  // With sample data off the browser's sample payouts and refunds never count, signed in or not.
+  const liveMoney = money.live || !sampleData
+  const payouts = liveMoney ? (money.payoutsToDecide ?? 0) : samplePayouts
+  const refunds = liveMoney ? 0 : sampleRefunds
   const sessionAdminName = useServerSession((s) => s.admin?.name ?? null)
   const campaigns = useAdmin((s) => s.campaigns.filter((c) => c.status === "in_review").length)
   const moderation = useAdmin((s) => s.moderation.filter((m) => m.status === "open" || m.status === "escalated").length)
@@ -132,8 +134,8 @@ function CommandStrip() {
   const chips = [
     { href: "/admin/brands", label: "Brands to review", count: pendingBrands, icon: BadgeCheck },
     // Awaiting approval and held (a held one needs a release): the Finance Payouts tab's count.
-    ...(!money.live || money.finance ? [{ href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote }] : []),
-    ...(money.live ? [] : [{ href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw }]),
+    ...(!liveMoney || money.finance ? [{ href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote }] : []),
+    ...(liveMoney ? [] : [{ href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw }]),
     ...(sampleData
       ? [
           { href: "/admin/advertising", label: "Campaigns in review", count: campaigns, icon: Megaphone },
@@ -226,7 +228,8 @@ function DecisionQueue({ className }: { className?: string }) {
   const chosenTab: QueueTab = !sampleData && (pickedTab === "campaigns" || pickedTab === "moderation") ? "brands" : pickedTab
   // A real admin decides payouts in Finance on the server, so the sample payout and refund queues
   // (and their approve buttons, which only change this browser's store) aren't offered to them.
-  const { live } = useLiveMoney()
+  // With sample data off they're never offered either, whoever is signed in.
+  const live = useLiveMoney().live || !sampleData
   const tab: QueueTab = live && (chosenTab === "payouts" || chosenTab === "refunds") ? "brands" : chosenTab
   const [confirm, setConfirm] = useState<null | { kind: "payout-approve" | "payout-release" | "refund-approve"; id: string; title: string; description: string; label: string }>(null)
   const { applications } = useBrandApplications()

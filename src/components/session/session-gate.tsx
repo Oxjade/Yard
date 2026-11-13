@@ -55,7 +55,9 @@ export function SessionGate({ surface, feature, permission, children }: Props) {
     { error: "Couldn't sign in to the demo account. Try again." },
   )
 
-  if (s.status === "loading") {
+  // Control Center: signed out, the admin shell sends the visitor to its own sign-in page
+  // (/admin/sign-in). Until that redirect lands, keep the loading skeleton rather than a form.
+  if (s.status === "loading" || (surface === "admin" && s.status === "ready" && !s.admin)) {
     return (
       <div aria-busy className="grid gap-3" role="status">
         <span className="sr-only">Checking your session</span>

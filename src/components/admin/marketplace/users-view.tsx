@@ -22,6 +22,7 @@ import { NO_ADMIN_SESSION, userActions, userAllowed, userDecision, useUserStatus
 import { UserDetail } from "./user-detail"
 import { AbusePanel } from "@/components/admin/trust/abuse-panel"
 import { useMirrorServerStatuses } from "@/components/admin/trust/status-sync"
+import { sampleOnly, useAdminSampleData } from "../sample"
 
 type Filter = "all" | "reported" | PlatformUser["status"] | "abuse"
 const FILTERS: { value: Filter; label: string; empty: string }[] = [
@@ -55,16 +56,23 @@ function inFilter(u: PlatformUser, f: Filter) {
 }
 
 export function UsersView() {
-  const ready = useAdminReady()
+  const adminReady = useAdminReady()
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
-  const users = useAdmin((s) => s.users)
+  // The account list in the browser's store is sample accounts: demo only. With sample data off
+  // there is no account directory yet, so the list is empty, the figures say so, and the page opens
+  // on Abuse (Yard's server signals).
+  const sample = useAdminSampleData()
+  const ready = adminReady && sample.known
+  const live = sample.known && !sample.on
+  const storeUsers = useAdmin((s) => s.users)
+  const users = sampleOnly(sample.on, storeUsers)
   const linked = useSearchParam("status")
   // Users › Abuse is ?tab=abuse (§8.1); the account filters stay on ?status=.
   const abuseTab = useSearchParam("tab") === "abuse"
-  const filter: Filter = abuseTab ? "abuse" : isFilter(linked) ? linked : "all"
+  const filter: Filter = abuseTab ? "abuse" : isFilter(linked) ? linked : live ? "abuse" : "all"
   // Status decisions run on Yard's server: without an admin session (or the role) they're disabled.
   const block = useUserStatusBlock()
   useMirrorServerStatuses("user", useMemo(() => users.map((u) => u.id), [users]))
@@ -143,29 +151,30 @@ export function UsersView() {
       <AdminPageHead
         title="Users"
         description="Find a shopper, read the reports against them and restrict or suspend the account."
+        live={!sample.on}
         note={block === NO_ADMIN_SESSION ? NO_ADMIN_SESSION : "Restrict, Suspend and Reinstate run on Yard's server: a suspension signs the account out everywhere and blocks sign-in. Checkout and drops still run in this browser, so a restriction doesn't block them yet."}
       />
 
       <InPageLinks>
         <StatRow label="Account figures">
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={UsersIcon} label="Shopper accounts" value={counts.all} format={n} hint="In this sample" href="/admin/users#accounts" hrefLabel="Show all accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={UsersIcon} label="Shopper accounts" value={counts.all} format={live ? () => "—" : n} hint={live ? "No account directory yet" : "In this sample"} href="/admin/users#accounts" hrefLabel="Show all accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, active" value={counts.reported} format={n} hint="Worth a look first" href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" variant={ready && counts.reported ? "brand" : "default"} icon={FlagIcon} label="Reported, active" value={counts.reported} format={live ? () => "—" : n} hint={live ? "Reports are under Abuse" : "Worth a look first"} href="/admin/users?status=reported#accounts" hrefLabel="Show reported accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={n} hint="Pauses are set under Abuse" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ShieldWarningIcon} label="Restricted" value={counts.restricted} format={live ? () => "—" : n} hint="Pauses are set under Abuse" href="/admin/users?status=restricted#accounts" hrefLabel="Show restricted accounts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" icon={ProhibitIcon} label="Suspended" value={counts.suspended} format={n} hint="Can't sign in" href="/admin/users?status=suspended#accounts" hrefLabel="Show suspended accounts" ready={ready} className="h-full" />
+            <StatCard surface="admin" icon={ProhibitIcon} label="Suspended" value={counts.suspended} format={live ? () => "—" : n} hint="Can't sign in" href="/admin/users?status=suspended#accounts" hrefLabel="Show suspended accounts" ready={ready} className="h-full" />
           </RevealItem>
         </StatRow>
       </InPageLinks>
 
       <Panel id="accounts" title={filter === "abuse" ? "Abuse signals" : "Accounts"} description={filter === "abuse" ? "Rate-limit hits, held messages, spam marks and alerts from Yard's server. Open an account to confirm or dismiss." : "Accounts with reports come first. Open one for its reports, orders and history."} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
         <PanelRail value={filter}>
-          <Segmented label="Account status" size="sm" value={filter} onChange={(f) => writeParams(f === "abuse" ? { tab: "abuse", status: null, user: null } : { tab: null, case: null, status: f === "all" ? null : f })} loading={!ready} idBase={qid} panelId={`${qid}-panel`} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "reported" ? counts.reported : undefined }))} />
+          <Segmented label="Account status" size="sm" value={filter} onChange={(f) => writeParams(f === "abuse" ? { tab: "abuse", status: null, user: null } : { tab: null, case: null, status: f === "all" && !live ? null : f })} loading={!ready} idBase={qid} panelId={`${qid}-panel`} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "reported" ? counts.reported : undefined }))} />
         </PanelRail>
         <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, filter)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
           {filter === "abuse" ? (
@@ -181,7 +190,7 @@ export function UsersView() {
             search={{ placeholder: "Search by name or email", text: (u) => `${u.name} ${u.email}` }}
             rowActions={rowActions}
             bulkActions={phone || !bulkActions.length ? undefined : bulkActions}
-            empty={{ title: current.empty, body: "Accounts appear here as their status changes." }}
+            empty={live ? { title: "No accounts listed yet", body: "Shopper accounts aren't listed in the Control Center yet. Reports, rate-limit hits and spam marks from Yard's server are under Abuse." } : { title: current.empty, body: "Accounts appear here as their status changes." }}
             initialPageSize={25}
             minWidth={300}
           />

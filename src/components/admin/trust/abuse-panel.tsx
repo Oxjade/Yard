@@ -16,6 +16,7 @@ import { abuseAlertKindLabels, durationLabels, restrictionKindLabels, type Abuse
 import { useApi } from "@/lib/api/use-api"
 import { mirrorUserStatus } from "@/components/admin/marketplace/user-actions"
 import { cn } from "@/lib/utils"
+import { useAdminSampleData } from "../sample"
 import { DURATIONS, restrictDecision } from "./restrict"
 import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, sheetTrack, useAdminSession, useServerDecision, type TrustAction, useQueueLive } from "./shared"
 
@@ -173,6 +174,7 @@ function AbuseTable() {
 }
 
 function AbuseSheet({ row, open, quiet, d, now, onOpenChange }: { row?: AbuseRowDto; open: boolean; quiet?: boolean; d: ReturnType<typeof decisions>; now: number | null; onOpenChange: (o: boolean) => void }) {
+  const sampleOn = useAdminSampleData().on
   const { reason } = useAdminSession()
   const last = useLast(row)
   const r = row ?? last
@@ -261,7 +263,8 @@ function AbuseSheet({ row, open, quiet, d, now, onOpenChange }: { row?: AbuseRow
       <RelatedLinks
         links={[
           { href: `/admin/messages?tab=held`, label: "Held messages", hint: "What the spam rules held" },
-          { href: `/admin/users?user=${encodeURIComponent(r.user.id)}`, label: "Account record", hint: "Orders and history (sample)" },
+          // The account record is the sample directory's (demo only): production has none to open.
+          ...(sampleOn ? [{ href: `/admin/users?user=${encodeURIComponent(r.user.id)}`, label: "Account record", hint: "Orders and history (sample)" }] : []),
         ]}
       />
       <DetailSection title="Activity" className={sheetTrack}>

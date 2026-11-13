@@ -31,7 +31,7 @@ export function BrandsJoining({ compact = false, className, title = "Brands are 
           <Link href="/drops">See upcoming drops</Link>
         </Button>
         <Button asChild variant="secondary">
-          <Link href="/studio/onboarding">Sell on Yard</Link>
+          <Link href="/sell">Sell on Yard</Link>
         </Button>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import {
   PulseIcon,
   SealCheckIcon,
@@ -46,7 +47,9 @@ import type { QueueCountsDto } from "@/lib/api/contracts/admin"
 import { useApi } from "@/lib/api/use-api"
 import { adminRoleLabels, canAdmin, type AdminPermission } from "@/lib/permissions"
 import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
-import { useServerSession } from "@/lib/session/use-server-session"
+import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
+import { Button } from "@/components/ui/button"
+import { Bone } from "@/components/feedback/skeletons"
 import { categories } from "@/lib/data/catalog"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
@@ -284,8 +287,64 @@ function useAdminReady() {
 const LEGACY_ADMIN_ID = "adm_1"
 const LEGACY_ADMIN_NOTE = "Legacy pages act as Kemi Ajayi in this browser."
 
-/** The internal Admin Control Center: a control room — dense, operational, data-first. */
+/** The Control Center's own sign-in page (src/app/admin/sign-in): rendered bare, without the shell. */
+export const ADMIN_SIGN_IN_PATH = "/admin/sign-in"
+
+/**
+ * The Control Center's gate. The sign-in page renders bare. Every other admin page renders the
+ * navigation only for a signed-in admin: while the session loads it shows a neutral skeleton, and
+ * signed out it sends the visitor to /admin/sign-in?next=<this page>. Server endpoints check the
+ * session again; this only decides what to render.
+ */
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const status = useServerSession((s) => s.status)
+  const signedIn = useServerSession((s) => !!s.admin)
+  const bare = pathname === ADMIN_SIGN_IN_PATH || pathname.startsWith(`${ADMIN_SIGN_IN_PATH}/`)
+  const signedOut = !bare && status === "ready" && !signedIn
+
+  useEffect(() => {
+    if (!signedOut) return
+    const here = `${window.location.pathname}${window.location.search}`
+    router.replace(`${ADMIN_SIGN_IN_PATH}?next=${encodeURIComponent(here)}`)
+  }, [signedOut, router])
+
+  if (bare) return <div className="min-h-dvh bg-[#080808] text-sm">{children}</div>
+  if (signedIn) return <AdminWorkspace>{children}</AdminWorkspace>
+  if (status === "error") {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-[#080808] px-4 text-sm">
+        <div role="alert" className="grid max-w-sm gap-3 text-center">
+          <p className="text-base font-medium text-ink">Couldn&apos;t check your session</p>
+          <p className="leading-relaxed text-ink-2">Yard&apos;s server didn&apos;t answer. Check your connection, then try again.</p>
+          <Button variant="secondary" className="justify-self-center" onClick={() => void refreshServerSession()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return <AdminSessionSkeleton />
+}
+
+/** Loading, or on the way to the sign-in page: no navigation, only the page's outline. */
+function AdminSessionSkeleton() {
+  return (
+    <div aria-busy role="status" className="min-h-dvh bg-[#080808] px-4 py-6 md:px-8 lg:py-10">
+      <span className="sr-only">Checking your session</span>
+      <div className="mx-auto grid max-w-5xl gap-3">
+        <Bone className="h-8 w-48" />
+        <Bone className="h-4 w-72 max-w-full" />
+        <Bone className="mt-3 h-40 w-full rounded-lg" />
+        <Bone className="h-40 w-full rounded-lg" />
+      </div>
+    </div>
+  )
+}
+
+/** The internal Admin Control Center: a control room — dense, operational, data-first. */
+function AdminWorkspace({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
   // Advertising and Health have only sample data so far: demo and development only (production
   // serves them as "coming soon", src/proxy.ts). Hidden until the session says which, so production

@@ -37,6 +37,7 @@ import { useApi } from "@/lib/api/use-api"
 import { formatNumber, formatPercent } from "@/lib/money"
 import type { AdminPermission } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
+import { useAdminSampleData } from "../sample"
 import { LoadError, NotInQueue, ServerActivity, TrustActionBar, TrustGate, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
 /*
@@ -105,12 +106,14 @@ function componentWords(c: Record<string, number>) {
 }
 
 export function ChartsView() {
+  const sampleOn = useAdminSampleData().on
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <AdminPageHead
         title="Charts"
         description="Whether every board counts genuine interest: excluded signals, the detectors' flags and brands frozen off the charts."
-        note="Boards include a labelled sample baseline in this build. Flags are computed by Yard's detectors from real signal events; nothing here is seeded as a flag."
+        live={!sampleOn}
+        note={sampleOn ? "Boards include a labelled sample baseline in this build. Flags are computed by Yard's detectors from real signal events; nothing here is seeded as a flag." : "Flags are computed by Yard's detectors from real signal events; nothing here is seeded as a flag."}
       />
       <TrustGate feature="Charts" anyOf={["charts.review", "sponsored.view"]}>
         <ChartsBody />
@@ -204,7 +207,7 @@ function SignalNotes({ o }: { o: ChartsOverviewDto }) {
     o.ipSignal === "unavailable"
       ? "IP signal: unavailable — set YARD_TRUSTED_PROXY_HOPS behind a proxy. Without it Yard can't see client IPs, so the IP-based detectors are off now; flags they raised earlier, while it was set, are still listed."
       : `IP signal: on — Yard reads client IPs through ${hops} (YARD_TRUSTED_PROXY_HOPS=${o.proxyHops}), so the IP cap and IP concentration detector run. Addresses are kept only as monthly hashes.`,
-    "Order signals: not connected (no payment provider). Sales count only from the labelled sample baseline until payments are confirmed.",
+    o.sample ? "Order signals: not connected (no payment provider). Sales count only from the labelled sample baseline until payments are confirmed." : "Order signals: not connected (no payment provider). Sales don't count toward the boards until payments are confirmed.",
   ]
   return (
     <ul className="grid gap-1.5 px-1">
@@ -285,7 +288,7 @@ function Overview({ o, ask }: { o?: ChartsOverviewDto; ask: Ask }) {
               <p className="text-[12px] leading-snug text-ink-2">{o.totals.total ? `${n(o.totals.counted)} of ${n(o.totals.total)} signals counted in the last 7 days.` : "No signals in the last 7 days yet."}</p>
               <p className="text-[11.5px] leading-snug text-ink-3">
                 {o.verifiedShare == null ? "" : o.verifiedShare < 1 - o.threshold ? `Below ${pct(1 - o.threshold)}: excluded signals are over the ${pct(o.threshold)} threshold. ` : `At or above ${pct(1 - o.threshold)}, inside the ${pct(o.threshold)} threshold. `}
-                Seeded sample signals count toward it.
+                {o.sample ? "Seeded sample signals count toward it." : null}
               </p>
             </div>
           </div>
@@ -294,7 +297,7 @@ function Overview({ o, ask }: { o?: ChartsOverviewDto; ask: Ask }) {
             <SplitBar
               segments={[
                 { label: "Organic entries, Top brands", value: o.surface.organic, tone: "purple" },
-                { label: "Sponsored slots (sample campaigns)", value: o.surface.sponsored, tone: "grey" },
+                { label: o.sample ? "Sponsored slots (sample campaigns)" : "Sponsored slots", value: o.surface.sponsored, tone: "grey" },
               ]}
             />
             <p className="text-[11.5px] text-ink-3">Sponsored brands sit in their own strip after rank 10 and are never ranked.</p>
@@ -750,6 +753,7 @@ function Freezes({ items, holds, ask }: { items?: FreezeDto[]; holds?: ChartHold
 }
 
 function Sponsored() {
+  const sampleOn = useAdminSampleData().on
   const q = useApi(adminKeys.sponsored, listSponsored)
   const columns: Column<SponsoredRowDto>[] = [
     { key: "campaign", header: "Campaign", cell: (s) => <span className="block min-w-0"><span className="block max-w-[40vw] truncate font-medium text-ink sm:max-w-[240px]">{s.name}</span><span className="block text-[11.5px] text-ink-3">{s.brand.name}</span></span> },
@@ -761,7 +765,7 @@ function Sponsored() {
     <div className="grid gap-3">
       <p className="flex items-start gap-2 text-[12px] text-ink-2">
         <RankingIcon className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
-        Read-only. Sponsored brands show in a separate strip after rank 10 and never change a rank. These are the sample campaigns from Advertising.
+        Read-only. Sponsored brands show in a separate strip after rank 10 and never change a rank.{sampleOn ? " These are the sample campaigns from Advertising." : null}
       </p>
       <DataTable label="Sponsored placements" rows={q.data?.items ?? []} columns={columns} getId={(s) => s.campaignId} loading={!q.data} empty={{ title: "No sponsored brands", body: "Sponsored-brand campaigns from Advertising appear here." }} minWidth={300} />
     </div>

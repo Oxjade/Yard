@@ -317,7 +317,7 @@ async function recordFailure(userId: string, current: { failedCount: number; fir
  */
 export async function signInWithPassword(input: { email: string; password: string; actor: ActorKind; brandId?: string | null }, meta: RequestMeta): Promise<SignInResult> {
   const email = normalizeEmail(input.email)
-  await limitSignIn(email, meta.ipHash)
+  await limitSignIn(email, meta.ipHash, input.actor)
   const user = await signInCandidate(email)
   const cred = user ? await credentialsOf(user.id) : null
   if (cred?.lockedUntil && cred.lockedUntil.getTime() > Date.now()) {

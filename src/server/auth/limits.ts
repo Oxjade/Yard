@@ -19,6 +19,13 @@ export const LIMITS = {
   emailSendGlobalUnknownIp: { limit: 300, windowSec: 3600 },
   tokenConsumePerIp: { limit: 30, windowSec: 600 },
   mfaPerUser: { limit: 10, windowSec: 600 },
+  // Control Center (admin) sign-in is stricter than shoppers' and brands', on top of the buckets above.
+  adminSignInPerIp: { limit: 10, windowSec: 900 },
+  adminSignInGlobalUnknownIp: { limit: 100, windowSec: 900 },
+  adminSignInPerEmail: { limit: 5, windowSec: 900 },
+  // Authenticator / recovery-code attempts (enrol, enrol confirm, verify) per client IP. Admin only.
+  adminMfaPerIp: { limit: 10, windowSec: 900 },
+  adminMfaGlobalUnknownIp: { limit: 100, windowSec: 900 },
   reauthPerUser: { limit: 10, windowSec: 600 },
   oauthStartPerIp: { limit: 30, windowSec: 600 },
   invitesPerBrandDay: { limit: 50, windowSec: 86_400 },
@@ -39,13 +46,22 @@ async function check(key: string, limit: number, windowSec: number, action: stri
 
 const tooMany = "Too many attempts. Try again in a few minutes, or reset your password."
 
-/** Password sign-in: per IP (or the global unknown-IP bucket) and per email. */
-export async function limitSignIn(email: string, ipHash: string | null) {
+const adminTooMany = "Too many sign-in attempts. Wait 15 minutes and try again."
+
+/**
+ * Password sign-in: per IP (or the global unknown-IP bucket) and per email. A Control Center
+ * (actor "admin") attempt also spends the tighter admin buckets.
+ */
+export async function limitSignIn(email: string, ipHash: string | null, actor?: string) {
   // In development the curl kit and parallel tabs share loopback: keep the per-IP budget roomy.
   const dev = getEnv().dev
   if (ipHash) await check(`auth.signin:ip:${ipHash}`, dev ? 120 : LIMITS.signInPerIp.limit, LIMITS.signInPerIp.windowSec, "auth.signin", ipHash, tooMany)
   else await check("auth.signin:anon-global", LIMITS.signInGlobalUnknownIp.limit, LIMITS.signInGlobalUnknownIp.windowSec, "auth.signin", null, tooMany)
   await check(`auth.signin:email:${emailKey(email)}`, LIMITS.signInPerEmail.limit, LIMITS.signInPerEmail.windowSec, "auth.signin", ipHash, tooMany)
+  if (actor !== "admin") return
+  if (ipHash) await check(`auth.admin-signin:ip:${ipHash}`, dev ? 60 : LIMITS.adminSignInPerIp.limit, LIMITS.adminSignInPerIp.windowSec, "auth.admin_signin", ipHash, adminTooMany)
+  else await check("auth.admin-signin:anon-global", LIMITS.adminSignInGlobalUnknownIp.limit, LIMITS.adminSignInGlobalUnknownIp.windowSec, "auth.admin_signin", null, adminTooMany)
+  await check(`auth.admin-signin:email:${emailKey(email)}`, dev ? 30 : LIMITS.adminSignInPerEmail.limit, LIMITS.adminSignInPerEmail.windowSec, "auth.admin_signin", ipHash, adminTooMany)
 }
 
 /**
@@ -57,6 +73,7 @@ export async function limitSignIn(email: string, ipHash: string | null) {
 export function clearSignInEmailLimit(email: string) {
   const windows = (yard.limiter as { windows?: Map<string, unknown> } | undefined)?.windows
   windows?.delete(`auth.signin:email:${emailKey(email)}`)
+  windows?.delete(`auth.admin-signin:email:${emailKey(email)}`)
 }
 
 /** Anything that sends an email to an address the caller typed (verify, reset, magic link, sign-up). */
@@ -73,7 +90,14 @@ export async function limitTokenConsume(action: string, ipHash: string | null) {
 
 export async function limitPerUser(action: "mfa" | "reauth", userId: string, ipHash: string | null) {
   const l = action === "mfa" ? LIMITS.mfaPerUser : LIMITS.reauthPerUser
-  await check(`auth.${action}:user:${userId}`, l.limit, l.windowSec, `auth.${action}`, ipHash, "Too many codes tried. Wait a few minutes and try again.")
+  const msg = "Too many codes tried. Wait a few minutes and try again."
+  // Second-factor challenges exist only for admins (mfa.ts): also cap them per client IP, so one
+  // address can't spread code guesses across several admin accounts.
+  if (action === "mfa") {
+    if (ipHash) await check(`auth.admin-mfa:ip:${ipHash}`, getEnv().dev ? 60 : LIMITS.adminMfaPerIp.limit, LIMITS.adminMfaPerIp.windowSec, "auth.admin_mfa", ipHash, msg)
+    else await check("auth.admin-mfa:anon-global", LIMITS.adminMfaGlobalUnknownIp.limit, LIMITS.adminMfaGlobalUnknownIp.windowSec, "auth.admin_mfa", null, msg)
+  }
+  await check(`auth.${action}:user:${userId}`, l.limit, l.windowSec, `auth.${action}`, ipHash, msg)
 }
 
 export async function limitOauthStart(ipHash: string | null) {

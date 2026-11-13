@@ -34,6 +34,7 @@ import { useApi } from "@/lib/api/use-api"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { formatNumber } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import { useAdminSampleData } from "../sample"
 import { DURATIONS, restrictDecision } from "./restrict"
 import { durationLabels } from "@/lib/api/contracts/admin"
 import { LoadError, NotInQueue, RelatedLinks, SampleTag, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
@@ -77,12 +78,14 @@ function senderOf(c: MessageCaseDto): { kind: "user" | "brand"; id: string; name
 }
 
 export function MessagesView() {
+  const sampleOn = useAdminSampleData().on
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <AdminPageHead
         title="Messages"
         description="Reported and held messages between shoppers and brands. Rows show who and why, never what was said."
-        note="Opening a report's evidence or a held message is recorded in the audit log. Conversations with the Sample tag are seeded sample data."
+        live={!sampleOn}
+        note={sampleOn ? "Opening a report's evidence or a held message is recorded in the audit log. Conversations with the Sample tag are seeded sample data." : "Opening a report's evidence or a held message is recorded in the audit log."}
       />
       <TrustGate feature="Messages" anyOf={["messages.view_reports"]}>
         <MessagesQueue />

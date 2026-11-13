@@ -5,6 +5,7 @@ import { db, afterCommit } from "../db"
 import { accountRestrictions, chartEntries, chartEvents, chartFlags, chartSnapshots } from "../db/schema"
 import { getEnv } from "../env"
 import { conflict, notFound } from "../http/errors"
+import { sampleOff } from "../catalog/sample-guard"
 import { newId } from "../ids"
 import { chartBoardLabels, detectorLabel, type ChartFlagDetailDto, type ChartFlagDto, type ChartHoldDto, type ChartsOverviewDto, type FreezeDto, type SponsoredRowDto } from "@/lib/api/contracts/admin"
 import { CHART_KINDS } from "@/lib/api/contracts/enums"
@@ -98,7 +99,8 @@ export async function chartsOverview(): Promise<ChartsOverviewDto> {
   const all = byKind.reduce((s, r) => s + Number(r.n), 0)
   const topLatest = snaps.find((s) => s.chart === "top" && s.scope === "global")
   const organic = topLatest ? Number((await d.select({ n: sql<number>`count(*)::int` }).from(chartEntries).where(eq(chartEntries.snapshotId, topLatest.id)))[0]?.n ?? 0) : 0
-  const sponsored = campaigns.filter((c) => c.type === "sponsored-brand" && c.status === "active").length
+  // The sponsored campaigns are the bundled sample ones (src/lib/data/ads): production has none yet.
+  const sponsored = sampleOff() ? 0 : campaigns.filter((c) => c.type === "sponsored-brand" && c.status === "active").length
   const flagRows = await d.select({ status: chartFlags.status, severity: chartFlags.severity }).from(chartFlags)
   const freezes = await d.select({ status: accountRestrictions.status, until: accountRestrictions.until }).from(accountRestrictions).where(eq(accountRestrictions.kind, "charts_freeze"))
 
@@ -119,7 +121,8 @@ export async function chartsOverview(): Promise<ChartsOverviewDto> {
     proxyHops: getEnv().trustedProxyHops,
     orderSignals: "not_connected",
     holds: await chartHolds(),
-    sample: true,
+    // The boards' sample baseline is seeded only with the demo switch on.
+    sample: !sampleOff(),
   }
 }
 
@@ -290,6 +293,8 @@ export async function flagDetail(id: string): Promise<ChartFlagDetailDto> {
 
 /** Sponsored placements are read-only here and never ranked (§6.3); sample campaigns in this build. */
 export async function sponsoredList(): Promise<{ items: SponsoredRowDto[] }> {
+  // Sample campaigns only (src/lib/data/ads): production lists none rather than the fixtures.
+  if (sampleOff()) return { items: [] }
   const rows = campaigns.filter((c) => c.type === "sponsored-brand")
   const brands = await brandMap(rows.map((c) => c.brandId))
   return { items: rows.map((c) => ({ campaignId: c.id, name: c.name, brand: brandRefOf(brands, c.brandId), status: c.status, placements: c.placements, sample: true })) }

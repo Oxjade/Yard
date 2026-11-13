@@ -9,6 +9,7 @@ import type { BrandApplication, BrandReviewStatus } from "@/lib/data/admin"
 import { canAdmin } from "@/lib/permissions"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { useAdmin } from "@/lib/stores/admin"
+import { sampleOnly, useAdminSampleData } from "../sample"
 
 /**
  * A submitted Studio application in the Brands queue. Identity checks haven't started at this
@@ -40,13 +41,17 @@ export function fromOnboardingApplication(o: OnboardingApplicationDto): BrandApp
 
 /**
  * Every brand application the Control Center shows: submitted Studio applications from Yard's
- * server (each in place of a sample row for the same brand), then this browser's sample rows.
+ * server (each in place of a sample row for the same brand), then this browser's sample rows
+ * (demo only: with sample data off, the server's applications alone).
  * A live row takes its brand's server status, so a brand suspended or restricted while its
  * application waits shows (and is acted on) as such. The Brands page, the sidebar badge, the
  * palette and the Overview all read this, so their counts agree.
  */
 export function useBrandApplications() {
-  const localApplications = useAdmin((s) => s.applications)
+  // The browser's sample applications belong to the demo: production lists the server's alone.
+  const sample = useAdminSampleData()
+  const storeApplications = useAdmin((s) => s.applications)
+  const localApplications = sampleOnly(sample.on, storeApplications)
   const admin = useServerSession((s) => s.admin)
   const canReviewApplications = !!admin && canAdmin(admin.role, "brands.restrict")
   const onboarding = useApi(canReviewApplications ? adminKeys.onboardings : null, listOnboardingApplications, { refreshInterval: 60_000 })
@@ -61,5 +66,5 @@ export function useBrandApplications() {
     () => merged.map((a) => (a.onboardingId && a.brandId && statuses?.[a.brandId] && statuses[a.brandId] !== a.status ? { ...a, status: statuses[a.brandId] as BrandReviewStatus } : a)),
     [merged, statuses],
   )
-  return { applications, onboarding, canReviewApplications, reinstateTo }
+  return { applications, onboarding, canReviewApplications, reinstateTo, sample }
 }

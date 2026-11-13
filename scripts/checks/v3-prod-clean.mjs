@@ -14,6 +14,10 @@
 //   YARD_PROD_SHOPPER_COOKIE  optional "yard_session=…" of a signed-in shopper on that server: runs the
 //                             signed-in refusals (wishlist, merge, back in stock, follow, reminder,
 //                             checkout). Without it those SKIP and the anonymous 401s are asserted.
+//   YARD_PROD_ADMIN_COOKIE    optional "yard_session=…" of a signed-in admin (Owner) on that server: runs
+//                             the Control Center checks (admin products list, charts sponsored list and
+//                             overview, queue reads carry no sample needle). Without it they SKIP and the
+//                             anonymous 401 on the admin products list is asserted.
 //   YARD_PROD_BROWSER=0       skip the browser checks (stored cart / saved lists, widths).
 //
 // Needles come from the bundled sample data (src/lib/data): brand ids, handles and names; product ids,
@@ -32,6 +36,7 @@ if (!base) {
   process.exit(2)
 }
 const COOKIE = process.env.YARD_PROD_SHOPPER_COOKIE?.trim() || ""
+const ADMIN_COOKIE = process.env.YARD_PROD_ADMIN_COOKIE?.trim() || ""
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 
 let failed = 0
@@ -396,6 +401,31 @@ if (COOKIE) {
   const wl = await get("/api/wishlist", as)
   const fl = await get("/api/follows", as)
   check("signed in: wishlist and follows list no sample id", wl.status === 200 && fl.status === 200 && !hits(wl.text + fl.text).length, hits(wl.text + fl.text))
+}
+
+/* ---------------- 5b. The Control Center reads no sample data ---------------- */
+
+if (!ADMIN_COOKIE) {
+  const anon = await get("/api/admin/catalog/products?limit=1", { cookie: "" })
+  check("admin: the products list refuses an anonymous caller (401/403)", anon.status === 401 || anon.status === 403, anon.status)
+  skip("admin Control Center reads (products, charts sponsored and overview, queues)", "set YARD_PROD_ADMIN_COOKIE to run them")
+} else {
+  const as = { cookie: ADMIN_COOKIE }
+  const products = await get("/api/admin/catalog/products?limit=200", as)
+  check("admin: the products list answers", products.status === 200, `${products.status} ${products.text.slice(0, 160)}`)
+  const sampleRows = (products.json?.products ?? []).filter((p) => productIds.includes(p.id) || brandIds.includes(p.brandId))
+  check("admin: the products list holds no sample product or brand", products.status === 200 && !sampleRows.length && !hits(products.text).length, sampleRows.length ? sampleRows.slice(0, 5).map((p) => p.id) : hits(products.text))
+  const sponsored = await get("/api/admin/charts/sponsored", as)
+  check("admin: the charts sponsored list is empty (no sample campaigns)", sponsored.status === 200 && Array.isArray(sponsored.json?.items) && sponsored.json.items.length === 0, `${sponsored.status} ${sponsored.text.slice(0, 160)}`)
+  const overview = await get("/api/admin/charts/overview", as)
+  check("admin: the charts overview counts no sample sponsored slot and says sample:false", overview.status === 200 && overview.json?.surface?.sponsored === 0 && overview.json?.sample === false, `${overview.status} ${JSON.stringify({ surface: overview.json?.surface, sample: overview.json?.sample })}`)
+  const reads = ["/api/admin/catalog/onboardings", "/api/admin/messages?tab=reported", "/api/admin/content?tab=posts", "/api/admin/delivery?tab=complaints", "/api/admin/charts/flags?status=open", "/api/admin/abuse", "/api/admin/founding-brands"]
+  const bad = []
+  for (const r of reads) {
+    const res = await get(r, as)
+    if (res.status === 200 && hits(res.text).length) bad.push(`${r}: ${hits(res.text)[0]}`)
+  }
+  check(`admin: ${reads.length} Control Center queue reads carry no sample needle`, !bad.length, bad)
 }
 
 /* ---------------- 6. A returning browser with old sample lines (Playwright) ---------------- */

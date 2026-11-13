@@ -8,7 +8,7 @@ import { SampleOnly } from "@/components/sample/sample-only"
 const columns = [
   { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories", "sample"]] },
   { title: "You", links: [["Your World", "/you"], ["Inbox", "/inbox"], ["Following", "/following"], ["Wishlist", "/wishlist"], ["Orders", "/you/orders"], ["Settings", "/you/settings"]] },
-  { title: "For brands", links: [["Sell on " + site.name, "/studio/onboarding"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising", "sample"]] },
+  { title: "For brands", links: [["Sell on " + site.name, "/sell"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising", "sample"]] },
   { title: "Help", links: [["Support", "/support"], ["Returns and refunds", "/legal/refunds"], ["Terms", "/legal/terms"], ["Privacy", "/legal/privacy"]] },
 ] as const
 

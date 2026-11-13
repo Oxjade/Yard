@@ -29,6 +29,7 @@ import { downloadCsv, InPageLinks, useAdminReady, useSearchParam, writeParams, u
 import { useServerSession } from "@/lib/session/use-server-session"
 import { adminRoleLabels, canAdmin, needsRole } from "@/lib/permissions"
 import { LiveLoading, RoleNote, SessionFailed } from "./live-gate"
+import { useAdminSampleData } from "../sample"
 
 
 type StatusFilter = "all" | FulfilState | "awaiting_payment" | "refund_requested" | "refunded" | "failed" | "disputed"
@@ -80,6 +81,7 @@ function exportOrders(rows: OrderRow[]) {
 export function OrdersView() {
   const status = useServerSession((session) => session.status)
   const admin = useServerSession((session) => session.admin)
+  const sampleOn = useAdminSampleData().on
   // Wait for the session: a real admin must never see the sample orders flash in first.
   if (status === "loading") return <LiveLoading label="orders" />
   if (status === "error" && !admin) return <SessionFailed title="Orders" />
@@ -87,6 +89,8 @@ export function OrdersView() {
     if (!canAdmin(admin.role, "shipping.view")) return <RoleNote title="Orders" description="Live orders, refunds, returns, disputes, and payment-provider event history." message={`${needsRole("shipping.view")} to see orders. Your role is ${adminRoleLabels[admin.role]}.`} />
     return <OrdersLiveView />
   }
+  // The sample orders view is the demo's: with sample data off, no admin session means nothing to show.
+  if (!sampleOn) return <RoleNote title="Orders" description="Live orders, refunds, returns, disputes, and payment-provider event history." message="Sign in with your admin account to see orders." />
   return <DemoOrdersView />
 }
 

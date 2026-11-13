@@ -24,6 +24,7 @@ import { TransactionsTab } from "./transactions-tab"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { adminRoleLabels, canAdminFinance } from "@/lib/permissions"
 import { LiveLoading, RoleNote, SessionFailed } from "./live-gate"
+import { useAdminSampleData } from "../sample"
 
 type TabKey = "transactions" | "payouts" | "refunds" | "disputes" | "reconciliation" | "adjustments" | "commission"
 const KEYS: TabKey[] = ["transactions", "payouts", "refunds", "disputes", "reconciliation", "adjustments", "commission"]
@@ -34,6 +35,7 @@ const n = (v: number) => formatNumber(Math.round(v))
 export function FinanceView() {
   const status = useServerSession((session) => session.status)
   const admin = useServerSession((session) => session.admin)
+  const sampleOn = useAdminSampleData().on
   // Wait for the session: a real admin must never see the sample finance figures flash in first.
   if (status === "loading") return <LiveLoading label="finance" />
   if (status === "error" && !admin) return <SessionFailed title="Finance" />
@@ -42,6 +44,8 @@ export function FinanceView() {
     if (!canAdminFinance(admin.role)) return <RoleNote title="Finance" description="Live balances, payout controls and ledger activity from the finance service." message={`Finance needs the Owner or Finance role. Your role is ${adminRoleLabels[admin.role]}.`} />
     return <FinanceLiveView />
   }
+  // The sample finance view is the demo's: with sample data off, no admin session means nothing to show.
+  if (!sampleOn) return <RoleNote title="Finance" description="Live balances, payout controls and ledger activity from the finance service." message="Sign in with your admin account to see finance." />
   return <DemoFinanceView />
 }
 

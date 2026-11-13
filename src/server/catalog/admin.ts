@@ -6,6 +6,7 @@ import { catalogProducts } from "../db/schema/catalog"
 import { badRequest } from "../http/errors"
 import { mediaSrc } from "../media"
 import { loadChildren } from "./dto"
+import { notSampleBrandSql } from "./sample-guard"
 
 export type AdminCatalogProductsQuery = {
   limit?: number
@@ -40,7 +41,9 @@ export async function listAdminCatalogProducts(query: AdminCatalogProductsQuery 
   }
   const q = query.q?.trim()
   const like = q ? `%${escapeLike(q)}%` : null
-  const live = ne(catalogProducts.status, "archived")
+  // Production leaves out the bundled sample catalogue's rows (a database once booted with the demo
+  // switch on still holds them), the same rule as every public catalogue read.
+  const live = and(ne(catalogProducts.status, "archived"), notSampleBrandSql(catalogProducts.brandId))!
   const filter = and(
     live,
     like ? or(ilike(catalogProducts.title, like), ilike(brands.name, like), ilike(brands.handle, like)) : undefined,

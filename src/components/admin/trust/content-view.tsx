@@ -35,6 +35,7 @@ import { useApi } from "@/lib/api/use-api"
 import { formatNumber } from "@/lib/money"
 import type { AdminPermission } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
+import { useAdminSampleData } from "../sample"
 import { AdminImg, LoadError, SampleTag, ServerActivity, TrustActionBar, TrustGate, useAdminSession, useServerDecision, type TrustAction, RelatedLinks, sheetTrack, useQueueFigures, useQueueLive } from "./shared"
 
 /*
@@ -43,7 +44,7 @@ import { AdminImg, LoadError, SampleTag, ServerActivity, TrustActionBar, TrustGa
  */
 
 const TABS: Record<ContentTab, { label: string; permission: AdminPermission; empty: string; emptyBody: string }> = {
-  posts: { label: "Posts", permission: "content.moderate", empty: "No posts on Yard yet", emptyBody: "Imported and sample posts that brands show on their storefronts appear here, reported ones first." },
+  posts: { label: "Posts", permission: "content.moderate", empty: "No posts on Yard yet", emptyBody: "Posts that brands show on their storefronts appear here, reported ones first." },
   uploads: { label: "Uploads", permission: "content.moderate", empty: "No uploads yet", emptyBody: "Posts brands upload straight to Yard appear here, reported ones first." },
   places: { label: "Places", permission: "places.moderate", empty: "No places published", emptyBody: "Stores, showrooms, pop-ups and exhibitions brands publish on Yard Around appear here." },
   integrations: { label: "Integrations", permission: "social.manage", empty: "No social accounts connected", emptyBody: "Instagram and TikTok accounts brands connect appear here with their sync status." },
@@ -75,12 +76,14 @@ function reviewedWords(p: PlaceDto, now: number | null) {
 }
 
 export function ContentView() {
+  const sampleOn = useAdminSampleData().on
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <AdminPageHead
         title="Content"
         description="Brand posts and uploads, places and events on Yard Around, and the social accounts behind them."
-        note="Posts and places with the Sample tag are seeded sample data. Removing something locks it: the brand can delete it but can't show it again."
+        live={!sampleOn}
+        note={sampleOn ? "Posts and places with the Sample tag are seeded sample data. Removing something locks it: the brand can delete it but can't show it again." : "Removing something locks it: the brand can delete it but can't show it again."}
       />
       <TrustGate feature="Content" anyOf={["content.moderate", "places.moderate", "social.manage"]}>
         <ContentQueues />
@@ -90,6 +93,7 @@ export function ContentView() {
 }
 
 function ContentQueues() {
+  const sampleOn = useAdminSampleData().on
   const qid = useId()
   const { can, reason } = useAdminSession()
   const linked = useSearchParam("tab")
@@ -121,7 +125,7 @@ function ContentQueues() {
       <InPageLinks>
         <StatRow label="Content figures">
           <RevealItem className="min-w-0">
-            <StatCard surface="admin" variant={ready && counts?.posts ? "brand" : "default"} icon={FlagIcon} label="Reported posts" value={counts?.posts ?? 0} format={figures.format(n)} hint={figures.hint("Imported and sample")} href="/admin/content?tab=posts#content-queue" hrefLabel="Show posts" ready={ready} className="h-full" />
+            <StatCard surface="admin" variant={ready && counts?.posts ? "brand" : "default"} icon={FlagIcon} label="Reported posts" value={counts?.posts ?? 0} format={figures.format(n)} hint={figures.hint(sampleOn ? "Imported and sample" : "Imported and uploaded")} href="/admin/content?tab=posts#content-queue" hrefLabel="Show posts" ready={ready} className="h-full" />
           </RevealItem>
           <RevealItem className="min-w-0">
             <StatCard surface="admin" variant={ready && counts?.uploads ? "brand" : "default"} icon={ImagesSquareIcon} label="Reported uploads" value={counts?.uploads ?? 0} format={figures.format(n)} hint={figures.hint("Uploaded to Yard")} href="/admin/content?tab=uploads#content-queue" hrefLabel="Show uploads" ready={ready} className="h-full" />

@@ -25,6 +25,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { complaintKindLabels, DELIVERY_TABS, type DeliveryIssueDto, type DeliveryListDto, type DeliveryTab, type HolidayDto } from "@/lib/api/contracts/admin"
 import { useApi } from "@/lib/api/use-api"
 import { cn } from "@/lib/utils"
+import { useAdminSampleData } from "../sample"
 import { formatNumber } from "@/lib/money"
 import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
@@ -78,12 +79,14 @@ function whyHere(i: DeliveryIssueDto) {
 }
 
 export function DeliveryView() {
+  const sampleOn = useAdminSampleData().on
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <AdminPageHead
         title="Delivery"
         description="Orders past their delivery estimate, complaints from shoppers, carrier exceptions and the holiday calendar."
-        note="Order history is sample data anchored to 5 Nov 2026. Every date here is an estimate from the brand's settings; no carrier is connected in this build. Sample orders estimated after they were already late have no promise on record, so their days late aren't counted."
+        live={!sampleOn}
+        note={sampleOn ? "Order history is sample data anchored to 5 Nov 2026. Every date here is an estimate from the brand's settings; no carrier is connected in this build. Sample orders estimated after they were already late have no promise on record, so their days late aren't counted." : "Every date here is an estimate from the brand's settings; no carrier is connected in this build."}
       />
       <TrustGate feature="Delivery" anyOf={["shipping.view"]}>
         <DeliveryQueues />
@@ -264,7 +267,7 @@ function Issues({ tab, items, unmeasured, ask, caseId }: { tab: DeliveryTab; ite
             className="admin-inset flex min-h-11 w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-violet"
           >
             <span className="min-w-0">
-              <span className="block text-[13px] text-ink">No promise on record (sample), {n(rest.length)}</span>
+              <span className="block text-[13px] text-ink">No promise on record, {n(rest.length)}</span>
               <span className="block text-[11.5px] text-ink-3">Estimated only after they were already late, so days late can&apos;t be measured. Not counted as queue work.</span>
             </span>
             <CaretDownIcon aria-hidden className={cn("size-4 shrink-0 text-ink-3 transition-transform motion-reduce:transition-none", showUnmeasured && "rotate-180")} />
@@ -364,7 +367,7 @@ function IssueSheet({ issue, open, d, resolveR, viewR, now, onOpenChange }: { is
         </DetailSection>
       )}
       {i.brandNotes.length ? <BrandNotes key={i.id} i={i} /> : null}
-      <RelatedLinks links={[{ href: `/admin/orders?order=${encodeURIComponent(i.orderId)}`, label: `Order ${i.reference} in Orders`, hint: "Items and timeline (sample)" }]} />
+      <RelatedLinks links={[{ href: `/admin/orders?order=${encodeURIComponent(i.orderId)}`, label: `Order ${i.reference} in Orders`, hint: "Items and timeline" }]} />
       <DetailSection title="Activity" className={sheetTrack}>
         <ServerActivity subjectIds={[i.id, i.orderId]} extra={[{ at: i.createdAt, label: i.kind === "complaint" ? "Complaint received" : "Order placed" }]} />
       </DetailSection>

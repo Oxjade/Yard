@@ -40,12 +40,14 @@ const n = (v: number) => formatNumber(Math.round(v))
 const days = (v: number) => `${n(v)} ${Math.round(v) === 1 ? "day" : "days"}`
 
 export function BrandsView() {
-  const ready = useAdminReady()
+  const adminReady = useAdminReady()
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
-  const { applications, onboarding, canReviewApplications, reinstateTo } = useBrandApplications()
+  const { applications, onboarding, canReviewApplications, reinstateTo, sample } = useBrandApplications()
+  // Counts wait for the demo switch too, so the demo never flashes an empty queue before its sample rows.
+  const ready = adminReady && sample.known
   const blockFor = useBrandStatusBlock()
   const linkedTab = useSearchParam("tab")
   const reviewId = useSearchParam("review")
@@ -166,7 +168,12 @@ export function BrandsView() {
       <AdminPageHead
         title="Brands"
         description="Review new applications, check verification and act on brands that break marketplace rules."
-        note="Status decisions on catalogue brands run on Yard's server: a suspension signs the brand's team out and takes its posts, places and chart entries off the marketplace. Sample applications with no catalogue brand are recorded in this browser only."
+        live={!sample.on}
+        note={
+          sample.on
+            ? "Status decisions on catalogue brands run on Yard's server: a suspension signs the brand's team out and takes its posts, places and chart entries off the marketplace. Sample applications with no catalogue brand are recorded in this browser only."
+            : "Applications submitted from Brand Studio are listed here. Status decisions run on Yard's server: a suspension signs the brand's team out and takes its posts, places and chart entries off the marketplace."
+        }
       />
 
       <InPageLinks>

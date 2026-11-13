@@ -17,7 +17,18 @@ type SignInResponse =
   | { status: "mfa_required" | "mfa_enrol_required"; challenge: string; expiresAt: string }
   | { status: "verify_email" }
 
-export function ServerActorSignIn({ surface }: { surface: Surface }) {
+type Props = {
+  surface: Surface
+  /** Runs once the session holds the new identity (after afterIdentityChange), e.g. to leave the sign-in page. */
+  onSignedIn?: () => void
+  /**
+   * True while the one-time recovery codes are on screen: the session is already signed in then
+   * (enrol confirm sets the cookie), so a page that leaves on sign-in must wait for "Continue".
+   */
+  onHold?: (hold: boolean) => void
+}
+
+export function ServerActorSignIn({ surface, onSignedIn, onHold }: Props) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
@@ -69,6 +80,7 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
         setUnverified(true)
       } else if (result.status === "signed_in") {
         await afterIdentityChange(surface)
+        onSignedIn?.()
       } else {
         setChallenge(result.challenge)
         setChallengeMode(result.status === "mfa_enrol_required" ? "enrol" : "verify")
@@ -92,10 +104,12 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
     try {
       if (challengeMode === "enrol") {
         const result = await api<{ recoveryCodes: string[] }>("/api/auth/mfa/enrol/confirm", { body: { challenge, code: code.replace(/\s/g, "") } })
+        onHold?.(true)
         setRecoveryCodes(result.recoveryCodes)
       } else {
         await api("/api/auth/mfa/verify", { body: useRecovery ? { challenge, recoveryCode: recoveryCode.trim() } : { challenge, code: code.replace(/\s/g, "") } })
         await afterIdentityChange("admin")
+        onSignedIn?.()
       }
     } catch (error) {
       setFailure(errorMessage(error, "That code could not be verified. Try again."))
@@ -134,7 +148,17 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
           <p className="mt-2 text-sm leading-relaxed text-ink-2">These one-time codes are the only way back in if you lose your authenticator. Store them somewhere private.</p>
         </div>
         <ul className="grid grid-cols-2 gap-2 font-mono text-sm text-ink">{recoveryCodes.map((item) => <li key={item}>{item}</li>)}</ul>
-        <Button variant="primary" onClick={() => void afterIdentityChange("admin")}>Continue to Control Center</Button>
+        <Button
+          variant="primary"
+          onClick={() =>
+            void afterIdentityChange("admin").then(() => {
+              onHold?.(false)
+              onSignedIn?.()
+            })
+          }
+        >
+          Continue to Control Center
+        </Button>
       </section>
     )
   }

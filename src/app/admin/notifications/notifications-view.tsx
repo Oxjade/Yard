@@ -14,6 +14,7 @@ import { Panel } from "@/components/admin/ui/panel"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { AdminPageHead } from "@/components/admin/marketplace/page-head"
 import { useNotificationsReady } from "@/components/admin/platform/ready"
+import { useAdminSampleData } from "@/components/admin/sample"
 import { categoryLabel, useNotifications, type AppNotification } from "@/lib/stores/notifications"
 
 const ALL = "all"
@@ -39,7 +40,10 @@ function groupOf(iso: string, now: Date) {
 
 export function AdminNotificationsView() {
   const router = useRouter()
-  const ready = useNotificationsReady()
+  // Sample notifications (derived from the demo's sample records) never show with sample data off,
+  // even before the purge in <Providers> has run; the list waits for that answer in the demo.
+  const sample = useAdminSampleData()
+  const ready = useNotificationsReady() && sample.known
   const tid = useId()
 
   const markRead = useNotifications((s) => s.markRead)
@@ -47,7 +51,8 @@ export function AdminNotificationsView() {
   const [filter, setFilter] = useState<"all" | "unread">("all")
   const [category, setCategory] = useState<string>(ALL)
 
-  const items = useVisibleNotifications("admin")
+  const visible = useVisibleNotifications("admin")
+  const items = useMemo(() => (sample.on ? visible : visible.filter((n) => !n.sample)), [sample.on, visible])
   const unread = items.filter((n) => !n.read)
   const urgent = unread.filter((n) => URGENT[n.category])
   const urgentKinds = [...new Set(urgent.map((n) => URGENT[n.category]!))]
@@ -85,7 +90,8 @@ export function AdminNotificationsView() {
       <AdminPageHead
         title="Notifications"
         description="Brand applications, listing reports, payment failures, chargebacks and system alerts, as they happen."
-        note="Items marked Sample come from the development data set. Everything else was triggered by actions in this browser."
+        live={!sample.on}
+        note={sample.on ? "Items marked Sample come from the development data set. Everything else was triggered by actions in this browser." : undefined}
       />
 
       <Panel

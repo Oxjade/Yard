@@ -22,6 +22,7 @@ import { modActions, modAllowed, modDecision, type ModActionKey } from "./modera
 import { ModerationDetail } from "./moderation-detail"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
+import { sampleOnly, useAdminSampleData } from "../sample"
 
 type Status = ModerationItem["status"]
 type Tab = Status | "listings"
@@ -36,12 +37,17 @@ const isTab = (v: string | null): v is Tab => v === "listings" || STATUS_TABS.so
 const n = (v: number) => formatNumber(Math.round(v))
 
 export function ModerationView() {
-  const ready = useAdminReady()
+  const adminReady = useAdminReady()
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const phone = usePhone()
   const qid = useId()
-  const moderation = useAdmin((s) => s.moderation)
+  // The report cases in the browser's store are sample ones (sample products and brands): demo
+  // only. With sample data off the queue is empty and the page opens on the server's listings.
+  const sample = useAdminSampleData()
+  const ready = adminReady && sample.known
+  const storeModeration = useAdmin((s) => s.moderation)
+  const moderation = sampleOnly(sample.on, storeModeration)
   const listings = useAdminListings()
   // Both counts come from the server over the whole catalogue, not from the rows one page loaded.
   const restrictedCount = listings.data?.hidden ?? 0
@@ -50,7 +56,8 @@ export function ModerationView() {
   const linkedTab = useSearchParam("tab")
   const caseId = useSearchParam("case")
   const viewing = caseId ? moderation.find((m) => m.id === caseId) : undefined
-  const tab: Tab = isTab(linkedTab) ? linkedTab : viewing && !linkedTab ? viewing.status : "open"
+  const defaultTab: Tab = sample.known && !sample.on ? "listings" : "open"
+  const tab: Tab = isTab(linkedTab) ? linkedTab : viewing && !linkedTab ? viewing.status : defaultTab
   // When the control that asked has gone or turned disabled: back to the selection bar while rows
   // stay selected (a search hid some of them), else the status tab.
   const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, tab)))
@@ -128,6 +135,7 @@ export function ModerationView() {
       <AdminPageHead
         title="Moderation"
         description="Work through reports and automated flags, and restrict any listing on the marketplace."
+        live={!sample.on}
         note="Decisions are recorded here and in the audit log with your reason. Hiding a listing removes it from the marketplace, search and the brand's storefront at once."
       />
 
@@ -154,7 +162,7 @@ export function ModerationView() {
             label="Moderation status"
             size="sm"
             value={tab}
-            onChange={(t) => writeParams({ tab: t === "open" ? null : t, category: null })}
+            onChange={(t) => writeParams({ tab: t === defaultTab ? null : t, category: null })}
             loading={!ready}
             idBase={qid}
             panelId={`${qid}-panel`}

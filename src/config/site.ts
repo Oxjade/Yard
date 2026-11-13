@@ -45,4 +45,5 @@ export const browseLinks: NavItem[] = [
   { href: "/drops", label: "Drops" },
   { href: "/brands", label: "Brands" },
   { href: "/categories", label: "Categories" },
+  { href: "/sell", label: "Sell on Yard" },
 ]

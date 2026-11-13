@@ -12,6 +12,7 @@ import { STUDIO_BRAND_ID } from "@/lib/data/brands"
 import type { AuditEntry, BrandApplication } from "@/lib/data/admin"
 import { formatMoney } from "@/lib/money"
 import { useAdmin } from "@/lib/stores/admin"
+import { sampleOnly, useAdminBrowserAudit, useAdminSampleData } from "../sample"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
@@ -46,8 +47,11 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const app = useLast(current)
-  const audit = useAdmin((s) => s.audit)
-  const moderation = useAdmin((s) => s.moderation)
+  const audit = useAdminBrowserAudit()
+  const sample = useAdminSampleData()
+  const storeModeration = useAdmin((s) => s.moderation)
+  // The moderation cases are sample ones: a real brand never matches them by name.
+  const moderation = sampleOnly(sample.on, storeModeration)
   const blockFor = useBrandStatusBlock()
 
   if (!app) return null
