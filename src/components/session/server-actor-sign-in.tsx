@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { afterIdentityChange } from "@/lib/session/identity"
+import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
+import { SocialMark, startSocialSignIn } from "@/components/auth/social-sign-in"
 
 type Surface = "studio" | "admin"
 type ChallengeMode = "enrol" | "verify"
@@ -30,6 +32,28 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
   const [notice, setNotice] = useState<string | null>(null)
   const [unverified, setUnverified] = useState(false)
   const [sending, setSending] = useState<"forgot" | "verify" | null>(null)
+  // Brand Studio also takes the social sign-ins (Control Center stays password + authenticator).
+  const [social, setSocial] = useState<SocialButton[]>([])
+  const [socialBusy, setSocialBusy] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (surface !== "studio") return
+    let active = true
+    void api<ProvidersStatus>("/api/auth/providers").then((p) => { if (active) setSocial(socialButtons(p)) }).catch(() => {})
+    return () => { active = false }
+  }, [surface])
+
+  async function startSocial(button: SocialButton) {
+    if (busy || socialBusy) return
+    setSocialBusy(button.key)
+    setFailure(null)
+    try {
+      window.location.assign(await startSocialSignIn(button, "brand"))
+    } catch (error) {
+      setFailure(errorMessage(error, `Couldn't start ${button.label} sign-in. Try again.`))
+      setSocialBusy(null)
+    }
+  }
 
   async function submitPassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -149,8 +173,10 @@ export function ServerActorSignIn({ surface }: { surface: Surface }) {
     <form onSubmit={submitPassword} className="grid gap-4 rounded-lg border border-line-soft bg-card p-5">
       <div>
         <h2 className="text-base font-medium text-ink">Sign in with your account</h2>
-        <p className="mt-1 text-sm text-ink-2">Use the email address and password connected to this workspace.</p>
+        <p className="mt-1 text-sm text-ink-2">{social.length ? "Use the account connected to this workspace." : "Use the email address and password connected to this workspace."}</p>
       </div>
+      {social.map((b) => <Button key={b.key} type="button" variant="secondary" className="w-full" loading={socialBusy === b.key} disabled={busy || (!!socialBusy && socialBusy !== b.key)} onClick={() => void startSocial(b)}><SocialMark mark={b.mark} /> Continue with {b.label}</Button>)}
+      {social.length ? <div className="flex items-center gap-3 text-xs text-ink-3"><span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" /></div> : null}
       <div className="grid gap-1.5">
         <Label htmlFor={`${surface}-email`}>Email</Label>
         <Input id={`${surface}-email`} type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />

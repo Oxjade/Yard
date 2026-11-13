@@ -21,7 +21,7 @@ const messages = new Map<string, string>(Object.entries({
   link_required: "Sign in with your password before connecting this provider.",
   email_required: "The provider didn’t share an email address. Try another sign-in method.",
   email_unverified: "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way.",
-  no_brand: "This account doesn’t have access to a brand workspace.",
+  no_brand: "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses.",
   suspended: "This account is currently unavailable.",
   reauth_mismatch: "The provider account didn’t match the account being confirmed.",
 }))
@@ -122,7 +122,7 @@ export function AuthOAuthCompletion() {
       <p className={current && !current.success ? "mt-5 max-w-xl text-sm leading-relaxed text-danger" : "mt-5 max-w-xl text-sm leading-relaxed text-ink-2"} role={current && !current.success ? "alert" : "status"}>
         {current?.message ?? (mode === "reauth" ? `Confirming with ${provider}…` : `Completing ${provider} ${mode === "signin" ? "sign-in" : mode}…`)}
       </p>
-      {mode === "reauth" && current ? <Button asChild variant={current.success ? "primary" : "secondary"} className="mt-6"><Link href={continueTo === "/you/orders" ? (actor === "brand" ? "/studio" : "/you") : continueTo}>{current.success ? "Back to where you were" : "Go back"}</Link></Button> : current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button> : null}
+      {mode === "reauth" && current ? <Button asChild variant={current.success ? "primary" : "secondary"} className="mt-6"><Link href={continueTo === "/you/orders" ? (actor === "brand" ? "/studio" : "/you") : continueTo}>{current.success ? "Back to where you were" : "Go back"}</Link></Button> : current?.success ? <Button asChild variant="primary" className="mt-6"><Link href={mode === "signin" && actor === "shopper" ? continueTo : "/studio"}>{mode === "signin" && actor === "shopper" && continueTo === "/studio/onboarding" ? "Continue your brand application" : "Continue"}</Link></Button> : current?.result === "no_brand" ? <Button asChild variant="primary" className="mt-6"><Link href="/studio/onboarding">Apply to sell on Yard</Link></Button> : current ? <Button asChild variant="secondary" className="mt-6"><Link href={actor === "brand" ? "/studio" : "/sign-in"}>Return to sign in</Link></Button> : null}
     </>
   )
 }

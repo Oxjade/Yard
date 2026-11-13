@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import { LockKeyIcon, SignInIcon, UserSwitchIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -120,6 +121,14 @@ export function SessionGate({ surface, feature, permission, children }: Props) {
             ) : undefined
           }
         />
+        {surface === "studio" && s.shopper && !s.shopper.demo ? (
+          <div className="mt-6 grid max-w-xl gap-3 rounded-lg border border-line-soft bg-card p-5" role="status">
+            <p className="text-sm leading-relaxed text-ink-2">
+              You’re signed in to the shop as <span className="text-ink">{s.shopper.email}</span>. Brand Studio has its own sign-in: if this account runs a brand, continue with the same method below. New to selling on Yard? Apply for a brand workspace.
+            </p>
+            <Button asChild variant="secondary" className={wrapButton}><Link href="/studio/onboarding">Apply to sell on Yard</Link></Button>
+          </div>
+        ) : null}
         <div className="mt-6 max-w-xl">
           <ServerActorSignIn surface={surface} />
         </div>
