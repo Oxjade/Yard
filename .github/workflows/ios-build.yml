@@ -1,0 +1,69 @@
+# Compiles the iOS app on a GitHub macOS runner (no Mac needed), then saves the build result to the
+# ios-ci branch (logs/latest.txt + logs/<commit>.txt) so it can be read with a plain git fetch.
+name: iOS build check
+
+on:
+  push:
+    branches: [iOSyard]
+    paths: ["ios/**", ".github/workflows/ios-build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Build for the simulator (no signing)
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd ios
+          xcodebuild -version
+          xcodebuild -project Yard.xcodeproj -target Yard -sdk iphonesimulator -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee ../build.log
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "commit: ${GITHUB_SHA}"
+            echo "result: ${{ steps.build.outcome }}"
+            echo "errors: $(grep -c ' error: ' build.log || true)"
+            echo "----- errors (deduplicated) -----"
+            grep ' error: ' build.log | sed 's|^.*/ios/|ios/|' | sort -u | head -400 || true
+            echo "----- last 60 lines -----"
+            tail -60 build.log
+          } > summary.txt
+          cat summary.txt
+
+      - name: Save the result to the ios-ci branch
+        if: always()
+        run: |
+          git config user.name "ios-build-check"
+          git config user.email "ios-build-check@users.noreply.github.com"
+          git fetch origin ios-ci || true
+          mkdir -p /tmp/out && cp summary.txt /tmp/out/
+          if git rev-parse --verify origin/ios-ci >/dev/null 2>&1; then git checkout -B ios-ci origin/ios-ci; else git checkout --orphan ios-ci && git rm -rf . >/dev/null; fi
+          mkdir -p logs
+          cp /tmp/out/summary.txt "logs/${GITHUB_SHA}.txt"
+          cp /tmp/out/summary.txt logs/latest.txt
+          git add logs && git commit -m "iOS build ${GITHUB_SHA::7}: ${{ steps.build.outcome }}" && git push origin ios-ci
+
+      - name: Fail the check when the build failed
+        if: steps.build.outcome != 'success'
+        run: exit 1
