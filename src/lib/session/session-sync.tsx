@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { api, ApiError } from "@/lib/api/client"
-import type { DemoSignInResult, ShopperProfile } from "@/lib/api/contracts/session"
+import type { DemoSignInResult, SessionDto, ShopperProfile } from "@/lib/api/contracts/session"
 import { DEMO_SHOPPER, useSession } from "@/lib/stores/session"
 import { clearAccountSaves, syncSavedWithServer, useSaved } from "@/lib/stores/saved"
 import { afterIdentityChange } from "./identity"
-import { getServerSessionState, useServerSession } from "./use-server-session"
+import { getServerSessionState, refreshServerSession, useServerSession } from "./use-server-session"
 
 const STORAGE_KEY = "nocturne-session"
 
@@ -49,6 +49,9 @@ export function SessionSync() {
   const pending = useSession((s) => s.serverPending)
   const restoring = useRef(false)
   const savedSyncFor = useRef<string | null>(null)
+  // The local/server pair this tab already re-checked with the server, so a mismatch is confirmed once.
+  const confirmedPair = useRef<string | null>(null)
+  const [recheck, setRecheck] = useState(0)
 
   useEffect(() => {
     if (server.status !== "ready") return
@@ -86,6 +89,20 @@ export function SessionSync() {
     if (remote) {
       if (user?.id === remote.id) return
       if (!user && signedOutAt) return
+      // This browser now holds a different account (signed in here or in another tab). This tab's
+      // copy of the server session may be stale: ask the server once before overriding it.
+      if (user) {
+        const pair = `${user.id}|${remote.id}`
+        if (confirmedPair.current !== pair) {
+          confirmedPair.current = pair
+          restoring.current = true
+          void refreshServerSession().finally(() => {
+            restoring.current = false
+            setRecheck((n) => n + 1) // re-run this check with the refreshed server session
+          })
+          return
+        }
+      }
       useSession.setState({ user: { id: remote.id, name: remote.name, email: remote.email, provider: user?.provider ?? "email" }, signedOutAt: null })
       return
     }
@@ -94,6 +111,14 @@ export function SessionSync() {
     void (async () => {
       try {
         await rereadPersisted()
+        // Another tab may have just signed in: this tab's server session can be stale, so re-read it
+        // before treating the local user as signed out.
+        // Asked directly: a shared refresh can be superseded and leave the old answer in the store.
+        const fresh = await api<SessionDto>("/api/session")
+        if (fresh.shopper) {
+          void refreshServerSession()
+          return
+        }
         const local = useSession.getState()
         if (!local.user || local.serverPending || getServerSessionState().shopper) return
         if (local.user.id !== DEMO_SHOPPER) {
@@ -116,7 +141,7 @@ export function SessionSync() {
         restoring.current = false
       }
     })()
-  }, [hydrated, server.status, server.shopper, user, signedOutAt, pending])
+  }, [hydrated, server.status, server.shopper, user, signedOutAt, pending, recheck])
 
   return null
 }
