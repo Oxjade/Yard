@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,7 +85,11 @@ import space.yardstore.app.core.models.CartGroup
 import space.yardstore.app.core.models.CartLine
 import space.yardstore.app.core.stores.LocalCartStore
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
@@ -250,41 +257,93 @@ private fun CheckoutForm(
     onRemoveBrand: (CartGroup) -> Unit,
 ) {
     val focus = LocalFocusManager.current
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.gutter)
-                .padding(bottom = Spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
-        ) {
-            YardDisplayText("Checkout", size = 44.sp, color = Color.yard.ink, modifier = Modifier.padding(top = Spacing.s))
-
-            if (model.paymentsClosed) {
-                BagNotice(icon = Icons.Outlined.Schedule, text = BagCheckoutOptions.OFF_MESSAGE, tint = Color.yard.violet)
-            } else if (model.isStub) {
-                BagNotice(icon = Icons.Outlined.Info, text = "Payments aren't connected in this environment. Nothing will be charged.", tint = Color.yard.violet)
-            }
-            model.currencyNotice?.let { BagNotice(icon = Icons.Outlined.AttachMoney, text = it) }
-
-            CheckoutContactSection(model)
-            CheckoutAddressSection(model)
-            CheckoutShippingSection(model, cart, onRemoveBrand)
-            CheckoutPaymentSection(model)
-            CheckoutSummarySection(model, cart)
-
-            Text(
-                "Delivery dates are estimates, not guarantees. They skip weekends and public holidays. Taxes aren't calculated in this build; import duties, if any, are collected by the courier on delivery.",
-                style = YardFonts.caption,
-                color = Color.yard.ink3,
-            )
-        }
-        CheckoutPayBar(model, cart, onPay = {
-            focus.clearFocus()
-            onPay()
-        }, onViewStatus = onViewStatus)
+    val pay = {
+        focus.clearFocus()
+        onPay()
     }
+    val window = LocalYardWindow.current
+    if (window.isExpanded) {
+        // Tablet: the form at reading width, the order summary and Pay in a side column.
+        AdaptiveContent(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .navigationBarsPadding()
+                        .padding(horizontal = Spacing.gutter)
+                        .padding(bottom = Spacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                ) {
+                    CheckoutFormSections(model, cart, onRemoveBrand, includeSummary = false)
+                }
+                Column(
+                    Modifier
+                        .width(checkoutSideWidth(window.width))
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .navigationBarsPadding()
+                        .padding(top = Spacing.s, end = Spacing.gutter, bottom = Spacing.xl)
+                        .animateContentSize(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.m),
+                ) {
+                    CheckoutSummarySection(model, cart)
+                    CheckoutPayStatus(model, onViewStatus)
+                    CheckoutPayButton(model, fullWidth = true, onPay = pay)
+                }
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxSize()) {
+            // Medium: one column capped at the reading width.
+            AdaptiveContent(Modifier.weight(1f)) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.gutter)
+                        .padding(bottom = Spacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                ) {
+                    CheckoutFormSections(model, cart, onRemoveBrand, includeSummary = true)
+                }
+            }
+            CheckoutPayBar(model, cart, onPay = pay, onViewStatus = onViewStatus)
+        }
+    }
+}
+
+/** The side column's width on Expanded windows. */
+internal fun checkoutSideWidth(width: Dp): Dp = if (width >= 1100.dp) 400.dp else 360.dp
+
+@Composable
+private fun ColumnScope.CheckoutFormSections(
+    model: CheckoutModel,
+    cart: Cart,
+    onRemoveBrand: (CartGroup) -> Unit,
+    includeSummary: Boolean,
+) {
+    YardDisplayText("Checkout", size = 44.sp, color = Color.yard.ink, modifier = Modifier.padding(top = Spacing.s))
+
+    if (model.paymentsClosed) {
+        BagNotice(icon = Icons.Outlined.Schedule, text = BagCheckoutOptions.OFF_MESSAGE, tint = Color.yard.violet)
+    } else if (model.isStub) {
+        BagNotice(icon = Icons.Outlined.Info, text = "Payments aren't connected in this environment. Nothing will be charged.", tint = Color.yard.violet)
+    }
+    model.currencyNotice?.let { BagNotice(icon = Icons.Outlined.AttachMoney, text = it) }
+
+    CheckoutContactSection(model)
+    CheckoutAddressSection(model)
+    CheckoutShippingSection(model, cart, onRemoveBrand)
+    CheckoutPaymentSection(model)
+    if (includeSummary) CheckoutSummarySection(model, cart)
+
+    Text(
+        "Delivery dates are estimates, not guarantees. They skip weekends and public holidays. Taxes aren't calculated in this build; import duties, if any, are collected by the courier on delivery.",
+        style = YardFonts.caption,
+        color = Color.yard.ink3,
+    )
 }
 
 @Composable
@@ -471,56 +530,69 @@ private fun CheckoutSummaryLine(line: CartLine, currency: String) {
 @Composable
 private fun CheckoutPayBar(model: CheckoutModel, cart: Cart, onPay: () -> Unit, onViewStatus: (String) -> Unit) {
     val line = Color.yard.line
-    val phase = model.phase
-    val working = phase == CheckoutModel.Phase.Starting || phase == CheckoutModel.Phase.Confirming || phase == CheckoutModel.Phase.Paying
     Column(
         Modifier
             .fillMaxWidth()
             .background(Color.yard.surface.copy(alpha = 0.96f))
             .drawBehind { drawLine(line, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx()) }
             .navigationBarsPadding()
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter, vertical = Spacing.m)
             .animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
-        AnimatedVisibility(phase == CheckoutModel.Phase.Confirming || phase == CheckoutModel.Phase.Paying) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                CircularProgressIndicator(color = Color.yard.violet, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
-                Text(
-                    if (phase == CheckoutModel.Phase.Paying) "Taking you to secure payment…" else "Confirming your payment…",
-                    style = YardFonts.caption,
-                    color = Color.yard.ink2,
-                )
-            }
-        }
-        val error = model.placeError
-        val note = model.notice
-        if (error != null) {
-            Text(error, style = YardFonts.caption, color = Color.yard.danger)
-        } else if (note != null && phase == CheckoutModel.Phase.Idle) {
-            Text(note, style = YardFonts.caption, color = Color.yard.ink2)
-        }
-        model.pendingCheckoutId?.let { pending ->
-            YardButton("View order status", style = YardButtonStyle.Secondary, size = YardButtonSize.Small, fullWidth = false) {
-                onViewStatus(pending)
-            }
-        }
+        CheckoutPayStatus(model, onViewStatus)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(if (model.totalMinor == null) "Subtotal" else "Total", style = YardFonts.caption, color = Color.yard.ink2)
                 BagAnimatedPrice(minor = model.totalMinor ?: cart.subtotalMinor, currency = cart.currency)
             }
-            YardButton(
-                "Pay",
-                icon = Icons.Filled.Lock,
-                isLoading = working,
-                fullWidth = false,
-                enabled = !model.paymentsClosed && phase != CheckoutModel.Phase.Done && model.optionsReady,
-                modifier = Modifier.widthIn(min = 150.dp),
-                onClick = onPay,
+            CheckoutPayButton(model, fullWidth = false, onPay = onPay)
+        }
+    }
+}
+
+/** Progress, the last error or notice, and "View order status" (above the Pay pill). */
+@Composable
+private fun ColumnScope.CheckoutPayStatus(model: CheckoutModel, onViewStatus: (String) -> Unit) {
+    val phase = model.phase
+    AnimatedVisibility(phase == CheckoutModel.Phase.Confirming || phase == CheckoutModel.Phase.Paying) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            CircularProgressIndicator(color = Color.yard.violet, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+            Text(
+                if (phase == CheckoutModel.Phase.Paying) "Taking you to secure payment…" else "Confirming your payment…",
+                style = YardFonts.caption,
+                color = Color.yard.ink2,
             )
         }
     }
+    val error = model.placeError
+    val note = model.notice
+    if (error != null) {
+        Text(error, style = YardFonts.caption, color = Color.yard.danger)
+    } else if (note != null && phase == CheckoutModel.Phase.Idle) {
+        Text(note, style = YardFonts.caption, color = Color.yard.ink2)
+    }
+    model.pendingCheckoutId?.let { pending ->
+        YardButton("View order status", style = YardButtonStyle.Secondary, size = YardButtonSize.Small, fullWidth = false) {
+            onViewStatus(pending)
+        }
+    }
+}
+
+@Composable
+private fun CheckoutPayButton(model: CheckoutModel, fullWidth: Boolean, onPay: () -> Unit) {
+    val phase = model.phase
+    val working = phase == CheckoutModel.Phase.Starting || phase == CheckoutModel.Phase.Confirming || phase == CheckoutModel.Phase.Paying
+    YardButton(
+        "Pay",
+        icon = Icons.Filled.Lock,
+        isLoading = working,
+        fullWidth = fullWidth,
+        enabled = !model.paymentsClosed && phase != CheckoutModel.Phase.Done && model.optionsReady,
+        modifier = if (fullWidth) Modifier else Modifier.widthIn(min = 150.dp),
+        onClick = onPay,
+    )
 }
 
 // region Pieces
@@ -796,6 +868,7 @@ fun CheckoutSkeleton() {
     Column(
         Modifier
             .fillMaxSize()
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter)
             .semantics { contentDescription = "Loading checkout" },
         verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -847,5 +920,13 @@ private fun CheckoutDark() = YardPreview(darkTheme = true) { CheckoutView(rememb
 @Preview(name = "CheckoutView — light", heightDp = 1800)
 @Composable
 private fun CheckoutLight() = YardPreview(darkTheme = false) { CheckoutView(remember { checkoutPreviewModel() }) }
+
+@YardTabletPreviews
+@Composable
+private fun CheckoutTabletDark() = YardPreview(darkTheme = true) { CheckoutView(remember { checkoutPreviewModel() }) }
+
+@YardTabletPreviews
+@Composable
+private fun CheckoutTabletLight() = YardPreview(darkTheme = false) { CheckoutView(remember { checkoutPreviewModel() }) }
 
 // endregion

@@ -20,6 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,7 +89,13 @@ import space.yardstore.app.core.models.Cart
 import space.yardstore.app.core.models.CartLine
 import space.yardstore.app.core.stores.LocalCartStore
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
+import space.yardstore.app.core.models.CartGroup
+import space.yardstore.app.core.stores.CartStore
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
@@ -244,7 +255,7 @@ private fun BagEmpty(onDiscover: () -> Unit) {
             .fillMaxSize()
             .padding(bottom = LocalTabPillClearance.current),
     ) {
-        BagHeader(itemCount = 0, brandCount = 0, modifier = Modifier.padding(horizontal = Spacing.gutter))
+        BagHeader(itemCount = 0, brandCount = 0, modifier = Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter))
         Spacer(Modifier.weight(1f))
         EmptyState(
             title = "Your bag is empty",
@@ -257,7 +268,6 @@ private fun BagEmpty(onDiscover: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BagList(
     c: Cart,
@@ -271,6 +281,69 @@ private fun BagList(
     onRemove: suspend (CartLine) -> Boolean,
     onCheckout: () -> Unit,
 ) {
+    val window = LocalYardWindow.current
+    val shipping = bagShippingTotal(c, quotes)
+    val lines: @Composable (Modifier, Dp) -> Unit = { modifier, bottom ->
+        BagLinesPane(
+            c = c,
+            quotes = quotes,
+            shipTo = shipTo,
+            busyVariantIds = busyVariantIds,
+            onShipTo = onShipTo,
+            onRefresh = onRefresh,
+            onOpen = onOpen,
+            onQuantity = onQuantity,
+            onRemove = onRemove,
+            bottomPadding = bottom,
+            modifier = modifier,
+        )
+    }
+    if (window.isExpanded) {
+        // Tablet: the lines on the left, the summary with Checkout in a side column (no bottom bar).
+        val clearance = LocalTabPillClearance.current
+        AdaptiveContent(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize()) {
+                lines(Modifier.weight(1f), Spacing.l + clearance)
+                BagSummaryPanel(
+                    c = c,
+                    shippingMinor = shipping,
+                    isQuoting = quotes.isLoading,
+                    onCheckout = onCheckout,
+                    modifier = Modifier
+                        .width(bagSummaryWidth(window.width))
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = Spacing.s, end = Spacing.gutter, bottom = Spacing.l + clearance),
+                )
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxSize()) {
+            // Medium: one column, capped at the reading width (the bar's content is capped too).
+            AdaptiveContent(Modifier.weight(1f)) { lines(Modifier.fillMaxSize(), Spacing.l) }
+            BagBottomBar(c = c, shippingMinor = shipping, onCheckout = onCheckout)
+        }
+    }
+}
+
+/** The summary column's width on Expanded windows. */
+internal fun bagSummaryWidth(width: Dp): Dp = if (width >= 1100.dp) 380.dp else 340.dp
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BagLinesPane(
+    c: Cart,
+    quotes: BagQuoteLoader,
+    shipTo: String,
+    busyVariantIds: Set<String>,
+    onShipTo: (String) -> Unit,
+    onRefresh: suspend () -> Unit,
+    onOpen: (CartLine) -> Unit,
+    onQuantity: (CartLine, Int) -> Unit,
+    onRemove: suspend (CartLine) -> Boolean,
+    bottomPadding: Dp,
+    modifier: Modifier = Modifier,
+) {
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     val refreshState = rememberPullToRefreshState()
@@ -278,58 +351,88 @@ private fun BagList(
     val loose = remember(c) { c.lines.filter { it.variantId !in grouped } }
     val countryName = BagMarkets.country(shipTo).name
 
-    Column(Modifier.fillMaxSize()) {
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = {
-                scope.launch {
-                    refreshing = true
-                    try { onRefresh() } finally { refreshing = false }
-                }
-            },
-            state = refreshState,
-            modifier = Modifier.weight(1f),
-            indicator = {
-                PullToRefreshDefaults.Indicator(
-                    state = refreshState,
-                    isRefreshing = refreshing,
-                    containerColor = Color.yard.surface,
-                    color = Color.yard.ink,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
-            },
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            scope.launch {
+                refreshing = true
+                try { onRefresh() } finally { refreshing = false }
+            }
+        },
+        state = refreshState,
+        modifier = modifier,
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = refreshState,
+                isRefreshing = refreshing,
+                containerColor = Color.yard.surface,
+                color = Color.yard.ink,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        },
+    ) {
+        LazyColumn(
+            Modifier.fillMaxSize().tabPillScrollSensor(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = Spacing.gutter,
+                end = Spacing.gutter,
+                bottom = bottomPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
-            LazyColumn(
-                Modifier.fillMaxSize().tabPillScrollSensor(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = Spacing.gutter,
-                    end = Spacing.gutter,
-                    bottom = Spacing.l,
-                ),
-                verticalArrangement = Arrangement.spacedBy(Spacing.l),
-            ) {
-                item(key = "header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                        BagHeader(itemCount = c.itemCount, brandCount = c.groups.size)
-                        BagNotice(
-                            icon = Icons.Outlined.Inventory2,
-                            text = "One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.",
-                        )
-                        BagShipToMenu(shipTo = shipTo, onSelect = onShipTo)
-                        if (c.issues.isNotEmpty()) {
-                            BagNotice(icon = Icons.Outlined.ErrorOutline, text = c.issues.joinToString("\n"), tint = Color.yard.danger)
-                        }
+            item(key = "header") {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                    BagHeader(itemCount = c.itemCount, brandCount = c.groups.size)
+                    BagNotice(
+                        icon = Icons.Outlined.Inventory2,
+                        text = "One checkout creates one order per brand. Each brand packs and ships its own parcel, with its own tracking.",
+                    )
+                    BagShipToMenu(shipTo = shipTo, onSelect = onShipTo)
+                    if (c.issues.isNotEmpty()) {
+                        BagNotice(icon = Icons.Outlined.ErrorOutline, text = c.issues.joinToString("\n"), tint = Color.yard.danger)
                     }
                 }
+            }
 
-                items(c.groups, key = { "group-${it.brandId}" }) { group ->
-                    val lines = c.lines(group)
-                    val quote = quotes.quote(group.brandId)
+            items(c.groups, key = { "group-${it.brandId}" }) { group ->
+                val lines = c.lines(group)
+                val quote = quotes.quote(group.brandId)
+                Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                    BagGroupHeader(name = bagBrandName(lines, quote), pieces = lines.sumOf { it.qty })
+                    Column(Modifier.fillMaxWidth().yardCard(radius = Radius.small)) {
+                        lines.forEach { line ->
+                            key(line.variantId) {
+                                BagSwipeLine(
+                                    line = line,
+                                    currency = c.currency,
+                                    isBusy = line.variantId in busyVariantIds,
+                                    onOpen = { onOpen(line) },
+                                    onQuantity = { onQuantity(line, it) },
+                                    onRemove = { onRemove(line) },
+                                )
+                                YardDivider(Modifier.padding(start = Spacing.m))
+                            }
+                        }
+                        BagGroupFooter(
+                            subtotalMinor = group.subtotalMinor,
+                            currency = c.currency,
+                            quote = quote,
+                            isLoading = quotes.isLoading,
+                            countryName = countryName,
+                            modifier = Modifier.padding(Spacing.m),
+                        )
+                    }
+                }
+            }
+
+            if (loose.isNotEmpty()) {
+                item(key = "loose") {
                     Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                        BagGroupHeader(name = bagBrandName(lines, quote), pieces = lines.sumOf { it.qty })
+                        BagGroupHeader(name = "No longer available", pieces = null)
                         Column(Modifier.fillMaxWidth().yardCard(radius = Radius.small)) {
-                            lines.forEach { line ->
+                            loose.forEachIndexed { i, line ->
                                 key(line.variantId) {
+                                    if (i > 0) YardDivider(Modifier.padding(start = Spacing.m))
                                     BagSwipeLine(
                                         line = line,
                                         currency = c.currency,
@@ -338,63 +441,92 @@ private fun BagList(
                                         onQuantity = { onQuantity(line, it) },
                                         onRemove = { onRemove(line) },
                                     )
-                                    YardDivider(Modifier.padding(start = Spacing.m))
-                                }
-                            }
-                            BagGroupFooter(
-                                subtotalMinor = group.subtotalMinor,
-                                currency = c.currency,
-                                quote = quote,
-                                isLoading = quotes.isLoading,
-                                countryName = countryName,
-                                modifier = Modifier.padding(Spacing.m),
-                            )
-                        }
-                    }
-                }
-
-                if (loose.isNotEmpty()) {
-                    item(key = "loose") {
-                        Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                            BagGroupHeader(name = "No longer available", pieces = null)
-                            Column(Modifier.fillMaxWidth().yardCard(radius = Radius.small)) {
-                                loose.forEachIndexed { i, line ->
-                                    key(line.variantId) {
-                                        if (i > 0) YardDivider(Modifier.padding(start = Spacing.m))
-                                        BagSwipeLine(
-                                            line = line,
-                                            currency = c.currency,
-                                            isBusy = line.variantId in busyVariantIds,
-                                            onOpen = { onOpen(line) },
-                                            onQuantity = { onQuantity(line, it) },
-                                            onRemove = { onRemove(line) },
-                                        )
-                                    }
                                 }
                             }
                         }
                     }
-                }
-
-                item(key = "taxes") {
-                    Text(
-                        "Taxes aren't calculated in this build. Import duties, if any, are collected by the courier on delivery. Delivery dates are estimates, not guarantees.",
-                        style = YardFonts.caption,
-                        color = Color.yard.ink3,
-                    )
                 }
             }
+
+            item(key = "taxes") {
+                Text(
+                    "Taxes aren't calculated in this build. Import duties, if any, are collected by the courier on delivery. Delivery dates are estimates, not guarantees.",
+                    style = YardFonts.caption,
+                    color = Color.yard.ink3,
+                )
+            }
         }
-        BagBottomBar(c = c, shippingMinor = bagShippingTotal(c, quotes), onCheckout = onCheckout)
+    }
+}
+
+/**
+ * Android tablet only (Expanded): the bag's totals and Checkout beside the lines, in place of the
+ * bottom bar. Same numbers and words as the bottom bar and the checkout's order summary.
+ */
+@Composable
+private fun BagSummaryPanel(
+    c: Cart,
+    shippingMinor: Int?,
+    isQuoting: Boolean,
+    onCheckout: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val blocked = c.lines.any { it.isUnavailable }
+    Column(modifier) {
+        Column(
+            Modifier.fillMaxWidth().yardCard().padding(Spacing.l),
+            verticalArrangement = Arrangement.spacedBy(Spacing.m),
+        ) {
+            Text("Order summary", style = YardFonts.title, color = Color.yard.ink)
+            CheckoutSummaryRow("Subtotal") {
+                PriceText(minor = c.subtotalMinor, currency = c.currency, style = YardFonts.bodyEmphasis)
+            }
+            CheckoutSummaryRow(if (c.groups.size == 1) "Shipping" else "Shipping, ${c.groups.size} brands") {
+                when {
+                    shippingMinor == 0 -> Text("Free", style = YardFonts.bodyEmphasis, color = Color.yard.success)
+                    shippingMinor != null -> PriceText(minor = shippingMinor, currency = c.currency, style = YardFonts.bodyEmphasis)
+                    isQuoting -> Skeleton(Modifier.size(width = 56.dp, height = 14.dp), shape = SkeletonShape.Capsule)
+                    else -> Text("—", style = YardFonts.bodyEmphasis, color = Color.yard.ink3)
+                }
+            }
+            YardDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "${if (shippingMinor == null) "Subtotal" else "Total"}, ${bagPlural(c.itemCount, "item")}",
+                    style = YardFonts.caption,
+                    color = Color.yard.ink2,
+                )
+                BagAnimatedPrice(minor = c.subtotalMinor + (shippingMinor ?: 0), currency = c.currency)
+            }
+            if (shippingMinor == null && !isQuoting) {
+                Text("Shipping is calculated at checkout", style = YardFonts.caption, color = Color.yard.ink3)
+            }
+            if (blocked) {
+                Text(
+                    "Remove the pieces that aren't available to check out.",
+                    style = YardFonts.caption,
+                    color = Color.yard.danger,
+                )
+            }
+            YardButton(
+                "Checkout",
+                icon = Icons.Outlined.Lock,
+                enabled = !blocked && c.itemCount > 0,
+                onClick = onCheckout,
+            )
+        }
     }
 }
 
 /** Shipping across brands, or null until every brand has a deliverable option. */
-private fun bagShippingTotal(c: Cart, quotes: BagQuoteLoader): Int? {
+internal fun bagShippingTotal(c: Cart, quotes: BagQuoteLoader): Int? = bagShippingTotal(c, quotes::quote)
+
+/** [bagShippingTotal] over any quote lookup (tests). */
+internal fun bagShippingTotal(c: Cart, quote: (String) -> BagGroupQuote?): Int? {
     if (c.groups.isEmpty()) return null
     var sum = 0
     for (g in c.groups) {
-        val q = quotes.quote(g.brandId) ?: return null
+        val q = quote(g.brandId) ?: return null
         if (q.unavailable) return null
         val o = q.option(null) ?: return null
         sum += if (o.free) 0 else o.priceMinor
@@ -431,10 +563,12 @@ private fun BagShipToMenu(shipTo: String, onSelect: (String) -> Unit) {
     Box {
         Row(
             Modifier
+                // 32dp pill (iOS), inside a 48dp touch target.
+                .pressableClick(onClickLabel = "Change delivery country") { open = true }
+                .minimumInteractiveComponentSize()
                 .height(32.dp)
                 .clip(RoundedCornerShape(50))
                 .background(Color.yard.surface2)
-                .pressableClick(onClickLabel = "Change delivery country") { open = true }
                 .padding(horizontal = Spacing.m)
                 .semantics { contentDescription = "Delivery country, $name" },
             horizontalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -510,6 +644,7 @@ private fun BagBottomBar(c: Cart, shippingMinor: Int?, onCheckout: () -> Unit) {
             .background(Color.yard.surface.copy(alpha = 0.96f))
             .drawBehind { drawLine(line, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx()) }
             .then(if (clearance > 0.dp) Modifier.padding(bottom = clearance) else Modifier.navigationBarsPadding())
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter, vertical = Spacing.m),
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
@@ -578,9 +713,9 @@ private fun BagSwipeLine(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color.yard.onPhoto, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(Spacing.s))
-                Text("Remove", style = YardFonts.bodyEmphasis, color = Color.White)
+                Text("Remove", style = YardFonts.bodyEmphasis, color = Color.yard.onPhoto)
             }
         },
     ) {
@@ -769,6 +904,7 @@ fun BagSkeleton() {
     Column(
         Modifier
             .fillMaxSize()
+            .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter)
             .semantics { contentDescription = "Loading your bag" },
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
@@ -808,6 +944,14 @@ private object BagPreviewData {
         ),
     )
 
+    /** The same bag grouped by brand, as GET /api/cart answers (tablet previews). */
+    val groupedCart = cart.copy(
+        groups = listOf(
+            CartGroup(brandId = "b1", variantIds = listOf("v1"), subtotalMinor = 9000),
+            CartGroup(brandId = "b2", variantIds = listOf("v2"), subtotalMinor = 12900),
+        ),
+    )
+
     val quotes = listOf(
         BagGroupQuote(brandId = "b1", brandName = "Acme Studio", options = listOf(
             BagQuoteOption(service = "standard", label = "Standard", available = true, priceMinor = 600, currency = "USD", estimate = BagEstimate("2026-11-18", "2026-11-21")),
@@ -823,6 +967,23 @@ private fun BagViewDark() = YardPreview(darkTheme = true) { BagView(quotes = Bag
 @Preview(name = "BagView — light")
 @Composable
 private fun BagViewLight() = YardPreview(darkTheme = false) { BagView(quotes = BagQuoteLoader.preview(null, emptyList())) }
+
+/** The bag with lines (tablet previews: lines + summary side by side on Expanded). */
+@Composable
+private fun BagTabletPreviewContent() {
+    val store = remember { CartStore.preview(BagPreviewData.groupedCart) }
+    CompositionLocalProvider(LocalCartStore provides store) {
+        BagView(quotes = remember { BagQuoteLoader.preview(BagPreviewData.groupedCart, listOf(BagPreviewData.quotes[0].copy(brandName = "Acme Studio"), BagPreviewData.quotes[1].copy(unavailable = false, reason = null, options = BagPreviewData.quotes[0].options))) })
+    }
+}
+
+@YardTabletPreviews
+@Composable
+private fun BagViewTabletDark() = YardPreview(darkTheme = true) { BagTabletPreviewContent() }
+
+@YardTabletPreviews
+@Composable
+private fun BagViewTabletLight() = YardPreview(darkTheme = false) { BagTabletPreviewContent() }
 
 @Composable
 private fun BagRowsPreviewContent(quote: BagGroupQuote, country: String, busy: String?) {

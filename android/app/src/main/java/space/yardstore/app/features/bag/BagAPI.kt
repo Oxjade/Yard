@@ -3,6 +3,8 @@ package space.yardstore.app.features.bag
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import space.yardstore.app.core.models.Cart
 import space.yardstore.app.core.networking.APIClient
@@ -111,11 +113,15 @@ class BagQuoteLoader(private val api: APIClient = APIClient.shared) {
         if (!city.isNullOrEmpty()) query += "city" to city.take(60)
         try {
             val raw = api.data(HTTPMethod.GET, "/api/cart", query)
-            val decodedCart = api.decode(Cart.serializer(), raw)
-            val envelope = api.decode(BagQuoteEnvelope.serializer(), raw)
-            val map = mutableMapOf<String, BagGroupQuote>()
-            for (g in envelope.groups) {
-                g.shipping?.let { map[g.brandId] = it }
+            // Two decodes of the whole cart body: off the main thread.
+            val (decodedCart, map) = withContext(Dispatchers.Default) {
+                val decoded = api.decode(Cart.serializer(), raw)
+                val envelope = api.decode(BagQuoteEnvelope.serializer(), raw)
+                val quotes = mutableMapOf<String, BagGroupQuote>()
+                for (g in envelope.groups) {
+                    g.shipping?.let { quotes[g.brandId] = it }
+                }
+                decoded to quotes
             }
             cart = decodedCart
             quotes = map

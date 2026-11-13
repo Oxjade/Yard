@@ -17,7 +17,8 @@ Tests: `app/src/test/java/space/yardstore/app/features/bag/` — `BagMarketsTest
 charge currency, methods, arrival ranges), `BagAPITest` (DTO decoding from realistic route JSON, option fallback,
 body encoding), `CheckoutModelTest` (MockWebServer: validation, quotes/totals, pay → hosted page → verify → paid,
 poll settles while open, abandoned, still pending, stub, failed, 409, 400 field mapping, 401, idempotency key reuse,
-payments off).
+payments off), `BagQuoteLoaderTest` (MockWebServer: GET /api/cart query + decoding, city cap, keeps last answer on
+error; shipping total across brands; tablet column widths).
 
 ## Endpoints
 
@@ -43,3 +44,17 @@ Same as iOS: `GET /api/cart?currency=&to=&city=` (CartStore + `BagQuoteLoader`),
   comes on screen instead of on every `.task`.
 - No text-field autofill content types (iOS `textContentType`); keyboard types/capitalisation/IME "Next" are set.
 - Not mirrored on either platform: "Saved for later" strip, landmark field (see iOS doc).
+
+## Tablet & large screens (Android only; iOS has no iPad layout)
+
+- **Bag**: Compact = phone layout. Medium = one column capped at `contentMaxWidth` (the bottom bar's content is
+  capped too, its background stays full width). Expanded = `AdaptiveContent` row: the lines (header, notices,
+  brand groups, taxes note; pull to refresh) on the left, and `BagSummaryPanel` on the right (340–380dp, its own
+  scroll): "Order summary" card with Subtotal, Shipping (same words as the checkout summary), total, the
+  unavailable-pieces warning and a full-width Checkout. The bottom bar is not shown on Expanded.
+- **Checkout**: Compact = phone. Medium = one column capped at `contentMaxWidth`, pay bar content capped.
+  Expanded = the form (contact, address, shipping, payment, notes) at reading width on the left and a side
+  column (360–400dp, own scroll) with the order summary, payment status/errors/"View order status" and a
+  full-width Pay; no bottom pay bar.
+- Skeletons and the empty bag header follow `adaptiveContentWidth()`. `@YardTabletPreviews` on both screens.
+- The bag's "Delivering to" pill stays 32dp tall but has a 48dp touch target.
