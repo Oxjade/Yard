@@ -9,6 +9,8 @@ import space.yardstore.app.core.models.Product
 import space.yardstore.app.core.models.ProductOption
 import space.yardstore.app.core.models.ProductVariant
 import space.yardstore.app.core.models.YardJson
+import space.yardstore.app.designsystem.YardWindow
+import androidx.compose.ui.unit.dp
 
 /** DTO decoding and pure helpers of the product feature. */
 class ProductHelpersTest {
@@ -105,5 +107,11 @@ class ProductHelpersTest {
         val model = ProductDetailModel(p)
         assertEquals("only", model.variant?.id)
         assertEquals("In stock" to ProductDetailModel.StockTone.Ok, model.stockLine())
+    }
+
+    @Test fun tabletGalleryTakesAboutSixtyPercent() {
+        // Tablet rule 4: gallery ≈ 55–60% on Medium+.
+        assertEquals(0.55f, productGalleryWeight(YardWindow(width = 700.dp, height = 1000.dp)))
+        assertEquals(0.58f, productGalleryWeight(YardWindow(width = 1280.dp, height = 800.dp)))
     }
 }

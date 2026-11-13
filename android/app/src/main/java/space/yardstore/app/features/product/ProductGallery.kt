@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +68,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -101,6 +104,11 @@ fun ProductGallery(
     onIndexChange: (Int) -> Unit,
     onOpen: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Tablet two-column layout: the photo's height cap (the pane's height minus the thumbnails), so
+     * the whole photo stays in view; it then narrows to keep its aspect. Unspecified on phones.
+     */
+    pagerMaxHeight: Dp = Dp.Unspecified,
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     // Pager aspect (w/h): the first image's, kept between 3:4 and 1:1; 4:5 when unknown.
@@ -119,10 +127,10 @@ fun ProductGallery(
     }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+        Box(Modifier.padding(horizontal = Spacing.s).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Box(
             Modifier
-                .padding(horizontal = Spacing.s)
-                .fillMaxWidth()
+                .then(if (pagerMaxHeight != Dp.Unspecified) Modifier.heightIn(max = pagerMaxHeight) else Modifier.fillMaxWidth())
                 .aspectRatio(aspect)
                 .clip(YardShapes.image)
                 .background(Color.yard.surface2),
@@ -160,6 +168,7 @@ fun ProductGallery(
                 ProductPageDots(count = images.size, index = pagerState.currentPage, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = Spacing.m))
             }
             Box(Modifier.align(Alignment.TopStart).padding(Spacing.m), content = overlay)
+        }
         }
 
         if (images.size > 1) {
@@ -304,7 +313,7 @@ private fun ProductPhotoViewerContent(images: List<ProductImage>, startIndex: In
                 )
             }
             Box(Modifier.weight(1f))
-            GlassIconButton(Icons.Filled.Close, contentDescription = "Close", onClick = onDismiss)
+            GlassIconButton(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.minimumInteractiveComponentSize(), onClick = onDismiss)
         }
     }
 }

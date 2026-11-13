@@ -238,4 +238,22 @@ class ProductDetailModelTest {
         assertEquals("/api/wishlist/back-in-stock/v3", requests.last().path)
         assertFalse(model.watchBusy)
     }
+
+    @Test fun refreshFailureKeepsThePageAndReportsTheMessage() = runTest {
+        stubAll()
+        val model = ProductDetailModel("boxy-tee", api)
+        assertNull(model.load("NG", "USD"))
+        routes["/api/catalog/products/boxy-tee"] = json("""{"error":{"code":"internal","message":"Something went wrong on our side."}}""", 500)
+
+        assertEquals("Something went wrong on our side.", model.load("NG", "USD"))
+        assertEquals(ProductDetailModel.Phase.Loaded, model.phase)
+        assertEquals("prd_1", model.product?.id)
+    }
+
+    @Test fun firstLoadFailureGoesToPhaseNotTheReturnValue() = runTest {
+        routes["/api/catalog/products/boxy-tee"] = json("""{"error":{"code":"internal","message":"Down."}}""", 500)
+        val model = ProductDetailModel("boxy-tee", api)
+        assertNull(model.load(null, "USD"))
+        assertEquals(ProductDetailModel.Phase.Failed("Down."), model.phase)
+    }
 }

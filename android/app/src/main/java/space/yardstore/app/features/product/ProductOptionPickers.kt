@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -124,6 +125,7 @@ private fun ProductSwatchChip(value: ProductOption.Value, selected: Boolean, ena
     val border by animateColorAsState(if (selected) Color.yard.ink else Color.yard.line, Motion.snappy(), label = "swatch-border")
     Row(
         Modifier
+            .minimumInteractiveComponentSize()
             .semantics {
                 this.selected = selected
                 contentDescription = if (enabled) value.value else "${value.value}, sold out"

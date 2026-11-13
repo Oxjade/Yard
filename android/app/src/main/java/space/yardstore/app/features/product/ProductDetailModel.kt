@@ -96,16 +96,28 @@ class ProductDetailModel(
         viewModelScope.launch { load(destinationCountry, currency) }
     }
 
-    /** Pull to refresh. */
-    fun refresh(destinationCountry: String?, currency: String) {
+    /**
+     * Pull to refresh. A failure while a product is already shown keeps the page as it is and is
+     * reported through [onFailure] (the screen toasts it; iOS swallows it silently).
+     */
+    fun refresh(destinationCountry: String?, currency: String, onFailure: (String) -> Unit = {}) {
         if (isRefreshing) return
         viewModelScope.launch {
             isRefreshing = true
-            try { load(destinationCountry, currency) } finally { isRefreshing = false }
+            try {
+                load(destinationCountry, currency)?.let(onFailure)
+            } finally {
+                isRefreshing = false
+            }
         }
     }
 
-    suspend fun load(destinationCountry: String?, currency: String) {
+    /**
+     * Loads the product, then its rails and delivery estimate. Returns the error message when the
+     * product request fails while a product is already held (a refresh); otherwise null (a first-load
+     * failure goes to [phase] instead).
+     */
+    suspend fun load(destinationCountry: String?, currency: String): String? {
         if (product == null) phase = Phase.Loading
         try {
             val response: ProductResponse = api.get("/api/catalog/products/${Config.encodePath(slug)}")
@@ -119,18 +131,25 @@ class ProductDetailModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: APIError) {
-            if (e.isCancelled) return
-            if (product == null) phase = if (e.isNotFound) Phase.NotFound else Phase.Failed(e.message)
-            return
+            if (e.isCancelled) return null
+            if (product == null) {
+                phase = if (e.isNotFound) Phase.NotFound else Phase.Failed(e.message)
+                return null
+            }
+            return e.message
         } catch (e: Exception) {
-            if (product == null) phase = Phase.Failed(APIError.messageFor(e))
-            return
+            if (product == null) {
+                phase = Phase.Failed(APIError.messageFor(e))
+                return null
+            }
+            return APIError.messageFor(e)
         }
-        val loaded = product ?: return
+        val loaded = product ?: return null
         coroutineScope {
             launch { loadRails(loaded) }
             launch { loadEstimate(loaded, destinationCountry, currency) }
         }
+        return null
     }
 
     private suspend fun loadRails(p: Product) = coroutineScope {

@@ -10,6 +10,17 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.minimumInteractiveComponentSize
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.YardWindow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -159,7 +170,7 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
     val scope = rememberCoroutineScope()
 
     var galleryIndex by rememberSaveable { mutableIntStateOf(0) }
-    var viewerStart by remember { mutableStateOf<Int?>(null) }
+    var viewerStart by rememberSaveable { mutableStateOf<Int?>(null) }
     var showsSizeSheet by rememberSaveable { mutableStateOf(false) }
     var showsSizePrompt by remember { mutableStateOf(false) }
     var isAdding by remember { mutableStateOf(false) }
@@ -306,36 +317,69 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
                     if (product == null) {
                         ProductDetailSkeleton()
                     } else {
-                        Column(Modifier.fillMaxSize()) {
-                            PullToRefreshBox(
-                                isRefreshing = model.isRefreshing,
-                                onRefresh = { model.refresh(cart.destinationCountry, cart.currency) },
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                            ) {
-                                ProductDetailList(
+                        // The scrolling page + its sticky bar. On phones it holds the gallery too; on
+                        // Medium+ it is the buy box in the right-hand column.
+                        @Composable
+                        fun BuyColumn(modifier: Modifier, showsGallery: Boolean) {
+                            BoxWithConstraints(modifier) {
+                                // A narrow buy box (Medium) drops the size pill; the size chips sit right above.
+                                val showsSizePill = maxWidth >= ProductBuyBoxPillMinWidth
+                                Column(Modifier.fillMaxSize()) {
+                                    PullToRefreshBox(
+                                        isRefreshing = model.isRefreshing,
+                                        onRefresh = {
+                                            model.refresh(cart.destinationCountry, cart.currency) { message ->
+                                                toast.show(message, Toast.Style.Error)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    ) {
+                                        ProductDetailList(
+                                            product = product,
+                                            model = model,
+                                            showsGallery = showsGallery,
+                                            galleryIndex = galleryIndex,
+                                            onGalleryIndex = { galleryIndex = it },
+                                            onOpenViewer = { viewerStart = it },
+                                            showsSizePrompt = showsSizePrompt,
+                                            onSizeChosen = { showsSizePrompt = false },
+                                            descriptionExpanded = descriptionExpanded,
+                                            onToggleDescription = { descriptionExpanded = !descriptionExpanded },
+                                            onToggleFollow = ::toggleFollow,
+                                            onMessageBrand = ::messageBrand,
+                                        )
+                                    }
+                                    ProductBottomBar(
+                                        product = product,
+                                        model = model,
+                                        isAdding = isAdding,
+                                        showsSizePill = showsSizePill,
+                                        onSave = { toggleSave(product) },
+                                        onChooseSize = { showsSizeSheet = true },
+                                        onAdd = ::addToBag,
+                                        onNotify = ::toggleWatch,
+                                        onShowSizes = { showsSizeSheet = true },
+                                    )
+                                }
+                            }
+                        }
+
+                        val window = LocalYardWindow.current
+                        if (window.isWide) {
+                            // Tablet rule 4: gallery on the left in its own scroll, buy box on the right.
+                            val galleryWeight = productGalleryWeight(window)
+                            Row(Modifier.fillMaxSize()) {
+                                ProductWideGalleryPane(
                                     product = product,
-                                    model = model,
                                     galleryIndex = galleryIndex,
                                     onGalleryIndex = { galleryIndex = it },
                                     onOpenViewer = { viewerStart = it },
-                                    showsSizePrompt = showsSizePrompt,
-                                    onSizeChosen = { showsSizePrompt = false },
-                                    descriptionExpanded = descriptionExpanded,
-                                    onToggleDescription = { descriptionExpanded = !descriptionExpanded },
-                                    onToggleFollow = ::toggleFollow,
-                                    onMessageBrand = ::messageBrand,
+                                    modifier = Modifier.weight(galleryWeight).fillMaxHeight(),
                                 )
+                                BuyColumn(Modifier.weight(1f - galleryWeight).fillMaxHeight(), showsGallery = false)
                             }
-                            ProductBottomBar(
-                                product = product,
-                                model = model,
-                                isAdding = isAdding,
-                                onSave = { toggleSave(product) },
-                                onChooseSize = { showsSizeSheet = true },
-                                onAdd = ::addToBag,
-                                onNotify = ::toggleWatch,
-                                onShowSizes = { showsSizeSheet = true },
-                            )
+                        } else {
+                            BuyColumn(Modifier.fillMaxSize(), showsGallery = true)
                         }
                     }
                 }
@@ -368,6 +412,7 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
 private fun ProductDetailList(
     product: Product,
     model: ProductDetailModel,
+    showsGallery: Boolean,
     galleryIndex: Int,
     onGalleryIndex: (Int) -> Unit,
     onOpenViewer: (Int) -> Unit,
@@ -384,9 +429,11 @@ private fun ProductDetailList(
         contentPadding = PaddingValues(top = Spacing.s, bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(Spacing.xl),
     ) {
-        item(key = "gallery") {
-            ProductGallery(product.images, index = galleryIndex, onIndexChange = onGalleryIndex, onOpen = onOpenViewer) {
-                ProductGalleryTag(product)
+        if (showsGallery) {
+            item(key = "gallery") {
+                ProductGallery(product.images, index = galleryIndex, onIndexChange = onGalleryIndex, onOpen = onOpenViewer) {
+                    ProductGalleryTag(product)
+                }
             }
         }
         item(key = "head") {
@@ -445,6 +492,47 @@ private fun ProductDetailList(
     }
 }
 
+/** Share of the width the gallery takes on Medium+ (tablet rule 4: ≈ 55–60%). */
+internal fun productGalleryWeight(window: YardWindow): Float = if (window.isExpanded) 0.58f else 0.55f
+
+/** Below this width the buy box's sticky bar leaves out the "Choose size" pill. */
+private val ProductBuyBoxPillMinWidth = 360.dp
+
+/**
+ * The left-hand column on Medium+: the gallery in its own scroll, the photo capped to the pane's
+ * height so it is seen whole next to the buy box.
+ */
+@Composable
+private fun ProductWideGalleryPane(
+    product: Product,
+    galleryIndex: Int,
+    onGalleryIndex: (Int) -> Unit,
+    onOpenViewer: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val navBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    BoxWithConstraints(modifier) {
+        val thumbnails = if (product.images.size > 1) 68.dp + Spacing.m else 0.dp
+        val pagerMax = (maxHeight - thumbnails - Spacing.s - Spacing.l - navBar).coerceAtLeast(240.dp)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(top = Spacing.s, bottom = Spacing.l + navBar),
+        ) {
+            ProductGallery(
+                product.images,
+                index = galleryIndex,
+                onIndexChange = onGalleryIndex,
+                onOpen = onOpenViewer,
+                pagerMaxHeight = pagerMax,
+            ) {
+                ProductGalleryTag(product)
+            }
+        }
+    }
+}
+
 @Composable
 private fun ProductGalleryTag(product: Product) {
     when {
@@ -491,15 +579,17 @@ private fun ProductBrandRow(brand: BrandSummary, onToggleFollow: (BrandSummary) 
             }
         }
 
+        // 40dp circle (as iOS) in a 48dp touch target.
         Box(
             Modifier
-                .size(40.dp)
-                .background(Color.yard.surface2, CircleShape)
+                .size(48.dp)
                 .semantics { contentDescription = "Message ${brand.name}" }
                 .pressableClick { onMessageBrand(brand) },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(40.dp).background(Color.yard.surface2, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(18.dp))
+            }
         }
 
         YardButton(
@@ -573,7 +663,7 @@ private fun ProductOptionsBlock(product: Product, model: ProductDetailModel, sho
                         "View bag",
                         style = YardFonts.captionEmphasis,
                         color = Color.yard.violet,
-                        modifier = Modifier.pressableClick { router.push(Route.Bag) }.padding(vertical = Spacing.xs),
+                        modifier = Modifier.minimumInteractiveComponentSize().pressableClick { router.push(Route.Bag) },
                     )
                 }
             }
@@ -643,7 +733,7 @@ private fun ProductDescriptionBlock(text: String, expanded: Boolean, onToggle: (
                 if (expanded) "Show less" else "Read more",
                 style = YardFonts.callout.copy(fontWeight = FontWeight.SemiBold),
                 color = Color.yard.violet,
-                modifier = Modifier.pressableClick(onClick = onToggle).padding(vertical = Spacing.xxs),
+                modifier = Modifier.minimumInteractiveComponentSize().pressableClick(onClick = onToggle),
             )
         }
     }
@@ -746,7 +836,10 @@ private fun ColumnScope.ProductDeliveryEstimateRows(product: Product, model: Pro
                 "Retry",
                 style = YardFonts.callout.copy(fontWeight = FontWeight.SemiBold),
                 color = Color.yard.violet,
-                modifier = Modifier.pressableClick { model.retryEstimate(cart.destinationCountry, cart.currency) }.padding(Spacing.xs),
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .pressableClick { model.retryEstimate(cart.destinationCountry, cart.currency) }
+                    .padding(horizontal = Spacing.xs),
             )
         }
         e != null -> {
@@ -852,6 +945,7 @@ private fun ProductBottomBar(
     product: Product,
     model: ProductDetailModel,
     isAdding: Boolean,
+    showsSizePill: Boolean,
     onSave: () -> Unit,
     onChooseSize: () -> Unit,
     onAdd: () -> Unit,
@@ -889,7 +983,7 @@ private fun ProductBottomBar(
             }
 
             val size = model.sizeOption
-            if (size != null) {
+            if (size != null && showsSizePill) {
                 val chosen = model.selection[size.name]
                 YardButton(
                     if (chosen != null) "Size $chosen" else "Choose size",
@@ -941,7 +1035,7 @@ private fun ProductNotifyButton(model: ProductDetailModel, onNotify: () -> Unit,
 @Composable
 private fun ProductShareButton(product: Product) {
     val context = LocalContext.current
-    GlassIconButton(Icons.Outlined.Share, contentDescription = "Share", size = 38.dp) {
+    GlassIconButton(Icons.Outlined.Share, contentDescription = "Share", modifier = Modifier.minimumInteractiveComponentSize(), size = 38.dp) {
         val url = Config.webUrl("/products/${Config.encodePath(product.slug)}")
         val message = product.brand?.let { "${product.title} by ${it.name} on Yard" } ?: product.title
         val send = Intent(Intent.ACTION_SEND).apply {
@@ -972,6 +1066,7 @@ private fun ProductBagButton(count: Int, onClick: () -> Unit) {
         GlassIconButton(
             Icons.Outlined.ShoppingBag,
             contentDescription = if (count > 0) "Bag, $count items" else "Bag",
+            modifier = Modifier.minimumInteractiveComponentSize(),
             size = 38.dp,
             onClick = onClick,
         )
@@ -983,7 +1078,7 @@ private fun ProductBagButton(count: Int, onClick: () -> Unit) {
                 maxLines = 1,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 4.dp, y = (-2).dp)
+                    .offset(x = (-1).dp, y = 3.dp)
                     .heightIn(min = 16.dp)
                     .widthIn(min = 16.dp)
                     .background(Color.yard.acid, YardShapes.pill)
@@ -996,33 +1091,61 @@ private fun ProductBagButton(count: Int, onClick: () -> Unit) {
 
 // endregion
 
-/** Loading placeholder shaped like the page. */
+/** Loading placeholder shaped like the page (two columns on Medium+, as the loaded page). */
 @Composable
 fun ProductDetailSkeleton() {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(top = Spacing.s)
-            .semantics { contentDescription = "Loading product" },
-        verticalArrangement = Arrangement.spacedBy(Spacing.l),
-    ) {
-        Skeleton(Modifier.padding(horizontal = Spacing.s).fillMaxWidth().aspectRatio(0.8f))
-        Row(Modifier.padding(horizontal = Spacing.gutter), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            repeat(4) { Skeleton(Modifier.size(width = 56.dp, height = 68.dp), cornerRadius = Radius.small) }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
-            Skeleton(Modifier.size(44.dp), shape = SkeletonShape.Circle)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Skeleton(Modifier.size(width = 140.dp, height = 14.dp), cornerRadius = 6.dp)
-                Skeleton(Modifier.size(width = 90.dp, height = 12.dp), cornerRadius = 6.dp)
+    val window = LocalYardWindow.current
+    if (window.isWide) {
+        val galleryWeight = productGalleryWeight(window)
+        Row(Modifier.fillMaxSize().semantics { contentDescription = "Loading product" }) {
+            Column(
+                Modifier.weight(galleryWeight).fillMaxHeight().padding(top = Spacing.s, bottom = Spacing.l),
+                verticalArrangement = Arrangement.spacedBy(Spacing.m),
+            ) {
+                Skeleton(Modifier.padding(horizontal = Spacing.s).fillMaxWidth().weight(1f))
+                ProductSkeletonThumbnails()
             }
-            Skeleton(Modifier.size(width = 84.dp, height = 34.dp), shape = SkeletonShape.Capsule)
+            Column(
+                Modifier.weight(1f - galleryWeight).fillMaxHeight().padding(top = Spacing.s),
+                verticalArrangement = Arrangement.spacedBy(Spacing.l),
+            ) { ProductSkeletonBuyBox() }
         }
-        Skeleton(Modifier.padding(horizontal = Spacing.gutter).fillMaxWidth().height(34.dp), cornerRadius = 8.dp)
-        Skeleton(Modifier.padding(horizontal = Spacing.gutter).size(width = 110.dp, height = 22.dp), cornerRadius = 6.dp)
-        Row(Modifier.padding(horizontal = Spacing.gutter), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            repeat(5) { Skeleton(Modifier.size(width = 52.dp, height = 36.dp), shape = SkeletonShape.Capsule) }
+    } else {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = Spacing.s)
+                .semantics { contentDescription = "Loading product" },
+            verticalArrangement = Arrangement.spacedBy(Spacing.l),
+        ) {
+            Skeleton(Modifier.padding(horizontal = Spacing.s).fillMaxWidth().aspectRatio(0.8f))
+            ProductSkeletonThumbnails()
+            ProductSkeletonBuyBox()
         }
+    }
+}
+
+@Composable
+private fun ProductSkeletonThumbnails() {
+    Row(Modifier.padding(horizontal = Spacing.gutter), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        repeat(4) { Skeleton(Modifier.size(width = 56.dp, height = 68.dp), cornerRadius = Radius.small) }
+    }
+}
+
+@Composable
+private fun ProductSkeletonBuyBox() {
+    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+        Skeleton(Modifier.size(44.dp), shape = SkeletonShape.Circle)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Skeleton(Modifier.size(width = 140.dp, height = 14.dp), cornerRadius = 6.dp)
+            Skeleton(Modifier.size(width = 90.dp, height = 12.dp), cornerRadius = 6.dp)
+        }
+        Skeleton(Modifier.size(width = 84.dp, height = 34.dp), shape = SkeletonShape.Capsule)
+    }
+    Skeleton(Modifier.padding(horizontal = Spacing.gutter).fillMaxWidth().height(34.dp), cornerRadius = 8.dp)
+    Skeleton(Modifier.padding(horizontal = Spacing.gutter).size(width = 110.dp, height = 22.dp), cornerRadius = 6.dp)
+    Row(Modifier.padding(horizontal = Spacing.gutter), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        repeat(5) { Skeleton(Modifier.size(width = 52.dp, height = 36.dp), shape = SkeletonShape.Capsule) }
     }
 }
 
@@ -1069,6 +1192,24 @@ private fun ProductDetailDarkPreview() = YardPreview(darkTheme = true) {
 @Composable
 private fun ProductDetailLightPreview() = YardPreview(darkTheme = false) {
     ProductDetailScreen(remember { ProductDetailModel(ProductDetailPreviewData.product) })
+}
+
+@YardTabletPreviews
+@Composable
+private fun ProductDetailTabletPreview() = YardPreview(darkTheme = true) {
+    ProductDetailScreen(remember { ProductDetailModel(ProductDetailPreviewData.product) })
+}
+
+@YardTabletPreviews
+@Composable
+private fun ProductDetailTabletLightPreview() = YardPreview(darkTheme = false) {
+    ProductDetailScreen(remember { ProductDetailModel(ProductDetailPreviewData.product) })
+}
+
+@YardTabletPreviews
+@Composable
+private fun ProductDetailTabletLoadingPreview() = YardPreview(darkTheme = true) {
+    Column(Modifier.fillMaxSize()) { ProductDetailSkeleton() }
 }
 
 @Preview(name = "ProductDetailView — loading")
