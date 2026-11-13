@@ -94,6 +94,7 @@ final class OrdersListModel {
 }
 
 /// The shopper's orders, one card per checkout, one row per brand order with its status chip.
+@MainActor
 struct OrdersListView: View {
     private enum Filter: String, Hashable, CaseIterable {
         case all

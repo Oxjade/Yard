@@ -94,6 +94,7 @@ final class OrderConfirmationModel {
 
 /// Reference 06: glowing success badge, "Order placed", the checkout as a ticket with a perforated
 /// tear line, a details grid, one ticket section per brand, then Track order / Keep shopping.
+@MainActor
 struct OrderConfirmationView: View {
     let checkoutId: String
 
