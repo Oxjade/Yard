@@ -199,10 +199,13 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile): Prom
   const existing = await findUserByEmail(p.email)
   if (existing) {
     if (existing.demo || (await deletionPending(existing.id))) return "link_required"
-    const cred = await credentialsOf(existing.id)
-    if (!p.emailVerified || !cred?.emailVerifiedAt) return "link_required"
+    if (!p.emailVerified) return "link_required"
     const already = await sameProviderIdentity(provider, existing.id, p.subject)
     if (already) return "link_required" // a different account of the same provider is linked already
+    // The provider verified this email, so it signs straight into the matching Yard account and
+    // marks the Yard email as confirmed (no "sign in with your password first" detour).
+    const cred = await credentialsOf(existing.id)
+    if (!cred?.emailVerifiedAt) await upsertCredentials(existing.id, { emailVerifiedAt: new Date() })
     await linkIdentity(provider, existing.id, p)
     return existing
   }
