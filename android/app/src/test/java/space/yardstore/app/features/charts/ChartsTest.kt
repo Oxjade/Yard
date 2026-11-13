@@ -207,6 +207,29 @@ class ChartsQueryTest {
         )
     }
 
+    @Test fun saveableRoundTripsEveryBoardAndPeriod() {
+        for (chart in ChartSlug.entries) for (period in ChartPeriod.entries) {
+            val q = ChartsQuery(chart, period, category = "bags", country = "NG", city = if (chart == ChartSlug.City) "lagos" else null)
+            assertEquals(q, chartsQueryFromSaveable(q.toSaveable()))
+        }
+        assertEquals(ChartsQuery(), chartsQueryFromSaveable(ChartsQuery().toSaveable()))
+    }
+
+    @Test fun saveableFallsBackOnUnknownValues() {
+        assertEquals(ChartsQuery(), chartsQueryFromSaveable(listOf("nope", "hourly", null, null, null)))
+        assertEquals(ChartsQuery(), chartsQueryFromSaveable(emptyList()))
+        assertEquals(ChartsQuery(chart = ChartSlug.TopDrops, category = "bags"), chartsQueryFromSaveable(listOf("top-drops", 7, "bags")))
+    }
+
+    @Test fun tabletPodiumPhotosLineUp() {
+        // #1's tablet photo is as tall as #2/#3's 4:3 photos on a card LEAD_WEIGHT times wider.
+        val sideWidth = 300f
+        val leadWidth = sideWidth * ChartsPodiumLayout.LEAD_WEIGHT
+        assertEquals(sideWidth / ChartsPodiumLayout.SIDE_ASPECT, leadWidth / ChartsPodiumLayout.WIDE_LEAD_ASPECT, 0.01f)
+        // A lone #1 on the widest content column (960dp minus gutters) stays under the photo cap.
+        assertTrue((960f - 32f) / ChartsPodiumLayout.SOLO_WIDE_ASPECT <= ChartsPodiumLayout.MAX_PHOTO_HEIGHT_DP)
+    }
+
     @Test fun filterCountIgnoresCityChartsCity() {
         assertEquals(0, ChartsQuery().filterCount)
         assertEquals(2, ChartsQuery(category = "bags", country = "NG").filterCount)

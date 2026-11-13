@@ -19,7 +19,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -73,7 +73,8 @@ private fun ColumnScope.ChartsFiltersContent(
     onClose: () -> Unit,
     onApply: (ChartsQuery) -> Unit,
 ) {
-    var draft by remember { mutableStateOf(query) }
+    // The draft survives rotation / process death while the sheet is open.
+    var draft by rememberSaveable(stateSaver = ChartsQuerySaver) { mutableStateOf(query) }
     val options = ChartsFilterOptions(draft, scopes, resolvedCity)
 
     YardSheetHeader("Filters", subtitle = draft.chart.label, onClose = onClose)

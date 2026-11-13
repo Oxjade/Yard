@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,11 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import space.yardstore.app.app.LocalRouter
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.RemoteImage
 import space.yardstore.app.designsystem.components.Skeleton
@@ -190,16 +193,43 @@ fun ChartsEditionLine(edition: ChartEditionInfo, period: ChartPeriod, modifier: 
  * Ranks 1–3 as editorial cards: #1 full width, #2 and #3 side by side beneath. Words sit on the
  * card's solid panel, never on the photo; the rank sits on a solid tab in the photo's corner
  * (acid for #1).
+ *
+ * Tablets (`isWide`): one row of three, #1 wider ([ChartsPodiumLayout.LEAD_WEIGHT]) with its photo
+ * as tall as the others; a lone #1 gets a wide, height-capped photo instead of a 16:10 one at full width.
  */
 @Composable
 fun ChartsPodium(entries: List<ChartEntry>, period: ChartPeriod, modifier: Modifier = Modifier) {
     val router = LocalRouter.current
     val top = entries.take(3)
+    val wide = LocalYardWindow.current.isWide
+    if (wide && top.size > 1) {
+        Row(modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            top.forEachIndexed { i, entry ->
+                val lead = i == 0
+                ChartsPodiumCard(
+                    entry, period, lead = lead,
+                    photoAspect = if (lead) ChartsPodiumLayout.WIDE_LEAD_ASPECT else ChartsPodiumLayout.SIDE_ASPECT,
+                    modifier = Modifier
+                        .weight(if (lead) ChartsPodiumLayout.LEAD_WEIGHT else 1f)
+                        .fillMaxHeight()
+                        .chartsEntryClick(entry, period) { router.push(entry.route) },
+                )
+            }
+            // Keep #1 and #2 at their podium widths when there is no #3.
+            if (top.size == 2) Spacer(Modifier.weight(1f))
+        }
+        return
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
         top.firstOrNull()?.let { first ->
-            ChartsPodiumCard(first, period, lead = true, modifier = Modifier.chartsEntryClick(first, period) { router.push(first.route) })
+            ChartsPodiumCard(
+                first, period, lead = true,
+                photoAspect = if (wide) ChartsPodiumLayout.SOLO_WIDE_ASPECT else ChartsPodiumLayout.LEAD_ASPECT,
+                modifier = Modifier.chartsEntryClick(first, period) { router.push(first.route) },
+            )
         }
         if (top.size > 1) {
+            // As on iOS, a lone #2 fills the row.
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
                 top.drop(1).forEach { entry ->
                     ChartsPodiumCard(
@@ -207,10 +237,22 @@ fun ChartsPodium(entries: List<ChartEntry>, period: ChartPeriod, modifier: Modif
                         modifier = Modifier.weight(1f).fillMaxHeight().chartsEntryClick(entry, period) { router.push(entry.route) },
                     )
                 }
-                if (top.size == 2) Spacer(Modifier.weight(1f))
             }
         }
     }
+}
+
+/** Podium proportions (phone: 16:10 lead, 4:3 sides). */
+internal object ChartsPodiumLayout {
+    const val LEAD_ASPECT = 16f / 10f
+    const val SIDE_ASPECT = 4f / 3f
+    /** #1's share of the tablet row, against 1 for #2 and #3. */
+    const val LEAD_WEIGHT = 1.3f
+    /** #1's photo in the tablet row: as tall as a 4:3 photo on a card [LEAD_WEIGHT] times narrower. */
+    const val WIDE_LEAD_ASPECT = SIDE_ASPECT * LEAD_WEIGHT
+    /** A lone #1 on a tablet (no #2 / #3): wide, never taller than [MAX_PHOTO_HEIGHT_DP]. */
+    const val SOLO_WIDE_ASPECT = 21f / 9f
+    const val MAX_PHOTO_HEIGHT_DP = 420
 }
 
 private fun Modifier.chartsEntryClick(entry: ChartEntry, period: ChartPeriod, onClick: () -> Unit): Modifier {
@@ -219,7 +261,13 @@ private fun Modifier.chartsEntryClick(entry: ChartEntry, period: ChartPeriod, on
 }
 
 @Composable
-fun ChartsPodiumCard(entry: ChartEntry, period: ChartPeriod, lead: Boolean, modifier: Modifier = Modifier) {
+fun ChartsPodiumCard(
+    entry: ChartEntry,
+    period: ChartPeriod,
+    lead: Boolean,
+    modifier: Modifier = Modifier,
+    photoAspect: Float = if (lead) ChartsPodiumLayout.LEAD_ASPECT else ChartsPodiumLayout.SIDE_ASPECT,
+) {
     val imageUrl = entry.drop?.image?.url ?: entry.brand.cover?.url
     Column(
         modifier
@@ -235,7 +283,8 @@ fun ChartsPodiumCard(entry: ChartEntry, period: ChartPeriod, lead: Boolean, modi
         Box(
             Modifier
                 .fillMaxWidth()
-                .aspectRatio(if (lead) 16f / 10f else 4f / 3f)
+                .heightIn(max = ChartsPodiumLayout.MAX_PHOTO_HEIGHT_DP.dp)
+                .aspectRatio(photoAspect)
                 .background(Color.yard.surface2),
             contentAlignment = Alignment.Center,
         ) {
@@ -407,7 +456,7 @@ fun chartsOffPodium(entry: ChartEntry?): ChartEntry? = entry?.takeIf { it.rank >
 private fun ChartsCallout(entry: ChartEntry, icon: ImageVector, heading: String, line: String, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier
-            .pressableClick(onClick = onClick)
+            .pressableClick(role = Role.Button, onClick = onClick)
             .yardCard(radius = Radius.image)
             .padding(Spacing.m),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -448,7 +497,10 @@ fun ChartsSponsoredStrip(items: List<ChartSponsored>, modifier: Modifier = Modif
         }
         items.forEach { item ->
             Row(
-                Modifier.fillMaxWidth().pressableClick { router.push(item.route) },
+                Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 52.dp)
+                    .pressableClick(role = Role.Button) { router.push(item.route) },
                 horizontalArrangement = Arrangement.spacedBy(Spacing.m),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -480,10 +532,19 @@ private fun chartsSponsoredSubtitle(item: ChartSponsored): String {
 @Composable
 fun ChartsBoardSkeleton(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().semantics { contentDescription = "Loading chart" }, verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        Skeleton(Modifier.fillMaxWidth().height(300.dp), cornerRadius = Radius.card)
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
-            Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
-            Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
+        if (LocalYardWindow.current.isWide) {
+            // Same shape as the tablet podium: one row of three, #1 wider.
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                Skeleton(Modifier.weight(ChartsPodiumLayout.LEAD_WEIGHT).height(300.dp), cornerRadius = Radius.card)
+                Skeleton(Modifier.weight(1f).height(300.dp), cornerRadius = Radius.card)
+                Skeleton(Modifier.weight(1f).height(300.dp), cornerRadius = Radius.card)
+            }
+        } else {
+            Skeleton(Modifier.fillMaxWidth().height(300.dp), cornerRadius = Radius.card)
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
+                Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
+            }
         }
         repeat(6) {
             Row(Modifier.padding(vertical = Spacing.s), horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
@@ -553,6 +614,10 @@ private fun ChartsPartsPreviewContent(showSkeleton: Boolean) {
 @Preview(name = "Charts parts — dark", heightDp = 1400)
 @Composable
 private fun ChartsPartsDarkPreview() = YardPreview(darkTheme = true) { ChartsPartsPreviewContent(showSkeleton = true) }
+
+@YardTabletPreviews
+@Composable
+private fun ChartsPartsTabletPreview() = YardPreview(darkTheme = true) { ChartsPartsPreviewContent(showSkeleton = true) }
 
 @Preview(name = "Charts parts — light", heightDp = 1100)
 @Composable

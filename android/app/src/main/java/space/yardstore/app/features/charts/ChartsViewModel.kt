@@ -2,6 +2,8 @@ package space.yardstore.app.features.charts
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,6 +35,30 @@ data class ChartsQuery(
     val filterCount: Int
         get() = (if (category != null) 1 else 0) + (if ((city != null || country != null) && chart != ChartSlug.City) 1 else 0)
 }
+
+/**
+ * The query as saveable values (chart and period raw values, then category, country, city), so the
+ * board the shopper picked survives process death. Unknown raw values fall back to the defaults.
+ */
+internal fun ChartsQuery.toSaveable(): List<String?> = listOf(chart.rawValue, period.rawValue, category, country, city)
+
+internal fun chartsQueryFromSaveable(values: List<Any?>): ChartsQuery {
+    fun at(i: Int) = values.getOrNull(i) as? String
+    val defaults = ChartsQuery()
+    return ChartsQuery(
+        chart = ChartSlug.entries.firstOrNull { it.rawValue == at(0) } ?: defaults.chart,
+        period = ChartPeriod.entries.firstOrNull { it.rawValue == at(1) } ?: defaults.period,
+        category = at(2),
+        country = at(3),
+        city = at(4),
+    )
+}
+
+/** `rememberSaveable(stateSaver = ChartsQuerySaver)` for the screen's query and the filters draft. */
+internal val ChartsQuerySaver: Saver<ChartsQuery, Any> = listSaver<ChartsQuery, String?>(
+    save = { it.toSaveable() },
+    restore = { chartsQueryFromSaveable(it) },
+)
 
 /** Loads the live board and the scopes; the view keeps the board fresh while it is on screen. */
 class ChartsViewModel(

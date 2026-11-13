@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -69,6 +72,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -88,6 +93,9 @@ import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.LocalYardWindow
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.Chip
 import space.yardstore.app.designsystem.components.ChipRow
 import space.yardstore.app.designsystem.components.EmptyState
@@ -112,7 +120,10 @@ import space.yardstore.app.designsystem.yard
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChartsView() {
-    val model: ChartsViewModel = viewModel { ChartsViewModel() }
+    // The picked board/period/filters survive process death; the ViewModel starts from them.
+    var savedQuery by rememberSaveable(stateSaver = ChartsQuerySaver) { mutableStateOf(ChartsQuery()) }
+    val model: ChartsViewModel = viewModel { ChartsViewModel(savedQuery) }
+    LaunchedEffect(model.query) { savedQuery = model.query }
     val cart = LocalCartStore.current
     val router = LocalRouter.current
     var showsFilters by rememberSaveable { mutableStateOf(false) }
@@ -146,6 +157,7 @@ fun ChartsView() {
         }
     }
 
+    val window = LocalYardWindow.current
     val bottomPadding = Spacing.xxxl + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + LocalTabPillClearance.current
     val refreshState = rememberPullToRefreshState()
 
@@ -171,10 +183,10 @@ fun ChartsView() {
                 contentPadding = PaddingValues(top = Spacing.s, bottom = bottomPadding),
             ) {
                 item(key = "header", contentType = "header") {
-                    ChartsHeader(model, Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l))
+                    ChartsHeader(model, Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l))
                 }
                 item(key = "rail", contentType = "rail") {
-                    ChipRow(Modifier.padding(bottom = Spacing.l)) {
+                    ChipRow(Modifier.adaptiveContentWidth().padding(bottom = Spacing.l)) {
                         ChartSlug.entries.forEach { slug ->
                             Chip(slug.label, isSelected = model.query.chart == slug) {
                                 model.apply(model.query.copy(chart = slug))
@@ -186,18 +198,18 @@ fun ChartsView() {
                     ChartsControls(
                         model,
                         onOpenFilters = { showsFilters = true },
-                        modifier = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l),
+                        modifier = Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l),
                     )
                 }
                 item(key = "heading", contentType = "heading") {
-                    ChartsBoardHeading(model, Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l))
+                    ChartsBoardHeading(model, Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l))
                 }
-                chartsBoardBody(model, onEntry = { router.push(it.route) })
+                chartsBoardBody(model, maxWidth = window.contentMaxWidth, onEntry = { router.push(it.route) })
                 item(key = "how", contentType = "how") {
                     ChartsHowItWorks(
                         expanded = showsHowItWorks,
                         onToggle = { showsHowItWorks = !showsHowItWorks },
-                        modifier = Modifier.animateItem().padding(horizontal = Spacing.gutter),
+                        modifier = Modifier.animateItem().adaptiveContentWidth().padding(horizontal = Spacing.gutter),
                     )
                 }
             }
@@ -255,6 +267,7 @@ private fun ChartsControls(model: ChartsViewModel, onOpenFilters: () -> Unit, mo
             Row(
                 Modifier
                     .weight(1f, fill = false)
+                    .minimumInteractiveComponentSize()
                     .semantics { contentDescription = "Location, $title" }
                     .clip(YardShapes.pill)
                     .background(Color.yard.surface2, YardShapes.pill)
@@ -311,9 +324,13 @@ private fun chartsHeadingLine(model: ChartsViewModel): String {
     return line
 }
 
-private fun LazyListScope.chartsBoardBody(model: ChartsViewModel, onEntry: (ChartEntry) -> Unit) {
+/**
+ * The board's lazy items. Every item is capped at [maxWidth] (the window's content width) and
+ * centered, so on tablets the board reads as one column instead of stretching edge to edge.
+ */
+private fun LazyListScope.chartsBoardBody(model: ChartsViewModel, maxWidth: Dp, onEntry: (ChartEntry) -> Unit) {
     val board = model.currentBoard
-    val pad = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l)
+    val pad = Modifier.chartsContentWidth(maxWidth).padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l)
     if (board == null) {
         val error = model.error
         if (error != null && !model.isLoading) {
@@ -350,12 +367,12 @@ private fun LazyListScope.chartsBoardBody(model: ChartsViewModel, onEntry: (Char
                 )
             }
         } else {
-            chartsEntries(board, model, pad, onEntry)
+            chartsEntries(board, model, pad, maxWidth, onEntry)
         }
     }
 }
 
-private fun LazyListScope.chartsEntries(board: ChartBoard, model: ChartsViewModel, pad: Modifier, onEntry: (ChartEntry) -> Unit) {
+private fun LazyListScope.chartsEntries(board: ChartBoard, model: ChartsViewModel, pad: Modifier, maxWidth: Dp, onEntry: (ChartEntry) -> Unit) {
     val rows = board.entries.drop(3)
     val head = rows.take(7)
     val tail = rows.drop(7)
@@ -363,11 +380,11 @@ private fun LazyListScope.chartsEntries(board: ChartBoard, model: ChartsViewMode
     if (chartsOffPodium(board.callouts.biggestClimber) != null || chartsOffPodium(board.callouts.highestDebut) != null) {
         item(key = "callouts") { ChartsCallouts(board.callouts, board.period, Modifier.animateItem().then(pad)) }
     }
-    chartsRowList("head", head, board.period, onEntry)
+    chartsRowList("head", head, board.period, maxWidth, onEntry)
     if (board.sponsored.isNotEmpty()) {
         item(key = "sponsored") { ChartsSponsoredStrip(board.sponsored, Modifier.animateItem().then(pad)) }
     }
-    chartsRowList("tail", tail, board.period, onEntry)
+    chartsRowList("tail", tail, board.period, maxWidth, onEntry)
     if (model.refreshFailed) {
         item(key = "refresh-failed") {
             Text(
@@ -381,7 +398,7 @@ private fun LazyListScope.chartsEntries(board: ChartBoard, model: ChartsViewMode
 }
 
 /** Rows inside one card, one lazy item per row: the card's outline and the dividers are drawn per segment. */
-private fun LazyListScope.chartsRowList(group: String, rows: List<ChartEntry>, period: ChartPeriod, onEntry: (ChartEntry) -> Unit) {
+private fun LazyListScope.chartsRowList(group: String, rows: List<ChartEntry>, period: ChartPeriod, maxWidth: Dp, onEntry: (ChartEntry) -> Unit) {
     if (rows.isEmpty()) return
     itemsIndexed(rows, key = { _, e -> "$group:${e.id}" }, contentType = { _, _ -> "row" }) { index, entry ->
         val first = index == 0
@@ -391,6 +408,7 @@ private fun LazyListScope.chartsRowList(group: String, rows: List<ChartEntry>, p
             period,
             modifier = Modifier
                 .animateItem()
+                .chartsContentWidth(maxWidth)
                 .padding(horizontal = Spacing.gutter)
                 .padding(bottom = if (last) Spacing.l else 0.dp)
                 .chartsRowSegment(first, last, Color.yard.surface, Color.yard.line)
@@ -398,6 +416,14 @@ private fun LazyListScope.chartsRowList(group: String, rows: List<ChartEntry>, p
         ) { onEntry(entry) }
     }
 }
+
+/**
+ * [adaptiveContentWidth] with an explicit width, usable while building lazy items (outside composition):
+ * fills, centers and caps at [maxWidth] (no cap when unspecified, i.e. on phones).
+ */
+private fun Modifier.chartsContentWidth(maxWidth: Dp): Modifier =
+    if (!maxWidth.isSpecified) fillMaxWidth()
+    else fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = maxWidth).fillMaxWidth()
 
 /** One segment of a card split across lazy items: outer corners rounded, hairline outline, inset divider below. */
 private fun Modifier.chartsRowSegment(first: Boolean, last: Boolean, fill: Color, line: Color): Modifier {
@@ -509,7 +535,8 @@ fun ChartsSmallCohortView(
     val content = remember(board, query, scopes) { chartsSmallCohortContent(board, query, scopes) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.l)) {
         EmptyState(title = content.title, message = content.message, icon = Icons.Outlined.LocationOff)
-        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        // Buttons stay button-sized on tablets instead of stretching across the board.
+        Column(Modifier.adaptiveContentWidth(maxWidth = 420.dp), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
             content.actions.forEach { action ->
                 YardButton(action.title, style = YardButtonStyle.Secondary, size = YardButtonSize.Medium) { onChange(action.query) }
             }
@@ -591,6 +618,10 @@ private fun ChartsViewDarkPreview() = YardPreview(darkTheme = true) { ChartsView
 @Preview(name = "ChartsView — light")
 @Composable
 private fun ChartsViewLightPreview() = YardPreview(darkTheme = false) { ChartsView() }
+
+@YardTabletPreviews
+@Composable
+private fun ChartsViewTabletPreview() = YardPreview(darkTheme = true) { ChartsView() }
 
 @Preview(name = "Small cohort — dark")
 @Composable
