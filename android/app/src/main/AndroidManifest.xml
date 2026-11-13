@@ -64,6 +64,7 @@
                 <data android:pathPrefix="/legal" />
             </intent-filter>
         </activity>
+        <receiver android:name=".features.drops.DropReminderReceiver" android:exported="false" />
     </application>
 
     <queries>
