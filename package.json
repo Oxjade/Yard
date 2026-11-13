@@ -14,6 +14,7 @@
     "start:demo": "node scripts/start-demo.mjs",
     "admin:create": "node --conditions=react-server --import tsx scripts/create-admin.mjs",
     "maintenance:approved-brand-setup": "node --conditions=react-server --import tsx scripts/fix-approved-brand-setup.mjs",
+    "geoip:update": "node scripts/geoip-update.mjs",
     "db:migrate": "node --conditions=react-server --import tsx scripts/db-migrate.mjs",
     "build:tools": "node scripts/bundle-tools.mjs"
   },
@@ -29,6 +30,7 @@
     "cn": "^0.5.2",
     "drizzle-orm": "0.45.4",
     "maplibre-gl": "6.16.0",
+    "mmdb-lib": "3.0.5",
     "motion": "^14.9.1",
     "next": "16.4.5",
     "next-themes": "^0.4.6",

@@ -65,3 +65,18 @@ export const realtimeEvents = pgTable(
   },
   (t) => [index("realtime_events_channel_seq_ix").on(t.channel, t.seq), index("realtime_events_created_ix").on(t.createdAt)],
 )
+
+/**
+ * Site visits per UTC day and visitor country (admin Traffic). Only counts: no IPs, no visitor ids.
+ * `country` is ISO 3166-1 alpha-2, or "ZZ" when the country is unknown.
+ */
+export const trafficDaily = pgTable(
+  "traffic_daily",
+  {
+    day: text("day").notNull(),
+    country: text("country").notNull(),
+    views: integer("views").notNull().default(0),
+    visitors: integer("visitors").notNull().default(0),
+  },
+  (t) => [uniqueIndex("traffic_daily_day_country_ux").on(t.day, t.country), index("traffic_daily_day_ix").on(t.day)],
+)

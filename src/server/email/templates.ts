@@ -204,6 +204,26 @@ export const templates = {
       why: "You're getting this because a brand on Yard invited this address to its team.",
     }),
   },
+  brand_approved: {
+    category: "account",
+    required: ["brand"],
+    build: (x) => ({
+      subject: `You're approved: ${v(x, "brand")} can sell on Yard`,
+      preheader: `Welcome to Yard. ${v(x, "brand")} is approved, so start creating as soon as you can.`,
+      eyebrow: "Yard Studio",
+      heading: "You're approved",
+      greeting: hey(x),
+      paragraphs: [
+        `Welcome to Yard. We've reviewed ${v(x, "brand")} and you're approved to sell.`,
+        "Start creating as soon as you can: add your pieces with photos, sizes and stock, dress up your storefront, and plan your first drop so your followers are there the moment it opens.",
+        "Before your first sale, add your payout account in Studio so your earnings reach you.",
+        "Need guidance at any point? The Yard team is here to help, just reach out from Help in Studio.",
+      ],
+      facts: facts({ label: "Brand", value: v(x, "brand") }, has(x, "handle") && { label: "Storefront", value: `@${v(x, "handle")}` }),
+      action: { label: "Open Brand Studio", url: has(x, "url") ? v(x, "url") : "/studio" },
+      why: "You're getting this because you applied to sell on Yard with this address.",
+    }),
+  },
   founding_claim: {
     category: "account",
     required: ["brand", "url"],

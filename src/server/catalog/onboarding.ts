@@ -4,11 +4,13 @@ import type { z } from "zod"
 import { countryTimeZone } from "@/lib/data/zones"
 import { writeAudit } from "../audit"
 import type { AdminActor, ShopperActor } from "../auth/dal"
-import { db, withTx, type Executor } from "../db"
-import { brandMembers, brands, mediaAssets } from "../db/schema"
+import { afterCommit, db, withTx, type Executor } from "../db"
+import { brandMembers, brands, mediaAssets, users } from "../db/schema"
 import { brandOnboardings, catalogCategories, catalogImages, catalogOptions, catalogProducts, catalogVariants, ONBOARDING_STEPS, storefrontDrafts } from "../db/schema/catalog"
+import { enqueueEmail } from "../email"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
+import { notify } from "../notify"
 import { createStarterShipping } from "../shipping/profile"
 import { onboardingStepSchemas, type OnboardingStep } from "./contracts"
 import { catalogChanged } from "./hooks"
@@ -357,6 +359,21 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       // Approved brands can sell at once: they start with shipping from their application (editable in Studio).
       const payments = (row.data as { payments?: { processingMin?: number; processingMax?: number; delivery?: string[] } }).payments
       if (brand) await createStarterShipping(brand, { handling: [payments?.processingMin ?? 1, payments?.processingMax ?? 3], delivery: payments?.delivery ?? ["domestic"] })
+
+      // Tell the applicant: an email (sent from the outbox after commit) and a Studio notification.
+      const [named] = await tx.select({ name: brands.name, handle: brands.handle }).from(brands).where(eq(brands.id, row.brandId)).limit(1)
+      const [applicant] = await tx.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, row.userId)).limit(1)
+      const brandName = named?.name ?? (row.data as { brand?: { name?: string } }).brand?.name ?? "Your brand"
+      if (applicant?.email) {
+        await enqueueEmail(tx, {
+          template: "brand_approved",
+          to: applicant.email,
+          vars: { name: applicant.name ?? "", brand: brandName, ...(named?.handle ? { handle: named.handle } : {}), url: "/studio" },
+          dedupeKey: `brand_approved:${row.id}:${row.revision + 1}`,
+        })
+      }
+      const approvedBrandId = row.brandId
+      afterCommit(() => notify({ kind: "brand", id: approvedBrandId }, { key: `brand.approved:${row.id}`, template: "brand.approved", vars: { brand: brandName }, href: "/studio" }).then(() => undefined))
     }
     await writeAudit({
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },

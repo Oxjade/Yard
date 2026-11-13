@@ -56,6 +56,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { SessionGate } from "@/components/session/session-gate"
 import { BusinessFigures } from "@/components/admin/overview/business-figures"
 import { LiveMonitoringSlot } from "@/components/admin/overview/monitoring-slot"
+import { TrafficByCountry } from "@/components/admin/overview/traffic-by-country"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { useBrowserAudit } from "@/components/admin/platform/security/audit-log"
 
@@ -743,6 +744,7 @@ export function ControlCenter() {
             <DecisionQueue className="@5xl:col-span-8" />
             <AuditTrail className="@5xl:col-span-4" />
           </div>
+          <TrafficByCountry />
           <LiveMonitoringSlot />
         </Reveal>
       </SessionGate>

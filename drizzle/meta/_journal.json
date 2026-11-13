@@ -99,6 +99,13 @@
       "when": 1794526569720,
       "tag": "0013_auth0_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794600953849,
+      "tag": "0014_traffic_daily",
+      "breakpoints": true
     }
   ]
 }

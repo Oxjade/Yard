@@ -53,6 +53,7 @@ set -euo pipefail
 sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_PUBLIC_URL=$(grep -m1 ^YARD_PUBLIC_URL= /etc/yard.env | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
 sudo -u postgres pg_dump -Fc yard > /var/backups/yard/pre-update-$(date +%F-%H%M).dump
 sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run db:migrate'
+sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run geoip:update' || true
 systemctl restart yard
 sleep 8
 curl -fsS http://127.0.0.1:3000/api/health && echo || { echo "Health check failed: journalctl -u yard -n 50"; exit 1; }
