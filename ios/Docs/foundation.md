@@ -245,3 +245,13 @@ Write one light and one dark `#Preview` per main view.
 - Follower/product/drop counts on the brand profile must come from the API (`followerCounts`, `ProductsPage.total`, `DropsPage`).
 - Never ship sample data; empty = `EmptyState`.
 - The app is shopper-only; brand Studio and admin stay on the web.
+
+## Integration (wired in YardApp)
+
+- Push: `@UIApplicationDelegateAdaptor(YardPushAppDelegate.self)` + `.yardPushNotifications()` after the environment.
+  Remote push also needs the Push Notifications capability (adds `aps-environment`) — needs a paid Apple
+  developer account, so it is left off by default; local drop-reminder alerts work without it.
+- Email sign-in / verify links: `AuthEmailLinks` handles them before the Router (needs universal links for
+  yardstore.space, i.e. an apple-app-site-association file on the website, to reach the app from email).
+- Live Activities: `resume()` whenever the app becomes active; `endAll()` on sign-out.
+- Ship-to country from You › Settings restored into the cart at launch.

@@ -61,6 +61,8 @@ final class SessionStore {
         }
         shopper = nil
         session = Session.signedOut
+        // A signed-out phone shouldn't keep showing someone's order on the Lock Screen.
+        await LiveActivityManager.shared.endAll()
         await refresh()
     }
 
