@@ -443,7 +443,9 @@ struct BagGroupFooter: View {
     private var shipping: some View {
         if let quote {
             if quote.unavailable || quote.option(for: nil) == nil {
-                Text("\(quote.reason ?? "Doesn't ship to \(countryName)"). Remove its pieces or change the delivery country at checkout.")
+                let raw: String = quote.reason ?? "Doesn't ship to \(countryName)"
+                let reason: String = raw.hasSuffix(".") ? String(raw.dropLast()) : raw
+                Text("\(reason). Remove its pieces or change the delivery country at checkout.")
                     .font(.yardCaption)
                     .foregroundStyle(Color.yard.ink3)
             } else if let option = quote.option(for: nil) {
