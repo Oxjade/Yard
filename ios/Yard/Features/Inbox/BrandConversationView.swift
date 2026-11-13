@@ -1,29 +1,39 @@
 import SwiftUI
 
-// PLACEHOLDER created by the foundation agent. Owner: inbox agent.
-// Replace this file's contents, but keep the type name and the initializer
-// `BrandConversationView(brandId: String)` exactly: App/Router.swift's RouteView calls it.
-
+/// "Message" from a storefront or product (route `.messageBrand(brandId:)`).
+/// Resolves GET /api/inbox/conversations/by-brand/{brandId}: an existing thread opens as itself;
+/// otherwise a new-thread composer whose first send creates the conversation (POST /api/inbox/messages
+/// with `brandId`). When the brand can't be messaged, the composer says why.
+@MainActor
 struct BrandConversationView: View {
     let brandId: String
 
+    @Environment(SessionStore.self) private var session
+    @Environment(Router.self) private var router
+    @State private var model: InboxThreadModel
+
     init(brandId: String) {
         self.brandId = brandId
+        _model = State(initialValue: InboxThreadModel(brandId: brandId))
     }
 
     var body: some View {
-        FeaturePlaceholder("Message")
+        if session.isSignedIn {
+            InboxThreadScreen(model: model)
+        } else {
+            InboxSignedOutGate(hasLoaded: session.hasLoaded) { router.present(.signIn) }
+        }
     }
 }
 
 #Preview("BrandConversationView — dark") {
-    NavigationStack { BrandConversationView(brandId: "preview") }
+    NavigationStack { InboxThreadScreen(model: InboxThreadPreviewData.model()) }
         .yardPreviewEnvironment()
         .preferredColorScheme(.dark)
 }
 
 #Preview("BrandConversationView — light") {
     NavigationStack { BrandConversationView(brandId: "preview") }
-        .yardPreviewEnvironment()
+        .yardPreviewEnvironment(signedIn: false)
         .preferredColorScheme(.light)
 }
