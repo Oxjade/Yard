@@ -9,13 +9,14 @@ const columns = [
   { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories", "sample"]] },
   { title: "You", links: [["Your World", "/you"], ["Inbox", "/inbox"], ["Following", "/following"], ["Wishlist", "/wishlist"], ["Orders", "/you/orders"], ["Settings", "/you/settings"]] },
   { title: "For brands", links: [["Sell on " + site.name, "/studio/onboarding"], ["Brand Studio", "/studio"], ["Advertising", "/studio/advertising", "sample"]] },
+  { title: "Help", links: [["Support", "/support"], ["Returns and refunds", "/legal/refunds"], ["Terms", "/legal/terms"], ["Privacy", "/legal/privacy"]] },
 ] as const
 
 export function MarketFooter() {
   return (
     <footer className="mt-24 border-t border-line-soft pb-32 lg:pb-10 print:hidden">
       <div className="mx-auto max-w-page px-4 pt-14 md:px-8">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">
           <div className="max-w-sm">
             <YardLogo className="block h-10" />
             <p className="mt-4 text-sm leading-relaxed text-ink-2">{site.description}</p>

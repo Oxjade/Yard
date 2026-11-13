@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -289,7 +290,7 @@ export function AccountStep({ onNext }: StepProps) {
             </InputGroup>
           </Field>
         </div>
-        {mode === "signup" ? <p className="mt-4 text-xs text-ink-3">By continuing you agree to the seller terms and the privacy policy.</p> : null}
+        {mode === "signup" ? <p className="mt-4 text-xs text-ink-3">By continuing you agree to the <Link href="/legal/seller-agreement" className="text-violet underline-offset-4 hover:underline">seller terms</Link> and the <Link href="/legal/privacy" className="text-violet underline-offset-4 hover:underline">privacy policy</Link>.</p> : null}
         {providers.demo.shopper ? <Button type="button" variant="secondary" size="lg" className="mt-4 w-full" loading={busy === "demo"} disabled={!!busy} onClick={() => void signInDemo()}>Continue as demo shopper</Button> : null}
         {failure ? <p role="alert" className="mt-3 text-sm text-danger">{failure}</p> : null}
         {notice ? <p role="status" className="mt-3 text-sm text-ink-2">{notice}</p> : null}
