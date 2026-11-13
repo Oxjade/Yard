@@ -11,6 +11,9 @@ export const site = {
   tagline: "Independent brands, found first.",
   description:
     "A global destination for discovering, following and shopping independent brands.",
+  /** The home page's search snippet: what people search for, in plain words. */
+  seoDescription:
+    "Shop independent fashion and streetwear brands from Lagos to the world. Discover limited drops, follow the brands you love and check out once across every brand on Yard.",
   /** Commission on each completed sale (3.5%). */
   commissionRate: 0.035,
   /** Launch offer: no commission on sales placed before this moment (UTC), for every brand. */

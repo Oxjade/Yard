@@ -36,7 +36,7 @@ grep -q '^YARD_PAYMENTS=' /etc/yard.env || echo "YARD_PAYMENTS=off" >> /etc/yard
 chmod 700 /var/lib/yard
 
 say "4/6 Pull and build the latest code (10-20 minutes)"
-sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
+sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_PUBLIC_URL=$(grep -m1 ^YARD_PUBLIC_URL= /etc/yard.env | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
 
 say "5/6 Create the tables"
 sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run db:migrate'
@@ -50,7 +50,7 @@ EOF
 cat > /usr/local/bin/yard-update <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
+sudo -u yard bash -c 'cd ~/app && git pull --ff-only && npm ci --no-audit --no-fund && YARD_PUBLIC_URL=$(grep -m1 ^YARD_PUBLIC_URL= /etc/yard.env | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build'
 sudo -u postgres pg_dump -Fc yard > /var/backups/yard/pre-update-$(date +%F-%H%M).dump
 sudo -u yard bash -c 'set -a; . /etc/yard.env; cd ~/app && npm run db:migrate'
 systemctl restart yard

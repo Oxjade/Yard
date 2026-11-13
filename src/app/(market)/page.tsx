@@ -1,4 +1,6 @@
 import { Suspense } from "react"
+import type { Metadata } from "next"
+import { site } from "@/config/site"
 import Image from "next/image"
 import Link from "next/link"
 import { BrandCard } from "@/components/market/brand-card"
@@ -50,6 +52,24 @@ const storyKind: Record<string, string> = {
   collaboration: "Collaboration",
 }
 
+export const metadata: Metadata = {
+  title: { absolute: `${site.name} — Shop independent fashion brands and limited drops` },
+  description: site.seoDescription,
+  alternates: { canonical: "/" },
+  openGraph: { url: "/", title: `${site.name} — Shop independent fashion brands and limited drops`, description: site.seoDescription },
+  twitter: { title: `${site.name} — Shop independent fashion brands and limited drops`, description: site.seoDescription },
+}
+
+/** Structured data for search engines: who Yard is, and its site search (sitelinks search box). */
+function HomeJsonLd() {
+  const base = (process.env.YARD_PUBLIC_URL?.trim() || "http://localhost:3000").replace(/\/$/, "")
+  const data = [
+    { "@context": "https://schema.org", "@type": "Organization", name: site.name, url: base, logo: `${base}/icon`, description: site.seoDescription, sameAs: [] as string[] },
+    { "@context": "https://schema.org", "@type": "WebSite", name: site.name, url: base, potentialAction: { "@type": "SearchAction", target: { "@type": "EntryPoint", urlTemplate: `${base}/shop?q={search_term_string}` }, "query-input": "required name=search_term_string" } },
+  ]
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\\u003c") }} />
+}
+
 export default function DiscoverPage() {
   // Production (no demo seed): the real founding brands take the place of the sample modules
   // (Trending now, the Underground Index and the brand rails), and the hero and drops band read
@@ -74,6 +94,7 @@ export default function DiscoverPage() {
 
   return (
     <>
+      <HomeJsonLd />
       {demo ? (
         <DiscoverHero
           brand={heroBrand}
