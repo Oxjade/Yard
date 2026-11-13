@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -294,7 +295,7 @@ fun HomeBrandTile(brand: BrandCard, modifier: Modifier = Modifier) {
             }
             Tag("Brand", Modifier.align(Alignment.TopStart).padding(Spacing.s), style = TagStyle.OnPhoto)
         }
-        HomeFollowChip(brand, Modifier.align(Alignment.TopEnd).padding(6.dp))
+        HomeFollowChip(brand, Modifier.align(Alignment.TopEnd))
     }
 }
 
@@ -317,12 +318,10 @@ private fun HomeFollowChip(brand: BrandCard, modifier: Modifier = Modifier) {
         Motion.snappy(),
         label = "home-follow-ink",
     )
+    // The tap target (≥ 48dp, transparent) wraps the 30dp pill and its 6dp inset from the corner.
     Box(
         modifier
-            .height(30.dp)
-            .clip(YardShapes.pill)
-            .background(fill, YardShapes.pill)
-            .border(BorderStroke(1.dp, if (isFollowing) Color.yard.onPhoto.copy(alpha = 0.25f) else Color.Transparent), YardShapes.pill)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .semantics { contentDescription = if (isFollowing) "Unfollow ${brand.name}" else "Follow ${brand.name}" }
             .pressableClick {
                 if (!session.isSignedIn) {
@@ -341,15 +340,25 @@ private fun HomeFollowChip(brand: BrandCard, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            .padding(horizontal = Spacing.m),
-        contentAlignment = Alignment.Center,
+            .padding(6.dp),
+        contentAlignment = Alignment.TopEnd,
     ) {
-        AnimatedContent(
-            targetState = isFollowing,
-            transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
-            label = "home-follow-label",
-        ) { following ->
-            Text(if (following) "Following" else "Follow", style = YardFonts.captionEmphasis, color = ink)
+        Box(
+            Modifier
+                .height(30.dp)
+                .clip(YardShapes.pill)
+                .background(fill, YardShapes.pill)
+                .border(BorderStroke(1.dp, if (isFollowing) Color.yard.onPhoto.copy(alpha = 0.25f) else Color.Transparent), YardShapes.pill)
+                .padding(horizontal = Spacing.m),
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedContent(
+                targetState = isFollowing,
+                transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
+                label = "home-follow-label",
+            ) { following ->
+                Text(if (following) "Following" else "Follow", style = YardFonts.captionEmphasis, color = ink)
+            }
         }
     }
 }

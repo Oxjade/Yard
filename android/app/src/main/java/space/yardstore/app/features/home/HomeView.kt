@@ -78,11 +78,13 @@ import space.yardstore.app.app.Route
 import space.yardstore.app.app.tabPillScrollSensor
 import space.yardstore.app.core.stores.LocalFollowStore
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardLogo
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.MasonryGrid
@@ -90,6 +92,7 @@ import space.yardstore.app.designsystem.components.MasonrySkeleton
 import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardButtonStyle
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
@@ -160,7 +163,8 @@ private fun HomeHeader(unreadNotifications: Int, unreadConversations: Int) {
             .background(Color.yard.bg)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(horizontal = Spacing.gutter)
-            .padding(top = Spacing.xs, bottom = Spacing.s),
+            // No bottom padding: the tab strip's taps start that Spacing.s higher (48dp targets).
+            .padding(top = Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
@@ -176,7 +180,7 @@ private fun HomeHeaderButton(icon: ImageVector, label: String, badge: Int, onCli
     val description = if (badge > 0) "$label, $badge unread" else label
     Box(
         Modifier
-            .size(40.dp)
+            .size(48.dp)
             .semantics { contentDescription = description }
             .pressableClick(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -186,7 +190,7 @@ private fun HomeHeaderButton(icon: ImageVector, label: String, badge: Int, onCli
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = (-7).dp, y = 7.dp)
+                    .offset(x = (-11).dp, y = 11.dp)
                     .size(9.dp)
                     .background(Color.yard.danger, CircleShape)
                     .border(BorderStroke(1.5.dp, Color.yard.bg), CircleShape),
@@ -257,7 +261,9 @@ fun HomeTabStrip(tabs: List<HomeTab>, selectedId: String, onSelect: (String) -> 
                                     onSelect(tab.id)
                                 }
                             }
-                            .padding(bottom = 9.dp),
+                            // Spacing.s on top (taken from the header's bottom padding) keeps the
+                            // layout as iOS while the tap target reaches the 48dp minimum.
+                            .padding(top = Spacing.s, bottom = 9.dp),
                     )
                 }
             }
@@ -287,6 +293,7 @@ fun HomeFeedView(model: HomeFeedModel, gridState: LazyStaggeredGridState, modifi
     val followIds = follows.items.map { it.brandId }
     val isFollowingTab = model.tab == HomeTab.Following
     val bottomClearance = LocalTabPillClearance.current
+    val window = LocalYardWindow.current
 
     // Only the Following tab reloads when follows change.
     val followKey = if (!isFollowingTab) "static" else (if (follows.hasLoaded) "loaded:" else "loading:") + followIds.sorted().joinToString(",")
@@ -321,20 +328,26 @@ fun HomeFeedView(model: HomeFeedModel, gridState: LazyStaggeredGridState, modifi
     ) {
         when (val phase = model.phase) {
             HomeFeedPhase.Idle, HomeFeedPhase.Loading -> HomeScrollColumn(bottomClearance) {
+                // Five rows at any column count (10 tiles on a phone, as iOS).
                 MasonrySkeleton(
                     Modifier.padding(horizontal = Spacing.gridGap).padding(top = Spacing.xs),
-                    count = 10,
+                    count = window.gridColumns * 5,
+                    columns = window.gridColumns,
                 )
             }
             is HomeFeedPhase.Failed -> HomeScrollColumn(bottomClearance) {
-                EmptyState.Error(message = phase.message, modifier = Modifier.padding(top = Spacing.xxl)) {
+                EmptyState.Error(message = phase.message, modifier = Modifier.adaptiveContentWidth().padding(top = Spacing.xxl)) {
                     model.refresh(followIds).join()
                 }
             }
             HomeFeedPhase.Loaded -> {
                 if (model.items.isEmpty() && model.founding.isEmpty()) {
                     HomeScrollColumn(bottomClearance) {
-                        HomeFeedEmptyState(model.tab, hasFollows = followIds.isNotEmpty(), modifier = Modifier.padding(top = Spacing.xxl))
+                        HomeFeedEmptyState(
+                            model.tab,
+                            hasFollows = followIds.isNotEmpty(),
+                            modifier = Modifier.adaptiveContentWidth().padding(top = Spacing.xxl),
+                        )
                     }
                 } else {
                     HomeFeedGrid(model, gridState, bottomClearance)
@@ -482,6 +495,10 @@ private fun HomeViewDarkPreview() = YardPreview(darkTheme = true) { HomeView() }
 @Preview(name = "HomeView — light")
 @Composable
 private fun HomeViewLightPreview() = YardPreview(darkTheme = false, signedIn = false) { HomeView() }
+
+@YardTabletPreviews
+@Composable
+private fun HomeViewTabletPreview() = YardPreview(darkTheme = true) { HomeView() }
 
 @Preview(name = "Home tab strip — dark")
 @Composable

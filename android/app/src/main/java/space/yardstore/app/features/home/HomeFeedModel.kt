@@ -131,6 +131,8 @@ class HomeFeedModel(
     /** Next page, triggered when the last tiles come into view. Returns the network job, if any. */
     fun loadMore(): Job? {
         if (phase != HomeFeedPhase.Loaded || isLoadingMore || !hasMore) return null
+        // A refresh is rebuilding the feed: a page fetched for the old offset would land on top of it.
+        if (refreshJob?.isActive == true) return null
         if (tab == HomeTab.Following) {
             followingShown = minOf(followingPool.size, followingShown + PAGE_SIZE)
             products = followingPool.take(followingShown)

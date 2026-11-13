@@ -115,6 +115,25 @@ class HomeFeedModelTest {
         assertNull(model.loadMore())
     }
 
+    @Test fun loadMoreWaitsWhileARefreshRebuildsTheFeed() = runTest {
+        val f = forYouServer()
+        val model = HomeFeedModel(HomeTab.ForYou, this, f.api)
+        model.refresh(emptyList()).join()
+        assertTrue(model.hasMore)
+
+        val pulled = model.refresh(emptyList(), pulled = true)
+        // The old offset must not be fetched on top of the feed being rebuilt.
+        assertNull(model.loadMore())
+        assertFalse(model.isLoadingMore)
+        pulled.join()
+
+        assertTrue(f.requestsTo("/api/catalog/products").all { it.requestUrl!!.queryParameter("offset") == "0" })
+        assertFalse(model.isRefreshing)
+        // Once the refresh is done, paging works again.
+        model.loadMore()!!.join()
+        assertEquals("24", f.requestsTo("/api/catalog/products").last().requestUrl!!.queryParameter("offset"))
+    }
+
     @Test fun loadMoreFailureIsRetryable() = runTest {
         var failNext = true
         val f = serve { path, q ->

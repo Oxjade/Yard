@@ -16,14 +16,20 @@ Package: `features/home/` (mirrors `ios/Yard/Features/Home/`).
 - Badges (signed in): `GET /api/notifications?as=shopper`, `GET /api/inbox/unread`
 
 ## Differences from iOS
-- Loads run in `HomeViewModel.viewModelScope`, so switching tabs never cancels a load; a pull to refresh cancels an in-flight "load more" (iOS doesn't — logged in ios-flaws.md).
+- Loads run in `HomeViewModel.viewModelScope`, so switching tabs never cancels a load; a pull to refresh cancels an in-flight "load more", and "load more" is refused while a refresh is running (iOS fences neither — logged in ios-flaws.md).
 - Each tab keeps its own scroll position (iOS resets on switch via `.id`). Tab switch cross-fades.
 - Masonry is the shared `LazyVerticalStaggeredGrid` (`MasonryGrid`), balanced by measured height, so `HomeFeedItem.heightRatio` isn't needed and wasn't ported.
 - Context menu → long-press `DropdownMenu`; `ShareLink` → `Intent.ACTION_SEND` chooser; `.ultraThinMaterial` on the Following chip/countdown → translucent scrim pill.
 - Pull to refresh = Material 3 `PullToRefreshBox` with Yard colours.
+- Touch targets: header buttons are 48dp (iOS 40pt, badge dot re-offset to stay on the icon); the Follow chip keeps its 30dp pill inside a 48dp transparent tap area; each tab's tap area starts `Spacing.s` higher (that padding moved from the header's bottom into the tab), so the layout is unchanged.
+
+## Tablet & large screens
+- Masonry (and its skeleton, 5 rows at any column count) at `gridColumns` (2 / 3 / 4); the founding rail keeps its 260dp cards and gutters (shows more cards); header and tab strip span the width.
+- Empty and error states are capped at `contentMaxWidth` (`adaptiveContentWidth`).
+- No list → detail or hero on Home, so no two-pane layout. `@YardTabletPreviews` on `HomeView`.
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/home/` — 24 tests (models/DTO decoding, stable hash/shapes, countdown labels, feed mixing, paging, errors, Following merge, ViewModel badges/categories against MockWebServer).
+`app/src/test/java/space/yardstore/app/features/home/` — 25 tests (models/DTO decoding, stable hash/shapes, countdown labels, feed mixing, paging, errors, Following merge, ViewModel badges/categories against MockWebServer).
 
 ## Unfinished / notes
 - Badges don't live-update (no realtime channel); they refresh when the shopper changes.
