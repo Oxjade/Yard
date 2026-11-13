@@ -84,7 +84,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -107,6 +111,8 @@ import space.yardstore.app.designsystem.monospacedDigits
 import space.yardstore.app.designsystem.yard
 import space.yardstore.app.features.bag.BagView
 import space.yardstore.app.features.home.HomeView
+import space.yardstore.app.features.liveactivity.LiveTrackingManager
+import space.yardstore.app.features.notifications.YardPushNotifications
 import space.yardstore.app.features.search.SearchView
 import space.yardstore.app.features.you.YouView
 import kotlin.math.sign
@@ -173,7 +179,7 @@ fun RootView(container: AppContainer) {
                 Box(Modifier.fillMaxSize().padding(start = railReserve)) {
                     for (tab in AppTab.entries) {
                         if (tab.name in visitedTabs) {
-                            key(tab) { TabStack(tab, router, selected = router.selectedTab == tab, wide = wide) }
+                            key(tab) { TabStack(tab, router, container.tabTops, selected = router.selectedTab == tab, wide = wide) }
                         }
                     }
                 }
@@ -200,6 +206,8 @@ fun RootView(container: AppContainer) {
             }
 
             RouteSheetHost(router)
+            // Notification channels, the soft "Never miss a drop" prompt and notification-tap routing.
+            YardPushNotifications()
         }
 
         // Android back on a non-Home tab root goes to Home first (then leaves the app).
@@ -224,6 +232,8 @@ fun RootView(container: AppContainer) {
     var resumedOnce by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        // Launch and every foreground: refresh the running order-tracking notifications.
+        scope.launch { LiveTrackingManager.resume() }
         if (resumedOnce) {
             scope.launch {
                 session.refresh()
@@ -240,12 +250,18 @@ private class DetachedBackOwner(override val lifecycle: Lifecycle) : OnBackPress
 }
 
 @Composable
-private fun TabStack(tab: AppTab, router: Router, selected: Boolean, wide: Boolean) {
+private fun TabStack(tab: AppTab, router: Router, tops: TabTopRoutes, selected: Boolean, wide: Boolean) {
     val controller: NavHostController = rememberNavController()
     DisposableEffect(controller) {
         router.attach(tab, controller)
-        onDispose { router.detach(tab, controller) }
+        onDispose {
+            router.detach(tab, controller)
+            tops.remove(tab)
+        }
     }
+    val topEntry by controller.currentBackStackEntryAsState()
+    val top = topEntry?.let(::shellRelevantRoute)
+    LaunchedEffect(tab, top) { tops.set(tab, top) }
     val realOwner = LocalOnBackPressedDispatcherOwner.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val detached = remember(lifecycle) { DetachedBackOwner(lifecycle) }
@@ -294,6 +310,13 @@ private fun TabStack(tab: AppTab, router: Router, selected: Boolean, wide: Boole
             }
         }
     }
+}
+
+/** The top entry as far as [TabTopRoutes] cares: an order confirmation (with its id), checkout, or null. */
+private fun shellRelevantRoute(entry: NavBackStackEntry): Route? = when {
+    entry.destination.hasRoute<Route.OrderConfirmation>() -> runCatching { entry.toRoute<Route.OrderConfirmation>() }.getOrNull()
+    entry.destination.hasRoute<Route.Checkout>() -> Route.Checkout
+    else -> null
 }
 
 /** The route sheet (`router.present(…)`): its own back stack, toasts, × on its root. */

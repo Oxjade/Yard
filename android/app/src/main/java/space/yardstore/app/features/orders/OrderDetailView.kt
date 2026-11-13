@@ -179,12 +179,13 @@ fun OrderDetailView(id: String) {
  */
 private suspend fun orderDetailReload(id: String, model: OrderDetailModel) {
     model.load(id)
-    // TODO(liveactivity-integrator): iOS then calls `LiveActivityManager.shared.sync(orderId: id)` when
-    //  the order is shipped / delivered / cancelled, or `LiveActivityManager.shared.isTracking(orderId: id)`.
-    //  Wire the Android equivalent (ongoing order notification, features/liveactivity) here once it
-    //  exists. Nothing is called yet. Condition to mirror:
-    //    val order = model.order ?: return
-    //    order.status in setOf(OrderStatus.Shipped, OrderStatus.Delivered, OrderStatus.Cancelled) || isTracking(id)
+    // Keep the ongoing order notification (features/liveactivity) in step, as iOS does with its Live Activity.
+    val order = model.order ?: return
+    val relevant = order.status == OrderStatus.Shipped || order.status == OrderStatus.Delivered ||
+        order.status == OrderStatus.Cancelled
+    if (relevant || space.yardstore.app.features.liveactivity.LiveTrackingManager.isTracking(id)) {
+        space.yardstore.app.features.liveactivity.LiveTrackingManager.sync(id)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -323,9 +324,9 @@ private fun OrderDetailLoaded(
                     )
                 }
                 if (order.status == OrderStatus.Shipped) {
-                    // TODO(liveactivity-integrator): iOS shows `LiveActivityTrackButton(orderId: order.id)`
-                    //  here ("Track on Lock Screen" / "Stop tracking"). Add the Android ongoing-notification
-                    //  toggle from features/liveactivity in this slot; nothing is shown yet.
+                    item(key = "live-tracking") {
+                        space.yardstore.app.features.liveactivity.LiveTrackingButton(orderId = order.id)
+                    }
                 }
             }
             item(key = "card") {

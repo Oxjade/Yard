@@ -10,6 +10,8 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import okio.Path.Companion.toOkioPath
 import space.yardstore.app.core.Config
+import space.yardstore.app.features.liveactivity.LiveTrackingManager
+import space.yardstore.app.features.notifications.YardNotificationChannels
 
 /**
  * App entry: creates the shared stores once (iOS `YardApp`'s `@State` stores) and configures the
@@ -24,6 +26,10 @@ class YardApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         Config.init(this)
         container = AppContainer(this)
+        // Notification channels (drops, orders, messages…) and the ongoing order-tracking
+        // notification (needs `container` for its sign-out listener, so after it).
+        YardNotificationChannels.create(this)
+        LiveTrackingManager.install(this)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

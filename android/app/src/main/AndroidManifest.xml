@@ -56,6 +56,7 @@
                 <data android:pathPrefix="/drops" />
                 <data android:pathPrefix="/you" />
                 <data android:pathPrefix="/inbox" />
+                <data android:pathPrefix="/auth" />
                 <data android:pathPrefix="/wishlist" />
                 <data android:pathPrefix="/following" />
                 <data android:pathPrefix="/charts" />
