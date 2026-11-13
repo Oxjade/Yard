@@ -8,7 +8,7 @@ import Observation
 @MainActor
 final class AroundLocationManager: NSObject, CLLocationManagerDelegate {
     private(set) var authorization: CLAuthorizationStatus
-    private(set) var location: CLLocation?
+    private(set) var location: CLLocation? = nil
     /// Bumped on each new fix after the shopper asked to locate them, so the map can fly there once.
     private(set) var requestedFixCount: Int = 0
 

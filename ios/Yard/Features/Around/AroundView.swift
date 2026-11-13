@@ -95,13 +95,13 @@ struct AroundView: View {
                     )
                     .onTapGesture { select(place) }
                 }
+                .annotationTitles(.hidden)
             }
             if locator.isAuthorized {
                 UserAnnotation()
             }
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .annotationTitles(.hidden)
         .mapControls {
             MapCompass()
         }
