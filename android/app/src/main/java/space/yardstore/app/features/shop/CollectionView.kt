@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.outlined.LayersClear
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,7 +68,9 @@ import space.yardstore.app.core.models.PublicStorefront
 import space.yardstore.app.core.models.StorefrontCollection
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.networking.APIError
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.PreviewFixtures
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.Radius
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
@@ -241,7 +245,7 @@ internal fun CollectionScreen(model: CollectionModel) {
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar(model.collection?.name ?: "Collection") {
             if (model.isLoaded) {
-                GlassIconButton(Icons.Outlined.Share, "Share collection", size = 38.dp) {
+                GlassIconButton(Icons.Outlined.Share, "Share collection", Modifier.minimumInteractiveComponentSize(), size = 38.dp) {
                     shopShare(context, model.shareUrl, model.collection?.name)
                 }
             }
@@ -332,6 +336,10 @@ private fun LazyStaggeredGridScope.collectionLine(key: String, content: @Composa
 
 // MARK: Hero
 
+/** The phone's tall 440dp cover; wide windows use a shorter one so it doesn't fill the screen. */
+@Composable
+private fun collectionHeroHeight() = if (LocalYardWindow.current.isWide) 340.dp else 440.dp
+
 @Composable
 private fun CollectionHero(model: CollectionModel, onBrand: () -> Unit) {
     val scrim = Color.yard.scrim
@@ -340,7 +348,7 @@ private fun CollectionHero(model: CollectionModel, onBrand: () -> Unit) {
             .padding(horizontal = Spacing.gutter)
             .padding(top = Spacing.s)
             .fillMaxWidth()
-            .height(440.dp)
+            .height(collectionHeroHeight())
             .clip(YardShapes.card)
             .background(Color.yard.surface2),
         contentAlignment = Alignment.BottomStart,
@@ -351,7 +359,10 @@ private fun CollectionHero(model: CollectionModel, onBrand: () -> Unit) {
                 Brush.verticalGradient(listOf(scrim.copy(alpha = 0.25f), scrim.copy(alpha = 0f), scrim.copy(alpha = 0.78f))),
             ),
         )
-        Column(Modifier.padding(Spacing.l), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        Column(
+            Modifier.padding(Spacing.l).widthIn(max = LocalYardWindow.current.contentMaxWidth),
+            verticalArrangement = Arrangement.spacedBy(Spacing.s),
+        ) {
             Text(
                 "A collection by ${model.brandName}",
                 style = YardFonts.captionEmphasis,
@@ -372,6 +383,8 @@ private fun CollectionHero(model: CollectionModel, onBrand: () -> Unit) {
 private fun CollectionBrandChip(model: CollectionModel, onBrand: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier
+            // 34dp glass pill like iOS, inside a 48dp touch target.
+            .minimumInteractiveComponentSize()
             .clip(YardShapes.pill)
             .background(Color.yard.surface.copy(alpha = 0.72f), YardShapes.pill)
             .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
@@ -464,7 +477,7 @@ internal fun CollectionCard(collection: StorefrontCollection, modifier: Modifier
 private fun CollectionSkeleton() {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.l)) {
         Skeleton(
-            Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.s).fillMaxWidth().height(440.dp),
+            Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.s).fillMaxWidth().height(collectionHeroHeight()),
             cornerRadius = Radius.card,
         )
         Skeleton(Modifier.padding(horizontal = Spacing.gutter).width(90.dp).height(14.dp), cornerRadius = 4.dp)
@@ -504,3 +517,7 @@ private fun CollectionViewDarkPreview() = YardPreview(darkTheme = true) { Collec
 @Preview(name = "CollectionView — light", heightDp = 1200)
 @Composable
 private fun CollectionViewLightPreview() = YardPreview(darkTheme = false) { CollectionPreviewScreen() }
+
+@YardTabletPreviews
+@Composable
+private fun CollectionViewTabletPreview() = YardPreview(darkTheme = true) { CollectionPreviewScreen() }

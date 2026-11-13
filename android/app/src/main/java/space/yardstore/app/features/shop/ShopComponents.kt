@@ -23,6 +23,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -131,7 +132,8 @@ internal fun <T> ShopSortMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    Box {
+    // 36dp pill like iOS, inside a 48dp touch target.
+    Box(Modifier.minimumInteractiveComponentSize()) {
         Row(
             Modifier
                 .semantics { contentDescription = "$accessibilityPrefix, ${title(selection)}" }

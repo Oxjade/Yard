@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
@@ -55,7 +56,9 @@ import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.app.Route
 import space.yardstore.app.core.Formatters
 import space.yardstore.app.core.models.Product
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.PreviewFixtures
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
@@ -181,6 +184,7 @@ private fun ShopHeader(model: ShopListingModel, modifier: Modifier = Modifier) {
                 "Explore published pieces from independent brands across Yard.",
                 style = YardFonts.callout,
                 color = Color.yard.ink2,
+                modifier = Modifier.widthIn(max = LocalYardWindow.current.contentMaxWidth),
             )
         }
     }
@@ -210,9 +214,15 @@ private fun ShopCategoryBanner(model: ShopListingModel, modifier: Modifier = Mod
                 Brush.verticalGradient(listOf(scrim.copy(alpha = 0f), scrim.copy(alpha = 0.2f), scrim.copy(alpha = 0.75f))),
             ),
         )
-        Column(Modifier.padding(Spacing.l), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        // The text stays at reading width on wide windows; the photo keeps the full width.
+        Column(
+            Modifier.padding(Spacing.l).widthIn(max = LocalYardWindow.current.contentMaxWidth),
+            verticalArrangement = Arrangement.spacedBy(Spacing.s),
+        ) {
             Row(
-                Modifier.pressableClick { router.push(Route.Categories) },
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .pressableClick { router.push(Route.Categories) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -390,3 +400,11 @@ private fun ShopViewCategoryDarkPreview() = YardPreview(darkTheme = true) { Shop
 @Preview(name = "ShopView empty — light", heightDp = 900)
 @Composable
 private fun ShopViewEmptyLightPreview() = YardPreview(darkTheme = false) { ShopPreviewScreen("sneakers", emptyList()) }
+
+@YardTabletPreviews
+@Composable
+private fun ShopViewTabletPreview() = YardPreview(darkTheme = true) { ShopPreviewScreen(null) }
+
+@YardTabletPreviews
+@Composable
+private fun ShopViewCategoryTabletPreview() = YardPreview(darkTheme = false) { ShopPreviewScreen("fashion") }

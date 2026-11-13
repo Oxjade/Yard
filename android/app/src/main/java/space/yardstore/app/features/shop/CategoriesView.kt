@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,7 +57,11 @@ import kotlinx.coroutines.launch
 import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.app.Route
 import space.yardstore.app.core.networking.APIClient
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Radius
+import space.yardstore.app.designsystem.YardTabletPreviews
+import space.yardstore.app.designsystem.YardWidthClass
+import space.yardstore.app.designsystem.YardWindow
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
@@ -155,6 +160,7 @@ internal fun CategoriesScreen(model: CategoriesModel) {
     val router = LocalRouter.current
     LaunchedEffect(model) { model.load() }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Spacing.xxl
+    val spec = CategoriesLayout.Spec.forWindow(LocalYardWindow.current)
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar("Categories")
@@ -168,7 +174,7 @@ internal fun CategoriesScreen(model: CategoriesModel) {
                     CategoriesHeader(model, Modifier.padding(bottom = Spacing.xl - Spacing.s))
                 }
                 when (val phase = model.phase) {
-                    CategoriesModel.Phase.Loading -> item(key = "skeleton") { CategoriesSkeleton() }
+                    CategoriesModel.Phase.Loading -> item(key = "skeleton") { CategoriesSkeleton(spec) }
                     is CategoriesModel.Phase.Failed -> item(key = "error") {
                         EmptyState.Error(phase.error, Modifier.heightIn(min = 360.dp)) { model.load(force = true) }
                     }
@@ -184,10 +190,11 @@ internal fun CategoriesScreen(model: CategoriesModel) {
                         }
                     } else {
                         val categories = model.categories
-                        items(CategoriesLayout.rows(categories.size), key = { "row-${it.id}" }) { row ->
-                            CategoriesMosaicRow(row, categories)
+                        items(CategoriesLayout.rows(categories.size, spec), key = { "row-${it.id}-${it.slots}" }) { row ->
+                            CategoriesMosaicRow(row, categories, spec)
                         }
-                        item(key = "shop-everything") { ShopEverything(Modifier.padding(top = Spacing.xl - Spacing.s)) }
+                        // iOS: the VStack's xl gap plus shopEverything's own l top padding.
+                        item(key = "shop-everything") { ShopEverything(Modifier.padding(top = Spacing.xl + Spacing.l - Spacing.s)) }
                     }
                 }
             }
@@ -209,34 +216,45 @@ private fun CategoriesHeader(model: CategoriesModel, modifier: Modifier = Modifi
             lead + "Every category is made up of small, independent studios, never resellers.",
             style = YardFonts.callout,
             color = Color.yard.ink2,
+            modifier = Modifier.widthIn(max = LocalYardWindow.current.contentMaxWidth),
         )
     }
 }
 
 // MARK: Mosaic
 
-/** Rows of one wide card then two half cards, repeating (the website's phone mosaic). */
+/**
+ * Rows of wide cards then smaller cards, repeating (the website's mosaic). On phones that is one
+ * wide card then two half cards; on wider windows the rows hold more cards
+ * ([Spec.forWindow]: 2 wide + 3 small on Medium, 2 wide + 4 small on Expanded).
+ */
 internal object CategoriesLayout {
-    sealed interface Kind {
-        data class Wide(val index: Int) : Kind
-        data class Pair(val left: Int, val right: Int?) : Kind
+    /** How many cards a wide row and a small row hold, and their heights. */
+    data class Spec(val wideSlots: Int, val smallSlots: Int, val wideHeight: Dp, val smallHeight: Dp) {
+        companion object {
+            val Phone = Spec(wideSlots = 1, smallSlots = 2, wideHeight = 260.dp, smallHeight = 230.dp)
+
+            fun forWindow(window: YardWindow): Spec = when (window.widthClass) {
+                YardWidthClass.Compact -> Phone
+                // One wide card per row would be a 700–1200dp banner: two per row on wide windows,
+                // and the small rows follow the grid columns.
+                else -> Spec(wideSlots = 2, smallSlots = window.gridColumns, wideHeight = 300.dp, smallHeight = 250.dp)
+            }
+        }
     }
 
-    data class MosaicRow(val id: Int, val kind: Kind)
+    /** One row: the category indices it shows; [slots] ≥ indices.size (the rest stays empty). */
+    data class MosaicRow(val id: Int, val indices: List<Int>, val wide: Boolean, val slots: Int)
 
-    fun rows(count: Int): List<MosaicRow> {
+    fun rows(count: Int, spec: Spec = Spec.Phone): List<MosaicRow> {
         val rows = mutableListOf<MosaicRow>()
         var i = 0
         var wideNext = true
         while (i < count) {
-            if (wideNext) {
-                rows.add(MosaicRow(i, Kind.Wide(i)))
-                i += 1
-            } else {
-                val right = if (i + 1 < count) i + 1 else null
-                rows.add(MosaicRow(i, Kind.Pair(i, right)))
-                i += 2
-            }
+            val slots = if (wideNext) spec.wideSlots else spec.smallSlots
+            val end = minOf(i + slots, count)
+            rows.add(MosaicRow(id = i, indices = (i until end).toList(), wide = wideNext, slots = slots))
+            i = end
             wideNext = !wideNext
         }
         return rows
@@ -244,19 +262,13 @@ internal object CategoriesLayout {
 }
 
 @Composable
-private fun CategoriesMosaicRow(row: CategoriesLayout.MosaicRow, categories: List<ShopCategory>) {
-    Box(Modifier.padding(horizontal = Spacing.gutter)) {
-        when (val kind = row.kind) {
-            is CategoriesLayout.Kind.Wide -> CategoryCardLink(categories, kind.index, 260.dp, wide = true, Modifier.fillMaxWidth())
-            is CategoriesLayout.Kind.Pair -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                CategoryCardLink(categories, kind.left, 230.dp, wide = false, Modifier.weight(1f))
-                if (kind.right != null) {
-                    CategoryCardLink(categories, kind.right, 230.dp, wide = false, Modifier.weight(1f))
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-            }
+private fun CategoriesMosaicRow(row: CategoriesLayout.MosaicRow, categories: List<ShopCategory>, spec: CategoriesLayout.Spec) {
+    val height = if (row.wide) spec.wideHeight else spec.smallHeight
+    Row(Modifier.padding(horizontal = Spacing.gutter), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        row.indices.forEach { index ->
+            CategoryCardLink(categories, index, height, wide = row.wide, Modifier.weight(1f))
         }
+        repeat(row.slots - row.indices.size) { Spacer(Modifier.weight(1f)) }
     }
 }
 
@@ -277,13 +289,16 @@ private fun ShopEverything(modifier: Modifier = Modifier) {
     val router = LocalRouter.current
     Column(modifier.fillMaxWidth().padding(horizontal = Spacing.gutter), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
         YardDivider(Modifier.padding(bottom = Spacing.s))
-        Text("Not sure where to start?", style = YardFonts.title, color = Color.yard.ink)
+        // Reading width on wide windows (the divider stays full width).
+        val readable = Modifier.widthIn(max = LocalYardWindow.current.contentMaxWidth)
+        Text("Not sure where to start?", style = YardFonts.title, color = Color.yard.ink, modifier = readable)
         Text(
             "Browse everything at once, then narrow by category, stock or price.",
             style = YardFonts.callout,
             color = Color.yard.ink2,
+            modifier = readable,
         )
-        YardButton("Shop everything", Modifier.padding(top = Spacing.xs), icon = Icons.AutoMirrored.Filled.ArrowForward) {
+        YardButton("Shop everything", readable.padding(top = Spacing.xs), icon = Icons.AutoMirrored.Filled.ArrowForward) {
             router.push(Route.Shop)
         }
     }
@@ -346,14 +361,17 @@ internal fun CategoryCard(category: ShopCategory, index: Int, wide: Boolean, mod
 // MARK: - Skeleton
 
 @Composable
-private fun CategoriesSkeleton() {
+private fun CategoriesSkeleton(spec: CategoriesLayout.Spec) {
     Column(Modifier.padding(horizontal = Spacing.gutter), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-        Skeleton(Modifier.fillMaxWidth().height(260.dp), cornerRadius = Radius.card)
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
-            Skeleton(Modifier.weight(1f).height(230.dp), cornerRadius = Radius.card)
+            repeat(spec.wideSlots) { Skeleton(Modifier.weight(1f).height(spec.wideHeight), cornerRadius = Radius.card) }
         }
-        Skeleton(Modifier.fillMaxWidth().height(260.dp), cornerRadius = Radius.card)
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            repeat(spec.smallSlots) { Skeleton(Modifier.weight(1f).height(spec.smallHeight), cornerRadius = Radius.card) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            repeat(spec.wideSlots) { Skeleton(Modifier.weight(1f).height(spec.wideHeight), cornerRadius = Radius.card) }
+        }
     }
 }
 
@@ -380,3 +398,7 @@ private fun CategoriesViewDarkPreview() = YardPreview(darkTheme = true) { Catego
 @Preview(name = "CategoriesView — light", heightDp = 1100)
 @Composable
 private fun CategoriesViewLightPreview() = YardPreview(darkTheme = false) { CategoriesPreviewScreen() }
+
+@YardTabletPreviews
+@Composable
+private fun CategoriesViewTabletPreview() = YardPreview(darkTheme = true) { CategoriesPreviewScreen() }

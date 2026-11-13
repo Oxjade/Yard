@@ -14,6 +14,14 @@ ViewModels: `ShopListingModel`, `CategoriesModel`, `CollectionModel` (same names
 Models: `ShopModels.kt` (`ShopCategory`, `ShopCategoriesResponse`, `ShopCategoryCache` (5 min in-memory, Mutex), `ShopSort`, `ShopCollectionSort`, `ShopCollectionResponse`, `ShopText`).
 Private helpers: `ShopComponents.kt` (`ShopDisplayText` = display face with `minimumScaleFactor` via `TextAutoSize`, `shopBleed`, `ShopRefreshBox`, `ShopSortMenu`, `shopShare`).
 
+## Tablet & large screens
+
+- **Categories**: the mosaic follows the window (`CategoriesLayout.Spec.forWindow`): phone = 1 wide (260dp) then 2 half (230dp); Medium/Expanded = 2 wide (300dp) then `gridColumns` (3 / 4) small (250dp) per row, so no category becomes a 1200dp banner. The skeleton uses the same spec. Subtitle and "Not sure where to start?" block are capped at `contentMaxWidth`.
+- **Shop**: masonry at `gridColumns` (via `MasonryGrid`); header subtitle and the category banner's text capped at `contentMaxWidth` (photo stays full width, 280dp tall); filter bar full width.
+- **Collection**: hero 340dp on `isWide` (440dp on phones), its text capped at `contentMaxWidth`; masonry at `gridColumns`; "More from" rail keeps 280×210 cards (shows more of them).
+- `@YardTabletPreviews` on all three screens.
+- Touch targets: the sort pill, the collection brand chip and the share button keep their iOS size inside a 48dp `minimumInteractiveComponentSize`; "All categories" on the banner is ≥ 48dp tall.
+
 ## Endpoints
 
 - `GET /api/catalog/categories`
@@ -34,4 +42,4 @@ Private helpers: `ShopComponents.kt` (`ShopDisplayText` = display face with `min
 
 ## Tests
 
-`app/src/test/java/space/yardstore/app/features/shop/`: `ShopModelsTest` (DTO decoding, count/pieces wording, sorts, mosaic layout) and `ShopViewModelsTest` (listing load/paging/dedupe/filters/sort/errors, category cache, collection order/chunking/not-found/storefront failure, categories load/fail) against MockWebServer.
+`app/src/test/java/space/yardstore/app/features/shop/`: `ShopModelsTest` (DTO decoding, count/pieces wording, sorts, mosaic layout on phone / Medium / Expanded windows) and `ShopViewModelsTest` (listing load/paging/dedupe/filters/sort/errors, category cache, collection order/chunking/not-found/storefront failure, categories load/fail) against MockWebServer.

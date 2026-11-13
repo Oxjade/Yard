@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.ui.unit.dp
+import space.yardstore.app.designsystem.YardWindow
 import space.yardstore.app.core.models.Product
 import space.yardstore.app.core.models.ProductsPage
 import space.yardstore.app.core.models.YardJson
@@ -83,17 +85,31 @@ class ShopModelsTest {
 
     @Test fun mosaicRowsAlternateWideAndPairs() {
         val rows = CategoriesLayout.rows(5)
-        assertEquals(
-            listOf(
-                CategoriesLayout.Kind.Wide(0),
-                CategoriesLayout.Kind.Pair(1, 2),
-                CategoriesLayout.Kind.Wide(3),
-                CategoriesLayout.Kind.Pair(4, null),
-            ),
-            rows.map { it.kind },
-        )
+        assertEquals(listOf(listOf(0), listOf(1, 2), listOf(3), listOf(4)), rows.map { it.indices })
+        assertEquals(listOf(true, false, true, false), rows.map { it.wide })
+        // The last pair keeps two slots so its single card stays half width.
+        assertEquals(listOf(1, 2, 1, 2), rows.map { it.slots })
         assertEquals(listOf(0, 1, 3, 4), rows.map { it.id })
         assertTrue(CategoriesLayout.rows(0).isEmpty())
         assertEquals(1, CategoriesLayout.rows(1).size)
+    }
+
+    @Test fun mosaicSpecFollowsWindowWidth() {
+        assertEquals(CategoriesLayout.Spec.Phone, CategoriesLayout.Spec.forWindow(YardWindow(width = 411.dp, height = 891.dp)))
+        val medium = CategoriesLayout.Spec.forWindow(YardWindow(width = 700.dp, height = 1000.dp))
+        assertEquals(2, medium.wideSlots)
+        assertEquals(3, medium.smallSlots)
+        val expanded = CategoriesLayout.Spec.forWindow(YardWindow(width = 1280.dp, height = 800.dp))
+        assertEquals(2, expanded.wideSlots)
+        assertEquals(4, expanded.smallSlots)
+    }
+
+    @Test fun mosaicRowsOnExpandedWindows() {
+        val spec = CategoriesLayout.Spec.forWindow(YardWindow(width = 1280.dp, height = 800.dp))
+        val rows = CategoriesLayout.rows(9, spec)
+        assertEquals(listOf(listOf(0, 1), listOf(2, 3, 4, 5), listOf(6, 7), listOf(8)), rows.map { it.indices })
+        assertEquals(listOf(2, 4, 2, 4), rows.map { it.slots })
+        // Every category appears exactly once, in order.
+        assertEquals((0 until 9).toList(), rows.flatMap { it.indices })
     }
 }
