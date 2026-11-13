@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -43,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +57,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,10 +80,12 @@ import space.yardstore.app.core.stores.LocalCartStore
 import space.yardstore.app.core.stores.LocalSavedStore
 import space.yardstore.app.core.stores.LocalSessionStore
 import space.yardstore.app.core.stores.SavedStore
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.Card
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.LocalToastCenter
@@ -94,6 +99,7 @@ import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardDivider
 import space.yardstore.app.designsystem.components.YardTopBar
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
@@ -114,6 +120,25 @@ enum class SavedSort(val title: String) {
     PriceDesc("Price, high to low"),
     Brand("Brand, A to Z"),
     InStock("In stock first"),
+}
+
+/** What "Move to bag" does for a piece (the iOS `startMove` branches). */
+sealed interface SavedMoveAction {
+    /** Exactly one variant and it's in stock: add it straight away. */
+    data class Direct(val variant: ProductVariant) : SavedMoveAction
+    /** Nothing in stock: say so. */
+    data object SoldOut : SavedMoveAction
+    /** Several variants: pick a size first. */
+    data object PickSize : SavedMoveAction
+}
+
+internal fun savedMoveAction(product: Product): SavedMoveAction {
+    val inStock = product.variants.filter { it.inStock && it.available > 0 }
+    return when {
+        product.variants.size == 1 && inStock.isNotEmpty() -> SavedMoveAction.Direct(inStock.first())
+        inStock.isEmpty() -> SavedMoveAction.SoldOut
+        else -> SavedMoveAction.PickSize
+    }
 }
 
 class SavedViewModel(private val api: APIClient = APIClient.shared) : ViewModel() {
@@ -267,7 +292,8 @@ fun SavedView() {
     val toast = LocalToastCenter.current
     val haptics = LocalHapticFeedback.current
     val model: SavedViewModel = viewModel { SavedViewModel() }
-    var sizeSheetProduct by remember { mutableStateOf<Product?>(null) }
+    // The size sheet's piece, by id so it survives rotation and process death.
+    var sizeSheetProductId by rememberSaveable { mutableStateOf<String?>(null) }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + LocalTabPillClearance.current
 
     LaunchedEffect(session.shopper?.id) {
@@ -279,11 +305,10 @@ fun SavedView() {
     }
 
     fun startMove(product: Product) {
-        val inStock = product.variants.filter { it.inStock && it.available > 0 }
-        when {
-            product.variants.size == 1 && inStock.isNotEmpty() -> move(product, inStock.first())
-            inStock.isEmpty() -> toast.show("This piece is sold out.", Toast.Style.Info)
-            else -> sizeSheetProduct = product
+        when (val action = savedMoveAction(product)) {
+            is SavedMoveAction.Direct -> move(product, action.variant)
+            SavedMoveAction.SoldOut -> toast.show("This piece is sold out.", Toast.Style.Info)
+            SavedMoveAction.PickSize -> sizeSheetProductId = product.id
         }
     }
 
@@ -324,8 +349,8 @@ fun SavedView() {
         }
     }
 
-    sizeSheetProduct?.let { product ->
-        SavedVariantSheet(product = product, onDismiss = { sizeSheetProduct = null }) { variant ->
+    sizeSheetProductId?.let { model.productsById[it] }?.let { product ->
+        SavedVariantSheet(product = product, onDismiss = { sizeSheetProductId = null }) { variant ->
             move(product, variant)
         }
     }
@@ -351,6 +376,9 @@ private fun SavedLoaded(
     // Sections sit Spacing.xl apart (the grid already adds gridGap between items).
     val sectionGap = Spacing.xl - gap
     val refreshState = rememberPullToRefreshState()
+    val window = LocalYardWindow.current
+    // Cards and notes under the grid keep a readable width on tablets (start-aligned with the header).
+    val readable = if (window.contentMaxWidth.isSpecified) Modifier.widthIn(max = window.contentMaxWidth) else Modifier
 
     PullToRefreshBox(
         isRefreshing = model.isRefreshing,
@@ -368,7 +396,7 @@ private fun SavedLoaded(
         },
     ) {
         LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Fixed(2),
+            columns = StaggeredGridCells.Fixed(window.gridColumns),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = gap, end = gap, top = Spacing.l, bottom = Spacing.xxl + bottomPadding),
             verticalItemSpacing = gap,
@@ -385,7 +413,7 @@ private fun SavedLoaded(
                 item(key = "empty", span = StaggeredGridItemSpan.FullLine) {
                     EmptyState(
                         "Nothing saved yet",
-                        modifier = Modifier.heightIn(min = 320.dp),
+                        modifier = Modifier.adaptiveContentWidth().heightIn(min = 320.dp),
                         message = "Tap the heart on any piece to keep it here until you're ready.",
                         icon = Icons.Outlined.FavoriteBorder,
                         actionTitle = "Browse new arrivals",
@@ -415,7 +443,7 @@ private fun SavedLoaded(
                 }
                 if (unlisted.isNotEmpty()) {
                     item(key = "unlisted", span = StaggeredGridItemSpan.FullLine) {
-                        SavedUnlistedSection(unlisted, Modifier.savedFullBleed(gap).padding(top = sectionGap), onRemove)
+                        SavedUnlistedSection(unlisted, Modifier.savedFullBleed(gap).padding(top = sectionGap).then(readable), onRemove)
                     }
                 }
                 item(key = "footnote", span = StaggeredGridItemSpan.FullLine) {
@@ -426,6 +454,7 @@ private fun SavedLoaded(
                         modifier = Modifier
                             .savedFullBleed(gap)
                             .padding(top = sectionGap)
+                            .then(readable)
                             .padding(horizontal = Spacing.gutter),
                     )
                 }
@@ -463,17 +492,24 @@ private fun SavedToolbarRow(
             modifier = Modifier.weight(1f),
         )
         Box {
-            Row(
+            // 48dp touch target around the compact pill.
+            Box(
                 Modifier
+                    .heightIn(min = 48.dp)
                     .semantics { contentDescription = "Sort wishlist, ${sort.title}" }
-                    .pressableClick { expanded = true }
-                    .background(Color.yard.surface2, YardShapes.pill)
-                    .padding(horizontal = Spacing.m, vertical = Spacing.s),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
+                    .pressableClick { expanded = true },
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(14.dp))
-                Text(sort.title, style = YardFonts.captionEmphasis, color = Color.yard.ink)
+                Row(
+                    Modifier
+                        .background(Color.yard.surface2, YardShapes.pill)
+                        .padding(horizontal = Spacing.m, vertical = Spacing.s),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(14.dp))
+                    Text(sort.title, style = YardFonts.captionEmphasis, color = Color.yard.ink)
+                }
             }
             DropdownMenu(
                 expanded = expanded,
@@ -512,7 +548,7 @@ private fun SavedTile(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         ProductTile(product, Modifier.pressableClick(onClickLabel = "Open ${product.title}") { onOpen() })
-        Box(Modifier.fillMaxWidth().heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
             when {
                 product.isNotForSale ->
                     YardButton("Opening soon", style = YardButtonStyle.Secondary, size = YardButtonSize.Small, enabled = false) {}
@@ -548,8 +584,8 @@ private fun SavedUnlistedSection(items: List<WishlistItem>, modifier: Modifier =
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(Spacing.m),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                        .padding(start = Spacing.m, end = Spacing.m - 6.dp, top = Spacing.m - 6.dp, bottom = Spacing.m - 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.m - 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -562,15 +598,17 @@ private fun SavedUnlistedSection(items: List<WishlistItem>, modifier: Modifier =
                         )
                         item.brandName?.let { Text(it, style = YardFonts.caption, color = Color.yard.ink2) }
                     }
+                    // 48dp touch target, 36dp circle (iOS size).
                     Box(
                         Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .semantics { contentDescription = "Remove from wishlist" }
-                            .pressableClick { onRemove(item.productId) }
-                            .background(Color.yard.surface2, CircleShape),
+                            .pressableClick { onRemove(item.productId) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Outlined.HeartBroken, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(17.dp))
+                        Box(Modifier.size(36.dp).background(Color.yard.surface2, CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.HeartBroken, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(17.dp))
+                        }
                     }
                 }
             }
@@ -591,6 +629,14 @@ private fun SavedViewLight() = YardPreview(darkTheme = false) { SavedView() }
 @Preview(name = "SavedView — signed out")
 @Composable
 private fun SavedViewSignedOut() = YardPreview(darkTheme = true, signedIn = false) { SavedView() }
+
+@YardTabletPreviews
+@Composable
+private fun SavedViewTablet() = YardPreview(darkTheme = true) { SavedView() }
+
+@YardTabletPreviews
+@Composable
+private fun SavedViewTabletSignedOut() = YardPreview(darkTheme = false, signedIn = false) { SavedView() }
 
 @Preview(name = "Saved tile + unlisted — light")
 @Composable

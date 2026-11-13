@@ -222,4 +222,26 @@ class FollowingViewModelTest {
         model.showMore()
         assertEquals(24, model.limit)
     }
+
+    @Test fun followStaysBusyUntilTheFeedHasReloaded() = runBlocking {
+        follows(followed("brd_1", "Acme Studio"))
+        productsByBrand(mapOf("brd_1" to listOf(product("p_1", brandId = "brd_1")), "brd_5" to listOf(product("p_5", brandId = "brd_5"))))
+        drops(emptyList(), emptyList())
+        brands(brandCard("brd_5", "Fifth"))
+        val store = FollowStore(backend.api)
+        val toast = ToastCenter()
+        val model = FollowingViewModel(backend.api)
+        model.load(store).join()
+        assertEquals(listOf("p_1"), model.pieces?.map { it.id })
+
+        follows(followed("brd_1", "Acme Studio"), followed("brd_5", "Fifth"))
+        backend.json("POST", "/api/follows", """{"brandId":"brd_5","following":true,"followers":3}""")
+        model.setFollowing(true, "brd_5", "Fifth", store, toast) {}
+        assertTrue("brd_5" in model.busyBrandIds)
+        waitUntil { model.busyBrandIds.isEmpty() }
+
+        // iOS awaits the reload before clearing busy, so the new brand's pieces are already in.
+        assertEquals(setOf("p_1", "p_5"), model.pieces?.map { it.id }?.toSet())
+        assertEquals(listOf("brd_1", "brd_5"), model.rows.map { it.brandId })
+    }
 }

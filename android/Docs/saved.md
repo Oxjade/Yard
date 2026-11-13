@@ -32,6 +32,19 @@ These are the same as iOS:
   re-enters composition (the same as iOS `.task`).
 - The iOS notes still apply: avatars are monograms because follows carry no logo, price sort ignores FX, and the toast has no Undo.
 
+- The size sheet's piece is kept by id in `rememberSaveable`, so an open sheet survives rotation. The sheet stays a
+  bottom sheet on tablets (it is short, like the iOS `.medium` detent).
+- Touch targets are at least 48dp: the Follow pill (72×26dp visual), the unlisted "Remove" circle (36dp visual) and the
+  sort pill sit in 48dp hit boxes. Under each wishlist tile the Move to bag slot is 48dp (44pt on iOS).
+- After Follow, the brand stays busy until the feed has reloaded, as on iOS (`await model.load` comes before the busy flag clears).
+
+## Tablet & large screens
+- Both grids use `LocalYardWindow.current.gridColumns` (2, 3 or 4), and so do their skeletons. Headers, section headers and
+  the avatar and drop rails stay full width with their gutters. The rails keep their item widths and show more items.
+- These capped blocks are start-aligned with the header and limited to `contentMaxWidth`: the "No longer available" card, the footnote and the
+  Following suggestions card. The empty states and the signed-out invite are centred with `adaptiveContentWidth()`.
+- Each screen has `@YardTabletPreviews` (signed in and signed out).
+
 ## Tests
-`app/src/test/java/space/yardstore/app/features/saved/` has 22 tests: `SavedViewModelTest` (13) and `FollowingViewModelTest` (9).
+`app/src/test/java/space/yardstore/app/features/saved/` has 26 tests: `SavedViewModelTest` (16) and `FollowingViewModelTest` (10).
 They run against MockWebServer with JSON shaped like `src/server/follows/index.ts` and the catalogue/drops routes.

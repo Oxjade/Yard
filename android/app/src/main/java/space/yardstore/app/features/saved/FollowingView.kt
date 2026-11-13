@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -38,6 +39,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,10 +89,12 @@ import space.yardstore.app.core.stores.FollowStore
 import space.yardstore.app.core.stores.LocalFollowStore
 import space.yardstore.app.core.stores.LocalSessionStore
 import space.yardstore.app.designsystem.PreviewFixtures
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.YardTabletPreviews
 import space.yardstore.app.designsystem.components.BrandAvatar
 import space.yardstore.app.designsystem.components.Card
 import space.yardstore.app.designsystem.components.EmptyState
@@ -104,6 +109,7 @@ import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardDivider
 import space.yardstore.app.designsystem.components.YardTopBar
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
@@ -218,7 +224,7 @@ class FollowingViewModel(private val api: APIClient = APIClient.shared) : ViewMo
                 toast.show(if (follow) "Following $name" else "Unfollowed $name", Toast.Style.Success)
                 if (follow) {
                     // Pull the new brand into the feed.
-                    load(follows, keepRows = true)
+                    load(follows, keepRows = true).join()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -385,6 +391,9 @@ private fun FollowingLoaded(
     val followedDrops = model.drops.filter { follows.isFollowing(it.brand.id) }
     val suggestions = model.suggestions(follows)
     val pieces = model.pieces
+    val window = LocalYardWindow.current
+    // The suggestions card keeps a readable width on tablets (start-aligned with the headers).
+    val readable = if (window.contentMaxWidth.isSpecified) Modifier.widthIn(max = window.contentMaxWidth) else Modifier
 
     PullToRefreshBox(
         isRefreshing = model.isRefreshing,
@@ -402,7 +411,7 @@ private fun FollowingLoaded(
         },
     ) {
         LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Fixed(2),
+            columns = StaggeredGridCells.Fixed(window.gridColumns),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = gap, end = gap, top = Spacing.l, bottom = Spacing.xxl + bottomPadding),
             verticalItemSpacing = gap,
@@ -415,7 +424,7 @@ private fun FollowingLoaded(
                 item(key = "empty", span = StaggeredGridItemSpan.FullLine) {
                     EmptyState(
                         "You're not following any brands yet",
-                        modifier = Modifier.heightIn(min = 300.dp).padding(bottom = sectionGap),
+                        modifier = Modifier.adaptiveContentWidth().heightIn(min = 300.dp).padding(bottom = sectionGap),
                         message = "Follow a few and their new pieces land here, newest first.",
                         icon = Icons.Outlined.Sensors,
                         actionTitle = "Browse brands",
@@ -453,7 +462,7 @@ private fun FollowingLoaded(
                     pieces.isEmpty() -> item(key = "pieces-empty", span = StaggeredGridItemSpan.FullLine) {
                         EmptyState(
                             "Brands you follow will post here",
-                            modifier = Modifier.heightIn(min = 240.dp).padding(bottom = sectionGap),
+                            modifier = Modifier.adaptiveContentWidth().heightIn(min = 240.dp).padding(bottom = sectionGap),
                             message = "Their new pieces appear here the day they're published.",
                             icon = Icons.Outlined.AutoAwesome,
                         )
@@ -491,7 +500,7 @@ private fun FollowingLoaded(
                         title = if (model.rows.isEmpty()) "Brands to start with" else "More brands on Yard",
                         brands = suggestions,
                         busyBrandIds = model.busyBrandIds,
-                        modifier = Modifier.savedFullBleed(gap),
+                        modifier = Modifier.savedFullBleed(gap).then(readable),
                         onAll = { onPush(Route.BrandsDirectory) },
                         onOpen = { onPush(Route.Brand(it.handle)) },
                         onFollow = { onSetFollowing(true, it.id, it.name) },
@@ -547,7 +556,8 @@ private fun FollowingBrandCell(
     Column(
         Modifier.width(76.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.s),
+        // No extra gap: the pill's 48dp touch box already leaves 11dp of air above it (iOS: 8dp).
+        verticalArrangement = Arrangement.Top,
     ) {
         Box {
             Column(
@@ -600,19 +610,26 @@ private fun FollowingBrandCell(
                 }
             }
         }
+        // 76×48dp touch target around the 72×26dp pill (iOS size).
         Box(
             Modifier
-                .size(width = 72.dp, height = 26.dp)
+                .size(width = 76.dp, height = 48.dp)
                 .semantics { contentDescription = if (isFollowing) "Unfollow ${brand.name}" else "Follow ${brand.name}" }
-                .pressableClick(enabled = !isBusy) { onSetFollowing(!isFollowing) }
-                .background(if (isFollowing) Color.yard.surface2 else Color.yard.acid, YardShapes.pill),
+                .pressableClick(enabled = !isBusy) { onSetFollowing(!isFollowing) },
             contentAlignment = Alignment.Center,
         ) {
-            val fg = if (isFollowing) Color.yard.ink else Color.yard.onAcid
-            if (isBusy) {
-                CircularProgressIndicator(color = fg, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
-            } else {
-                Text(if (isFollowing) "Following" else "Follow", style = YardFonts.micro, color = fg)
+            Box(
+                Modifier
+                    .size(width = 72.dp, height = 26.dp)
+                    .background(if (isFollowing) Color.yard.surface2 else Color.yard.acid, YardShapes.pill),
+                contentAlignment = Alignment.Center,
+            ) {
+                val fg = if (isFollowing) Color.yard.ink else Color.yard.onAcid
+                if (isBusy) {
+                    CircularProgressIndicator(color = fg, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
+                } else {
+                    Text(if (isFollowing) "Following" else "Follow", style = YardFonts.micro, color = fg)
+                }
             }
         }
     }
@@ -687,6 +704,7 @@ private fun FollowingSuggestions(
                     }
                     YardButton(
                         "Follow",
+                        modifier = Modifier.minimumInteractiveComponentSize(),
                         style = YardButtonStyle.Primary,
                         size = YardButtonSize.Small,
                         isLoading = brand.id in busyBrandIds,
@@ -711,6 +729,14 @@ private fun FollowingViewLight() = YardPreview(darkTheme = false) { FollowingVie
 @Preview(name = "FollowingView — signed out")
 @Composable
 private fun FollowingViewSignedOut() = YardPreview(darkTheme = false, signedIn = false) { FollowingView() }
+
+@YardTabletPreviews
+@Composable
+private fun FollowingViewTablet() = YardPreview(darkTheme = true) { FollowingView() }
+
+@YardTabletPreviews
+@Composable
+private fun FollowingViewTabletSignedOut() = YardPreview(darkTheme = false, signedIn = false) { FollowingView() }
 
 private val previewFollowed = listOf(
     FollowedBrand(brandId = "brd_preview", handle = "acme", name = "Acme Studio", verified = true),

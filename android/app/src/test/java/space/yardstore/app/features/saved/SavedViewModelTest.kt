@@ -14,6 +14,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import space.yardstore.app.core.models.Product
+import space.yardstore.app.core.models.ProductVariant
 import space.yardstore.app.core.stores.CartStore
 import space.yardstore.app.core.stores.SavedStore
 import space.yardstore.app.designsystem.components.Toast
@@ -248,6 +250,29 @@ class SavedViewModelTest {
         assertEquals(
             listOf("Recently saved", "Price, low to high", "Price, high to low", "Brand, A to Z", "In stock first"),
             SavedSort.entries.map { it.title },
+        )
+    }
+
+    private fun pieceWith(vararg variants: ProductVariant) = Product(id = "prd_v", slug = "prd-v", brandId = "brd_1", title = "Piece", variants = variants.toList())
+
+    @Test fun moveActionAddsTheOnlyInStockVariantDirectly() {
+        val only = ProductVariant(id = "v1", label = "One size", available = 3, inStock = true)
+        assertEquals(SavedMoveAction.Direct(only), savedMoveAction(pieceWith(only)))
+    }
+
+    @Test fun moveActionSaysSoldOutWhenNothingIsInStock() {
+        assertEquals(SavedMoveAction.SoldOut, savedMoveAction(pieceWith(ProductVariant(id = "v1", available = 0, inStock = false))))
+        assertEquals(
+            SavedMoveAction.SoldOut,
+            savedMoveAction(pieceWith(ProductVariant(id = "s", available = 0, inStock = true), ProductVariant(id = "m", available = 2, inStock = false))),
+        )
+    }
+
+    @Test fun moveActionAsksForASizeWhenThereAreSeveralVariants() {
+        // Even with only one size left, several variants open the sheet (it pre-selects that size), as on iOS.
+        assertEquals(
+            SavedMoveAction.PickSize,
+            savedMoveAction(pieceWith(ProductVariant(id = "s", available = 2, inStock = true), ProductVariant(id = "m", available = 0, inStock = false))),
         )
     }
 }

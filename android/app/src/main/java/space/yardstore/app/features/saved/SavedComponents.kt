@@ -76,6 +76,7 @@ import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardSheet
 import space.yardstore.app.designsystem.components.YardSheetHeader
+import space.yardstore.app.designsystem.components.adaptiveContentWidth
 import space.yardstore.app.designsystem.yard
 
 // Pieces shared by SavedView and FollowingView (saved feature only). Mirrors SavedComponents.swift.
@@ -112,8 +113,9 @@ fun SavedSignInInvite(
             .padding(top = Spacing.l, bottom = Spacing.xxl + bottomPadding),
         verticalArrangement = Arrangement.spacedBy(Spacing.xl),
     ) {
-        SavedScreenHeader(title = title, subtitle = message)
-        Card(Modifier.padding(horizontal = Spacing.gutter)) {
+        // A short reading block: capped and centred on tablets.
+        SavedScreenHeader(title = title, subtitle = message, modifier = Modifier.adaptiveContentWidth())
+        Card(Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter)) {
             Column(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
