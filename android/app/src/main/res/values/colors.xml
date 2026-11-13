@@ -1,0 +1,6 @@
+<resources>
+    <!-- Launch only. Every in-app colour comes from designsystem/Theme.kt. -->
+    <color name="yard_launch_bg">#F6F5F1</color>
+    <color name="yard_acid">#F5FF00</color>
+    <color name="yard_onacid">#0B0B0B</color>
+</resources>

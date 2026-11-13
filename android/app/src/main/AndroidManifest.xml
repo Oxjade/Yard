@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".app.YardApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Yard.Starting">
+
+        <activity
+            android:name=".app.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Yard.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- yard://brands/acme, yard://drops/abc … -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="yard" />
+            </intent-filter>
+
+            <!-- App links. Verification needs /.well-known/assetlinks.json on the website. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="yardstore.space" />
+                <data android:pathPrefix="/brands" />
+                <data android:pathPrefix="/products" />
+                <data android:pathPrefix="/categories" />
+                <data android:pathPrefix="/shop" />
+                <data android:pathPrefix="/search" />
+                <data android:pathPrefix="/bag" />
+                <data android:pathPrefix="/checkout" />
+                <data android:pathPrefix="/drops" />
+                <data android:pathPrefix="/you" />
+                <data android:pathPrefix="/inbox" />
+                <data android:pathPrefix="/wishlist" />
+                <data android:pathPrefix="/following" />
+                <data android:pathPrefix="/charts" />
+                <data android:pathPrefix="/around" />
+                <data android:pathPrefix="/notifications" />
+                <data android:pathPrefix="/sign-in" />
+                <data android:pathPrefix="/welcome" />
+                <data android:pathPrefix="/legal" />
+            </intent-filter>
+        </activity>
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
+</manifest>
