@@ -18,13 +18,17 @@ import kotlinx.coroutines.launch
 import space.yardstore.app.core.AppearancePreference
 import space.yardstore.app.core.WebPages
 import space.yardstore.app.designsystem.YardTheme
+import space.yardstore.app.features.auth.AuthAppHandoff
 import space.yardstore.app.features.auth.AuthEmailLinks
+import space.yardstore.app.features.auth.AuthHandoffCallback
 import space.yardstore.app.features.notifications.YardPushCenter
+import space.yardstore.app.features.notifications.YardPushMessage
 
 /**
  * The single activity: edge-to-edge, applies the appearance choice at the root (iOS
  * `.preferredColorScheme`), hosts `RootView`, and routes incoming links (iOS `.onOpenURL` /
- * universal links): notification taps go to `YardPushCenter`, email sign-in links finish sign-in
+ * universal links): the social sign-in hand-off (`yard://auth/complete`) goes to `AuthAppHandoff`,
+ * notification taps go to `YardPushCenter`, email sign-in links finish sign-in
  * in the app, app destinations go through `Router.open`, anything else opens in a Custom Tab.
  */
 class MainActivity : ComponentActivity() {
@@ -50,7 +54,13 @@ class MainActivity : ComponentActivity() {
                 RootView(container)
             }
         }
-        if (savedInstanceState == null) handleIntent(intent)
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+        } else {
+            // Restored after process death while the sign-in Custom Tab was open: the
+            // yard://auth/complete link can arrive as the (re)creating intent.
+            handleIntent(intent, restored = true)
+        }
     }
 
     /**
@@ -86,15 +96,29 @@ class MainActivity : ComponentActivity() {
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
-    private fun handleIntent(intent: Intent?) {
+    private fun handleIntent(intent: Intent?, restored: Boolean = false) {
+        val extras = intent?.extras
         val incoming = AppLinkRouting.classify(
             action = intent?.action,
             url = intent?.dataString,
             pushHref = intent?.takeIf { it.hasExtra(YardPushCenter.EXTRA_HREF) }
-                ?.let { it.getStringExtra(YardPushCenter.EXTRA_HREF).orEmpty() },
+                ?.let { it.getStringExtra(YardPushCenter.EXTRA_HREF).orEmpty() }
+                // A push shown by the system while Yard was in the background (FCM puts the data
+                // keys in the launch intent's extras).
+                ?: YardPushMessage.hrefFromTapExtras { key -> extras?.getString(key) },
             isEmailLink = AuthEmailLinks::canHandle,
         )
+        if (restored && incoming !is AppLinkRouting.Incoming.AuthHandoff) return
         when (incoming) {
+            is AppLinkRouting.Incoming.AuthHandoff -> {
+                // Show the sign-in screen to finish on (it may be gone after a process restart).
+                if (AuthAppHandoff.activeScreens == 0 && (!restored || AuthAppHandoff.hasPending())) {
+                    container.router.present(Route.SignIn)
+                }
+                container.appScope.launch {
+                    AuthAppHandoff.complete(incoming.url, container.session, onlyIfPending = restored)
+                }
+            }
             is AppLinkRouting.Incoming.NotificationTap -> YardPushCenter.handleTap(incoming.href)
             is AppLinkRouting.Incoming.EmailLink -> container.appScope.launch {
                 AuthEmailLinks.handle(incoming.url, container.session)?.let { container.toast.show(it) }
@@ -120,6 +144,8 @@ class MainActivity : ComponentActivity() {
 /** Pure decisions behind [MainActivity]'s intent handling (unit-tested). */
 internal object AppLinkRouting {
     sealed interface Incoming {
+        /** `yard://auth/complete?…` from the social sign-in Custom Tab ([AuthAppHandoff]); never a route. */
+        data class AuthHandoff(val url: String) : Incoming
         /** A tapped notification carrying `YardPushCenter.EXTRA_HREF` (empty → the notifications list). */
         data class NotificationTap(val href: String) : Incoming
         /** An email sign-in / verification link (`AuthEmailLinks`): finish it in the app, then toast. */
@@ -133,7 +159,14 @@ internal object AppLinkRouting {
      * [pushHref] is the notification extra when the intent has it (possibly empty), else null.
      * Notification taps win over the intent's data; other links must be ACTION_VIEW with a URL.
      */
-    fun classify(action: String?, url: String?, pushHref: String?, isEmailLink: (String) -> Boolean): Incoming = when {
+    fun classify(
+        action: String?,
+        url: String?,
+        pushHref: String?,
+        isEmailLink: (String) -> Boolean,
+        isAuthHandoff: (String) -> Boolean = AuthHandoffCallback::matches,
+    ): Incoming = when {
+        action == Intent.ACTION_VIEW && !url.isNullOrEmpty() && isAuthHandoff(url) -> Incoming.AuthHandoff(url)
         pushHref != null -> Incoming.NotificationTap(pushHref)
         action != Intent.ACTION_VIEW || url.isNullOrEmpty() -> Incoming.Ignore
         isEmailLink(url) -> Incoming.EmailLink(url)

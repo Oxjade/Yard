@@ -12,6 +12,7 @@ import okio.Path.Companion.toOkioPath
 import space.yardstore.app.core.Config
 import space.yardstore.app.features.liveactivity.LiveTrackingManager
 import space.yardstore.app.features.notifications.YardNotificationChannels
+import space.yardstore.app.features.notifications.YardPushCenter
 
 /**
  * App entry: creates the shared stores once (iOS `YardApp`'s `@State` stores) and configures the
@@ -29,6 +30,8 @@ class YardApp : Application(), SingletonImageLoader.Factory {
         // Notification channels (drops, orders, messages…) and the ongoing order-tracking
         // notification (needs `container` for its sign-out listener, so after it).
         YardNotificationChannels.create(this)
+        // Push: restores the FCM token and unregisters it before every sign-out.
+        YardPushCenter.install(this, container.session)
         LiveTrackingManager.install(this)
     }
 

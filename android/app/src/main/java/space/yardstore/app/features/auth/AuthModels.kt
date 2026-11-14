@@ -107,9 +107,9 @@ data class AuthEmailBody(val email: String)
 @Serializable
 data class AuthTokenBody(val token: String)
 
-/** POST /api/auth/oauth/{provider}/start (`connection` omitted when null). */
+/** POST /api/auth/oauth/app-exchange: the hand-off code from yard://auth/complete and its PKCE verifier. */
 @Serializable
-data class AuthOAuthStartBody(val mode: String, val actor: String, val connection: String? = null)
+data class AuthAppExchangeBody(val code: String, val verifier: String)
 
 /** POST /api/auth/demo. */
 @Serializable
@@ -126,13 +126,23 @@ data class AuthDemoBody(val actor: String, val account: String)
 @Serializable
 data class AuthStatusResponse(val status: String = "", val signedIn: Boolean? = null)
 
-/** POST /api/auth/oauth/{provider}/start → `{ url }`. */
+/**
+ * POST /api/auth/oauth/app-exchange → `{ result: "signed_in", isNew, … }` (session cookie set), or the
+ * password sign-in's MFA shape `{ status: "mfa_required" | "mfa_enrol_required", … }`. The app
+ * ignores any session fields here and re-reads GET /api/session afterwards.
+ */
 @Serializable
-data class AuthOAuthStartResponse(val url: String = "")
+data class AuthAppExchangeResponse(
+    val result: String = "",
+    val isNew: Boolean = false,
+    val status: String? = null,
+) {
+    val isMfaRequired: Boolean get() = status?.startsWith("mfa_") == true
+}
 
 // endregion
 
-/** `result=` on /auth/complete → the website's wording (auth-oauth-completion.tsx). */
+/** `result=` on /auth/complete and yard://auth/complete → the website's wording (auth-oauth-completion.tsx). */
 object AuthOAuthResult {
     fun message(result: String): String = when (result) {
         "cancelled" -> "Sign-in was cancelled."
@@ -144,7 +154,9 @@ object AuthOAuthResult {
         "link_required" -> "Sign in with your password before connecting this provider."
         "email_required" -> "The provider didn’t share an email address. Try another sign-in method."
         "email_unverified" -> "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way."
+        "no_brand" -> "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses."
         "suspended" -> "This account is currently unavailable."
+        "reauth_mismatch" -> "The provider account didn’t match the account being confirmed."
         else -> "Sign-in could not be completed."
     }
 }

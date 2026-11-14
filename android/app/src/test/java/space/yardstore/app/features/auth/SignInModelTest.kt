@@ -172,34 +172,26 @@ class SignInModelTest {
         assertEquals("""{"actor":"shopper","account":"u_ada"}""", req.body.readUtf8())
     }
 
-    @Test fun socialStartOpensWebFlowAndOutcomes() {
-        server.enqueue(json("""{"url":"https://yard.eu.auth0.com/authorize?state=abc"}"""))
-        val m = filled()
-        m.startSocial(AuthSocialButton.auth0Google)
-        waitUntil { m.webFlow != null }
-        assertEquals("https://yard.eu.auth0.com/authorize?state=abc", m.webFlow!!.url)
-        assertEquals("Google", m.webFlow!!.label)
-        assertEquals(SignInModel.Busy.Social("auth0:google-oauth2"), m.busy)
-        val req = server.takeRequest()
-        assertEquals("/api/auth/oauth/auth0/start", req.path)
-        assertEquals("""{"mode":"signin","actor":"shopper","connection":"google-oauth2"}""", req.body.readUtf8())
+    @Test fun socialStartReturnsAppStartUrlAndOutcomes() {
+        AuthAppHandoff.storeOverride = AuthHandoffStore(null)
+        try {
+            val m = filled()
+            val url = m.startSocial(AuthSocialButton.auth0Google)!!
+            val base = server.url("/").toString().trimEnd('/')
+            assertTrue(url, url.startsWith("$base/api/auth/oauth/auth0/app-start?client=android&challenge="))
+            assertTrue(url, url.endsWith("&mode=signin&actor=shopper&connection=google-oauth2"))
+            assertEquals(0, server.requestCount) // nothing is sent until the Custom Tab opens it
+            assertNull(m.busy)
 
-        assertTrue(m.finishSocial(AuthWebOutcome.Completed("signed_in")))
-        assertNull(m.webFlow)
-        assertNull(m.busy)
-        assertFalse(m.finishSocial(AuthWebOutcome.Completed("invalid_state")))
-        assertEquals("This sign-in link expired or could not be verified. Start again.", m.failure)
-        assertFalse(m.finishSocial(AuthWebOutcome.Failed("You're offline. Check your connection and try again.")))
-        assertEquals("Couldn't finish social sign-in. You're offline. Check your connection and try again.", m.failure)
-    }
-
-    @Test fun socialStartFailureShowsServerMessage() {
-        server.enqueue(json("""{"error":{"code":"not_configured","message":"This sign-in provider isn’t configured on Yard yet."}}""", 503))
-        val m = filled()
-        m.startSocial(AuthSocialButton.auth0Google)
-        waitUntil { m.failure != null }
-        assertEquals("This sign-in provider isn’t configured on Yard yet.", m.failure)
-        assertNull(m.busy)
-        assertNull(m.webFlow)
+            assertTrue(m.finishSocial(AuthAppHandoff.Outcome.SignedIn(isNew = true, provider = "auth0")))
+            assertNull(m.failure)
+            assertFalse(m.finishSocial(AuthAppHandoff.Outcome.Failed("Sign-in was cancelled.")))
+            assertEquals("Sign-in was cancelled.", m.failure)
+            // A new start clears the old message.
+            m.startSocial(AuthSocialButton("google", "google", null, "Google", AuthSocialButton.Mark.Google))
+            assertNull(m.failure)
+        } finally {
+            AuthAppHandoff.storeOverride = null
+        }
     }
 }

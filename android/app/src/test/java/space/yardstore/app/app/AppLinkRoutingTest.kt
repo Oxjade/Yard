@@ -13,6 +13,17 @@ class AppLinkRoutingTest {
 
     // classify
 
+    @Test fun authHandoffIsNeverARoute() {
+        val ok = "yard://auth/complete?code=abc&result=signed_in&provider=google&mode=signin&actor=shopper"
+        assertEquals(Incoming.AuthHandoff(ok), AppLinkRouting.classify(view, ok, null, ::emailLinks))
+        val failed = "yard://auth/complete?result=cancelled&provider=google"
+        assertEquals(Incoming.AuthHandoff(failed), AppLinkRouting.classify(view, failed, null, ::emailLinks))
+        // Only ACTION_VIEW links, and the https page is not the hand-off.
+        assertEquals(Incoming.Ignore, AppLinkRouting.classify(null, ok, null, ::emailLinks))
+        val web = "https://yardstore.space/auth/complete?result=signed_in"
+        assertEquals(Incoming.AppLink(web), AppLinkRouting.classify(view, web, null, ::emailLinks))
+    }
+
     @Test fun notificationTapWinsOverData() {
         assertEquals(
             Incoming.NotificationTap("/you/orders/ord_1"),

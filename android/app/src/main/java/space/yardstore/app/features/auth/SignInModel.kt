@@ -7,6 +7,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import space.yardstore.app.core.Config
 import space.yardstore.app.core.networking.APIError
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -70,10 +71,6 @@ class SignInModel(
         private set(value) { signUpSentToState = value; savedState?.set(KEY_SENT_TO, value) }
 
     var busy by mutableStateOf<Busy?>(null); private set
-    /** The social sign-in being shown in the web sheet. */
-    var webFlow by mutableStateOf<AuthWebFlow?>(null); private set
-    /** The social button that started [webFlow]. */
-    private var webFlowButton: AuthSocialButton? = null
 
     var providers by mutableStateOf(previewProviders); private set
     var providersLoaded by mutableStateOf(previewProviders != null); private set
@@ -260,48 +257,29 @@ class SignInModel(
         }
     }
 
-    /** Starts a social sign-in; on success [webFlow] is set and the view shows the web sheet. */
-    fun startSocial(button: AuthSocialButton) {
-        if (busy != null) return
-        busy = Busy.Social(button.key)
+    /**
+     * Starts a social sign-in: keeps a new PKCE verifier and returns the app-start URL the view
+     * opens in a Custom Tab (null while something else is running). The result comes back through
+     * `yard://auth/complete` → [AuthAppHandoff] → [finishSocial].
+     */
+    fun startSocial(button: AuthSocialButton): String? {
+        if (busy != null) return null
         failure = null
         notice = null
-        viewModelScope.launch {
-            try {
-                val url = AuthAPI.startOAuth(button)
-                webFlowButton = button
-                webFlow = AuthWebFlow(url = url, label = button.label)
-            } catch (e: CancellationException) {
-                busy = null
-                throw e
-            } catch (e: Exception) {
-                busy = null
-                failure = message(e, fallback = "Couldn't start ${button.label} sign-in. Try again.")
-            }
-        }
+        val base = AuthAPI.baseOverride?.let { httpUrl(it) } ?: Config.baseHttpUrl
+        return AuthAppHandoff.begin(button, base)
     }
 
     /**
-     * The web sheet ended. Returns true when the server reported `signed_in` (the caller then
-     * refreshes the session and confirms a shopper is really there).
+     * A hand-off finished. Returns true when the shopper is signed in (the caller then confirms a
+     * shopper is really there and carries on); otherwise shows the website's sentence.
      */
-    fun finishSocial(outcome: AuthWebOutcome): Boolean {
-        webFlow = null
+    fun finishSocial(outcome: AuthAppHandoff.Outcome): Boolean {
         busy = null
-        val label = webFlowButton?.label ?: "social"
-        webFlowButton = null
         return when (outcome) {
-            is AuthWebOutcome.Completed -> {
-                if (outcome.result == "signed_in") {
-                    true
-                } else {
-                    failure = AuthOAuthResult.message(outcome.result)
-                    false
-                }
-            }
-            AuthWebOutcome.Cancelled -> false
-            is AuthWebOutcome.Failed -> {
-                failure = "Couldn't finish $label sign-in. ${outcome.message}"
+            is AuthAppHandoff.Outcome.SignedIn -> true
+            is AuthAppHandoff.Outcome.Failed -> {
+                failure = outcome.message
                 false
             }
         }

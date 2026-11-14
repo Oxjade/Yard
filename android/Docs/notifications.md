@@ -7,9 +7,11 @@ Package: `app/src/main/java/space/yardstore/app/features/notifications/`. Mirror
 | `NotificationsView.kt` | `NotificationsView()` (`Route.Notifications`): top bar with **Mark all as read** (glass ✓, dimmed when nothing is unread), display header + subtitle, All / Unread `SegmentedPill`, **Today / Earlier** cards, `NotificationsListRow` (kind icon tile, title, body, "Kind · 3h ago", violet unread dot). Tap opens the route and marks it read; long-press opens a small menu with Mark as read / unread (the iOS context menu). Pull to refresh (`PullToRefreshBox`). Skeleton, empty, unread-empty, error and signed-out states. Light/dark previews. |
 | `NotificationsViewModel.kt` | Loader/marker, optimistic with rollback (`setRead`, `markAllRead` run in `viewModelScope`, report errors via callback → toast). |
 | `NotificationsModels.kt` | `ShopperNotification`, lossy `NotificationsListResponse`, `NotificationsReadBody/Result`, `ShopperNotificationKind` (category → icon/label), `NotificationsRouting.route(href)`. |
+| `NotificationsRemotePush.kt` | FCM: `YardMessagingService` (onNewToken / onMessageReceived), `YardPushMessage` (payload → notification, href safety, background-tap extras), `YardPushNotifier` (channel `yard_updates`), `PushDevicesAPI` (POST/DELETE /api/devices), `YardFirebase` (safe when Firebase isn't configured). See `Docs/connect.md`. |
 | `NotificationsPush.kt` | `NotificationsPermission`, `rememberNotificationsPermissionRequest`, `YardNotificationChannels`, `YardPushCenter`, `YardPushNotifications()` root host, the soft "Never miss a drop" sheet. |
 
-Tests: `app/src/test/java/space/yardstore/app/features/notifications/NotificationsTest.kt` (MockWebServer).
+Tests: `app/src/test/java/space/yardstore/app/features/notifications/NotificationsTest.kt` (MockWebServer),
+`NotificationsRemotePushTest.kt` (9: mapping, href safety, tap extras, exact /api/devices requests, DELETE before sign-out).
 
 ## Endpoints
 
@@ -24,7 +26,7 @@ Tests: `app/src/test/java/space/yardstore/app/features/notifications/Notificatio
 
 ## Channels
 
-`YardNotificationChannels.create(context)` (idempotent) creates `drops`, `orders`, `messages`, `following`, `wishlist`, `account`, `general`. `YardNotificationChannels.idFor(category)` / `idFor(kind)` picks one. The live-activity agent's ongoing order notification should use `ORDERS`.
+`YardNotificationChannels.create(context)` (idempotent) creates `drops`, `orders`, `messages`, `following`, `wishlist`, `account`, `general`, and `yard_updates` ("Updates", remote pushes from the website). `YardNotificationChannels.idFor(category)` / `idFor(kind)` picks one. The live-activity agent's ongoing order notification should use `ORDERS`.
 
 ## Foundation wiring needed (orchestrator — foundation files are read-only here)
 
@@ -35,7 +37,6 @@ Until 1 is done, no soft prompt appears (the in-app list works regardless).
 
 ## Not mirrored
 
-- **Remote push**: no Firebase/FCM (new dependency + `google-services.json`) and no server device-token endpoint. `YardPushCenter.didRegister(context, token)` / `uploadTokenIfPossible()` are the hook points (suggested `POST /api/notifications/devices { token, platform: "android" }`).
-- iOS `registerForRemoteNotifications` on launch/grant: nothing to register on Android without FCM.
+- **Remote push**: FCM, on only when `app/google-services.json` is present at build time (Docs/connect.md). Token registered with `POST /api/devices` on sign-in / app start, removed with `DELETE /api/devices` before sign-out.
 - Context menu → `DropdownMenu` on long-press.
 - No realtime refresh and no unread badge elsewhere (same as iOS).

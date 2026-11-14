@@ -1,8 +1,8 @@
 package space.yardstore.app.features.auth
 
 import android.net.Uri
-import space.yardstore.app.core.Config
 import space.yardstore.app.core.networking.APIClient
+import space.yardstore.app.core.Config
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.core.networking.HTTPMethod
 import space.yardstore.app.core.stores.SessionStore
@@ -47,16 +47,12 @@ object AuthAPI {
     }
 
     /**
-     * POST /api/auth/oauth/{provider}/start → the provider URL. The response also sets the
-     * browser-binding cookie (`yard_oauth`) in the app's cookie jar; [AuthWebSheet] carries it
-     * into the WebView so the callback can complete.
+     * POST /api/auth/oauth/app-exchange { code, verifier }: swaps the single-use code from
+     * `yard://auth/complete` for the session cookie (`yard_s`), set in the app's own cookie jar.
+     * 400 `invalid_code` when the code is unknown, used, expired or the verifier doesn't match.
      */
-    suspend fun startOAuth(button: AuthSocialButton): String {
-        val body = AuthOAuthStartBody(mode = "signin", actor = "shopper", connection = button.connection)
-        val response: AuthOAuthStartResponse = api.post(p("/api/auth/oauth/${Config.encodePath(button.provider)}/start"), body = body)
-        return Config.url(response.url)
-            ?: throw APIError(0, "bad_url", "Couldn't start ${button.label} sign-in. Try again.")
-    }
+    suspend fun exchangeAppCode(code: String, verifier: String): AuthAppExchangeResponse =
+        api.post(p("/api/auth/oauth/app-exchange"), body = AuthAppExchangeBody(code = code, verifier = verifier))
 
     /** POST /api/auth/demo { actor: "shopper", account: "u_ada" } (only when providers.demo.shopper). */
     suspend fun signInDemo() {

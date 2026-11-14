@@ -92,8 +92,8 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
   `LocalTabPillClearance` (iOS `.safeAreaPadding` on tab roots), `YardSwitch`, `YardDivider`,
   `Modifier.pressableClick`, `WebPages` (Custom Tabs), `SessionStore.addSignOutListener`.
 - **Not wired yet (iOS wires these in `YardApp`, features own them)**:
-  - Push notifications (`YardPushAppDelegate`, `.yardPushNotifications()`): needs Firebase/FCM — a new
-    dependency and `google-services.json`; not added.
+  - Push notifications: now FCM (firebase-bom 33.16.0 + firebase-messaging; google-services plugin
+    4.4.3 applied only when `app/google-services.json` exists). See `Docs/connect.md`.
   - Email sign-in / verify links (`AuthEmailLinks`) are not intercepted before `Router.open` in
     `MainActivity.handleLink`; the auth agent should ask the orchestrator to add that one call.
   - Live Activities have no Android equivalent (closest: an ongoing order notification); `signOut`
@@ -101,6 +101,7 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
   - `YouRegion.restore(into: cart)` (ship-to country at launch) — the you agent can set
     `cart.destinationCountry` from its own stored setting; ask the orchestrator to call it at launch.
 - **App links**: the manifest declares `https://yardstore.space/…` (autoVerify) and `yard://`; verified
-  links need `/.well-known/assetlinks.json` on the website with the release signing key's SHA-256.
+  links need `/.well-known/assetlinks.json` on the website with the release signing key's SHA-256
+  (`ANDROID_CERT_SHA256`). Release signing: `keystore.properties` or `YARD_KEY*` env (Docs/connect.md).
 - **App icon / splash**: placeholder acid "Y" adaptive icon; replace with the brush-logo artwork.
 - Maps (Around) need a library (osmdroid / MapLibre) — not added.

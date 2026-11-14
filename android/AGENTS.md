@@ -33,7 +33,8 @@ and behaviour (`src/app/api/**/route.ts`, `src/lib/api/**`, `src/server/**`).
   (see **Tablet & large screens**).
 - **Libraries are fixed** (`gradle/libs.versions.toml`): Compose, material3 + material-icons-extended,
   navigation-compose, lifecycle-viewmodel-compose, kotlinx-serialization-json, OkHttp, Coil 3,
-  DataStore, androidx.browser (Custom Tabs), core-splashscreen. **Do not add dependencies or edit
+  DataStore, androidx.browser (Custom Tabs), core-splashscreen, firebase-messaging (push; inert without
+  `app/google-services.json`). **Do not add dependencies or edit
   Gradle files** — ask the orchestrator if you truly need one (e.g. a map library for Around).
 - **You can compile — so do.** `cd android && ./gradlew :app:compileDebugKotlin` must pass before you
   finish; `./gradlew :app:testDebugUnitTest` for any tests you add (`app/src/test/java/…/features/<folder>/`).
@@ -68,6 +69,15 @@ restarts by `PersistentCookieJar`), errors `{error:{code,message,fields}}` → `
 Models: `@Serializable data class`, camelCase field names = wire names, **every property gets a
 default unless the server always sends it** (ids), nullable where Swift is optional. Decode with
 the shared lenient `YardJson` (APIClient does). Model only what a screen uses.
+
+## Connected to the website (Docs/connect.md)
+
+- Social sign-in = Custom Tab + `yard://auth/complete` hand-off (`features/auth/AuthAppHandoff.kt`):
+  never add a WebView sign-in; `yard://auth/…` is not a route.
+- Push = FCM (`features/notifications/NotificationsRemotePush.kt`): `POST /api/devices` on sign-in,
+  `DELETE /api/devices` before sign-out (`SessionStore.addBeforeSignOutListener`), channel `yard_updates`.
+- Release signing from `keystore.properties` / `YARD_KEY*` env; never commit keystores or
+  `google-services.json`.
 
 ## Package layout and ownership (one owner per package — never edit another owner's files)
 

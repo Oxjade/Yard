@@ -7,3 +7,9 @@ app/build/
 .kotlin/
 captures/
 .DS_Store
+
+# Release signing and Firebase config: never in git (see Docs/connect.md).
+keystore.properties
+*.jks
+*.keystore
+app/google-services.json

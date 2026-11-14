@@ -31,6 +31,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,7 +96,8 @@ import space.yardstore.app.designsystem.yard
  * Mirrors SignInView.swift.
  *
  * - "Continue with Google" (and any other provider the server lists at GET /api/auth/providers)
- *   → POST /api/auth/oauth/{provider}/start → in-app WebView → /auth/complete ([AuthWebSheet]).
+ *   → Custom Tab at /api/auth/oauth/{provider}/app-start (PKCE) → yard://auth/complete →
+ *   POST /api/auth/oauth/app-exchange ([AuthAppHandoff], see android/Docs/connect.md).
  *   After a social sign-in the shopper picks "I'm here to shop" / "I want to sell on Yard"
  *   (the website's /auth/complete choice).
  * - Email + password: POST /api/auth/sign-in (handles `verify_email`).
@@ -171,10 +173,16 @@ internal fun SignInScreen(model: SignInModel) {
         scope.launch { if (model.submit(setFocus)) completeSignIn(social = false) }
     }
 
-    model.webFlow?.let { flow ->
-        AuthWebSheet(flow) { outcome ->
-            if (model.finishSocial(outcome)) scope.launch { completeSignIn(social = true) }
-        }
+    // Social sign-in comes back through yard://auth/complete (MainActivity → AuthAppHandoff),
+    // possibly after the process was restarted; this screen finishes it.
+    DisposableEffect(Unit) {
+        AuthAppHandoff.screenAppeared()
+        onDispose { AuthAppHandoff.screenDisappeared() }
+    }
+    val handoffOutcome = AuthAppHandoff.outcome
+    LaunchedEffect(handoffOutcome) {
+        val outcome = AuthAppHandoff.consumeOutcome() ?: return@LaunchedEffect
+        if (model.finishSocial(outcome)) completeSignIn(social = true)
     }
 
     AnimatedContent(
@@ -248,9 +256,16 @@ internal fun SignInScreen(model: SignInModel) {
                         justSignedIn -> SignInStatusLine("Signed in. Taking you there now.")
                         sentTo != null -> SignUpSentPanel(sentTo) { model.backToSignIn() }
                         else -> {
-                            SignInSocialSection(model, onDemo = {
-                                scope.launch { if (model.signInDemo()) completeSignIn(social = false) }
-                            })
+                            SignInSocialSection(
+                                model,
+                                exchangingKey = AuthAppHandoff.exchangingKey,
+                                onSocial = { button ->
+                                    model.startSocial(button)?.let { url -> WebPages.open(context, url, darkTheme = isDark) }
+                                },
+                                onDemo = {
+                                    scope.launch { if (model.signInDemo()) completeSignIn(social = false) }
+                                },
+                            )
                             SignInFormCard(model, nameFocus, emailFocus, passwordFocus, setFocus, onSubmit = { submit() })
                             AuthTextLink(
                                 if (model.mode == SignInModel.Mode.SignUp) "I already have an account" else "Create an account",
@@ -296,7 +311,12 @@ private fun SignInHeader(title: String, body: String, isDark: Boolean) {
 }
 
 @Composable
-private fun SignInSocialSection(model: SignInModel, onDemo: () -> Unit) {
+private fun SignInSocialSection(
+    model: SignInModel,
+    exchangingKey: String?,
+    onSocial: (AuthSocialButton) -> Unit,
+    onDemo: () -> Unit,
+) {
     val buttons = model.socialButtons
     val showDemo = model.demoEnabled
     if (!model.providersLoaded) {
@@ -305,7 +325,7 @@ private fun SignInSocialSection(model: SignInModel, onDemo: () -> Unit) {
             AuthDividerLabel("or with email")
         }
     } else if (buttons.isNotEmpty() || showDemo) {
-        val busy = model.busy
+        val busy = model.busy ?: exchangingKey?.let { SignInModel.Busy.Social(it) }
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
             if (showDemo) {
                 YardButton(
@@ -318,7 +338,7 @@ private fun SignInSocialSection(model: SignInModel, onDemo: () -> Unit) {
             }
             for (button in buttons) {
                 val mine = busy == SignInModel.Busy.Social(button.key)
-                AuthSocialButtonView(button, isLoading = mine, enabled = busy == null || mine) { model.startSocial(button) }
+                AuthSocialButtonView(button, isLoading = mine, enabled = busy == null || mine) { onSocial(button) }
             }
             AuthDividerLabel("or with email")
         }

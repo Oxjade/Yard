@@ -1,7 +1,7 @@
 # Auth (features/auth)
 
 Mirrors `ios/Yard/Features/Auth` file for file: AuthModels, AuthService (`AuthAPI`, `AuthEmailLinks`),
-AuthWebSheet (`AuthCookieBridge`, `AuthWebSheet`), AuthComponents (fields, links, Google mark,
+AuthAppHandoff (Android: Custom Tab sign-in hand-off, replaces the WebView sheet), AuthComponents (fields, links, Google mark,
 social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / WelcomeView.
 
 ## Screens
@@ -21,7 +21,7 @@ social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / Welcome
 - **WelcomeView()** — 3 skippable steps (categories, looks, brands to follow), progress bar,
   Back / Skip / Continue bar, "Skip setup". Signed out → "Make it yours" sign-in empty state.
   Android back steps back through the steps.
-- **AuthWebSheet** — full-screen dialog with the WebView for social sign-in.
+- Social sign-in opens a **Custom Tab** (no in-app WebView); see `Docs/connect.md`.
 
 ## Tablets & large screens
 - **SignInView**: the form column is capped at a reading width (`signInReadingWidth`: full width on
@@ -29,7 +29,6 @@ social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / Welcome
   background and top bar stay full-bleed. As a route sheet it already sits in the ≤ 560dp dialog.
 - **WelcomeView**: steps in `AdaptiveContent` (720/960dp), the bottom bar's buttons capped the same
   way (its surface stays full width); suggested brands two per row on `isWide` (`welcomeBrandColumns`).
-- **AuthWebSheet**: stays full-screen (provider pages are responsive).
 - `@YardTabletPreviews` on SignIn and Welcome.
 
 ## State
@@ -40,29 +39,20 @@ social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / Welcome
 
 ## Endpoints
 GET /api/auth/providers · POST /api/auth/sign-in · POST /api/auth/sign-up · POST /api/auth/magic-link ·
-POST /api/auth/password/forgot · POST /api/auth/oauth/{provider}/start · POST /api/auth/demo ·
+POST /api/auth/password/forgot · GET /api/auth/oauth/{provider}/app-start (in the Custom Tab) ·
+POST /api/auth/oauth/app-exchange · POST /api/auth/demo ·
 GET /api/session (SessionStore) · GET /api/catalog/categories · GET /api/catalog/brands ·
 POST/DELETE /api/follows (FollowStore). Helpers (not wired): POST /api/auth/magic-link/consume,
 POST /api/auth/verify-email/confirm (`AuthEmailLinks`).
 
-## Social sign-in: WebView + cookie copy (same reasoning as iOS)
-POST /start from the app (binding cookie `yard_oauth` lands in OkHttp's `PersistentCookieJar`,
-reached via `APIClient.shared.http.cookieJar`) → clear `android.webkit.CookieManager`, copy the
-app's API-host cookies in → load the provider URL → stop at `https://<host>/auth/complete?result=`
-(`shouldOverrideUrlLoading`, with `onPageStarted` as a fallback) → read the host's cookies from
-CookieManager (retry 5 × 300 ms for `yard_s` / `__Host-yard_s`) and save them into the OkHttp jar
-(stale `yard_oauth` removed) → `session.didSignIn()`. CookieManager is process-wide, so cookies and
-web storage are wiped before and after each flow (iOS: non-persistent data store).
-CookieManager only exposes name=value: imported cookies keep the attributes of an existing app
-cookie with the same name, else host-only, Path=/, Secure (https), HttpOnly, 30-day expiry (the
-session's idle window; the server re-sets the real expiry on its daily renewal).
-
-**Risk to check on device (bigger than on iOS):** Google rejects OAuth in Android WebViews
-(`403 disallowed_useragent`, detected from the `; wv` user-agent token). If Auth0's Google page
-shows that, the fix is server-side: a native hand-off (`/start` accepting a `client: "android"`
-flag and `/auth/complete` redirecting to `yard://auth/complete?code=…` that the app exchanges for
-the session cookie), after which a Custom Tab can be used. That is a website change (staging first).
-The user agent is not spoofed.
+## Social sign-in: Custom Tab + hand-off code
+Google rejects OAuth in WebViews, so every social button (google / apple / auth0 connections) opens
+`/api/auth/oauth/{provider}/app-start?client=android&challenge=…` in a Custom Tab with a PKCE
+challenge; the website redirects to `yard://auth/complete?code=…`, `MainActivity` hands it to
+`AuthAppHandoff.complete`, which POSTs `/api/auth/oauth/app-exchange { code, verifier }` (session
+cookie into the app's jar), refreshes the session and publishes the outcome that `SignInView`
+finishes (shop-or-sell, Welcome, close; errors in the website's words). The verifier survives
+process death (SharedPreferences, 10 min). Full flow and requests: `Docs/connect.md`.
 
 ## Local state
 SharedPreferences `yard` (`Config.preferences`), same keys as iOS `@AppStorage`: `yard.onboarded`
@@ -71,8 +61,9 @@ SharedPreferences `yard` (`Config.preferences`), same keys as iOS `@AppStorage`:
 ## Differences from iOS
 - Welcome after sign-in replaces the form in place (animated) instead of a NavigationStack push:
   the route sheet's NavHost isn't reachable from features. Finishing Welcome closes sign-in, as on iOS.
-- Web sheet: full-screen dialog with × (iOS: sheet with "Cancel"); Android back goes back in web history.
+- Social sign-in: Custom Tab + `yard://auth/complete` hand-off (iOS still uses its web sheet until it moves to the same endpoints).
 - Apple mark: no Apple logo in Material icons; a phone icon is used (Apple is off on the server today).
+- MFA (admin-only accounts): no MFA screens, as with the password form; the hand-off says to sign in on the website.
 - Haptics: LongPress / TextHandleMove feedback for success / selection.
 
 ## For the integrator
@@ -81,7 +72,7 @@ SharedPreferences `yard` (`Config.preferences`), same keys as iOS `@AppStorage`:
 - Password reset finishes on the website (`/auth/reset`).
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/auth/`: AuthModelsTest (8), SignInModelTest (13,
-MockWebServer), WelcomeModelTest (9, MockWebServer), AuthCookieBridgeTest (3), AuthAdaptiveTest (6:
+`app/src/test/java/space/yardstore/app/features/auth/`: AuthModelsTest (8), SignInModelTest (12,
+MockWebServer), AuthAppHandoffTest (13: PKCE vector, app-start URL, link parsing, exchange), WelcomeModelTest (9, MockWebServer), AuthAdaptiveTest (6:
 reading width, brand columns, picks saver, SavedStateHandle restore without password). `AuthAPI.clientOverride`
 / `baseOverride` and `WelcomeModel(api, base)` are the test hooks.

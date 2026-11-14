@@ -8,6 +8,7 @@ import space.yardstore.app.core.models.Shopper
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.core.networking.HTTPMethod
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -38,6 +39,7 @@ class SessionStore(private val api: APIClient = APIClient.shared) {
         private set
 
     private val signOutListeners = mutableListOf<suspend () -> Unit>()
+    private val beforeSignOutListeners = mutableListOf<suspend () -> Unit>()
 
     /** A shopper is signed in. */
     val isSignedIn: Boolean get() = shopper != null
@@ -69,6 +71,16 @@ class SessionStore(private val api: APIClient = APIClient.shared) {
 
     /** Signs the shopper out on the server and locally. Never throws: the user always ends signed out. */
     suspend fun signOut() {
+        // While the session cookie still works (e.g. unregistering this device's push token).
+        // Best effort and time-boxed: never blocks or fails the sign-out.
+        for (listener in beforeSignOutListeners.toList()) {
+            try {
+                withTimeoutOrNull(BEFORE_SIGN_OUT_TIMEOUT_MS) { listener() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
         try {
             api.send(HTTPMethod.POST, "/api/auth/sign-out", query = listOf("actor" to "shopper"))
         } catch (e: CancellationException) {
@@ -92,7 +104,17 @@ class SessionStore(private val api: APIClient = APIClient.shared) {
         signOutListeners += listener
     }
 
+    /**
+     * Runs [listener] at the start of every [signOut], before the server call, while the shopper
+     * is still signed in (push: DELETE /api/devices). Each gets at most 3 s; failures are ignored.
+     */
+    fun addBeforeSignOutListener(listener: suspend () -> Unit) {
+        beforeSignOutListeners += listener
+    }
+
     companion object {
+        const val BEFORE_SIGN_OUT_TIMEOUT_MS: Long = 3_000
+
         /** Previews only: a store that looks signed in (or out) without the network. */
         fun preview(signedIn: Boolean = true): SessionStore {
             val store = SessionStore(APIClient.shared)

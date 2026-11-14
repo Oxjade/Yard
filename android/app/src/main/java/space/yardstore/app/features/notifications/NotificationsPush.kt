@@ -50,6 +50,8 @@ import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import space.yardstore.app.core.stores.SessionStore
+import kotlin.coroutines.cancellation.CancellationException
 import space.yardstore.app.app.AppTab
 import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.app.Route
@@ -73,9 +75,9 @@ import space.yardstore.app.designsystem.yard
 //   YardPushNotifications()                      // inside RootView, below the store/router providers
 //   YardPushCenter.handleTap(intent.getStringExtra(YardPushCenter.EXTRA_HREF))   // MainActivity, for notification taps
 //
-// REMOTE PUSH GAP: no Firebase/FCM in the app (dependency + google-services.json not added) and the
-// website has no device-token endpoint yet. `YardPushCenter.didRegister(token)` and
-// `uploadTokenIfPossible()` are the single places to hook FCM in later (see android/Docs/notifications.md).
+// Remote push: FCM (NotificationsRemotePush.kt). `YardPushCenter.install` (YardApp) unregisters the
+// token before sign-out; `uploadTokenIfPossible` registers it on every sign-in and app start
+// (POST /api/devices). See android/Docs/connect.md.
 
 // region Permission
 
@@ -188,6 +190,8 @@ object YardNotificationChannels {
     const val WISHLIST = "wishlist"
     const val ACCOUNT = "account"
     const val GENERAL = "general"
+    /** Remote pushes from the website (FCM `android.notification.channel_id`). */
+    const val UPDATES = "yard_updates"
 
     private data class Spec(val id: String, val name: String, val description: String, val importance: Int)
 
@@ -199,6 +203,7 @@ object YardNotificationChannels {
         Spec(WISHLIST, "Wishlist", "Price drops and restocks on pieces you saved.", NotificationManagerCompat.IMPORTANCE_DEFAULT),
         Spec(ACCOUNT, "Account", "Updates about your Yard account.", NotificationManagerCompat.IMPORTANCE_DEFAULT),
         Spec(GENERAL, "Yard", "Everything else from Yard.", NotificationManagerCompat.IMPORTANCE_LOW),
+        Spec(UPDATES, "Updates", "Order updates, replies from brands and drops, sent by Yard.", NotificationManagerCompat.IMPORTANCE_HIGH),
     )
 
     /** Creates (or updates the names of) every channel. Safe to call any number of times. */
@@ -237,7 +242,7 @@ object YardPushCenter {
     const val EXTRA_HREF = "space.yardstore.app.push.href"
 
     internal const val PREFS = "yard.push"
-    /** The push token (FCM, once added). */
+    /** The FCM token. */
     internal const val TOKEN_KEY = "yard.push.token"
     /** When the soft prompt was last dismissed with "Not now" (epoch seconds). */
     internal const val DECLINED_AT_KEY = "yard.push.softPromptDeclinedAt"
@@ -249,9 +254,9 @@ object YardPushCenter {
         data class DropReminder(val dropName: String?) : PrimingReason
     }
 
-    /** The push token once registered (always null until FCM is added). */
+    /** This install's FCM token (null until Firebase gives one, or without Firebase). */
     var deviceToken: String? by mutableStateOf(null)
-        private set
+        internal set
     /** A notification href the user tapped, waiting for the UI to route it. */
     var pendingHref: String? by mutableStateOf(null)
     /** The soft prompt shown before the system one. */
@@ -263,7 +268,7 @@ object YardPushCenter {
 
     // Tokens
 
-    /** For a future FCM service's `onNewToken`. */
+    /** Keeps a new FCM token (`YardMessagingService.onNewToken`). */
     fun didRegister(context: Context, token: String) {
         if (token != deviceToken) {
             deviceToken = token
@@ -276,14 +281,46 @@ object YardPushCenter {
     }
 
     /**
-     * Sends the push token to Yard. The server has NO device-token endpoint yet (and the app has no
-     * FCM), so this does nothing. When both exist (suggested:
-     * `POST /api/notifications/devices { token, platform: "android" }`, shopper auth), call it here;
-     * it already runs on every sign-in.
+     * Registers this device for push with the signed-in account (POST /api/devices). Runs on every
+     * sign-in and on app start while signed in. Asks Firebase for the token when none is stored;
+     * no Firebase → nothing to do. Never throws.
      */
-    suspend fun uploadTokenIfPossible() {
-        if (deviceToken == null) return
-        // Intentionally nothing to call yet: no endpoint on the server.
+    suspend fun uploadTokenIfPossible(context: Context) {
+        val token = deviceToken
+            ?: YardFirebase.currentToken(context)?.also { didRegister(context, it) }
+            ?: return
+        upload(token)
+    }
+
+    /** POST /api/devices; failures (signed out → 401, offline) are ignored and retried next time. */
+    internal suspend fun upload(token: String) {
+        try {
+            PushDevicesAPI.register(token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
+
+    /** DELETE /api/devices { token } — called before sign-out (best effort, never throws). */
+    suspend fun unregisterBeforeSignOut() {
+        val token = deviceToken ?: return
+        try {
+            PushDevicesAPI.unregister(token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
+
+    /** App start (YardApp): restores the token and unregisters it before every sign-out. */
+    fun install(context: Context, session: SessionStore) {
+        restoreToken(context)
+        hookSignOut(session)
+    }
+
+    internal fun hookSignOut(session: SessionStore) {
+        session.addBeforeSignOutListener { unregisterBeforeSignOut() }
     }
 
     // Soft prompt
@@ -314,8 +351,7 @@ object YardPushCenter {
 
     /**
      * Records a tapped notification's destination (from its tap intent's [EXTRA_HREF]). No href →
-     * the notifications list. Push payload contract for the server later:
-     * `{ "title", "body", "href": "/you/orders/ord_1", "key": "<event key>" }` (FCM data message).
+     * the notifications list. Pushes carry it as FCM `data.url` (see [YardPushMessage]).
      */
     fun handleTap(href: String?) {
         pendingHref = if (!href.isNullOrEmpty()) href else "/notifications"
@@ -348,7 +384,7 @@ fun YardPushNotifications() {
     }
 
     LaunchedEffect(session.shopper?.id ?: "signed-out") {
-        if (session.isSignedIn) center.uploadTokenIfPossible()
+        if (session.isSignedIn) center.uploadTokenIfPossible(context)
     }
 
     // A tap on Follow inserts exactly one id after the list has loaded; a load happens while

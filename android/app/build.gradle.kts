@@ -1,9 +1,39 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.roborazzi)
+}
+
+// Firebase (push): the google-services plugin needs android/app/google-services.json, which is
+// not in git. Without it the app builds and runs; push is simply off (see Docs/connect.md).
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+}
+
+// Release signing: android/keystore.properties (storeFile, storePassword, keyAlias, keyPassword)
+// or YARD_KEYSTORE_FILE / YARD_KEYSTORE_PASSWORD / YARD_KEY_ALIAS / YARD_KEY_PASSWORD. Neither
+// present → the release build stays unsigned (and still builds). Never commit a keystore.
+val releaseSigning: Map<String, String>? = run {
+    val propsFile = rootProject.file("keystore.properties")
+    val fromFile: Map<String, String>? = if (propsFile.exists()) {
+        val props = Properties()
+        propsFile.inputStream().use { props.load(it) }
+        listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+            .associateWith { props.getProperty(it)?.trim().orEmpty() }
+    } else {
+        null
+    }
+    val fromEnv = mapOf(
+        "storeFile" to System.getenv("YARD_KEYSTORE_FILE").orEmpty(),
+        "storePassword" to System.getenv("YARD_KEYSTORE_PASSWORD").orEmpty(),
+        "keyAlias" to System.getenv("YARD_KEY_ALIAS").orEmpty(),
+        "keyPassword" to System.getenv("YARD_KEY_PASSWORD").orEmpty(),
+    )
+    listOfNotNull(fromFile, fromEnv).firstOrNull { values -> values.values.all { it.isNotEmpty() } }
 }
 
 android {
@@ -18,8 +48,21 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                // A relative storeFile is relative to android/ (where keystore.properties lives).
+                storeFile = rootProject.file(releaseSigning.getValue("storeFile"))
+                storePassword = releaseSigning.getValue("storePassword")
+                keyAlias = releaseSigning.getValue("keyAlias")
+                keyPassword = releaseSigning.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseSigning != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -79,6 +122,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.osmdroid.android)
+
+    // Push (FCM). Initialised only when google-services.json is present (see above).
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

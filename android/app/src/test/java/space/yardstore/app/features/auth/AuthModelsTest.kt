@@ -59,15 +59,18 @@ class AuthModelsTest {
         assertEquals(true, s.signedIn)
         val s2 = YardJson.decodeFromString(AuthStatusResponse.serializer(), """{"status":"signed_in"}""")
         assertNull(s2.signedIn)
-        val start = YardJson.decodeFromString(AuthOAuthStartResponse.serializer(), """{"url":"https://yard.eu.auth0.com/authorize?client_id=x&state=y"}""")
-        assertTrue(start.url.startsWith("https://yard.eu.auth0.com/authorize"))
+        val exchange = YardJson.decodeFromString(AuthAppExchangeResponse.serializer(), """{"result":"signed_in","isNew":true,"shopper":{"id":"u_1"}}""")
+        assertEquals("signed_in", exchange.result)
+        assertTrue(exchange.isNew)
+        assertFalse(exchange.isMfaRequired)
+        val mfa = YardJson.decodeFromString(AuthAppExchangeResponse.serializer(), """{"status":"mfa_required","challenge":"c","expiresAt":"x"}""")
+        assertTrue(mfa.isMfaRequired)
+        assertFalse(mfa.isNew)
     }
 
     @Test fun bodiesMatchStrictServerSchemas() {
         val api = APIClient.shared
-        // `connection` is `.optional()` (not nullable) on the server: it must be omitted, not null.
-        assertEquals("""{"mode":"signin","actor":"shopper"}""", api.encodeBody(AuthOAuthStartBody("signin", "shopper", null)))
-        assertEquals("""{"mode":"signin","actor":"shopper","connection":"google-oauth2"}""", api.encodeBody(AuthOAuthStartBody("signin", "shopper", "google-oauth2")))
+        assertEquals("""{"code":"c1","verifier":"v1"}""", api.encodeBody(AuthAppExchangeBody("c1", "v1")))
         assertEquals("""{"email":"a@b.co","password":"pw","actor":"shopper"}""", api.encodeBody(AuthSignInBody("a@b.co", "pw", "shopper")))
         assertEquals("""{"actor":"shopper","account":"u_ada"}""", api.encodeBody(AuthDemoBody("shopper", "u_ada")))
     }
