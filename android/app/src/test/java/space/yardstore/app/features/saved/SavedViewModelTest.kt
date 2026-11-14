@@ -30,6 +30,11 @@ import space.yardstore.app.features.saved.SavedFakeBackend.Companion.wishlistIte
  * virtual clock would skip that delay while we wait for OkHttp threads in real time.
  */
 class SavedViewModelTest {
+    // Toasts auto-dismiss after 2.6s on Dispatchers.Main. Dismiss them before resetMain() so that
+    // timer cannot resume during a later test with no Main dispatcher (the suite's flaky failure).
+    private val toasts = mutableListOf<ToastCenter>()
+    private fun newToast() = ToastCenter().also { toasts += it }
+
     private lateinit var backend: SavedFakeBackend
 
     @Before fun setUp() {
@@ -38,6 +43,7 @@ class SavedViewModelTest {
     }
 
     @After fun tearDown() {
+        toasts.forEach { it.dismiss() }
         backend.shutdown()
         Dispatchers.resetMain()
     }
@@ -185,7 +191,7 @@ class SavedViewModelTest {
         backend.json("DELETE", "/api/wishlist/prd_a", """{"productId":"prd_a","saved":false,"verdict":"direct"}""")
         val saved = SavedStore(backend.api)
         val cart = CartStore(backend.api)
-        val toast = ToastCenter()
+        val toast = newToast()
         val model = SavedViewModel(backend.api)
         model.load(saved).join()
         val product = model.productsById.getValue("prd_a")
@@ -208,7 +214,7 @@ class SavedViewModelTest {
         backend.json("GET", "/api/catalog/products", productsPage(product("prd_a")))
         backend.on("POST", "/api/cart/lines") { SavedFakeBackend.error(409, "conflict", "Only 1 left.") }
         val saved = SavedStore(backend.api)
-        val toast = ToastCenter()
+        val toast = newToast()
         val model = SavedViewModel(backend.api)
         model.load(saved).join()
         val product = model.productsById.getValue("prd_a")
@@ -234,7 +240,7 @@ class SavedViewModelTest {
         assertEquals(1, model.unlistedItems(saved).size)
         assertEquals(null, model.unlistedItems(saved).single().title)
 
-        model.remove("prd_gone", saved, ToastCenter())
+        model.remove("prd_gone", saved, newToast())
         waitUntil { !saved.isSaved("prd_gone") && backend.requestsTo("/api/wishlist/prd_gone").isNotEmpty() }
 
         assertTrue(model.unlistedItems(saved).isEmpty())

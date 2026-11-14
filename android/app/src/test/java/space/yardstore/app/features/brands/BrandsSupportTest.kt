@@ -24,6 +24,11 @@ import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BrandsSupportTest {
+    // Toasts auto-dismiss after 2.6s on Dispatchers.Main. Dismiss them before resetMain() so that
+    // timer cannot resume during a later test with no Main dispatcher (the suite's flaky failure).
+    private val toasts = mutableListOf<ToastCenter>()
+    private fun newToast() = ToastCenter().also { toasts += it }
+
     private var savedLocale: Locale = Locale.getDefault()
 
     @Before fun setUp() {
@@ -33,6 +38,7 @@ class BrandsSupportTest {
     }
 
     @After fun tearDown() {
+        toasts.forEach { it.dismiss() }
         Locale.setDefault(savedLocale)
         Dispatchers.resetMain()
     }
@@ -74,7 +80,7 @@ class BrandsSupportTest {
 
     @Test fun followSignedOutPresentsSignIn() = runBlocking {
         val router = Router()
-        val toast = ToastCenter()
+        val toast = newToast()
         val result = BrandsFollow.toggle("brd_1", "Acme", SessionStore.preview(signedIn = false), FollowStore.preview(), router, toast)
         assertNull(result)
         assertEquals(Route.SignIn, router.sheet)
@@ -87,7 +93,7 @@ class BrandsSupportTest {
         try {
             t.json("/api/follows", """{"brandId": "brd_1", "following": true, "followers": 12}""")
             val follows = FollowStore(t.api)
-            val toast = ToastCenter()
+            val toast = newToast()
             val result = BrandsFollow.toggle("brd_1", "Acme", SessionStore.preview(signedIn = true), follows, Router(), toast)
             assertEquals(12, result?.followers)
             assertTrue(follows.isFollowing("brd_1"))
@@ -95,7 +101,7 @@ class BrandsSupportTest {
             assertEquals(Toast.Style.Success, toast.current?.style)
 
             t.json("/api/follows/brd_1", """{"brandId": "brd_1", "following": false, "followers": 11}""")
-            val off = BrandsFollow.toggle("brd_1", "Acme", SessionStore.preview(signedIn = true), follows, Router(), ToastCenter())
+            val off = BrandsFollow.toggle("brd_1", "Acme", SessionStore.preview(signedIn = true), follows, Router(), newToast())
             assertFalse(off!!.following)
             assertEquals("DELETE", t.requestsTo("/api/follows/brd_1").single().method)
         } finally {
@@ -109,7 +115,7 @@ class BrandsSupportTest {
         try {
             t.json("/api/follows", """{"error":{"code":"rate_limited","message":"Slow down a little."}}""", code = 429)
             val follows = FollowStore(t.api)
-            val toast = ToastCenter()
+            val toast = newToast()
             val result = BrandsFollow.toggle("brd_1", "Acme", SessionStore.preview(signedIn = true), follows, Router(), toast)
             assertNull(result)
             assertFalse(follows.isFollowing("brd_1"))

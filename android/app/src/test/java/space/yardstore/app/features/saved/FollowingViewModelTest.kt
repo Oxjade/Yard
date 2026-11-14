@@ -25,6 +25,11 @@ import space.yardstore.app.features.saved.SavedFakeBackend.Companion.productsPag
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FollowingViewModelTest {
+    // Toasts auto-dismiss after 2.6s on Dispatchers.Main. Dismiss them before resetMain() so that
+    // timer cannot resume during a later test with no Main dispatcher (the suite's flaky failure).
+    private val toasts = mutableListOf<ToastCenter>()
+    private fun newToast() = ToastCenter().also { toasts += it }
+
     private lateinit var backend: SavedFakeBackend
 
     @Before fun setUp() {
@@ -33,6 +38,7 @@ class FollowingViewModelTest {
     }
 
     @After fun tearDown() {
+        toasts.forEach { it.dismiss() }
         backend.shutdown()
         Dispatchers.resetMain()
     }
@@ -164,7 +170,7 @@ class FollowingViewModelTest {
         brands()
         backend.json("DELETE", "/api/follows/brd_1", """{"brandId":"brd_1","following":false,"followers":11}""")
         val store = FollowStore(backend.api)
-        val toast = ToastCenter()
+        val toast = newToast()
         val model = FollowingViewModel(backend.api)
         model.load(store).join()
         var changed = 0
@@ -192,7 +198,7 @@ class FollowingViewModelTest {
         brands()
         backend.on("POST", "/api/follows") { SavedFakeBackend.error(429, "rate_limited", "Slow down a little.") }
         val store = FollowStore(backend.api)
-        val toast = ToastCenter()
+        val toast = newToast()
         val model = FollowingViewModel(backend.api)
         model.load(store).join()
 
@@ -229,7 +235,7 @@ class FollowingViewModelTest {
         drops(emptyList(), emptyList())
         brands(brandCard("brd_5", "Fifth"))
         val store = FollowStore(backend.api)
-        val toast = ToastCenter()
+        val toast = newToast()
         val model = FollowingViewModel(backend.api)
         model.load(store).join()
         assertEquals(listOf("p_1"), model.pieces?.map { it.id })
