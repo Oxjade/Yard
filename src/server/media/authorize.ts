@@ -9,6 +9,7 @@ import type { UploadPurpose } from "@/lib/api/contracts/uploads"
 import { brands } from "../db/schema"
 import { brandOnboardings } from "../db/schema/catalog"
 import { desc, eq } from "drizzle-orm"
+import { refuseSampleBrand } from "../catalog/sample-guard"
 
 /**
  * Upload authorisation from the query string alone (§5.4 step 1), so nothing is read from the
@@ -118,8 +119,21 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
  * from then on. Any other brand, purpose or state is refused.
  */
 export async function authorizeAdminUpload(actor: AdminActor, q: Query): Promise<UploadTarget> {
+  // Suggestions from Yard: product photos an admin with catalog.propose adds to a suggestion. They
+  // belong to that brand (owner_kind brand, a catalogue purpose), so its members see them before
+  // accepting, and they move onto the product as they are. Private until a published product uses them.
+  if (q.purpose === "social_post" && canAdmin(actor.role, "catalog.propose")) {
+    if (q.conversationId) throw badRequest({ conversationId: "Only inbox attachments belong to a conversation." })
+    if (!q.brandId) throw badRequest({ brandId: "Name the brand the photo is for." })
+    refuseSampleBrand(q.brandId)
+    const d = await db()
+    const [b] = await d.select({ id: brands.id, reviewStatus: brands.reviewStatus }).from(brands).where(eq(brands.id, q.brandId)).limit(1)
+    if (!b) throw notFound()
+    if (b.reviewStatus === "suspended") throw forbidden("Yard has suspended this brand.")
+    return { purpose: "social_post", ownerKind: "brand", ownerId: b.id, brandId: b.id, conversationId: null, targetBrandId: null }
+  }
   if (!canAdmin(actor.role, "brands.founding")) throw forbidden()
-  if (q.purpose !== "storefront_cover") throw forbidden("Admins upload founding brand logos and banners only.")
+  if (q.purpose !== "storefront_cover") throw forbidden("Admins upload founding brand logos and banners, and photos for suggestions.")
   if (q.conversationId) throw badRequest({ conversationId: "Only inbox attachments belong to a conversation." })
   if (!q.brandId) throw badRequest({ brandId: "Name the founding brand." })
   const d = await db()

@@ -1,4 +1,8 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, desc, eq, ilike, inArray, isNull, like, or, sql } from "drizzle-orm"
+import { catalogChanged } from "@/server/catalog/hooks"
+import { catalogImages, catalogProducts, productProposals } from "@/server/db/schema/catalog"
+import { purgeOrphans } from "@/server/media"
+import { orderLines } from "@/server/db/schema/orders-v3"
 import { connection, type NextRequest } from "next/server"
 import { z } from "zod"
 import { createAdminAccount } from "@/server/auth/admins"
@@ -29,13 +33,17 @@ import { route } from "@/server/http/route"
  * POST { op: "delete-support", email } | { …, demoUserId } | { …, brandId }
  *                                                  → deletes that kit shopper's Yard Support thread, or a brand's thread
  *                                                    whose brand-side messages all came from demo accounts (+ its notifications)
+ * GET  ?op=proposal-emails&proposalId=…  → { emails } queued for a suggestion (kit brands' members are demo accounts)
+ * POST { op: "delete-proposals", tag }   → deletes the suggestions whose note or product name holds `tag` (must contain
+ *                                          "t_v3_"), the products made from them (never ordered), and their notifications
  */
 
 const TAG = "t_v3_"
 const tagged = (email: string | null | undefined) => !!email && email.toLowerCase().includes(TAG)
 
 const getQuery = z.object({
-  op: z.enum(["outbox", "inspect"]),
+  op: z.enum(["outbox", "inspect", "proposal-emails"]),
+  proposalId: z.string().max(64).optional(),
   email: z.string().max(254).optional(),
   userId: z.string().max(64).optional(),
 })
@@ -47,6 +55,7 @@ const postBody = z.discriminatedUnion("op", [
   z.object({ op: z.literal("run-erasures") }),
   z.object({ op: z.literal("retire-admin"), email: z.string().max(254) }),
   z.object({ op: z.literal("expire-claim-links"), email: z.string().max(254) }),
+  z.object({ op: z.literal("delete-proposals"), tag: z.string().min(8).max(80) }),
   z.object({ op: z.literal("delete-support"), email: z.string().max(254).optional(), brandId: z.string().max(64).optional(), demoUserId: z.string().max(64).optional() }),
 ])
 
@@ -65,6 +74,16 @@ const getHandler = route({ auth: "public", query: getQuery }, async ({ query }) 
       .select({ template: emailOutbox.template, toEmail: emailOutbox.toEmail, vars: emailOutbox.vars, status: emailOutbox.status, createdAt: emailOutbox.createdAt })
       .from(emailOutbox)
       .where(sql`lower(${emailOutbox.toEmail}) = ${query.email.trim().toLowerCase()}`)
+      .orderBy(desc(emailOutbox.createdAt))
+      .limit(50)
+    return { emails: rows }
+  }
+  if (query.op === "proposal-emails") {
+    if (!query.proposalId || !/^pp_[\w-]{1,60}$/.test(query.proposalId)) throw badRequest({ proposalId: "Name the suggestion." })
+    const rows = await d
+      .select({ template: emailOutbox.template, toEmail: emailOutbox.toEmail, vars: emailOutbox.vars, status: emailOutbox.status, createdAt: emailOutbox.createdAt })
+      .from(emailOutbox)
+      .where(like(emailOutbox.dedupeKey, `proposal:${query.proposalId}:%`))
       .orderBy(desc(emailOutbox.createdAt))
       .limit(50)
     return { emails: rows }
@@ -152,6 +171,46 @@ const postHandler = route({ auth: "public", body: postBody, maxBody: 2 * 1024 },
         if (media.length) await t.delete(mediaAssets).where(inArray(mediaAssets.id, media.map((m) => m.id)))
       })
       return { deleted: 1 }
+    }
+    case "delete-proposals": {
+      if (!tagged(body.tag)) throw badRequest({ tag: `Only tags containing ${TAG}.` })
+      const pattern = `%${body.tag.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+      const result = await withTx(async () => {
+        const t = await db()
+        const rows = await t
+          .select({ id: productProposals.id, brandId: productProposals.brandId, productId: productProposals.productId, kind: productProposals.kind })
+          .from(productProposals)
+          .leftJoin(catalogProducts, eq(catalogProducts.id, productProposals.productId))
+          .where(or(ilike(productProposals.note, pattern), sql`${productProposals.payload} ->> 'title' ilike ${pattern}`, ilike(catalogProducts.title, pattern)))
+        // Products named with the tag, and products made by accepting one of these new-product suggestions.
+        const made = rows.filter((r) => r.kind === "new" && r.productId).map((r) => r.productId!)
+        const products = await t
+          .select({ id: catalogProducts.id, brandId: catalogProducts.brandId })
+          .from(catalogProducts)
+          .where(made.length ? or(ilike(catalogProducts.title, pattern), inArray(catalogProducts.id, made)) : ilike(catalogProducts.title, pattern))
+        const ordered = products.length ? await t.select({ id: orderLines.productId }).from(orderLines).where(inArray(orderLines.productId, products.map((p) => p.id))) : []
+        const removable = products.filter((p) => !ordered.some((o) => o.id === p.id)).map((p) => p.id)
+        const ids = rows.map((r) => r.id)
+        // The photos the kit uploaded for its suggestions: purged below once nothing references them.
+        const fromProposals = ids.length ? await t.select({ payload: productProposals.payload }).from(productProposals).where(inArray(productProposals.id, ids)) : []
+        const fromProducts = removable.length ? await t.select({ mediaId: catalogImages.mediaId }).from(catalogImages).where(inArray(catalogImages.productId, removable)) : []
+        const media = [...new Set([...fromProposals.flatMap((r) => ((r.payload as { images?: { mediaId?: string }[] }).images ?? []).map((i) => i.mediaId)), ...fromProducts.map((r) => r.mediaId)].filter((m): m is string => !!m))]
+        if (ids.length) {
+          await t.delete(notifications).where(inArray(notifications.eventKey, [...ids.map((id) => `proposal:${id}`), ...ids.map((id) => `proposal.decided:${id}`)]))
+          await t.delete(emailOutbox).where(or(...ids.map((id) => like(emailOutbox.dedupeKey, `proposal:${id}:%`))))
+          await t.delete(productProposals).where(inArray(productProposals.id, ids))
+        }
+        // Kit products made by accepting: their proposals are gone, so nothing points at them any more.
+        if (removable.length) {
+          await t.delete(productProposals).where(inArray(productProposals.productId, removable))
+          await t.delete(catalogProducts).where(inArray(catalogProducts.id, removable))
+        }
+        catalogChanged({ products: removable, brands: [...new Set([...rows.map((r) => r.brandId), ...products.map((p) => p.brandId)])] })
+        if (media.length) await t.update(mediaAssets).set({ createdAt: sql`now() - interval '8 days'`, unreferencedAt: sql`now() - interval '8 days'` }).where(and(inArray(mediaAssets.id, media), sql`${mediaAssets.createdBy} in (select user_id from admin_members)`))
+        return { proposals: ids.length, products: removable.length, media: media.length }
+      })
+      const purged = result.media ? await purgeOrphans() : { rows: 0 }
+      return { ...result, mediaPurged: purged.rows }
     }
     case "expire-claim-links": {
       // Claim links name an address that may have no account yet, so the tag is checked on the address itself.

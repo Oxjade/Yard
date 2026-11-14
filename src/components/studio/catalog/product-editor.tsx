@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ApiError, api } from "@/lib/api/client"
 import type { StudioProductCreateBody, StudioProductDto, StudioProductResponse, StudioProductStatusAction } from "@/lib/api/contracts/catalog"
+import type { ProposalProductInput } from "@/lib/api/contracts/proposals"
 import type { StudioShippingDto } from "@/lib/api/contracts/shipping"
 import { getStudioShipping, STUDIO_SHIPPING_KEY } from "@/lib/api/shipping"
 import { apiUpload } from "@/lib/api/upload"
@@ -105,7 +106,7 @@ export function ProductEditorRoute({ id }: { id?: string }) {
 type LiveMember = { id: string; handle: string; name: string }
 
 /** A Brand for the form from the live session and shipping profile; sample copy only fills the rest. */
-function liveBrand(base: Brand, member: LiveMember, shipping?: StudioShippingDto): Brand {
+export function liveBrand(base: Brand, member: LiveMember, shipping?: StudioShippingDto): Brand {
   const text = member.name
     .split(/\s+/)
     .map((part) => part[0] ?? "")
@@ -230,10 +231,10 @@ function useSettingsBrand(brand: Brand) {
   return useMemo(() => (min !== undefined && max !== undefined ? { ...brand, processingDays: [min, max] as [number, number] } : brand), [brand, min, max])
 }
 
-function BackLink() {
+function BackLink({ href = "/studio/products", label = "Products" }: { href?: string; label?: string }) {
   return (
-    <Link href="/studio/products" className="inline-flex w-fit items-center gap-1 text-xs text-ink-2 hover:text-ink">
-      <ChevronLeft className="size-3.5" /> Products
+    <Link href={href} className="inline-flex w-fit items-center gap-1 text-xs text-ink-2 hover:text-ink">
+      <ChevronLeft className="size-3.5" /> {label}
     </Link>
   )
 }
@@ -251,7 +252,30 @@ function createdDescription(status: Product["status"], publishAt: string | null)
   return "Saved as a draft. Only you can see it."
 }
 
-type ServerEditor = {
+/**
+ * Suggestions from Yard: the same form, saved as a suggestion (admin) or as the brand's answer to
+ * one ("Edit before accepting"). `submit` gets the body the editor would have sent to the catalogue
+ * plus `stock` (on-hand counts of existing variants); it owns what happens next (it navigates).
+ */
+export type ProposalEditor = {
+  title: string
+  description: string
+  backHref: string
+  backLabel: string
+  saveLabel: string
+  /** Replaces the Publishing panel's controls: when it goes live. */
+  publishNote: string
+  /** A product to start a NEW product from (a suggested new product): its variants and photos are saved as new. */
+  prefill?: Product
+  /** Shown first in the right column (the note to the brand). */
+  aside?: React.ReactNode
+  submit: (body: ProposalSubmitBody) => Promise<void>
+}
+export type ProposalSubmitBody = ProposalProductInput
+
+export type ServerEditor = {
+  /** Set for Suggestions from Yard (see ProposalEditor). */
+  proposal?: ProposalEditor
   dto?: StudioProductDto
   allProducts: Product[]
   collections: Collection[]
@@ -261,7 +285,7 @@ type ServerEditor = {
   upload: (file: File) => Promise<UploadedImage>
 }
 
-function ProductEditor({ product, brand: profile, server }: { product?: Product; brand: Brand; server?: ServerEditor }) {
+export function ProductEditor({ product, brand: profile, server }: { product?: Product; brand: Brand; server?: ServerEditor }) {
   const brand = useSettingsBrand(profile)
   const router = useRouter()
   const localProducts = useStudio((s) => s.products)
@@ -273,7 +297,8 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
   const studioDrops = server ? NO_DROPS : localDrops
   const collections = server?.collections ?? localCollections
 
-  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, brand) : emptyForm(brand)))
+  const proposal = server?.proposal
+  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, brand) : proposal?.prefill ? fromProduct(proposal.prefill, brand) : emptyForm(brand)))
   const [form, setForm] = useState<ProductForm>(baseline)
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const [focusTick, setFocusTick] = useState(0)
@@ -434,7 +459,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
   async function commitLive() {
     setSaving(true)
     const dto = server?.dto
-    if (server && product && !dto) throw new Error("This product needs to be reloaded before it can be saved.")
+    if (server && product && !dto && !server.proposal) throw new Error("This product needs to be reloaded before it can be saved.")
     const name = form.name.trim()
     const alts = buildImages(form.images, name, brand)
     const images = form.images.map((im, index) => {
@@ -467,6 +492,16 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
       ),
       images,
       collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
+    }
+
+    if (proposal) {
+      const { dropId: _drop, ...rest } = body
+      void _drop
+      const stock: Record<string, number> = {}
+      for (const v of form.variants) if (v.id && v.originalStock !== undefined) stock[v.id] = Number(v.stock)
+      await proposal.submit({ ...rest, ...(product ? { stock } : {}) })
+      setCheckedAt(null)
+      return
     }
 
     const warnings: string[] = []
@@ -641,7 +676,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
   })
 
   function liveSaveFailed(cause: unknown) {
-    if (cause instanceof ApiError && cause.status === 409) {
+    if (cause instanceof ApiError && cause.status === 409 && !proposal) {
       toast.error("Someone else changed this product", {
         description: "Reload to see their changes. Your unsaved edits on this page will be replaced.",
         duration: Infinity,
@@ -657,7 +692,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
     }
     if (cause instanceof ApiError) {
       const fields = cause.fields ? Object.values(cause.fields).filter(Boolean) : []
-      toast.error("Your product couldn't be saved", { description: [cause.message, ...fields].join(" ") })
+      toast.error(proposal ? "This couldn't be saved" : "Your product couldn't be saved", { description: [cause.message, ...fields].join(" ") })
       return
     }
     // The editor's own checks (photos still uploading, a stale product) throw plain Errors with user copy.
@@ -784,32 +819,32 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
   return (
     <div className={cn("grid gap-6", dirty && "pb-24")}>
       <div className="grid gap-2">
-        <BackLink />
+        <BackLink href={proposal?.backHref} label={proposal?.backLabel} />
         <PageHeader
-          title={isNew ? "New product" : product.name}
-          description={isNew ? "Add photos, a price and the sizes you stock. Save it as a draft until it's ready." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
+          title={proposal ? proposal.title : isNew ? "New product" : product.name}
+          description={proposal ? proposal.description : isNew ? "Add photos, a price and the sizes you stock. Save it as a draft until it's ready." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
           actions={
             <>
-              <Button id="pf-back" type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => guard.leave("/studio/products")}>{isNew || dirty ? "Cancel" : "Back"}</Button>
+              <Button id="pf-back" type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => guard.leave(proposal?.backHref ?? "/studio/products")}>{isNew || dirty || proposal ? "Cancel" : "Back"}</Button>
               {/* One acid Save on screen: while the save bar shows, it carries the acid button. */}
               {/* With nothing to save, an existing product's button rests as "Saved" (after a save it shows the check first). */}
               <Button
                 type="submit"
                 form="product-form"
-                variant={dirty || !isNew ? "secondary" : "primary"}
+                variant={proposal ? (dirty ? "secondary" : "primary") : dirty || !isNew ? "secondary" : "primary"}
                 size="sm"
                 className="h-10 md:h-8"
                 loading={busy}
-                success={saveAction.succeeded && !dirty}
-                disabled={processing || (!dirty && !isNew && !saveAction.succeeded)}
+                success={!proposal && saveAction.succeeded && !dirty}
+                disabled={processing || (!proposal && !dirty && !isNew && !saveAction.succeeded)}
               >
-                {isNew ? "Save product" : dirty ? "Save" : "Saved"}
+                {proposal ? proposal.saveLabel : isNew ? "Save product" : dirty ? "Save" : "Saved"}
               </Button>
             </>
           }
         >
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+            {proposal ? null : <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}
             {/* The header button's check says it visually; this says it to screen readers. */}
             <span role="status" className="sr-only">{!isNew && saveAction.succeeded && !dirty ? "Changes saved" : ""}</span>
             <AnimatePresence initial={false}>
@@ -940,6 +975,12 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
         </div>
 
         <div className="grid min-w-0 gap-6">
+          {proposal?.aside}
+          {proposal ? (
+            <Panel title="Publishing" description={proposal.publishNote}>
+              <CatalogueNote>Nothing reaches shoppers until the brand accepts.</CatalogueNote>
+            </Panel>
+          ) : (
           <Panel title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>
             {archived ? (
               server ? <CatalogueNote>Restore this product to make changes to how it&apos;s published.</CatalogueNote> : <CatalogueNote />
@@ -974,6 +1015,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
               </div>
             )}
           </Panel>
+          )}
 
           <Panel title="Organisation" description="Where shoppers find it when they browse and filter.">
             <div className="grid gap-4">
@@ -1012,7 +1054,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
             </div>
           </Panel>
 
-          <Panel title="Collections" description="Group it with related pieces on your storefront." action={<Link href="/studio/collections" className="text-xs whitespace-nowrap text-violet hover:underline">Manage</Link>}>
+          <Panel title="Collections" description="Group it with related pieces on your storefront." action={proposal ? undefined : <Link href="/studio/collections" className="text-xs whitespace-nowrap text-violet hover:underline">Manage</Link>}>
             {collections.length ? (
               <ul className="grid gap-1">
                 {collections.map((c) => {
@@ -1030,12 +1072,12 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
               </ul>
             ) : (
               <p className="text-sm text-ink-2">
-                No collections yet. <Link href="/studio/collections" className="text-violet hover:underline">Create one</Link> to group products on your storefront.
+                {proposal ? "No collections yet." : <>No collections yet. <Link href="/studio/collections" className="text-violet hover:underline">Create one</Link> to group products on your storefront.</>}
               </p>
             )}
           </Panel>
 
-          {!isNew ? (
+          {!isNew && !proposal ? (
             <Panel title="Remove product" description={server ? "Archive to set it aside. Orders and stock history stay, and you can restore it later." : archived ? "Delete removes it for good." : "Archive to set it aside and keep its history. Delete removes it for good."}>
               <div className="flex flex-wrap gap-2">
                 {archived ? null : (
@@ -1051,7 +1093,7 @@ function ProductEditor({ product, brand: profile, server }: { product?: Product;
       <SaveBar
         visible={dirty}
         label={processing ? "Preparing photos" : isNew ? "Unsaved product" : "Unsaved changes"}
-        saveLabel={isNew ? "Save product" : "Save"}
+        saveLabel={proposal ? proposal.saveLabel : isNew ? "Save product" : "Save"}
         onSave={save}
         onDiscard={() => setDialog("discard")}
         saving={busy}

@@ -48,6 +48,8 @@ export type NotificationCategory =
   | "location_review"
   | "chart_movement"
   | "delivery_complaint"
+  /** Suggestions from Yard: a product or product changes waiting for the brand, and the brand's answer (admin). */
+  | "product_suggestion"
   // v2: admin
   | "message_report"
   | "content_report"
@@ -348,6 +350,7 @@ export const categoryLabel: Record<NotificationCategory, string> = {
   shipping_issue: "Delivery",
   abuse_alert: "Abuse",
   support_message: "Support",
+  product_suggestion: "Products",
   merchant_application: "Brands",
   product_report: "Moderation",
   payment_failure: "Payments",

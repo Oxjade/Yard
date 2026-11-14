@@ -33,6 +33,7 @@ import {
   CalendarXIcon,
   ProhibitIcon,
   LifebuoyIcon,
+  SparkleIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { useLiveMoney } from "@/components/admin/finance/live-counts"
@@ -272,6 +273,8 @@ const search: ShellSearch = {
     { label: "Holidays", href: "/admin/delivery?tab=holidays", icon: CalendarXIcon, hint: "Marketplace" },
     { label: "Abuse", href: "/admin/users?tab=abuse", icon: ProhibitIcon, hint: "Marketplace" },
     { label: "Support queue", href: "/admin/support", icon: LifebuoyIcon, hint: "Marketplace" },
+    { label: "Product suggestions", href: "/admin/products/suggestions", icon: SparkleIcon, hint: "Marketplace" },
+    { label: "Add product for brand", href: "/admin/products/suggestions/new", icon: SparkleIcon, hint: "Marketplace" },
     { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
   ],
   Results: AdminAllResults,

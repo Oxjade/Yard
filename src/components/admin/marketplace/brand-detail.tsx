@@ -16,7 +16,7 @@ import { sampleOnly, useAdminBrowserAudit, useAdminSampleData } from "../sample"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
-import { AdminImg, ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
+import { AdminImg, ServerActivity, TrustActionBar, useAdminSession } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
 import { ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, daysSince, formatDate, plural, relDays } from "./format"
@@ -53,6 +53,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
   // The moderation cases are sample ones: a real brand never matches them by name.
   const moderation = sampleOnly(sample.on, storeModeration)
   const blockFor = useBrandStatusBlock()
+  const canPropose = useAdminSession().can("catalog.propose")
 
   if (!app) return null
 
@@ -164,6 +165,16 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
             <li>
               <LinkRow href={`/admin/finance?tab=payouts&focus=po_${app.handle}`} label="Payouts and ledger" hint="This brand's payout in Finance" />
             </li>
+          ) : null}
+          {app.brandId && canPropose ? (
+            <>
+              <li>
+                <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(app.brandId)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
+              </li>
+              <li>
+                <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(app.brandId)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${app.brandName}`} />
+              </li>
+            </>
           ) : null}
         </ul>
       </DetailSection>

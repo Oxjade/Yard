@@ -94,13 +94,13 @@ async function assertOwnDrop(d: Executor, brandId: string, dropId: string | null
   if (!row) throw badRequest({ dropId: "Choose one of your own drops." })
 }
 
-async function assertCategory(d: Executor, slug: string, subcategory: string | null | undefined) {
+export async function assertCategory(d: Executor, slug: string, subcategory: string | null | undefined) {
   const [c] = await d.select().from(catalogCategories).where(eq(catalogCategories.slug, slug)).limit(1)
   if (!c) throw badRequest({ categorySlug: "Choose one of Yard's categories." })
   if (subcategory && c.subcategories.length && !c.subcategories.includes(subcategory)) throw badRequest({ subcategory: `Choose a ${c.name} subcategory.` })
 }
 
-async function assertCollections(d: Executor, brandId: string, ids: string[]) {
+export async function assertCollections(d: Executor, brandId: string, ids: string[]) {
   if (!ids.length) return
   const rows = await d
     .select({ id: catalogCollections.id })
@@ -118,7 +118,7 @@ type OptionIn = { name: string; values: { value: string; hex?: string }[] }
 type VariantIn = { id?: string; sku: string; options: Record<string, string>; priceMinor?: number | null; initialStock?: number }
 
 /** Variant option maps must use exactly the product's option names and listed values, with no duplicate combination or SKU. */
-function validateVariants(options: OptionIn[], variants: VariantIn[]) {
+export function validateVariants(options: OptionIn[], variants: VariantIn[]) {
   const fields: Record<string, string> = {}
   const names = options.map((o) => o.name)
   if (new Set(names).size !== names.length) fields.options = "Each option needs its own name."
@@ -142,7 +142,7 @@ function validateVariants(options: OptionIn[], variants: VariantIn[]) {
   if (Object.keys(fields).length) throw badRequest(fields)
 }
 
-async function assertSkusFree(d: Executor, brandId: string, variants: VariantIn[], productId?: string) {
+export async function assertSkusFree(d: Executor, brandId: string, variants: VariantIn[], productId?: string) {
   const skus = variants.map((v) => v.sku.trim())
   const rows = await d
     .select({ id: catalogVariants.id, sku: catalogVariants.sku, productId: catalogVariants.productId })

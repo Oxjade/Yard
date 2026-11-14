@@ -7,6 +7,8 @@ import { writeAudit } from "../audit"
 import { getAdmin, getBrandActor, getShopper, type Actor } from "../auth/dal"
 import { db } from "../db"
 import { auditLog, messageAttachments, messages, reports } from "../db/schema"
+import { catalogImages, productProposals } from "../db/schema/catalog"
+import { CATALOG_IMAGE_PURPOSES } from "./visibility"
 import { notFound } from "../http/errors"
 import { log } from "../log"
 import { canAdmin, type AdminPermission } from "@/lib/permissions"
@@ -62,6 +64,20 @@ async function inboxEvidence(mediaId: string) {
   return !!held
 }
 
+/** A brand photo on one of its products, named by a suggestion, or uploaded by this admin for one. */
+async function catalogPhoto(m: MediaRow, adminId: string) {
+  if (m.createdBy === adminId && m.purpose === "social_post") return true
+  const d = await db()
+  const [onProduct] = await d.select({ id: catalogImages.id }).from(catalogImages).where(and(eq(catalogImages.mediaId, m.id), eq(catalogImages.brandId, m.brandId!))).limit(1)
+  if (onProduct) return true
+  const [inProposal] = await d
+    .select({ id: productProposals.id })
+    .from(productProposals)
+    .where(and(eq(productProposals.brandId, m.brandId!), sql`exists (select 1 from jsonb_array_elements(coalesce(${productProposals.payload} -> 'images', '[]'::jsonb)) e where e ->> 'mediaId' = ${m.id})`))
+    .limit(1)
+  return !!inProposal
+}
+
 /**
  * An inbox attachment the other side of the conversation may open: it is on a message that was
  * delivered (status `sent`). Before its message is sent, while it's held for review, or once Yard
@@ -111,6 +127,12 @@ async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Acto
       await auditView(a, m)
       return a
     }
+  }
+  // Suggestions from Yard: a brand's catalogue photos (on its products or in a suggestion, or the
+  // admin's own upload for one) for admins who suggest products.
+  if (a && canAdmin(a.role, "catalog.propose") && m.ownerKind === "brand" && m.brandId && m.moderationStatus !== "removed" && (CATALOG_IMAGE_PURPOSES as readonly string[]).includes(m.purpose) && (await catalogPhoto(m, a.userId))) {
+    await auditView(a, m)
+    return a
   }
   const permission = adminPermissionFor(m.purpose)
   if (!a || !permission || !canAdmin(a.role, permission)) return null

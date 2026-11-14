@@ -297,3 +297,52 @@ export const brandOnboardings = pgTable(
     oneOf("catalog_brand_onboardings_status_ck", "status", ONBOARDING_STATUSES),
   ],
 )
+
+export const PROPOSAL_KINDS = ["new", "edit"] as const
+export const PROPOSAL_STATUSES = ["pending", "accepted", "declined", "withdrawn", "superseded"] as const
+
+/**
+ * Suggestions from Yard: an admin proposes a new product for a brand, or changes to one of its
+ * products. Nothing reaches the catalogue until a brand member who can manage products accepts.
+ * `payload` is the proposed product (kind new) or only the changed fields (kind edit, plus `stock`:
+ * on-hand counts for existing variants); `base` holds those fields' values when it was proposed, so
+ * the review can show before → after and flag fields the brand changed since. Photos are uploads of
+ * the brand (owner_kind brand), so brand members see them before accepting and they move onto the
+ * product as they are. One pending edit per product: an update supersedes the old row.
+ */
+export const productProposals = pgTable(
+  "product_proposals",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id")
+      .notNull()
+      .references(() => brands.id),
+    /** The product an edit changes; null for a new product until it's accepted (then the created product). */
+    productId: text("product_id").references(() => catalogProducts.id),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    base: jsonb("base").$type<Record<string, unknown>>(),
+    baseVersion: integer("base_version"),
+    baseUpdatedAt: tz("base_updated_at"),
+    note: text("note"),
+    status: text("status").notNull().default("pending"),
+    createdByAdminId: text("created_by_admin_id")
+      .notNull()
+      .references(() => users.id),
+    decidedByUserId: text("decided_by_user_id").references(() => users.id),
+    decidedAt: tz("decided_at"),
+    declineReason: text("decline_reason"),
+    /** The proposal this one replaced (an admin's update). */
+    supersedesId: text("supersedes_id"),
+    createdAt: tz("created_at").notNull().defaultNow(),
+    updatedAt: tz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("product_proposals_brand_status_ix").on(t.brandId, t.status, t.createdAt),
+    index("product_proposals_status_ix").on(t.status, t.createdAt),
+    uniqueIndex("product_proposals_pending_edit_ux").on(t.productId).where(raw("status = 'pending' and kind = 'edit'")),
+    oneOf("product_proposals_kind_ck", "kind", PROPOSAL_KINDS),
+    oneOf("product_proposals_status_ck", "status", PROPOSAL_STATUSES),
+    check("product_proposals_product_ck", raw("kind = 'new' or product_id is not null")),
+  ],
+)

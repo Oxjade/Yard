@@ -49,6 +49,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from brands lb where lb.logo_media_id = m.id)
+  or exists (select 1 from product_proposals pp, jsonb_array_elements(coalesce(pp.payload -> 'images', '[]'::jsonb)) e where pp.status = 'pending' and e ->> 'mediaId' = m.id)
   or exists (
     select 1 from catalog_brand_onboardings o
     where o.data -> 'brand' ->> 'logoMediaId' = m.id

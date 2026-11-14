@@ -1,7 +1,11 @@
 "use client"
 
 import { useId, useMemo } from "react"
-import { EyeIcon, FlagIcon, GavelIcon, ShieldWarningIcon, SealWarningIcon } from "@phosphor-icons/react"
+import Link from "next/link"
+import { EyeIcon, FlagIcon, GavelIcon, PlusIcon, ShieldWarningIcon, SealWarningIcon, SparkleIcon } from "@phosphor-icons/react"
+import { Button } from "@/components/ui/button"
+import { canAdmin } from "@/lib/permissions"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
@@ -38,6 +42,7 @@ const n = (v: number) => formatNumber(Math.round(v))
 
 export function ModerationView() {
   const adminReady = useAdminReady()
+  const canPropose = useServerSession((s) => !!s.admin && canAdmin(s.admin.role, "catalog.propose"))
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
   const phone = usePhone()
@@ -137,6 +142,22 @@ export function ModerationView() {
         description="Work through reports and automated flags, and restrict any listing on the marketplace."
         live={!sample.on}
         note="Decisions are recorded here and in the audit log with your reason. Hiding a listing removes it from the marketplace, search and the brand's storefront at once."
+        actions={
+          canPropose ? (
+            <>
+              <Button asChild size="sm" variant="secondary" className="h-10 sm:h-9">
+                <Link href="/admin/products/suggestions">
+                  <SparkleIcon /> Suggestions
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="secondary" className="h-10 sm:h-9">
+                <Link href="/admin/products/suggestions/new">
+                  <PlusIcon /> Add product for brand
+                </Link>
+              </Button>
+            </>
+          ) : undefined
+        }
       />
 
       <InPageLinks>

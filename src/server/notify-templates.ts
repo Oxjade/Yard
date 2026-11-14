@@ -37,6 +37,11 @@ export const templates = {
   "support.reply_for_brand": { category: "new_message", build: () => ({ title: "Yard Support replied", body: "Open Yard Support in Studio to read it." }) },
   // `who`: the shopper's name, or the brand's name; `party`: "shopper" | "brand".
   "support.new_for_admin": { category: "support_message", build: (v) => ({ title: `Support: new message from ${s(v.who, v.party === "brand" ? "a brand" : "a shopper")}`, body: v.party === "brand" ? "A brand wrote to Yard Support. Open the Support queue to reply." : "A shopper wrote to Yard Support. Open the Support queue to reply." }) },
+  // Suggestions from Yard (product proposals). Never the admin's note or name: the review page shows the note.
+  "proposal.new_for_brand": { category: "product_suggestion", build: () => ({ title: "Yard suggested a new product", body: "Review it in Studio. Nothing goes live until you accept." }) },
+  "proposal.edit_for_brand": { category: "product_suggestion", build: (v) => ({ title: `Yard suggested changes to ${s(v.product, "a product")}`, body: "Review them in Studio. Nothing changes until you accept." }) },
+  // `outcome`: "accepted" | "declined".
+  "proposal.decided_for_admin": { category: "product_suggestion", build: (v) => ({ title: `${s(v.brand, "The brand")} ${v.outcome === "accepted" ? "accepted" : "declined"} your suggestion`, body: `${s(v.product, "A product")}. Open Suggestions for the details.` }) },
   // Reports (F2, M)
   // `subject` is the report's subject type; `brand` the owning brand's name. Never the reported text.
   "report.admin_new": { category: "message_report", build: (v) => ({ title: `New report: ${s(v.reason, "reported content")}`, body: v.subject === "conversation" ? `A conversation with ${s(v.brand, "a brand")}.` : `A message in a conversation with ${s(v.brand, "a brand")}.` }) },

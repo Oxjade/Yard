@@ -3,6 +3,7 @@ import { inboxRealtimeEvents } from "./inbox"
 import { notificationDto, notificationReadEvent, notificationRemovedEvent } from "./notifications"
 import { shippingRealtimeEvents } from "./shipping"
 import { socialRealtimeEvents } from "./social"
+import { proposalRealtimeEvents } from "./proposals"
 import { supportRealtimeEvents } from "./support"
 
 /**
@@ -16,6 +17,7 @@ export const realtimeEvents = {
   ...shippingRealtimeEvents,
   ...socialRealtimeEvents,
   ...supportRealtimeEvents,
+  ...proposalRealtimeEvents,
   "notification.created": notificationDto,
   "notification.read": notificationReadEvent,
   "notification.removed": notificationRemovedEvent,

@@ -55,6 +55,7 @@ const icons: Partial<Record<NotificationCategory, React.ComponentType<{ classNam
   shipping_issue: Truck,
   abuse_alert: ProhibitIcon,
   support_message: ChatCircleDotsIcon,
+  product_suggestion: Sparkles,
 }
 
 const urgent: NotificationCategory[] = ["out_of_stock", "payment_failure", "chargeback", "suspicious_activity", "system_alert", "refund_request", "message_report", "chart_integrity", "abuse_alert"]

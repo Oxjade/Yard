@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { SuggestionsBanner } from "@/components/proposals/studio-proposals"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -424,6 +425,8 @@ export function ProductsIndex() {
       >
         <CatalogueNote className="mt-3">{live ? "Changes here are saved to this brand's live catalogue and reach shoppers straight away." : undefined}</CatalogueNote>
       </PageHeader>
+
+      {member ? <SuggestionsBanner /> : null}
 
       {loadError ? (
         <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 sm:flex-row sm:items-center">

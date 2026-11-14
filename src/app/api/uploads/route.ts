@@ -12,8 +12,9 @@ export const POST = route(
   {
     auth: "multi",
     as: ["shopper", "brand", "admin"],
-    // Admins upload only founding brand logos and banners (authorizeAdminUpload).
-    permission: { admin: "brands.founding" },
+    // Admins upload founding brand logos and banners (brands.founding) and photos for suggestions
+    // (catalog.propose); authorizeAdminUpload checks which before reading the body.
+    permission: { admin: "any_admin" },
     csrf: "multipart",
     query: uploadQuery,
     rate: { key: "uploads", limit: 10, windowSec: 600, daily: 100 },

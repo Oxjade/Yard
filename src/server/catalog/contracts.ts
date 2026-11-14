@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { currencyCodes } from "@/config/markets"
 import { safeId, safeLine, safeText } from "@/lib/api/contracts/common"
+import { PROPOSAL_STATUSES } from "@/lib/api/contracts/proposals"
 
 /**
  * CATALOG request contracts (zod 4). Bodies are strict: unknown fields are a 400, so a client can
@@ -254,3 +255,45 @@ export const publicBrandsQuery = z.object({
   offset: z.coerce.number().int().min(0).max(5000).default(0),
 })
 export type PublicBrandsQuery = z.output<typeof publicBrandsQuery>
+
+/* ---------- Suggestions from Yard (src/lib/api/contracts/proposals.ts) ---------- */
+
+/**
+ * The product form's body as the editor sends it, without what only the brand sets (its address
+ * and drop). `stock`: on-hand counts for the product's existing variants (edits only).
+ */
+export const proposalProductBody = productCreateBody.omit({ slug: true, dropId: true }).extend({
+  stock: z.record(safeId(), z.number().int().min(0).max(1_000_000)).optional(),
+})
+export type ProposalProductBody = z.output<typeof proposalProductBody>
+
+const note = safeText({ max: 300, tooLong: "Keep the note to 300 characters." }).optional()
+
+/** POST /api/admin/proposals. */
+export const adminProposalCreateBody = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("new"), brandId: safeId(), product: proposalProductBody, note }),
+  z.strictObject({ kind: z.literal("edit"), productId: safeId(), product: proposalProductBody, note }),
+])
+export type AdminProposalCreateBody = z.output<typeof adminProposalCreateBody>
+
+/** POST /api/admin/proposals/{id}/revise: replaces a pending proposal (the old one is marked superseded). */
+export const adminProposalReviseBody = z.strictObject({ product: proposalProductBody, note })
+export type AdminProposalReviseBody = z.output<typeof adminProposalReviseBody>
+
+export const adminProposalsQuery = z.object({
+  status: z.enum([...PROPOSAL_STATUSES, "all"]).default("pending"),
+  brandId: safeId().optional(),
+  q: safeLine({ max: 80 }).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
+})
+
+export const studioProposalsQuery = z.object({ status: z.enum(["pending", "all"]).default("pending") })
+
+/** POST /api/studio/proposals/{id}/accept. `product`: the brand's own edit of it ("Edit before accepting"). */
+export const studioProposalAcceptBody = z.strictObject({ product: proposalProductBody.optional() })
+export const studioProposalDeclineBody = z.strictObject({ reason: safeText({ max: 300, tooLong: "Keep the reason to 300 characters." }).optional() })
+
+/** GET /api/admin/proposals/context?brandId=… | ?productId=…: what the admin form needs. */
+export const adminProposalContextQuery = z.object({ brandId: safeId().optional(), productId: safeId().optional() })
+

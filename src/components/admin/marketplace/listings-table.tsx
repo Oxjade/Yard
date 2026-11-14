@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowSquareOutIcon, MagnifyingGlassIcon, ShieldCheckIcon, ShieldWarningIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, MagnifyingGlassIcon, ShieldCheckIcon, ShieldWarningIcon, SparkleIcon } from "@phosphor-icons/react"
 import { DataTable, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -58,6 +58,7 @@ const STATES = [
 /** Every listing in the live catalogue, including hidden ones, so Trust and Safety can restrict any product. */
 export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | Promise<boolean>; loading: boolean }) {
   const router = useRouter()
+  const canPropose = useServerSession((s) => !!s.admin && canAdmin(s.admin.role, "catalog.propose"))
   const phone = usePhone()
   // The filters live in the URL (?category=…&state=…) like the tab, so a reload keeps them. The
   // server filters and pages, so a listing outside the newest page can still be found and lifted.
@@ -175,6 +176,8 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
 
   const rowActions: RowAction<AdminCatalogProductDto>[] = [
     { label: "View listing", icon: ArrowSquareOutIcon, hidden: (p) => p.status !== "published" || isRestricted(p), onSelect: (p) => router.push(`/products/${p.slug}`) },
+    // Suggestions from Yard: the brand reviews the changes before anything on the listing changes.
+    { label: "Suggest changes", icon: SparkleIcon, hidden: () => !canPropose, onSelect: (p) => router.push(`/admin/products/suggestions/new?product=${encodeURIComponent(p.id)}`) },
     {
       label: "Restrict listing",
       icon: ShieldWarningIcon,

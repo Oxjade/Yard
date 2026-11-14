@@ -35,6 +35,7 @@ export const ADMIN_PERMISSIONS = [
   "sponsored.view",
   "brands.founding",
   "support.manage",
+  "catalog.propose",
 ] as const
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number]
 
@@ -69,6 +70,7 @@ export const adminRolePermissions: Record<AdminRole, AdminPermission[]> = {
     "audit.view",
     "shipping.view",
     "support.manage",
+    "catalog.propose",
   ],
   support: ["messages.view_reports", "shipping.view", "shipping.resolve", "abuse.view", "support.manage"],
   ads_ops: ["charts.review", "sponsored.view"],
@@ -131,6 +133,7 @@ export const adminPermissionLabels: Record<AdminPermission, string> = {
   "sponsored.view": "view sponsored placements",
   "brands.founding": "set up founding brands",
   "support.manage": "answer Yard Support conversations",
+  "catalog.propose": "suggest products and product changes to brands",
 }
 
 const brandSet = new Set<string>(BRAND_PERMISSIONS)

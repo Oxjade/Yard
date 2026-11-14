@@ -261,6 +261,30 @@ export const templates = {
       why: "You're getting this because you applied to sell on Yard with this address.",
     }),
   },
+  // Suggestions from Yard. `kind`: "new" | "edit"; `product`: the product's name (edits); `note`: the admin's note to the brand.
+  product_suggestion: {
+    category: "account",
+    required: ["brand", "url"],
+    build: (x) => {
+      const edit = x.kind === "edit"
+      const title = edit ? `Yard suggested changes to ${v(x, "product", "a product")}` : "Yard suggested a new product"
+      return {
+        subject: title,
+        preheader: edit ? "Nothing changes until you accept." : "Nothing goes live until you accept.",
+        eyebrow: "Suggestion from Yard",
+        heading: title,
+        greeting: hey(x, "brand"),
+        paragraphs: [
+          edit ? `The Yard team suggested changes to ${v(x, "product", "one of your products")}.` : `The Yard team put together a product for ${v(x, "brand")}.`,
+          ...(has(x, "note") ? [`Note from Yard: “${v(x, "note")}”`] : []),
+          edit ? "Review each change in Studio, then accept, edit or decline. Nothing changes until you accept." : "Review it in Studio, then accept, edit or decline. Nothing goes live until you accept.",
+        ],
+        facts: facts({ label: "Brand", value: v(x, "brand") }, edit && { label: "Product", value: v(x, "product") }),
+        action: { label: "Review in Studio", url: v(x, "url") },
+        why: `You're getting this because you manage products for ${v(x, "brand")} on Yard.`,
+      }
+    },
+  },
   founding_claim: {
     category: "account",
     required: ["brand", "url"],
