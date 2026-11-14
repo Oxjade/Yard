@@ -111,6 +111,7 @@ Without `after` the newest `limit` messages come back oldest-first, with `hasMor
   (multipart, one field `file`, same headers; 201 `{ "media": { "id": "med_…", "src": "/api/media/med_…?as=shopper", "width", "height", … } }`),
   then send `kind: "image"`, `attachmentIds: [media.id, …]` (≤ 4). Display `attachments[].src` with the session cookie.
 - A message from the shopper to a resolved conversation reopens it (a system line "Reopened" is added first).
+- Resolving and reopening add a system line and make it the conversation's `lastMessage` (`side: "system"`), so the pinned row's preview can be "Yard Support marked this conversation resolved…" or "Reopened". Show it without a "You:" prefix; it never changes `unread`.
 - No reactions, no archive/mute/block, and nothing in a support thread can be reported (`POST /api/reports` answers 404 for it).
 
 Status codes: 400 `validation` (`fields.body` "Write a message first.", `fields.attachmentIds`,

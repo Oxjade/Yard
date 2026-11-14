@@ -376,7 +376,7 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
         })
       }
       const approvedBrandId = row.brandId
-      afterCommit(() => notify({ kind: "brand", id: approvedBrandId }, { key: `brand.approved:${row.id}`, template: "brand.approved", vars: { brand: brandName }, href: "/studio" }).then(() => undefined))
+      afterCommit(() => notify({ kind: "brand", id: approvedBrandId }, { key: `brand.approved:${row.id}`, template: "brand.approved", vars: { brand: brandName }, href: "/studio/support" }).then(() => undefined))
     }
     await writeAudit({
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },

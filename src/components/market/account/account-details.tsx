@@ -215,7 +215,27 @@ export function AccountDetails({ as }: { as: "shopper" | "brand" }) {
               </span>
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setChanging(true)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  // Resending asks for the password (or confirmation) again, so it opens the form with the address filled in.
+                  setEmail(account.pendingEmail?.email ?? "")
+                  setErrors({})
+                  setChanging(true)
+                }}
+              >
+                Resend link
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setEmail("")
+                  setErrors({})
+                  setChanging(true)
+                }}
+              >
                 Use a different email
               </Button>
               <Button size="sm" variant="ghost" loading={cancelling} onClick={() => void cancel()}>

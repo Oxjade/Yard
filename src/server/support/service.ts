@@ -372,6 +372,26 @@ async function bump(c: AnyConvRow, m: MessageRow, attachments: number) {
   return fresh
 }
 
+/**
+ * Moves the conversation's last message on to a system line (resolved / reopened), so the party's
+ * pinned row and the admin queue show it. Unread counts and read positions stay as they are.
+ */
+async function bumpSystemLine(conversationId: string, line: MessageRow): Promise<AnyConvRow> {
+  const d = await db()
+  const preview = previewOf({ kind: line.kind, body: line.body })
+  const at = iso(line.createdAt)!
+  const [fresh] = await d
+    .update(conversations)
+    .set({
+      lastPreview: sql`case when ${line.seq} >= ${conversations.lastMessageSeq} then ${preview} else ${conversations.lastPreview} end`,
+      lastMessageAt: sql`greatest(coalesce(${conversations.lastMessageAt}, ${at}::timestamptz), ${at}::timestamptz)`,
+      lastMessageSeq: sql`greatest(${conversations.lastMessageSeq}, ${line.seq})`,
+    })
+    .where(eq(conversations.id, conversationId))
+    .returning()
+  return fresh
+}
+
 async function sendResult(conversationId: string, messageId: string, viewer: Viewer): Promise<SendResult> {
   const c = await loadSupportConversation(conversationId)
   const message = await messageDto(messageId, viewer)
@@ -449,8 +469,9 @@ export async function sendAsParty(actor: ShopperActor | BrandActor, body: Suppor
     if (c.status === "resolved") {
       // A new message from the party reopens the conversation for Yard.
       const line = await insertSystemLine(c.id, "Reopened")
+      const bumped = await bumpSystemLine(c.id, line)
       await d.update(conversations).set({ status: "open", resolvedAt: null, resolvedBy: null }).where(eq(conversations.id, c.id))
-      c = { ...c, status: "open", resolvedAt: null, resolvedBy: null }
+      c = { ...c, lastPreview: bumped.lastPreview, lastMessageAt: bumped.lastMessageAt, lastMessageSeq: bumped.lastMessageSeq, status: "open", resolvedAt: null, resolvedBy: null }
       await publishToParty(c, "message.created", line.id)
     }
     const [m] = await d
@@ -618,6 +639,8 @@ export async function patchSupport(admin: AdminActor, conv: AnyConvRow, patch: {
         .where(eq(conversations.id, c.id))
       c = { ...c, status: patch.status, resolvedAt: resolved ? new Date() : null, resolvedBy: resolved ? admin.userId : null }
       const line = await insertSystemLine(c.id, resolved ? "Yard Support marked this conversation resolved. Write again any time to reopen it." : "Reopened")
+      const bumped = await bumpSystemLine(c.id, line)
+      c = { ...c, lastPreview: bumped.lastPreview, lastMessageAt: bumped.lastMessageAt, lastMessageSeq: bumped.lastMessageSeq }
       await publishToParty(c, "message.created", line.id)
       await writeAudit({ actor: { kind: "admin", id: admin.userId, name: admin.name, role: admin.role }, action: resolved ? "support.resolved" : "support.reopened", target: "Yard Support conversation", subjectType: "conversation", subjectId: c.id, ipHash })
     }

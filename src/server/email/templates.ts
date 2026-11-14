@@ -48,7 +48,14 @@ const hey = (vars: Vars, key = "name") => {
   return n ? `Hey ${key === "name" ? n.split(/\s+/)[0] : n},` : undefined
 }
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-const minutes = (x: Vars, fallback: string) => (Number(x.expiresMinutes) > 0 ? `${Number(x.expiresMinutes)} minutes` : fallback)
+/** A link's lifetime in words: "15 minutes", "1 hour", "24 hours", "3 days" (a whole number of days from 48 hours up). */
+const minutes = (x: Vars, fallback: string) => {
+  const m = Math.round(Number(x.expiresMinutes))
+  if (!(m > 0)) return fallback
+  if (m < 60) return plural(m, "minute")
+  if (m < 48 * 60 || m % (24 * 60) !== 0) return plural(Math.round(m / 60), "hour")
+  return plural(m / (24 * 60), "day")
+}
 const facts = (...rows: (Fact | false | null | undefined)[]) => rows.filter((r): r is Fact => !!r && !!r.value)
 const by = (x: Vars) => (has(x, "brand") ? ` by ${v(x, "brand")}` : "")
 const heroOf = (x: Vars, alt: string, imageSize: "full" | "product" = "product") => (has(x, "image") ? { image: v(x, "image"), imageAlt: alt, imageSize } : {})
