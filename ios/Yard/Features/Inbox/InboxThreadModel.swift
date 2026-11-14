@@ -373,7 +373,8 @@ final class InboxThreadModel {
         let order: SupportOrderChip? = isSupport && photos.isEmpty ? supportOrder : nil
         guard !body.isEmpty || !photos.isEmpty || order != nil else { return }
         let p = InboxPendingMessage(id: UUID().uuidString.lowercased(), text: body, photos: photos, createdAt: Date(), failedMessage: nil, attachmentIds: [], order: order)
-        if order != nil { supportOrder = nil }
+        // Any send drops the chip (as the web composer and Android do), photos included.
+        if isSupport { supportOrder = nil }
         withAnimation(Motion.spring) { pending.append(p) }
         Task { @MainActor in await self.deliver(p) }
     }

@@ -298,10 +298,9 @@ final class YouAccountModel {
             let providers = try await AuthAPI.providers()
             reauthButtons = AuthSocialButton.buttons(from: providers).filter { linked.contains($0.provider) }
         } catch {
-            reauthButtons = []
-        }
-        if reauthButtons.isEmpty && linked.contains("google") {
-            reauthButtons = [AuthSocialButton.auth0Google]
+            // Providers unreadable: the Auth0 Google button only confirms an Auth0-linked account
+            // (a direct Google link is a different identity), else the sign-out-and-back-in copy.
+            reauthButtons = linked.contains("auth0") ? [AuthSocialButton.auth0Google] : []
         }
     }
 

@@ -308,7 +308,7 @@ struct InboxView: View {
                     .listRowBackground(Color.yard.bg)
                     .listRowSeparator(.hidden)
             }
-            if model.filter == .inbox && model.query.isEmpty && model.pinnedSupport == nil {
+            if model.filter == .inbox && model.query.isEmpty && model.pinnedSupport == nil && model.nextCursor == nil {
                 supportLink
                     .listRowInsets(EdgeInsets(top: Spacing.l, leading: Spacing.gutter, bottom: Spacing.l, trailing: Spacing.gutter))
                     .listRowBackground(Color.yard.bg)
