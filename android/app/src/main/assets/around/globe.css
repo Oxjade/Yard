@@ -1,12 +1,42 @@
-/* Yard Around globe (Android). Mirrors the website's around-map.css and pins.ts. Static: no glows. */
+/* Yard Around globe (Android). Mirrors the website's around-map.css, pins.ts, areas and the
+   Tailwind classes they use (src/app/globals.css tokens). Static: no animated stars, no glows. */
+
+@font-face {
+  font-family: "Archivo Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src: url(fonts/archivo-latin-wdth-normal.woff2) format("woff2-variations");
+}
+@font-face {
+  font-family: "Space Grotesk Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url(fonts/space-grotesk-latin-wght-normal.woff2) format("woff2-variations");
+}
+
 :root {
   --obsidian: #080808;
   --card: #131313;
   --ink: #f5f5f5;
   --ink-2: #858585;
+  --ink-3: #858585;
   --acid: #f5ff00;
   --purple: #6d19d9;
   --violet: #9452ff;
+  --glass-bg: rgba(16, 16, 16, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.07);
+  --glass-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Variable", "Arial Narrow", ui-sans-serif, sans-serif;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 html, body {
@@ -16,10 +46,31 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #050505;
+  color: var(--ink);
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
-  font-family: Roboto, "Noto Sans", sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Brand mark faces (pins.ts markFont) and the display utilities (globals.css). */
+.font-display {
+  font-family: var(--font-display);
+  font-stretch: 62%;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.005em;
+}
+.font-wide {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.font-grotesk {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .yard-around-map {
@@ -52,25 +103,173 @@ html, body {
   box-sizing: border-box;
 }
 
+/* The Snap-style title (around-app.tsx): top right, condensed display type, 2rem (2.75rem wide). */
+#title {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 10;
+  max-width: 60%;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--ink);
+  pointer-events: none;
+  text-shadow: 0 2px 12px #080808;
+}
+.wide #title {
+  top: 20px;
+  right: 24px;
+  font-size: 2.75rem;
+}
+
+/* ---- credits, scale bar and the "you" note (around-map.tsx) ---- */
+
 #credits {
   position: absolute;
-  top: 6px;
   right: 8px;
+  bottom: 4px;
   z-index: 5;
-  margin: 0;
-  max-width: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 2rem);
   pointer-events: none;
   font-size: 10px;
-  line-height: 1.2;
-  text-align: right;
   color: rgba(133, 133, 133, 0.8);
   text-shadow: 0 1px 2px #080808;
 }
+#credits p {
+  margin: 0;
+}
+.credits-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.credits-row.phone {
+  flex-direction: row-reverse;
+  align-items: center;
+}
+.credits-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.credits-info {
+  pointer-events: auto;
+  margin: -10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--ink-2);
+  outline: none;
+}
+.credits-info svg {
+  width: 16px;
+  height: 16px;
+}
+.credits-info:focus-visible {
+  box-shadow: 0 0 0 2px var(--violet);
+}
+.credits-text.pill {
+  border-radius: 9999px;
+  background: rgba(8, 8, 8, 0.8);
+  padding: 4px 8px;
+  color: var(--ink-2);
+}
+.scale {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.scale-label {
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.scale-bar {
+  display: block;
+  height: 4px;
+  box-sizing: border-box;
+  border: 1px solid rgba(133, 133, 133, 0.7);
+  border-top: 0;
+}
+#note {
+  max-width: 100%;
+  border-radius: 16px;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink);
+  text-shadow: none;
+  text-wrap: balance;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
 
-/* A marker on the far side of the globe can't be seen, so it can't be tapped either. */
+/* ---- wide screens: the control column ---- */
+
+#controls {
+  position: absolute;
+  right: 16px;
+  bottom: 24px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 9999px;
+  color: var(--ink);
+  outline: none;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.control svg {
+  width: 20px;
+  height: 20px;
+}
+.control:active {
+  transform: scale(0.95);
+}
+.control:focus-visible {
+  box-shadow: 0 0 0 2px var(--violet);
+}
+
+/* A marker on the far side of the globe can't be seen, so it can't be tapped or focused either. */
 .maplibregl-marker-covered {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* An area name with no clear spot outside the screen's chrome. */
+[data-under-chrome] {
+  visibility: hidden;
 }
 
 .maplibregl-canvas:focus-visible {
@@ -78,10 +277,11 @@ html, body {
   outline-offset: -2px;
 }
 
-/* ---- pins (website pins.ts) ---- */
+/* ---- pins (pins.ts) ---- */
 
+/* No `position` here: MapLibre's .maplibregl-marker makes markers absolute (on the website its
+   unlayered CSS beats Tailwind's `relative`), which also anchors the kind dot and the count chip. */
 .yard-pin {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -95,39 +295,26 @@ html, body {
   box-shadow: 0 0 0 2px var(--ink);
   outline: none;
   cursor: pointer;
-  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 200ms var(--ease-out-quint), box-shadow 200ms var(--ease-out-quint);
 }
-
+/* A sample place's dashed outer ring. */
 .yard-pin.sample {
   outline: 1.5px dashed rgba(245, 245, 245, 0.7);
   outline-offset: 3px;
 }
-
+.yard-pin:focus-visible {
+  box-shadow: 0 0 0 2px var(--violet);
+}
 .yard-pin.selected {
   box-shadow: 0 0 0 3px var(--purple);
   transform: scale(1.1);
 }
 
 .yard-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  border-radius: 9999px;
-  font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
-  font-weight: 900;
   font-size: 13px;
   line-height: 1;
-  letter-spacing: 0.01em;
-}
-
-.yard-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .yard-dot {
@@ -148,7 +335,6 @@ html, body {
 /* ---- clusters: up to three stacked brand marks plus a count chip ---- */
 
 .yard-cluster {
-  position: relative;
   display: flex;
   align-items: center;
   height: 44px;
@@ -159,13 +345,16 @@ html, body {
   outline: none;
   cursor: pointer;
 }
+.yard-cluster:focus-visible {
+  box-shadow: 0 0 0 2px var(--violet);
+}
 
 .yard-stack {
   display: flex;
   align-items: center;
 }
 
-.yard-stack .yard-circle {
+.yard-circle {
   position: relative;
   display: flex;
   align-items: center;
@@ -173,19 +362,15 @@ html, body {
   width: 40px;
   height: 40px;
   box-sizing: border-box;
-  overflow: hidden;
   border-radius: 9999px;
   border: 2px solid var(--obsidian);
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 0 0 1px rgba(245, 245, 245, 0.7);
-  font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
-  font-weight: 900;
   font-size: 12px;
   line-height: 1;
 }
-.yard-stack .yard-circle + .yard-circle { margin-left: -10px; }
-.yard-stack .yard-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yard-circle + .yard-circle { margin-left: -10px; }
 
 .yard-count {
   position: absolute;
@@ -219,6 +404,88 @@ html, body {
   pointer-events: none;
 }
 
+/* ---- area names (pins.ts areaLabel) ---- */
+
+.yard-area {
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #080808, 0 1px 3px #080808;
+}
+.yard-area.city {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(245, 245, 245, 0.75);
+}
+.yard-area.hood {
+  font-weight: 500;
+  color: rgba(245, 245, 245, 0.7);
+}
+
+/* ---- the map without WebGL (svg-fallback.tsx) ---- */
+
+#fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+#fallback-box {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0b0b10;
+}
+#fallback-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+#fallback figcaption {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.fallback-city {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--ink);
+  outline: none;
+}
+.fallback-city.selected {
+  box-shadow: 0 0 0 2px var(--purple);
+}
+.fallback-city.sample {
+  outline: 1.5px dashed rgba(245, 245, 245, 0.6);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .yard-pin { transition: none; }
 }
+.reduce-motion .yard-pin { transition: none; }
+.reduce-motion .control:active { transform: none; }

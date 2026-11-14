@@ -94,12 +94,17 @@ enum class AroundEventKind {
         }
 }
 
+/** A brand's wordmark: its text and face ("condensed", "expanded" or "grotesk"), as the website's pins draw it. */
+@Serializable
+data class AroundMark(val text: String = "", val style: String = "grotesk")
+
 @Serializable
 data class AroundBrand(
     val id: String,
     val handle: String = id,
     val name: String = "A Yard brand",
     val verified: Boolean = false,
+    val mark: AroundMark? = null,
 )
 
 @Serializable
@@ -345,3 +350,28 @@ object AroundCountry {
     fun name(code: String): String = names[code] ?: code
 }
 
+
+/**
+ * The quick kind chips over the list (website filters-model.ts `KIND_KEYS`). Several on = any of
+ * them; none on = everything. They filter the globe's pins and the list alike.
+ */
+enum class AroundKindFilter(val label: String) {
+    Store("Stores"),
+    Showroom("Showrooms"),
+    Popup("Pop-ups"),
+    Events("Exhibitions & events"),
+    Offers("Drops & offers");
+
+    fun matches(p: AroundPlace): Boolean = when (this) {
+        Store -> p.kind == AroundPlaceKind.Store
+        Showroom -> p.kind == AroundPlaceKind.Showroom
+        Popup -> p.kind == AroundPlaceKind.Popup
+        Events -> p.kind == AroundPlaceKind.Exhibition || p.nextEvent != null
+        Offers -> p.offer
+    }
+
+    companion object {
+        fun apply(places: List<AroundPlace>, kinds: Set<AroundKindFilter>): List<AroundPlace> =
+            if (kinds.isEmpty()) places else places.filter { p -> kinds.any { it.matches(p) } }
+    }
+}

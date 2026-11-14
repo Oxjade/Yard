@@ -28,8 +28,8 @@ class AroundGlobeBridgeTest {
 
     // region Kotlin → JS
 
-    @Test fun placesMessageEncodesEveryPin() {
-        val msg = obj(AroundGlobeBridge.placesMessage(places, { if (it.id == store.id) "/api/media/logo_1" else null }, now))
+    @Test fun placesMessageEncodesEveryPinLikeTheWebsite() {
+        val msg = obj(AroundGlobeBridge.placesMessage(places, now))
         assertEquals("places", msg["type"]!!.jsonPrimitive.content)
         val pins = msg["places"] as JsonArray
         assertEquals(places.size, pins.size)
@@ -37,22 +37,45 @@ class AroundGlobeBridgeTest {
         assertEquals(store.lat, pin["lat"]!!.jsonPrimitive.double, 1e-9)
         assertEquals(store.lng, pin["lng"]!!.jsonPrimitive.double, 1e-9)
         assertEquals("Lagos Thread", pin["brand"]!!.jsonPrimitive.content)
-        assertEquals("LA", pin["mark"]!!.jsonPrimitive.content)
-        assertEquals("https://yardstore.space/api/media/logo_1", pin["logo"]!!.jsonPrimitive.content)
-        assertEquals("Store", pin["kind"]!!.jsonPrimitive.content)
+        // The brand's own wordmark and face, as the website's pins draw them.
+        assertEquals("LT", pin["markText"]!!.jsonPrimitive.content)
+        assertEquals("grotesk", pin["markStyle"]!!.jsonPrimitive.content)
+        assertEquals("Store", pin["kindLabel"]!!.jsonPrimitive.content)
         assertEquals("Ikoyi", pin["area"]!!.jsonPrimitive.content)
         assertEquals("store", pin["status"]!!.jsonPrimitive.content)
         assertFalse(pin["sample"]!!.jsonPrimitive.boolean)
+        assertNull(pin["logo"])
+        // No mark from the API: the monogram in the grotesk face.
         val other = pins.first { it.jsonObject["id"]!!.jsonPrimitive.content != store.id }.jsonObject
-        assertEquals(JsonNull, other["logo"])
+        assertEquals("AC", other["markText"]!!.jsonPrimitive.content)
+        assertEquals("grotesk", other["markStyle"]!!.jsonPrimitive.content)
+        // An unknown face falls back too.
+        val odd = AroundGlobeBridge.placeJson(store.copy(brand = store.brand.copy(mark = AroundMark("ZZ", "gothic"))), now)
+        assertEquals("ZZ", odd["markText"]!!.jsonPrimitive.content)
+        assertEquals("grotesk", odd["markStyle"]!!.jsonPrimitive.content)
+        val condensed = AroundGlobeBridge.placeJson(store.copy(brand = store.brand.copy(mark = AroundMark("LT", "condensed"))), now)
+        assertEquals("condensed", condensed["markStyle"]!!.jsonPrimitive.content)
     }
 
     @Test fun placesMessageEscapesNamesSafely() {
-        val tricky = store.copy(id = "loc_x", brand = store.brand.copy(name = "Quote \" </script>   Brand"))
-        val raw = AroundGlobeBridge.placesMessage(listOf(tricky), { null }, now)
+        val tricky = store.copy(id = "loc_x", brand = store.brand.copy(name = "Quote \" </script>   Brand"))
+        val raw = AroundGlobeBridge.placesMessage(listOf(tricky), now)
         val pin = obj(raw)["places"]!!.jsonArray[0].jsonObject
-        assertEquals("Quote \" </script>   Brand", pin["brand"]!!.jsonPrimitive.content)
+        assertEquals("Quote \" </script>   Brand", pin["brand"]!!.jsonPrimitive.content)
         assertTrue(AroundGlobeBridge.script(raw).startsWith("window.yardGlobe&&window.yardGlobe.receive({"))
+    }
+
+    @Test fun revealChromeAndMotionMessages() {
+        val reveal = obj(AroundGlobeBridge.revealMessage(store))
+        assertEquals("reveal", reveal["type"]!!.jsonPrimitive.content)
+        assertEquals(store.id, reveal["id"]!!.jsonPrimitive.content)
+        assertEquals(store.lat, reveal["lat"]!!.jsonPrimitive.double, 1e-9)
+        val chrome = obj(AroundGlobeBridge.chromeMessage(wide = false, peekDp = 174.4, coveredDp = 420.0))
+        assertEquals("chrome", chrome["type"]!!.jsonPrimitive.content)
+        assertFalse(chrome["wide"]!!.jsonPrimitive.boolean)
+        assertEquals(174.0, chrome["peek"]!!.jsonPrimitive.double, 1e-9)
+        assertEquals(420.0, chrome["covered"]!!.jsonPrimitive.double, 1e-9)
+        assertTrue(obj(AroundGlobeBridge.motionMessage(true))["reduced"]!!.jsonPrimitive.boolean)
     }
 
     @Test fun pinStatusFollowsKindAndDates() {
@@ -67,6 +90,9 @@ class AroundGlobeBridgeTest {
     @Test fun selectFlyToAndYouMessages() {
         assertEquals("loc_1", obj(AroundGlobeBridge.selectMessage("loc_1"))["id"]!!.jsonPrimitive.content)
         assertEquals(JsonNull, obj(AroundGlobeBridge.selectMessage(null))["id"])
+        // While a place is open the title names its area.
+        assertEquals("Ikoyi", obj(AroundGlobeBridge.selectMessage("loc_1", "Ikoyi"))["area"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, obj(AroundGlobeBridge.selectMessage("loc_1"))["area"])
 
         val fly = obj(AroundGlobeBridge.flyToMessage(AroundGlobeCamera(6.45, 3.43, 12.5), animate = true))
         assertEquals("flyTo", fly["type"]!!.jsonPrimitive.content)
@@ -91,6 +117,8 @@ class AroundGlobeBridgeTest {
         assertEquals(AroundGlobeEvent.Streets(true), AroundGlobeBridge.parse("""{"type":"streets","state":"ready"}"""))
         assertEquals(AroundGlobeEvent.Streets(false), AroundGlobeBridge.parse("""{"type":"streets","state":"failed"}"""))
         assertEquals(AroundGlobeEvent.Fallback("webgl"), AroundGlobeBridge.parse("""{"type":"fallback","reason":"webgl"}"""))
+        assertEquals(AroundGlobeEvent.CityTapped("lagos"), AroundGlobeBridge.parse("""{"type":"cityTapped","slug":"lagos"}"""))
+        assertEquals(AroundGlobeEvent.Streets(false), AroundGlobeBridge.parse("""{"type":"streets","state":"loading"}"""))
 
         val idle = AroundGlobeBridge.parse(
             """{"type":"cameraIdle","lat":6.5,"lng":3.4,"zoom":10.4,"west":3.1,"south":6.3,"east":3.7,"north":6.7,"user":true}""",
@@ -106,6 +134,7 @@ class AroundGlobeBridgeTest {
         assertNull(AroundGlobeBridge.parse("""{"type":"somethingNew"}"""))
         assertNull(AroundGlobeBridge.parse("""{"type":"placeTapped"}"""))
         assertNull(AroundGlobeBridge.parse("""{"type":"placeTapped","id":""}"""))
+        assertNull(AroundGlobeBridge.parse("""{"type":"cityTapped"}"""))
         assertNull(AroundGlobeBridge.parse("""{"type":"cameraIdle","lat":6.5,"lng":3.4,"zoom":10}"""))
         assertNull(AroundGlobeBridge.parse("""{"type":"cameraIdle","lat":"x","lng":3.4,"zoom":10,"west":0,"south":0,"east":1,"north":1}"""))
         // A missing "user" means the camera moved on its own.
@@ -123,6 +152,14 @@ class AroundGlobeBridgeTest {
         assertEquals(360.0, r.longitudeDelta, 1e-9)
         // Every place, on either side of the globe, is in view for the list.
         assertTrue(places.all { AroundViewModel.contains(r, it.coordinate) })
+    }
+
+    @Test fun belowCountryZoomCountsAsTheWorld() {
+        // The website lists every place below zoom 4 (`basis.zoom >= 4`).
+        val r = AroundGlobeBridge.regionFor(AroundGlobeCamera(8.0, 5.0, 3.9), AroundGlobeBounds(-10.0, -5.0, 20.0, 20.0))
+        assertEquals(360.0, r.longitudeDelta, 1e-9)
+        val close = AroundGlobeBridge.regionFor(AroundGlobeCamera(8.0, 5.0, 4.0), AroundGlobeBounds(-10.0, -5.0, 20.0, 20.0))
+        assertEquals(30.0, close.longitudeDelta, 1e-9)
     }
 
     @Test fun closeCameraUsesVisibleBounds() {

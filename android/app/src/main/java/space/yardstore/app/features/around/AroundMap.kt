@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
@@ -15,8 +16,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,9 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -36,8 +35,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -47,8 +46,6 @@ import androidx.webkit.WebViewAssetLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.yardstore.app.designsystem.LocalYardWindow
-import space.yardstore.app.designsystem.Spacing
-import space.yardstore.app.designsystem.YardFonts
 import java.time.Instant
 import kotlin.math.min
 
@@ -65,7 +62,6 @@ import kotlin.math.min
 private val GlobeSpace = Color(0xFF050505)
 private val GlobeOcean = Color(0xFF060609)
 private val GlobeRim = Color(0x73858585)
-private val GlobeInk2 = Color(0xFF858585)
 
 /** Drives the globe from Compose (iOS `MapCameraPosition` + `onMapCameraChange`). */
 @Stable
@@ -74,7 +70,7 @@ class AroundMapController {
     var cameraTick by mutableIntStateOf(0)
         internal set
 
-    /** The page can't draw a map here (no WebGL 2, or its data didn't load). */
+    /** The page shows its simplified SVG map instead of the globe (no WebGL 2, or the map failed). */
     var isUnavailable by mutableStateOf(false)
         internal set
 
@@ -91,17 +87,34 @@ class AroundMapController {
 
     // The page's state, replayed whenever it (re)loads.
     private var placesMessage: String? = null
-    private var selectedId: String? = null
+    private var selectMessage: String = AroundGlobeBridge.selectMessage(null)
     private var you: AroundCoordinate? = null
-    /** The last camera asked for or reported; the opening globe until then. */
-    private var camera: AroundGlobeCamera? = null
+    private var chromeMessage: String? = null
+    private var reducedMotion = false
+    /** The last camera asked for or reported; where this screen was last time, else the opening globe. */
+    private var camera: AroundGlobeCamera? = lastCamera
     /** A region asked for before the map knew its size. */
     private var pendingRegion: AroundRegion? = null
+    /** The sheet's height at rest (peek), in dp: the camera's padding keeps the globe above it. */
+    private var peekDp = 0.0
 
     internal var onPlaceTapped: (String) -> Unit = {}
+    internal var onCityTapped: (String) -> Unit = {}
 
     /** The region in view once the camera last came to rest, or null before the globe has drawn. */
     fun currentRegion(): AroundRegion? = region
+
+    /** The zoom the camera last rested at (or was sent to). */
+    fun currentZoom(): Double? = camera?.zoom
+
+    /**
+     * The part of the map a camera frames, in dp: the map minus the page's padding (globe.js
+     * `padding()`: under the title on top, above the sheet's peek; wide screens a margin all round).
+     */
+    fun frame(): AroundFrame? {
+        if (widthDp <= 0 || heightDp <= 0) return null
+        return if (wide) AroundFrame(widthDp - 96, heightDp - 96) else AroundFrame(widthDp - 32, heightDp - 56 - peekDp - 16)
+    }
 
     /** Flies the camera to show [region] (iOS `withAnimation { position = .region(r) }`). */
     fun flyTo(region: AroundRegion, animated: Boolean = true) {
@@ -111,9 +124,20 @@ class AroundMapController {
             return
         }
         pendingRegion = null
-        val cam = AroundGlobeBridge.cameraFor(region, widthDp, heightDp, wide)
-        camera = cam
-        send(AroundGlobeBridge.flyToMessage(cam, animated))
+        flyTo(AroundGlobeBridge.cameraFor(region, widthDp, heightDp, wide), animated)
+    }
+
+    /** Flies to [camera] (the website's `flyTo`: speed 1.6, curve 1.4; a jump under reduced motion). */
+    fun flyTo(camera: AroundGlobeCamera, animated: Boolean = true) {
+        pendingRegion = null
+        this.camera = camera
+        lastCamera = camera
+        send(AroundGlobeBridge.flyToMessage(camera, animated))
+    }
+
+    /** Brings [place]'s own pin into the free part of the map (out of a cluster, above the sheet), only if it isn't already. */
+    fun reveal(place: AroundPlace) {
+        send(AroundGlobeBridge.revealMessage(place))
     }
 
     internal fun setSize(widthDp: Double, heightDp: Double) {
@@ -122,15 +146,31 @@ class AroundMapController {
         pendingRegion?.let { flyTo(it, animated = false) }
     }
 
+    internal fun setChrome(wide: Boolean, peekDp: Double, coveredDp: Double) {
+        this.peekDp = peekDp
+        val msg = AroundGlobeBridge.chromeMessage(wide, peekDp, coveredDp)
+        if (msg == chromeMessage) return
+        chromeMessage = msg
+        send(msg)
+    }
+
+    internal fun setReducedMotion(reduced: Boolean) {
+        if (reduced == reducedMotion) return
+        reducedMotion = reduced
+        send(AroundGlobeBridge.motionMessage(reduced))
+    }
+
     internal fun setPlaces(message: String) {
         if (message == placesMessage) return
         placesMessage = message
         send(message)
     }
 
-    internal fun select(id: String?) {
-        selectedId = id
-        send(AroundGlobeBridge.selectMessage(id))
+    internal fun select(id: String?, area: String?) {
+        val msg = AroundGlobeBridge.selectMessage(id, area)
+        if (msg == selectMessage) return
+        selectMessage = msg
+        send(msg)
     }
 
     internal fun setYou(location: AroundCoordinate?) {
@@ -162,7 +202,10 @@ class AroundMapController {
             AroundGlobeEvent.Ready -> {
                 ready = true
                 isUnavailable = false
-                // The page opens on [camera]; then the pins, the selection and the "you" dot.
+                // The screen around the map first (the camera's padding depends on it), then the
+                // camera the page opens on, the pins, the selection and the "you" dot.
+                chromeMessage?.let { send(it) }
+                send(AroundGlobeBridge.motionMessage(reducedMotion))
                 val cam = pendingRegion?.takeIf { widthDp > 0 && heightDp > 0 }
                     ?.let { AroundGlobeBridge.cameraFor(it, widthDp, heightDp, wide) }
                     ?: camera
@@ -170,17 +213,19 @@ class AroundMapController {
                 pendingRegion = null
                 send(AroundGlobeBridge.flyToMessage(cam, animate = false))
                 placesMessage?.let { send(it) }
-                send(AroundGlobeBridge.selectMessage(selectedId))
+                send(selectMessage)
                 send(AroundGlobeBridge.youMessage(you))
             }
             is AroundGlobeEvent.PlaceTapped -> onPlaceTapped(event.id)
             is AroundGlobeEvent.CameraIdle -> {
                 camera = event.camera
+                lastCamera = event.camera
                 region = AroundGlobeBridge.regionFor(event.camera, event.bounds)
                 cameraTick += 1
             }
             is AroundGlobeEvent.Streets -> Unit
             is AroundGlobeEvent.Fallback -> isUnavailable = true
+            is AroundGlobeEvent.CityTapped -> onCityTapped(event.slug)
         }
     }
 
@@ -196,6 +241,11 @@ class AroundMapController {
         val view = webView ?: return
         if (!ready) return
         view.evaluateJavascript(AroundGlobeBridge.script(message), null)
+    }
+
+    companion object {
+        /** Where the globe was when Around was left, so coming back restores it (website `rememberedCamera`). */
+        internal var lastCamera: AroundGlobeCamera? = null
     }
 }
 
@@ -251,25 +301,37 @@ private fun makeAroundGlobeView(context: Context, controller: AroundMapControlle
 }
 
 /**
- * The dark globe with a brand pin per place (clustered when close; purple ring when selected; the
- * kind dot acid when live) and the shopper's dot. Tapping a pin calls [onSelect].
+ * The website's dark globe: a brand-mark pin per place (clustered when close; purple ring when
+ * selected; the kind dot acid when live), neighbourhood rings and names, city coastlines, the
+ * title, credits and scale bar, and the shopper's dot. Tapping a pin calls [onSelect]; a city on
+ * the simplified no-WebGL map calls [onCity].
  */
 @Composable
 fun AroundMap(
     controller: AroundMapController,
     places: List<AroundPlace>,
-    logoUrl: (AroundPlace) -> String?,
     selectedId: String?,
+    /** The open place's area (the title names it while the place is open), else null. */
+    selectedArea: String?,
     now: Instant,
     userLocation: AroundCoordinate?,
     onSelect: (AroundPlace) -> Unit,
     modifier: Modifier = Modifier,
+    onCity: (String) -> Unit = {},
 ) {
     val density = LocalDensity.current
     controller.wide = LocalYardWindow.current.isExpanded
     val currentPlaces by rememberUpdatedState(places)
     val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentOnCity by rememberUpdatedState(onCity)
     controller.onPlaceTapped = { id -> currentPlaces.firstOrNull { it.id == id }?.let { currentOnSelect(it) } }
+    controller.onCityTapped = { slug -> currentOnCity(slug) }
+    val context = LocalContext.current
+    // System "Remove animations" → the page's reduced motion (jumps instead of flights, no pin lift easing).
+    val reduceMotion = remember {
+        runCatching { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
+    }
+    controller.setReducedMotion(reduceMotion)
 
     Box(
         modifier
@@ -308,27 +370,14 @@ fun AroundMap(
                 }
             }
         }
-        if (controller.isUnavailable) {
-            Text(
-                "The globe can't be shown on this device. The list below still works.",
-                style = YardFonts.caption,
-                color = GlobeInk2,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.TopCenter).padding(Spacing.l),
-            )
-        }
     }
 
     // Pins: encoded off the main thread; the page skips re-tiling when nothing changed.
-    val logos = places.map { logoUrl(it) }
-    LaunchedEffect(places, logos, now) {
-        val message = withContext(Dispatchers.Default) {
-            val byId = places.indices.associate { places[it].id to logos[it] }
-            AroundGlobeBridge.placesMessage(places, { p -> byId[p.id] }, now)
-        }
+    LaunchedEffect(places, now) {
+        val message = withContext(Dispatchers.Default) { AroundGlobeBridge.placesMessage(places, now) }
         controller.setPlaces(message)
     }
-    LaunchedEffect(selectedId) { controller.select(selectedId) }
+    LaunchedEffect(selectedId, selectedArea) { controller.select(selectedId, selectedArea) }
     LaunchedEffect(userLocation) { controller.setYou(userLocation) }
 }
 

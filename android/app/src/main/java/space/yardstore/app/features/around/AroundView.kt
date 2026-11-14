@@ -54,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,7 +65,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -89,6 +92,8 @@ import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.components.AdaptiveContent
+import space.yardstore.app.designsystem.components.Chip
+import space.yardstore.app.designsystem.components.ChipRow
 import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.GlassIconButton
 import space.yardstore.app.designsystem.components.LocalToastCenter
@@ -135,6 +140,15 @@ internal fun AroundScreen(model: AroundViewModel) {
     val locator = remember { AroundLocationManager(context) }
     val map = remember { AroundMapController() }
     val sheet = rememberAroundSheetState(AroundDetent.Peek)
+    val gazetteer = remember { AroundGazetteer.get(context) }
+    val density = LocalDensity.current
+    val navBarDp = with(density) { WindowInsets.navigationBars.getBottom(this).toDp().value.toDouble() }
+    /** The map's height in dp, for the sheet's share of it (what the globe keeps pins clear of). */
+    var mapHeightDp by remember { mutableDoubleStateOf(0.0) }
+    /** The website's kind chips: they filter the globe's pins and the list. */
+    var kindNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val kinds = remember(kindNames) { kindNames.mapNotNull { n -> AroundKindFilter.entries.firstOrNull { it.name == n } }.toSet() }
+    val shownPlaces = remember(model.places, kinds) { AroundKindFilter.apply(model.places, kinds) }
 
     var region by remember { mutableStateOf<AroundRegion?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -142,22 +156,35 @@ internal fun AroundScreen(model: AroundViewModel) {
     var detailId by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
-    var hasCenteredOnUser by rememberSaveable { mutableStateOf(false) }
     var now by remember { mutableStateOf(Instant.now()) }
 
-    fun flyToUser() {
-        val me = locator.location ?: return
-        hasCenteredOnUser = true
-        detailId = null
-        map.flyTo(AroundRegion.around(me, 20_000.0))
+    // The sheet's height at rest and at a detent, in dp (AroundSheet: 150dp + nav bar, half, full).
+    val peekDp = if (sidePanel) 0.0 else minOf(150.0 + navBarDp, mapHeightDp * 0.5)
+    fun coveredDp(detent: AroundDetent): Double = when {
+        sidePanel -> 0.0
+        detent == AroundDetent.Peek -> peekDp
+        detent == AroundDetent.Medium -> mapHeightDp * 0.5
+        else -> (mapHeightDp - 8).coerceAtLeast(0.0)
     }
 
+    /**
+     * Locate (website `onFix`): the camera goes to the nearest gazetteer neighbourhood or city — the
+     * same camera a manual choice of that area gets — never to the fix itself (§5.6).
+     */
+    fun flyToUser() {
+        val me = locator.location ?: return
+        detailId = null
+        map.flyTo(gazetteer.cameraForFix(me.latitude, me.longitude, map.frame(), model.places.map { it.coordinate }).first)
+    }
+
+    /** A pin or a row: open the place and bring its own pin into the map above the sheet (website `revealPlace`). */
     fun select(place: AroundPlace) {
         selectedId = place.id
         detailId = place.id
         if (sheet.detent == AroundDetent.Peek) sheet.animateTo(AroundDetent.Medium)
         focus.clearFocus()
-        map.flyTo(aroundSelectionRegion(place, region, sheetBelow = !sidePanel))
+        map.setChrome(sidePanel, peekDp, coveredDp(sheet.detent))
+        map.reveal(place)
     }
 
     fun showAll() {
@@ -183,6 +210,13 @@ internal fun AroundScreen(model: AroundViewModel) {
     fun runSearch() {
         val q = query.trim()
         if (q.isEmpty() || isSearching) return
+        // A gazetteer city or neighbourhood first, framed as the website's area search does.
+        gazetteer.search(q, 1).firstOrNull()?.let { area ->
+            focus.clearFocus()
+            detailId = null
+            map.flyTo(gazetteer.areaCamera(area, map.frame(), model.places.map { it.coordinate }))
+            return
+        }
         isSearching = true
         scope.launch {
             val target = model.regionForSearch(q, context)
@@ -232,12 +266,12 @@ internal fun AroundScreen(model: AroundViewModel) {
     }
 
     LaunchedEffect(locator.requestedFixCount) { if (locator.requestedFixCount > 0) flyToUser() }
-    LaunchedEffect(locator.fixCount) {
-        if (locator.fixCount > 0 && !hasCenteredOnUser && selectedId == null) flyToUser()
-    }
-    // The globe opens on Africa and Europe like the website (GLOBE_CAMERA) and stays there until the
-    // shopper's location, a search or a pick sends it somewhere.
+    // The globe opens where it was left, else on Africa and Europe like the website (GLOBE_CAMERA),
+    // and stays there until Locate, a search or a pick sends it somewhere: a fix that arrives on its
+    // own only draws the "you" dot (the website never moves the camera to a fix it wasn't asked for).
     LaunchedEffect(detailId) { if (detailId == null) selectedId = null }
+    // The page keeps pins, names and the camera clear of the sheet (and knows wide screens).
+    LaunchedEffect(sidePanel, peekDp, mapHeightDp, sheet.detent) { map.setChrome(sidePanel, peekDp, coveredDp(sheet.detent)) }
     LaunchedEffect(model.error != null) { if (model.error != null) sheet.animateTo(AroundDetent.Medium) }
     // iOS `onMapCameraChange(frequency: .onEnd)`: the region once the camera settles.
     LaunchedEffect(map) {
@@ -249,7 +283,9 @@ internal fun AroundScreen(model: AroundViewModel) {
 
     BackHandler(enabled = detailId != null) { detailId = null }
 
-    val visiblePlaces = remember(model.places, region, locator.location) { model.visiblePlaces(region, locator.location) }
+    val visiblePlaces = remember(model.places, kinds, region, locator.location) {
+        AroundKindFilter.apply(model.visiblePlaces(region, locator.location), kinds)
+    }
 
     val searchBar: @Composable () -> Unit = {
         AroundSearchBar(
@@ -291,6 +327,11 @@ internal fun AroundScreen(model: AroundViewModel) {
                     onRetry = { model.loadNow() },
                     onShowAll = { showAll() },
                     onBrowseBrands = { leave(AroundExit.Push(Route.BrandsDirectory)) },
+                    kindChips = {
+                        AroundKindChips(kinds) { k ->
+                            kindNames = (if (k in kinds) kinds - k else kinds + k).map { it.name }
+                        }
+                    },
                 )
             } else {
                 val summary = model.place(id)
@@ -323,16 +364,29 @@ internal fun AroundScreen(model: AroundViewModel) {
                 }
                 Box(Modifier.width(1.dp).fillMaxHeight().background(Color.yard.line))
             }
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .onSizeChanged { mapHeightDp = with(density) { it.height.toDp().value.toDouble() } },
+            ) {
                 AroundMap(
                     controller = map,
-                    places = model.places,
-                    logoUrl = { model.logoUrl(it) },
+                    places = shownPlaces,
                     selectedId = selectedId,
+                    selectedArea = detailId?.let { model.place(it) }?.let { AroundGlobeBridge.areaName(it) },
                     now = now,
                     userLocation = if (locator.isAuthorized) locator.location else null,
                     onSelect = { select(it) },
                     modifier = Modifier.fillMaxSize(),
+                    // The simplified (no-WebGL) map: a city's button lists that city's places.
+                    onCity = { slug ->
+                        gazetteer.city(slug)?.let { c ->
+                            detailId = null
+                            region = AroundRegion.around(AroundCoordinate(c.lat, c.lng), 120_000.0)
+                            if (sheet.detent == AroundDetent.Peek) sheet.animateTo(AroundDetent.Medium)
+                        }
+                    },
                 )
                 if (!sidePanel) {
                     AroundSheet(sheet, Modifier.fillMaxSize()) { panelContent() }
@@ -442,8 +496,17 @@ fun AroundPlacesList(
     onShowAll: () -> Unit,
     onBrowseBrands: () -> Unit,
     modifier: Modifier = Modifier,
+    kindChips: (@Composable () -> Unit)? = null,
 ) {
-    AdaptiveContent(modifier.fillMaxSize()) { AroundPlacesLazyList(places, totalCount, isLoading, error, isLocated, selectedId, now, logo, distanceText, onSelect, onRetry, onShowAll, onBrowseBrands) }
+    AdaptiveContent(modifier.fillMaxSize()) { AroundPlacesLazyList(places, totalCount, isLoading, error, isLocated, selectedId, now, logo, distanceText, onSelect, onRetry, onShowAll, onBrowseBrands, kindChips) }
+}
+
+/** The website's quick kind chips (filters.tsx `KindChips`): a sideways-scrolling row. */
+@Composable
+internal fun AroundKindChips(kinds: Set<AroundKindFilter>, onToggle: (AroundKindFilter) -> Unit) {
+    ChipRow(contentPadding = PaddingValues(0.dp), modifier = Modifier.semantics { contentDescription = "Kind of place" }) {
+        for (k in AroundKindFilter.entries) Chip(k.label, isSelected = k in kinds) { onToggle(k) }
+    }
 }
 
 @Composable
@@ -461,6 +524,7 @@ private fun AroundPlacesLazyList(
     onRetry: suspend () -> Unit,
     onShowAll: () -> Unit,
     onBrowseBrands: () -> Unit,
+    kindChips: (@Composable () -> Unit)?,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -473,6 +537,7 @@ private fun AroundPlacesLazyList(
                 Text(aroundListSubtitle(places.size, totalCount, isLoading, error != null, isLocated), style = YardFonts.caption, color = Color.yard.ink2)
             }
         }
+        if (kindChips != null && totalCount > 0) item(key = "kinds", contentType = "kinds") { kindChips() }
         when {
             error != null -> item(key = "error") {
                 EmptyState.Error(error, Modifier.padding(top = Spacing.l), retry = onRetry)
