@@ -13,6 +13,8 @@ struct InboxPendingMessage: Identifiable, Hashable, Sendable {
     /// Media ids of `photos` already uploaded, in order (photos[i] → attachmentIds[i]). Kept so a
     /// retry reuses them instead of uploading the same photos again.
     var attachmentIds: [String] = []
+    /// Yard Support only: the order attached to this message ("Get help from Yard").
+    var order: SupportOrderChip? = nil
 
     var isFailed: Bool { failedMessage != nil }
 }
@@ -34,7 +36,8 @@ enum InboxThreadItem: Identifiable, Hashable {
 
 /// The shopper's thread with one brand: load, 5 s polling, older pages, sending, read receipts.
 /// Works for an existing conversation (`conversationId`) and for a new one by brand (`brandId`),
-/// whose first send creates the conversation.
+/// whose first send creates the conversation. With `init(supportOrder:)` it is the shopper's
+/// Yard Support thread instead (same DTOs over /api/support/…; the first message creates it).
 @Observable @MainActor
 final class InboxThreadModel {
     enum Phase {
@@ -63,6 +66,14 @@ final class InboxThreadModel {
     /// Product photos for shared product cards (productId → cover URL).
     var productImages: [String: URL] = [:]
 
+    /// True for the shopper's Yard Support thread (/api/support/…).
+    private(set) var isSupport = false
+    /// Yard Support only: the order to attach to the next message (a removable chip above the composer).
+    var supportOrder: SupportOrderChip?
+    /// Read receipts (`threadDto.receipts`): the other side has read up to this seq.
+    var theirReadUpToSeq: Int?
+    var receiptsEnabled = false
+
     private var lastMarkedSeq = 0
     private var requestedProductIds: Set<String> = []
     private var loadedBrandInfo = false
@@ -76,10 +87,20 @@ final class InboxThreadModel {
         self.brandId = brandId
     }
 
+    /// The shopper's Yard Support thread, optionally with an order attached to the first message.
+    init(supportOrder: SupportOrderChip?) {
+        self.isSupport = true
+        self.supportOrder = supportOrder
+        self.brandName = "Yard Support"
+        self.brandVerified = true
+        self.loadedBrandInfo = true
+    }
+
     /// Preview-only: a thread already loaded.
     init(preview conversation: InboxConversation, messages: [InboxMessage]) {
         self.conversationId = conversation.id
-        self.brandId = conversation.brand.id
+        self.isSupport = conversation.isSupport
+        self.brandId = conversation.isSupport ? nil : conversation.brand.id
         self.conversation = conversation
         self.messages = messages
         self.brandName = conversation.brand.name
@@ -91,7 +112,17 @@ final class InboxThreadModel {
 
     // MARK: Derived
 
-    var displayName: String { brandName.isEmpty ? "This brand" : brandName }
+    var displayName: String {
+        if isSupport { return "Yard Support" }
+        return brandName.isEmpty ? "This brand" : brandName
+    }
+
+    /// Yard Support: the shopper's newest message the team has read ("Seen" goes under it).
+    var seenMessageId: String? {
+        guard isSupport, receiptsEnabled, let upTo = theirReadUpToSeq else { return nil }
+        guard let newestMine = messages.last(where: { $0.isMine }), newestMine.seq <= upTo else { return nil }
+        return newestMine.id
+    }
 
     var interaction: InboxInteraction? {
         conversationId != nil ? conversation?.interaction : newThreadInteraction
@@ -152,6 +183,10 @@ final class InboxThreadModel {
     func load() async {
         if case .ready = phase, !messages.isEmpty { return }
         phase = .loading
+        if isSupport {
+            await loadSupport()
+            return
+        }
         do {
             if conversationId == nil, let brandId {
                 let r = try await InboxAPI.byBrand(brandId: brandId)
@@ -178,6 +213,51 @@ final class InboxThreadModel {
         }
     }
 
+    /// Yard Support: GET /api/support/conversation, then the thread once it exists (it is created by
+    /// the first message, so a shopper who never wrote gets the intro and an empty composer).
+    private func loadSupport() async {
+        do {
+            if conversationId == nil, let c = try await SupportAPI.conversation(), c.lastMessage != nil {
+                conversationId = c.id
+                apply(conversation: c)
+            }
+            if conversationId != nil {
+                do {
+                    let t = try await SupportAPI.thread()
+                    apply(conversation: t.conversation)
+                    applyReceipts(t.receipts)
+                    messages = Self.merged([], t.messages)
+                    hasMore = t.hasMore
+                } catch let api as APIError where api.isNotFound {
+                    // No message yet (404 before the first one): start fresh.
+                    conversationId = nil
+                    conversation = nil
+                }
+            }
+            phase = .ready
+            Task { @MainActor in await self.markReadIfNeeded() }
+        } catch {
+            if let api = error as? APIError, api.isCancelled { return }
+            phase = .failed(APIError.message(for: error))
+        }
+    }
+
+    /// The thread read for this model (brand inbox or Yard Support).
+    private func fetchThread(id: String, before: Int? = nil, after: Int? = nil, limit: Int = 50) async throws -> InboxThread {
+        if isSupport {
+            return try await SupportAPI.thread(before: before, after: after, limit: limit)
+        }
+        return try await InboxAPI.thread(id: id, before: before, after: after, limit: limit)
+    }
+
+    private func applyReceipts(_ r: InboxReceipts?) {
+        guard let r else { return }
+        receiptsEnabled = r.enabled
+        if let seq = r.theirsUpToSeq {
+            theirReadUpToSeq = max(theirReadUpToSeq ?? 0, seq)
+        }
+    }
+
     /// Fetches what's new since the newest message we hold (5 s while the thread is open).
     func poll() async {
         guard let id = conversationId, case .ready = phase, !isPolling else { return }
@@ -185,8 +265,9 @@ final class InboxThreadModel {
         defer { isPolling = false }
         do {
             let after = messages.map(\.seq).max() ?? 0
-            let t = try await InboxAPI.thread(id: id, after: after, limit: 100)
+            let t = try await fetchThread(id: id, after: after, limit: 100)
             apply(conversation: t.conversation)
+            applyReceipts(t.receipts)
             if !t.messages.isEmpty {
                 messages = Self.merged(messages, t.messages)
                 // A confirmed send that the poll returned first: drop its pending copy.
@@ -205,7 +286,7 @@ final class InboxThreadModel {
         isLoadingOlder = true
         defer { isLoadingOlder = false }
         do {
-            let t = try await InboxAPI.thread(id: id, before: first)
+            let t = try await fetchThread(id: id, before: first)
             messages = Self.merged(messages, t.messages)
             hasMore = t.hasMore
             await loadProductImages()
@@ -217,10 +298,12 @@ final class InboxThreadModel {
     private func apply(conversation c: InboxConversation) {
         // List reads don't carry `interaction`; keep the one we have.
         if c.interaction == nil, let old = conversation?.interaction {
-            conversation = InboxConversation(id: c.id, brand: c.brand, status: c.status, locked: c.locked, lastMessage: c.lastMessage, unread: c.unread, markedUnread: c.markedUnread, archived: c.archived, muted: c.muted, blockedByMe: c.blockedByMe, blockedByThem: c.blockedByThem, sample: c.sample, createdAt: c.createdAt, interaction: old)
+            conversation = c.withInteraction(old)
         } else {
             conversation = c
         }
+        // Yard Support's counterpart isn't a brand: no storefront, no block.
+        if isSupport { return }
         brandId = c.brand.id
         if brandName.isEmpty || !loadedBrandInfo { brandName = c.brand.name }
         if !c.brand.handle.isEmpty { brandHandle = c.brand.handle }
@@ -229,7 +312,7 @@ final class InboxThreadModel {
 
     /// The brand's name, handle and logo from its public storefront (one cached GET).
     func loadBrandInfo() async {
-        guard !loadedBrandInfo, let brandId else { return }
+        guard !loadedBrandInfo, !isSupport, let brandId else { return }
         loadedBrandInfo = true
         do {
             let b = try await InboxAPI.brand(idOrHandle: brandId)
@@ -270,7 +353,11 @@ final class InboxThreadModel {
         let previous = lastMarkedSeq
         lastMarkedSeq = maxSeq
         do {
-            try await InboxAPI.markRead(id: id, upToSeq: maxSeq)
+            if isSupport {
+                try await SupportAPI.markRead(upToSeq: maxSeq)
+            } else {
+                try await InboxAPI.markRead(id: id, upToSeq: maxSeq)
+            }
             if let c = conversation { conversation = c.markingRead() }
         } catch {
             lastMarkedSeq = previous
@@ -282,8 +369,11 @@ final class InboxThreadModel {
     /// Sends text and/or photos. Optimistic: the bubble shows at once and settles when confirmed.
     func send(text: String, photos: [Data]) {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty || !photos.isEmpty else { return }
-        let p = InboxPendingMessage(id: UUID().uuidString.lowercased(), text: body, photos: photos, createdAt: Date(), failedMessage: nil)
+        // Yard Support: the attached order goes with this message (photos go as their own kind).
+        let order: SupportOrderChip? = isSupport && photos.isEmpty ? supportOrder : nil
+        guard !body.isEmpty || !photos.isEmpty || order != nil else { return }
+        let p = InboxPendingMessage(id: UUID().uuidString.lowercased(), text: body, photos: photos, createdAt: Date(), failedMessage: nil, attachmentIds: [], order: order)
+        if order != nil { supportOrder = nil }
         withAnimation(Motion.spring) { pending.append(p) }
         Task { @MainActor in await self.deliver(p) }
     }
@@ -300,6 +390,10 @@ final class InboxThreadModel {
     }
 
     private func deliver(_ p: InboxPendingMessage) async {
+        if isSupport {
+            await deliverSupport(p)
+            return
+        }
         do {
             guard let brandId = brandId ?? conversation?.brand.id else {
                 throw APIError(status: 0, code: "client", message: "Something went wrong. Try again.")
@@ -330,9 +424,51 @@ final class InboxThreadModel {
             apply(conversation: r.conversation)
             if conversation?.interaction == nil, let fresh = newThreadInteraction {
                 // A new conversation keeps the composer state by-brand gave us.
-                let c = r.conversation
-                conversation = InboxConversation(id: c.id, brand: c.brand, status: c.status, locked: c.locked, lastMessage: c.lastMessage, unread: c.unread, markedUnread: c.markedUnread, archived: c.archived, muted: c.muted, blockedByMe: c.blockedByMe, blockedByThem: c.blockedByThem, sample: c.sample, createdAt: c.createdAt, interaction: fresh)
+                conversation = r.conversation.withInteraction(fresh)
             }
+            withAnimation(Motion.spring) {
+                pending.removeAll { $0.id == p.id }
+                messages = Self.merged(messages, [r.message])
+            }
+            lastMarkedSeq = max(lastMarkedSeq, r.message.seq)
+        } catch {
+            if let api = error as? APIError, api.isCancelled { return }
+            if let i = pending.firstIndex(where: { $0.id == p.id }) {
+                pending[i].failedMessage = APIError.message(for: error)
+            }
+        }
+    }
+
+    /// Yard Support: POST /api/support/messages (text, photos once the thread exists, or an order).
+    private func deliverSupport(_ p: InboxPendingMessage) async {
+        do {
+            var attachmentIds: [String] = pending.first(where: { $0.id == p.id })?.attachmentIds ?? p.attachmentIds
+            if !p.photos.isEmpty {
+                // Photos upload into the thread, so they need it to exist (the composer only offers them then).
+                guard let id = conversationId else {
+                    throw APIError(status: 400, code: "validation", message: "Send a message first, then add photos.")
+                }
+                if attachmentIds.count > p.photos.count { attachmentIds = Array(attachmentIds.prefix(p.photos.count)) }
+                for jpeg in p.photos.dropFirst(attachmentIds.count) {
+                    let mediaId = try await InboxAPI.uploadPhoto(jpeg: jpeg, conversationId: id, brandId: "")
+                    attachmentIds.append(mediaId)
+                    if let i = pending.firstIndex(where: { $0.id == p.id }) {
+                        pending[i].attachmentIds = attachmentIds
+                    }
+                }
+            }
+            var body = SupportSendBody(clientId: p.id, kind: "text")
+            if !attachmentIds.isEmpty {
+                body.kind = "image"
+                body.attachmentIds = attachmentIds
+            } else if let order = p.order {
+                body.kind = "order"
+                body.orderRefId = order.orderId
+            }
+            if !p.text.isEmpty { body.body = p.text }
+            let r = try await SupportAPI.send(body)
+            conversationId = r.conversation.id
+            apply(conversation: r.conversation)
             withAnimation(Motion.spring) {
                 pending.removeAll { $0.id == p.id }
                 messages = Self.merged(messages, [r.message])

@@ -101,6 +101,8 @@ enum Route: Hashable, Sendable {
     // You
     case you
     case settings
+    /// Settings › Account: name and email (with the email-change flow).
+    case account
     case appearance
     case notificationSettings
     case addresses
@@ -109,6 +111,8 @@ enum Route: Hashable, Sendable {
     case inbox
     case conversation(id: String)
     case messageBrand(brandId: String)
+    /// The shopper's Yard Support thread; with an order, it opens with that order attached.
+    case support(orderId: String?, orderReference: String?)
     // Saved
     case saved
     case following
@@ -178,7 +182,14 @@ extension Route {
                 self = .you
             }
         case "inbox":
-            if let id = q("c") ?? q("conversation") ?? second { self = .conversation(id: id) } else { self = .inbox }
+            if q("support") == "1" {
+                // /inbox?support=1[&order=<order id>&orderRef=<reference>] (Yard Support links and notifications).
+                self = .support(orderId: q("order"), orderReference: q("orderRef"))
+            } else if let id = q("thread") ?? q("c") ?? q("conversation") ?? second {
+                self = .conversation(id: id)
+            } else {
+                self = .inbox
+            }
         case "wishlist":
             self = .saved
         case "following":
@@ -364,6 +375,7 @@ struct RouteView: View {
         case .welcome: WelcomeView()
         case .you: YouView()
         case .settings: SettingsView()
+        case .account: YouAccountView()
         case .appearance: AppearanceView()
         case .notificationSettings: NotificationSettingsView()
         case .addresses: AddressesView()
@@ -371,6 +383,7 @@ struct RouteView: View {
         case .inbox: InboxView()
         case .conversation(let id): ConversationView(id: id)
         case .messageBrand(let brandId): BrandConversationView(brandId: brandId)
+        case .support(let orderId, let orderReference): SupportConversationView(orderId: orderId, orderReference: orderReference)
         case .saved: SavedView()
         case .following: FollowingView()
         case .charts: ChartsView()

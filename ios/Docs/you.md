@@ -12,7 +12,9 @@
 - `NotificationSettingsView()`: topics (Drops, New products and collections, Promotions, Back in stock), the Email channel, a "Push on this iPhone" row that opens iOS Settings, and Messages → Send read receipts. Each switch saves at once, using the website's rules: a topic writes its email flag only while Email is on, and turning Email off stops every topic.
 - `AddressesView()`: honest empty state (Yard has no address-book API; the address is entered at checkout), plus Ship to and Currency.
 - `LegalView(page:)`: the website's legal page in a `WKWebView` (non-persistent data store), with a skeleton while loading, an error state with retry, and a toolbar "Open in Safari" button.
-- Sheets: `YouRegionSheet`, `YouAccountDetailsSheet`, `YouChangePasswordSheet`, `YouDeleteAccountSheet`. Deleting the account uses a modal confirmation, as the site rule requires: type DELETE, plus the password when re-auth is needed.
+- `YouAccountView()` (route `.account`, Settings › Account › Name and email): the name (sign-up rules: 1–80 characters, no control characters or `<>`; saved at once with `PATCH /api/account?as=shopper`, then `session.refresh()`), and the email: current address (+ Verified), "Change email" → new email + current password (accounts with a password) → `POST /api/account/email?as=shopper` → pending card ("We sent a link to …", expiry) with Resend link / Use a different email / Cancel change (`DELETE /api/account/email?as=shopper`). Accounts without a password get 403 `fields.reauth = "required"`: the form shows "Confirm with Google/Apple" (the account's linked providers), which runs the provider in the in-app web sheet with `mode: "reauth"` (`POST /api/auth/oauth/{p}/start`; the sheet carries this session's cookies) and then sends the link again. The account is re-read (`GET /api/account?as=shopper`) whenever the app returns to the foreground; when the email changed, the session is refreshed too. `/auth/change-email?token=` links that reach the app are confirmed with `POST /api/auth/change-email/confirm` (`YouEmailChangeLink`); normally they open on the website.
+- Help: You › Help and Settings › Help and legal have "Message Yard Support" (the native thread, `.support`) and "Help centre" (the website).
+- Sheets: `YouRegionSheet`, `YouChangePasswordSheet`, `YouDeleteAccountSheet`. Deleting the account uses a modal confirmation, as the site rule requires: type DELETE, plus the password when re-auth is needed.
 - Help (`https://yardstore.space/support`), Sell on Yard (`/sell`) and "Connect on the web" (`/you/settings`) open in `SFSafariViewController`.
 
 ## Endpoints
@@ -30,7 +32,6 @@
 - `YouSafariView` / `.youWebPage(_:)`, `YouSettingsGroup`, `YouToggleRow`, `YouTextField`, `YouSkeletonRow`, and the DTOs for `/api/auth/security`.
 
 ## Unfinished / notes for the integrator
-- **Editing name and email is not possible.** The API has no profile-update endpoint; the website's `updateProfile` only changes the browser's local copy. "Your details" shows them read-only and points to support.
 - **Connecting Google or Apple** is not done in the app. OAuth `link`/`reauth` must finish in the same cookie session, and `ASWebAuthenticationSession`/Safari don't share the app's cookies. The row opens yardstore.space instead. Disconnecting works in the app.
 - An OAuth-only account can't re-auth in the app for delete or set-password. The UI tells the shopper to sign out and back in, then act within the window (10 min for delete, 5 min for set-password).
 - Root suggestion: at launch, call `YouRegion.restore(into: cart)`, which sets `cart.destinationCountry` from `yard.shipTo`. Today it runs only when Settings or Addresses appear.

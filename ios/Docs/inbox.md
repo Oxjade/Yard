@@ -14,6 +14,29 @@ Folder: `ios/Yard/Features/Inbox/`. Wording and behaviour follow `src/components
 
 Polling: every 5 s while the thread is on screen and the app is active (`after=<max seq>`), plus once on returning to foreground. Marks read on open and whenever new brand messages arrive (only when something is unread, so idle polling sends no read POSTs).
 
+## Yard Support
+
+`SupportConversationView(orderId:orderReference:)` (route `.support(orderId:orderReference:)`, links
+`/inbox?support=1[&order=<order id>&orderRef=<reference>]`, the "Yard Support replied" notification) is
+the shopper's one conversation with Yard's own team. It reuses `InboxThreadModel(supportOrder:)` and
+`InboxThreadScreen`: header with the Yard mark (`InboxSupportMark`, the acid logo on black) and "Yard
+Support" ("The Yard team. We usually reply within a day." / "Resolved. Writing again reopens it."), no
+menu (no mute/archive/block/report), Yard's replies (`side: "support"`) as the other bubble, "Seen"
+under the shopper's newest message Yard has read (`receipts.theirs`, when receipts are on). The thread
+is created by the first message, so a shopper who never wrote sees the intro and an empty composer;
+photos are offered once the thread exists. "Get help from Yard" (order detail) opens it with the order
+as a removable chip above the composer; the next send is `kind: "order"` with `orderRefId`, so the
+message carries the order card. The inbox list pins the thread above the brand conversations once
+it has a message (`GET /api/support/conversation`), and shows a "Message Yard Support" link until then.
+
+- `GET /api/support/conversation` → `{ conversation | null }`
+- `GET /api/support/conversation/messages?before=&after=&limit=` (404 before the first message)
+- `POST /api/support/messages` `{ clientId, kind: text|image|order, body?, attachmentIds?, orderRefId? }`
+- `POST /api/support/conversation/read` `{ upToSeq }`
+- Photos: `POST /api/uploads?purpose=inbox_attachment&as=shopper&conversationId=<support id>`
+
+Not done: the typing indicator (the app polls every 5 s, like the brand threads).
+
 ## Endpoints
 
 - `GET /api/inbox/conversations?q=&filter=archived|blocked&cursor=` — list

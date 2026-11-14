@@ -449,6 +449,15 @@ struct OrderDetailView: View {
             // Help
             section("Help") {
                 VStack(spacing: 0) {
+                    // Yard Support with this order attached (web: "Get help from Yard" on the order page).
+                    Button {
+                        router.push(.support(orderId: order.id, orderReference: order.summary.reference))
+                    } label: {
+                        SettingsRow("Get help from Yard", systemImage: "questionmark.bubble")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(order.id.isEmpty)
+                    Divider().overlay(Color.yard.line)
                     Button {
                         router.push(.messageBrand(brandId: order.summary.brand.id))
                     } label: {

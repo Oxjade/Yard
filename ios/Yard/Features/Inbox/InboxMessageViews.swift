@@ -144,6 +144,9 @@ struct InboxPendingRow: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: Spacing.xs) {
+            if let order = pending.order {
+                Tag("Order \(order.reference)", systemImage: "shippingbox")
+            }
             if !pending.photos.isEmpty {
                 HStack(spacing: Spacing.xs) {
                     ForEach(Array(pending.photos.enumerated()), id: \.offset) { _, data in

@@ -42,6 +42,14 @@ struct YardApp: App {
                     YouRegion.restore(into: cart)
                 }
                 .onOpenURL { url in
+                    // An email-change confirmation link (normally opened on the website).
+                    if YouEmailChangeLink.canHandle(url) {
+                        Task { @MainActor in
+                            let message = await YouEmailChangeLink.handle(url, session: session)
+                            toast.show(message)
+                        }
+                        return
+                    }
                     // Email sign-in and verification links are consumed in the app.
                     if AuthEmailLinks.canHandle(url) {
                         Task { @MainActor in
@@ -56,6 +64,13 @@ struct YardApp: App {
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     guard let url = activity.webpageURL else { return }
+                    if YouEmailChangeLink.canHandle(url) {
+                        Task { @MainActor in
+                            let message = await YouEmailChangeLink.handle(url, session: session)
+                            toast.show(message)
+                        }
+                        return
+                    }
                     if AuthEmailLinks.canHandle(url) {
                         Task { @MainActor in
                             if let message = await AuthEmailLinks.handle(url, session: session) { toast.show(message) }

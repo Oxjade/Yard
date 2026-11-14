@@ -3,9 +3,9 @@ import Observation
 
 // You › Settings, in the style of reference 08 (grouped rounded cards, icon tile per row).
 //   General: Appearance, Notifications, Ship to, Currency
-//   Account: Your details, Password, Sign-in methods (GET /api/auth/security?as=shopper,
+//   Account: Name and email (YouAccountView), Password, Sign-in methods (GET /api/auth/security?as=shopper,
 //            DELETE /api/auth/identities/{id}?as=shopper), Delete account, Sign out
-//   About:   Help, Terms, Privacy, Refunds, Data deletion
+//   About:   Message Yard Support, Help, Terms, Privacy, Refunds, Data deletion
 
 @Observable
 @MainActor
@@ -64,7 +64,6 @@ struct SettingsView: View {
     @State private var security = YouSecurityModel()
     @State private var webPage: YouWebPage? = nil
     @State private var regionSheet: YouRegionSheet.Mode? = nil
-    @State private var showsDetails = false
     @State private var showsPassword = false
     @State private var showsDelete = false
     @State private var pendingUnlink: YouIdentity? = nil
@@ -115,15 +114,6 @@ struct SettingsView: View {
         .youWebPage($webPage)
         .sheet(item: $regionSheet) { mode in
             YouRegionSheet(mode: mode) { shipTo = YouRegion.storedShipTo }
-        }
-        .sheet(isPresented: $showsDetails) {
-            YouAccountDetailsSheet(security: security.security) {
-                // Let the sheet finish dismissing before presenting Safari.
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 450_000_000)
-                    webPage = .help
-                }
-            }
         }
         .sheet(isPresented: $showsPassword) {
             YouChangePasswordSheet(hasPassword: security.security?.hasPassword ?? true) {
@@ -180,8 +170,8 @@ struct SettingsView: View {
     @ViewBuilder
     private var account: some View {
         YouSettingsGroup("Account", footer: "Your name goes on your orders.") {
-            Button { showsDetails = true } label: {
-                SettingsRow("Your details", systemImage: "person.text.rectangle", value: session.shopper?.name)
+            NavigationLink(value: Route.account) {
+                SettingsRow("Name and email", systemImage: "person.text.rectangle", value: session.shopper?.name)
             }
             .buttonStyle(.plain)
             NavigationLink(value: Route.addresses) {
@@ -277,8 +267,12 @@ struct SettingsView: View {
 
     private var about: some View {
         YouSettingsGroup("Help and legal") {
+            NavigationLink(value: Route.support(orderId: nil, orderReference: nil)) {
+                SettingsRow("Message Yard Support", systemImage: "bubble.left.and.bubble.right")
+            }
+            .buttonStyle(.plain)
             Button { webPage = .help } label: {
-                SettingsRow("Help", systemImage: "questionmark.circle")
+                SettingsRow("Help centre", systemImage: "questionmark.circle")
             }
             .buttonStyle(.plain)
             ForEach(LegalPage.allCases) { page in

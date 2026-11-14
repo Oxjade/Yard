@@ -3,7 +3,8 @@ import SwiftUI
 /// The You tab root.
 /// - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
 /// - Signed in: profile header (initials avatar, name, email), quick tiles (Orders, Saved, Following,
-///   Inbox, Drop reminders, Notifications) and links (Settings, Help, Sell on Yard, Terms, Privacy, Refunds).
+///   Inbox, Drop reminders, Notifications), links (Settings, Sell on Yard), Help (Message Yard Support,
+///   Help centre) and legal (Terms, Privacy, Refunds).
 @MainActor
 struct YouView: View {
     @Environment(SessionStore.self) private var session
@@ -29,6 +30,7 @@ struct YouView: View {
                     inviteCard
                 }
                 links
+                help
                 legal
             }
             .padding(.horizontal, Spacing.gutter)
@@ -152,12 +154,22 @@ struct YouView: View {
                 SettingsRow("Settings", systemImage: "gearshape")
             }
             .buttonStyle(.plain)
-            Button { webPage = .help } label: {
-                SettingsRow("Help", systemImage: "questionmark.circle")
-            }
-            .buttonStyle(.plain)
             Button { webPage = .sell } label: {
                 SettingsRow("Sell on Yard", systemImage: "storefront")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Help: the native Yard Support thread, and the website's help centre.
+    private var help: some View {
+        YouSettingsGroup("Help", footer: "Questions about an order, a payment or your account? Yard's team replies in the app and in your notifications.") {
+            NavigationLink(value: Route.support(orderId: nil, orderReference: nil)) {
+                SettingsRow("Message Yard Support", systemImage: "bubble.left.and.bubble.right")
+            }
+            .buttonStyle(.plain)
+            Button { webPage = .help } label: {
+                SettingsRow("Help centre", systemImage: "questionmark.circle")
             }
             .buttonStyle(.plain)
         }

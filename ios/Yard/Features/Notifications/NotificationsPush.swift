@@ -285,7 +285,7 @@ private struct YardPushNotificationsModifier: ViewModifier {
             return
         }
         switch route {
-        case .order, .orders, .conversation, .inbox, .myDrops, .notifications:
+        case .order, .orders, .conversation, .inbox, .support, .myDrops, .notifications:
             router.show(route, in: .you)
         default:
             router.show(route, in: .home)

@@ -31,7 +31,8 @@ Owner: orders agent. References: `06-order-confirmed-ticket.jpg`, `07-order-stat
   - Details: items, summary (subtotal, shipping/Free, refunded, total, payment sentence), ship-to
     address + service, tracking number with Copy + "Track with {carrier}" (carrier URL rules from
     the site), returns (open return status / **Request a return** sheet / outcome / window note),
-    help (Message brand → `.messageBrand(brandId:)`, Refunds policy → `.legal(.refunds)`), Cancel
+    help (Get help from Yard → `.support(orderId:orderReference:)`, the Yard Support thread with this
+    order attached; Message brand → `.messageBrand(brandId:)`, Refunds policy → `.legal(.refunds)`), Cancel
     order (only when `actions.canCancel`, confirmation dialog).
   - After each load it calls `LiveActivityManager.shared.sync(orderId:)` when the order is
     shipped/delivered/cancelled or already tracked (live-activity doc's hook).

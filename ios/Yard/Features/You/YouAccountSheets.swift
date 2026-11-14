@@ -1,67 +1,10 @@
 import SwiftUI
 
-// Account sheets opened from Settings:
-//   YouAccountDetailsSheet   name + email (read-only: the API has no profile-update endpoint yet)
+// Account sheets opened from Settings (name and email are edited on YouAccountView):
 //   YouChangePasswordSheet   POST /api/auth/password/change?as=shopper { currentPassword?, newPassword }
 //   YouDeleteAccountSheet    POST /api/auth/reauth?as=shopper { password } when needed, then
 //                            POST /api/auth/account/delete { confirm: "DELETE" }
 // Delete is an irreversible destructive action, so it gets a modal confirmation (AGENTS rule).
-
-// MARK: - Your details
-
-@MainActor
-struct YouAccountDetailsSheet: View {
-    let security: YouSecurity?
-    let onHelp: () -> Void
-
-    init(security: YouSecurity?, onHelp: @escaping () -> Void) {
-        self.security = security
-        self.onHelp = onHelp
-    }
-
-    @Environment(SessionStore.self) private var session
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.l) {
-            YardSheetHeader("Your details", subtitle: "Your name goes on your orders.") { dismiss() }
-            VStack(alignment: .leading, spacing: Spacing.l) {
-                Card(padding: Spacing.xs) {
-                    VStack(spacing: 0) {
-                        SettingsRow("Name", systemImage: "person", value: session.shopper?.name ?? "", showsChevron: false)
-                        SettingsRow("Email", systemImage: "envelope", value: session.shopper?.email ?? "", showsChevron: false)
-                        if let s = security, !s.demo {
-                            SettingsRow(
-                                "Email verified",
-                                systemImage: s.emailVerified ? "checkmark.seal" : "exclamationmark.circle",
-                                value: s.emailVerified ? "Yes" : "Not yet",
-                                showsChevron: false
-                            )
-                        }
-                    }
-                }
-                Text(managedNote)
-                    .font(.yardCaption)
-                    .foregroundStyle(Color.yard.ink3)
-                    .fixedSize(horizontal: false, vertical: true)
-                YardButton("Contact support", systemImage: "questionmark.circle", style: .secondary, size: .medium) {
-                    dismiss()
-                    onHelp()
-                }
-            }
-            .padding(.horizontal, Spacing.gutter)
-            Spacer(minLength: 0)
-        }
-        .yardSheet(detents: [.medium, .large])
-    }
-
-    private var managedNote: String {
-        if let s = security, !s.hasPassword, s.identities.contains(where: { $0.provider == "google" }) {
-            return "Signed in with Google. Change this email in your Google account. To change your name, contact support."
-        }
-        return "Changing your name or email isn't available in the app yet. Contact support and we'll update it for you."
-    }
-}
 
 // MARK: - Change password
 
