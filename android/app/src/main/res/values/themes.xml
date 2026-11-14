@@ -7,7 +7,7 @@
 
     <style name="Theme.Yard.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/yard_launch_bg</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.Yard</item>
     </style>
 </resources>
