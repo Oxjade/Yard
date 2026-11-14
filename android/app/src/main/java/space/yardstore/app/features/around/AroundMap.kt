@@ -1,174 +1,258 @@
 package space.yardstore.app.features.around
 
+import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Point
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.material3.Text
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
-import org.osmdroid.views.Projection
-import org.osmdroid.views.overlay.Overlay
-import org.osmdroid.views.overlay.TilesOverlay
-import space.yardstore.app.BuildConfig
+import androidx.webkit.WebViewAssetLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
-import space.yardstore.app.designsystem.YardShapes
-import space.yardstore.app.designsystem.components.pressableClick
-import space.yardstore.app.designsystem.yard
-import java.io.File
 import java.time.Instant
-import kotlin.math.roundToInt
+import kotlin.math.min
 
-// ANDROID-ONLY: iOS uses MapKit's `Map` with SwiftUI `Annotation`s. Here an osmdroid MapView
-// (OpenStreetMap tiles, no API key) sits under a Compose layer that places the same brand pins
-// at the projected coordinates, so pins are real composables (BrandAvatar, Coil logos, ripples).
+// ANDROID-ONLY: iOS uses MapKit. Android draws the website's dark 3D globe: MapLibre GL JS 6.16.0
+// (the website's own version) with globe projection, in a WebView that loads only the APK's assets
+// (assets/around/, served by WebViewAssetLoader at https://appassets.androidplatform.net). MapLibre
+// Native for Android has globe only in preview builds, so the WebView is the stable way to get it.
+// Kotlin and the page talk through the typed messages in AroundGlobeBridge.
 
-/** Drives the osmdroid map from Compose (iOS `MapCameraPosition` + `onMapCameraChange`). */
+/**
+ * The globe's space and ocean colours. The globe is dark in both appearances, like the website's
+ * (src/components/around/map/around-map.css: #050505 space, #060609 ocean, #1d1c24 land).
+ */
+private val GlobeSpace = Color(0xFF050505)
+private val GlobeOcean = Color(0xFF060609)
+private val GlobeRim = Color(0x73858585)
+private val GlobeInk2 = Color(0xFF858585)
+
+/** Drives the globe from Compose (iOS `MapCameraPosition` + `onMapCameraChange`). */
 @Stable
 class AroundMapController {
-    internal var mapView: MapView? = null
-        set(value) {
-            field = value
-            if (value != null) pending?.let { run -> runWhenLaidOut(value, run) }
-            pending = null
-        }
-
-    /** Bumped whenever the camera moves (every frame of a pan, zoom or animation). */
+    /** Bumped whenever the camera comes to rest (iOS `onMapCameraChange(frequency: .onEnd)`). */
     var cameraTick by mutableIntStateOf(0)
         internal set
 
-    private var pending: ((MapView) -> Unit)? = null
+    /** The page can't draw a map here (no WebGL 2, or its data didn't load). */
+    var isUnavailable by mutableStateOf(false)
+        internal set
 
-    /** The visible region, or null before the map has been laid out. */
-    fun currentRegion(): AroundRegion? {
-        val map = mapView ?: return null
-        if (!map.isLayoutOccurred || map.width == 0) return null
-        val box = map.boundingBox
-        var lngDelta = box.lonEast - box.lonWest
-        if (lngDelta < 0) lngDelta += 360.0
-        val center = map.mapCenter
-        return AroundRegion(
-            AroundCoordinate(center.latitude, center.longitude),
-            latitudeDelta = (box.latNorth - box.latSouth).coerceAtLeast(0.0),
-            longitudeDelta = lngDelta,
-        )
-    }
+    /** Bumped when the WebView's renderer died, so the composable builds a fresh one. */
+    internal var generation by mutableIntStateOf(0)
+        private set
 
-    /** Animates the camera to show [region] (iOS `withAnimation { position = .region(r) }`). */
+    private var region: AroundRegion? = null
+    private var webView: WebView? = null
+    private var ready = false
+    private var widthDp = 0.0
+    private var heightDp = 0.0
+    internal var wide = false
+
+    // The page's state, replayed whenever it (re)loads.
+    private var placesMessage: String? = null
+    private var selectedId: String? = null
+    private var you: AroundCoordinate? = null
+    /** The last camera asked for or reported; the opening globe until then. */
+    private var camera: AroundGlobeCamera? = null
+    /** A region asked for before the map knew its size. */
+    private var pendingRegion: AroundRegion? = null
+
+    internal var onPlaceTapped: (String) -> Unit = {}
+
+    /** The region in view once the camera last came to rest, or null before the globe has drawn. */
+    fun currentRegion(): AroundRegion? = region
+
+    /** Flies the camera to show [region] (iOS `withAnimation { position = .region(r) }`). */
     fun flyTo(region: AroundRegion, animated: Boolean = true) {
-        val run: (MapView) -> Unit = { map ->
-            val maxLat = 85.0
-            val north = (region.center.latitude + region.latitudeDelta / 2).coerceIn(-maxLat, maxLat)
-            val south = (region.center.latitude - region.latitudeDelta / 2).coerceIn(-maxLat, maxLat)
-            val (west, east) = if (region.longitudeDelta >= 359.0) {
-                -180.0 to 180.0
-            } else {
-                (region.center.longitude - region.longitudeDelta / 2).coerceIn(-180.0, 180.0) to
-                    (region.center.longitude + region.longitudeDelta / 2).coerceIn(-180.0, 180.0)
-            }
-            runCatching {
-                map.zoomToBoundingBox(BoundingBox(north, east, south, west), animated, 0, MAX_ZOOM, if (animated) 650L else null)
-            }
+        if (widthDp <= 0 || heightDp <= 0) {
+            pendingRegion = region
+            camera = null
+            return
         }
-        val map = mapView
-        if (map == null) pending = run else runWhenLaidOut(map, run)
+        pendingRegion = null
+        val cam = AroundGlobeBridge.cameraFor(region, widthDp, heightDp, wide)
+        camera = cam
+        send(AroundGlobeBridge.flyToMessage(cam, animated))
     }
 
-    /** The map view pixel for a coordinate, or null without a map. */
-    internal fun toPixels(c: AroundCoordinate, out: Point): Point? {
-        val map = mapView ?: return null
-        if (!map.isLayoutOccurred) return null
-        return runCatching { map.projection.toPixels(GeoPoint(c.latitude, c.longitude), out) }.getOrNull()
+    internal fun setSize(widthDp: Double, heightDp: Double) {
+        this.widthDp = widthDp
+        this.heightDp = heightDp
+        pendingRegion?.let { flyTo(it, animated = false) }
     }
 
-    private fun runWhenLaidOut(map: MapView, run: (MapView) -> Unit) {
-        if (map.isLayoutOccurred && map.width > 0) run(map) else map.addOnFirstLayoutListener { _, _, _, _, _ -> run(map) }
+    internal fun setPlaces(message: String) {
+        if (message == placesMessage) return
+        placesMessage = message
+        send(message)
     }
 
-    companion object {
-        const val MIN_ZOOM = 2.0
-        const val MAX_ZOOM = 19.0
+    internal fun select(id: String?) {
+        selectedId = id
+        send(AroundGlobeBridge.selectMessage(id))
+    }
+
+    internal fun setYou(location: AroundCoordinate?) {
+        if (location == you) return
+        you = location
+        send(AroundGlobeBridge.youMessage(location))
+    }
+
+    internal fun attach(view: WebView) {
+        webView = view
+        ready = false
+    }
+
+    internal fun detach(view: WebView) {
+        if (webView === view) {
+            webView = null
+            ready = false
+        }
+    }
+
+    internal fun rendererGone(view: WebView) {
+        detach(view)
+        generation += 1
+    }
+
+    /** Handles one page event on the main thread. */
+    internal fun handle(event: AroundGlobeEvent) {
+        when (event) {
+            AroundGlobeEvent.Ready -> {
+                ready = true
+                isUnavailable = false
+                // The page opens on [camera]; then the pins, the selection and the "you" dot.
+                val cam = pendingRegion?.takeIf { widthDp > 0 && heightDp > 0 }
+                    ?.let { AroundGlobeBridge.cameraFor(it, widthDp, heightDp, wide) }
+                    ?: camera
+                    ?: AroundGlobeBridge.globeCamera(wide)
+                pendingRegion = null
+                send(AroundGlobeBridge.flyToMessage(cam, animate = false))
+                placesMessage?.let { send(it) }
+                send(AroundGlobeBridge.selectMessage(selectedId))
+                send(AroundGlobeBridge.youMessage(you))
+            }
+            is AroundGlobeEvent.PlaceTapped -> onPlaceTapped(event.id)
+            is AroundGlobeEvent.CameraIdle -> {
+                camera = event.camera
+                region = AroundGlobeBridge.regionFor(event.camera, event.bounds)
+                cameraTick += 1
+            }
+            is AroundGlobeEvent.Streets -> Unit
+            is AroundGlobeEvent.Fallback -> isUnavailable = true
+        }
+    }
+
+    internal fun resumeView() {
+        webView?.onResume()
+    }
+
+    internal fun pauseView() {
+        webView?.onPause()
+    }
+
+    private fun send(message: String) {
+        val view = webView ?: return
+        if (!ready) return
+        view.evaluateJavascript(AroundGlobeBridge.script(message), null)
     }
 }
 
-/** Bumps [AroundMapController.cameraTick] whenever the projection changed since the last frame. */
-private class AroundCameraWatcher(private val controller: AroundMapController) : Overlay() {
-    private var lastLat = Double.NaN
-    private var lastLng = Double.NaN
-    private var lastZoom = Double.NaN
-    private var lastW = -1
-    private var lastH = -1
+/** `window.YardAndroid`: the page's only way back. Called on the WebView's binder thread. */
+private class AroundGlobeJsInterface(private val controller: AroundMapController) {
+    private val main = Handler(Looper.getMainLooper())
 
-    override fun draw(canvas: Canvas, projection: Projection) {
-        val center = projection.currentCenter
-        val zoom = projection.zoomLevel
-        val w = projection.width
-        val h = projection.height
-        if (center.latitude != lastLat || center.longitude != lastLng || zoom != lastZoom || w != lastW || h != lastH) {
-            lastLat = center.latitude
-            lastLng = center.longitude
-            lastZoom = zoom
-            lastW = w
-            lastH = h
-            controller.cameraTick += 1
-        }
+    @JavascriptInterface
+    fun post(message: String) {
+        val event = AroundGlobeBridge.parse(message) ?: return
+        main.post { controller.handle(event) }
     }
 }
 
-private fun makeAroundMapView(context: Context, controller: AroundMapController): MapView {
-    Configuration.getInstance().apply {
-        load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
-        userAgentValue = BuildConfig.APPLICATION_ID
-        osmdroidBasePath = File(context.cacheDir, "osmdroid")
-        osmdroidTileCache = File(context.cacheDir, "osmdroid/tiles")
-    }
-    return MapView(context).apply {
-        setTileSource(TileSourceFactory.MAPNIK)
-        setMultiTouchControls(true)
-        zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-        setTilesScaledToDpi(true)
-        setMinZoomLevel(AroundMapController.MIN_ZOOM)
-        setMaxZoomLevel(AroundMapController.MAX_ZOOM)
-        setVerticalMapRepetitionEnabled(false)
-        setScrollableAreaLimitLatitude(MapView.getTileSystem().maxLatitude, MapView.getTileSystem().minLatitude, 0)
-        this.controller.setZoom(AroundMapController.MIN_ZOOM)
-        this.controller.setCenter(GeoPoint(20.0, 0.0))
-        overlays.add(AroundCameraWatcher(controller))
+@SuppressLint("SetJavaScriptEnabled") // The page is our own bundled asset; navigation elsewhere is blocked.
+private fun makeAroundGlobeView(context: Context, controller: AroundMapController): WebView {
+    val loader = WebViewAssetLoader.Builder()
+        .setDomain(AroundGlobeBridge.ASSET_HOST)
+        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+        .build()
+    return WebView(context).apply {
+        setBackgroundColor(GlobeSpace.toArgb())
+        isVerticalScrollBarEnabled = false
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = WebView.OVER_SCROLL_NEVER
+        settings.apply {
+            javaScriptEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            setGeolocationEnabled(false)
+            javaScriptCanOpenWindowsAutomatically = false
+        }
+        addJavascriptInterface(AroundGlobeJsInterface(controller), AroundGlobeBridge.JS_INTERFACE)
+        webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                loader.shouldInterceptRequest(request.url)
+
+            // The globe never navigates; links and redirects go nowhere.
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                controller.rendererGone(view)
+                return true
+            }
+        }
+        controller.attach(this)
+        loadUrl(AroundGlobeBridge.PAGE_URL)
     }
 }
 
 /**
- * The map with a pin per place (acid ring when selected, acid dot when open/live) and the
- * shopper's dot. Tapping a pin calls [onSelect].
+ * The dark globe with a brand pin per place (clustered when close; purple ring when selected; the
+ * kind dot acid when live) and the shopper's dot. Tapping a pin calls [onSelect].
  */
 @Composable
 fun AroundMap(
@@ -181,101 +265,80 @@ fun AroundMap(
     onSelect: (AroundPlace) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = Color.yard.isDark
-    val bg = Color.yard.bg.toArgb()
-    val line = Color.yard.line.toArgb()
-    Box(modifier.clipToBounds()) {
+    val density = LocalDensity.current
+    controller.wide = LocalYardWindow.current.isExpanded
+    val currentPlaces by rememberUpdatedState(places)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    controller.onPlaceTapped = { id -> currentPlaces.firstOrNull { it.id == id }?.let { currentOnSelect(it) } }
+
+    Box(
+        modifier
+            .clipToBounds()
+            .background(GlobeSpace)
+            .onSizeChanged { size ->
+                with(density) { controller.setSize(size.width.toDp().value.toDouble(), size.height.toDp().value.toDouble()) }
+            },
+    ) {
         if (LocalInspectionMode.current) {
-            Box(Modifier.fillMaxSize().background(Color.yard.surface2))
+            AroundGlobePlaceholder(Modifier.fillMaxSize())
         } else {
             val lifecycle = LocalLifecycleOwner.current.lifecycle
-            AndroidView(
-                factory = { ctx -> makeAroundMapView(ctx, controller).also { controller.mapView = it } },
-                modifier = Modifier.fillMaxSize(),
-                update = { map ->
-                    map.overlayManager.tilesOverlay.setColorFilter(if (isDark) TilesOverlay.INVERT_COLORS else null)
-                    map.overlayManager.tilesOverlay.loadingBackgroundColor = bg
-                    map.overlayManager.tilesOverlay.loadingLineColor = line
-                    map.invalidate()
-                },
-                onRelease = { map ->
-                    if (controller.mapView === map) controller.mapView = null
-                    map.onDetach()
-                },
-            )
-            DisposableEffect(lifecycle) {
-                val observer = LifecycleEventObserver { _, event ->
+            key(controller.generation) {
+                AndroidView(
+                    factory = { ctx -> makeAroundGlobeView(ctx, controller) },
+                    modifier = Modifier.fillMaxSize(),
+                    onRelease = { view ->
+                        controller.detach(view)
+                        view.removeJavascriptInterface(AroundGlobeBridge.JS_INTERFACE)
+                        view.destroy()
+                    },
+                )
+            }
+            DisposableEffect(lifecycle, controller) {
+                val pauser = LifecycleEventObserver { _, event ->
                     when (event) {
-                        Lifecycle.Event.ON_RESUME -> controller.mapView?.onResume()
-                        Lifecycle.Event.ON_PAUSE -> controller.mapView?.onPause()
+                        Lifecycle.Event.ON_RESUME -> controller.resumeView()
+                        Lifecycle.Event.ON_PAUSE -> controller.pauseView()
                         else -> Unit
                     }
                 }
-                lifecycle.addObserver(observer)
-                onDispose { lifecycle.removeObserver(observer) }
-            }
-        }
-
-        // Pins, placed at their projected coordinates (anchor: bottom centre); the selected one on top.
-        val point = remember { Point() }
-        Layout(
-            content = {
-                for (place in places) {
-                    key(place.id) {
-                        AroundPin(
-                            name = place.brand.name,
-                            logoUrl = logoUrl(place),
-                            isSelected = place.id == selectedId,
-                            isOpen = AroundTime.isOpenNow(place, now),
-                            modifier = Modifier.pressableClick(onClickLabel = "Show ${place.brand.name}") { onSelect(place) },
-                        )
-                    }
-                }
-                if (userLocation != null) AroundUserDot()
-            },
-            modifier = Modifier.fillMaxSize(),
-        ) { measurables, constraints ->
-            val placeables = measurables.map { it.measure(Constraints()) }
-            layout(constraints.maxWidth, constraints.maxHeight) {
-                @Suppress("UNUSED_VARIABLE")
-                val tick = controller.cameraTick // re-place on every camera move
-                val inPreview = controller.mapView == null
-                places.forEachIndexed { i, place ->
-                    val p = placeables.getOrNull(i) ?: return@forEachIndexed
-                    val px = if (inPreview) {
-                        previewPoint(place, i, constraints)
-                    } else {
-                        controller.toPixels(place.coordinate, point)?.let { it.x to it.y } ?: return@forEachIndexed
-                    }
-                    p.place(px.first - p.width / 2, px.second - p.height, zIndex = if (place.id == selectedId) 1f else 0f)
-                }
-                if (userLocation != null) {
-                    val dot = placeables.lastOrNull()
-                    val px = controller.toPixels(userLocation, point)
-                    if (dot != null && px != null) dot.place(px.x - dot.width / 2, px.y - dot.height / 2, zIndex = 0.5f)
+                lifecycle.addObserver(pauser)
+                onDispose {
+                    lifecycle.removeObserver(pauser)
                 }
             }
         }
-
-        // OpenStreetMap's licence asks for visible attribution.
-        Text(
-            "© OpenStreetMap contributors",
-            style = YardFonts.micro,
-            color = Color.yard.ink2,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(Spacing.s)
-                .background(Color.yard.surface.copy(alpha = 0.8f), YardShapes.pill)
-                .padding(horizontal = Spacing.s, vertical = 2.dp),
-        )
+        if (controller.isUnavailable) {
+            Text(
+                "The globe can't be shown on this device. The list below still works.",
+                style = YardFonts.caption,
+                color = GlobeInk2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.TopCenter).padding(Spacing.l),
+            )
+        }
     }
+
+    // Pins: encoded off the main thread; the page skips re-tiling when nothing changed.
+    val logos = places.map { logoUrl(it) }
+    LaunchedEffect(places, logos, now) {
+        val message = withContext(Dispatchers.Default) {
+            val byId = places.indices.associate { places[it].id to logos[it] }
+            AroundGlobeBridge.placesMessage(places, { p -> byId[p.id] }, now)
+        }
+        controller.setPlaces(message)
+    }
+    LaunchedEffect(selectedId) { controller.select(selectedId) }
+    LaunchedEffect(userLocation) { controller.setYou(userLocation) }
 }
 
-/** Previews have no map: spread the pins over the top half so they can be seen. */
-private fun previewPoint(place: AroundPlace, index: Int, constraints: Constraints): Pair<Int, Int> {
-    val w = constraints.maxWidth.takeIf { it != Constraints.Infinity } ?: 1000
-    val h = constraints.maxHeight.takeIf { it != Constraints.Infinity } ?: 1000
-    val x = (w * (0.3f + 0.4f * (index % 2))).roundToInt()
-    val y = (h * (0.22f + 0.08f * (index % 3))).roundToInt() + (place.lat.toInt() % 3)
-    return x to y
+/** Previews have no WebView: the globe as a dark disc with its grey rim. */
+@Composable
+private fun AroundGlobePlaceholder(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val r = min(size.width, size.height) * 0.42f
+        val c = Offset(size.width / 2, size.height * 0.4f)
+        drawCircle(GlobeOcean, r, c)
+        drawCircle(GlobeRim, r, c, style = Stroke(1.dp.toPx()))
+    }
 }

@@ -1,0 +1,224 @@
+/* Yard Around globe (Android). Mirrors the website's around-map.css and pins.ts. Static: no glows. */
+:root {
+  --obsidian: #080808;
+  --card: #131313;
+  --ink: #f5f5f5;
+  --ink-2: #858585;
+  --acid: #f5ff00;
+  --purple: #6d19d9;
+  --violet: #9452ff;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050505;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
+
+.yard-around-map {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background-color: #050505;
+  background-image:
+    radial-gradient(circle, rgba(245, 245, 245, 0.32) 0.6px, transparent 0.9px),
+    radial-gradient(circle, rgba(245, 245, 245, 0.16) 0.6px, transparent 0.9px);
+  background-size: 113px 97px, 167px 151px;
+  background-position: 11px 23px, 71px 59px;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+/* The globe's rim: a grey hairline where Snap Map has a blue glow. */
+#rim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  pointer-events: none;
+  border-radius: 9999px;
+  border: 1px solid rgba(133, 133, 133, 0.45);
+  box-sizing: border-box;
+}
+
+#credits {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 5;
+  margin: 0;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: right;
+  color: rgba(133, 133, 133, 0.8);
+  text-shadow: 0 1px 2px #080808;
+}
+
+/* A marker on the far side of the globe can't be seen, so it can't be tapped either. */
+.maplibregl-marker-covered {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: -2px;
+}
+
+/* ---- pins (website pins.ts) ---- */
+
+.yard-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px var(--ink);
+  outline: none;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.yard-pin.sample {
+  outline: 1.5px dashed rgba(245, 245, 245, 0.7);
+  outline-offset: 3px;
+}
+
+.yard-pin.selected {
+  box-shadow: 0 0 0 3px var(--purple);
+  transform: scale(1.1);
+}
+
+.yard-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.yard-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.yard-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid var(--card);
+}
+.yard-dot.store { background: var(--ink); }
+.yard-dot.showroom { background: var(--ink-2); }
+.yard-dot.live { background: var(--acid); }
+.yard-dot.upcoming { background: var(--obsidian); box-shadow: inset 0 0 0 1px var(--ink-2); }
+
+/* ---- clusters: up to three stacked brand marks plus a count chip ---- */
+
+.yard-cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+
+.yard-stack {
+  display: flex;
+  align-items: center;
+}
+
+.yard-stack .yard-circle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 9999px;
+  border: 2px solid var(--obsidian);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(245, 245, 245, 0.7);
+  font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1;
+}
+.yard-stack .yard-circle + .yard-circle { margin-left: -10px; }
+.yard-stack .yard-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.yard-count {
+  position: absolute;
+  top: -8px;
+  right: -12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--obsidian);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "you" dot: an ink dot with a purple ring, never in the data source. */
+.yard-you {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid var(--obsidian);
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--purple);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yard-pin { transition: none; }
+}

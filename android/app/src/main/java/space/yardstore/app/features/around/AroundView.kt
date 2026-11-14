@@ -143,7 +143,6 @@ internal fun AroundScreen(model: AroundViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     var hasCenteredOnUser by rememberSaveable { mutableStateOf(false) }
-    var hasFramed by rememberSaveable { mutableStateOf(false) }
     var now by remember { mutableStateOf(Instant.now()) }
 
     fun flyToUser() {
@@ -236,15 +235,8 @@ internal fun AroundScreen(model: AroundViewModel) {
     LaunchedEffect(locator.fixCount) {
         if (locator.fixCount > 0 && !hasCenteredOnUser && selectedId == null) flyToUser()
     }
-    // iOS `.automatic`: frame every place once they arrive, unless the camera already has a job.
-    LaunchedEffect(model.places) {
-        if (!hasFramed && model.places.isNotEmpty()) {
-            hasFramed = true
-            if (!hasCenteredOnUser && selectedId == null) {
-                AroundViewModel.regionFitting(model.places.map { it.coordinate })?.let { map.flyTo(it, animated = false) }
-            }
-        }
-    }
+    // The globe opens on Africa and Europe like the website (GLOBE_CAMERA) and stays there until the
+    // shopper's location, a search or a pick sends it somewhere.
     LaunchedEffect(detailId) { if (detailId == null) selectedId = null }
     LaunchedEffect(model.error != null) { if (model.error != null) sheet.animateTo(AroundDetent.Medium) }
     // iOS `onMapCameraChange(frequency: .onEnd)`: the region once the camera settles.
@@ -314,8 +306,8 @@ internal fun AroundScreen(model: AroundViewModel) {
         }
     }
 
-    // One tree for every width (the map keeps its position in it), so rotating, resizing or
-    // unfolding never recreates the MapView or loses the camera.
+    // One tree for every width (the globe keeps its position in it), so rotating, resizing or
+    // unfolding never recreates the WebView or loses the camera.
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar("Around")
         if (!sidePanel) searchBar()

@@ -104,4 +104,5 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
   links need `/.well-known/assetlinks.json` on the website with the release signing key's SHA-256
   (`ANDROID_CERT_SHA256`). Release signing: `keystore.properties` or `YARD_KEY*` env (Docs/connect.md).
 - **App icon / splash**: placeholder acid "Y" adaptive icon; replace with the brush-logo artwork.
-- Maps (Around) need a library (osmdroid / MapLibre) — not added.
+- Maps (Around): `androidx.webkit` (WebViewAssetLoader) serves the bundled MapLibre GL JS globe from
+  `assets/around/`; osmdroid was removed.

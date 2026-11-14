@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://tiles.openfreemap.org; font-src 'self'">
+<title>Around</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="globe.css">
+</head>
+<body>
+<!-- Yard Around's globe (Android). The same MapLibre GL JS 6.16.0 build, Natural Earth data and
+     palette as the website's src/components/around/map/around-map.tsx, all from the APK's assets.
+     Kotlin drives it through window.yardGlobe.receive(msg); it answers through YardAndroid.post(json). -->
+<div id="root" class="yard-around-map">
+  <div id="map" role="region" aria-label="Map of places"></div>
+  <div id="rim" aria-hidden="true"></div>
+  <p id="credits">Natural Earth</p>
+</div>
+<script src="vendor/topojson-client.min.js"></script>
+<script type="module" src="globe.js"></script>
+</body>
+</html>

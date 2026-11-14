@@ -121,7 +121,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    implementation(libs.osmdroid.android)
+    // Around: WebViewAssetLoader serves the bundled MapLibre GL JS globe (assets/around/).
+    implementation(libs.androidx.webkit)
 
     // Push (FCM). Initialised only when google-services.json is present (see above).
     implementation(platform(libs.firebase.bom))
