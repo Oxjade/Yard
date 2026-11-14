@@ -37,8 +37,11 @@ export const CONVERSATION_STATUSES = ["open", "resolved"] as const
 export const SPAM_STATES = ["none", "suspected", "confirmed"] as const
 export const CONVERSATION_ORIGINS = ["storefront", "product", "order", "inbox"] as const
 export const CONVERSATION_TOPICS = ["sizing", "availability", "delivery", "drops", "product", "order", "other"] as const
-export const PARTICIPANT_SIDES = ["customer", "brand"] as const
-export const MESSAGE_SIDES = ["customer", "brand", "system"] as const
+/** "brand": a shopper and a brand. "support": a shopper or a brand with Yard Support (Yard's own team). */
+export const CONVERSATION_KINDS = ["brand", "support"] as const
+/** "support" is Yard Support's side of a support conversation (the admins answering as Yard). */
+export const PARTICIPANT_SIDES = ["customer", "brand", "support"] as const
+export const MESSAGE_SIDES = ["customer", "brand", "system", "support"] as const
 export const MESSAGE_KINDS = ["text", "product", "order", "image", "system"] as const
 export const MESSAGE_STATUSES = ["sent", "held", "removed"] as const
 export const BLOCKER_KINDS = ["brand", "shopper"] as const

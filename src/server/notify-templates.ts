@@ -32,6 +32,11 @@ export const templates = {
   // Inbox (I)
   "message.new_for_brand": { category: "new_message", build: (v) => ({ title: `New message from ${s(v.customer, "a shopper")}`, body: "Open your inbox to reply." }) },
   "message.reply_for_shopper": { category: "new_message", build: (v) => ({ title: `${s(v.brand, "A brand")} replied`, body: "Open your inbox to read it." }) },
+  // Yard Support (support threads): never the message text, never the admin's name.
+  "support.reply_for_shopper": { category: "new_message", build: () => ({ title: "Yard Support replied", body: "Open your inbox to read it." }) },
+  "support.reply_for_brand": { category: "new_message", build: () => ({ title: "Yard Support replied", body: "Open Yard Support in Studio to read it." }) },
+  // `who`: the shopper's name, or the brand's name; `party`: "shopper" | "brand".
+  "support.new_for_admin": { category: "support_message", build: (v) => ({ title: `Support: new message from ${s(v.who, v.party === "brand" ? "a brand" : "a shopper")}`, body: v.party === "brand" ? "A brand wrote to Yard Support. Open the Support queue to reply." : "A shopper wrote to Yard Support. Open the Support queue to reply." }) },
   // Reports (F2, M)
   // `subject` is the report's subject type; `brand` the owning brand's name. Never the reported text.
   "report.admin_new": { category: "message_report", build: (v) => ({ title: `New report: ${s(v.reason, "reported content")}`, body: v.subject === "conversation" ? `A conversation with ${s(v.brand, "a brand")}.` : `A message in a conversation with ${s(v.brand, "a brand")}.` }) },
@@ -62,7 +67,7 @@ export const templates = {
   "account.restricted": { category: "account_status", build: (v) => ({ title: `${s(v.what, "Messaging")} is paused on your account`, body: `Reason: ${s(v.reason)}.` }) },
   "brand.status": { category: "account_status", build: (v) => ({ title: `Yard ${s(v.status, "updated")} ${s(v.brand, "your brand")}`, body: `Reason: ${s(v.reason)}.` }) },
   // Founding brands: an owner claimed the store Yard set up.
-  "brand.approved": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "Your brand")} is approved`, body: "You can sell on Yard now. Add your pieces, set up your storefront and plan your first drop. Need guidance? Reach out from Help." }) },
+  "brand.approved": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "Your brand")} is approved`, body: "You can sell on Yard now. Add your pieces, set up your storefront and plan your first drop. Need guidance? Message @support from Yard Support in Studio." }) },
   "founding.claimed": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "A founding brand")} was claimed`, body: `${s(v.owner, "Its owner")} is now the owner. Selling starts once a payout account is added.` }) },
   // F1 self-test (dev only)
   selftest: { category: "system_alert", build: (v) => ({ title: "Self-test notification", body: `Transaction self-test ${s(v.run)}.` }) },

@@ -14,7 +14,14 @@ import { brands, conversationParticipants, conversations, mediaAssets, messageAt
  */
 
 export type Side = "customer" | "brand"
-export type ConvRow = typeof conversations.$inferSelect
+/** Any conversations row: a brand thread or a Yard Support thread (src/server/support). */
+export type AnyConvRow = typeof conversations.$inferSelect
+/** A shopper–brand conversation (kind "brand"): both parties are always set. */
+export type ConvRow = AnyConvRow & { brandId: string; customerId: string }
+/** The row as a brand conversation, or null for a Yard Support thread (which this module never serves). */
+export const asBrandConv = (r: AnyConvRow | null | undefined): ConvRow | null => (r && r.kind === "brand" && r.brandId && r.customerId ? (r as ConvRow) : null)
+/** The brand-conversation filter every inbox read adds, so a support thread never reaches it. */
+export const brandKindSql = eq(conversations.kind, "brand")
 export type MessageRow = typeof messages.$inferSelect
 
 export const iso = (v: Date | string | null | undefined) => (v == null ? null : (v instanceof Date ? v : new Date(v)).toISOString())
@@ -60,7 +67,7 @@ export async function selectSummaries(side: Side, where: SQL | undefined, opts: 
     .innerJoin(users, eq(users.id, conversations.customerId))
     .innerJoin(conversationParticipants, and(eq(conversationParticipants.conversationId, conversations.id), eq(conversationParticipants.side, side)))
     .leftJoin(lm, and(eq(lm.conversationId, conversations.id), eq(lm.seq, conversations.lastMessageSeq)))
-    .where(where)
+    .where(and(brandKindSql, where))
     .orderBy(desc(sortKeySql), desc(conversations.id))
   return opts.limit ? q.limit(opts.limit) : q
 }
@@ -68,7 +75,7 @@ export async function selectSummaries(side: Side, where: SQL | undefined, opts: 
 export type SummaryRow = Awaited<ReturnType<typeof selectSummaries>>[number]
 
 export function toSummary(r: SummaryRow, side: Side): ConversationSummary {
-  const c = r.c
+  const c = r.c as ConvRow
   const staticBrand = brandById.get(c.brandId)
   const heldAt = iso(r.ownHeldAt)
   const lastAt = iso(c.lastMessageAt)
@@ -77,6 +84,7 @@ export function toSummary(r: SummaryRow, side: Side): ConversationSummary {
   else if (lastAt && c.lastMessageSeq > 0) lastMessage = { preview: c.lastPreview, at: lastAt, side: (r.lastSide as "customer" | "brand" | "system" | null) ?? "customer" }
   return {
     id: c.id,
+    kind: "brand",
     brand: { id: c.brandId, handle: r.brandHandle, name: r.brandName, mark: { text: staticBrand?.mark.text ?? r.brandName.slice(0, 2).toUpperCase(), style: staticBrand?.mark.style ?? "grotesk" }, verified: r.brandReview === "verified" },
     customer: side === "brand" ? { id: c.customerId, name: r.customerName } : undefined,
     status: c.status as "open" | "resolved",
@@ -101,16 +109,18 @@ export async function summaryFor(conversationId: string, side: Side) {
 }
 
 /** Which messages a side may see: delivered and removed ones, plus its own held messages. */
-export function visibleTo(side: Side) {
+export function visibleTo(side: Viewer) {
   // A held message Yard removed never reached the other side, so only its sender sees the
   // "Message removed by Yard" bubble; a delivered message Yard removed shows to both (N, from M2).
   return sql`(${messages.status} = 'sent' or (${messages.status} = 'removed' and (${messages.heldReason} is null or ${messages.senderSide} = ${side})) or (${messages.status} = 'held' and ${messages.senderSide} = ${side}))`
 }
 
-const asOf = (side: Side) => (side === "customer" ? "shopper" : "brand")
+/** Who reads: the shopper, the brand, or (side "support") an admin answering as Yard Support. */
+export type Viewer = Side | "support"
+const asOf = (side: Viewer) => (side === "customer" ? "shopper" : side === "brand" ? "brand" : "admin")
 
 /** Message DTOs for one side, with attachments and reactions, in the order given. */
-export async function toMessageDtos(rows: MessageRow[], side: Side): Promise<MessageDto[]> {
+export async function toMessageDtos(rows: MessageRow[], side: Viewer): Promise<MessageDto[]> {
   if (!rows.length) return []
   const d = await db()
   const ids = rows.map((m) => m.id)

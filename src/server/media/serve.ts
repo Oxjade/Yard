@@ -104,6 +104,14 @@ async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Acto
   // Admin: same-origin requests only, so a cross-site <img> can neither read nor write an audit row.
   if (req.headers.get("sec-fetch-site") !== "same-origin") return null
   const a = await getAdmin()
+  // A photo sent to Yard Support: the admins answering support read it once it was sent.
+  if (a && m.purpose === "inbox_attachment" && canAdmin(a.role, "support.manage") && m.moderationStatus !== "removed") {
+    const c = await conversationOf(m)
+    if (c?.kind === "support" && (await onSentMessage(m.id))) {
+      await auditView(a, m)
+      return a
+    }
+  }
   const permission = adminPermissionFor(m.purpose)
   if (!a || !permission || !canAdmin(a.role, permission)) return null
   if (m.purpose === "inbox_attachment" && !(await inboxEvidence(m.id))) return null

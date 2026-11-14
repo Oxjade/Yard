@@ -72,6 +72,8 @@ export const queueCountsDto = z.object({
   charts: z.number().optional(),
   delivery: z.number().optional(),
   abuse: z.number().optional(),
+  /** Open Yard Support conversations with messages Yard hasn't read. */
+  support: z.number().optional(),
 })
 export type QueueCountsDto = z.infer<typeof queueCountsDto>
 

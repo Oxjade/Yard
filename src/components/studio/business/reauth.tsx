@@ -43,8 +43,8 @@ function methodOf(cause: unknown, demo: boolean): Method {
  * Either way the dialog then retries the action with the SAME Idempotency-Key it used the first
  * time. A refused confirmation shows the server's own message, never an API path.
  */
-export function useBrandReauth(fieldId: string) {
-  const sessionDemo = useServerSession((s) => !!s.brand?.demo)
+export function useBrandReauth(fieldId: string, as: "brand" | "shopper" = "brand") {
+  const sessionDemo = useServerSession((s) => !!(as === "brand" ? s.brand?.demo : s.shopper?.demo))
   const [required, setRequired] = useState(false)
   const [method, setMethod] = useState<Method>({ kind: "password" })
   const [password, setPasswordValue] = useState("")
@@ -101,7 +101,7 @@ export function useBrandReauth(fieldId: string) {
       return false
     }
     try {
-      await api("/api/auth/reauth", { query: { as: "brand" }, body: method.kind === "demo" ? { demo: true } : { password } })
+      await api("/api/auth/reauth", { query: { as }, body: method.kind === "demo" ? { demo: true } : { password } })
     } catch (cause) {
       const fields = fieldErrors(cause)
       // The account has no password after all (it was removed meanwhile): offer its provider.
@@ -137,7 +137,7 @@ export function useBrandReauth(fieldId: string) {
       popup = null
     }
     try {
-      const body: Record<string, string> = { mode: "reauth", actor: "brand" }
+      const body: Record<string, string> = { mode: "reauth", actor: as }
       if (provider.connection) body.connection = provider.connection
       const { url } = await api<{ url: string }>(`/api/auth/oauth/${provider.provider}/start`, { body })
       if (!popup || popup.closed) {
@@ -161,7 +161,7 @@ export function useBrandReauth(fieldId: string) {
     let channel: BroadcastChannel | null = null
     const onResult = (data: unknown) => {
       const m = data as Partial<OAuthReauthMessage> | null
-      if (!m || m.type !== "yard:oauth-reauth" || m.actor !== "brand") return
+      if (!m || m.type !== "yard:oauth-reauth" || m.actor !== as) return
       stopListening()
       setOpening(null)
       if (m.ok) {
@@ -235,7 +235,7 @@ export type BrandReauth = ReturnType<typeof useBrandReauth>
  * What a Studio money dialog shows once the server asks (inline, in the same form): the password
  * input, or for an account that signs in with Google or Apple, a button per provider.
  */
-export function BrandReauthField({ reauth, className }: { reauth: BrandReauth; className?: string }) {
+export function BrandReauthField({ reauth, className, hint }: { reauth: BrandReauth; className?: string; /** Replaces the "money actions" wording where the step-up guards something else. */ hint?: string }) {
   if (!reauth.required || reauth.method.kind === "demo") return null
   const id = reauth.fieldId
   const error = reauth.error ?? undefined
@@ -249,7 +249,7 @@ export function BrandReauthField({ reauth, className }: { reauth: BrandReauth; c
           </p>
         ) : (
           <>
-            <p className="text-sm text-ink-2">Your account signs in with {providers.map(providerLabel).join(" or ")}. Money actions need you to confirm it&apos;s you every few minutes.</p>
+            <p className="text-sm text-ink-2">Your account signs in with {providers.map(providerLabel).join(" or ")}. {hint ?? "Money actions need you to confirm it's you every few minutes."}</p>
             <div className="flex flex-wrap gap-2">
               {providers.map((p, i) => (
                 <Button key={p.key} id={i === 0 ? id : undefined} type="button" variant="secondary" loading={reauth.opening === p.key} disabled={!!reauth.opening && reauth.opening !== p.key} onClick={() => void reauth.confirmWith(p)}>
@@ -268,7 +268,7 @@ export function BrandReauthField({ reauth, className }: { reauth: BrandReauth; c
     )
   }
   return (
-    <Field id={id} label="Your password" error={error} hint="Money actions need your password again every few minutes." className={cn(className)}>
+    <Field id={id} label="Your password" error={error} hint={hint ?? "Money actions need your password again every few minutes."} className={cn(className)}>
       <Input {...control(id, error)} type="password" value={reauth.password} onChange={(e) => reauth.setPassword(e.target.value)} className={inputClass} autoComplete="current-password" />
     </Field>
   )

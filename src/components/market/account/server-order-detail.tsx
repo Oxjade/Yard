@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { MessageSupportButton } from "@/components/inbox/entry"
 import { Button } from "@/components/ui/button"
 import { shippingMethodLabel, type ShippingMethod } from "@/components/market/checkout/shipping"
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
@@ -213,6 +214,11 @@ export function ServerOrderDetail({ id }: { id: string }) {
                 )}
               </>
             ) : <p className="mt-3 text-sm text-ink-2">Returns are available after delivery while the return window is open.</p>}
+          </section>
+          <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Help">
+            <h2 className="text-base font-medium text-ink">Help</h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-2">A question about this order, a payment or delivery? Message Yard Support with this order attached.</p>
+            <MessageSupportButton order={{ id: order.id, reference: order.reference }} label="Get help from Yard" className="mt-4" />
           </section>
           <section className="rounded-lg border border-line-soft bg-card p-4 md:p-6" aria-label="Order timeline">
             <h2 className="text-base font-medium text-ink">Timeline</h2>

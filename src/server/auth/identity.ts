@@ -45,6 +45,8 @@ export const AUTH_EMAIL_TEMPLATES = {
   accountDeleted: "account_deleted", // vars: name
   mfaReset: "mfa_reset", // vars: name
   foundingClaim: "founding_claim", // vars: brand, handle, url, expiresDays
+  changeEmail: "email_change", // to the NEW address; vars: name, url, expiresMinutes
+  emailChanged: "email_changed", // to the OLD address; vars: name, email (the new one)
 } as const
 
 /** Queues an auth email in the caller's transaction (dedupe keys make retries harmless). */

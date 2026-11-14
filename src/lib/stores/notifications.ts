@@ -55,6 +55,7 @@ export type NotificationCategory =
   | "chart_integrity"
   | "shipping_issue"
   | "abuse_alert"
+  | "support_message"
   // admin
   | "merchant_application"
   | "product_report"
@@ -346,6 +347,7 @@ export const categoryLabel: Record<NotificationCategory, string> = {
   chart_integrity: "Charts",
   shipping_issue: "Delivery",
   abuse_alert: "Abuse",
+  support_message: "Support",
   merchant_application: "Brands",
   product_report: "Moderation",
   payment_failure: "Payments",

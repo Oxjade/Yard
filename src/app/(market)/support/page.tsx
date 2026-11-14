@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
+import { MessageSupportButton } from "@/components/inbox/entry"
 import { LegalLink, LegalList, LegalPage, LegalSection, SupportEmail } from "@/components/market/legal-page"
 
 export const metadata: Metadata = {
   title: "Support",
-  description: "Get help with orders, delivery, returns, drops, your account or selling on Yard. Email support and we reply within 2 business days.",
+  description: "Get help with orders, delivery, returns, drops, your account or selling on Yard. Message Yard Support or email us and a person on the Yard team replies.",
 }
 
 /** /support: how to reach Yard, and quick answers to the questions shoppers and brands ask most. */
@@ -13,10 +14,11 @@ export default function SupportPage() {
       title="Support"
       intro={
         <>
-          <p>
-            Need help with an order, your account or selling on Yard? Email us at <SupportEmail /> and a person on the Yard team will reply.
-          </p>
-          <p>We aim to reply within 2 business days (Monday to Friday, excluding Nigerian public holidays).</p>
+          <p>Need help with an order, your account or selling on Yard? Message Yard Support and a person on the Yard team replies in your inbox. You can also email us at <SupportEmail />.</p>
+          <div>
+            <MessageSupportButton variant="primary" />
+          </div>
+          <p>We aim to reply within 2 business days (Monday to Friday, excluding Nigerian public holidays). Brands can message Yard Support from Studio.</p>
         </>
       }
     >
@@ -66,7 +68,7 @@ export default function SupportPage() {
           <li>You can sign in with your email and password, or with Google, Facebook or Apple. Use the same method you signed up with, so you land in the same account.</li>
           <li>Forgotten your password? Choose &quot;Forgot password&quot; on the sign-in screen and we&apos;ll email you a reset link. Check your spam folder if it doesn&apos;t arrive within a few minutes.</li>
           <li>Change your name, email and notification preferences under <LegalLink href="/you/settings">Settings</LegalLink>.</li>
-          <li>Still stuck? Email us from the address on your account and tell us how you signed up.</li>
+          <li>Still stuck? Message Yard Support, or email us from the address on your account and tell us how you signed up.</li>
         </LegalList>
       </LegalSection>
 

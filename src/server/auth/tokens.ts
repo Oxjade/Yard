@@ -17,6 +17,7 @@ export const TOKEN_TTL_MIN: Record<TokenPurpose, number> = {
   reset_password: 30,
   magic_link: 15,
   mfa_challenge: 10,
+  change_email: 24 * 60,
 }
 
 /** Issues a token. `replace` voids the user's other unused tokens of the same purpose first. */

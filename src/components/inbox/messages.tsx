@@ -13,14 +13,13 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { MessageDto } from "@/lib/api/contracts/inbox"
 import { safetyCopy } from "@/lib/api/contracts/inbox"
-import type { InboxSide } from "@/lib/api/inbox"
 import { productById } from "@/lib/data/products"
 import type { MerchantOrderStatus } from "@/lib/data/types"
 import type { CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { dayLabel, heldExplanation, sameDay, seenLabel, shortDate, timeLabel } from "./format"
-import type { Pending } from "./use-thread"
+import type { Pending, ThreadSide } from "./use-thread"
 
 /**
  * The chat itself (§6.2, inspiration zfVzXZ3Wj): date pills, bubbles grouped by sender within
@@ -113,8 +112,8 @@ function ProductCard({ m, href }: { m: NonNullable<MessageDto["product"]>; href:
   )
 }
 
-function OrderCard({ o, side }: { o: NonNullable<MessageDto["order"]>; side: InboxSide }) {
-  const href = side === "customer" ? `/you/orders/${o.orderId}` : `/studio/orders/${o.orderId}`
+function OrderCard({ o, side }: { o: NonNullable<MessageDto["order"]>; side: ThreadSide }) {
+  const href = side === "customer" ? `/you/orders/${o.orderId}` : side === "support" ? `/admin/orders?order=${encodeURIComponent(o.orderId)}` : `/studio/orders/${o.orderId}`
   const status = o.status as MerchantOrderStatus
   return (
     <div className="w-[min(17rem,74vw)] rounded-xl border border-line-soft bg-card p-3.5">
@@ -203,7 +202,8 @@ export function Lightbox({ items, index, onClose }: { items: { src: string }[]; 
 }
 
 type ListProps = {
-  side: InboxSide
+  /** "support": an admin reading a Yard Support thread. */
+  side: ThreadSide
   messages: MessageDto[]
   pending: Pending[]
   /** The other party's display name (typing row). */
@@ -213,15 +213,19 @@ type ListProps = {
   canInteract: boolean
   onRetry: (clientId: string) => void
   onDiscard: (clientId: string) => void
-  onReact: (m: MessageDto) => void
-  onReport: (m: MessageDto) => void
+  /** Absent: no ♥ reactions (Yard Support threads). */
+  onReact?: (m: MessageDto) => void
+  /** Absent: no Report action (Yard Support's own messages can't be reported). */
+  onReport?: (m: MessageDto) => void
   highlight?: string
   matchSeqs?: Set<number>
   activeSeq?: number | null
   productHref?: (slug: string) => string
+  /** Admin views of Yard Support threads: name the admin under each "support" message. */
+  showAuthor?: boolean
 }
 
-export function MessageList({ side, messages, pending, otherName, theyreTyping, receipts, canInteract, onRetry, onDiscard, onReact, onReport, highlight, matchSeqs, activeSeq, productHref = (slug) => `/products/${slug}` }: ListProps) {
+export function MessageList({ side, messages, pending, otherName, theyreTyping, receipts, canInteract, onRetry, onDiscard, onReact, onReport, highlight, matchSeqs, activeSeq, productHref = (slug) => `/products/${slug}`, showAuthor }: ListProps) {
   const [lightbox, setLightbox] = useState<{ items: { src: string }[]; index: number } | null>(null)
   const items: Item[] = useMemo(() => [...messages.map((m) => ({ kind: "message" as const, m })), ...pending.map((p) => ({ kind: "pending" as const, p }))], [messages, pending])
   // The newest own delivered message carries the Seen receipt.
@@ -262,6 +266,7 @@ export function MessageList({ side, messages, pending, otherName, theyreTyping, 
                 onPhotos={(index) => setLightbox({ items: it.m.attachments, index })}
                 highlight={matchSeqs?.has(it.m.seq) ? highlight : undefined}
                 active={activeSeq === it.m.seq}
+                showAuthor={showAuthor}
                 productHref={productHref}
                 seen={newestOwn?.id === it.m.id ? seen : null}
               />
@@ -301,20 +306,22 @@ function Bubble({
   active,
   productHref,
   seen,
+  showAuthor,
 }: {
   m: MessageDto
-  side: InboxSide
+  side: ThreadSide
   own: boolean
   startsGroup: boolean
   endsGroup: boolean
   canInteract: boolean
-  onReact: (m: MessageDto) => void
-  onReport: (m: MessageDto) => void
+  onReact?: (m: MessageDto) => void
+  onReport?: (m: MessageDto) => void
   onPhotos: (i: number) => void
   highlight?: string
   active: boolean
   productHref: (slug: string) => string
   seen: { upToSeq: number; at: string | null } | null
+  showAuthor?: boolean
 }) {
   const [menu, setMenu] = useState(false)
   // On touch, a tap on the bubble reveals its actions; a long press reacts.
@@ -323,7 +330,7 @@ function Bubble({
   const longPressed = useRef(false)
   const removed = m.status === "removed"
   const held = m.status === "held"
-  const canReact = !own && !removed && !held && m.status === "sent" && canInteract
+  const canReact = !!onReact && !own && !removed && !held && m.status === "sent" && canInteract
   const text = m.body ?? ""
 
   const startPress = () => {
@@ -332,7 +339,7 @@ function Bubble({
     press.current = window.setTimeout(() => {
       press.current = undefined
       longPressed.current = true
-      onReact(m)
+      onReact?.(m)
     }, 520)
   }
   const endPress = (e?: React.PointerEvent) => {
@@ -346,7 +353,7 @@ function Bubble({
       {m.safetyNotice && !own ? (
         <p className="mb-1.5 flex max-w-[min(32rem,85%)] items-start gap-1.5 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-ink">
           <ShieldWarningIcon className="mt-px size-3.5 shrink-0 text-ink-2" aria-hidden />
-          {safetyCopy[side]}
+          {side === "support" ? safetyCopy.brand : safetyCopy[side]}
         </p>
       ) : null}
       <div className={cn("flex w-full items-end gap-1.5", own ? "flex-row-reverse" : "flex-row")}>
@@ -362,12 +369,12 @@ function Bubble({
             <div className={cn(bubbleBase, radius(own, endsGroup), "border border-dashed border-line bg-transparent text-ink-2")}>
               <span className="mb-1 inline-flex h-5 items-center rounded-[4px] border border-white/10 px-1.5 text-[10px] text-ink-2">Held for review</span>
               {text ? <span className="block">{text}</span> : null}
-              <span className="mt-1 block text-xs text-ink-3">{heldExplanation(side)}</span>
+              <span className="mt-1 block text-xs text-ink-3">{heldExplanation(side === "support" ? "brand" : side)}</span>
             </div>
           ) : text ? (
             <div
               className={cn(bubbleBase, radius(own, endsGroup), own ? ownBubble : theirBubble, active && "ring-2 ring-violet")}
-              onDoubleClick={() => canReact && onReact(m)}
+              onDoubleClick={() => canReact && onReact?.(m)}
               onPointerDown={startPress}
               onPointerUp={endPress}
               onPointerLeave={() => endPress()}
@@ -400,7 +407,7 @@ function Bubble({
             </DropdownMenuTrigger>
             <DropdownMenuContent align={own ? "end" : "start"} className="min-w-40">
               {canReact ? (
-                <DropdownMenuItem onSelect={() => onReact(m)}>
+                <DropdownMenuItem onSelect={() => onReact?.(m)}>
                   <HeartIcon weight={m.reaction?.mine ? "fill" : "regular"} /> {m.reaction?.mine ? "Remove ♥" : "React ♥"}
                 </DropdownMenuItem>
               ) : null}
@@ -416,7 +423,7 @@ function Bubble({
                   <CopyIcon /> Copy
                 </DropdownMenuItem>
               ) : null}
-              {!own ? (
+              {!own && onReport ? (
                 <DropdownMenuItem onSelect={() => onReport(m)}>
                   <FlagIcon /> Report
                 </DropdownMenuItem>
@@ -428,6 +435,7 @@ function Bubble({
       {endsGroup || seen ? (
         <p className={cn("mt-1 px-1 text-[11px] text-ink-3", m.reaction?.mine || m.reaction?.theirs ? "mt-2.5" : "")}>
           <time dateTime={m.createdAt}>{timeLabel(m.createdAt)}</time>
+          {showAuthor && m.author ? <span className="ml-2">{m.author.name}</span> : null}
           {m.quickReply ? <span className="ml-2">Quick reply</span> : null}
           {seen ? <span className="ml-2 text-ink-2">{seenLabel(seen.at, m.createdAt)}</span> : null}
         </p>

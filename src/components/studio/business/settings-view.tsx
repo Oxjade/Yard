@@ -6,6 +6,7 @@ import { CheckIcon as Check, InfoIcon as Info, BankIcon as Landmark, ShieldCheck
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
+import Link from "next/link"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
@@ -18,6 +19,7 @@ import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
 import { errorMessage } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
 import { useServerSession } from "@/lib/session/use-server-session"
+import { AccountDetails } from "@/components/market/account/account-details"
 import { toast } from "sonner"
 import { categories } from "@/lib/data/catalog"
 import type { CategorySlug } from "@/lib/data/types"
@@ -42,6 +44,8 @@ const sections = [
   { id: "returns", label: "Returns" },
   { id: "team", label: "Team" },
   { id: "fees", label: "Fees" },
+  { id: "account", label: "Your account" },
+  { id: "help", label: "Help" },
 ] as const
 
 type SectionId = (typeof sections)[number]["id"]
@@ -123,6 +127,8 @@ export function SettingsView() {
             <ReturnsSection />
             <TeamSection />
             <FeesPanel />
+            <YourAccountSection />
+            <HelpSection />
           </div>
         ) : (
           <div role="status" aria-label="Loading settings">
@@ -642,5 +648,26 @@ function AccountForm({ country, onDone, live }: { country: CountryCode; onDone: 
         </DialogContent>
       </Dialog>
     </form>
+  )
+}
+
+/** The signed-in member's own name and email (their Yard account, shared with shopping). */
+function YourAccountSection() {
+  const member = useServerSession((s) => s.brand)
+  return (
+    <Panel id="account" title="Your account" description="Your own name and sign-in email. They're yours, not the brand's: the same account you shop with.">
+      {member ? <AccountDetails as="brand" /> : <p className="text-sm text-ink-2">Sign in to Studio to change your name or email.</p>}
+    </Panel>
+  )
+}
+
+/** Yard Support: the brand's thread with the Yard team. */
+function HelpSection() {
+  return (
+    <Panel id="help" title="Help" description="Questions about selling on Yard, your storefront, orders or payouts. Message @support and a person on the Yard team replies in Studio.">
+      <Button asChild variant="primary" size="sm">
+        <Link href="/studio/support">Contact Yard Support</Link>
+      </Button>
+    </Panel>
   )
 }

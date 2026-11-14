@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { connection, type NextRequest } from "next/server"
 import { z } from "zod"
 import { createAdminAccount } from "@/server/auth/admins"
@@ -6,7 +6,7 @@ import { processDueErasures } from "@/server/auth/erasure"
 import { findUserByEmail, userById } from "@/server/auth/identity"
 import { endSessionsForUser } from "@/server/auth/session"
 import { db, withTx } from "@/server/db"
-import { adminMembers, brandMembers, emailOutbox, sessions, users } from "@/server/db/schema"
+import { adminMembers, brandMembers, conversations, emailOutbox, mediaAssets, messages, notifications, sessions, users } from "@/server/db/schema"
 import { accountDeletions, adminMfa, authTokens, AUTH_TOKEN_PURPOSES, brandInvites, mfaRecoveryCodes, sessionAuth, userCredentials } from "@/server/db/schema/identity"
 import { getEnv } from "@/server/env"
 import { badRequest, notFound } from "@/server/http/errors"
@@ -26,6 +26,9 @@ import { route } from "@/server/http/route"
  * POST { op: "run-erasures" }                      → processDueErasures()
  * POST { op: "retire-admin", email }               → removes a kit admin's admin role, TOTP and sessions; suspends the user
  * POST { op: "expire-claim-links", email }         → backdates the pending founding-brand claim links sent to that address
+ * POST { op: "delete-support", email } | { …, demoUserId } | { …, brandId }
+ *                                                  → deletes that kit shopper's Yard Support thread, or a brand's thread
+ *                                                    whose brand-side messages all came from demo accounts (+ its notifications)
  */
 
 const TAG = "t_v3_"
@@ -44,6 +47,7 @@ const postBody = z.discriminatedUnion("op", [
   z.object({ op: z.literal("run-erasures") }),
   z.object({ op: z.literal("retire-admin"), email: z.string().max(254) }),
   z.object({ op: z.literal("expire-claim-links"), email: z.string().max(254) }),
+  z.object({ op: z.literal("delete-support"), email: z.string().max(254).optional(), brandId: z.string().max(64).optional(), demoUserId: z.string().max(64).optional() }),
 ])
 
 async function taggedUser(email?: string, userId?: string) {
@@ -117,6 +121,38 @@ const postHandler = route({ auth: "public", body: postBody, maxBody: 2 * 1024 },
     }
     case "run-erasures":
       return processDueErasures()
+    case "delete-support": {
+      let conv: { id: string } | undefined
+      if (body.email) {
+        const u = await taggedUser(body.email)
+        ;[conv] = await d.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.kind, "support"), eq(conversations.customerId, u.id))).limit(1)
+      } else if (body.demoUserId) {
+        // A seeded demo shopper (Ada) used by a kit: never a real account.
+        const u = await userById(body.demoUserId)
+        if (!u?.demo) throw notFound("No such demo account.")
+        ;[conv] = await d.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.kind, "support"), eq(conversations.customerId, u.id))).limit(1)
+      } else if (body.brandId) {
+        ;[conv] = await d.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.kind, "support"), eq(conversations.brandId, body.brandId), isNull(conversations.customerId))).limit(1)
+        if (conv) {
+          const [{ n }] = await d
+            .select({ n: sql<number>`count(*)::int` })
+            .from(messages)
+            .innerJoin(users, eq(users.id, messages.senderUserId))
+            .where(and(eq(messages.conversationId, conv.id), eq(messages.senderSide, "brand"), eq(users.demo, false)))
+          if (n > 0) throw badRequest({ brandId: "That thread has messages from real accounts." })
+        }
+      } else throw badRequest({ email: "Name the kit shopper or the brand." })
+      if (!conv) return { deleted: 0 }
+      const id = conv.id
+      await withTx(async () => {
+        const t = await db()
+        const media = await t.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.conversationId, id))
+        await t.delete(notifications).where(eq(notifications.eventKey, `support:${id}`))
+        await t.delete(conversations).where(eq(conversations.id, id))
+        if (media.length) await t.delete(mediaAssets).where(inArray(mediaAssets.id, media.map((m) => m.id)))
+      })
+      return { deleted: 1 }
+    }
     case "expire-claim-links": {
       // Claim links name an address that may have no account yet, so the tag is checked on the address itself.
       if (!tagged(body.email)) throw badRequest({ email: `Only addresses containing ${TAG}.` })

@@ -37,6 +37,8 @@ export function useLiveList<T extends ConversationsPage>(mutate: (fn: (cur: T | 
   useEffect(() => () => window.clearTimeout(timer.current), [])
   const apply = useCallback(
     (c: ConversationSummary | undefined, partial: boolean) => {
+      // The Yard Support thread has its own pinned row: it never joins a brand list.
+      if (c?.kind === "support") return
       if (!partial && c) {
         mutate((cur) => {
           if (!cur) return cur
@@ -58,7 +60,7 @@ export function useLiveList<T extends ConversationsPage>(mutate: (fn: (cur: T | 
 const filterLabel = { blocked: "Show blocked", archived: "Archived" } as const
 
 /** The shopper's conversation list (§6.2), styled like NotificationRow. */
-export function ConversationList({ selected, onSelect, filter, onFilter, q, onQuery, className }: { selected: string | null; onSelect: (c: ConversationSummary) => void; filter: "blocked" | "archived" | null; onFilter: (f: "blocked" | "archived" | null) => void; q: string; onQuery: (q: string) => void; className?: string }) {
+export function ConversationList({ selected, onSelect, filter, onFilter, q, onQuery, pinned, footer, className }: { selected: string | null; onSelect: (c: ConversationSummary) => void; filter: "blocked" | "archived" | null; onFilter: (f: "blocked" | "archived" | null) => void; q: string; onQuery: (q: string) => void; /** Shown above the list (the Yard Support thread) when no filter or search is on. */ pinned?: React.ReactNode; footer?: React.ReactNode; className?: string }) {
   const [term, setTerm] = useState(q)
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -119,6 +121,7 @@ export function ConversationList({ selected, onSelect, filter, onFilter, q, onQu
         </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {pinned && !filter && !q ? <div className="mb-0.5 border-b border-line-soft pb-0.5">{pinned}</div> : null}
         {isLoading ? (
           <div className="px-1 pt-2">
             <ListSkeleton rows={6} />
@@ -138,6 +141,8 @@ export function ConversationList({ selected, onSelect, filter, onFilter, q, onQu
             <EmptyState icon={ChatsCircleIcon} title="No blocked brands" body="Brands you block can't message you. They'd show here." />
           ) : filter === "archived" ? (
             <EmptyState icon={ChatsCircleIcon} title="No archived conversations" body="Archive a conversation from its menu to tidy your inbox. It comes back when someone writes." />
+          ) : pinned ? (
+            <p className="px-2.5 py-6 text-center text-xs text-ink-3">No conversations with brands yet. Ask a brand about sizing, stock or delivery from any storefront or product.</p>
           ) : (
             <EmptyState
               icon={ChatsCircleIcon}
@@ -179,6 +184,7 @@ export function ConversationList({ selected, onSelect, filter, onFilter, q, onQu
             </Button>
           </div>
         ) : null}
+        {footer && !filter && !q ? footer : null}
       </div>
     </div>
   )
@@ -223,4 +229,36 @@ function ConversationRow({ c, selected, onSelect }: { c: ConversationSummary; se
 
 export function Tag({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex h-5 items-center rounded-[3px] border border-white/10 px-1.5 text-[10px] text-ink-2">{children}</span>
+}
+
+/** The pinned Yard Support row (the list's own row style, with the Yard mark). */
+export function SupportRow({ c, selected, onSelect, mark }: { c: ConversationSummary; selected: boolean; onSelect: () => void; mark: React.ReactNode }) {
+  const unread = c.unread > 0
+  const mine = c.lastMessage?.side === "customer" || c.lastMessage?.side === "brand"
+  const preview = c.lastMessage ? `${mine ? "You: " : ""}${c.lastMessage.preview}` : "No messages yet"
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? "true" : undefined}
+      className={cn("flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left transition-colors focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
+    >
+      {mark}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className={cn("truncate text-sm text-ink", unread && "font-medium")}>Yard Support</span>
+          <span className="inline-flex h-5 items-center rounded-[3px] border border-white/10 px-1.5 text-[10px] text-ink-2">Pinned</span>
+          <span className="ml-auto shrink-0 pl-2 text-[11px] text-ink-3">{c.lastMessage ? relativeTime(c.lastMessage.at) : ""}</span>
+        </span>
+        <span className={cn("mt-0.5 line-clamp-1 text-[13px]", unread ? "font-medium text-ink" : "text-ink-2")}>{preview}</span>
+        {c.status === "resolved" ? (
+          <span className="mt-1.5 flex flex-wrap gap-1">
+            <Tag>Resolved</Tag>
+          </span>
+        ) : null}
+      </span>
+      <span aria-hidden className={cn("mt-1.5 size-2 shrink-0 rounded-full", unread && "bg-violet")} />
+      {unread ? <span className="sr-only">Unread</span> : null}
+    </button>
+  )
 }

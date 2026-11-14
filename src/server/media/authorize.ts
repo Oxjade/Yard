@@ -3,6 +3,7 @@ import { activeRestriction, assertBrandMayPublish, type AdminActor, type BrandAc
 import { db } from "../db"
 import { badRequest, forbidden, notFound, restricted } from "../http/errors"
 import { brandCanInteract, shopperCanInteract } from "../inbox/interact"
+import { asBrandConv } from "../inbox/dto"
 import { canAdmin, canBrand } from "@/lib/permissions"
 import type { UploadPurpose } from "@/lib/api/contracts/uploads"
 import { brands } from "../db/schema"
@@ -63,7 +64,9 @@ export async function authorizeShopperUpload(actor: ShopperActor, q: Query): Pro
     // The shopper's scope: their own conversations only; anything else doesn't exist for them.
     const c = await d.query.conversations.findFirst({ where: (cv, { and, eq }) => and(eq(cv.id, q.conversationId!), eq(cv.customerId, actor.userId)) })
     if (!c) throw notFound()
-    brandId = c.brandId
+    // A Yard Support thread: the shopper may always send Yard a photo (no brand to check).
+    if (c.kind === "support") return { purpose: "inbox_attachment", ownerKind: "user", ownerId: actor.userId, brandId: null, conversationId: c.id, targetBrandId: null }
+    brandId = c.brandId!
     conversationId = c.id
     locked = c.locked
   } else {
@@ -87,8 +90,12 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
     // Scoped to the ACTIVE brand: another brand's conversation is 404, whatever the user's other memberships.
     const c = await d.query.conversations.findFirst({ where: (cv, { and, eq }) => and(eq(cv.id, q.conversationId!), eq(cv.brandId, actor.brandId)) })
     if (!c) throw notFound()
+    // The brand's own Yard Support thread: any member may send Yard a photo.
+    if (c.kind === "support") return { ...base, purpose: "inbox_attachment", conversationId: c.id }
     if (!canBrand(actor.role, "inbox.reply")) throw forbidden()
-    const verdict = await brandCanInteract(actor, c)
+    const brandConv = asBrandConv(c)
+    if (!brandConv) throw notFound()
+    const verdict = await brandCanInteract(actor, brandConv)
     if (!verdict.ok) throw verdict.error
     return { ...base, purpose: "inbox_attachment", conversationId: c.id }
   }

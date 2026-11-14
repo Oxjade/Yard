@@ -63,4 +63,9 @@ export const inviteAcceptBody = z.object({ token, name: name.optional(), passwor
 
 export const deleteAccountBody = z.object({ confirm: z.literal("DELETE", { message: "Type DELETE to confirm." }) }).strict()
 
+/** PATCH /api/account: the display name, with the sign-up rules. */
+export const accountNameBody = z.object({ name }).strict()
+/** POST /api/account/email: the new address; the current password when the account has one. */
+export const accountEmailBody = z.object({ email, currentPassword: password.optional() }).strict()
+
 export const adminCreateBody = z.object({ email, name, role: z.enum(ADMIN_ROLES) }).strict()

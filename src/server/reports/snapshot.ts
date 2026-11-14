@@ -1,4 +1,5 @@
 import "server-only"
+import { asBrandConv } from "../inbox/dto"
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm"
 import { publicEvents, publicPlaces } from "../around"
 import { activeRestriction, brandListed, type Actor } from "../auth/dal"
@@ -64,7 +65,9 @@ async function brandName(id: string) {
 /** The conversation, if the actor is a party to it; the side they read it from. */
 async function partyConversation(actor: Actor, conversationId: string) {
   const d = await db()
-  const c = await d.query.conversations.findFirst({ where: (cv, { eq }) => eq(cv.id, conversationId) })
+  const row = await d.query.conversations.findFirst({ where: (cv, { eq }) => eq(cv.id, conversationId) })
+  // Yard Support threads (and Yard Support's own messages) can't be reported: Yard answers them.
+  const c = asBrandConv(row)
   if (!c) return null
   if (actor.kind === "shopper" && c.customerId === actor.userId) return { c, side: "customer" as const }
   if (actor.kind === "brand" && c.brandId === actor.brandId) return { c, side: "brand" as const }

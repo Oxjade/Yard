@@ -4,7 +4,7 @@ import { db, withTx } from "../db"
 import { accountRestrictions, auditLog, blocks, conversations, messageAttachments, messages, reports } from "../db/schema"
 import { conflict, notFound } from "../http/errors"
 import * as inbox from "../inbox"
-import { messageDtoFor, summaryFor } from "../inbox/dto"
+import { asBrandConv, messageDtoFor, summaryFor, type ConvRow } from "../inbox/dto"
 import { mediaSrc } from "../media"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
@@ -45,7 +45,8 @@ import {
 
 type ReportRow = typeof reports.$inferSelect
 type MessageRow = typeof messages.$inferSelect
-type ConversationRow = typeof conversations.$inferSelect
+/** Moderation covers shopper–brand conversations only: Yard Support threads are Yard's own. */
+type ConversationRow = ConvRow
 
 const LIMIT = 200
 const MESSAGE_SUBJECTS = ["message", "conversation"]
@@ -55,7 +56,10 @@ async function conversationsFor(ids: string[]) {
   const d = await db()
   const out = new Map<string, ConversationRow>()
   if (!ids.length) return out
-  for (const c of await d.select().from(conversations).where(inArray(conversations.id, [...new Set(ids)]))) out.set(c.id, c)
+  for (const row of await d.select().from(conversations).where(inArray(conversations.id, [...new Set(ids)]))) {
+    const c = asBrandConv(row)
+    if (c) out.set(c.id, c)
+  }
   return out
 }
 
@@ -266,7 +270,7 @@ export async function listMessages(tab: MessageTab): Promise<MessageListDto> {
   const d = await db()
   let items: MessageCaseDto[]
   if (tab === "held") items = await heldCases(await d.select().from(messages).where(eq(messages.status, "held")).orderBy(asc(messages.createdAt)).limit(LIMIT))
-  else if (tab === "spam") items = await spamCases(await d.select().from(conversations).where(inArray(conversations.spamState, ["suspected", "confirmed"])).orderBy(desc(conversations.lastMessageAt)).limit(LIMIT))
+  else if (tab === "spam") items = await spamCases((await d.select().from(conversations).where(and(eq(conversations.kind, "brand"), inArray(conversations.spamState, ["suspected", "confirmed"]))).orderBy(desc(conversations.lastMessageAt)).limit(LIMIT)).map(asBrandConv).filter((c): c is ConvRow => !!c))
   else if (tab === "closed")
     items = await reportCases(await d.select().from(reports).where(and(inArray(reports.subjectType, MESSAGE_SUBJECTS), inArray(reports.status, CLOSED))).orderBy(desc(reports.decidedAt)).limit(LIMIT))
   else
@@ -297,7 +301,7 @@ export async function messageCase(id: string): Promise<MessageCaseDto> {
   if (id.startsWith("cv_")) {
     // Only a conversation with a spam signal is a spam case. One a report names opens as that report's
     // case; any other conversation id is 404 (no browsing by id, and no signal implied that isn't there).
-    const c = await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, id) })
+    const c = asBrandConv(await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, id) }))
     if (!c) throw notFound()
     const [spam] = await spamCases([c])
     if (spam) return spam
@@ -436,7 +440,8 @@ export async function removeMessage(ctx: DecisionCtx, body: { id: string; reason
   if (!m) throw notFound()
   assertState(m.status !== "removed")
   await reportOnConversation(body.reportId, { messageId: m.id, conversationId: m.conversationId })
-  const c = (await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, m.conversationId) }))!
+  const c = asBrandConv(await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, m.conversationId) }))
+  if (!c) throw notFound()
   const [updated] = await d
     .update(messages)
     .set({ status: "removed", removedBy: ctx.actor.userId, removedReason: body.reason })
@@ -508,7 +513,8 @@ export async function releaseHeld(ctx: DecisionCtx, body: { id: string; reason: 
   // goes too, as I's release clears it: a delivered message must read as delivered to the inbox's
   // visibleTo, so a later removal shows on both sides.
   if (after?.status === "held") await d.update(messages).set({ status: "sent", heldReason: null }).where(eq(messages.id, m.id))
-  const c = (await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, m.conversationId) }))!
+  const c = asBrandConv(await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, m.conversationId) }))
+  if (!c) throw notFound()
   const brands = await brandMap([c.brandId])
   const people = await userMap([c.customerId])
   const entry = await audit(ctx, {
@@ -557,6 +563,6 @@ export async function lockConversation(ctx: DecisionCtx, body: { id: string; rea
     const [r] = await d.select().from(reports).where(eq(reports.id, body.reportId))
     if (r) return { item: (await reportCases([r]))[0], audit: entry }
   }
-  const fresh = (await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, c.id) }))!
+  const fresh = asBrandConv(await d.query.conversations.findFirst({ where: (x, { eq }) => eq(x.id, c.id) }))!
   return { item: (await spamCases([fresh]))[0] ?? null, audit: entry }
 }

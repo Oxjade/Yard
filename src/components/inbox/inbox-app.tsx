@@ -10,14 +10,17 @@ import type { ConversationSummary, Interaction } from "@/lib/api/contracts/inbox
 import { api } from "@/lib/api/client"
 import { errorMessage } from "@/lib/api/errors"
 import { conversationByBrand } from "@/lib/api/inbox"
+import { getSupportConversation } from "@/lib/api/support"
+import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { useApi } from "@/lib/api/use-api"
 import { brandByHandle } from "@/lib/data/brands"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
 import { useSearchParam, writeParams } from "@/hooks/use-search-param"
-import { ConversationList } from "./conversation-list"
+import { ConversationList, SupportRow } from "./conversation-list"
 import { useBelowLg } from "./hooks"
 import { ShopperThread } from "./shopper-thread"
+import { SupportMark, SupportThread } from "./support-thread"
 
 /** The page's loading shape: a list of 6 rows beside a thread of bubble bones. */
 export function InboxSkeleton() {
@@ -41,6 +44,8 @@ export function InboxSkeleton() {
  * The marketplace Inbox (§6.2). Query params: `?thread=<cv>` opens a conversation;
  * `?brand=<handle>[&product=&variant=|&order=]` opens that brand's conversation, or a new-thread
  * view whose first send creates it, with the product or order attached as a removable chip.
+ * `?support=1[&order=<order id>&orderRef=<reference>]` opens the Yard Support thread (pinned at the
+ * top of the list once it exists), with the order attached as a chip.
  * Desktop: a 360 px list and the thread. Phone: the list, and the thread as a full-screen layer.
  */
 export function InboxApp() {
@@ -50,6 +55,8 @@ export function InboxApp() {
   const productParam = useSearchParam("product")
   const variantParam = useSearchParam("variant")
   const orderParam = useSearchParam("order")
+  const supportParam = useSearchParam("support") === "1"
+  const orderRefParam = useSearchParam("orderRef")
   const filterParam = useSearchParam("filter")
   const qParam = useSearchParam("q") ?? ""
   const filter = filterParam === "blocked" || filterParam === "archived" ? filterParam : null
@@ -74,7 +81,7 @@ export function InboxApp() {
   const onSelect = useCallback(
     (c: ConversationSummary) => {
       remember(c.id, c.brand.id)
-      writeParams({ thread: c.id, brand: null, product: null, variant: null, order: null })
+      writeParams({ thread: c.id, brand: null, product: null, variant: null, order: null, support: null, orderRef: null })
     },
     [remember],
   )
@@ -87,7 +94,21 @@ export function InboxApp() {
     },
     [brandId, remember],
   )
-  const back = useCallback(() => writeParams({ thread: null, brand: null, product: null, variant: null, order: null }), [])
+  const back = useCallback(() => writeParams({ thread: null, brand: null, product: null, variant: null, order: null, support: null, orderRef: null }), [])
+
+  // The Yard Support thread: pinned above the brand conversations once it exists.
+  const supportQuery = useApi(session.shopper ? `inbox:support:${session.shopper.id}` : null, () => getSupportConversation("shopper"), { revalidateOnFocus: true })
+  const supportConv = supportQuery.data?.conversation ?? null
+  const mutateSupport = supportQuery.mutate
+  const applySupport = useCallback(
+    (c: ConversationSummary | undefined) => {
+      if (c?.kind === "support") mutateSupport(() => ({ conversation: c }))
+    },
+    [mutateSupport],
+  )
+  useRealtimeEvent("message.created", (p, meta) => (meta.partial ? void supportQuery.revalidate() : applySupport(p.conversation)))
+  useRealtimeEvent("conversation.updated", (p, meta) => (meta.partial ? void supportQuery.revalidate() : applySupport(p.conversation)))
+  const openSupport = useCallback(() => writeParams({ support: "1", thread: null, brand: null, product: null, variant: null }), [])
 
   if (session.status === "loading" || (session.status === "ready" && !session.shopper)) {
     // Signed in on this device but the server session is still being restored (SessionSync).
@@ -111,10 +132,37 @@ export function InboxApp() {
   const threadBrandId = thread ? (known[thread] ?? (byBrand?.conversation?.id === thread ? byBrand.conversation.brand.id : null)) : (brand?.id ?? null)
   const unknownBrand = !!brandHandle && !brand && !thread && (sampleOn || !!liveBrandQuery.error)
   // A stale ?brand= link says so in the pane (desktop) or the phone layer, never fails silently.
-  const open = !!thread || !!brand || unknownBrand
+  const open = supportParam || !!thread || !!brand || unknownBrand
 
   let threadView: React.ReactNode = null
-  if (unknownBrand) {
+  if (supportParam) {
+    threadView =
+      supportQuery.error && !supportQuery.data ? (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" role="alert">
+          <p className="text-sm text-ink">Couldn&apos;t open Yard Support.</p>
+          <p className="text-xs text-ink-2">{errorMessage(supportQuery.error)}</p>
+          <Button size="sm" variant="secondary" onClick={() => void supportQuery.revalidate()}>
+            <ArrowCounterClockwiseIcon /> Retry
+          </Button>
+        </div>
+      ) : !supportQuery.data ? (
+        <div className="p-4">
+          <ListSkeleton rows={2} />
+        </div>
+      ) : (
+        <SupportThread
+          key="support"
+          party="shopper"
+          conversationId={supportConv?.id ?? null}
+          initialOrder={orderParam ? { orderId: orderParam, reference: orderRefParam ?? orderParam } : null}
+          onCreated={(c) => mutateSupport(() => ({ conversation: c }))}
+          onOrderSent={() => writeParams({ order: null, orderRef: null })}
+          onConversation={applySupport}
+          onBack={phone ? back : undefined}
+          layer={phone}
+        />
+      )
+  } else if (unknownBrand) {
     threadView = (
       <div className="flex h-full flex-col">
         {phone ? (
@@ -180,6 +228,17 @@ export function InboxApp() {
       onFilter={(f) => writeParams({ filter: f })}
       q={qParam}
       onQuery={(q) => writeParams({ q: q || null })}
+      pinned={supportConv && supportConv.lastMessage ? <SupportRow c={supportConv} selected={supportParam} onSelect={openSupport} mark={<SupportMark />} /> : null}
+      footer={
+        supportConv?.lastMessage ? null : (
+          <p className="px-2.5 pt-4 pb-2 text-xs text-ink-3">
+            Need help with an order or your account?{" "}
+            <button type="button" onClick={openSupport} className="text-violet underline-offset-4 hover:underline">
+              Message Yard Support
+            </button>
+          </p>
+        )
+      }
       className="h-full"
     />
   )

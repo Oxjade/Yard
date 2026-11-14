@@ -60,7 +60,7 @@ const list = (ids: string[]) =>
   )
 
 type Plan = {
-  conversations: { id: string; brandId: string; customerId: string }[]
+  conversations: { id: string; brandId: string | null; customerId: string | null }[]
   media: { id: string; storagePath: string }[]
   reports: string[]
   notifications: { id: string; kind: Recipient["kind"]; rid: string; key: string }[]
@@ -261,7 +261,7 @@ export async function clearTestData(actor: AdminActor, prefix: string, opts: Opt
     // Open tabs: drop the deleted notifications, and refetch lists that showed a deleted conversation.
     // (Published after the replay rows are gone, so these two never match the delete above.)
     await announceRemovedNotifications(plan.notifications.map((n) => ({ kind: n.kind, id: n.rid, key: n.key })))
-    const listChannels = new Set(plan.conversations.flatMap((c) => [channels.brand(c.brandId), channels.user(c.customerId)]))
+    const listChannels = new Set(plan.conversations.flatMap((c) => [...(c.brandId ? [channels.brand(c.brandId)] : []), ...(c.customerId ? [channels.user(c.customerId)] : [])]))
     for (const ch of listChannels) await publish(ch, "resync", {})
 
     const counts = {

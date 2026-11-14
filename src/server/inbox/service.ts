@@ -45,6 +45,8 @@ import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { dailyHit, hit, recordAbuse } from "../security/rate-limit"
 import {
+  asBrandConv,
+  brandKindSql,
   blockedByBrandSql,
   blockedByCustomerSql,
   iso,
@@ -85,9 +87,9 @@ export async function loadShopperConversation(userId: string, id: string) {
   const [row] = await d
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.customerId, userId)))
+    .where(and(eq(conversations.id, id), eq(conversations.customerId, userId), brandKindSql))
     .limit(1)
-  return row ?? null
+  return asBrandConv(row)
 }
 
 /** A conversation of the active brand that the brand can see (one delivered message at least). */
@@ -96,9 +98,9 @@ export async function loadBrandConversation(brandId: string, id: string) {
   const [row] = await d
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.brandId, brandId), gt(conversations.lastMessageSeq, 0)))
+    .where(and(eq(conversations.id, id), eq(conversations.brandId, brandId), gt(conversations.lastMessageSeq, 0), brandKindSql))
     .limit(1)
-  return row ?? null
+  return asBrandConv(row)
 }
 
 /* ------------------------------------------------------------------ lists */
@@ -152,7 +154,7 @@ function studioFilter(f: StudioFilter): SQL {
   }
 }
 
-const studioBase = (brandId: string) => and(eq(conversations.brandId, brandId), gt(conversations.lastMessageSeq, 0))
+const studioBase = (brandId: string) => and(eq(conversations.brandId, brandId), gt(conversations.lastMessageSeq, 0), brandKindSql)
 
 export async function studioCounts(brandId: string) {
   const d = await db()
@@ -176,7 +178,7 @@ export async function listStudio(actor: BrandActor, q: { q?: string; filter?: St
   return { ...result, counts: await studioCounts(actor.brandId) }
 }
 
-/** Conversations with unread messages for a shopper (the badge, §4.3). */
+/** Conversations with unread messages for a shopper (the badge, §4.3), their Yard Support thread included. */
 export async function unreadShopper(userId: string) {
   const d = await db()
   const [r] = await d
@@ -320,7 +322,7 @@ async function productSnapshotOf(productId: string, variantId?: string) {
   return { slug: live.slug, name: live.title, image: live.images[0]?.src ?? "", price: { amount: v?.priceMinor ?? live.priceMinor, currency: live.currency }, variantLabel: v?.label, brandId: live.brandId }
 }
 
-async function orderSnapshotOf(orderRefId: string) {
+export async function orderSnapshotOf(orderRefId: string) {
   const d = await db()
   const [o] = await d.select().from(orderRefs).where(eq(orderRefs.id, orderRefId)).limit(1)
   if (!o) return null
@@ -344,14 +346,14 @@ async function checkAttachments(actor: ShopperActor | BrandActor, ids: string[],
   if (Object.keys(fields).length) throw badRequest(fields)
 }
 
-async function bindAttachments(messageId: string, conversationId: string, ids: string[]) {
+export async function bindAttachments(messageId: string, conversationId: string, ids: string[]) {
   if (!ids.length) return
   const d = await db()
   await d.update(mediaAssets).set({ conversationId, attachedAt: new Date() }).where(inArray(mediaAssets.id, ids))
   await d.insert(messageAttachments).values(ids.map((mediaId, position) => ({ id: newId("att"), messageId, mediaId, position })))
 }
 
-async function insertSystemLine(conversationId: string, text: string) {
+export async function insertSystemLine(conversationId: string, text: string) {
   const d = await db()
   const [row] = await d
     .insert(messages)
@@ -508,7 +510,7 @@ export async function sendAsShopper(actor: ShopperActor, body: SendMessageBody, 
       .from(conversations)
       .where(and(eq(conversations.brandId, body.brandId), eq(conversations.customerId, actor.userId)))
       .limit(1)
-    conv = existing ?? null
+    conv = asBrandConv(existing)
   } else {
     throw badRequest({ conversationId: "Choose a conversation or a brand to message." })
   }
@@ -546,11 +548,12 @@ export async function sendAsShopper(actor: ShopperActor, body: SendMessageBody, 
           topic: body.topic ?? null,
         })
         .onConflictDoNothing()
-      ;[c] = await tx
+      const [created] = await tx
         .select()
         .from(conversations)
         .where(and(eq(conversations.brandId, brandId), eq(conversations.customerId, actor.userId)))
         .limit(1)
+      c = asBrandConv(created)
       if (!c) throw notFound("We couldn't find that brand.")
       await tx
         .insert(conversationParticipants)
@@ -833,11 +836,12 @@ export async function shopperBlock(actor: ShopperActor, brandId: string, on: boo
     if (!b) throw notFound("We couldn't find that brand.")
     if (on) await d.insert(blocks).values({ id: newId("blk"), blockerKind: "shopper", blockerId: actor.userId, blockedKind: "brand", blockedId: brandId, createdBy: actor.userId }).onConflictDoNothing()
     else await d.delete(blocks).where(and(eq(blocks.blockerKind, "shopper"), eq(blocks.blockerId, actor.userId), eq(blocks.blockedKind, "brand"), eq(blocks.blockedId, brandId)))
-    const [conv] = await d
+    const [row] = await d
       .select()
       .from(conversations)
       .where(and(eq(conversations.brandId, brandId), eq(conversations.customerId, actor.userId)))
       .limit(1)
+    const conv = asBrandConv(row)
     if (conv) {
       await publishConversation(conv, ["customer", "brand"])
       await publishUnread("customer", conv)
@@ -851,11 +855,12 @@ export async function shopperBlock(actor: ShopperActor, brandId: string, on: boo
 export async function studioBlock(actor: BrandActor, userId: string, on: boolean, ipHash: string | null) {
   return withTx(async () => {
     const d = await db()
-    const [conv] = await d
+    const [row] = await d
       .select()
       .from(conversations)
       .where(and(eq(conversations.brandId, actor.brandId), eq(conversations.customerId, userId), gt(conversations.lastMessageSeq, 0)))
       .limit(1)
+    const conv = asBrandConv(row)
     if (!conv) throw notFound()
     if (on) {
       const inserted = await d.insert(blocks).values({ id: newId("blk"), blockerKind: "brand", blockerId: actor.brandId, blockedKind: "shopper", blockedId: userId, createdBy: actor.userId }).onConflictDoNothing().returning({ id: blocks.id })
@@ -1044,11 +1049,12 @@ export async function byBrand(actor: ShopperActor, brandId: string) {
   const d = await db()
   const [b] = await d.select({ id: brands.id }).from(brands).where(eq(brands.id, brandId)).limit(1)
   if (!b) throw notFound("We couldn't find that brand.")
-  const [conv] = await d
+  const [row] = await d
     .select()
     .from(conversations)
     .where(and(eq(conversations.brandId, brandId), eq(conversations.customerId, actor.userId)))
     .limit(1)
+  const conv = asBrandConv(row)
   const gate = await shopperCanInteract(actor, { brandId, locked: conv?.locked })
   const reason = gate.ok ? undefined : gate.reason === "blocked_by_them" ? "blocked" : gate.reason === "blocked_by_me" ? "blocked_by_me" : gate.reason === "brand_unavailable" ? "brand_unavailable" : "restricted"
   return {
@@ -1073,8 +1079,11 @@ export async function setSettings(userId: string, readReceipts: boolean) {
     // Receipts are reciprocal: brands with this shopper's thread open re-read it, so a "Seen"
     // already on their screen goes (or comes back). The event carries the summary only.
     if (before && before.on !== readReceipts) {
-      const convs = await d.select().from(conversations).where(eq(conversations.customerId, userId))
-      for (const c of convs) await publishConversation(c, ["brand"])
+      const convs = await d.select().from(conversations).where(and(eq(conversations.customerId, userId), brandKindSql))
+      for (const row of convs) {
+        const c = asBrandConv(row)
+        if (c) await publishConversation(c, ["brand"])
+      }
     }
     return { readReceipts }
   })
@@ -1086,7 +1095,9 @@ export async function setSettings(userId: string, readReceipts: boolean) {
 export async function publishSystemNotice(conversationId: string, text: string) {
   await withTx(async () => {
     const d = await db()
-    const [conv] = await d.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1)
+    const [row] = await d.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1)
+    // Yard Support threads are answered by Yard itself: moderation notices never go there.
+    const conv = asBrandConv(row)
     if (!conv) throw notFound()
     const line = await insertSystemLine(conv.id, text)
     await publishMessage(conv, line.id, "message.created", conv.lastMessageSeq > 0 ? ["customer", "brand"] : ["customer"])
@@ -1101,7 +1112,9 @@ export async function releaseHeldMessage(messageId: string) {
     const [m] = await d.select().from(messages).where(eq(messages.id, messageId)).limit(1)
     if (!m) throw notFound()
     if (m.status !== "held") throw conflict("Someone already decided this — refreshed.")
-    const [conv] = await d.select().from(conversations).where(eq(conversations.id, m.conversationId)).limit(1)
+    const [row] = await d.select().from(conversations).where(eq(conversations.id, m.conversationId)).limit(1)
+    const conv = asBrandConv(row)
+    if (!conv) throw notFound()
     const [released] = await d.update(messages).set({ status: "sent", heldReason: null }).where(eq(messages.id, messageId)).returning()
     let c = conv
     if (released.senderSide === "customer" && c.status === "resolved") {

@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowCounterClockwiseIcon as RotateCcw, CaretLeftIcon as ChevronLeft, CheckCircleIcon as CheckCircle, ArrowSquareOutIcon as ExternalLink, InfoIcon as Info, StackIcon as PackageSearch } from "@phosphor-icons/react"
 import { agoText } from "@/components/market/ago-text"
-import { MessageAboutOrderLink } from "@/components/inbox/entry"
+import { MessageAboutOrderLink, MessageSupportButton } from "@/components/inbox/entry"
 import { BrandMark } from "@/components/market/brand-mark"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -319,6 +319,8 @@ export function OrderDetail({ id }: { id: string }) {
                 record Yard can act on stays in the order's own workflows (§6.2, §7.4). */}
             <div className="mt-4 grid gap-1">
               <MessageAboutOrderLink orderId={order.id} brand={brand} className="-my-1 justify-self-start" />
+              {/* Help from Yard itself: the Yard Support thread, with this order attached. */}
+              {!sample ? <MessageSupportButton order={{ id: order.id, reference: order.reference }} label="Get help from Yard" variant="ghost" size="sm" className="-my-1 -ml-3 justify-self-start" /> : null}
               <p className="text-xs leading-relaxed text-ink-3">For returns, refunds or a missing parcel, use the options above — they keep a record Yard can act on.</p>
             </div>
             <dl className="mt-5 grid gap-4 border-t border-line-soft pt-5 text-sm">

@@ -7,6 +7,7 @@ import { canAdmin, type AdminPermission } from "@/lib/permissions"
 import type { QueueCountsDto } from "@/lib/api/contracts/admin"
 import { OPEN_REPORT } from "./shared"
 import { heldNoteCount, lateOrderCount } from "./delivery"
+import { supportCounts } from "../support/service"
 
 /** The view permission behind each queue count (§8.1, §2.7). */
 export const queuePermission: Record<keyof QueueCountsDto, AdminPermission> = {
@@ -16,6 +17,7 @@ export const queuePermission: Record<keyof QueueCountsDto, AdminPermission> = {
   charts: "charts.review",
   delivery: "shipping.view",
   abuse: "abuse.view",
+  support: "support.manage",
 }
 
 const n = (rows: { n: number | string }[]) => Number(rows.at(0)?.n ?? 0)
@@ -48,7 +50,8 @@ export async function allQueueCounts(): Promise<Required<QueueCountsDto>> {
     d.select({ n: sql<number>`count(*)::int` }).from(abuseAlerts).where(eq(abuseAlerts.status, "open")).then(n),
     heldNoteCount(),
   ])
-  return { messages: msgReports + held, content: posts, places: placeReports + places + events, charts: flags + freezes, delivery: complaints + late + heldNotes, abuse: alerts }
+  const support = await supportCounts()
+  return { messages: msgReports + held, content: posts, places: placeReports + places + events, charts: flags + freezes, delivery: complaints + late + heldNotes, abuse: alerts, support: support.unread }
 }
 
 /** GET /api/admin/queues/counts: only the counts this admin's role may see; the others are left out. */

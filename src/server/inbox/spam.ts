@@ -198,7 +198,7 @@ export async function scoreShopperMessage(input: { userId: string; accountCreate
       .limit(300)
     const h = normalisedHash(text)
     const brands = new Set([input.brandId])
-    for (const r of recent) if (r.body && normalisedHash(r.body) === h) brands.add(r.brandId)
+    for (const r of recent) if (r.body && r.brandId && normalisedHash(r.body) === h) brands.add(r.brandId)
     if (brands.size >= 3) add(s, "spam_duplicate", 4)
   }
   if (input.conversationId) {

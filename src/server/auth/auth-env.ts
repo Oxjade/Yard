@@ -86,6 +86,7 @@ export const authLinks = {
   magicLink: (token: string) => `${getEnv().publicUrl}/auth/magic?token=${encodeURIComponent(token)}`,
   invite: (token: string) => `${getEnv().publicUrl}/auth/invite?token=${encodeURIComponent(token)}`,
   claim: (token: string) => `${getEnv().publicUrl}/auth/claim?token=${encodeURIComponent(token)}`,
+  changeEmail: (token: string) => `${getEnv().publicUrl}/auth/change-email?token=${encodeURIComponent(token)}`,
 }
 
 export const oauthRedirectUri = (provider: "google" | "apple" | "auth0") => `${getEnv().publicUrl}/api/auth/oauth/${provider}/callback`

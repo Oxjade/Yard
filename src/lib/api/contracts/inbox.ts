@@ -45,14 +45,22 @@ export type Interaction = z.infer<typeof interaction>
 
 export const brandMark = z.object({ text: z.string(), style: z.string() })
 
+/** Yard Support as a conversation's counterpart (the `brand` of every support conversation summary). */
+export const YARD_SUPPORT = { id: "yard_support", handle: "support", name: "Yard Support", mark: { text: "Y", style: "yard" }, verified: true } as const
+
 export const conversationSummary = z.object({
   id: z.string(),
+  /**
+   * "brand": a conversation with a brand. "support": the viewer's Yard Support thread, whose
+   * `brand` is always YARD_SUPPORT (Yard's own team) and whose replies come from side "support".
+   */
+  kind: z.enum(["brand", "support"]).default("brand"),
   brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), mark: brandMark, verified: z.boolean() }),
   customer: z.object({ id: z.string(), name: z.string() }).optional(),
   status: z.enum(["open", "resolved"]),
   spamState: z.enum(["none", "suspected", "confirmed"]),
   locked: z.boolean(),
-  lastMessage: z.object({ preview: z.string(), at: z.string(), side: z.enum(["customer", "brand", "system"]), held: z.boolean().optional() }).nullable(),
+  lastMessage: z.object({ preview: z.string(), at: z.string(), side: z.enum(["customer", "brand", "system", "support"]), held: z.boolean().optional() }).nullable(),
   unread: z.number(),
   markedUnread: z.boolean(),
   archived: z.boolean(),
@@ -69,7 +77,8 @@ export const messageDto = z.object({
   id: z.string(),
   seq: z.number(),
   conversationId: z.string(),
-  side: z.enum(["customer", "brand", "system"]),
+  /** "support": written by Yard Support (one of Yard's team; never named to shoppers or brands). */
+  side: z.enum(["customer", "brand", "system", "support"]),
   kind: z.enum(["text", "product", "order", "image", "system"]),
   /** Null for a message Yard removed ("Message removed by Yard."). */
   body: z.string().nullable().optional(),
@@ -85,6 +94,8 @@ export const messageDto = z.object({
   reaction: z.object({ mine: z.boolean(), theirs: z.boolean() }).optional(),
   /** Sent from a quick reply (Studio only). */
   quickReply: z.boolean().optional(),
+  /** Admin views of Yard Support threads only: the admin who wrote a "support" message. */
+  author: z.object({ id: z.string(), name: z.string() }).optional(),
   createdAt: z.string(),
   clientId: z.string(),
 })
@@ -239,8 +250,8 @@ export const inboxRealtimeEvents = {
   "message.created": z.object({ message: messageDto, conversation: conversationSummary.optional() }),
   "message.updated": z.object({ message: messageDto, conversation: conversationSummary.optional() }),
   "conversation.updated": z.object({ conversation: conversationSummary }),
-  typing: z.object({ conversationId: z.string(), side: z.enum(["customer", "brand"]), until: z.string() }),
-  read: z.object({ conversationId: z.string(), side: z.enum(["customer", "brand"]), upToSeq: z.number(), at: z.string() }),
+  typing: z.object({ conversationId: z.string(), side: z.enum(["customer", "brand", "support"]), until: z.string() }),
+  read: z.object({ conversationId: z.string(), side: z.enum(["customer", "brand", "support"]), upToSeq: z.number(), at: z.string() }),
   "unread.counts": unreadDto,
 }
 

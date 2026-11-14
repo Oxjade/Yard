@@ -2,6 +2,7 @@ import { boolean, check, index, integer, jsonb, pgTable, primaryKey, smallint, t
 import {
   BLOCKED_KINDS,
   BLOCKER_KINDS,
+  CONVERSATION_KINDS,
   CONVERSATION_ORIGINS,
   CONVERSATION_STATUSES,
   CONVERSATION_TOPICS,
@@ -17,17 +18,20 @@ import { mediaAssets } from "./media"
 import { orderRefs } from "./orders"
 import { users } from "./people"
 
-/** One conversation per (brand, shopper) pair (§3.3, §6.2). */
+/**
+ * One conversation per (brand, shopper) pair (§3.3, §6.2), kind "brand". Yard Support threads
+ * (kind "support") reuse the table: one per shopper (customer_id set, brand_id null) and one per
+ * brand (brand_id set, customer_id null); Yard's side is the "support" participant.
+ */
 export const conversations = pgTable(
   "conversations",
   {
     id: text("id").primaryKey(),
-    brandId: text("brand_id")
-      .notNull()
-      .references(() => brands.id),
-    customerId: text("customer_id")
-      .notNull()
-      .references(() => users.id),
+    kind: text("kind").notNull().default("brand"),
+    brandId: text("brand_id").references(() => brands.id),
+    customerId: text("customer_id").references(() => users.id),
+    /** Support only: the admin who took the conversation (never shown to the shopper or brand). */
+    assignedAdminId: text("assigned_admin_id").references(() => users.id),
     status: text("status").notNull().default("open"),
     spamState: text("spam_state").notNull().default("none"),
     locked: boolean("locked").notNull().default(false),
@@ -44,6 +48,11 @@ export const conversations = pgTable(
   },
   (t) => [
     uniqueIndex("conversations_brand_customer_ux").on(t.brandId, t.customerId),
+    uniqueIndex("conversations_support_shopper_ux").on(t.customerId).where(raw("kind = 'support' and brand_id is null")),
+    uniqueIndex("conversations_support_brand_ux").on(t.brandId).where(raw("kind = 'support' and customer_id is null")),
+    index("conversations_support_queue_ix").on(t.kind, t.status, t.lastMessageAt.desc()),
+    oneOf("conversations_kind_ck", "kind", CONVERSATION_KINDS),
+    check("conversations_parties_ck", raw("(kind = 'brand' and brand_id is not null and customer_id is not null) or (kind = 'support' and (brand_id is null) <> (customer_id is null))")),
     index("conversations_brand_list_ix").on(t.brandId, t.status, t.lastMessageAt.desc()),
     index("conversations_customer_list_ix").on(t.customerId, t.lastMessageAt.desc()),
     oneOf("conversations_status_ck", "status", CONVERSATION_STATUSES),

@@ -32,6 +32,7 @@ import {
   ShieldWarningIcon,
   CalendarXIcon,
   ProhibitIcon,
+  LifebuoyIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
 import { useLiveMoney } from "@/components/admin/finance/live-counts"
@@ -270,6 +271,7 @@ const search: ShellSearch = {
     { label: "Delivery complaints", href: "/admin/delivery?tab=complaints", icon: TruckIcon, hint: "Marketplace" },
     { label: "Holidays", href: "/admin/delivery?tab=holidays", icon: CalendarXIcon, hint: "Marketplace" },
     { label: "Abuse", href: "/admin/users?tab=abuse", icon: ProhibitIcon, hint: "Marketplace" },
+    { label: "Support queue", href: "/admin/support", icon: LifebuoyIcon, hint: "Marketplace" },
     { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
   ],
   Results: AdminAllResults,
@@ -398,6 +400,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
         // A real admin sees Orders with shipping.view, as GET /api/orders/admin checks; demo and signed-out keep it.
         ...when(!money.live || sees("shipping.view"), { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon }),
         ...when(sees("shipping.view"), { href: "/admin/delivery", label: "Delivery", icon: TruckIcon, badge: q(c?.delivery), badgeLabel: "open issues", tone: "attention" }),
+        ...when(sees("support.manage"), { href: "/admin/support", label: "Support", icon: LifebuoyIcon, badge: q(c?.support), badgeLabel: "unread", tone: "attention" }),
       ],
     },
     {

@@ -16,7 +16,8 @@ import { sessions, users } from "./people"
 export const AUTH_METHODS = ["demo", "password", "google", "apple", "auth0", "magic_link", "invite", "email_verification", "yard_setup", "claim"] as const
 export const OAUTH_PROVIDERS = ["google", "apple", "auth0"] as const
 export const OAUTH_MODES = ["signin", "link", "reauth"] as const
-export const AUTH_TOKEN_PURPOSES = ["verify_email", "reset_password", "magic_link", "mfa_challenge"] as const
+/** change_email: a link sent to the NEW address; meta { email: new, from: old }. */
+export const AUTH_TOKEN_PURPOSES = ["verify_email", "reset_password", "magic_link", "mfa_challenge", "change_email"] as const
 /** Native apps that sign in through a Custom Tab / ASWebAuthenticationSession hand-off. */
 export const APP_CLIENTS = ["android", "ios"] as const
 export const INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const

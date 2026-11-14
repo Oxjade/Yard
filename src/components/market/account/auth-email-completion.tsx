@@ -10,7 +10,7 @@ import { getServerSessionState, refreshServerSession } from "@/lib/session/use-s
 import { useSession, type SessionUser } from "@/lib/stores/session"
 import { Button } from "@/components/ui/button"
 
-type LinkMode = "verify" | "magic"
+type LinkMode = "verify" | "magic" | "change-email"
 type LinkResult = { token: string; state: "success" | "error"; message: string; signedIn?: boolean }
 
 type VerifyResponse =
@@ -28,6 +28,16 @@ const completions = new Map<string, Promise<LinkResult>>()
 
 async function complete(mode: LinkMode, token: string): Promise<LinkResult> {
   try {
+    if (mode === "change-email") {
+      // No session needed: the link may be opened on another device. Signed in here, the
+      // account's copy in this browser follows the new address.
+      const response = await api<{ status: "changed"; email: string }>("/api/auth/change-email/confirm", { body: { token } })
+      await refreshServerSession()
+      const shopper = getServerSessionState().shopper
+      const local = useSession.getState()
+      if (shopper && local.user?.id === shopper.id) local.updateProfile({ name: shopper.name, email: shopper.email })
+      return { token, state: "success", signedIn: !!shopper || !!getServerSessionState().brand, message: `Your Yard email is now ${response.email}. We told your old address.` }
+    }
     if (mode === "verify") {
       const response = await api<VerifyResponse>("/api/auth/verify-email/confirm", { body: { token } })
       if (!response.signedIn) return { token, state: "success", signedIn: false, message: "Your email is verified. Sign in to continue." }
@@ -43,7 +53,7 @@ async function complete(mode: LinkMode, token: string): Promise<LinkResult> {
   } catch (error) {
     // A link that was already spent in this browser (another tab, a reload before the token
     // left the URL) has done its job if the session already holds a real shopper.
-    if (error instanceof ApiError && error.status === 400) {
+    if (mode !== "change-email" && error instanceof ApiError && error.status === 400) {
       await refreshServerSession()
       const shopper = getServerSessionState().shopper
       if (shopper && !shopper.demo) return { token, state: "success", signedIn: true, message: "This link can’t be used again, but you’re already signed in." }
@@ -96,7 +106,8 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
       // already has an account is sent a sign-in link instead of a verification one.
       if (outcome.state === "success" && outcome.signedIn) {
         const back = takeOnboardingAuthReturn()
-        if (back) setContinueTo(back)
+        if (mode === "change-email") setContinueTo(getServerSessionState().shopper ? "/you/settings" : "/studio/settings")
+        else if (back) setContinueTo(back)
         else void resumableApplication().then((resume) => { if (active && resume) setContinueTo(ONBOARDING_PATH) })
       }
       // Keep the spent token out of history, screenshots and shared URLs.
@@ -109,7 +120,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
     return () => { active = false }
   }, [mode, pathname, token])
 
-  const title = mode === "verify" ? "Verify your email" : "Sign-in link"
+  const title = mode === "verify" ? "Verify your email" : mode === "change-email" ? "Confirm your new email" : "Sign-in link"
   return (
     <>
       <h1 className="font-display text-display-lg text-ink">{title}</h1>
@@ -119,7 +130,7 @@ export function AuthEmailCompletion({ mode }: { mode: LinkMode }) {
       {current?.state === "error" ? (
         <Button asChild variant="primary" className="mt-6"><Link href="/sign-in">Return to sign in</Link></Button>
       ) : current?.state === "success" ? (
-        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : continueTo}>{current.signedIn === false ? "Sign in" : continueTo === ONBOARDING_PATH ? "Continue your brand application" : "Continue to your account"}</Link></Button>
+        <Button asChild variant="primary" className="mt-6"><Link href={current.signedIn === false ? "/sign-in" : continueTo}>{current.signedIn === false ? "Sign in" : continueTo === ONBOARDING_PATH ? "Continue your brand application" : mode === "change-email" ? "Back to settings" : "Continue to your account"}</Link></Button>
       ) : null}
     </>
   )

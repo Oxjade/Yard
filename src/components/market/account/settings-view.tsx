@@ -5,12 +5,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { BellRingingIcon as BellRing, CheckIcon as Check, SignOutIcon as LogOut } from "@phosphor-icons/react"
 import { toast } from "sonner"
-import { useAsyncAction } from "@/hooks/use-async-action"
 import { Notice } from "@/components/market/checkout/fields"
 import { LocaleSelect } from "@/components/market/locale-select"
 import { SectionHeader } from "@/components/market/section-header"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { countries, currencies } from "@/config/markets"
@@ -20,6 +18,8 @@ import { useSaved } from "@/lib/stores/saved"
 import { useSession, type NotificationPrefs } from "@/lib/stores/session"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { ReadReceiptsSetting } from "@/components/inbox/read-receipts-setting"
+import { MessageSupportButton } from "@/components/inbox/entry"
+import { AccountDetails } from "./account-details"
 import { InterestEditor } from "./interest-editor"
 import { YouNav } from "./you-nav"
 
@@ -34,8 +34,6 @@ const channels: { key: keyof NotificationPrefs; label: string; body: string }[] 
   { key: "email", label: "Email", body: "Sent to the address on your account. Not connected in this development build." },
   { key: "push", label: "Push", body: "On this device, once you allow it. Not connected in this development build." },
 ]
-
-const providerName = { google: "Google", apple: "Apple", auth0: "social sign-in", email: "email and password" } as const
 
 function Row({ id, label, body, checked, onChange }: { id: string; label: string; body: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -77,101 +75,6 @@ function Section({ id, title, description, children }: { id: string; title: stri
       </div>
       <div className="rounded-lg border border-line-soft bg-card p-5 md:p-6">{children}</div>
     </section>
-  )
-}
-
-function AccountForm() {
-  const user = useSession((s) => s.user)!
-  const updateProfile = useSession((s) => s.updateProfile)
-  const [name, setName] = useState(user.name)
-  const [email, setEmail] = useState(user.email)
-  const [errors, setErrors] = useState<{ name?: string; email?: string }>({})
-  const [justSaved, setJustSaved] = useState(false)
-  const managed = user.provider !== "email"
-  const dirty = name.trim() !== user.name || email.trim() !== user.email
-
-  // Saved in place: the button shows its check and the note confirms it, so no toast.
-  const save = useAsyncAction((details: { name: string; email: string }) => updateProfile(details), {
-    error: "Your details weren't saved. Try again.",
-    onSuccess: () => setJustSaved(true),
-  })
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (save.pending || !dirty) return
-    const next: typeof errors = {}
-    const n = name.trim()
-    if (n.length < 2) next.name = "Enter the name you'd like on orders, at least 2 characters."
-    else if (n.length > 60) next.name = "Keep your name under 60 characters."
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = "Enter an email address like name@example.com."
-    setErrors(next)
-    if (Object.keys(next).length) {
-      window.requestAnimationFrame(() => document.getElementById(next.name ? "acc-name" : "acc-email")?.focus())
-      return
-    }
-    void save.run({ name: n, email: email.trim() })
-  }
-
-  return (
-    <form onSubmit={submit} noValidate className="grid gap-5">
-      <div className="grid gap-1.5">
-        <Label htmlFor="acc-name">Name</Label>
-        <Input
-          id="acc-name"
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value)
-            setJustSaved(false)
-          }}
-          autoComplete="name"
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? "acc-name-error" : undefined}
-          className="h-11"
-        />
-        {errors.name ? <p id="acc-name-error" className="text-xs text-danger">{errors.name}</p> : null}
-      </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor="acc-email">Email</Label>
-        <Input
-          id="acc-email"
-          type="email"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value)
-            setJustSaved(false)
-          }}
-          autoComplete="email"
-          disabled={managed}
-          aria-invalid={!!errors.email}
-          aria-describedby={managed ? "acc-email-note" : errors.email ? "acc-email-error" : undefined}
-          className="h-11"
-        />
-        {errors.email ? <p id="acc-email-error" className="text-xs text-danger">{errors.email}</p> : null}
-        {managed ? <p id="acc-email-note" className="text-xs text-ink-3">Signed in with {providerName[user.provider]}. Change this email in your {providerName[user.provider]} account.</p> : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" disabled={!dirty && !save.succeeded} loading={save.pending} success={save.succeeded}>
-          Save changes
-        </Button>
-        {dirty ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setName(user.name)
-              setEmail(user.email)
-              setErrors({})
-            }}
-          >
-            Discard
-          </Button>
-        ) : justSaved ? (
-          <SavedNote message="Saved. New orders use these details." idle="" />
-        ) : !managed ? (
-          <span className="text-xs text-ink-3">Signed in with {providerName[user.provider]}</span>
-        ) : null}
-      </div>
-    </form>
   )
 }
 
@@ -242,8 +145,8 @@ export function SettingsView() {
       </header>
       <YouNav className="mt-8" />
 
-      <Section id="set-account" title="Account" description="Your name goes on your orders. Order updates appear in Notifications. Email receipts start once email is connected.">
-        <AccountForm />
+      <Section id="set-account" title="Account" description="Your name goes on your orders. Changing your email sends a link to the new address first.">
+        {shopperId ? <AccountDetails as="shopper" /> : null}
       </Section>
 
       <Section id="set-notify" title="Notifications" description="Choose what you hear about and how. Brands only ever reach you through these settings.">
@@ -282,6 +185,15 @@ export function SettingsView() {
 
       <Section id="set-messages" title="Messages" description="How your conversations with brands work. Refunds, returns and delivery problems stay on each order page.">
         <ReadReceiptsSetting />
+      </Section>
+
+      <Section id="set-help" title="Help" description="Questions about an order, a payment or your account. A person on the Yard team replies in your inbox.">
+        <div className="flex flex-wrap items-center gap-3">
+          <MessageSupportButton variant="primary" />
+          <Link href="/support" className="text-sm text-ink-2 underline-offset-4 hover:text-ink hover:underline">
+            Support and answers
+          </Link>
+        </div>
       </Section>
 
       <Section id="set-region" title="Region and currency" description="Where you ship to sets delivery times and shipping costs. Prices show in your currency as an estimate; checkout confirms the rate.">

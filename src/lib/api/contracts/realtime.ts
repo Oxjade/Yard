@@ -3,6 +3,7 @@ import { inboxRealtimeEvents } from "./inbox"
 import { notificationDto, notificationReadEvent, notificationRemovedEvent } from "./notifications"
 import { shippingRealtimeEvents } from "./shipping"
 import { socialRealtimeEvents } from "./social"
+import { supportRealtimeEvents } from "./support"
 
 /**
  * Realtime event payloads (§4.2). The union imports each feature's payloads from that feature's
@@ -14,10 +15,11 @@ export const realtimeEvents = {
   ...inboxRealtimeEvents,
   ...shippingRealtimeEvents,
   ...socialRealtimeEvents,
+  ...supportRealtimeEvents,
   "notification.created": notificationDto,
   "notification.read": notificationReadEvent,
   "notification.removed": notificationRemovedEvent,
-  "moderation.counts": z.object({ messages: z.number(), content: z.number(), places: z.number(), charts: z.number(), delivery: z.number(), abuse: z.number() }).partial(),
+  "moderation.counts": z.object({ messages: z.number(), content: z.number(), places: z.number(), charts: z.number(), delivery: z.number(), abuse: z.number(), support: z.number() }).partial(),
   "session.ended": z.object({ reason: z.string() }),
   resync: z.object({}),
   hello: z.object({ lastSeq: z.number(), serverTime: z.string() }),

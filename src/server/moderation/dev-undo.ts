@@ -178,9 +178,9 @@ export async function undoKitDecisions(rows: AuditRow[], opts: { dryRun: boolean
                 .where(and(eq(conversationParticipants.conversationId, c.id), eq(conversationParticipants.side, side)))
             // A release that was the conversation's first delivered shopper message recorded message_started.
             if (m.senderSide === "customer")
-              await d.delete(chartEvents).where(and(eq(chartEvents.kind, "message_started"), eq(chartEvents.brandId, c.brandId), eq(chartEvents.actorId, c.customerId), gte(chartEvents.createdAt, new Date(a.at.getTime() - SLACK_MS))))
-            resyncChannels.add(channels.user(c.customerId))
-            resyncChannels.add(channels.brand(c.brandId))
+              await d.delete(chartEvents).where(and(eq(chartEvents.kind, "message_started"), eq(chartEvents.brandId, c.brandId!), eq(chartEvents.actorId, c.customerId!), gte(chartEvents.createdAt, new Date(a.at.getTime() - SLACK_MS))))
+            resyncChannels.add(channels.user(c.customerId!))
+            resyncChannels.add(channels.brand(c.brandId!))
           }
         }
         done(ok, !!m)

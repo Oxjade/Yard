@@ -37,7 +37,9 @@ import {
   UsersIcon,
   WalletIcon,
   WrenchIcon,
+  LifebuoyIcon,
 } from "@phosphor-icons/react"
+import { useStudioSupport } from "@/components/studio/support/studio-support"
 import { BrandMark } from "@/components/market/brand-mark"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { DemoAccountMenuBridge, SIGN_OUT_HREF, SWITCH_ACCOUNT_HREF } from "@/components/session/demo-account-menu"
@@ -457,6 +459,9 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
   const social = useApi(member && !yardSetup ? accountsKey : null, getAccounts, { revalidateOnFocus: false })
   useRealtimeEvent("social.status", () => void social.revalidate())
   const reconnect = member ? (social.data?.accounts.filter((a) => a.status === "needs_reauth" || a.status === "error").length ?? 0) : 0
+  // Yard Support: the brand's thread with the Yard team; its unread replies badge the item.
+  const support = useStudioSupport(!!member && !yardSetup)
+  const supportUnread = support.data?.conversation?.unread ?? 0
 
   // §7.5: 17 items in 5 groups. The daily-work items with badges sit at the top; Social holds the
   // owner's "Social connections" and "Content Studio" as its two tabs (§7.8 decision 1).
@@ -511,6 +516,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
             ]
           : []),
         { href: "/studio/settings", label: "Settings", icon: GearIcon },
+        { href: "/studio/support", label: "Yard Support", icon: LifebuoyIcon, badge: supportUnread || undefined, badgeLabel: "unread", tone: "attention" },
       ],
     },
   ]
@@ -534,6 +540,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
           { label: "Edit storefront", href: "/studio/storefront", icon: LayoutIcon },
           { label: "Settings", href: "/studio/settings", icon: GearIcon },
           { label: "Notifications", href: "/studio/notifications", icon: BellIcon },
+          { label: "Contact Yard Support", href: "/studio/support", icon: LifebuoyIcon },
           ...(demoOn ? [{ label: "Switch demo account…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
           // Signing out never depends on the demo flag: whoever holds a session can always end it.
           ...(member ? [{ label: member.demo ? "Sign out of demo account" : "Sign out", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),

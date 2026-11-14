@@ -64,7 +64,30 @@ export type SendFn = (clientId: string, payload: DraftPayload) => Promise<SendRe
 /** Typing pings from the other side within this long after their message are the pre-send one, late. */
 const TYPING_AFTER_MESSAGE_MS = 1500
 
-export function useThread({ side, conversationId, send: sendFn, active, onConversation }: { side: InboxSide; conversationId: string | null; send: SendFn; active: boolean; onConversation?: (c: ConversationSummary) => void }) {
+/**
+ * Where a thread reads and writes. The inbox's own routes by default; Yard Support threads pass
+ * theirs (src/lib/api/support.ts), which answer in the same DTOs.
+ */
+export type ThreadEndpoints = {
+  thread: (id: string, q?: { before?: number; after?: number; limit?: number; q?: string }) => Promise<ThreadDto>
+  read: (id: string, upToSeq: number) => Promise<unknown>
+  typing: (id: string) => Promise<unknown>
+  /** Absent where reactions aren't offered (Yard Support threads). */
+  react?: (messageId: string, emoji: "♥" | null) => Promise<{ message: MessageDto }>
+}
+
+const inboxEndpoints = (side: InboxSide): ThreadEndpoints => ({
+  thread: (id, q) => getThread(side, id, q),
+  read: (id, upToSeq) => postRead(side, id, upToSeq),
+  typing: (id) => postTyping(side, id),
+  react: (messageId, emoji) => postReaction(side, messageId, emoji),
+})
+
+/** The viewer's side: a shopper ("customer"), a brand, or Yard Support (an admin, "support"). */
+export type ThreadSide = InboxSide | "support"
+
+export function useThread({ side, conversationId, send: sendFn, active, onConversation, endpoints }: { side: ThreadSide; conversationId: string | null; send: SendFn; active: boolean; onConversation?: (c: ConversationSummary) => void; endpoints?: ThreadEndpoints }) {
+  const ep = useMemo(() => endpoints ?? inboxEndpoints(side === "support" ? "brand" : side), [endpoints, side])
   const [state, setState] = useState<State>(empty)
   // A conversation that was marked unread when it opened is read by opening it, once. A mark made
   // later (here or by a teammate) never triggers /read on its own.
@@ -93,7 +116,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     if (!id) return
     setState((s) => ({ ...s, status: s.conversation?.id === id ? s.status : "loading", error: undefined }))
     try {
-      const t = await getThread(side, id)
+      const t = await ep.thread(id)
       if (idRef.current !== id) return
       setState({ status: "ready", conversation: t.conversation, messages: t.messages, hasMore: t.hasMore, receipts: t.receipts })
       setOpenMark(t.conversation.markedUnread ? id : null)
@@ -102,7 +125,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
       if (idRef.current !== id || (e instanceof DOMException && e.name === "AbortError")) return
       setState((s) => (s.conversation?.id === id && s.status === "ready" ? s : { ...empty, status: "error", error: e }))
     }
-  }, [side])
+  }, [ep])
 
   /** New messages after the newest one we hold, plus the conversation and receipts as they are now. */
   const refresh = useCallback(async () => {
@@ -111,7 +134,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     if (!id || s.status !== "ready") return load()
     const last = s.messages[s.messages.length - 1]?.seq ?? 0
     try {
-      const t = await getThread(side, id, { after: last, limit: 100 })
+      const t = await ep.thread(id, { after: last, limit: 100 })
       if (idRef.current !== id) return
       setState((cur) => ({ ...cur, conversation: t.conversation, receipts: t.receipts, messages: merge(cur.messages, t.messages) }))
       setPending((p) => p.filter((x) => !t.messages.some((m) => m.clientId === x.clientId)))
@@ -119,20 +142,20 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     } catch {
       /* the next event or poll tries again */
     }
-  }, [side, load])
+  }, [ep, load])
 
   // Reload the latest window (reactions and removals change older messages).
   const reloadWindow = useCallback(async () => {
     const id = idRef.current
     if (!id) return
     try {
-      const t = await getThread(side, id)
+      const t = await ep.thread(id)
       if (idRef.current !== id) return
       setState((cur) => ({ ...cur, status: "ready", conversation: t.conversation, receipts: t.receipts, messages: merge(cur.messages, t.messages), hasMore: cur.messages.length ? cur.hasMore : t.hasMore }))
     } catch {
       /* keep what we have */
     }
-  }, [side])
+  }, [ep])
 
   useEffect(() => {
     setPending([])
@@ -151,7 +174,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     if (!id || !s.hasMore || loadingOlder || !s.messages.length) return false
     setLoadingOlder(true)
     try {
-      const t = await getThread(side, id, { before: s.messages[0].seq, limit: 50 })
+      const t = await ep.thread(id, { before: s.messages[0].seq, limit: 50 })
       if (idRef.current !== id) return false
       setState((cur) => ({ ...cur, messages: merge(cur.messages, t.messages), hasMore: t.hasMore }))
       return true
@@ -160,7 +183,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     } finally {
       setLoadingOlder(false)
     }
-  }, [side, loadingOlder])
+  }, [ep, loadingOlder])
 
   /** Loads older pages until `seq` is in the window (in-thread search). */
   const ensureLoaded = useCallback(
@@ -170,14 +193,14 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
       for (let i = 0; i < 20; i++) {
         const s = stateRef.current
         if (!s.messages.length || s.messages[0].seq <= seq || !s.hasMore) return
-        const t = await getThread(side, id, { before: s.messages[0].seq, limit: 100 }).catch(() => null)
+        const t = await ep.thread(id, { before: s.messages[0].seq, limit: 100 }).catch(() => null)
         if (!t || idRef.current !== id) return
         const merged = merge(stateRef.current.messages, t.messages)
         stateRef.current = { ...stateRef.current, messages: merged, hasMore: t.hasMore }
         setState((cur) => ({ ...cur, messages: merge(cur.messages, t.messages), hasMore: t.hasMore }))
       }
     },
-    [side],
+    [ep],
   )
 
   /* ---------------- realtime */
@@ -296,14 +319,14 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     const t = window.setTimeout(() => {
       lastPostedRead.current = target
       setOpenMark(null)
-      void postRead(side, id, target)
+      void ep.read(id, target)
         .then(() => setState((s) => (s.conversation?.id === id ? { ...s, conversation: { ...s.conversation, unread: 0, markedUnread: false } } : s)))
         .catch(() => {
           lastPostedRead.current = 0
         })
     }, 500)
     return () => window.clearTimeout(t)
-  }, [conversationId, active, focused, state.status, newestTheirs, unreadFlag, held, side, state.messages])
+  }, [conversationId, active, focused, state.status, newestTheirs, unreadFlag, held, ep, state.messages])
 
   /* ---------------- typing pings */
 
@@ -313,8 +336,8 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
     if (!id || realtime !== "open") return
     if (Date.now() - lastTyping.current < 2000) return
     lastTyping.current = Date.now()
-    void postTyping(side, id).catch(() => {})
-  }, [side, realtime])
+    void ep.typing(id).catch(() => {})
+  }, [ep, realtime])
 
   /* ---------------- sending */
 
@@ -365,7 +388,8 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
       const on = !m.reaction?.mine
       setState((s) => ({ ...s, messages: s.messages.map((x) => (x.id === m.id ? { ...x, reaction: { mine: on, theirs: !!x.reaction?.theirs } } : x)) }))
       try {
-        const r = await postReaction(side, m.id, on ? "♥" : null)
+        if (!ep.react) throw new Error("Reactions aren't available here.")
+        const r = await ep.react(m.id, on ? "♥" : null)
         setState((s) => ({ ...s, messages: s.messages.map((x) => (x.id === m.id ? r.message : x)) }))
         return true
       } catch (e) {
@@ -373,7 +397,7 @@ export function useThread({ side, conversationId, send: sendFn, active, onConver
         throw e
       }
     },
-    [side],
+    [ep],
   )
 
   return {
