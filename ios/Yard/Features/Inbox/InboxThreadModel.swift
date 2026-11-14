@@ -10,6 +10,9 @@ struct InboxPendingMessage: Identifiable, Hashable, Sendable {
     let photos: [Data]
     let createdAt: Date
     var failedMessage: String?
+    /// Media ids of `photos` already uploaded, in order (photos[i] → attachmentIds[i]). Kept so a
+    /// retry reuses them instead of uploading the same photos again.
+    var attachmentIds: [String] = []
 
     var isFailed: Bool { failedMessage != nil }
 }
@@ -59,9 +62,6 @@ final class InboxThreadModel {
     var phase: Phase = .loading
     /// Product photos for shared product cards (productId → cover URL).
     var productImages: [String: URL] = [:]
-
-    /// Called once when the first send creates the conversation.
-    var onCreated: ((String) -> Void)?
 
     private var lastMarkedSeq = 0
     private var requestedProductIds: Set<String> = []
@@ -304,10 +304,15 @@ final class InboxThreadModel {
             guard let brandId = brandId ?? conversation?.brand.id else {
                 throw APIError(status: 0, code: "client", message: "Something went wrong. Try again.")
             }
-            var attachmentIds: [String] = []
-            for jpeg in p.photos {
+            // Reuse photos uploaded by an earlier attempt; upload only the rest.
+            var attachmentIds: [String] = pending.first(where: { $0.id == p.id })?.attachmentIds ?? p.attachmentIds
+            if attachmentIds.count > p.photos.count { attachmentIds = Array(attachmentIds.prefix(p.photos.count)) }
+            for jpeg in p.photos.dropFirst(attachmentIds.count) {
                 let mediaId = try await InboxAPI.uploadPhoto(jpeg: jpeg, conversationId: conversationId, brandId: brandId)
                 attachmentIds.append(mediaId)
+                if let i = pending.firstIndex(where: { $0.id == p.id }) {
+                    pending[i].attachmentIds = attachmentIds
+                }
             }
             var body = InboxSendBody(clientId: p.id, kind: attachmentIds.isEmpty ? "text" : "image")
             if !p.text.isEmpty { body.body = p.text }
@@ -319,7 +324,8 @@ final class InboxThreadModel {
                 body.origin = "inbox"
             }
             let r = try await InboxAPI.send(body)
-            let created = conversationId == nil
+            // The first send of a new thread creates the conversation; from here on the model
+            // talks to it by id (no route swap needed: this screen keeps working as that thread).
             conversationId = r.conversation.id
             apply(conversation: r.conversation)
             if conversation?.interaction == nil, let fresh = newThreadInteraction {
@@ -332,7 +338,6 @@ final class InboxThreadModel {
                 messages = Self.merged(messages, [r.message])
             }
             lastMarkedSeq = max(lastMarkedSeq, r.message.seq)
-            if created { onCreated?(r.conversation.id) }
         } catch {
             if let api = error as? APIError, api.isCancelled { return }
             if let i = pending.firstIndex(where: { $0.id == p.id }) {

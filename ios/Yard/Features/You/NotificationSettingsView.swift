@@ -222,6 +222,12 @@ struct NotificationSettingsView: View {
 
     init() {}
 
+    /// "Sent to <email>." — falls back when the email is missing or empty.
+    private var emailDetail: String {
+        let email: String = session.shopper?.email ?? ""
+        return "Sent to \(email.isEmpty ? "the address on your account" : email)."
+    }
+
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -310,7 +316,7 @@ struct NotificationSettingsView: View {
                 ) {
                     YouToggleRow(
                         title: "Email",
-                        detail: "Sent to \(session.shopper?.email ?? "the address on your account").",
+                        detail: emailDetail,
                         systemImage: "envelope",
                         isOn: Binding(
                             get: { model.emailOn },

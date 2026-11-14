@@ -39,17 +39,25 @@ final class LiveActivityManager {
     private static let tokensKey = "yard.liveActivity.pushTokens"
     /// Brand cities already resolved, so a refresh doesn't re-read the storefront.
     @ObservationIgnored private var brandCities: [String: String] = [:]
+    /// Watches Settings › Yard › Live Activities so `areActivitiesEnabled` stays current.
+    @ObservationIgnored private var enablementTask: Task<Void, Never>?
+
+    /// Whether the person allows Live Activities for Yard (Settings › Yard › Live Activities).
+    /// Stored (and kept current from `activityEnablementUpdates`) so views observing it re-render
+    /// when the person flips the switch in Settings.
+    private(set) var areActivitiesEnabled: Bool = false
 
     init() {
         if let stored = UserDefaults.standard.dictionary(forKey: LiveActivityManager.tokensKey) as? [String: String] {
             pushTokens = stored
         }
+        areActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
         refreshTracked()
-    }
-
-    /// Whether the person allows Live Activities for Yard (Settings › Yard › Live Activities).
-    var areActivitiesEnabled: Bool {
-        ActivityAuthorizationInfo().areActivitiesEnabled
+        enablementTask = Task { @MainActor [weak self] in
+            for await enabled in ActivityAuthorizationInfo().activityEnablementUpdates {
+                self?.areActivitiesEnabled = enabled
+            }
+        }
     }
 
     func isTracking(orderId: String) -> Bool {
@@ -67,6 +75,7 @@ final class LiveActivityManager {
             Task { @MainActor in await self.update(existing, state: state) }
             return true
         }
+        areActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
         guard areActivitiesEnabled else { return false }
         if !order.brandCity.isEmpty { brandCities[order.orderId] = order.brandCity }
 
@@ -159,6 +168,7 @@ final class LiveActivityManager {
 
     /// On launch / foreground: re-attach token observers and refresh every running activity.
     func resume() async {
+        areActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
         refreshTracked()
         for activity in Activity<Attributes>.activities where isLive(activity) {
             observePushToken(of: activity)

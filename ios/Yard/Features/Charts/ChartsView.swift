@@ -45,7 +45,7 @@ struct ChartsView: View {
         .yardScreenBackground()
         .navigationTitle("Charts")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.load(silent: true) }
+        .refreshable { await model.load() }
         .task {
             await model.loadScopes()
             model.resolveDefaultCity(shipToCity: cart.destinationCity, shipToCountry: cart.destinationCountry)
@@ -58,7 +58,7 @@ struct ChartsView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: period.refreshSeconds * 1_000_000_000)
                 if Task.isCancelled { break }
-                await model.load(silent: true)
+                await model.load()
             }
         }
         .sheet(isPresented: $showsFilters) {

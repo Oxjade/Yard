@@ -39,6 +39,10 @@ struct YouView: View {
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             await session.refresh()
+            if session.isSignedIn {
+                await saved.load()
+                await follows.load()
+            }
         }
         .youWebPage($webPage)
     }

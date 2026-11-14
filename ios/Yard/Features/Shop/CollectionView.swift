@@ -57,7 +57,11 @@ final class CollectionModel {
 
     var sortedProducts: [Product] { sort.apply(to: products) }
 
-    var brandName: String { brand?.name ?? brandHandle }
+    /// The brand's name; falls back to the handle when it is missing or empty (decoded leniently as "").
+    var brandName: String {
+        let name: String = brand?.name ?? ""
+        return name.isEmpty ? brandHandle : name
+    }
 
     /// The collection photo, else its first piece's photo (as the website does).
     var coverURL: URL? { collection?.imageURL ?? products.first?.coverURL }

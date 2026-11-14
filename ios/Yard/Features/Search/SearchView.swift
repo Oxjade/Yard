@@ -112,6 +112,13 @@ struct SearchHomeView: View {
                 isFieldFocused = false
             }
         }
+        .onChange(of: router.reselectCount) { _, _ in
+            // Re-tapping the Search tab doesn't change `selectedTab`; it pops to root.
+            if router.selectedTab == .search && router.depth == 0 {
+                recents = SearchRecents.load()
+                focusSoon()
+            }
+        }
     }
 
     // MARK: Header

@@ -399,8 +399,10 @@ struct BrandProfileView: View {
     }
 
     private func announcementRow(_ announcement: StorefrontConfig.Announcement) -> some View {
-        Button {
-            guard let href = announcement.href, !href.isEmpty else { return }
+        // An empty href is no link: no chevron, not tappable.
+        let hasLink: Bool = !(announcement.href ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        return Button {
+            guard hasLink, let href = announcement.href else { return }
             if let route = Route(path: href) {
                 router.push(route)
             } else if let url = Config.url(for: href) {
@@ -415,7 +417,7 @@ struct BrandProfileView: View {
                     .foregroundStyle(Color.yard.ink)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
-                if announcement.href != nil {
+                if hasLink {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.yard.ink3)
@@ -425,7 +427,7 @@ struct BrandProfileView: View {
             .yardCard(background: Color.yard.surface)
         }
         .buttonStyle(PressableButtonStyle())
-        .disabled(announcement.href == nil)
+        .disabled(!hasLink)
     }
 
     // MARK: Products
@@ -465,6 +467,12 @@ struct BrandProfileView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.l)
+            } else if model.productsLoadMoreFailed {
+                YardButton("Load more", style: .secondary, size: .medium, fullWidth: false) {
+                    Task { @MainActor in await model.loadMoreProducts() }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.l)
             }
         }
     }

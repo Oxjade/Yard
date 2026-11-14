@@ -63,7 +63,10 @@ final class NotificationsViewModel {
         return out
     }
 
-    func load() async {
+    /// Loads the list. Returns the error message when a refresh failed with items still on screen
+    /// (they are kept), so the caller can toast it; nil otherwise.
+    @discardableResult
+    func load() async -> String? {
         if items.isEmpty { phase = .loading }
         do {
             let response: NotificationsListResponse = try await api.get(
@@ -73,12 +76,15 @@ final class NotificationsViewModel {
             )
             items = response.items
             phase = .loaded
+            return nil
         } catch {
-            if let apiError = error as? APIError, apiError.isCancelled { return }
+            if let apiError = error as? APIError, apiError.isCancelled { return nil }
             if items.isEmpty {
                 phase = .failed(APIError.message(for: error))
+                return nil
             }
-            // With items on screen a failed refresh keeps them; the caller may toast.
+            // With items on screen a failed refresh keeps them; the caller toasts the message.
+            return APIError.message(for: error)
         }
     }
 
@@ -86,6 +92,7 @@ final class NotificationsViewModel {
     func reset() {
         items = []
         phase = .idle
+        filter = .all
     }
 
     /// Marks one notification read (or unread). Optimistic; rolls back on failure.

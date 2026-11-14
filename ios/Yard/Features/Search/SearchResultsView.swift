@@ -39,7 +39,7 @@ struct SearchResultsView: View {
             }
         }
         .refreshable {
-            await model.load(currency: cart.currency)
+            await model.load(currency: cart.currency, refreshing: true)
         }
         .task(id: model.reloadKey(currency: cart.currency)) {
             await model.load(currency: cart.currency)

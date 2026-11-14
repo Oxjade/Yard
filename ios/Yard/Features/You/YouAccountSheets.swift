@@ -141,7 +141,7 @@ struct YouChangePasswordSheet: View {
             } catch let error as APIError {
                 if error.isCancelled { return }
                 if error.youNeedsReauth {
-                    formError = "For your security, sign out and sign back in with Google, then set a password within 5 minutes."
+                    formError = "For your security, sign out and sign back in with Google or Apple, then set a password within 5 minutes."
                 } else if !error.fields.isEmpty {
                     errors = error.fields
                     if error.fields["currentPassword"] == nil && error.fields["newPassword"] == nil { formError = error.message }

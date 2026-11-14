@@ -46,7 +46,7 @@ struct ProductDetailView: View {
             .toolbar { toolbarContent }
             .task(id: slug) {
                 if model.product == nil {
-                    await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+                    _ = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
                 }
             }
             .sheet(isPresented: $showsSizeSheet) {
@@ -58,9 +58,11 @@ struct ProductDetailView: View {
                 ProductPhotoViewer(images: model.product?.images ?? [], startIndex: start.index)
             }
             .sensoryFeedback(.success, trigger: addedCount)
-            .onChange(of: model.variant?.id) { _, newValue in
-                guard let id = newValue, session.isSignedIn else { return }
-                Task { @MainActor in await model.loadWatch(variantId: id) }
+            // Back-in-stock state for the selected variant: also for a variant selected from the
+            // start (single-size / no-option products) and again after signing in.
+            .task(id: "\(model.variant?.id ?? "")-\(session.isSignedIn)") {
+                guard let id = model.variant?.id, session.isSignedIn else { return }
+                await model.loadWatch(variantId: id)
             }
     }
 
@@ -78,7 +80,7 @@ struct ProductDetailView: View {
                        actionTitle: "Go back") { router.pop() }
         case .failed(let message):
             EmptyState.error(message: message) {
-                await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+                _ = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
             }
         case .loaded:
             if let product = model.product {
@@ -133,7 +135,9 @@ struct ProductDetailView: View {
         }
         .scrollIndicators(.hidden)
         .refreshable {
-            await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+            if let message = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency) {
+                toast.show(message, style: .error)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             bottomBar(product)

@@ -237,6 +237,9 @@ final class Router {
     var isTabPillCollapsed: Bool = false
     /// Force-hide the floating pill (e.g. a full-screen composer). Reset it on disappear.
     var isTabPillSuppressed: Bool = false
+    /// Bumped each time the already-selected tab is tapped again (`select` on the current tab),
+    /// so a tab root can react (e.g. Search focuses its field). `selectedTab` doesn't change then.
+    private(set) var reselectCount: Int = 0
 
     init() {}
 
@@ -274,6 +277,7 @@ final class Router {
     func select(_ tab: AppTab) {
         if tab == selectedTab {
             popToRoot(tab)
+            reselectCount += 1
         } else {
             selectedTab = tab
         }

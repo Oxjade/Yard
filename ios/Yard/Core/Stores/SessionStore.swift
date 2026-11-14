@@ -37,9 +37,13 @@ final class SessionStore {
         }
         do {
             let s: Session = try await api.get("/api/session")
+            let wasSignedIn = shopper != nil
             session = s
             shopper = s.shopper
             lastError = nil
+            // The session ended elsewhere (expired / signed out on the web): drop the local
+            // drop alerts that belong to that account.
+            if wasSignedIn && s.shopper == nil { await DropLocalReminder.cancelAll() }
         } catch let error as APIError {
             if !error.isCancelled { lastError = error }
         } catch {
@@ -63,6 +67,8 @@ final class SessionStore {
         session = Session.signedOut
         // A signed-out phone shouldn't keep showing someone's order on the Lock Screen.
         await LiveActivityManager.shared.endAll()
+        // Local "opens in 10 minutes" drop alerts belong to the account that set them.
+        await DropLocalReminder.cancelAll()
         await refresh()
     }
 

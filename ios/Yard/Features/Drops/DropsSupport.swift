@@ -244,6 +244,7 @@ enum DropActions {
         switch outcome {
         case .scheduled: return ("Reminder set. We'll alert you 10 minutes before it opens.", .success)
         case .denied: return ("Reminder set. Turn on notifications for Yard in Settings to get an alert on this iPhone.", .success)
+        case .failed: return ("Reminder set. We couldn't schedule an alert on this iPhone.", .success)
         case .tooSoon, .removed: return ("Reminder set", .success)
         }
     }
@@ -258,11 +259,15 @@ enum DropLocalReminder {
         case denied
         case tooSoon
         case removed
+        /// Notifications are allowed but iOS refused to schedule the alert.
+        case failed
     }
+
+    static let identifierPrefix = "yard.drop-reminder."
 
     static let leadTime: TimeInterval = 10 * 60
 
-    static func identifier(for dropId: String) -> String { "yard.drop-reminder.\(dropId)" }
+    static func identifier(for dropId: String) -> String { "\(identifierPrefix)\(dropId)" }
 
     /// Schedules (or reschedules: same identifier replaces) the alert. `prompt` asks for
     /// notification permission when it hasn't been asked yet; syncing passes false.
@@ -314,12 +319,22 @@ enum DropLocalReminder {
             try await center.add(request)
             return .scheduled
         } catch {
-            return .denied
+            return .failed
         }
     }
 
     static func cancel(dropId: String) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier(for: dropId)])
+    }
+
+    /// Removes every pending drop alert (sign out: they belong to the previous account).
+    static func cancelAll() async {
+        let center = UNUserNotificationCenter.current()
+        let pending: [UNNotificationRequest] = await center.pendingNotificationRequests()
+        let ids: [String] = pending.map { $0.identifier }.filter { $0.hasPrefix(identifierPrefix) }
+        if !ids.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+        }
     }
 
     /// Keeps the local alert in line with the server's reminder (set on the web, or moved by the brand).

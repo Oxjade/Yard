@@ -72,7 +72,7 @@ struct NotificationsView: View {
             case .idle, .loading:
                 NotificationsSkeleton()
             case .failed(let message):
-                EmptyState.error(message: message) { await model.load() }
+                EmptyState.error(message: message) { _ = await model.load() }
             case .loaded:
                 list
             }
@@ -125,7 +125,11 @@ struct NotificationsView: View {
             .padding(.bottom, Spacing.xxl)
             .animation(Motion.spring, value: model.filter)
         }
-        .refreshable { await model.load() }
+        .refreshable {
+            if let message = await model.load() {
+                toast.show(message, style: .error)
+            }
+        }
     }
 
     private var header: some View {

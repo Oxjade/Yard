@@ -473,9 +473,11 @@ struct OrderDetailView: View {
                 }
             }
 
-            Text("Placed \(order.summary.placedDate.map { OrderText.longDate($0) } ?? "")")
-                .font(.yardCaption)
-                .foregroundStyle(Color.yard.ink3)
+            if let placed = order.summary.placedDate {
+                Text("Placed \(OrderText.longDate(placed))")
+                    .font(.yardCaption)
+                    .foregroundStyle(Color.yard.ink3)
+            }
         }
     }
 

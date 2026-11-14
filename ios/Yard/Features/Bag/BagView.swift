@@ -32,6 +32,11 @@ struct BagView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .onAppear {
+                // The checkout may have changed the country (CheckoutModel.changeCountry).
+                let saved: String = BagMarkets.shipTo
+                if saved != shipTo { shipTo = saved }
+            }
             .task { await cart.load() }
             .task(id: quoteKey) { await loadQuotes() }
             .onChange(of: shipTo) { _, newValue in
