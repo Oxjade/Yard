@@ -89,7 +89,8 @@ import java.time.LocalTime
  * The You tab root. Mirrors YouView.swift.
  * - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
  * - Signed in: profile header (initials avatar, name, email), quick tiles (Orders, Saved, Following,
- *   Inbox, Drop reminders, Updates) and links (Settings, Help, Sell on Yard, Terms, Privacy, Refunds).
+ *   Inbox, Drop reminders, Updates), links (Settings, Sell on Yard), Help (Message Yard Support,
+ *   Help centre) and legal (Terms, Privacy, Refunds).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,9 +140,16 @@ fun YouView() {
 
             YouSettingsGroup(null) {
                 SettingsRow("Settings", Icons.Outlined.Settings, Modifier.youRowClick { router.push(Route.Settings) })
-                SettingsRow("Help", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
-                SettingsRow("Message Yard Support", Icons.Outlined.SupportAgent, Modifier.youRowClick { router.push(Route.YardSupport()) })
                 SettingsRow("Sell on Yard", Icons.Outlined.Storefront, Modifier.youRowClick { YouWebPage.Sell.open(context, dark) })
+            }
+
+            // Help: the native Yard Support thread, and the website's help centre.
+            YouSettingsGroup(
+                "Help",
+                footer = "Questions about an order, a payment or your account? Yard's team replies in the app and in your notifications.",
+            ) {
+                SettingsRow("Message Yard Support", Icons.Outlined.SupportAgent, Modifier.youRowClick { router.push(Route.YardSupport()) })
+                SettingsRow("Help centre", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
             }
 
             YouSettingsGroup("Legal") {

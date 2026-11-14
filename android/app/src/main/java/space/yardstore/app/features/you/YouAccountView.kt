@@ -373,12 +373,13 @@ private fun YouNameSection(model: YouAccountModel, account: YouAccount) {
                 },
                 error = model.nameError,
                 capitalization = KeyboardCapitalization.Words,
+                enabled = !account.demo,
             )
             YardButton(
                 "Save name",
                 size = YardButtonSize.Medium,
                 isLoading = model.isSavingName,
-                enabled = changed,
+                enabled = changed && !account.demo,
             ) {
                 scope.launch {
                     if (model.saveName(name)) {
