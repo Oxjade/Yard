@@ -10,6 +10,7 @@ import { log } from "../log"
 import type { ShopperActor } from "./dal"
 import { AUTH_EMAIL_TEMPLATES, sendAuthEmail, userById, type RequestMeta } from "./identity"
 import { endSessionsForUser } from "./session"
+import { removeDevicesOf } from "../push"
 import { voidTokens } from "./tokens"
 
 /**
@@ -77,6 +78,7 @@ export async function requestAccountDeletion(actor: ShopperActor, meta: RequestM
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.accountDeleted, user.email, { name: user.name }, `account-deleted:${user.id}`)
     await writeAudit({ actor: { kind: "shopper", id: user.id, name: user.name }, action: "account.deletion_requested", target: user.id, subjectType: "user", subjectId: user.id, ipHash: meta.ipHash, meta: { requestId: id } })
     await endSessionsForUser(user.id, ["shopper", "brand", "admin"], "account_deleted")
+    await removeDevicesOf(user.id)
     return { id }
   })
   afterCommit(() => processDueErasures().then(() => undefined))
@@ -112,6 +114,7 @@ async function eraseUser(tx: Tx, userId: string) {
   await d.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId))
   await d.delete(userCredentials).where(eq(userCredentials.userId, userId))
   await d.delete(sessions).where(eq(sessions.userId, userId))
+  await removeDevicesOf(userId)
   await d.delete(notifications).where(and(eq(notifications.recipientKind, "shopper"), eq(notifications.recipientId, userId)))
   await d.delete(shopperFollows).where(eq(shopperFollows.userId, userId))
   await d.delete(shopperWishlist).where(eq(shopperWishlist.userId, userId))

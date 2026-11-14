@@ -74,6 +74,7 @@ export const errorCode = z.enum([
   "gone",
   "conflict",
   "length_required",
+  "invalid_code",
   "too_large",
   "unsupported_type",
   "rule",

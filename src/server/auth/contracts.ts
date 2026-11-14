@@ -42,6 +42,20 @@ export const oauthStartBody = z
   .object({ mode: z.enum(["signin", "link", "reauth"]).default("signin"), actor: z.enum(["shopper", "brand"]).default("shopper"), brandId: id.optional(), connection: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional() })
   .strict()
 
+/** GET /api/auth/oauth/{provider}/app-start (native apps; the Custom Tab opens it). */
+export const oauthAppStartQuery = z
+  .object({
+    client: z.enum(["android", "ios"]),
+    challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Send base64url(sha256(verifier)), 43 characters."),
+    mode: z.literal("signin").default("signin"),
+    actor: z.enum(["shopper", "brand"]).default("shopper"),
+    connection: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
+  })
+  .strict()
+
+/** POST /api/auth/oauth/app-exchange. Formats are checked by the service, so every bad code answers 400 invalid_code. */
+export const oauthAppExchangeBody = z.object({ code: z.string().max(512), verifier: z.string().max(512) }).strict()
+
 export const brandSwitchBody = z.object({ brandId: id }).strict()
 
 export const inviteCreateBody = z.object({ email, role: z.enum(TEAM_ROLES) }).strict()

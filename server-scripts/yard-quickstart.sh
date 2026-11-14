@@ -75,6 +75,11 @@ YARD_DATA_DIR=/var/lib/yard
 YARD_TRUSTED_PROXY_HOPS=1
 YARD_SESSION_SECRET=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')
 YARD_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')
+# Yard apps (docs/APP.md). Push: copy the Firebase service-account key to the server, then
+#   install -D -m 640 -o root -g yard fcm-service-account.json /etc/yard/fcm-service-account.json
+# and uncomment. Android App Links: the app's signing-certificate SHA-256 fingerprints (AA:BB:…, comma-separated).
+# FCM_SERVICE_ACCOUNT_FILE=/etc/yard/fcm-service-account.json
+# ANDROID_CERT_SHA256=
 EOF
   chown root:yard /etc/yard.env && chmod 640 /etc/yard.env
   echo

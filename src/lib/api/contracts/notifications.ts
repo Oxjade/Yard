@@ -46,3 +46,16 @@ export const notificationReadEvent = z.object({ recipient: z.object({ kind: acto
  * (a test-data restore, a removed conversation). Tabs drop those srv: items at once.
  */
 export const notificationRemovedEvent = z.object({ recipient: z.object({ kind: actorKind, id: z.string() }), keys: z.array(z.string()) })
+
+/** POST /api/devices: a phone that receives push notifications (the Yard Android app; iOS later). */
+export const pushDeviceBody = z
+  .object({
+    platform: z.enum(["android", "ios"]),
+    token: z.string().min(1).max(4096).regex(/^[^\s\u0000-\u001f\u007f]+$/, "Send the push token as the platform gave it."),
+    appVersion: z.string().trim().min(1).max(64).regex(/^[^\u0000-\u001f\u007f<>]+$/).optional(),
+  })
+  .strict()
+export type PushDeviceBody = z.infer<typeof pushDeviceBody>
+
+/** DELETE /api/devices (the app calls it before it signs out). */
+export const pushDeviceDeleteBody = z.object({ token: z.string().min(1).max(4096) }).strict()

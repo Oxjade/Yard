@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 import { INVITE_KINDS, TEAM_ROLES } from "../../../lib/api/contracts/enums"
 import { brands } from "./brands"
 import { oneOf, raw, tz } from "./columns"
@@ -17,6 +17,8 @@ export const AUTH_METHODS = ["demo", "password", "google", "apple", "auth0", "ma
 export const OAUTH_PROVIDERS = ["google", "apple", "auth0"] as const
 export const OAUTH_MODES = ["signin", "link", "reauth"] as const
 export const AUTH_TOKEN_PURPOSES = ["verify_email", "reset_password", "magic_link", "mfa_challenge"] as const
+/** Native apps that sign in through a Custom Tab / ASWebAuthenticationSession hand-off. */
+export const APP_CLIENTS = ["android", "ios"] as const
 export const INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const
 export const DELETION_STATUSES = ["pending", "processing", "completed", "failed"] as const
 export const SIGN_IN_ACTORS = ["shopper", "brand", "admin"] as const
@@ -86,12 +88,16 @@ export const authOauthStates = pgTable(
     codeVerifierEnc: text("code_verifier_enc"),
     nonce: text("nonce").notNull(),
     bindingHash: text("binding_hash").notNull(),
+    /** Native app sign-in (GET …/app-start): the app (android | ios) and its PKCE-style challenge. Null for the web flow. */
+    appClient: text("app_client"),
+    appChallenge: text("app_challenge"),
     createdAt: tz("created_at").notNull().defaultNow(),
     expiresAt: tz("expires_at").notNull(),
     usedAt: tz("used_at"),
   },
   (t) => [
     index("auth_oauth_states_expires_ix").on(t.expiresAt),
+    oneOf("auth_oauth_states_app_client_ck", "app_client", APP_CLIENTS),
     oneOf("auth_oauth_states_provider_ck", "provider", OAUTH_PROVIDERS),
     oneOf("auth_oauth_states_mode_ck", "mode", OAUTH_MODES),
     oneOf("auth_oauth_states_actor_ck", "actor", SIGN_IN_ACTORS),
@@ -230,5 +236,41 @@ export const accountDeletions = pgTable(
     uniqueIndex("account_deletions_open_ux").on(t.userId).where(raw("status in ('pending', 'processing')")),
     index("account_deletions_due_ix").on(t.status, t.scheduledFor),
     oneOf("account_deletions_status_ck", "status", DELETION_STATUSES),
+  ],
+)
+
+/**
+ * Native app sign-in hand-off (Google/Apple/Auth0 in a Custom Tab, whose cookies aren't the app's).
+ * The OAuth callback of an app flow opens no session: it stores one of these (code as sha256 only,
+ * 120 s, single use) and redirects to yard://auth/complete?code=…; the app then POSTs the code
+ * with its verifier to /api/auth/oauth/app-exchange, which opens the session in the app's own jar.
+ */
+export const authAppHandoffs = pgTable(
+  "auth_app_handoffs",
+  {
+    id: text("id").primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    actor: text("actor").notNull(),
+    brandId: text("brand_id").references(() => brands.id, { onDelete: "cascade" }),
+    client: text("client").notNull(),
+    challenge: text("challenge").notNull(),
+    provider: text("provider").notNull(),
+    mode: text("mode").notNull(),
+    result: text("result").notNull(),
+    isNew: boolean("is_new").notNull().default(false),
+    used: boolean("used").notNull().default(false),
+    createdAt: tz("created_at").notNull().defaultNow(),
+    expiresAt: tz("expires_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("auth_app_handoffs_code_hash_ux").on(t.codeHash),
+    index("auth_app_handoffs_expires_ix").on(t.expiresAt),
+    index("auth_app_handoffs_user_ix").on(t.userId),
+    oneOf("auth_app_handoffs_client_ck", "client", APP_CLIENTS),
+    oneOf("auth_app_handoffs_provider_ck", "provider", OAUTH_PROVIDERS),
+    oneOf("auth_app_handoffs_actor_ck", "actor", SIGN_IN_ACTORS),
   ],
 )

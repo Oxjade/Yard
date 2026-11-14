@@ -91,6 +91,30 @@ export const notificationPreferences = pgTable("notification_preferences", {
   updatedAt: tz("updated_at").notNull().defaultNow(),
 })
 
+/* ---------- Push devices ---------- */
+
+export const PUSH_PLATFORMS = ["android", "ios"] as const
+
+/**
+ * A phone that receives push notifications (Firebase Cloud Messaging for Android). One row per
+ * token; a token registered by another account is re-pointed to whoever registered it last.
+ */
+export const pushDevices = pgTable(
+  "push_devices",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    token: text("token").notNull(),
+    appVersion: text("app_version"),
+    createdAt: tz("created_at").notNull().defaultNow(),
+    lastSeenAt: tz("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("push_devices_token_ux").on(t.token), index("push_devices_user_ix").on(t.userId, t.platform), oneOf("push_devices_platform_ck", "platform", PUSH_PLATFORMS)],
+)
+
 /* ---------- Drops ---------- */
 
 /**

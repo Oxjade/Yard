@@ -4,6 +4,7 @@ import { db } from "../db"
 import { notifications } from "../db/schema"
 import { newId } from "../ids"
 import { recipientChannel, toNotificationDto } from "../notify"
+import { queuePush } from "../push"
 import { publish } from "../realtime/bus"
 import type { OptionalCategory } from "./preferences"
 
@@ -38,7 +39,7 @@ export function inAppPref(template: EngagementTemplate): OptionalCategory | null
   return templates[template].pref
 }
 
-/** Upserts a notification for a shopper (or brand) and publishes notification.created after commit. Call inside withTx. */
+/** Upserts a notification for a shopper (or brand), publishes notification.created and queues its push after commit. Call inside withTx. */
 export async function notifyEngagement(recipient: { kind: "shopper" | "brand"; id: string }, n: { key: string; template: EngagementTemplate; vars?: Vars; href?: string | null }) {
   if (n.href != null && !isSameOriginPath(n.href)) throw new Error(`notifyEngagement(${n.key}): href must be a Yard path`)
   const t = templates[n.template]
@@ -52,5 +53,6 @@ export async function notifyEngagement(recipient: { kind: "shopper" | "brand"; i
     .returning()
   const dto = toNotificationDto(row)
   await publish(recipientChannel(recipient), "notification.created", dto)
+  queuePush(recipient, dto, t.pref)
   return dto
 }

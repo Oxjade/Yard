@@ -8,6 +8,7 @@ import { db } from "./db"
 import { adminMembers, notifications } from "./db/schema"
 import { newId } from "./ids"
 import { render, type TemplateKey } from "./notify-templates"
+import { queuePush } from "./push"
 import { publish } from "./realtime/bus"
 import { channels } from "./realtime/channels"
 
@@ -65,7 +66,8 @@ export function toNotificationDto(row: typeof notifications.$inferSelect): Notif
 
 /**
  * Upserts a notification (unique per recipient and key; an upsert marks it unread again and
- * refreshes its text and time) and publishes notification.created after commit (§2.7).
+ * refreshes its text and time) and publishes notification.created after commit (§2.7). The same
+ * notification goes to the recipient's phones as a push after commit (src/server/push).
  */
 export async function notify(recipient: Recipient, n: { key: string; template: TemplateKey; vars?: Record<string, string | number | undefined>; href?: string | null; category?: string }) {
   // Notifications open with router.push(href): only same-origin paths, never another site.
@@ -83,6 +85,7 @@ export async function notify(recipient: Recipient, n: { key: string; template: T
     .returning()
   const dto = toNotificationDto(row)
   await publish(recipientChannel(recipient), "notification.created", dto)
+  queuePush(recipient, dto)
   return dto
 }
 

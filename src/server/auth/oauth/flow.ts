@@ -1,11 +1,11 @@
 import "server-only"
 import { randomBytes } from "node:crypto"
-import { and, eq, gt, isNull } from "drizzle-orm"
+import { and, eq, gt, isNull, lt } from "drizzle-orm"
 import { cookies } from "next/headers"
 import { writeAudit } from "../../audit"
 import { db, withTx } from "../../db"
 import { users } from "../../db/schema"
-import { authOauthStates, oauthIdentities } from "../../db/schema/identity"
+import { authAppHandoffs, authOauthStates, oauthIdentities } from "../../db/schema/identity"
 import { getEnv } from "../../env"
 import { HttpError, badRequest, notConfigured } from "../../http/errors"
 import { newId } from "../../ids"
@@ -17,6 +17,7 @@ import { assertEligible, credentialsOf, deletionPending, findUserByEmail, openSe
 import { limitOauthStart } from "../limits"
 import { markReauth } from "../session-auth"
 import { auth0ConnectionOfSubject } from "../../../lib/auth/auth0"
+import { appCompleteUrl, HANDOFF_TTL_MS, newHandoffCode, type AppClient } from "./app-core"
 import { auth0Connections, getProvider, ProviderNotConfigured, providerLabel, type ProviderId, type ProviderProfile } from "./providers"
 
 /**
@@ -69,7 +70,13 @@ function pkce() {
   return { verifier, challenge: sha256b64url(verifier) }
 }
 
-export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode; actor: OAuthActor; brandId?: string | null; connection?: string | null }, meta: RequestMeta) {
+/**
+ * `app` (GET …/app-start only): a native app's sign-in. The state row remembers the app and its
+ * challenge, so the callback hands off a single-use code instead of opening a session in the
+ * Custom Tab (see app-core.ts). Only `signin` runs as an app flow.
+ */
+export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode; actor: OAuthActor; brandId?: string | null; connection?: string | null; app?: { client: AppClient; challenge: string } | null }, meta: RequestMeta) {
+  if (input.app && input.mode !== "signin") throw badRequest({ mode: "Apps sign in only." })
   await limitOauthStart(meta.ipHash)
   // Auth0: the button names the social connection; only the configured ones are accepted.
   let connection: string | null = null
@@ -109,6 +116,8 @@ export async function startOAuth(input: { provider: ProviderId; mode: OAuthMode;
       codeVerifierEnc: p ? seal(p.verifier, vaultAad(id)) : null,
       nonce,
       bindingHash: sha256hex(binding),
+      appClient: input.app?.client ?? null,
+      appChallenge: input.app?.challenge ?? null,
       expiresAt: new Date(Date.now() + STATE_TTL_MS),
     })
   })
@@ -127,15 +136,48 @@ export function completeUrl(provider: ProviderId, result: OAuthResult, extra: { 
   return u.toString()
 }
 
-type CallbackInput = { code: string | null; state: string | null; error: string | null; appleUser: string | null }
+/** Where an OAuth outcome goes: /auth/complete in a browser, yard://auth/complete for an app flow. */
+function outcomeUrl(app: boolean, provider: ProviderId, result: OAuthResult, extra: { mode?: OAuthMode; actor?: OAuthActor } = {}) {
+  return app ? appCompleteUrl({ result, provider }) : completeUrl(provider, result, extra)
+}
 
-/** Claims the state row once: verifies the MAC, the expiry, the provider and the browser binding. */
-async function claimState(provider: ProviderId, state: string | null) {
+/** The state's row id when its MAC is valid (the row itself may be used, expired or gone). */
+function stateId(provider: ProviderId, state: string | null) {
   if (!state) return null
   const dot = state.indexOf(".")
   if (dot < 10) return null
   const id = state.slice(0, dot)
   if (!/^[\w-]{16,40}$/.test(id) || !safeEqual(state.slice(dot + 1), stateMac(id, provider))) return null
+  return id
+}
+
+/**
+ * Whether a callback belongs to an app flow even when the state can't be claimed (used, expired,
+ * wrong browser), so its failure still lands in the app instead of a web page in the Custom Tab.
+ */
+async function isAppState(provider: ProviderId, state: string | null) {
+  const id = stateId(provider, state)
+  if (!id) return false
+  try {
+    const d = await db()
+    const [row] = await d.select({ appClient: authOauthStates.appClient }).from(authOauthStates).where(eq(authOauthStates.id, id)).limit(1)
+    return !!row?.appClient
+  } catch {
+    return false
+  }
+}
+
+/** The failure redirect for a callback that couldn't be handled at all (the route's backstop). */
+export async function callbackFailureUrl(provider: ProviderId, state: string | null, result: OAuthResult = "invalid_state") {
+  return outcomeUrl(await isAppState(provider, state), provider, result)
+}
+
+type CallbackInput = { code: string | null; state: string | null; error: string | null; appleUser: string | null }
+
+/** Claims the state row once: verifies the MAC, the expiry, the provider and the browser binding. */
+async function claimState(provider: ProviderId, state: string | null) {
+  const id = stateId(provider, state)
+  if (!id) return null
   const d = await db()
   const [row] = await d
     .update(authOauthStates)
@@ -182,8 +224,11 @@ async function linkIdentity(provider: ProviderId, userId: string, p: ProviderPro
   await d.insert(oauthIdentities).values({ id: newId("oid"), userId, provider, subject: p.subject, email: p.email, emailVerified: p.emailVerified ? 1 : 0, lastUsedAt: new Date() })
 }
 
-/** Resolves (or creates) the user for a sign-in. Returns the user or a result explaining why not. */
-async function resolveSignInUser(provider: ProviderId, p: ProviderProfile): Promise<UserRow | OAuthResult> {
+/**
+ * Resolves (or creates) the user for a sign-in. Returns the user or a result explaining why not.
+ * `out.created` says whether this sign-in created the account (the app asks "shop or sell").
+ */
+async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, out: { created: boolean } = { created: false }): Promise<UserRow | OAuthResult> {
   const d = await db()
   const known = await identityBySubject(provider, p.subject)
   if (known) {
@@ -214,6 +259,7 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile): Prom
   await upsertCredentials(id, { emailVerifiedAt: p.emailVerified ? new Date() : null })
   await linkIdentity(provider, id, p)
   const u = await userById(id)
+  if (u) out.created = true
   return u ?? "error"
 }
 
@@ -225,10 +271,11 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
   } catch (e) {
     log.error(`[yard] auth: ${provider} state check failed`, e)
   }
-  if (!row) return completeUrl(provider, "invalid_state")
+  if (!row) return outcomeUrl(await isAppState(provider, input.state), provider, "invalid_state")
   const mode = row.mode as OAuthMode
   const actor = row.actor as OAuthActor
-  const done = (result: OAuthResult) => completeUrl(provider, result, { mode, actor })
+  const app = row.appClient && row.appChallenge ? { client: row.appClient as AppClient, challenge: row.appChallenge } : null
+  const done = (result: OAuthResult) => outcomeUrl(!!app, provider, result, { mode, actor })
   if (input.error) return done("cancelled")
   if (!input.code) return done("invalid_state")
 
@@ -250,7 +297,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
 
   try {
     // link / reauth must land in the same session that started it.
-    if (mode !== "signin") {
+    if (mode !== "signin" && !app) {
       const current = actor === "shopper" ? await getShopper() : await getBrandActor()
       if (!current || current.userId !== row.userId || current.sessionId !== row.sessionId) return done("invalid_state")
       if (current.demo) return done("error") // defence in depth: start refuses demo sessions; never link or re-auth a demo account
@@ -269,8 +316,10 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
         return done("linked")
       })
     }
+    if (mode !== "signin") return done("invalid_state") // app flows only sign in (start refuses the rest)
     return await withTx(async () => {
-      const resolved = await resolveSignInUser(provider, profile)
+      const created = { created: false }
+      const resolved = await resolveSignInUser(provider, profile, created)
       if (typeof resolved === "string") return done(resolved)
       let brandId: string | null
       try {
@@ -280,6 +329,11 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
         if (e instanceof HttpError) return done(actor === "brand" ? "no_brand" : "error")
         throw e
       }
+      if (app) {
+        // The Custom Tab gets no session: the app exchanges this code (with its verifier) for one.
+        const code = await createHandoff({ userId: resolved.id, actor, brandId, provider, mode, result: "signed_in", isNew: created.created, ...app })
+        return appCompleteUrl({ code, result: "signed_in", provider, mode, actor })
+      }
       await openSession({ actor, user: resolved, brandId, method: provider, meta })
       return done("signed_in")
     })
@@ -287,6 +341,15 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     log.error(`[yard] auth: ${provider} callback failed`, e)
     return done("error")
   }
+}
+
+/** Stores a hand-off (code as sha256 only) and returns the code. Purges expired ones on the way. Inside withTx. */
+async function createHandoff(h: { userId: string; actor: OAuthActor; brandId: string | null; provider: ProviderId; mode: OAuthMode; result: OAuthResult; isNew: boolean; client: AppClient; challenge: string }) {
+  const d = await db()
+  await d.delete(authAppHandoffs).where(lt(authAppHandoffs.expiresAt, new Date(Date.now() - 60 * 60_000)))
+  const { code, hash } = newHandoffCode()
+  await d.insert(authAppHandoffs).values({ id: newId("aho"), codeHash: hash, ...h, expiresAt: new Date(Date.now() + HANDOFF_TTL_MS) })
+  return code
 }
 
 /** Linked identities for the settings page. */
