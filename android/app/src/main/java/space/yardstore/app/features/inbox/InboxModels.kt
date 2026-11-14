@@ -32,7 +32,7 @@ data class InboxBrandRef(
 data class InboxLastMessage(
     val preview: String = "",
     val at: String = "",
-    /** "customer" | "brand" | "system". */
+    /** "customer" | "brand" | "system" | "support" (Yard Support's replies). */
     val side: String = "customer",
     val held: Boolean = false,
 )
@@ -68,11 +68,19 @@ data class InboxConversation(
     val createdAt: String = "",
     /** Only on single-conversation reads. */
     val interaction: InboxInteraction? = null,
+    /**
+     * "brand" (a brand conversation) | "support" (the shopper's one thread with Yard Support, whose
+     * `brand` is always Yard Support). Older servers omit it: treat missing as "brand".
+     */
+    val kind: String = "brand",
 ) {
     val blockedByMe: Boolean get() = blocked?.byMe == true
     val blockedByThem: Boolean get() = blocked?.byThem == true
 
     val isUnread: Boolean get() = unread > 0 || markedUnread
+
+    /** The Yard Support thread: Yard's mark, no storefront link, no archive/mute/block/report. */
+    val isSupport: Boolean get() = kind == "support"
 
     /** Newest activity: the last message, else when it started. */
     val sortAt: String get() = lastMessage?.at ?: createdAt
@@ -144,7 +152,7 @@ data class InboxAttachment(
 data class InboxMessage(
     val id: String,
     val seq: Int = 0,
-    /** "customer" | "brand" | "system". */
+    /** "customer" | "brand" | "system" | "support" (Yard Support, in the support thread). */
     val side: String = "brand",
     /** "text" | "product" | "order" | "image" | "system". */
     val kind: String = "text",

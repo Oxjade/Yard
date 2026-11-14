@@ -219,7 +219,11 @@ private fun InboxThreadHeader(model: InboxThreadModel, onBlockTapped: () -> Unit
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.s),
         ) {
-            BrandAvatar(name = model.displayName, logoUrl = model.brandLogoUrl, size = 32.dp)
+            if (model.isSupport) {
+                YardSupportMark(size = 32.dp)
+            } else {
+                BrandAvatar(name = model.displayName, logoUrl = model.brandLogoUrl, size = 32.dp)
+            }
             Column(Modifier.weight(1f, fill = false)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     Text(
@@ -237,12 +241,15 @@ private fun InboxThreadHeader(model: InboxThreadModel, onBlockTapped: () -> Unit
                 val c = model.conversation
                 if (c?.status == "resolved") {
                     Text("Resolved. Writing again reopens it.", style = YardFonts.micro, color = Color.yard.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else if (model.isSupport) {
+                    Text("The Yard team. We usually reply within a day.", style = YardFonts.micro, color = Color.yard.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else if (c?.muted == true) {
                     Text("Muted", style = YardFonts.micro, color = Color.yard.ink3)
                 }
             }
         }
-        Box {
+        // Yard Support has no storefront, archive, mute or block.
+        if (!model.isSupport) Box {
             GlassIconButton(Icons.Filled.MoreHoriz, contentDescription = "More", size = 38.dp) { menuOpen = true }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = Color.yard.surface) {
                 val name = model.displayName
@@ -350,13 +357,20 @@ private fun InboxThreadBody(
         InboxComposer(
             placeholder = "Message ${model.displayName}",
             disabledReason = model.disabledReason,
-            allowsPhotos = model.conversationId != null || model.brandId != null,
+            // Yard Support: photos only once the thread exists (the first message is text or an order).
+            allowsPhotos = if (model.isSupport) model.conversationId != null else model.conversationId != null || model.brandId != null,
+            attachedOrder = model.orderChip,
+            onRemoveOrder = { model.clearOrderChip() },
         ) { text, photos -> model.send(text, photos) }
     }
 }
 
 @Composable
 private fun InboxThreadIntro(model: InboxThreadModel) {
+    if (model.isSupport) {
+        YardSupportIntro()
+        return
+    }
     Column(
         Modifier.fillMaxWidth().padding(vertical = Spacing.xxxl),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -366,6 +380,26 @@ private fun InboxThreadIntro(model: InboxThreadModel) {
         Text("Ask ${model.displayName} anything", style = YardFonts.headline, color = Color.yard.ink, textAlign = TextAlign.Center)
         Text(
             "Sizing, stock, delivery or their next drop. Replies arrive here and in your notifications. Refunds and returns have their own steps on the order page.",
+            style = YardFonts.callout,
+            color = Color.yard.ink2,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 300.dp),
+        )
+    }
+}
+
+/** The empty Yard Support thread (website `SupportThread` intro for shoppers). */
+@Composable
+private fun YardSupportIntro() {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = Spacing.xxxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.s),
+    ) {
+        YardSupportMark(size = 72.dp)
+        Text("Message Yard Support", style = YardFonts.headline, color = Color.yard.ink, textAlign = TextAlign.Center)
+        Text(
+            "Questions about an order, a payment, your account or anything on Yard. Our team replies here and in your notifications.",
             style = YardFonts.callout,
             color = Color.yard.ink2,
             textAlign = TextAlign.Center,

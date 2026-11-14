@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.DoNotDisturbOff
@@ -149,10 +151,42 @@ class InboxListModel : ViewModel() {
     var query by mutableStateOf(""); private set
     /** Ids with an action in flight (row dims). */
     var busyIds by mutableStateOf<Set<String>>(emptySet()); private set
+    /** The shopper's Yard Support thread (GET /api/support/conversation; not part of the list read). */
+    var support by mutableStateOf<InboxConversation?>(null); private set
 
     private var generation = 0
 
     val hasLoaded: Boolean get() = phase == Phase.Loaded
+
+    /** Yard Support pinned above the list once the thread has a message (Inbox filter, no search). */
+    val pinnedSupport: InboxConversation?
+        get() = support?.takeIf { it.lastMessage != null && filter == InboxAPI.Filter.Inbox && query.isEmpty() }
+
+    /** "Message Yard Support" under the list until the thread exists (Inbox filter, no search). */
+    val showsSupportLink: Boolean
+        get() = pinnedSupport == null && filter == InboxAPI.Filter.Inbox && query.isEmpty()
+
+    /**
+     * Reads the Yard Support thread for the pinned row, after the list and only where it shows
+     * (Inbox filter, no search). Best effort: the list works without it.
+     */
+    private suspend fun loadSupportIfShown() {
+        if (filter != InboxAPI.Filter.Inbox || query.isNotEmpty()) return
+        try {
+            support = YardSupportAPI.conversation()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Keep what we had; the next refresh tries again.
+        }
+    }
+
+    /** The open Yard Support thread (two-pane) reports its conversation here so the pinned row follows. */
+    fun applySupportUpdate(c: InboxConversation) {
+        if (!c.isSupport) return
+        val merged = c.copy(lastMessage = c.lastMessage ?: support?.lastMessage, interaction = null)
+        if (merged != support) support = merged
+    }
 
     /** First load (skeleton) or a reload after the filter/query changed. */
     fun load(): Job {
@@ -166,6 +200,7 @@ class InboxListModel : ViewModel() {
                 items = sorted(page.items)
                 nextCursor = page.nextCursor
                 phase = Phase.Loaded
+                loadSupportIfShown()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -188,6 +223,7 @@ class InboxListModel : ViewModel() {
                 items = sorted(page.items)
                 nextCursor = page.nextCursor
                 phase = Phase.Loaded
+                loadSupportIfShown()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -351,7 +387,7 @@ fun InboxView() {
         val id = selectedId
         if (!expanded && id != null) {
             selectedId = null
-            router.push(Route.Conversation(id))
+            router.push(if (id == InboxSupportSelection) Route.YardSupport() else Route.Conversation(id))
         }
     }
     BackHandler(enabled = expanded && selectedId != null) { selectedId = null }
@@ -379,7 +415,13 @@ fun InboxView() {
                     searchText = searchText,
                     onSearchChange = { searchText = it },
                     selectedId = if (expanded) selectedId else null,
-                    onOpen = { id -> if (expanded) selectedId = id else router.push(Route.Conversation(id)) },
+                    onOpen = { id ->
+                        when {
+                            expanded -> selectedId = id
+                            id == InboxSupportSelection -> router.push(Route.YardSupport())
+                            else -> router.push(Route.Conversation(id))
+                        }
+                    },
                 )
             },
             detail = { InboxDetailPane(selectedId, model) },
@@ -437,6 +479,16 @@ private fun InboxDetailPane(selectedId: String?, list: InboxListModel) {
         }
         return
     }
+    if (selectedId == InboxSupportSelection) {
+        val thread: InboxThreadModel = viewModel(key = "yard-support") { InboxThreadModel.forSupport() }
+        LaunchedEffect(thread) {
+            snapshotFlow { thread.conversation }.filterNotNull().collect { list.applySupportUpdate(it) }
+        }
+        CompositionLocalProvider(LocalBackAction provides null) {
+            InboxThreadScreen(thread)
+        }
+        return
+    }
     key(selectedId) {
         val thread: InboxThreadModel = viewModel(key = "inbox-thread-$selectedId") { InboxThreadModel.forConversation(selectedId) }
         LaunchedEffect(thread) {
@@ -476,9 +528,12 @@ private fun InboxList(model: InboxListModel, selectedId: String?, onOpen: (Strin
         },
         modifier = modifier.fillMaxWidth(),
     ) {
-        if (model.items.isEmpty()) {
-            InboxEmptyState(model, Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                router.push(Route.BrandsDirectory)
+        if (model.items.isEmpty() && model.pinnedSupport == null) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                InboxEmptyState(model, Modifier.fillMaxWidth()) { router.push(Route.BrandsDirectory) }
+                if (model.showsSupportLink) {
+                    InboxSupportLink(Modifier.padding(top = Spacing.xl)) { onOpen(InboxSupportSelection) }
+                }
             }
         } else {
             LazyColumn(
@@ -511,10 +566,23 @@ private fun InboxList(model: InboxListModel, selectedId: String?, onOpen: (Strin
                         }
                     }
                 }
+                model.pinnedSupport?.let { c ->
+                    item(key = "yard-support") {
+                        Column(Modifier.animateItem()) {
+                            InboxSupportRow(c, selected = selectedId == InboxSupportSelection) { onOpen(InboxSupportSelection) }
+                            YardDivider(Modifier.padding(start = 64.dp + Spacing.gutter))
+                        }
+                    }
+                }
                 items(model.items, key = { it.id }) { c ->
                     Column(Modifier.animateItem()) {
                         InboxSwipeRow(model, c, selected = c.id == selectedId) { onOpen(c.id) }
                         YardDivider(Modifier.padding(start = 64.dp + Spacing.gutter))
+                    }
+                }
+                if (model.showsSupportLink && model.nextCursor == null) {
+                    item(key = "yard-support-link") {
+                        InboxSupportLink(Modifier.padding(top = Spacing.l)) { onOpen(InboxSupportSelection) }
                     }
                 }
                 if (model.isLoadingMore) {
@@ -526,6 +594,42 @@ private fun InboxList(model: InboxListModel, selectedId: String?, onOpen: (Strin
                 }
             }
         }
+    }
+}
+
+/** `selectedId` of the Yard Support thread in the two-pane inbox (conversation ids start with "cv_"). */
+internal const val InboxSupportSelection = "yard-support"
+
+/** The pinned Yard Support row: Yard's mark, no swipe or long-press actions (nothing to archive, mute or block). */
+@Composable
+private fun InboxSupportRow(c: InboxConversation, selected: Boolean, onOpen: () -> Unit) {
+    Box(
+        Modifier
+            .background(if (selected) Color.yard.surface2 else Color.yard.bg)
+            .semantics { this.selected = selected }
+            .combinedClickableCompat(onOpen),
+    ) {
+        InboxConversationRow(c, Modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.m))
+    }
+}
+
+/** "Message Yard Support" under the list (and the empty state) until the support thread exists. */
+@Composable
+private fun InboxSupportLink(modifier: Modifier = Modifier, onOpen: () -> Unit) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .combinedClickableCompat(onOpen)
+            .padding(horizontal = Spacing.gutter, vertical = Spacing.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+    ) {
+        YardSupportMark(size = 40.dp)
+        Column(Modifier.weight(1f)) {
+            Text("Message Yard Support", style = YardFonts.bodyEmphasis, color = Color.yard.ink)
+            Text("Help with an order, a payment or your account.", style = YardFonts.caption, color = Color.yard.ink2)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.yard.ink3, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -745,7 +849,7 @@ fun InboxConversationRow(conversation: InboxConversation, modifier: Modifier = M
         horizontalArrangement = Arrangement.spacedBy(Spacing.m),
         verticalAlignment = Alignment.Top,
     ) {
-        BrandAvatar(name = c.brand.name, size = 52.dp, verified = c.brand.verified)
+        if (c.isSupport) YardSupportMark(size = 52.dp) else BrandAvatar(name = c.brand.name, size = 52.dp, verified = c.brand.verified)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                 Text(
@@ -756,6 +860,9 @@ fun InboxConversationRow(conversation: InboxConversation, modifier: Modifier = M
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                if (c.isSupport) {
+                    Icon(Icons.Filled.PushPin, contentDescription = "Pinned", tint = Color.yard.ink3, modifier = Modifier.size(14.dp))
+                }
                 if (c.muted) {
                     Icon(Icons.Filled.NotificationsOff, contentDescription = "Muted", tint = Color.yard.ink3, modifier = Modifier.size(14.dp))
                 }

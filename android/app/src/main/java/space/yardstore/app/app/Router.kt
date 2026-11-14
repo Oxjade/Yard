@@ -89,12 +89,19 @@ sealed interface Route {
     @Serializable data object Appearance : Route
     @Serializable data object NotificationSettings : Route
     @Serializable data object Addresses : Route
+    /** You › Settings › Your details: name and email (`YouAccountView`). */
+    @Serializable data object Account : Route
     @Serializable data class Legal(val page: LegalPage) : Route
 
     // Inbox
     @Serializable data object Inbox : Route
     @Serializable data class Conversation(val id: String) : Route
     @Serializable data class MessageBrand(val brandId: String) : Route
+    /**
+     * The shopper's thread with Yard Support (`/inbox?support=1`). With [orderId] the order is
+     * attached to the next message ("Get help from Yard" on an order); [orderRef] is its reference.
+     */
+    @Serializable data class YardSupport(val orderId: String? = null, val orderRef: String? = null) : Route
 
     // Saved
     @Serializable data object Saved : Route
@@ -146,7 +153,13 @@ sealed interface Route {
                     "settings" -> Settings
                     else -> You
                 }
-                "inbox" -> (q("c") ?: q("conversation") ?: second)?.let { Conversation(id = it) } ?: Inbox
+                "inbox" -> when {
+                    q("support") == "1" -> YardSupport(
+                        orderId = q("order")?.takeIf { it.isNotEmpty() },
+                        orderRef = q("orderRef")?.takeIf { it.isNotEmpty() },
+                    )
+                    else -> (q("c") ?: q("conversation") ?: second)?.let { Conversation(id = it) } ?: Inbox
+                }
                 "wishlist" -> Saved
                 "following" -> Following
                 "charts" -> Charts

@@ -36,6 +36,10 @@ References: `06-order-confirmed-ticket.jpg`, `07-order-status-timeline.jpg`.
   The return request is a dialog sheet on wide windows (`presentAsDialogOnWide`).
 - `@YardTabletPreviews` on the list (with and without a selection), detail and confirmation.
 
+## Get help from Yard
+
+Order detail › Help has "Get help from Yard" under "Message {brand}": it pushes `Route.YardSupport(orderId = order.id, orderRef = reference)`, the Yard Support thread with the order as a chip above the composer (sent as `kind: "order"` with the first message; see Docs/inbox.md). The app only shows real orders, so it is always offered.
+
 ## Endpoints
 
 `GET /api/orders?limit=50&before=`, `GET /api/orders/{id}`, `GET /api/orders/checkouts/{checkoutId}`,

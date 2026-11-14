@@ -43,6 +43,8 @@ data class InboxPendingMessage(
     val photos: List<InboxPreparedPhoto>,
     val createdAt: Instant,
     val failedMessage: String? = null,
+    /** Yard Support only: the order attached to this message ("Get help from Yard"). */
+    val order: InboxOrderChip? = null,
 ) {
     val isFailed: Boolean get() = failedMessage != null
 }
@@ -68,10 +70,16 @@ sealed interface InboxThreadItem {
  * The shopper's thread with one brand: load, 5 s polling, older pages, sending, read receipts.
  * Works for an existing conversation (`conversationId`) and for a new one by brand (`brandId`),
  * whose first send creates the conversation. Mirrors `InboxThreadModel.swift`.
+ *
+ * [isSupport]: the shopper's thread with Yard Support (`forSupport`), same behaviour through
+ * /api/support/… (one thread per shopper, created by the first message; photos only once it
+ * exists; an attached order goes out as `kind: "order"`; no archive/mute/block).
  */
 class InboxThreadModel private constructor(
     conversationId: String?,
     brandId: String?,
+    val isSupport: Boolean = false,
+    orderChip: InboxOrderChip? = null,
 ) : ViewModel() {
     sealed interface Phase {
         data object Loading : Phase
@@ -99,6 +107,9 @@ class InboxThreadModel private constructor(
     /** Product photos for shared product cards (productId → cover URL). */
     var productImages by mutableStateOf<Map<String, String>>(emptyMap()); private set
 
+    /** Yard Support: the order riding above the composer, sent with the next message. */
+    var orderChip by mutableStateOf(orderChip); private set
+
     /** Called once when the first send creates the conversation. */
     var onCreated: ((String) -> Unit)? = null
 
@@ -110,6 +121,19 @@ class InboxThreadModel private constructor(
     companion object {
         fun forConversation(id: String) = InboxThreadModel(conversationId = id, brandId = null)
         fun forBrand(brandId: String) = InboxThreadModel(conversationId = null, brandId = brandId)
+        fun forSupport(order: InboxOrderChip? = null) =
+            InboxThreadModel(conversationId = null, brandId = null, isSupport = true, orderChip = order)
+
+        /** Preview-only: a Yard Support thread already loaded. */
+        fun previewSupport(conversation: InboxConversation, messages: List<InboxMessage>, order: InboxOrderChip?) =
+            InboxThreadModel(conversation.id, null, isSupport = true, orderChip = order).apply {
+                this.conversation = conversation
+                this.messages = messages
+                brandName = YardSupportName
+                brandVerified = true
+                phase = Phase.Ready
+                loadedBrandInfo = true
+            }
 
         /** Preview-only: a thread already loaded. */
         fun preview(conversation: InboxConversation, messages: List<InboxMessage>) =
@@ -134,7 +158,7 @@ class InboxThreadModel private constructor(
 
     // region Derived
 
-    val displayName: String get() = brandName.ifEmpty { "This brand" }
+    val displayName: String get() = if (isSupport) YardSupportName else brandName.ifEmpty { "This brand" }
 
     val interaction: InboxInteraction?
         get() = if (conversationId != null) conversation?.interaction else newThreadInteraction
@@ -193,6 +217,12 @@ class InboxThreadModel private constructor(
         if (phase == Phase.Ready && messages.isNotEmpty()) return@launch
         phase = Phase.Loading
         try {
+            if (isSupport) {
+                loadSupport()
+                phase = Phase.Ready
+                launch { markReadIfNeeded() }
+                return@launch
+            }
             val brand = brandId
             if (conversationId == null && brand != null) {
                 val r = InboxAPI.byBrand(brand)
@@ -222,6 +252,36 @@ class InboxThreadModel private constructor(
         }
     }
 
+    /** Yard Support: the thread if it exists (it is created by the first message), else a fresh composer. */
+    private suspend fun loadSupport() {
+        brandName = YardSupportName
+        brandVerified = true
+        loadedBrandInfo = true
+        val c = YardSupportAPI.conversation()
+        if (c != null) {
+            conversationId = c.id
+            apply(c)
+        }
+        if (conversationId == null) {
+            newThreadInteraction = InboxInteraction(canSend = true)
+            return
+        }
+        try {
+            val t = YardSupportAPI.thread()
+            apply(t.conversation)
+            messages = merged(emptyList(), t.messages)
+            hasMore = t.hasMore
+        } catch (e: APIError) {
+            // No message yet (the thread read is 404 until the first one): start fresh.
+            if (!e.isNotFound) throw e
+            newThreadInteraction = InboxInteraction(canSend = true)
+        }
+    }
+
+    private suspend fun threadPage(id: String, before: Int? = null, after: Int? = null, limit: Int = 50): InboxThread =
+        if (isSupport) YardSupportAPI.thread(before = before, after = after, limit = limit)
+        else InboxAPI.thread(id, before = before, after = after, limit = limit)
+
     /** Fetches what's new since the newest message we hold (5 s while the thread is open). */
     fun poll(): Job = viewModelScope.launch {
         val id = conversationId ?: return@launch
@@ -229,7 +289,7 @@ class InboxThreadModel private constructor(
         isPolling = true
         try {
             val after = messages.maxOfOrNull { it.seq } ?: 0
-            val t = InboxAPI.thread(id, after = after, limit = 100)
+            val t = threadPage(id, after = after, limit = 100)
             apply(t.conversation)
             if (t.messages.isNotEmpty()) {
                 messages = merged(messages, t.messages)
@@ -254,7 +314,7 @@ class InboxThreadModel private constructor(
         if (!hasMore || isLoadingOlder) return@launch
         isLoadingOlder = true
         try {
-            val t = InboxAPI.thread(id, before = first)
+            val t = threadPage(id, before = first)
             messages = merged(messages, t.messages)
             hasMore = t.hasMore
             loadProductImages()
@@ -271,6 +331,13 @@ class InboxThreadModel private constructor(
         // List reads don't carry `interaction`; keep the one we have.
         val old = conversation?.interaction
         conversation = if (c.interaction == null && old != null) c.copy(interaction = old) else c
+        if (isSupport) {
+            // Yard Support: Yard's mark and name, never a storefront.
+            brandName = YardSupportName
+            brandHandle = null
+            brandVerified = true
+            return
+        }
         brandId = c.brand.id
         if (brandName.isEmpty() || !loadedBrandInfo) brandName = c.brand.name
         if (c.brand.handle.isNotEmpty()) brandHandle = c.brand.handle
@@ -279,6 +346,7 @@ class InboxThreadModel private constructor(
 
     /** The brand's name, handle and logo from its public storefront (one cached GET). */
     private suspend fun loadBrandInfo() {
+        if (isSupport) return
         val id = brandId ?: return
         if (loadedBrandInfo) return
         loadedBrandInfo = true
@@ -330,7 +398,7 @@ class InboxThreadModel private constructor(
         val previous = lastMarkedSeq
         lastMarkedSeq = maxSeq
         try {
-            InboxAPI.markRead(id, maxSeq)
+            if (isSupport) YardSupportAPI.markRead(maxSeq) else InboxAPI.markRead(id, maxSeq)
             conversation?.let { conversation = it.markingRead() }
         } catch (e: CancellationException) {
             lastMarkedSeq = previous
@@ -347,8 +415,13 @@ class InboxThreadModel private constructor(
     /** Sends text and/or photos. Optimistic: the bubble shows at once and settles when confirmed. */
     fun send(text: String, photos: List<InboxPreparedPhoto>) {
         val body = text.trim()
-        if (body.isEmpty() && photos.isEmpty()) return
-        val p = InboxPendingMessage(id = UUID.randomUUID().toString().lowercase(), text = body, photos = photos, createdAt = Instant.now())
+        // Yard Support: an attached order goes with this message (photos win, as on the website).
+        val order = if (isSupport && photos.isEmpty()) orderChip else null
+        if (body.isEmpty() && photos.isEmpty() && order == null) return
+        val p = InboxPendingMessage(
+            id = UUID.randomUUID().toString().lowercase(), text = body, photos = photos, createdAt = Instant.now(), order = order,
+        )
+        if (isSupport) orderChip = null
         pending = pending + p
         viewModelScope.launch { deliver(p) }
     }
@@ -365,8 +438,37 @@ class InboxThreadModel private constructor(
         pending = pending.filterNot { it.id == p.id }
     }
 
+    /** Yard Support: drops the attached order (the chip's ×). */
+    fun clearOrderChip() {
+        orderChip = null
+    }
+
+    /** Whether the composer can send with no text (an attached order is enough). */
+    val canSendWithoutText: Boolean get() = isSupport && orderChip != null
+
+    private suspend fun deliverSupport(p: InboxPendingMessage) {
+        val attachmentIds = mutableListOf<String>()
+        if (p.photos.isNotEmpty()) {
+            val id = conversationId ?: throw APIError(0, "client", "Send a message first, then add photos.")
+            for (photo in p.photos) attachmentIds += YardSupportAPI.uploadPhoto(photo.jpeg, id)
+        }
+        val r = YardSupportAPI.send(YardSupportAPI.body(p.id, p.text, attachmentIds, p.order))
+        val created = conversationId == null
+        conversationId = r.conversation.id
+        apply(r.conversation)
+        if (conversation?.interaction == null) conversation = r.conversation.copy(interaction = InboxInteraction(canSend = true))
+        pending = pending.filterNot { it.id == p.id }
+        messages = merged(messages, listOf(r.message))
+        lastMarkedSeq = max(lastMarkedSeq, r.message.seq)
+        if (created) onCreated?.invoke(r.conversation.id)
+    }
+
     private suspend fun deliver(p: InboxPendingMessage) {
         try {
+            if (isSupport) {
+                deliverSupport(p)
+                return
+            }
             val brand = brandId ?: conversation?.brand?.id
                 ?: throw APIError(0, "client", "Something went wrong. Try again.")
             val attachmentIds = mutableListOf<String>()

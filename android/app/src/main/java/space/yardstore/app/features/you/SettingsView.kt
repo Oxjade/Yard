@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Paid
 import androidx.compose.material.icons.outlined.PhoneIphone
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,7 +73,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import space.yardstore.app.app.AppTab
@@ -184,7 +184,6 @@ fun SettingsView() {
 
     val security: YouSecurityModel = viewModel { YouSecurityModel() }
     var regionSheet by remember { mutableStateOf<YouRegionSheetMode?>(null) }
-    var showsDetails by remember { mutableStateOf(false) }
     var showsPassword by remember { mutableStateOf(false) }
     var showsDelete by remember { mutableStateOf(false) }
     var pendingUnlink by remember { mutableStateOf<YouIdentity?>(null) }
@@ -257,7 +256,7 @@ fun SettingsView() {
                             SettingsAccount(
                                 model = security,
                                 shopperName = session.shopper?.name,
-                                onDetails = { showsDetails = true },
+                                detailsModifier = Modifier.pageRow(YouSettingsPage.Account),
                                 addressesModifier = Modifier.pageRow(YouSettingsPage.Addresses),
                                 onPassword = { showsPassword = true },
                                 onDelete = { showsDelete = true },
@@ -281,6 +280,7 @@ fun SettingsView() {
                         // Help and legal
                         YouSettingsGroup("Help and legal") {
                             SettingsRow("Help", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
+                            SettingsRow("Message Yard Support", Icons.Outlined.SupportAgent, Modifier.youRowClick { router.push(Route.YardSupport()) })
                             LegalPage.entries.forEach { page ->
                                 SettingsRow(page.title, YouLegalIcon.icon(page), Modifier.pageRow(YouSettingsPage.legal(page)))
                             }
@@ -306,18 +306,6 @@ fun SettingsView() {
 
     regionSheet?.let { mode ->
         YouRegionSheet(mode = mode, onChange = { shipTo = YouRegion.storedShipTo }, onDismiss = { regionSheet = null })
-    }
-    if (showsDetails) {
-        YouAccountDetailsSheet(
-            security = security.security,
-            onHelp = {
-                scope.launch {
-                    delay(300) // let the sheet finish closing first
-                    YouWebPage.Help.open(context, dark)
-                }
-            },
-            onDismiss = { showsDetails = false },
-        )
     }
     if (showsPassword) {
         YouChangePasswordSheet(
@@ -365,7 +353,7 @@ fun SettingsView() {
 private fun SettingsAccount(
     model: YouSecurityModel,
     shopperName: String?,
-    onDetails: () -> Unit,
+    detailsModifier: Modifier,
     addressesModifier: Modifier,
     onPassword: () -> Unit,
     onDelete: () -> Unit,
@@ -373,8 +361,8 @@ private fun SettingsAccount(
     onConnectOnWeb: () -> Unit,
 ) {
     val s = model.security
-    YouSettingsGroup("Account", footer = "Your name goes on your orders.") {
-        SettingsRow("Your details", Icons.Outlined.Badge, Modifier.youRowClick(onClick = onDetails), value = shopperName)
+    YouSettingsGroup("Account", footer = "Change your name and email in Your details. Your name goes on your orders.") {
+        SettingsRow("Your details", Icons.Outlined.Badge, detailsModifier, value = shopperName)
         SettingsRow("Addresses", Icons.Outlined.Place, addressesModifier)
         when (model.phase) {
             YouSecurityModel.Phase.Idle, YouSecurityModel.Phase.Loading -> YouSkeletonRow()
@@ -432,12 +420,13 @@ private fun youDeletionValue(s: YouSecurity): String {
 
 /** A Settings sub-page: pushed as [route] on phones, shown in the detail pane on Expanded windows. */
 enum class YouSettingsPage {
-    Appearance, Notifications, Addresses, Terms, Privacy, Refunds, DataDeletion;
+    Appearance, Notifications, Account, Addresses, Terms, Privacy, Refunds, DataDeletion;
 
     val route: Route
         get() = when (this) {
             Appearance -> Route.Appearance
             Notifications -> Route.NotificationSettings
+            Account -> Route.Account
             Addresses -> Route.Addresses
             Terms -> Route.Legal(LegalPage.Terms)
             Privacy -> Route.Legal(LegalPage.Privacy)
@@ -472,6 +461,7 @@ private fun YouSettingsDetail(page: YouSettingsPage?) {
                 }
                 YouSettingsPage.Appearance -> AppearanceView()
                 YouSettingsPage.Notifications -> NotificationSettingsView()
+                YouSettingsPage.Account -> YouAccountView()
                 YouSettingsPage.Addresses -> AddressesView()
                 YouSettingsPage.Terms -> LegalView(LegalPage.Terms)
                 YouSettingsPage.Privacy -> LegalView(LegalPage.Privacy)

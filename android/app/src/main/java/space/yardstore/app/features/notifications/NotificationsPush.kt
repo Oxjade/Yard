@@ -412,7 +412,7 @@ fun YardPushNotifications() {
         }
         when (val route = NotificationsRouting.route(href)) {
             null -> router.show(Route.Notifications, AppTab.You)
-            is Route.Order, Route.Orders, is Route.Conversation, Route.Inbox, Route.MyDrops, Route.Notifications ->
+            is Route.Order, Route.Orders, is Route.Conversation, is Route.YardSupport, Route.Inbox, Route.MyDrops, Route.Notifications ->
                 router.show(route, AppTab.You)
             else -> router.show(route, AppTab.Home)
         }

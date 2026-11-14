@@ -246,6 +246,9 @@ fun InboxPendingRow(
                 }
             }
         }
+        pending.order?.let { order ->
+            InboxOrderChipView(order)
+        }
         if (pending.text.isNotEmpty()) {
             InboxBubble(mine = true) {
                 Text(pending.text, style = YardFonts.body, color = Color.yard.onAcid)

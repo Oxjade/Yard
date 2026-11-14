@@ -67,6 +67,11 @@ pane windows, list-pane width, n-column masonry, phone orientation policy, rail 
 follows/wishlist, storefront), `APIClientTest` (MockWebServer: headers, Origin/Content-Type, query
 encoding, body encoding, error envelope, decoding errors, cookie persistence).
 
+## Routes added later
+
+- `Route.YardSupport(orderId: String? = null, orderRef: String? = null)` → `YardSupportConversationView` (inbox); `Route.fromUrl` maps `/inbox?support=1[&order=&orderRef=]`.
+- `Route.Account` → `YouAccountView` (You › Settings › Your details).
+
 ## Not mirrored / different on purpose
 
 - **Material blur**: `.ultraThinMaterial` (tab pill, glass buttons, toasts, save heart) is a

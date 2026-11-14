@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -139,6 +140,7 @@ fun YouView() {
             YouSettingsGroup(null) {
                 SettingsRow("Settings", Icons.Outlined.Settings, Modifier.youRowClick { router.push(Route.Settings) })
                 SettingsRow("Help", Icons.AutoMirrored.Outlined.HelpOutline, Modifier.youRowClick { YouWebPage.Help.open(context, dark) })
+                SettingsRow("Message Yard Support", Icons.Outlined.SupportAgent, Modifier.youRowClick { router.push(Route.YardSupport()) })
                 SettingsRow("Sell on Yard", Icons.Outlined.Storefront, Modifier.youRowClick { YouWebPage.Sell.open(context, dark) })
             }
 

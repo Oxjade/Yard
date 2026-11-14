@@ -11,13 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,13 +35,11 @@ import kotlinx.serialization.Serializable
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.core.networking.HTTPMethod
-import space.yardstore.app.core.stores.LocalSessionStore
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardPreview
 import space.yardstore.app.designsystem.components.Card
 import space.yardstore.app.designsystem.components.LocalToastCenter
-import space.yardstore.app.designsystem.components.SettingsRow
 import space.yardstore.app.designsystem.components.Toast
 import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonSize
@@ -54,53 +47,12 @@ import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardSheetHeader
 import space.yardstore.app.designsystem.yard
 
-// Account sheets opened from Settings (mirrors YouAccountSheets.swift):
-//   YouAccountDetailsSheet   name + email (read-only: the API has no profile-update endpoint yet)
+// Account sheets opened from Settings (mirrors YouAccountSheets.swift). Name and email are a
+// page of their own now (YouAccountView, Route.Account).
 //   YouChangePasswordSheet   POST /api/auth/password/change?as=shopper { currentPassword?, newPassword }
 //   YouDeleteAccountSheet    POST /api/auth/reauth?as=shopper { password } when needed, then
 //                            POST /api/auth/account/delete { confirm: "DELETE" }
 // Delete is an irreversible destructive action, so it gets a modal confirmation.
-
-// MARK: - Your details
-
-@Composable
-fun YouAccountDetailsSheet(security: YouSecurity?, onHelp: () -> Unit, onDismiss: () -> Unit) {
-    val session = LocalSessionStore.current
-    YouSheet(onDismiss = onDismiss, skipPartiallyExpanded = false) { close ->
-        YardSheetHeader("Your details", subtitle = "Your name goes on your orders.", onClose = close)
-        Column(
-            Modifier
-                .padding(horizontal = Spacing.gutter)
-                .padding(top = Spacing.s, bottom = Spacing.xl)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(Spacing.l),
-        ) {
-            Card(padding = Spacing.xs) {
-                SettingsRow("Name", Icons.Outlined.Person, value = session.shopper?.name ?: "", showsChevron = false)
-                SettingsRow("Email", Icons.Outlined.Email, value = session.shopper?.email ?: "", showsChevron = false)
-                if (security != null && !security.demo) {
-                    SettingsRow(
-                        "Email verified",
-                        if (security.emailVerified) Icons.Outlined.Verified else Icons.Outlined.ErrorOutline,
-                        value = if (security.emailVerified) "Yes" else "Not yet",
-                        showsChevron = false,
-                    )
-                }
-            }
-            Text(youManagedNote(security), style = YardFonts.caption, color = Color.yard.ink3)
-            YardButton("Contact support", icon = Icons.AutoMirrored.Outlined.HelpOutline, style = YardButtonStyle.Secondary, size = YardButtonSize.Medium) {
-                close()
-                onHelp()
-            }
-        }
-    }
-}
-
-private fun youManagedNote(security: YouSecurity?): String =
-    if (security != null && !security.hasPassword && security.identities.any { it.provider == "google" })
-        "Signed in with Google. Change this email in your Google account. To change your name, contact support."
-    else
-        "Changing your name or email isn't available in the app yet. Contact support and we'll update it for you."
 
 // MARK: - Change password
 

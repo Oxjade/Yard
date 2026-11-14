@@ -14,6 +14,24 @@ Package `features/inbox/`. Mirrors `ios/Yard/Features/Inbox/` file for file (see
 
 Polling: every 5 s while the screen's lifecycle is RESUMED (`repeatOnLifecycle`), once immediately on returning; stops when the screen is covered, popped or the app is backgrounded. Mark-read on open and when brand messages arrive.
 
+## Yard Support
+
+The shopper's one conversation with Yard's own team (docs/APP.md › Yard Support on the website branch). It is an inbox conversation of kind `"support"` in the inbox's own DTOs, so it reuses `InboxThreadScreen`, the bubbles and the composer; `YardSupport.kt` holds the rest.
+
+| Piece | What |
+|---|---|
+| `YardSupportConversationView(orderId, orderRef)` | `Route.YardSupport` (also `/inbox?support=1[&order=&orderRef=]` links and the support-reply push, `data.url` `/inbox?support=1`). `InboxThreadModel.forSupport(chip)`; signed-out gate. |
+| `InboxThreadModel.isSupport` | Same load / 5 s poll / older pages / optimistic send / retry with the same `clientId` / mark read, through `YardSupportAPI`. No storefront, logo or product reads. The thread is created by the first message (`conversation: null` and a 404 thread read before it = fresh composer). Photos only once the thread exists (upload `conversationId=<support thread>`). |
+| Header | `YardSupportMark` (Yard logo in acid on black, avatar-shaped), "Yard Support", "The Yard team. We usually reply within a day." / "Resolved. Writing again reopens it."; no ⋯ menu (no archive, mute, block or report). |
+| Order help | `orderChip`: the order rides above the composer as a removable chip (`InboxOrderChipView`), goes out with the next message as `kind: "order"`, `orderRefId` (text optional; photos win, as on the website), then clears. A failed send keeps its order for Retry. |
+| Inbox list | `InboxListModel.support` (GET /api/support/conversation, best effort, with every load/refresh). Pinned row above the brand rows once it has a `lastMessage` (Inbox filter, no search; no swipe/long-press actions), else a "Message Yard Support" link under the list / empty state. Two-pane: selection `"yard-support"` opens the support thread in the detail pane and streams back to the pinned row (`applySupportUpdate`). |
+
+Endpoints: `GET /api/support/conversation`, `GET /api/support/conversation/messages?before=&after=&limit=`, `POST /api/support/messages` `{ clientId, kind: text|image|order, body?, attachmentIds?, orderRefId? }`, `POST /api/support/conversation/read` `{ upToSeq }`, `POST /api/uploads?purpose=inbox_attachment&as=shopper&conversationId=`.
+
+Entry points: You › "Message Yard Support", Settings › Help and legal › "Message Yard Support", order detail › Help › "Get help from Yard" (`Route.YardSupport(order.id, reference)`), inbox pinned row / link, notifications and push.
+
+Not done (same as the brand inbox): typing indicator and "Seen" receipts (the app polls; no SSE), unread badge.
+
 ## Tablet & large screens
 
 - **Inbox → thread** is a `ListDetailLayout` on Expanded (≥ 840dp): list pane (top bar + filter, search, rows; the open row is highlighted on `surface2`) beside the thread (`InboxThreadScreen` with no back button). The open conversation id lives in `rememberSaveable`; nothing selected = "Pick a conversation" `EmptyState`. System back closes the open thread first. The thread's conversation streams into the list (`InboxListModel.applyThreadUpdate`): unread dot, preview, mute/archive/block and order update live, since the list never resumes while both panes show. If the window shrinks below Expanded with a thread open, that thread is pushed as `Route.Conversation`. Compact/Medium: list only, rows push as on phones.
@@ -37,6 +55,9 @@ Same as iOS: `GET /api/inbox/conversations`, `GET /api/inbox/conversations/{id}/
 - `InboxAPI.client` is an internal test hook (null = `APIClient.shared`).
 
 ## Tests
+
+`YardSupportTest` (18): support DTOs exactly as docs/APP.md, send-body kinds, thread load/no-thread/404/poll/older pages/first send/order help/retry, photo upload query, pinned row and link, `/inbox?support=1` links and notification hrefs.
+
 
 `app/src/test/java/space/yardstore/app/features/inbox/` (36 tests, MockWebServer): DTO decoding/encoding (`InboxModelsTest`), formatting and disabled-composer copy (`InboxFormatTest`), `InboxThreadModel` (load, mark read, storefront/product reads, polling, new-thread first send, blocked reason, failed send + retry with same clientId, discard, older pages, mute/block, day grouping) and `InboxListModel` (sorting, paging, filter/search params, error vs refresh, archive/mute/mark-read/unblock, busy state, photo upload query, two-pane thread → list sync).
 

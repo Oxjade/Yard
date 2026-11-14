@@ -28,6 +28,7 @@ import space.yardstore.app.features.drops.MyDropsView
 import space.yardstore.app.features.inbox.BrandConversationView
 import space.yardstore.app.features.inbox.ConversationView
 import space.yardstore.app.features.inbox.InboxView
+import space.yardstore.app.features.inbox.YardSupportConversationView
 import space.yardstore.app.features.notifications.NotificationsView
 import space.yardstore.app.features.orders.OrderConfirmationView
 import space.yardstore.app.features.orders.OrderDetailView
@@ -44,6 +45,7 @@ import space.yardstore.app.features.you.AppearanceView
 import space.yardstore.app.features.you.LegalView
 import space.yardstore.app.features.you.NotificationSettingsView
 import space.yardstore.app.features.you.SettingsView
+import space.yardstore.app.features.you.YouAccountView
 import space.yardstore.app.features.you.YouView
 import kotlin.reflect.typeOf
 
@@ -77,10 +79,12 @@ fun RouteView(route: Route) {
         Route.Appearance -> AppearanceView()
         Route.NotificationSettings -> NotificationSettingsView()
         Route.Addresses -> AddressesView()
+        Route.Account -> YouAccountView()
         is Route.Legal -> LegalView(page = route.page)
         Route.Inbox -> InboxView()
         is Route.Conversation -> ConversationView(id = route.id)
         is Route.MessageBrand -> BrandConversationView(brandId = route.brandId)
+        is Route.YardSupport -> YardSupportConversationView(orderId = route.orderId, orderRef = route.orderRef)
         Route.Saved -> SavedView()
         Route.Following -> FollowingView()
         Route.Charts -> ChartsView()
@@ -138,6 +142,7 @@ fun NavGraphBuilder.yardRouteDestinations(content: @Composable (NavBackStackEntr
     routeDestination<Route.Appearance>(content)
     routeDestination<Route.NotificationSettings>(content)
     routeDestination<Route.Addresses>(content)
+    routeDestination<Route.Account>(content)
     composable<Route.Legal>(
         typeMap = mapOf(typeOf<LegalPage>() to NavType.EnumType(LegalPage::class.java)),
         enterTransition = pushEnter,
@@ -148,6 +153,7 @@ fun NavGraphBuilder.yardRouteDestinations(content: @Composable (NavBackStackEntr
     routeDestination<Route.Inbox>(content)
     routeDestination<Route.Conversation>(content)
     routeDestination<Route.MessageBrand>(content)
+    routeDestination<Route.YardSupport>(content)
     routeDestination<Route.Saved>(content)
     routeDestination<Route.Following>(content)
     routeDestination<Route.Charts>(content)

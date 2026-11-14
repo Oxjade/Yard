@@ -267,6 +267,10 @@ fun YouTextField(
     onTextChange: (String) -> Unit,
     isSecure: Boolean = false,
     error: String? = null,
+    /** Default: Password for secure fields, else Text. */
+    keyboardType: KeyboardType? = null,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    enabled: Boolean = true,
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         Text(title, style = YardFonts.captionEmphasis, color = Color.yard.ink2)
@@ -275,13 +279,14 @@ fun YouTextField(
             value = text,
             onValueChange = onTextChange,
             singleLine = true,
-            textStyle = YardFonts.body.copy(color = Color.yard.ink),
+            enabled = enabled,
+            textStyle = YardFonts.body.copy(color = if (enabled) Color.yard.ink else Color.yard.ink3),
             cursorBrush = SolidColor(Color.yard.ink),
             visualTransformation = if (isSecure) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.None,
+                capitalization = capitalization,
                 autoCorrectEnabled = false,
-                keyboardType = if (isSecure) KeyboardType.Password else KeyboardType.Text,
+                keyboardType = keyboardType ?: if (isSecure) KeyboardType.Password else KeyboardType.Text,
             ),
             modifier = Modifier
                 .fillMaxWidth()

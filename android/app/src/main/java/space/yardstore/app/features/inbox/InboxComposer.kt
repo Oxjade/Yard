@@ -87,6 +87,9 @@ fun InboxComposer(
     /** Photos need a conversation or a brand to upload against; both are always known here. */
     allowsPhotos: Boolean,
     modifier: Modifier = Modifier,
+    /** Yard Support: an order riding with the next message (a removable chip; text is optional then). */
+    attachedOrder: InboxOrderChip? = null,
+    onRemoveOrder: () -> Unit = {},
     onFocusChanged: (Boolean) -> Unit = {},
     onSend: (String, List<InboxPreparedPhoto>) -> Unit,
 ) {
@@ -101,7 +104,7 @@ fun InboxComposer(
     val focus = remember { FocusRequester() }
 
     val trimmed = text.trim()
-    val canSend = (trimmed.isNotEmpty() || photos.isNotEmpty()) && !isPreparing && text.length <= InboxComposerMaxLength
+    val canSend = (trimmed.isNotEmpty() || photos.isNotEmpty() || attachedOrder != null) && !isPreparing && text.length <= InboxComposerMaxLength
 
     fun addPhotos(uris: List<android.net.Uri>) {
         if (uris.isEmpty()) return
@@ -159,6 +162,9 @@ fun InboxComposer(
                 Modifier.fillMaxWidth().padding(horizontal = Spacing.m - Spacing.xs, vertical = Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
+                if (attachedOrder != null) {
+                    InboxOrderChipView(attachedOrder, Modifier.padding(start = Spacing.xs, top = Spacing.xs), onRemove = onRemoveOrder)
+                }
                 if (photos.isNotEmpty() || isPreparing) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                         items(photos, key = { it.id }) { photo ->

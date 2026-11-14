@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -679,6 +680,15 @@ private fun OrderDetailsTab(order: OrderDetail, isCancelling: Boolean, onCancel:
                     "Message ${order.summary.brand.name} about this order",
                     Icons.Outlined.Forum,
                     modifier = Modifier.clickable(enabled = brandId.isNotEmpty()) { router.push(Route.MessageBrand(brandId)) },
+                )
+                YardDivider()
+                // Yard Support with this order attached to the first message (docs/APP.md › Order help).
+                SettingsRow(
+                    "Get help from Yard",
+                    Icons.Outlined.SupportAgent,
+                    modifier = Modifier.clickable {
+                        router.push(Route.YardSupport(orderId = order.id, orderRef = order.summary.reference.ifEmpty { null }))
+                    },
                 )
                 YardDivider()
                 SettingsRow(

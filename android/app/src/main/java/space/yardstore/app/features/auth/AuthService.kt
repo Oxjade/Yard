@@ -66,7 +66,19 @@ object AuthAPI {
     /** POST /api/auth/verify-email/confirm { token } → `{ status: "verified", signedIn }`. */
     suspend fun confirmEmail(token: String): AuthStatusResponse =
         api.post(p("/api/auth/verify-email/confirm"), body = AuthTokenBody(token))
+
+    /**
+     * POST /api/auth/change-email/confirm { token } (public, no session needed) →
+     * `{ status: "changed", email }`. 400 `fields.token` for an expired, used or replaced link;
+     * 409 when another account took the address meanwhile.
+     */
+    suspend fun confirmEmailChange(token: String): AuthEmailChangeResponse =
+        api.post(p("/api/auth/change-email/confirm"), body = AuthTokenBody(token))
 }
+
+/** POST /api/auth/change-email/confirm → `{ status: "changed", email }`. */
+@kotlinx.serialization.Serializable
+data class AuthEmailChangeResponse(val status: String = "", val email: String = "")
 
 /**
  * Email links (`/auth/magic?token=…`, `/auth/verify?token=…`) opened in the app.
@@ -85,7 +97,7 @@ object AuthEmailLinks {
         val apiHost = Config.baseHttpUrl.host
         if (!(uri.host.equals(apiHost, ignoreCase = true) || uri.scheme == "yard")) return false
         val path = normalisedPath(uri)
-        return (path == "/auth/magic" || path == "/auth/verify") && token(uri) != null
+        return (path == "/auth/magic" || path == "/auth/verify" || path == CHANGE_EMAIL_PATH) && token(uri) != null
     }
 
     /** Consumes the link; returns a sentence for a toast. */
@@ -108,6 +120,13 @@ object AuthEmailLinks {
                         "Your email is verified. Sign in to continue."
                     }
                 }
+                // The confirmation link for a new email (Settings › Your details). The app claims
+                // /auth links, so it finishes the change itself instead of the website page.
+                CHANGE_EMAIL_PATH -> {
+                    val result = AuthAPI.confirmEmailChange(token)
+                    if (session.isSignedIn) session.refresh()
+                    changeEmailMessage(result)
+                }
                 else -> null
             }
         } catch (e: CancellationException) {
@@ -116,6 +135,12 @@ object AuthEmailLinks {
             APIError.messageFor(APIError.network(e))
         }
     }
+
+    const val CHANGE_EMAIL_PATH = "/auth/change-email"
+
+    /** The toast after a confirmed email change. */
+    fun changeEmailMessage(result: AuthEmailChangeResponse): String =
+        if (result.email.isNotEmpty()) "Your Yard email is now ${result.email}." else "Your Yard email was changed."
 
     private fun normalisedPath(uri: Uri): String {
         if (uri.scheme == "yard") {

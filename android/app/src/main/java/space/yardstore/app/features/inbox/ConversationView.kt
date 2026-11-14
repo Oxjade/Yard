@@ -33,14 +33,19 @@ fun ConversationView(id: String) {
 
 /** Signed-out state for the thread screens (skeleton while the session is still loading). */
 @Composable
-fun InboxSignedOutGate(hasLoaded: Boolean, signIn: () -> Unit) {
+fun InboxSignedOutGate(
+    hasLoaded: Boolean,
+    message: String = "Sign in to message brands about sizing, stock and delivery.",
+    title: String = "Your inbox",
+    signIn: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar(null)
         if (hasLoaded) {
             EmptyState.SignedOut(
-                message = "Sign in to message brands about sizing, stock and delivery.",
+                message = message,
                 modifier = Modifier.weight(1f),
-                title = "Your inbox",
+                title = title,
                 signIn = signIn,
             )
         } else {

@@ -9,7 +9,16 @@ Mirrors `ios/Yard/Features/You` file for file (same names, copy, endpoints and s
 - `NotificationSettingsView()` — topics, Email channel, "Push on this phone" (opens the system's app-notification settings), read receipts; each switch saves at once with the site's email rule; skeleton / error / signed-out states.
 - `AddressesView()` — honest empty state (no address-book API) + Ship to / Currency.
 - `LegalView(page)` — the website page in an `android.webkit.WebView`, skeleton while loading, error + retry, "Open in browser" (Custom Tab) top-bar action.
-- Sheets (`YouSheet` = `YardSheet` + own toast host + hide animation + dismiss lock): `YouRegionSheet`, `YouAccountDetailsSheet`, `YouChangePasswordSheet`, `YouDeleteAccountSheet`.
+- Sheets (`YouSheet` = `YardSheet` + own toast host + hide animation + dismiss lock): `YouRegionSheet`, `YouChangePasswordSheet`, `YouDeleteAccountSheet`. Your details is a page (`YouAccountView`).
+
+## Your details (name and email) — `YouAccountView()`, `Route.Account`
+
+Settings › Account › Your details is a page (two-pane: `YouSettingsPage.Account`). It replaced the read-only sheet and its "isn't available in the app yet" note.
+- `GET /api/account?as=shopper` → `AccountDto`; re-read on every resume and whenever the session's email changes.
+- Name: sign-up rules (`youNameError`: trimmed, 1–80, no control characters or `<` `>`), `PATCH /api/account?as=shopper { name }`, then `session.refresh()`.
+- Email: `POST /api/account/email?as=shopper { email, currentPassword? }` (password only when `hasPassword`); local checks (`youEmailChangeErrors`), server `fields.email` / `fields.currentPassword` under their fields, 422/429 as a form error. Pending card ("We sent a link to …", expiry) with Resend link (password accounts re-open the form with the address filled in), Use a different email, Cancel change (`DELETE /api/account/email?as=shopper`). Demo accounts: "Demo accounts can't change their email."
+- No password + 403 `fields.reauth = "required"`: "Confirm it's you" with Continue with Google/Apple/… (the account's `signInProviders` × `GET /api/auth/providers`): the normal Custom Tab hand-off (`AuthAppHandoff.begin`; the panel counts as the waiting sign-in screen so no sign-in sheet opens over it); on success (same shopper) the request is sent again. Accounts with no provider and no password (magic link) are told to sign out and back in first.
+- The link in the email (`/auth/change-email?token=`) is an `/auth` App Link, so the app finishes it: `AuthEmailLinks` POSTs `/api/auth/change-email/confirm { token }`, refreshes the session and toasts "Your Yard email is now …" (or the server's message for a used/expired link). In a browser the website page does the same; the app re-reads on resume.
 
 ## Tablet & large screens
 - `YouView`: the scrolling column is capped at `contentMaxWidth` (whole width still scrolls); the six quick tiles sit in one row on `isWide` (`youTileColumns`: 3 → 6), equal height per row.
@@ -19,6 +28,7 @@ Mirrors `ios/Yard/Features/You` file for file (same names, copy, endpoints and s
 - `@YardTabletPreviews` on YouView, SettingsView, AppearanceView, NotificationSettingsView, AddressesView, LegalView.
 
 ## Endpoints
+- `GET/PATCH /api/account?as=shopper`, `POST/DELETE /api/account/email?as=shopper`, `POST /api/auth/change-email/confirm` (Your details)
 - `GET /api/auth/security?as=shopper`, `DELETE /api/auth/identities/{id}?as=shopper`
 - `POST /api/auth/password/change?as=shopper` `{ currentPassword?, newPassword }`
 - `POST /api/auth/reauth?as=shopper` `{ password }` then `POST /api/auth/account/delete` `{ confirm: "DELETE" }`
@@ -30,7 +40,7 @@ Mirrors `ios/Yard/Features/You` file for file (same names, copy, endpoints and s
 `YouMarkets` (copy of src/config/markets.ts), `YouRegion` (ship-to in `Config.preferences` key `yard.shipTo`, `yard.currencyChosen`), `YouWebPage` (Help / Sell / web settings via `WebPages`), `YouSettingsGroup`, `YouToggleRow`, `YouTextField`, `YouSkeletonRow`, `Modifier.youRowClick`, security DTOs.
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer). Models take `(api, root)` so tests can point them at the mock server.
+`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer), `YouAccountTest` (16: name/email rules, AccountDto, exact request bodies, error mapping, reauth, pending/cancel/refresh, change-email confirm). Models take `(api, root)` so tests can point them at the mock server.
 
 ## Differences from iOS
 - Web pages open in Custom Tabs, not SFSafariViewController. Legal WebView shares the system WebView cookie store (iOS used a non-persistent store); it doesn't force dark styling of the web page (iOS doesn't either).
@@ -38,7 +48,7 @@ Mirrors `ios/Yard/Features/You` file for file (same names, copy, endpoints and s
 - Footers say "this phone" / "your phone's" instead of "this iPhone" / "your iPhone's".
 - Sign-in method icons: no Google/Apple logos in material icons — AccountCircle / PhoneIphone stand in.
 - No password-manager autofill hints on the account-sheet fields (iOS `textContentType`).
-- Same open items as iOS: no profile-update endpoint (details are read-only), Google/Apple linking happens on the web, tiles for Orders/Inbox/Drop reminders have no counts.
+- Same open items as iOS: Google/Apple linking happens on the web, tiles for Orders/Inbox/Drop reminders have no counts.
 - After "Delete my account" succeeds, the sheet calls `onDeleted` and SettingsView refreshes the session, pops to You and toasts in its own scope (the sheet's scope is cancelled when it closes; on iOS the `Task` survives `dismiss()`).
 - The change-password sheet can't be swiped away while saving (closing would cancel the request's coroutine).
 - `YouToggleRow` is a single `toggleable` (role Switch) row; the switch inside is display-only, so TalkBack reads one switch with its title and detail.
