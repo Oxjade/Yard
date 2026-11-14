@@ -190,8 +190,22 @@ object AuthAppHandoff {
     var activeScreens: Int by mutableIntStateOf(0)
         private set
 
+    /** Counts the times the last sign-in screen went away (see [complete]). */
+    private var closings = 0
+
     fun screenAppeared() { activeScreens += 1 }
-    fun screenDisappeared() { activeScreens = (activeScreens - 1).coerceAtLeast(0) }
+
+    /**
+     * When the last sign-in screen goes away, an outcome nobody read is dropped, so a later
+     * sign-in screen never shows a stale success or error.
+     */
+    fun screenDisappeared() {
+        activeScreens = (activeScreens - 1).coerceAtLeast(0)
+        if (activeScreens == 0) {
+            closings += 1
+            outcome = null
+        }
+    }
 
     fun consumeOutcome(): Outcome? = outcome.also { outcome = null }
 
@@ -236,6 +250,7 @@ object AuthAppHandoff {
     suspend fun complete(url: String, session: SessionStore?, onlyIfPending: Boolean = false): Outcome? {
         val callback = AuthHandoffCallback.parse(url) ?: return null
         if (onlyIfPending && !hasPending()) return null
+        val closingsAtStart = closings
         val pending = store.take()
         val label = pending?.label?.takeIf { it.isNotEmpty() } ?: "social"
         val result: Outcome = when {
@@ -243,7 +258,10 @@ object AuthAppHandoff {
             pending == null || pending.isExpired(clock()) -> Outcome.Failed(AuthOAuthResult.message("invalid_state"))
             else -> exchange(callback, pending, label, session)
         }
-        outcome = result
+        // The sign-in screen was closed while the code was being exchanged and none has opened
+        // since: nobody is waiting for this result (the session was still refreshed on success).
+        val abandoned = closings != closingsAtStart && activeScreens == 0
+        if (!abandoned) outcome = result
         return result
     }
 
@@ -276,6 +294,7 @@ object AuthAppHandoff {
         outcome = null
         exchangingKey = null
         activeScreens = 0
+        closings = 0
         storeOverride?.clear()
     }
 }

@@ -98,8 +98,8 @@ import space.yardstore.app.designsystem.yard
  * - "Continue with Google" (and any other provider the server lists at GET /api/auth/providers)
  *   → Custom Tab at /api/auth/oauth/{provider}/app-start (PKCE) → yard://auth/complete →
  *   POST /api/auth/oauth/app-exchange ([AuthAppHandoff], see android/Docs/connect.md).
- *   After a social sign-in the shopper picks "I'm here to shop" / "I want to sell on Yard"
- *   (the website's /auth/complete choice).
+ *   After a social sign-in that creates a new account (`isNew`) the shopper picks "I'm here to
+ *   shop" / "I want to sell on Yard" (the website's /auth/complete choice).
  * - Email + password: POST /api/auth/sign-in (handles `verify_email`).
  * - Create account: POST /api/auth/sign-up → "check your email".
  * - "Email me a sign-in link": POST /api/auth/magic-link. "Forgot password?": POST /api/auth/password/forgot.
@@ -126,7 +126,7 @@ internal fun SignInScreen(model: SignInModel) {
     var showWelcome by rememberSaveable { mutableStateOf(false) }
     /** True from a successful sign-in until the sheet closes (hides the "already signed in" panel). */
     var justSignedIn by rememberSaveable { mutableStateOf(false) }
-    /** After a social sign-in: "What brings you to Yard?" (shop / sell). */
+    /** After a social sign-in that created a new account: "What brings you to Yard?" (shop / sell). */
     var showIntentChoice by rememberSaveable { mutableStateOf(false) }
     var signingOut by remember { mutableStateOf(false) }
 
@@ -150,7 +150,7 @@ internal fun SignInScreen(model: SignInModel) {
     }
 
     /** The server says signed in: re-read the session, confirm a shopper is there, then go on. */
-    suspend fun completeSignIn(social: Boolean) {
+    suspend fun completeSignIn(newSocialAccount: Boolean) {
         focusManager.clearFocus()
         session.didSignIn()
         val shopper = session.shopper
@@ -161,16 +161,17 @@ internal fun SignInScreen(model: SignInModel) {
         justSignedIn = true
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         when {
-            // The website asks a new social sign-in what brought them (so a brand isn't stuck in a
-            // shopper account with no way to start selling).
-            social && !shopper.demo -> showIntentChoice = true
+            // The website asks a social sign-in that created a new account what brought them (so a
+            // brand isn't stuck in a shopper account with no way to start selling); a returning
+            // account is not asked again.
+            newSocialAccount && !shopper.demo -> showIntentChoice = true
             AuthOnboarding.onboarded -> close()
             else -> showWelcome = true
         }
     }
 
     fun submit() {
-        scope.launch { if (model.submit(setFocus)) completeSignIn(social = false) }
+        scope.launch { if (model.submit(setFocus)) completeSignIn(newSocialAccount = false) }
     }
 
     // Social sign-in comes back through yard://auth/complete (MainActivity → AuthAppHandoff),
@@ -182,7 +183,9 @@ internal fun SignInScreen(model: SignInModel) {
     val handoffOutcome = AuthAppHandoff.outcome
     LaunchedEffect(handoffOutcome) {
         val outcome = AuthAppHandoff.consumeOutcome() ?: return@LaunchedEffect
-        if (model.finishSocial(outcome)) completeSignIn(social = true)
+        if (model.finishSocial(outcome)) {
+            completeSignIn(newSocialAccount = (outcome as? AuthAppHandoff.Outcome.SignedIn)?.isNew == true)
+        }
     }
 
     AnimatedContent(
@@ -263,7 +266,7 @@ internal fun SignInScreen(model: SignInModel) {
                                     model.startSocial(button)?.let { url -> WebPages.open(context, url, darkTheme = isDark) }
                                 },
                                 onDemo = {
-                                    scope.launch { if (model.signInDemo()) completeSignIn(social = false) }
+                                    scope.launch { if (model.signInDemo()) completeSignIn(newSocialAccount = false) }
                                 },
                             )
                             SignInFormCard(model, nameFocus, emailFocus, passwordFocus, setFocus, onSubmit = { submit() })

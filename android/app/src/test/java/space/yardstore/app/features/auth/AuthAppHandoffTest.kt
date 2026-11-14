@@ -1,5 +1,6 @@
 package space.yardstore.app.features.auth
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
@@ -131,6 +132,25 @@ class AuthAppHandoffTest {
         assertNull(AuthAppHandoff.exchangingKey)
         assertEquals(outcome, AuthAppHandoff.consumeOutcome())
         assertNull(AuthAppHandoff.outcome)
+    }
+
+    @Test fun closingTheLastSignInScreenDropsAnUnreadOutcome() = runBlocking {
+        AuthAppHandoff.screenAppeared()
+        AuthAppHandoff.complete("yard://auth/complete?result=identity_in_use&provider=google", session = null)
+        assertTrue(AuthAppHandoff.outcome != null)
+        AuthAppHandoff.screenDisappeared()
+        assertNull(AuthAppHandoff.outcome)
+    }
+
+    @Test fun exchangeFinishingAfterTheScreenClosedIsNotPublished() = runBlocking {
+        AuthAppHandoff.screenAppeared()
+        AuthAppHandoff.begin(google, server.url("/"))
+        server.enqueue(json("""{"result":"signed_in","isNew":false}""").setHeadersDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS))
+        val closer = launch { kotlinx.coroutines.delay(100); AuthAppHandoff.screenDisappeared() }
+        val outcome = AuthAppHandoff.complete("yard://auth/complete?code=c&result=signed_in&provider=google", session = null)
+        closer.join()
+        assertEquals(AuthAppHandoff.Outcome.SignedIn(isNew = false, provider = "google"), outcome)
+        assertNull(AuthAppHandoff.outcome) // a later sign-in screen sees nothing stale
     }
 
     @Test fun exchange400ShowsExpiredWording() = runBlocking {
