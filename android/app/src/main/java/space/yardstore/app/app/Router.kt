@@ -315,6 +315,9 @@ class Router {
     // region NavHost wiring (RootView only)
 
     /** Called by `RootView` when a tab's NavHost is created. Replays queued pushes. */
+    // currentBackStack is library-restricted but stable on the pinned navigation-compose version;
+    // it is the only way to read the tab's depth. Re-check when bumping androidx.navigation.
+    @android.annotation.SuppressLint("RestrictedApi")
     fun attach(tab: AppTab, controller: NavHostController) {
         if (controllers[tab] === controller) return
         controllers[tab]?.let { old -> listeners[tab]?.let { old.removeOnDestinationChangedListener(it) } }

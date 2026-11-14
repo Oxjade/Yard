@@ -1,3 +1,6 @@
+// Lint: view models are built inline only in @Preview / isPreview paths (design-time sample data).
+@file:Suppress("ViewModelConstructorInComposable")
+
 package space.yardstore.app.features.around
 
 import android.Manifest
