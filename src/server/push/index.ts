@@ -1,9 +1,8 @@
 import "server-only"
 import { readFileSync } from "node:fs"
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import type { NotificationDto } from "@/lib/api/contracts/notifications"
 import { afterCommit, db } from "../db"
-import { brandMembers } from "../db/schema"
 import { pushDevices, PUSH_PLATFORMS } from "../db/schema/engagement"
 import { getPreferencesMany, type OptionalCategory } from "../email/preferences"
 import { newId } from "../ids"
@@ -13,8 +12,10 @@ import { buildAssertion, buildFcmMessage, fcmSendUrl, fcmTokenGone, parseService
 
 /**
  * Push notifications to the Yard apps. Every in-app notification (notify() and notifyEngagement())
- * also goes, after its transaction commits, to the phones of the people it is for: a shopper's own
- * devices, or every active member of a brand (not Yard setup). Fire-and-forget: a slow or failing
+ * for a shopper also goes, after its transaction commits, to that shopper's own devices. Brand
+ * notifications are not pushed: the only app is the shopper app, which registers devices from the
+ * shopper session and has no Studio routes, so a shopper who is also a brand member would get
+ * Studio pushes it can't open. Admin notifications aren't pushed either. Fire-and-forget: a slow or failing
  * push never slows or fails the request that created the notification. Optional categories
  * (drops, price drops, back in stock, brand news) follow the in-app preference.
  *
@@ -111,18 +112,34 @@ const sendFcm: Sender = async (devices, n) => {
     return
   }
   const gone: string[] = []
+  const send = (token: string) =>
+    fetch(fcmSendUrl(sa.projectId), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+      body: JSON.stringify(buildFcmMessage(token, n)),
+      signal: AbortSignal.timeout(10_000),
+    })
+  let refreshed = false
   for (const dev of devices) {
     try {
-      const res = await fetch(fcmSendUrl(sa.projectId), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
-        body: JSON.stringify(buildFcmMessage(dev.token, n)),
-        signal: AbortSignal.timeout(10_000),
-      })
+      let res = await send(dev.token)
+      if (res.status === 401 && !refreshed) {
+        // The access token was revoked or expired early: sign in again once, retry this device,
+        // and use the new token for the rest of the loop.
+        refreshed = true
+        state.access = undefined
+        try {
+          access = await fcmAccessToken(state, sa)
+        } catch (e) {
+          log.warn("[yard] push: FCM sign-in failed", e)
+          return
+        }
+        res = await send(dev.token)
+      }
       if (res.ok) continue
       const body = await res.json().catch(() => null)
       if (fcmTokenGone(res.status, body)) gone.push(dev.id)
-      else if (res.status === 401) state.access = undefined // a revoked token: sign in again next time
+      else if (res.status === 401) state.access = undefined // still refused after one refresh: sign in again next time
       else log.warn(`[yard] push: FCM answered ${res.status} for device ${dev.id}`)
     } catch (e) {
       log.warn(`[yard] push: FCM send to device ${dev.id} failed`, e)
@@ -139,21 +156,8 @@ const SENDERS: Partial<Record<PushPlatform, Sender>> = { android: sendFcm }
 
 /* ---------- Fan-out ---------- */
 
-/** The users a notification recipient stands for: a shopper, or a brand's active members. */
-async function recipientUsers(recipient: { kind: "shopper" | "brand" | "admin"; id: string }) {
-  if (recipient.kind === "shopper") return [recipient.id]
-  if (recipient.kind !== "brand") return []
-  const d = await db()
-  const rows = await d
-    .select({ userId: brandMembers.userId })
-    .from(brandMembers)
-    .where(and(eq(brandMembers.brandId, recipient.id), eq(brandMembers.status, "active"), ne(brandMembers.role, "yard_setup")))
-  return [...new Set(rows.map((r) => r.userId))]
-}
-
-async function deliver(recipient: { kind: "shopper" | "brand" | "admin"; id: string }, n: NotificationDto, pref: OptionalCategory | null) {
-  let userIds = await recipientUsers(recipient)
-  if (!userIds.length) return
+async function deliver(shopperId: string, n: NotificationDto, pref: OptionalCategory | null) {
+  let userIds = [shopperId]
   if (pref) {
     const prefs = await getPreferencesMany(userIds)
     userIds = userIds.filter((u) => prefs.get(u)?.inApp[pref] !== false)
@@ -162,7 +166,7 @@ async function deliver(recipient: { kind: "shopper" | "brand" | "admin"; id: str
   const d = await db()
   const rows = await d.select({ id: pushDevices.id, token: pushDevices.token, platform: pushDevices.platform }).from(pushDevices).where(inArray(pushDevices.userId, userIds))
   if (!rows.length) return
-  const notice: PushNotice = { id: n.id, kind: n.category, title: n.title, body: n.body, url: pushPath(n.href, recipient.kind === "brand" ? "/studio" : "/") }
+  const notice: PushNotice = { id: n.id, kind: n.category, title: n.title, body: n.body, url: pushPath(n.href, "/") }
   for (const platform of PUSH_PLATFORMS) {
     const send = SENDERS[platform]
     const devices = rows.filter((r) => r.platform === platform) as Device[]
@@ -173,11 +177,14 @@ async function deliver(recipient: { kind: "shopper" | "brand" | "admin"; id: str
 /**
  * Queues the push for a notification just written. Call it where the notification row is
  * written (inside its transaction or not): it runs only after commit, in the background.
- * Admin notifications aren't pushed (the Control Center has no app).
+ * Only shopper notifications are pushed: brand ones would land in the shopper app with Studio links
+ * it can't open, and admin ones have no app. Add brand pushes with a brand app (and store which
+ * actor registered each device).
  */
 export function queuePush(recipient: { kind: "shopper" | "brand" | "admin"; id: string }, n: NotificationDto, pref: OptionalCategory | null = null) {
-  if (recipient.kind === "admin") return
+  if (recipient.kind !== "shopper") return
+  const shopperId = recipient.id
   afterCommit(() => {
-    void deliver(recipient, n, pref).catch((e) => log.warn("[yard] push: delivery failed", e))
+    void deliver(shopperId, n, pref).catch((e) => log.warn("[yard] push: delivery failed", e))
   })
 }

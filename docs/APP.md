@@ -39,9 +39,9 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
 - `DELETE /api/devices { token }` → 204 (only the caller's token). Call it before signing out.
 - Both need the app's shopper session, or a brand member's session; 401 without one; 400 on bad input.
 
-Every in-app notification (src/server/notify.ts, src/server/email/inapp.ts) is also pushed after
-commit to the recipient's Android devices (a shopper's own, or every active member of a brand), in
-the background (src/server/push). Optional categories follow the in-app preference. The FCM message:
+Every in-app notification for a shopper (src/server/notify.ts, src/server/email/inapp.ts) is also
+pushed after commit to that shopper's Android devices, in the background (src/server/push). Brand
+and admin notifications are not pushed: the app is the shopper app and has no Studio routes. Optional categories follow the in-app preference. The FCM message:
 
 ```json
 { "token": "…", "notification": { "title": "…", "body": "…" },
