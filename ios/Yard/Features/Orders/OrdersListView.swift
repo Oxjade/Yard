@@ -129,6 +129,7 @@ struct OrdersListView: View {
 
     var body: some View {
         content
+            .yardCrossfade("\(model.hasLoaded)|\(model.items.isEmpty)|\(model.error == nil)")
             .yardScreenBackground()
             .navigationTitle("Orders")
             .navigationBarTitleDisplayMode(.large)

@@ -211,6 +211,7 @@ struct HomeFeedView: View {
             TabPillScrollSensor()
             VStack(spacing: Spacing.l) {
                 content
+                    .yardCrossfade(model.phase)
             }
             .padding(.top, Spacing.xs)
         }

@@ -28,6 +28,7 @@ struct BagView: View {
 
     var body: some View {
         content
+            .yardCrossfade("\(cart.cart == nil)|\(cart.cart?.lines.isEmpty ?? false)|\(cart.lastError == nil)")
             .yardScreenBackground()
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)

@@ -11,6 +11,8 @@ struct ProductOptionPicker: View {
     var showsHeader: Bool = true
     var showsInvalid: Bool = false
     var onChoose: (String) -> Void = { _ in }
+    // Not private: a private property would make the memberwise init private.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     private var chosen: String? { model.selection[option.name] }
     private var isSize: Bool { ProductDetailModel.isSizeName(option.name) }
@@ -27,8 +29,11 @@ struct ProductOptionPicker: View {
                         Text(chosen)
                             .font(.yardCallout.weight(.semibold))
                             .foregroundStyle(Color.yard.ink)
+                            .id(chosen)
+                            .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.opacity.combined(with: .offset(y: 4)))
                     }
                 }
+                .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: chosen)
                 .padding(.horizontal, Spacing.gutter)
             }
             ChipRow {
@@ -61,7 +66,7 @@ struct ProductOptionPicker: View {
     }
 
     private func choose(_ value: String) {
-        withAnimation(Motion.snappy) {
+        withAnimation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion)) {
             model.choose(value, for: option)
         }
         onChoose(value)
@@ -88,6 +93,8 @@ struct ProductOptionPicker: View {
             .frame(minHeight: 36)
             .background(Color.yard.surface2, in: Capsule())
             .overlay(Capsule().strokeBorder(selected ? Color.yard.ink : Color.yard.line, lineWidth: selected ? 2 : 1))
+            .scaleEffect(selected && !reduceMotion ? 1.03 : 1)
+            .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: selected)
             .contentShape(Capsule())
         }
         .buttonStyle(PressableButtonStyle())
@@ -212,7 +219,7 @@ struct ProductStockLineView: View {
                 .foregroundStyle(line.tone == .low ? Color.yard.ink : Color.yard.ink2)
                 .contentTransition(.opacity)
         }
-        .animation(Motion.snappy, value: line.text)
+        .yardAnimation(Motion.snappy, value: line.text)
     }
 
     private func color(_ tone: ProductDetailModel.StockTone) -> Color {

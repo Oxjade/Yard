@@ -5,7 +5,7 @@ import SwiftUI
 /// The shopper's conversation list (GET /api/inbox/conversations), newest activity first.
 @Observable @MainActor
 final class InboxListModel {
-    enum Phase {
+    enum Phase: Equatable {
         case idle
         case loading
         case loaded
@@ -171,6 +171,7 @@ struct InboxView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.yard.bg.ignoresSafeArea())
             .navigationTitle("Inbox")
@@ -319,7 +320,7 @@ struct InboxView: View {
         .scrollContentBackground(.hidden)
         .background(Color.yard.bg)
         .refreshable { await model.refresh() }
-        .animation(Motion.spring, value: model.items.map(\.id))
+        .yardAnimation(Motion.spring, value: model.items.map(\.id))
     }
 
     /// "Message Yard Support" until the shopper's support thread exists (then it's the pinned row).
@@ -455,6 +456,8 @@ private struct InboxSearchModifier: ViewModifier {
 /// One conversation: brand avatar, name, time, preview, state tags, unread dot.
 struct InboxConversationRow: View {
     let conversation: InboxConversation
+    // Not private: a private property would make the memberwise init private.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         let c = conversation
@@ -493,6 +496,7 @@ struct InboxConversationRow: View {
                         .fill(Color.yard.violet)
                         .frame(width: 10, height: 10)
                         .padding(.top, 5)
+                        .scaleEffect(c.isUnread || reduceMotion ? 1 : 0.2)
                         .opacity(c.isUnread ? 1 : 0)
                         .accessibilityHidden(true)
                 }
@@ -506,6 +510,8 @@ struct InboxConversationRow: View {
                 }
             }
         }
+        // Read/unread flips (opening a thread, swipe Mark read/unread) ease instead of snapping.
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: c.isUnread)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(Text(c.isUnread ? "Unread" : ""))

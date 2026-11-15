@@ -17,6 +17,8 @@ struct ProductDetailView: View {
     @State private var showsSizePrompt: Bool = false
     @State private var isAdding: Bool = false
     @State private var addedCount: Int = 0
+    /// "Added" on the main button for a moment after a real add succeeds.
+    @State private var justAdded: Bool = false
     @State private var descriptionExpanded: Bool = false
 
     @Environment(SessionStore.self) private var session
@@ -25,6 +27,7 @@ struct ProductDetailView: View {
     @Environment(SavedStore.self) private var saved
     @Environment(Router.self) private var router
     @Environment(ToastCenter.self) private var toast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(slug: String) {
         self.slug = slug
@@ -39,6 +42,7 @@ struct ProductDetailView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase)
             .background(Color.yard.bg.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -301,7 +305,7 @@ struct ProductDetailView: View {
                 .transition(.opacity)
             }
         }
-        .animation(Motion.snappy, value: action)
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: action)
     }
 
     private var effectiveQuantity: Int {
@@ -644,9 +648,10 @@ struct ProductDetailView: View {
     private func primaryButton(_ action: ProductBuyAction) -> some View {
         switch action {
         case .ready, .chooseSize:
-            YardButton("Add to bag", systemImage: "bag", isLoading: isAdding) {
+            YardButton(justAdded ? "Added" : "Add to bag", systemImage: justAdded ? "checkmark" : "bag", isLoading: isAdding) {
                 addToBag()
             }
+            .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: justAdded)
         case .opening:
             notifyButton(prompt: true)
         case .soldOut:
@@ -711,7 +716,7 @@ struct ProductDetailView: View {
                                 .contentTransition(.numericText())
                         }
                     }
-                    .animation(Motion.spring, value: cart.count)
+                    .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: cart.count)
             }
             .accessibilityLabel(Text(cart.count > 0 ? "Bag, \(cart.count) items" : "Bag"))
         }
@@ -749,6 +754,12 @@ struct ProductDetailView: View {
                 addedCount += 1
                 model.quantity = 1
                 showsSizeSheet = false
+                justAdded = true
+                let tick = addedCount
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    if addedCount == tick { justAdded = false }
+                }
                 toast.show(qty > 1 ? "\(qty) added to your bag" : "Added to your bag", style: .success, systemImage: "bag.fill")
             } catch {
                 toast.show(error)

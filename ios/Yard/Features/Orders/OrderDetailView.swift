@@ -87,6 +87,7 @@ struct OrderDetailView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.order == nil)
             .yardScreenBackground()
             .navigationTitle("Your order")
             .navigationBarTitleDisplayMode(.inline)

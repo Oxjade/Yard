@@ -27,6 +27,7 @@ struct SearchResultsView: View {
                 }
                 filterChips
                 content
+                    .yardCrossfade(model.phase)
             }
             .padding(.bottom, Spacing.xxl)
         }

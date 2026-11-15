@@ -90,13 +90,7 @@ enum ProfilePhotoCrop {
     /// moves less, never more than `dimension` past the edge. Drag and pinch overshoot with it,
     /// then settle back.
     static func rubberBand(_ value: CGFloat, limit: CGFloat, dimension: CGFloat) -> CGFloat {
-        guard value.isFinite else { return 0 }
-        let limit = max(0, limit)
-        let magnitude = abs(value)
-        guard magnitude > limit, dimension > 0 else { return value }
-        let over = magnitude - limit
-        let resisted = (1 - 1 / (over * 0.55 / dimension + 1)) * dimension
-        return (value < 0 ? -1 : 1) * (limit + resisted)
+        RubberBand.value(value, limit: limit, dimension: dimension)
     }
 
     /// A pinch past the zoom range gives a little (down to ~0.85×, up to ~4.6×), then settles back.

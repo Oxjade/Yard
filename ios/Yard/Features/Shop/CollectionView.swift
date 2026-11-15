@@ -162,6 +162,7 @@ struct CollectionView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase.crossfadeKey)
             .yardScreenBackground()
             .navigationTitle(model.collection?.name ?? "Collection")
             .navigationBarTitleDisplayMode(.inline)
@@ -473,4 +474,16 @@ private func collectionPreviewModel() -> CollectionModel {
     NavigationStack { CollectionView(previewModel: collectionPreviewModel()) }
         .yardPreviewEnvironment()
         .preferredColorScheme(.light)
+}
+
+extension CollectionModel.Phase {
+    /// Which state is showing (the error payload isn't Equatable): keys the skeleton → content crossfade.
+    var crossfadeKey: Int {
+        switch self {
+        case .loading: return 0
+        case .loaded: return 1
+        case .notFound: return 2
+        case .failed: return 3
+        }
+    }
 }

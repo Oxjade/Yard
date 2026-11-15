@@ -125,6 +125,9 @@ struct OrderSuccessBadge: View {
 
     var tone: Tone = .success
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The badge lands once (scale up, rays sweep in, icon bounces), then breathes.
+    @State private var arrived: Bool = false
 
     init(tone: Tone = .success) {
         self.tone = tone
@@ -154,6 +157,7 @@ struct OrderSuccessBadge: View {
     }
 
     private var glowOpacity: Double { scheme == .dark ? 0.55 : 0.28 }
+    private var shown: Bool { arrived }
 
     var body: some View {
         ZStack {
@@ -170,29 +174,46 @@ struct OrderSuccessBadge: View {
                 .frame(width: 260, height: 260)
 
             // Sunburst rays (reference 06)
-            ForEach(0..<36, id: \.self) { (i: Int) in
-                Capsule()
-                    .fill(fill.opacity(scheme == .dark ? 0.22 : 0.35))
-                    .frame(width: 1, height: i.isMultiple(of: 2) ? 26 : 16)
-                    .offset(y: -86)
-                    .rotationEffect(.degrees(Double(i) * 10))
+            ZStack {
+                ForEach(0..<36, id: \.self) { (i: Int) in
+                    Capsule()
+                        .fill(fill.opacity(scheme == .dark ? 0.22 : 0.35))
+                        .frame(width: 1, height: i.isMultiple(of: 2) ? 26 : 16)
+                        .offset(y: -86)
+                        .rotationEffect(.degrees(Double(i) * 10))
+                }
             }
+            .rotationEffect(.degrees(shown || reduceMotion ? 0 : -24))
+            .opacity(shown ? 1 : 0)
 
-            PhaseAnimator([false, true]) { (on: Bool) in
+            if reduceMotion {
                 Circle()
                     .fill(fill)
                     .frame(width: 92, height: 92)
-                    .shadow(color: fill.opacity(on ? glowOpacity + 0.15 : glowOpacity), radius: on ? 34 : 22)
-                    .scaleEffect(on ? 1.03 : 1)
-            } animation: { _ in
-                .easeInOut(duration: 1.6)
+                    .shadow(color: fill.opacity(glowOpacity), radius: 26)
+            } else {
+                PhaseAnimator([false, true]) { (on: Bool) in
+                    Circle()
+                        .fill(fill)
+                        .frame(width: 92, height: 92)
+                        .shadow(color: fill.opacity(on ? glowOpacity + 0.15 : glowOpacity), radius: on ? 34 : 22)
+                        .scaleEffect(on ? 1.03 : 1)
+                } animation: { _ in
+                    .easeInOut(duration: 1.6)
+                }
             }
 
             Image(systemName: symbol)
                 .font(.system(size: 38, weight: .bold))
                 .foregroundStyle(iconColor)
+                .symbolEffect(.bounce, value: reduceMotion ? false : arrived)
         }
+        .scaleEffect(shown || reduceMotion ? 1 : 0.7)
+        .opacity(shown ? 1 : 0)
         .frame(height: 220)
+        .onAppear {
+            withAnimation(Motion.resolved(Motion.arrive, reduceMotion: reduceMotion)) { arrived = true }
+        }
         .accessibilityHidden(true)
     }
 }

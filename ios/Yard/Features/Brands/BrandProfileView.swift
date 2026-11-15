@@ -45,6 +45,7 @@ struct BrandProfileView: View {
         ZStack(alignment: .top) {
             Color.yard.bg.ignoresSafeArea()
             content
+                .yardCrossfade(model.phase)
             topBar
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -316,7 +317,7 @@ struct BrandProfileView: View {
                         Text(Formatters.count(item.value))
                             .font(.yardNumber(28))
                             .foregroundStyle(Color.yard.onPhoto)
-                            .contentTransition(.numericText())
+                            .yardNumericTransition(Double(item.value))
                         Text(item.label)
                             .font(.yardCaption)
                             .foregroundStyle(Color.yard.onPhoto.opacity(0.68))
@@ -327,7 +328,7 @@ struct BrandProfileView: View {
                 }
             }
             .padding(.vertical, Spacing.xs)
-            .animation(Motion.spring, value: model.followers)
+            .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: model.followers)
         }
     }
 

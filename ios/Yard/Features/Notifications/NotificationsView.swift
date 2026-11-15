@@ -24,6 +24,7 @@ struct NotificationsView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .yardScreenBackground()
             .navigationTitle("Notifications")
@@ -123,7 +124,7 @@ struct NotificationsView: View {
             .padding(.horizontal, Spacing.gutter)
             .padding(.top, Spacing.s)
             .padding(.bottom, Spacing.xxl)
-            .animation(Motion.spring, value: model.filter)
+            .yardAnimation(Motion.spring, value: model.filter)
         }
         .refreshable {
             if let message = await model.load() {
@@ -227,6 +228,8 @@ struct NotificationsView: View {
 /// Icon tile (per kind), title, body, time and an unread dot.
 struct NotificationsListRow: View {
     let notification: ShopperNotification
+    // Not private: a private property would make the memberwise init private.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.m) {
@@ -266,12 +269,16 @@ struct NotificationsListRow: View {
             Circle()
                 .fill(Color.yard.violet)
                 .frame(width: 8, height: 8)
+                .scaleEffect(notification.read && !reduceMotion ? 0.2 : 1)
                 .opacity(notification.read ? 0 : 1)
                 .padding(.top, Spacing.s)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Spacing.m)
         .padding(.vertical, Spacing.m)
+        // Unread rows sit on a faint violet wash that fades out once read.
+        .background(Color.yard.violet.opacity(notification.read ? 0 : 0.06))
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: notification.read)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(notification.read ? "" : "Unread")

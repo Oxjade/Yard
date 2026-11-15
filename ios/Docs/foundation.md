@@ -255,3 +255,14 @@ Write one light and one dark `#Preview` per main view.
   yardstore.space, i.e. an apple-app-site-association file on the website, to reach the app from email).
 - Live Activities: `resume()` whenever the app becomes active; `endAll()` on sign-out.
 - Ship-to country from You › Settings restored into the cart at launch.
+
+## Premium pass, round 2 (Nov 2026)
+
+- `DesignSystem/Components/MotionHelpers.swift`: `yardCrossfade(_:)` (skeleton → content keyed on
+  a screen's phase; Android's `YardCrossfade`), `yardNumericTransition(_:)` (rolling digits, a fade
+  under Reduce Motion), `yardAnimation(_:value:)` (`.animation` resolved for Reduce Motion) and
+  `RubberBand.value` (drag/pinch overshoot, shared by the photo viewer and the profile-photo crop).
+- Crossfade wired on Product, Brand, Home feed, Search results, Shop listing, Categories,
+  Collection, Saved, Following, Notifications, Inbox, Bag, Orders list, Order detail and the
+  Charts board.
+- `PersonAvatar`: photo or initials (see Docs/you.md › Profile photo).

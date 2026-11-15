@@ -66,7 +66,7 @@ struct ChartsView: View {
                 model.apply(next)
             }
         }
-        .animation(Motion.spring, value: model.query)
+        .yardAnimation(Motion.spring, value: model.query)
     }
 
     // MARK: Header
@@ -158,6 +158,7 @@ struct ChartsView: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             boardHeading
             boardBody
+                .yardCrossfade("\(model.currentBoard == nil)|\(model.currentBoard?.edition?.date ?? "")")
         }
     }
 

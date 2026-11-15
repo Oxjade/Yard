@@ -14,6 +14,7 @@ struct CheckoutView: View {
 
     @State private var model: CheckoutModel
     @State private var payTaps: Int = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Field?
 
     enum Field: Hashable {
@@ -117,10 +118,13 @@ struct CheckoutView: View {
     private func form(_ cart: Cart) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
-                Text("Checkout")
-                    .yardDisplay(44)
-                    .foregroundStyle(Color.yard.ink)
-                    .padding(.top, Spacing.s)
+                VStack(alignment: .leading, spacing: Spacing.m) {
+                    Text("Checkout")
+                        .yardDisplay(44)
+                        .foregroundStyle(Color.yard.ink)
+                    CheckoutStages(current: checkoutStage)
+                }
+                .padding(.top, Spacing.s)
 
                 if model.paymentsClosed {
                     BagNotice(systemImage: "clock", text: BagCheckoutOptions.offMessage, tint: Color.yard.violet)
@@ -376,7 +380,7 @@ struct CheckoutView: View {
                         .font(.yardCaption)
                         .foregroundStyle(Color.yard.ink2)
                     PriceText(minor: model.totalMinor ?? cart.subtotalMinor, currency: cart.currency, font: .yardNumber(22))
-                        .contentTransition(.numericText())
+                        .yardNumericTransition(Double(model.totalMinor ?? cart.subtotalMinor))
                 }
                 Spacer(minLength: Spacing.s)
                 YardButton(
@@ -397,8 +401,18 @@ struct CheckoutView: View {
         .padding(.vertical, Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .yardGlassBar()
-        .animation(Motion.spring, value: model.placeError)
-        .animation(Motion.spring, value: model.phase)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: model.placeError)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: model.phase)
+    }
+
+    /// Where this checkout is, from its real state: details until Pay is tapped, then paying,
+    /// then done (the bag step is always behind you here).
+    private var checkoutStage: CheckoutStages.Stage {
+        switch model.phase {
+        case .done: return .done
+        case .starting, .paying, .confirming: return .pay
+        case .idle: return .details
+        }
     }
 
     // MARK: Actions
@@ -421,6 +435,68 @@ struct CheckoutView: View {
 // MARK: - Pieces
 
 /// A titled card section.
+/// Bag › Details › Pay › Done: a compact stage line under the Checkout title. Done stages get a
+/// check, the current one is an acid capsule; changes ease (a fade under Reduce Motion).
+struct CheckoutStages: View {
+    enum Stage: Int, CaseIterable, Sendable {
+        case bag
+        case details
+        case pay
+        case done
+
+        var title: String {
+            switch self {
+            case .bag: return "Bag"
+            case .details: return "Details"
+            case .pay: return "Pay"
+            case .done: return "Done"
+            }
+        }
+    }
+
+    let current: Stage
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(current: Stage) {
+        self.current = current
+    }
+
+    var body: some View {
+        HStack(spacing: Spacing.xs) {
+            ForEach(Stage.allCases, id: \.rawValue) { (stage: Stage) in
+                if stage != .bag {
+                    Capsule()
+                        .fill(stage.rawValue <= current.rawValue ? Color.yard.ink.opacity(0.5) : Color.yard.line)
+                        .frame(width: 14, height: 1.5)
+                }
+                pill(stage)
+            }
+        }
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: current)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Step \(current.rawValue + 1) of \(Stage.allCases.count): \(current.title)"))
+    }
+
+    private func pill(_ stage: Stage) -> some View {
+        let isCurrent = stage == current
+        let isDone = stage.rawValue < current.rawValue
+        return HStack(spacing: 4) {
+            if isDone {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .transition(.opacity)
+            }
+            Text(stage.title)
+                .font(.yardCaptionEmphasis)
+                .lineLimit(1)
+        }
+        .foregroundStyle(isCurrent ? Color.yard.onAcid : (isDone ? Color.yard.ink : Color.yard.ink3))
+        .padding(.horizontal, Spacing.s)
+        .frame(minHeight: 24)
+        .background(isCurrent ? Color.yard.acid : Color.yard.surface2, in: Capsule())
+    }
+}
+
 struct CheckoutSection<Content: View>: View {
     let title: String
     let subtitle: String?
