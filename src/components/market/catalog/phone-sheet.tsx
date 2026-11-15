@@ -4,7 +4,7 @@ import { useRef } from "react"
 import { XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion, useDragControls, type PanInfo } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
-import { duration, ease, spring } from "@/lib/motion"
+import { transition } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 /**
@@ -57,16 +57,16 @@ export function PhoneSheet({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: duration.drawer, ease: ease.out }}
+                transition={transition.scrim}
               />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content asChild forceMount {...returnFocus} {...(description ? {} : { "aria-describedby": undefined })}>
               <motion.div
-                className="glass-strong glass-sheen fixed inset-x-2 bottom-2 z-50 mx-auto flex max-h-[min(88dvh,760px)] max-w-lg flex-col overflow-hidden rounded-2xl outline-none sm:bottom-3"
+                className="glass-sheet glass-sheen fixed inset-x-2 bottom-2 z-50 mx-auto flex max-h-[min(88dvh,760px)] max-w-lg flex-col overflow-hidden rounded-2xl outline-none sm:bottom-3"
                 initial={{ y: "105%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "105%" }}
-                transition={spring.drawer}
+                transition={transition.sheet}
                 drag="y"
                 dragControls={drag}
                 dragListener={false}
@@ -89,7 +89,7 @@ export function PhoneSheet({
                       {description ? <DialogPrimitive.Description className="mt-1 truncate text-sm text-ink-2">{description}</DialogPrimitive.Description> : null}
                     </div>
                     <DialogPrimitive.Close
-                      className="-mr-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-ink-2 transition-[background-color,color,transform,scale] duration-150 hover:bg-white/8 hover:text-ink active:scale-95"
+                      className="press -mr-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink"
                       aria-label={closeLabel}
                     >
                       <X className="size-5" />

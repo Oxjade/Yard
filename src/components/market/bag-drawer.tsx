@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
+import { transition } from "@/lib/motion"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
 import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
@@ -70,16 +71,16 @@ export function BagDrawer() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
+                transition={transition.scrim}
               />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content asChild forceMount aria-describedby={undefined} onCloseAutoFocus={focus.onCloseAutoFocus}>
               <motion.div
-                className="glass-strong glass-sheen fixed inset-y-2 right-2 z-50 flex w-[calc(100%-1rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl outline-none sm:inset-y-3 sm:right-3"
+                className="glass-sheet glass-sheen fixed inset-y-2 right-2 z-50 flex w-[calc(100%-1rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl outline-none sm:inset-y-3 sm:right-3"
                 initial={{ x: "105%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "105%" }}
-                transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.9 }}
+                transition={transition.sheet}
               >
                 {focus.probe}
                 <header className="flex items-center justify-between px-5 pt-5 pb-4">
@@ -87,7 +88,7 @@ export function BagDrawer() {
                     <span className="font-display text-display-sm">Cart</span>
                     <span className="text-sm text-ink-2 tabular">{count} {count === 1 ? "item" : "items"}</span>
                   </DialogPrimitive.Title>
-                  <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full text-ink-2 transition hover:bg-white/8 hover:text-ink" aria-label="Close cart">
+                  <DialogPrimitive.Close className="press inline-flex size-9 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close cart">
                     <X className="size-5" />
                   </DialogPrimitive.Close>
                 </header>

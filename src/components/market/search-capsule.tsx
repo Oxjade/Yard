@@ -40,7 +40,7 @@ export function SearchCapsule({ className, compact = false }: { className?: stri
       aria-label="Search brands and products"
       aria-keyshortcuts="Meta+K Control+K"
       className={cn(
-        "group pointer-events-auto relative flex h-10 items-center gap-2.5 rounded-full border border-white/12 bg-black/45 pr-2 pl-3.5 text-left text-[13px] text-ink-2 backdrop-blur-xl transition-[border-color,background-color,width] duration-200 ease-out-quint hover:border-white/25 hover:bg-black/60",
+        "glass-bar group pointer-events-auto relative flex h-10 items-center gap-2.5 rounded-full pr-2 pl-3.5 text-left text-[13px] text-ink-2 transition-[border-color,background-color,scale] duration-200 ease-out-quint hover:border-white/20 hover:bg-[rgb(14_14_14/0.82)] active:scale-[0.98] active:duration-(--dur-press)",
         compact ? "w-10 justify-center px-0" : "w-60 xl:w-72",
         className,
       )}

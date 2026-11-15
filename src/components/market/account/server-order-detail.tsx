@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { MessageSupportButton } from "@/components/inbox/entry"
 import { Button } from "@/components/ui/button"
+import { useContentReveal } from "@/components/ui/loaded"
 import { shippingMethodLabel, type ShippingMethod } from "@/components/market/checkout/shipping"
 import { countries, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { ApiError, api } from "@/lib/api/client"
@@ -76,6 +77,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
   }, [id])
 
   // The page already provides the container (gutters and top padding), so every state renders bare, as OrderDetail does.
+  const reveal = useContentReveal(!loading)
   if (loading) return <AccountSkeleton variant="detail" />
   if (error || !order) {
     return (
@@ -142,7 +144,7 @@ export function ServerOrderDetail({ id }: { id: string }) {
   }
 
   return (
-    <>
+    <div className={reveal}>
       <Link href="/you/orders" className="text-sm text-ink-2 transition-colors hover:text-ink">← All orders</Link>
       <header className="mt-6 flex flex-wrap items-end justify-between gap-5">
         <div>
@@ -226,6 +228,6 @@ export function ServerOrderDetail({ id }: { id: string }) {
           </section>
         </aside>
       </div>
-    </>
+    </div>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { FadeImage } from "@/components/ui/fade-image"
 import Link from "next/link"
 import { SealCheckIcon as BadgeCheck } from "@phosphor-icons/react"
 import { countries } from "@/config/markets"
@@ -66,7 +67,7 @@ export function BrandCard({
       {/* The cover is a second, mouse-only way in; the name link below is the one Tab and screen readers use. */}
       <div className="relative">
         <Link href={href} className="relative block aspect-[4/3] overflow-hidden" aria-hidden tabIndex={-1}>
-          <Image
+          <FadeImage
             src={brand.cover.src}
             alt=""
             fill

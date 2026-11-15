@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { useContentReveal } from "@/components/ui/loaded"
 import { Chip, ChipRadioGroup } from "@/components/market/catalog/chip"
 import { OrderStatusBadge } from "@/components/market/account/order-status"
 import { ApiError, api } from "@/lib/api/client"
@@ -125,15 +126,17 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
     }
   }
 
+  const firstLoad = loading && items.length === 0 && !error
+  const reveal = useContentReveal(!firstLoad)
   const groups = groupsOf(items)
   const isOpen = (group: Group) => group.orders.some((order) => openStatuses.has(merchantStatus(order.states.merchant)))
   const visible = groups.filter((group) => filter === "all" || (filter === "open" ? isOpen(group) : !isOpen(group)))
 
   // The page already provides the container; the first load shows the list skeleton its loading.tsx uses.
-  if (loading && items.length === 0 && !error) return <AccountSkeleton variant="list" />
+  if (firstLoad) return <AccountSkeleton variant="list" />
 
   return (
-    <>
+    <div className={reveal}>
       <header>
         <p className="text-sm text-violet">Your World</p>
         <h1 className="mt-2 font-display text-display-lg text-ink">Orders</h1>
@@ -161,6 +164,6 @@ export function ServerOrdersList({ shopperId }: { shopperId: string }) {
           {nextCursor ? <Button variant="secondary" className="mt-8" loading={loading} disabled={loading} onClick={() => void loadOlder()}>Load older orders</Button> : null}
         </>
       ) : null}
-    </>
+    </div>
   )
 }

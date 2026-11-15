@@ -166,7 +166,7 @@ export function NotificationBell({ audience, className, align = "end" }: { audie
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} className={cn("relative inline-flex size-10 items-center justify-center rounded-full text-ink-2 transition-colors duration-150 hover:bg-white/8 hover:text-ink data-[state=open]:bg-white/10 data-[state=open]:text-ink", className)}>
+        <button type="button" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} className={cn("press relative inline-flex size-10 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink data-[state=open]:bg-white/10 data-[state=open]:text-ink", className)}>
           <BellIcon className="size-[21px]" />
           <AnimatePresence>
             {unread > 0 ? (

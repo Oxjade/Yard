@@ -2,16 +2,17 @@
 
 import { motion, type Variants } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
-/** Spring presets for the Control Center. Mass/stiffness/damping are explicit on purpose. */
+/** The Control Center's names for the shared springs (src/lib/motion.ts), so Admin moves like the rest of Yard. */
 export const springs = {
   /** Entrance reveals: settles without overshoot. */
-  reveal: { type: "spring", stiffness: 240, damping: 28, mass: 0.9 },
+  reveal: spring.reveal,
   /** Hover lift and press feedback: quick and tight. */
-  tactile: { type: "spring", stiffness: 420, damping: 26, mass: 0.6 },
+  tactile: spring.lift,
   /** Sliding pills and tab underlines. */
-  pill: { type: "spring", stiffness: 520, damping: 38, mass: 0.8 },
+  pill: spring.indicator,
 } as const
 
 const container: Variants = {

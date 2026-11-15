@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { HeartIcon, ShoppingBagOpenIcon, UserIcon } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { marketNav, site } from "@/config/site"
+import { spring, transition } from "@/lib/motion"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useCart } from "@/lib/stores/cart"
 import { useSession } from "@/lib/stores/session"
@@ -39,13 +40,13 @@ export function isActive(pathname: string, href: string) {
 /** "Cart, 1 item", "Cart, 3 items": the Cart buttons' accessible name (header and home bar). */
 export const cartLabel = (count: number) => `Cart, ${count} ${count === 1 ? "item" : "items"}`
 
-/** A floating group's backdrop, shown once the page has scrolled (see MarketHeader). */
+/** A floating group's backdrop, shown once the page has scrolled (see MarketHeader): a Liquid Glass bar. */
 function Backdrop({ shown }: { shown: boolean }) {
   return (
     <span
       aria-hidden
       className={cn(
-        "pointer-events-none absolute inset-0 -z-10 rounded-full border border-white/10 bg-obsidian/85 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-opacity duration-200 ease-out-quint",
+        "glass-bar pointer-events-none absolute inset-0 -z-10 rounded-full transition-opacity duration-200 ease-out-quint",
         shown ? "opacity-100" : "opacity-0",
       )}
     />
@@ -54,7 +55,7 @@ function Backdrop({ shown }: { shown: boolean }) {
 
 /** A minimal floating icon button: no box, a quiet circle on hover, a soft shadow for legibility over imagery. */
 export const floatIcon =
-  "icon-float relative inline-flex size-10 items-center justify-center rounded-full text-ink transition-[background-color,transform] duration-150 hover:bg-white/10 active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-violet"
+  "icon-float press relative inline-flex size-10 items-center justify-center rounded-full text-ink hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-violet"
 
 /**
  * The marketplace header (§7.1).
@@ -135,7 +136,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
                   className={cn("relative rounded-full px-2 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150 2xl:px-3", !solid && "text-float", active ? "text-ink" : "text-ink/70 hover:text-ink")}
                 >
                   {item.label}
-                  {active ? <motion.span layoutId="nav-dot" className="absolute bottom-0 left-1/2 size-1 -translate-x-1/2 rounded-full bg-purple shadow-[0_0_0_2px_rgba(8,8,8,0.6)]" transition={{ type: "spring", stiffness: 500, damping: 40 }} /> : null}
+                  {active ? <motion.span layoutId="nav-dot" className="absolute bottom-0 left-1/2 size-1 -translate-x-1/2 rounded-full bg-purple shadow-[0_0_0_2px_rgba(8,8,8,0.6)]" transition={spring.indicator} /> : null}
                 </Link>
               )
             })}
@@ -147,10 +148,10 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
           <Link href="/sell" aria-current={isActive(pathname, "/sell") ? "page" : undefined} className={cn("hidden rounded-full px-2 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150 xl:flex", !solid && "text-float", isActive(pathname, "/sell") ? "text-ink" : "text-ink/70 hover:text-ink")}>
             Sell on {site.name}
           </Link>
-          {/* The capsule already has its own glass; scrolled, it turns as solid as the other groups.
+          {/* The capsule is the same glass bar as the scrolled groups, so it needs no scrolled state.
               Between lg and xl it folds to an icon, so the six links and five actions fit at 1024px. */}
-          <SearchCapsule compact className={cn("hidden lg:flex xl:hidden", (scrolled || solid) && "border-white/10 bg-obsidian/85 hover:bg-obsidian/95")} />
-          <SearchCapsule className={cn("hidden xl:flex", (scrolled || solid) && "border-white/10 bg-obsidian/85 hover:bg-obsidian/95")} />
+          <SearchCapsule compact className="hidden lg:flex xl:hidden" />
+          <SearchCapsule className="hidden xl:flex" />
           {/* Its pill hugs the buttons (4px each side) and ends as far from the right edge as the
               wordmark's pill starts from the left, so the buttons sit 4px (8px from md) past the
               gutter, which lines their glyphs up with it. Signed out on a phone it holds nothing. */}
@@ -171,7 +172,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
                     key={`count-${count}`}
                     initial={{ scale: 0.4 }}
                     animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 600, damping: 22 }}
+                    transition={transition.badge}
                     className="absolute top-1 right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-acid px-1 text-[10px] font-semibold text-obsidian tabular"
                   >
                     {count}
@@ -182,7 +183,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
               {lgUp === true ? <BagPop placement="header" /> : null}
             </div>
             {signedIn ? (
-              <Link href="/you" className="ml-1 hidden size-9 items-center justify-center overflow-hidden rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 transition-transform duration-150 hover:scale-[1.04] active:scale-95 lg:inline-flex">
+              <Link href="/you" className="press ml-1 hidden size-9 items-center justify-center overflow-hidden rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 hover:scale-[1.04] lg:inline-flex">
                 <PhotoOrInitials src={photo}>
                   <span aria-hidden>{user!.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
                 </PhotoOrInitials>

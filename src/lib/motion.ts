@@ -17,6 +17,10 @@
  * | Page transition    | 200–300ms    |
  * | Chart transition   | 350–600ms    |
  * | Skeleton shimmer   | 1.2–1.8s     |
+ * | Skeleton → content | 260ms fade   |
+ * | Image fade-in      | 420ms        |
+ *
+ * CSS mirrors these as --dur-* and --ease-* in globals.css; keep the two in step.
  */
 
 export const ease = {
@@ -59,6 +63,26 @@ export const spring = {
   layout: { type: "spring", stiffness: 420, damping: 40, mass: 0.8 },
   /** Entrance reveals of page sections. */
   reveal: { type: "spring", stiffness: 260, damping: 30, mass: 0.9 },
+} as const
+
+/**
+ * Transition presets for the shared surfaces, so every overlay moves the same way. The CSS side
+ * uses the same numbers (--dur-*, --ease-* in globals.css) for Radix's CSS-animated menus.
+ *
+ * - `scrim`: the dimmed backdrop behind a sheet, drawer or overlay.
+ * - `sheet`: phone bottom sheets and side drawers (cart, filters, sizes) follow `spring.drawer`.
+ * - `popover`: floating panels that drop from their trigger (search overlay, notifications).
+ * - `crossfade`: skeleton to content, tab panels, swapped labels.
+ * - `exit`: anything leaving: quick, no lingering.
+ */
+export const transition = {
+  scrim: { duration: duration.drawer, ease: ease.out },
+  sheet: spring.drawer,
+  popover: { type: "spring", stiffness: 500, damping: 38, mass: 0.8 },
+  crossfade: { duration: 0.26, ease: ease.out },
+  exit: { duration: 0.16, ease: ease.in },
+  /** Counts and badges that change in place (cart count, unread). */
+  badge: { type: "spring", stiffness: 600, damping: 22, mass: 0.6 },
 } as const
 
 /** Shared variants. */

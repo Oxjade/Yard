@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { FadeImage } from "@/components/ui/fade-image"
 import { brandHref } from "@/lib/api/catalog-products"
 import Link from "next/link"
 import { brandById } from "@/lib/data/brands"
@@ -61,7 +62,7 @@ export function ProductCard({
     <article className={cn("group/card relative flex flex-col", isFeature && "h-full", className)}>
       <div className={cn("relative overflow-hidden rounded-lg bg-card", ratio[variant], isFeature && "flex-1")}>
         <Link href={href} className="absolute inset-0 z-0 block focus-visible:outline-offset-[-2px]" aria-label={`${product.name} by ${brand.name}`}>
-          <Image
+          <FadeImage
             src={product.images[0].src}
             alt={product.images[0].alt}
             fill

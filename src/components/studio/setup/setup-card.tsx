@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowRightIcon, CheckIcon, XIcon } from "@phosphor-icons/react"
 import { Bone } from "@/components/feedback/skeletons"
 import { Button } from "@/components/ui/button"
+import { useContentReveal } from "@/components/ui/loaded"
 import { api } from "@/lib/api/client"
 import { useApi } from "@/lib/api/use-api"
 import { useServerSession } from "@/lib/session/use-server-session"
@@ -49,6 +50,7 @@ export function SetupCard({ className }: { className?: string }) {
     setStoredFor({ id: brandId, dismissed })
   }, [brandId])
 
+  const reveal = useContentReveal(!(isLoading && !data))
   if (!brandId || error) return null
   const known = storedFor?.id === brandId
   if (!known) return null
@@ -66,7 +68,7 @@ export function SetupCard({ className }: { className?: string }) {
   }
 
   return (
-    <section aria-labelledby="studio-setup-title" className={cn("rounded-2xl border border-white/[0.07] bg-card p-5 @2xl:p-6", className)}>
+    <section aria-labelledby="studio-setup-title" className={cn("rounded-2xl border border-white/[0.07] bg-card p-5 @2xl:p-6", reveal, className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 id="studio-setup-title" className="text-base font-medium text-ink">

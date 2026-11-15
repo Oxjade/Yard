@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { NotificationBell } from "@/components/feedback/notification-bell"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { spring } from "@/lib/motion"
+import { spring, transition } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CommandPalette, usePaletteHotkeys } from "./shell/command-palette"
 import { NavList } from "./shell/nav-list"
@@ -160,11 +160,11 @@ export function AppShell({
           {drawer ? (
             <DialogPrimitive.Portal forceMount>
               <DialogPrimitive.Overlay asChild forceMount>
-                <motion.div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+                <motion.div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transition.scrim} />
               </DialogPrimitive.Overlay>
               <DialogPrimitive.Content asChild forceMount aria-describedby={undefined}>
                 <motion.div
-                  className={cn("shell-panel fixed inset-y-2 left-2 z-50 flex w-[min(296px,calc(100vw-16px))] flex-col overflow-hidden rounded-[24px] outline-none lg:hidden", density === "dense" ? "text-[13px]" : "text-sm")}
+                  className={cn("glass-sheet glass-sheen fixed inset-y-2 left-2 z-50 flex w-[min(296px,calc(100vw-16px))] flex-col overflow-hidden rounded-[24px] outline-none lg:hidden", density === "dense" ? "text-[13px]" : "text-sm")}
                   initial={{ x: "-108%" }}
                   animate={{ x: 0 }}
                   exit={{ x: "-108%" }}
@@ -175,7 +175,7 @@ export function AppShell({
                     variant="drawer"
                     onNavigate={() => setDrawer(false)}
                     headerAction={
-                      <DialogPrimitive.Close className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-white/10 text-ink-2 transition-colors hover:text-ink" aria-label="Close navigation">
+                      <DialogPrimitive.Close className="press inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-white/10 text-ink-2 hover:text-ink" aria-label="Close navigation">
                         <XIcon className="size-4" />
                       </DialogPrimitive.Close>
                     }

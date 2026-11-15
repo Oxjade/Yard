@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import Image from "next/image"
+import { FadeImage } from "@/components/ui/fade-image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowRightIcon, MagnifyingGlassIcon as Search, MapPinAreaIcon, RankingIcon, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
+import { transition } from "@/lib/motion"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { chooseArea } from "@/components/around/around-store"
 import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
@@ -132,7 +133,7 @@ export function SearchOverlay() {
   const loading = term.length >= 2 && remote?.term !== term && remoteError?.term !== term
   const error = remoteError?.term === term ? remoteError.message : null
   const empty = results && !loading && !error && !results.products.length && !results.brands.length && !results.categories.length && !results.cities.length && !results.charts.length
-  const chip = "inline-flex h-10 items-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-ink transition-colors hover:border-white/25 hover:bg-white/6 focus-visible:outline-2 focus-visible:outline-violet"
+  const chip = "press inline-flex h-10 items-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-ink hover:border-white/25 hover:bg-white/6 focus-visible:outline-2 focus-visible:outline-violet [--press-scale:0.96]"
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -140,7 +141,7 @@ export function SearchOverlay() {
         {open ? (
           <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay asChild forceMount>
-              <motion.div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[8px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+              <motion.div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[8px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: transition.exit }} transition={transition.scrim} />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content
               asChild
@@ -160,11 +161,11 @@ export function SearchOverlay() {
             >
               {/* Below lg it ends clear of the home bar and its raised pin, which sit above the scrim. */}
               <motion.div
-                className="glass-strong glass-sheen fixed inset-x-2 top-2 z-50 mx-auto flex max-h-[calc(100dvh-var(--tabbar-top)-2.25rem)] max-w-2xl flex-col overflow-hidden rounded-2xl outline-none sm:top-16 sm:max-h-[calc(100dvh-var(--tabbar-top)-5.75rem)] lg:max-h-[calc(100dvh-5rem)]"
+                className="glass-panel glass-sheen fixed inset-x-2 top-2 z-50 mx-auto flex max-h-[calc(100dvh-var(--tabbar-top)-2.25rem)] max-w-2xl flex-col overflow-hidden rounded-2xl outline-none sm:top-16 sm:max-h-[calc(100dvh-var(--tabbar-top)-5.75rem)] lg:max-h-[calc(100dvh-5rem)]"
                 initial={{ opacity: 0, y: -12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                transition={{ type: "spring", stiffness: 500, damping: 38 }}
+                exit={{ opacity: 0, y: -8, scale: 0.98, transition: transition.exit }}
+                transition={transition.popover}
               >
                 {focus.probe}
                 <DialogPrimitive.Title className="sr-only">Search</DialogPrimitive.Title>
@@ -178,7 +179,7 @@ export function SearchOverlay() {
                     className="h-14 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
                     aria-label="Search"
                   />
-                  <DialogPrimitive.Close className="-mr-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close search">
+                  <DialogPrimitive.Close className="press -mr-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close search">
                     <X className="size-4" />
                   </DialogPrimitive.Close>
                 </form>
@@ -257,7 +258,7 @@ export function SearchOverlay() {
                               <li key={p.productId}>
                                 <Link href={p.slug ? `/products/${p.slug}` : `/shop?q=${encodeURIComponent(q.trim())}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
                                   <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface">
-                                    {p.image ? <Image src={p.image} alt="" fill sizes="48px" className="object-cover" /> : null}
+                                    {p.image ? <FadeImage src={p.image} alt="" fill sizes="48px" className="object-cover" /> : null}
                                   </span>
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm text-ink">{p.title}</span>

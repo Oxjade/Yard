@@ -462,7 +462,7 @@ export function CatalogListing({ category, initial }: { category?: CategorySlug;
               onClick={openSheet}
               aria-haspopup="dialog"
               aria-label={panelCount ? `Filter and sort, ${panelCount} active` : undefined}
-              className="glass glass-sheen pointer-events-auto inline-flex h-12 items-center gap-2.5 rounded-full pr-4 pl-5 text-sm font-medium text-ink transition-transform duration-100 active:scale-[0.97]"
+              className="glass-bar press pointer-events-auto inline-flex h-12 items-center gap-2.5 rounded-full pr-4 pl-5 text-sm font-medium text-ink [--press-scale:0.96]"
             >
               <SlidersHorizontal className="size-4" />
               Filter and sort

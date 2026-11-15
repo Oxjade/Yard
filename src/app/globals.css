@@ -139,8 +139,11 @@
   --container-page: 90rem;
   --breakpoint-3xl: 112rem;
 
-  /* Motion */
+  /* Motion — the CSS mirror of src/lib/motion.ts (ease.*). Utilities: ease-out-quint, ease-settle,
+     ease-exit; durations are the --dur-* custom properties in :root. */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
@@ -226,13 +229,24 @@
   --sidebar-border: #1a1a1a;
   --sidebar-ring: #9452ff;
 
-  /* Liquid Glass — neutral black, no tint */
-  --glass-bg: rgba(16, 16, 16, 0.72);
-  --glass-bg-strong: rgba(12, 12, 12, 0.86);
+  /* Liquid Glass — neutral black, no tint. The surfaces themselves are in the "Liquid Glass"
+     block below; --glass-bg and --glass-bg-strong stay for components that borrow the fill. */
+  --glass-bg: rgba(16, 16, 16, 0.66);
+  --glass-bg-strong: rgba(12, 12, 12, 0.8);
   --glass-fallback: rgba(16, 16, 16, 0.97);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.08);
   --glass-highlight: rgba(255, 255, 255, 0.07);
   --glass-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+  /* Motion durations — the CSS mirror of duration.* in src/lib/motion.ts. */
+  --dur-press: 120ms;
+  --dur-hover: 180ms;
+  --dur-dropdown: 200ms;
+  --dur-modal: 240ms;
+  --dur-drawer: 300ms;
+  --dur-page: 220ms;
+  --dur-crossfade: 260ms;
+  --dur-image: 420ms;
 
   /* The phone home bar (§7.2). --tabbar-top: from the bottom of the screen to the top of its
      58px capsule. --tabbar-clear: where a floating bar's bottom edge may sit, clear of the raised
@@ -317,40 +331,120 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Liquid Glass — for floating elements and overlays only, never main content */
-  .glass {
+  /*
+   * Liquid Glass — for floating elements and overlays only, never main content.
+   *
+   * One surface, four uses (src/components/ui/glass.tsx picks them):
+   *   .glass-bar    floating navigation: header groups, search capsule, the phone home bar, FABs
+   *   .glass-panel  popovers and panels: notifications, search overlay, filter panels
+   *   .glass-menu   dropdowns, selects and command menus (denser fill: rows of small text)
+   *   .glass-sheet  dialogs, drawers and sheets (the most opaque: forms sit on it)
+   * plus the older .glass (small chips over photographs) and .glass-strong (= sheet strength).
+   *
+   * Layers, back to front: the backdrop (blurred, saturated a touch so photographs keep their
+   * colour through it), a neutral black fill, one faint reflection across the top third, then a
+   * rim: a 1px hairline whose top edge catches the light and fades down the sides (::before,
+   * masked to the edge, so the element's own border and overflow are untouched). No tint, no
+   * glow. Without backdrop-filter, or when the viewer asks for less transparency, the fill turns
+   * opaque and the rim stays.
+   */
+  .glass,
+  .glass-strong,
+  .glass-bar,
+  .glass-panel,
+  .glass-menu,
+  .glass-sheet {
+    --glass-fill: rgba(16, 16, 16, 0.66);
+    --glass-blur: 20px;
+    --glass-saturate: 160%;
+    --glass-reflection: rgba(255, 255, 255, 0.035);
+    --glass-rim: rgba(255, 255, 255, 0.16);
+    --glass-depth: var(--glass-shadow);
     position: relative;
-    background: var(--glass-bg);
+    background-color: var(--glass-fill);
+    background-image: linear-gradient(180deg, var(--glass-reflection) 0%, transparent 34%);
     border: 1px solid var(--glass-border);
     box-shadow:
       inset 0 1px 0 var(--glass-highlight),
-      var(--glass-shadow);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
-    backdrop-filter: blur(20px) saturate(150%);
+      var(--glass-depth);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
-  .glass-strong {
-    position: relative;
-    background: var(--glass-bg-strong);
-    border: 1px solid var(--glass-border);
-    box-shadow:
-      inset 0 1px 0 var(--glass-highlight),
-      var(--glass-shadow);
-    -webkit-backdrop-filter: blur(28px) saturate(160%);
-    backdrop-filter: blur(28px) saturate(160%);
-  }
-  /* A controlled reflection: one crisp highlight line on the top edge — no soft gradient */
-  .glass-sheen::before {
+  .glass::before,
+  .glass-strong::before,
+  .glass-bar::before,
+  .glass-panel::before,
+  .glass-menu::before,
+  .glass-sheet::before {
     content: "";
     position: absolute;
-    inset: 0 12% auto 12%;
-    height: 1px;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
     pointer-events: none;
-    background: rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, var(--glass-rim) 0%, rgba(255, 255, 255, 0.04) 32%, rgba(255, 255, 255, 0.02) 72%, rgba(255, 255, 255, 0.05) 100%);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+  }
+  .glass {
+    --glass-fill: rgba(18, 18, 18, 0.62);
+    --glass-rim: rgba(255, 255, 255, 0.14);
+  }
+  .glass-strong,
+  .glass-sheet {
+    --glass-fill: rgba(13, 13, 13, 0.8);
+    --glass-blur: 36px;
+    --glass-saturate: 170%;
+    --glass-rim: rgba(255, 255, 255, 0.18);
+    --glass-depth: 0 32px 80px -28px rgba(0, 0, 0, 0.85), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  .glass-bar {
+    --glass-fill: rgba(10, 10, 10, 0.68);
+    --glass-blur: 24px;
+    --glass-saturate: 180%;
+    --glass-reflection: rgba(255, 255, 255, 0.045);
+    --glass-rim: rgba(255, 255, 255, 0.2);
+    --glass-depth: 0 12px 32px -12px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  .glass-panel {
+    --glass-fill: rgba(15, 15, 15, 0.74);
+    --glass-blur: 32px;
+    --glass-saturate: 170%;
+    --glass-rim: rgba(255, 255, 255, 0.17);
+  }
+  .glass-menu {
+    --glass-fill: rgba(20, 20, 20, 0.82);
+    --glass-blur: 24px;
+    --glass-rim: rgba(255, 255, 255, 0.15);
+    --glass-depth: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+  /* A brighter top edge, for the largest floating surfaces (drawers, the search overlay). */
+  .glass-sheen {
+    --glass-rim: rgba(255, 255, 255, 0.24);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .glass,
-    .glass-strong {
-      background: var(--glass-fallback);
+    .glass-strong,
+    .glass-bar,
+    .glass-panel,
+    .glass-menu,
+    .glass-sheet {
+      --glass-fill: var(--glass-fallback);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass,
+    .glass-strong,
+    .glass-bar,
+    .glass-panel,
+    .glass-menu,
+    .glass-sheet {
+      --glass-fill: var(--glass-fallback);
     }
   }
 
@@ -448,6 +542,49 @@
     to {
       background-position: -60% 0;
     }
+  }
+}
+
+/* Content replacing a skeleton fades in over the skeleton's footprint (useContentReveal and
+   <Loaded> in src/components/ui/loaded.tsx add it only when a skeleton was actually shown). */
+@layer components {
+  .content-in {
+    animation: content-in var(--dur-crossfade) var(--ease-out-quint) both;
+  }
+  @keyframes content-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/* FadeImage (src/components/ui/fade-image.tsx): a photograph that isn't decoded yet waits
+   transparent over its placeholder, then fades in. The attribute is set from JavaScript after
+   hydration, so server HTML and no-JS pages always show images straight away. Unlayered, so a
+   component's own transition and opacity classes never fight it: it uses an animation. */
+img[data-fade="pending"] {
+  opacity: 0;
+}
+img[data-fade="in"] {
+  animation: image-in var(--dur-image) var(--ease-out-quint) both;
+}
+@keyframes image-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Press feedback for controls that aren't <Button> (icon buttons, tabs, chips, close buttons):
+   a quick compression on the `scale` property, so it never fights a translate, and a slower
+   release. `press` owns the element's transition (colours, opacity, shadow and scale); use it in
+   place of a transition-* class. Reduced motion: the global rule makes it instant. */
+@utility press {
+  transition-property: color, background-color, border-color, opacity, box-shadow, scale;
+  transition-duration: var(--dur-hover);
+  transition-timing-function: var(--ease-out-quint);
+  &:active:not(:disabled):not([aria-disabled="true"]) {
+    scale: var(--press-scale, 0.94);
+    transition-duration: var(--dur-press);
   }
 }
 

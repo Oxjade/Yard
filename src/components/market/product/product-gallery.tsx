@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import Image from "next/image"
+import { FadeImage } from "@/components/ui/fade-image"
 import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsOutIcon as Expand } from "@phosphor-icons/react"
 import { AnimatePresence, motion, type PanInfo } from "motion/react"
 import { duration, ease, spring } from "@/lib/motion"
@@ -100,7 +101,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
               if (!dragged.current) setZoomOpen(true)
             }}
           >
-            <Image
+            <FadeImage
               src={image.src}
               alt={image.alt}
               fill

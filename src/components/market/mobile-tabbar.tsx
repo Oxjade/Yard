@@ -9,6 +9,7 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { useUnread } from "@/lib/realtime/unread"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { useCart } from "@/lib/stores/cart"
+import { spring, transition } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { bagCount } from "./bag-count"
 import { BagPop, useLgUp } from "./bag-pop"
@@ -31,8 +32,8 @@ export function tabFor(pathname: string): Tab | null {
 }
 
 /**
- * The phone home bar (§7.2, after the owner's pin 5gWDq1nnC.jpg): a black capsule with Home and
- * Explore on the left, the raised Around pin in the centre, and Cart and Me on the right.
+ * The phone home bar (§7.2, after the owner's pin 5gWDq1nnC.jpg): a black Liquid Glass capsule
+ * (glass-bar, kept dark: the page shows through blurred, never bright) with Home and Explore on the left, the raised Around pin in the centre, and Cart and Me on the right.
  *
  * - The active side tab is a purple pill with the filled icon and its label (below 380px the
  *   label goes to screen readers only and the pill closes to a filled disc). Inactive tabs are
@@ -90,7 +91,7 @@ export function MobileTabBar() {
     >
       <div
         ref={capsule}
-        className="pointer-events-auto relative grid h-[58px] w-[min(calc(100vw-1.5rem),23rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center rounded-full border border-white/10 bg-obsidian px-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.9)]"
+        className="glass-bar pointer-events-auto relative grid h-[58px] w-[min(calc(100vw-1.5rem),23rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center rounded-full px-1.5 [--glass-fill:rgba(8,8,8,0.74)]"
       >
         <ul className="flex min-w-0 items-center justify-end gap-0.5">
           <li>
@@ -138,7 +139,7 @@ export function MobileTabBar() {
                     key={`count-${items}-${pulse}`}
                     initial={{ scale: 0.4 }}
                     animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 600, damping: 22 }}
+                    transition={transition.badge}
                     aria-hidden
                     className="absolute top-0.5 right-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-acid px-1 text-[10px] font-semibold text-obsidian tabular"
                   >
@@ -169,11 +170,11 @@ export function MobileTabBar() {
 }
 
 const tabBase =
-  "relative isolate inline-flex h-11 min-w-11 items-center justify-center rounded-full text-ink outline-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet"
+  "press relative isolate inline-flex h-11 min-w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet"
 
 /** The active tab's purple pill: one layoutId, so it glides between tabs (still under reduced motion). */
 function Pill() {
-  return <motion.span layoutId="tab-pill" aria-hidden className="absolute inset-0 -z-10 rounded-full bg-purple" transition={{ type: "spring", stiffness: 500, damping: 38 }} />
+  return <motion.span layoutId="tab-pill" aria-hidden className="absolute inset-0 -z-10 rounded-full bg-purple" transition={spring.indicator} />
 }
 
 /** Icon plus label when active (the label is screen-reader-only below 380px); icon alone otherwise. */

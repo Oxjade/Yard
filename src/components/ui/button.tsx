@@ -12,7 +12,8 @@ const filledDisabled = "disabled:not-aria-busy:border-line disabled:not-aria-bus
  * `secondary` (outline) is everything else. Purple is for selected states, not buttons,
  * so the `brand` variant is used sparingly (e.g. Follow).
  *
- * Feedback: colours ease in 150ms; a press compresses in ~120ms; `loading` swaps the
+ * Feedback: colours ease in 150ms; a press compresses to 97% in 120ms (the `scale` property, which
+ * is what Tailwind's scale-* sets, so it is in the transition list) and releases in 150ms; `loading` swaps the
  * label for a compact spinner without changing the button's width (at full strength: it is
  * working, not unavailable); `success` shows a check for confirmation. Pair with
  * `useAsyncAction` so these states reflect the real operation — never a timer.
@@ -23,7 +24,7 @@ const filledDisabled = "disabled:not-aria-busy:border-line disabled:not-aria-bus
  * look and the layout don't change).
  */
 const buttonVariants = cva(
-  "group/button relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-transparent font-medium whitespace-nowrap select-none transition-[background-color,border-color,color,transform,box-shadow,opacity] duration-150 ease-out-quint outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian active:not-aria-[haspopup]:scale-[0.97] active:duration-100 disabled:pointer-events-none disabled:opacity-40 aria-busy:cursor-progress aria-busy:opacity-100 aria-invalid:border-danger [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-transparent font-medium whitespace-nowrap select-none transition-[background-color,border-color,color,scale,box-shadow,opacity] duration-150 ease-out-quint outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian active:not-aria-[haspopup]:scale-[0.97] active:duration-(--dur-press) disabled:pointer-events-none disabled:opacity-40 aria-busy:cursor-progress aria-busy:opacity-100 aria-invalid:border-danger [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

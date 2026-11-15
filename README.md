@@ -63,12 +63,20 @@ All shared values live in `src/app/globals.css`:
   is reserved for errors. Bold and high-contrast — no pastels, soft gradients or glow.
 - **Type** — Archivo (variable width) condensed for marketplace headlines (`.font-display`),
   expanded for the wordmark (`.font-wide`); Space Grotesk for everything else.
-- **Liquid Glass** — `.glass`, `.glass-strong`, `.glass-sheen`, with an opaque fallback where
-  `backdrop-filter` is unsupported. Used only on floating elements and overlays.
+- **Liquid Glass** — one surface in four strengths, `.glass-bar` (floating navigation),
+  `.glass-panel` (popovers, the search overlay), `.glass-menu` (dropdowns, selects) and
+  `.glass-sheet` (dialogs, drawers, sheets), picked with `glass()` / `<GlassSurface>` from
+  `src/components/ui/glass.tsx`; the older `.glass` (chips over photos), `.glass-strong` and
+  `.glass-sheen` share the same rim. Opaque where `backdrop-filter` is unsupported or the viewer
+  asks for less transparency. Used only on floating elements and overlays.
 - **Shape** — 4–10px radii; 16px+ only for floating overlays; full rounding only for chips
   and circular icon buttons.
 - **Motion** — Motion for React with `reducedMotion="user"`. One orchestrated moment (the
-  Discover hero); everything else responds to what the user does.
+  Discover hero); everything else responds to what the user does. Timing lives in
+  `src/lib/motion.ts` (`duration`, `ease`, `spring`, `transition`) with CSS mirrors (`--dur-*`,
+  `--ease-*`); `press` is the press-feedback utility for controls that aren't `<Button>`,
+  `FadeImage` fades photographs in once loaded, and `useContentReveal` / `<Loaded>` fade content
+  in over the skeleton it replaces.
 
 ## Code map
 
