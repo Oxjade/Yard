@@ -61,3 +61,14 @@ All decisions come from `LocalYardWindow` (helpers `dropsCardColumns`, `dropsCal
 `app/src/test/java/space/yardstore/app/features/drops/`: phase/wording helpers, large-screen column
 helpers, MyDropsResponse decoding, captions, sign-in change detection, and the three ViewModels
 against MockWebServer.
+
+## Premium pass (Nov 2026)
+
+- Cards (`DropLiveCard`): full-bleed photo with a soft bottom scrim and depth (shadow + inner rim);
+  with no photo, `BrandArtwork` (the brand's tone from `YardArtwork.tones` + oversized initials),
+  never a grey box. The status is a smoked-glass capsule (`DropPhotoCapsule`) inset 16dp
+  (`DropCardDefaults.inset`) with the acid live pulse (static under reduced motion). Brand (tracked
+  small caps) → name (display) → "CLOSES IN" + a 1 s ticking countdown in tabular figures → hairline
+  → rules line. Press: 0.98 scale + haptic. Same capsules/artwork on past tiles, calendar thumbnails,
+  "Your drops" rows and the drop detail hero (which also carries a ticking countdown capsule).
+- Section headers kept, spacing tightened; loading → content crossfades (`YardCrossfade`).

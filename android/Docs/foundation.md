@@ -111,3 +111,22 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
 - **App icon / splash**: placeholder acid "Y" adaptive icon; replace with the brush-logo artwork.
 - Maps (Around): `androidx.webkit` (WebViewAssetLoader) serves the bundled MapLibre GL JS globe from
   `assets/around/`; osmdroid was removed.
+
+## Premium pass (Nov 2026): glass, motion, reduced motion
+
+- `designsystem/Glass.kt`: `Modifier.yardGlass(shape, style, backdrop)` for FLOATING layers only
+  (tab pill / rail, glass icon buttons, save hearts, toasts). With a `GlassBackdrop`
+  (`rememberGlassBackdrop()` + `Modifier.glassBackdropSource()` on the content the layer floats
+  over — never on an ancestor of the glass itself) it blurs what is behind it on API 31+
+  (RenderEffect, recorded at ¼ resolution); otherwise a denser translucent fill. Always: tint,
+  top-lit sheen, a rim brighter along the top, soft shadow. The root records the tab stacks so the
+  pill/rail blur real content.
+- Sheets (`YardSheet`, `YardDialogSheet`): window blur-behind on API 31+ when the device allows
+  cross-window blur; plain scrim otherwise.
+- Motion tokens (`Metrics.kt › Motion`): `spring`, `snappy`, `press`, `emphasized`, `crossfade`,
+  `navigation` (emphasized decelerate, used for push/pop), `instant`; `PRESSED_SCALE` 0.96 /
+  `PRESSED_SCALE_LARGE` 0.98. Reduced motion: `rememberReducedMotion()` (animator duration scale 0
+  = "Remove animations"; `LocalReducedMotion` overrides) and `Motion.or(reduce) { … }`.
+  `pressableClick` takes `haptic` and an `interactionSource`.
+- `BrandArtwork` (designed placeholder: brand tone + initials), `YardCrossfade` (skeleton → content),
+  bag badge pop + rolling count, save-heart pop, toasts arrive with the emphasized spring.

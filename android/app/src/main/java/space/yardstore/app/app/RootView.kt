@@ -5,6 +5,16 @@ import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.togetherWith
+import space.yardstore.app.designsystem.GlassBackdrop
+import space.yardstore.app.designsystem.glassBackdropSource
+import space.yardstore.app.designsystem.rememberGlassBackdrop
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.or
+import space.yardstore.app.designsystem.yardGlass
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -57,6 +67,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -173,10 +184,13 @@ fun RootView(container: AppContainer) {
                 label = "rail-reserve",
             )
 
+            // What the floating tab pill / rail blur (API 31+). The pill and rail are siblings of
+            // this source, never inside it.
+            val backdrop = rememberGlassBackdrop()
             YardToastHost(toast, Modifier.fillMaxSize().background(Color.yard.bg)) {
                 // The tab stacks keep the same position in the tree for every window size, so
                 // rotating or unfolding never recreates a back stack.
-                Box(Modifier.fillMaxSize().padding(start = railReserve)) {
+                Box(Modifier.fillMaxSize().glassBackdropSource(backdrop).background(Color.yard.bg).padding(start = railReserve)) {
                     for (tab in AppTab.entries) {
                         if (tab.name in visitedTabs) {
                             key(tab) { TabStack(tab, router, container.tabTops, selected = router.selectedTab == tab, wide = wide) }
@@ -189,7 +203,7 @@ fun RootView(container: AppContainer) {
                     enter = slideInVertically { it } + fadeIn(),
                     exit = slideOutVertically { it } + fadeOut(),
                 ) {
-                    TabPill(Modifier.navigationBarsPadding().padding(bottom = Spacing.s))
+                    TabPill(Modifier.navigationBarsPadding().padding(bottom = Spacing.s), backdrop = backdrop)
                 }
                 AnimatedVisibility(
                     visible = railVisible,
@@ -201,6 +215,7 @@ fun RootView(container: AppContainer) {
                         Modifier
                             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
                             .padding(start = TabRailDefaults.margin),
+                        backdrop = backdrop,
                     )
                 }
             }
@@ -373,15 +388,53 @@ private fun RouteSheetHost(router: Router) {
 
 @Composable
 private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
-    AnimatedVisibility(visible = count > 0, modifier = modifier, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+    val reduce = rememberReducedMotion()
+    // The last non-zero count, so the badge keeps its number while it scales out.
+    var shown by remember { mutableIntStateOf(count) }
+    if (count > 0) shown = count
+    // A small pop each time the count goes up (add to bag), settling back with the app spring.
+    val pop = remember { Animatable(1f) }
+    var last by remember { mutableIntStateOf(count) }
+    LaunchedEffect(count) {
+        if (count > last && last > 0 && !reduce) {
+            pop.snapTo(1.25f)
+            pop.animateTo(1f, Motion.emphasized())
+        }
+        last = count
+    }
+    AnimatedVisibility(
+        visible = count > 0,
+        modifier = modifier,
+        enter = if (reduce) fadeIn(snap()) else scaleIn(Motion.emphasized()) + fadeIn(),
+        exit = if (reduce) fadeOut(snap()) else scaleOut() + fadeOut(),
+    ) {
         Box(
             Modifier
+                .graphicsLayer {
+                    scaleX = pop.value
+                    scaleY = pop.value
+                }
                 .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
                 .background(Color.yard.ink, YardShapes.pill)
                 .padding(horizontal = 5.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(if (count > 99) "99+" else "$count", style = YardFonts.micro.monospacedDigits(), color = Color.yard.bg)
+            // The number rolls (up when it grows, down when it shrinks).
+            AnimatedContent(
+                targetState = shown,
+                transitionSpec = {
+                    if (reduce) {
+                        fadeIn(snap()) togetherWith fadeOut(snap())
+                    } else {
+                        val up = targetState > initialState
+                        (slideInVertically(Motion.snappy()) { if (up) it else -it } + fadeIn(Motion.crossfade())) togetherWith
+                            (slideOutVertically(Motion.snappy()) { if (up) -it else it } + fadeOut(Motion.crossfade()))
+                    }
+                },
+                label = "bag-count",
+            ) { n ->
+                Text(if (n > 99) "99+" else "$n", style = YardFonts.micro.monospacedDigits(), color = Color.yard.bg)
+            }
         }
     }
 }
@@ -389,10 +442,11 @@ private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
 /**
  * Home · Search · Bag (count badge) · You, in a translucent capsule hovering over content.
  * Collapses to a smaller pill while the user scrolls down (`Modifier.tabPillScrollSensor()`).
- * Mirrors `TabPill` in `RootView.swift` (Android: translucent surface, no backdrop blur).
+ * Mirrors `TabPill` in `RootView.swift`. Liquid glass: on API 31+ it blurs the screen behind it
+ * ([backdrop]); older Android gets a denser translucent fill with the same sheen and rim.
  */
 @Composable
-fun TabPill(modifier: Modifier = Modifier) {
+fun TabPill(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     val router = LocalRouter.current
     val cart = LocalCartStore.current
     val haptics = LocalHapticFeedback.current
@@ -401,7 +455,8 @@ fun TabPill(modifier: Modifier = Modifier) {
     val buttonWidth: Dp = if (collapsed) 48.dp else 58.dp
     val gap: Dp = if (collapsed) 2.dp else 6.dp
     val index = AppTab.entries.indexOf(router.selectedTab)
-    val indicatorX by animateDpAsState((buttonWidth + gap) * index, Motion.spring(), label = "pill-indicator")
+    val reduce = rememberReducedMotion()
+    val indicatorX by animateDpAsState((buttonWidth + gap) * index, Motion.or(reduce) { Motion.spring() }, label = "pill-indicator")
 
     Box(
         modifier
@@ -410,9 +465,7 @@ fun TabPill(modifier: Modifier = Modifier) {
                 scaleY = scale
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
             }
-            .shadow(18.dp, YardShapes.pill, ambientColor = Color.yard.scrim.copy(alpha = 0.22f), spotColor = Color.yard.scrim.copy(alpha = 0.22f))
-            .background(Color.yard.surface.copy(alpha = 0.9f), YardShapes.pill)
-            .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
+            .yardGlass(YardShapes.pill, backdrop = backdrop)
             .padding(5.dp),
     ) {
         Box(
@@ -455,21 +508,20 @@ fun TabPill(modifier: Modifier = Modifier) {
  * Medium/Expanded windows instead of the bottom pill; it does not collapse on scroll.
  */
 @Composable
-fun TabRail(modifier: Modifier = Modifier) {
+fun TabRail(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     val router = LocalRouter.current
     val cart = LocalCartStore.current
     val haptics = LocalHapticFeedback.current
     val buttonSize = 58.dp
     val gap = 6.dp
     val index = AppTab.entries.indexOf(router.selectedTab)
-    val indicatorY by animateDpAsState((buttonSize + gap) * index, Motion.spring(), label = "rail-indicator")
+    val reduce = rememberReducedMotion()
+    val indicatorY by animateDpAsState((buttonSize + gap) * index, Motion.or(reduce) { Motion.spring() }, label = "rail-indicator")
 
     Box(
         modifier
             .width(TabRailDefaults.railWidth)
-            .shadow(18.dp, YardShapes.pill, ambientColor = Color.yard.scrim.copy(alpha = 0.22f), spotColor = Color.yard.scrim.copy(alpha = 0.22f))
-            .background(Color.yard.surface.copy(alpha = 0.9f), YardShapes.pill)
-            .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
+            .yardGlass(YardShapes.pill, backdrop = backdrop)
             .padding(5.dp)
             .selectableGroup(),
     ) {

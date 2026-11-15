@@ -1,5 +1,11 @@
 package space.yardstore.app.designsystem.components
 
+import android.os.Build
+import android.view.WindowManager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -88,8 +94,31 @@ fun YardSheet(
         tonalElevation = 0.dp,
         scrimColor = Color.yard.scrim.copy(alpha = 0.45f),
         dragHandle = if (showsGrabber) ({ YardSheetGrabber() }) else null,
-        content = content,
-    )
+    ) {
+        SheetBackdropBlur()
+        content()
+    }
+}
+
+/**
+ * Sheets are a physical layer: on API 31+ (when the device allows cross-window blur) the app
+ * behind the sheet's scrim is blurred by the window manager. Older devices keep the plain scrim.
+ * Call inside a dialog window's content (ModalBottomSheet, Dialog).
+ */
+@Composable
+internal fun SheetBackdropBlur(radius: Dp = 20.dp) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val view = LocalView.current
+    val px = with(LocalDensity.current) { radius.roundToPx() }
+    DisposableEffect(view, px) {
+        runCatching {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@runCatching
+            if (!window.windowManager.isCrossWindowBlurEnabled) return@runCatching
+            window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            window.attributes = window.attributes.apply { blurBehindRadius = px }
+        }
+        onDispose { }
+    }
 }
 
 /**
@@ -129,6 +158,7 @@ fun YardDialogSheet(
                     // Swallow taps so they don't reach the scrim's dismiss.
                     .clickable(remember { MutableInteractionSource() }, indication = null) {},
             ) {
+                SheetBackdropBlur()
                 CompositionLocalProvider(LocalContentColor provides Color.yard.ink) { content() }
             }
         }

@@ -1,5 +1,11 @@
 package space.yardstore.app.designsystem.components
 
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.scaleIn
+import space.yardstore.app.designsystem.GlassStyle
+import space.yardstore.app.designsystem.Motion
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.yardGlass
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -132,9 +138,7 @@ fun ToastView(toast: Toast, modifier: Modifier = Modifier) {
     }
     Row(
         modifier
-            .shadow(16.dp, YardShapes.pill, ambientColor = Color.yard.scrim.copy(alpha = 0.18f), spotColor = Color.yard.scrim.copy(alpha = 0.18f))
-            .background(Color.yard.surface.copy(alpha = 0.96f), YardShapes.pill)
-            .border(BorderStroke(1.dp, Color.yard.line), YardShapes.pill)
+            .yardGlass(YardShapes.pill, style = GlassStyle.Thick, elevation = 16.dp)
             .padding(horizontal = Spacing.l, vertical = Spacing.m)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -151,6 +155,7 @@ fun ToastView(toast: Toast, modifier: Modifier = Modifier) {
  */
 @Composable
 fun YardToastHost(center: ToastCenter, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    val reduce = rememberReducedMotion()
     Box(modifier) {
         content()
         val toast = center.current
@@ -165,8 +170,9 @@ fun YardToastHost(center: ToastCenter, modifier: Modifier = Modifier, content: @
                 .statusBarsPadding()
                 .padding(horizontal = Spacing.gutter, vertical = Spacing.s)
                 .widthIn(max = maxToastWidth),
-            enter = slideInVertically { -it } + fadeIn(),
-            exit = slideOutVertically { -it } + fadeOut(),
+            // Arrives from above with the emphasized spring (a slight settle), leaves quickly.
+            enter = if (reduce) fadeIn(snap()) else slideInVertically(Motion.emphasized()) { -it } + scaleIn(Motion.emphasized(), initialScale = 0.92f) + fadeIn(Motion.crossfade()),
+            exit = if (reduce) fadeOut(snap()) else slideOutVertically(Motion.standard(200)) { -it } + fadeOut(Motion.standard(160)),
         ) {
             last?.let { shown ->
                 ToastView(shown, Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { center.dismiss() })

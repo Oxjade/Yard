@@ -1,5 +1,8 @@
 package space.yardstore.app.features.auth
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -30,7 +33,13 @@ class SignInModelTest {
         AuthAPI.baseOverride = server.url("/").toString()
     }
 
+    private val models = mutableListOf<ViewModel>()
+    private fun <T : ViewModel> T.tracked(): T = also { models += it }
+
     @After fun tearDown() {
+        // Cancel the models' pending work before Main is reset (a request still in flight would
+        // resume on the missing Android Main dispatcher and fail the next runTest).
+        models.forEach { it.viewModelScope.cancel() }
         AuthAPI.clientOverride = null
         AuthAPI.baseOverride = null
         server.shutdown()
@@ -39,7 +48,7 @@ class SignInModelTest {
 
     private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)
 
-    private fun filled(mode: SignInModel.Mode = SignInModel.Mode.SignIn) = SignInModel(AuthProviders.preview()).apply {
+    private fun filled(mode: SignInModel.Mode = SignInModel.Mode.SignIn) = SignInModel(AuthProviders.preview()).tracked().apply {
         if (mode == SignInModel.Mode.SignUp) toggleMode()
         name = "Ada Obi"
         email = "  ada@example.com "
@@ -47,7 +56,7 @@ class SignInModelTest {
     }
 
     @Test fun validationUsesWebsiteWordingAndSendsNothing() = runBlocking {
-        val m = SignInModel(AuthProviders.preview())
+        val m = SignInModel(AuthProviders.preview()).tracked()
         assertFalse(m.submit { focused += it })
         assertEquals("Enter your email address.", m.emailError)
         assertEquals("Enter your password.", m.passwordError)
@@ -137,7 +146,7 @@ class SignInModelTest {
     }
 
     @Test fun magicLinkNeedsValidEmail() {
-        val m = SignInModel(AuthProviders.preview())
+        val m = SignInModel(AuthProviders.preview()).tracked()
         m.requestMagicLink { focused += it }
         assertEquals("Enter your email address.", m.emailError)
         assertEquals(listOf(SignInModel.Field.Email), focused)
@@ -146,7 +155,7 @@ class SignInModelTest {
 
     @Test fun providersLoadAndFallback() {
         server.enqueue(json("""{"password":true,"magicLink":false,"google":false,"apple":false,"auth0":true,"auth0Connections":[{"name":"google-oauth2","label":"Google"}],"demo":{"shopper":true}}"""))
-        val m = SignInModel()
+        val m = SignInModel().tracked()
         assertFalse(m.providersLoaded)
         m.loadProviders()
         waitUntil { m.providersLoaded }
@@ -155,7 +164,7 @@ class SignInModelTest {
         assertTrue(m.demoEnabled)
 
         server.enqueue(MockResponse().setResponseCode(500))
-        val failed = SignInModel()
+        val failed = SignInModel().tracked()
         failed.loadProviders()
         waitUntil { failed.providersLoaded }
         assertEquals(listOf(AuthSocialButton.auth0Google), failed.socialButtons)

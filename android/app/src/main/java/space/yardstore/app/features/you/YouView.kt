@@ -1,5 +1,12 @@
 package space.yardstore.app.features.you
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.unit.em
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -88,8 +95,8 @@ import java.time.LocalTime
 /**
  * The You tab root. Mirrors YouView.swift.
  * - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
- * - Signed in: profile header (initials avatar, name, email), quick tiles (Orders, Saved, Following,
- *   Inbox, Drop reminders, Updates), links (Settings, Sell on Yard), Help (Message Yard Support,
+ * - Signed in: profile header (initials avatar, greeting, name, email), one quick-links panel
+ *   (Orders, Saved, Following, Inbox, Drop reminders, Updates, with their live counts), links (Settings, Sell on Yard), Help (Message Yard Support,
  *   Help centre) and legal (Terms, Privacy, Refunds).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,13 +109,22 @@ fun YouView() {
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
     val shopper = session.shopper
+    val badges: YouBadgesModel = viewModel { YouBadgesModel() }
+    val signedIn = session.isSignedIn
+    // Live link state: on sign-in changes and whenever You comes back into view (back from Inbox
+    // after reading, from Orders, from the app switcher).
+    LaunchedEffect(shopper?.id) { if (shopper == null) badges.reset() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { badges.refresh(signedIn) }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = {
             scope.launch {
                 isRefreshing = true
-                try { session.refresh() } finally { isRefreshing = false }
+                try {
+                    session.refresh()
+                    badges.refresh(session.isSignedIn, force = true)
+                } finally { isRefreshing = false }
             }
         },
         modifier = Modifier.fillMaxSize().yardScreenBackground(),
@@ -132,7 +148,8 @@ fun YouView() {
             when {
                 session.isSignedIn && shopper != null -> {
                     YouProfileHeader(shopper)
-                    YouTiles()
+                    LaunchedEffect(shopper.id) { badges.refresh(true) }
+                    YouQuickLinks(badges)
                 }
                 !session.hasLoaded -> YouLoadingHeader()
                 else -> YouInviteCard(onSignIn = { router.present(Route.SignIn) })
@@ -186,17 +203,40 @@ private fun YouProfileHeader(shopper: Shopper) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
+        // Acid disc with the initials, set in the display face; a hairline ring lifts it off the page.
         Box(
-            Modifier.size(72.dp).background(Color.yard.acid, CircleShape).clearAndSetSemantics {},
+            Modifier
+                .size(64.dp)
+                .background(Color.yard.acid, CircleShape)
+                .border(BorderStroke(1.dp, Color.yard.ink.copy(alpha = 0.08f)), CircleShape)
+                .clearAndSetSemantics {},
             contentAlignment = Alignment.Center,
         ) {
-            Text(shopper.initials, style = YardFonts.display(30.sp), color = Color.yard.onAcid)
+            Text(shopper.initials, style = YardFonts.display(26.sp), color = Color.yard.onAcid)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
-            Text("${youGreeting()},", style = YardFonts.caption, color = Color.yard.violet)
-            YardDisplayText(name, size = if (name.length > 18) 24.sp else 30.sp, color = Color.yard.ink, maxLines = 2)
+        Column(Modifier.weight(1f)) {
+            // An editorial kicker: small caps, tracked out, above the name.
+            Text(
+                youGreeting().uppercase(),
+                style = YardFonts.micro.copy(letterSpacing = 0.14.em),
+                color = Color.yard.violet,
+            )
+            YardDisplayText(
+                name,
+                size = if (name.length > 18) 24.sp else 30.sp,
+                color = Color.yard.ink,
+                maxLines = 2,
+                modifier = Modifier.padding(top = 3.dp),
+            )
             if (shopper.email.isNotEmpty()) {
-                Text(shopper.email, style = YardFonts.callout, color = Color.yard.ink2, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+                Text(
+                    shopper.email,
+                    style = YardFonts.caption,
+                    color = Color.yard.ink3,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
         }
     }
@@ -205,74 +245,11 @@ private fun YouProfileHeader(shopper: Shopper) {
 @Composable
 private fun YouLoadingHeader() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.l)) {
-        Skeleton(Modifier.size(72.dp), shape = SkeletonShape.Circle)
+        Skeleton(Modifier.size(64.dp), shape = SkeletonShape.Circle)
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
             Skeleton(Modifier.size(width = 160.dp, height = 20.dp), cornerRadius = 4.dp)
             Skeleton(Modifier.size(width = 120.dp, height = 12.dp), cornerRadius = 4.dp)
         }
-    }
-}
-
-/** Quick tiles per row: 3 on phones (iOS), all 6 in one row on wide windows. */
-internal fun youTileColumns(window: YardWindow): Int = if (window.isWide) 6 else 3
-
-private data class YouTileItem(val title: String, val icon: ImageVector, val count: Int?, val route: Route)
-
-@Composable
-private fun YouTiles() {
-    val saved = LocalSavedStore.current
-    val follows = LocalFollowStore.current
-    val tiles = listOf(
-        YouTileItem("Orders", Icons.Outlined.Inventory2, null, Route.Orders),
-        YouTileItem("Saved", Icons.Outlined.FavoriteBorder, saved.items.size, Route.Saved),
-        YouTileItem("Following", Icons.Outlined.People, follows.items.size, Route.Following),
-        YouTileItem("Inbox", Icons.Outlined.Forum, null, Route.Inbox),
-        YouTileItem("Drop reminders", Icons.Outlined.NotificationsActive, null, Route.MyDrops),
-        YouTileItem("Updates", Icons.Outlined.Notifications, null, Route.Notifications),
-    )
-    val columns = youTileColumns(LocalYardWindow.current)
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-        tiles.chunked(columns).forEach { row ->
-            Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                row.forEach { YouTile(it, Modifier.weight(1f).fillMaxHeight()) }
-            }
-        }
-    }
-}
-
-/** A quick tile: icon, title, optional real count. */
-@Composable
-private fun YouTile(item: YouTileItem, modifier: Modifier = Modifier) {
-    val router = LocalRouter.current
-    val label = item.count?.let { "${item.title}, $it" } ?: item.title
-    Column(
-        modifier
-            .yardCard()
-            .pressableClick(onClickLabel = label) { router.push(item.route) }
-            .semantics(mergeDescendants = true) { contentDescription = label }
-            .padding(Spacing.m),
-        verticalArrangement = Arrangement.spacedBy(Spacing.s),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Box(
-                Modifier.size(36.dp).background(Color.yard.surface2, RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(item.icon, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(19.dp))
-            }
-            Spacer(Modifier.weight(1f))
-            val count = item.count
-            if (count != null && count > 0) {
-                Text(Formatters.count(count), style = YardFonts.number(15.sp), color = Color.yard.ink)
-            }
-        }
-        Text(
-            item.title,
-            style = YardFonts.captionEmphasis,
-            color = Color.yard.ink,
-            maxLines = 2,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp),
-        )
     }
 }
 

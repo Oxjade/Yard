@@ -155,3 +155,24 @@ fun YardTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable (
         }
     }
 }
+
+/**
+ * Tones for designed placeholders (a brand or drop with no photo yet): deep, fabric-like pairs
+ * (light → dark) that carry white text. One per brand, picked from its id so it never changes.
+ * Same values on iOS (`YardArtwork.tones`).
+ */
+object YardArtwork {
+    val tones: List<Pair<Color, Color>> = listOf(
+        Color(0xFF5B4FB0) to Color(0xFF1E1840), // violet ink
+        Color(0xFF8C3B2E) to Color(0xFF2A100C), // oxblood
+        Color(0xFF3F6B5A) to Color(0xFF0F2119), // bottle green
+        Color(0xFF2F5B8A) to Color(0xFF0C1A2C), // workwear blue
+        Color(0xFF8A6A2F) to Color(0xFF2A1F0C), // tobacco
+        Color(0xFF7A3E68) to Color(0xFF240E1E), // aubergine
+        Color(0xFF4E5A63) to Color(0xFF15191C), // slate
+        Color(0xFF9A5A2A) to Color(0xFF2C1608), // rust
+    )
+
+    /** The tone for [key] (a brand id, handle or name). */
+    fun tone(key: String): Pair<Color, Color> = tones[(key.hashCode() and Int.MAX_VALUE) % tones.size]
+}

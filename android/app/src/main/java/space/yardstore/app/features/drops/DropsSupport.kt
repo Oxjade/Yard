@@ -1,5 +1,12 @@
 package space.yardstore.app.features.drops
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.em
+import space.yardstore.app.designsystem.onPhotoGlassTint
+import space.yardstore.app.designsystem.rememberReducedMotion
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -277,36 +284,48 @@ internal fun Modifier.dropsBleed(horizontal: Dp): Modifier = layout { measurable
 
 // MARK: - Live pulse
 
-/** The pulsing "live" dot: a solid dot with a ring that grows and fades, on repeat. */
+/** The live pulse: a dot with a soft expanding ring. Static (just the dot) under reduced motion. */
 @Composable
 fun DropLivePulse(color: Color = Color.yard.onAcid, size: Dp = 7.dp) {
-    val transition = rememberInfiniteTransition(label = "drop-pulse")
-    val progress by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
-        label = "drop-pulse-progress",
-    )
+    val reduce = rememberReducedMotion()
     Box(Modifier.size(size * 2.6f).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(size)
-                .graphicsLayer {
-                    val s = 1f + 1.6f * progress
-                    scaleX = s
-                    scaleY = s
-                    alpha = 0.55f * (1f - progress)
-                }
-                .background(color, CircleShape),
-        )
+        if (!reduce) {
+            val transition = rememberInfiniteTransition(label = "drop-pulse")
+            val progress by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(1400, easing = LinearOutSlowInEasing), RepeatMode.Restart),
+                label = "drop-pulse-progress",
+            )
+            Box(
+                Modifier
+                    .size(size)
+                    .graphicsLayer {
+                        val s = 1f + 1.6f * progress
+                        scaleX = s
+                        scaleY = s
+                        alpha = 0.6f * (1f - progress)
+                    }
+                    .background(color, CircleShape),
+            )
+        }
         Box(Modifier.size(size).background(color, CircleShape))
     }
 }
 
-/** Status badge: acid with the live pulse when the shopper can act now, neutral otherwise. */
+/**
+ * Status badge. On photos: a small smoked-glass capsule (translucent dark, hairline rim, white
+ * label) with the acid live pulse when the shopper can act now; it reads on any photo and never
+ * looks pasted on. Off photos: acid with the pulse when hot, a neutral tag otherwise.
+ */
 @Composable
 fun DropStatusBadge(drop: Drop, phase: DropLivePhase, onPhoto: Boolean = false) {
-    if (drop.isHot(phase)) {
+    val hot = drop.isHot(phase)
+    if (onPhoto) {
+        DropPhotoCapsule(drop.statusLabel(phase), live = hot)
+        return
+    }
+    if (hot) {
         Row(
             Modifier
                 .background(Color.yard.acid, YardShapes.pill)
@@ -324,7 +343,30 @@ fun DropStatusBadge(drop: Drop, phase: DropLivePhase, onPhoto: Boolean = false) 
             )
         }
     } else {
-        Tag(drop.statusLabel(phase), style = if (onPhoto) TagStyle.OnPhoto else TagStyle.Neutral)
+        Tag(drop.statusLabel(phase), style = TagStyle.Neutral)
+    }
+}
+
+/** The frosted capsule used for labels on drop photos (status, access, sponsored). */
+@Composable
+fun DropPhotoCapsule(text: String, modifier: Modifier = Modifier, live: Boolean = false) {
+    val rim = Color.yard.onPhoto.copy(alpha = 0.22f)
+    Row(
+        modifier
+            .background(onPhotoGlassTint(), YardShapes.pill)
+            .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(rim, rim.copy(alpha = 0.06f)))), YardShapes.pill)
+            .padding(start = if (live) 7.dp else 10.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        if (live) Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { DropLivePulse(Color.yard.acid, 6.dp) }
+        Text(
+            text.uppercase(),
+            style = YardFonts.micro.copy(letterSpacing = 0.08.em),
+            color = Color.yard.onPhoto,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

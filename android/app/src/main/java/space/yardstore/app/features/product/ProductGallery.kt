@@ -1,5 +1,6 @@
 package space.yardstore.app.features.product
 
+import space.yardstore.app.designsystem.onPhotoGlassTint
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -181,7 +182,9 @@ fun ProductGallery(
 private fun ProductPageDots(count: Int, index: Int, modifier: Modifier = Modifier) {
     Row(
         modifier
-            .background(Color.yard.scrim.copy(alpha = 0.28f), YardShapes.pill)
+            // Smoked glass on the photo, with a hairline rim (as the drop capsules).
+            .background(onPhotoGlassTint(), YardShapes.pill)
+            .border(BorderStroke(1.dp, Color.yard.onPhoto.copy(alpha = 0.16f)), YardShapes.pill)
             .padding(horizontal = Spacing.s, vertical = 6.dp)
             .clearAndSetSemantics { },
         horizontalArrangement = Arrangement.spacedBy(5.dp),

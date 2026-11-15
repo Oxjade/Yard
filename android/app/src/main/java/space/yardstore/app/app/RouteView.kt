@@ -1,5 +1,6 @@
 package space.yardstore.app.app
 
+import space.yardstore.app.designsystem.Motion
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -95,13 +96,13 @@ fun RouteView(route: Route) {
 
 /** iOS-like push: the new screen slides in from the right, the old one drifts left. */
 internal val pushEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
-    { slideInHorizontally(tween(320)) { it } }
+    { slideInHorizontally(Motion.navigation()) { it } }
 internal val pushExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
-    { slideOutHorizontally(tween(320)) { -it / 4 } + fadeOut(tween(320), targetAlpha = 0.6f) }
+    { slideOutHorizontally(Motion.navigation()) { -it / 4 } + fadeOut(Motion.navigation(), targetAlpha = 0.6f) }
 internal val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
-    { slideInHorizontally(tween(320)) { -it / 4 } + fadeIn(tween(320), initialAlpha = 0.6f) }
+    { slideInHorizontally(Motion.navigation()) { -it / 4 } + fadeIn(Motion.navigation(), initialAlpha = 0.6f) }
 internal val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
-    { slideOutHorizontally(tween(320)) { it } }
+    { slideOutHorizontally(Motion.navigation(320)) { it } }
 
 private inline fun <reified T : Route> NavGraphBuilder.routeDestination(
     noinline content: @Composable (NavBackStackEntry, Route) -> Unit,

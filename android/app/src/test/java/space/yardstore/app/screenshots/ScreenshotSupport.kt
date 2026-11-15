@@ -40,6 +40,9 @@ import space.yardstore.app.designsystem.PreviewFixtures
 import space.yardstore.app.features.charts.ChartsFiltersPreview
 import space.yardstore.app.features.charts.ChartsPreviewData
 import space.yardstore.app.features.drops.DropsPreviewFixtures
+import space.yardstore.app.features.drops.MyDropsResponse
+import space.yardstore.app.features.orders.OrderPreviewData
+import space.yardstore.app.features.orders.OrdersPage
 import space.yardstore.app.features.home.HomeCategoriesResponse
 import space.yardstore.app.features.home.HomeCategory
 import space.yardstore.app.features.home.HomeInboxUnread
@@ -118,6 +121,13 @@ object FakeYardBackend {
             }
             path == "/api/notifications" -> json(HomeNotificationsResponse(listOf(HomeNotificationsResponse.Item("n1", read = false), HomeNotificationsResponse.Item("n2", read = false))))
             path == "/api/inbox/unread" -> json(HomeInboxUnread(conversations = 2))
+            path == "/api/orders" -> json(OrdersPage(items = OrderPreviewData.summaries))
+            path == "/api/drops/me" -> json(
+                MyDropsResponse(
+                    reminders = listOf(DropsPreviewFixtures.upcoming, DropsPreviewFixtures.tomorrow)
+                        .map { MyDropsResponse.Reminder(dropId = it.id, drop = it) },
+                ),
+            )
             path == "/api/inbox/conversations" -> json(InboxConversationsPage(items = inboxRows))
             path == "/api/charts/scopes" -> json(ChartsFiltersPreview.scopes)
             path == "/api/charts" -> json(ChartsPreviewData.board)

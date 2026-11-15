@@ -3,7 +3,7 @@
 Mirrors `ios/Yard/Features/You` file for file (same names, copy, endpoints and states).
 
 ## Screens
-- `YouView()` — tab root. Signed out: "Your World" invite card (Sign in / Create account → `Route.SignIn`). Loading: skeleton header. Signed in: initials avatar, greeting, name, email; six tiles (Orders, Saved + count, Following + count, Inbox, Drop reminders, Updates); Settings / Help / Sell on Yard; Legal (Terms, Privacy, Refunds). Pull to refresh (`PullToRefreshBox` → `session.refresh()`), tab-pill scroll sensor, edge to edge.
+- `YouView()` — tab root. Signed out: "Your World" invite card (Sign in / Create account → `Route.SignIn`). Loading: skeleton header. Signed in: editorial header (initials avatar, tracked small-caps greeting, name, email); ONE quick-links panel (`YouQuickLinks.kt`: a rounded surface with a 3 × 2 grid of icon-over-label cells and hairline separators — Orders, Saved, Following, Inbox, Drop reminders, Updates; press = 0.96 scale + highlight + light haptic) with live state from `YouBadgesModel` (inbox unread dot ← `/api/inbox/unread`, Updates unread count ← `/api/notifications?as=shopper`, Orders in-progress count ← `/api/orders`, active drop reminders ← `/api/drops/me`, Saved/Following totals ← the stores; unknown or zero hides the badge; refreshed on resume, sign-in change and pull to refresh); Settings / Help / Sell on Yard; Legal (Terms, Privacy, Refunds). Pull to refresh (`PullToRefreshBox` → `session.refresh()`), tab-pill scroll sensor, edge to edge.
 - `SettingsView()` — grouped cards (reference 08): General (Appearance, Notifications, Ship to, Currency), Account (Your details, Addresses, Change/Set password, Delete account or "Deletion requested"), Sign-in methods (Disconnect behind an AlertDialog; "Connect on the web"), Help and legal, Sign out. Signed out: sign-in card instead of Account.
 - `AppearanceView()` — three swatches (drawn with the fixed `YardColors.Light/Dark` sets) + checklist; writes `AppearanceStore` (DataStore `appearance`).
 - `NotificationSettingsView()` — topics, Email channel, "Push on this phone" (opens the system's app-notification settings), read receipts; each switch saves at once with the site's email rule; skeleton / error / signed-out states.
@@ -21,7 +21,7 @@ Settings › Account › Your details is a page (two-pane: `YouSettingsPage.Acco
 - The link in the email (`/auth/change-email?token=`) is an `/auth` App Link, so the app finishes it: `AuthEmailLinks` POSTs `/api/auth/change-email/confirm { token }`, refreshes the session and toasts "Your Yard email is now …" (or the server's message for a used/expired link). In a browser the website page does the same; the app re-reads on resume.
 
 ## Tablet & large screens
-- `YouView`: the scrolling column is capped at `contentMaxWidth` (whole width still scrolls); the six quick tiles sit in one row on `isWide` (`youTileColumns`: 3 → 6), equal height per row.
+- `YouView`: the scrolling column is capped at `contentMaxWidth` (whole width still scrolls); the quick-links panel is one row of six cells on `isWide` (`youTileColumns`: 3 → 6).
 - `SettingsView`: `ListDetailLayout` on Expanded — settings list on the left, the selected sub-page (`YouSettingsPage`: Appearance, Notifications, Addresses, Terms, Privacy, Refunds, Data deletion) on the right without a back button (`LocalBackAction provides null`), selection in `rememberSaveable`, selected row highlighted (`surface2`, `selected` semantics), "Pick a setting" `EmptyState` when nothing is selected. Help, Ship to / Currency and the account sheets keep opening as before. Medium/Compact push the routes as on phones.
 - Appearance, Notifications, Addresses: content capped with `adaptiveContentWidth()`; Legal: the WebView sits in `AdaptiveContent`.
 - `YouSheet(presentAsDialogOnWide = true)` for the tall sheets (Ship to / Currency, Change password, Delete account) → centered dialog on wide windows; Your details stays a bottom sheet.
@@ -40,7 +40,7 @@ Settings › Account › Your details is a page (two-pane: `YouSettingsPage.Acco
 `YouMarkets` (copy of src/config/markets.ts), `YouRegion` (ship-to in `Config.preferences` key `yard.shipTo`, `yard.currencyChosen`), `YouWebPage` (Help / Sell / web settings via `WebPages`), `YouSettingsGroup`, `YouToggleRow`, `YouTextField`, `YouSkeletonRow`, `Modifier.youRowClick`, security DTOs.
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer), `YouAccountTest` (16: name/email rules, AccountDto, exact request bodies, error mapping, reauth, pending/cancel/refresh, change-email confirm). Models take `(api, root)` so tests can point them at the mock server.
+`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer), `YouQuickLinksTest` (badge rules, live counts, throttle, partial failure), `YouAccountTest` (16: name/email rules, AccountDto, exact request bodies, error mapping, reauth, pending/cancel/refresh, change-email confirm). Models take `(api, root)` so tests can point them at the mock server.
 
 ## Differences from iOS
 - Web pages open in Custom Tabs, not SFSafariViewController. Legal WebView shares the system WebView cookie store (iOS used a non-persistent store); it doesn't force dark styling of the web page (iOS doesn't either).
@@ -48,7 +48,7 @@ Settings › Account › Your details is a page (two-pane: `YouSettingsPage.Acco
 - Footers say "this phone" / "your phone's" instead of "this iPhone" / "your iPhone's".
 - Sign-in method icons: no Google/Apple logos in material icons — AccountCircle / PhoneIphone stand in.
 - No password-manager autofill hints on the account-sheet fields (iOS `textContentType`).
-- Same open items as iOS: Google/Apple linking happens on the web, tiles for Orders/Inbox/Drop reminders have no counts.
+- Same open items as iOS: Google/Apple linking happens on the web.
 - After "Delete my account" succeeds, the sheet calls `onDeleted` and SettingsView refreshes the session, pops to You and toasts in its own scope (the sheet's scope is cancelled when it closes; on iOS the `Task` survives `dismiss()`).
 - The change-password sheet can't be swiped away while saving (closing would cancel the request's coroutine).
 - `YouToggleRow` is a single `toggleable` (role Switch) row; the switch inside is display-only, so TalkBack reads one switch with its title and detail.

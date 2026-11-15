@@ -27,13 +27,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import space.yardstore.app.designsystem.GlassStyle
 import space.yardstore.app.designsystem.YardPreview
+import space.yardstore.app.designsystem.yardGlass
 import space.yardstore.app.designsystem.yard
 
 /**
  * A round frosted icon button for use over photos and headers (close ×, "…", share, heart).
- * Mirrors `GlassIconButton.swift`. Android has no backdrop blur on all API levels: the "glass"
- * is a translucent `surface` disc with a hairline.
+ * Mirrors `GlassIconButton.swift`. The glass is [yardGlass] (clear style): a translucent disc with
+ * a top-lit sheen and rim. It sits inside page content, so it never blurs (no backdrop of its own).
  *
  *   GlassIconButton(Icons.Filled.Close, contentDescription = "Close") { router.pop() }
  *   GlassIconButton(if (saved) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, "Save",
@@ -52,10 +54,9 @@ fun GlassIconButton(
     Box(
         modifier
             .size(size)
-            .background(Color.yard.surface.copy(alpha = 0.72f), CircleShape)
-            .border(BorderStroke(1.dp, Color.yard.line), CircleShape)
             .semantics { this.contentDescription = contentDescription }
-            .pressableClick(onClick = onClick),
+            .pressableClick(pressedScale = 0.92f, onClick = onClick)
+            .yardGlass(CircleShape, style = GlassStyle.Clear, elevation = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = tint ?: Color.yard.ink, modifier = Modifier.size(size * 0.45f))

@@ -3,6 +3,9 @@
 
 package space.yardstore.app.features.drops
 
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.em
+import space.yardstore.app.designsystem.onPhotoGlassTint
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -258,12 +261,46 @@ private fun DropHero(drop: Drop, phase: DropLivePhase) {
             .clip(YardShapes.image)
             .semantics { contentDescription = drop.name },
     ) {
-        RemoteImage(drop.imageUrl, Modifier.fillMaxSize(), maxPixelSize = 1600)
-        Row(Modifier.align(Alignment.TopStart).padding(Spacing.m), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        DropArtwork(drop, Modifier.fillMaxSize(), maxPixelSize = 1600)
+        // A soft floor so the hero settles into the page below it.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.yard.scrim.copy(alpha = 0f),
+                        0.65f to Color.yard.scrim.copy(alpha = 0f),
+                        1f to Color.yard.scrim.copy(alpha = 0.38f),
+                    ),
+                ),
+        )
+        Row(Modifier.align(Alignment.TopStart).padding(DropCardDefaults.inset), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             DropStatusBadge(drop, phase, onPhoto = true)
-            Tag(drop.accessLabel, style = TagStyle.OnPhoto)
-            if (drop.sponsored) Tag("Sponsored", style = TagStyle.OnPhoto)
+            DropPhotoCapsule(drop.accessLabel)
+            if (drop.sponsored) DropPhotoCapsule("Sponsored")
         }
+        // The countdown rides on the hero too, bottom left, ticking every second.
+        drop.countdownTarget(phase, Instant.now())?.let { target ->
+            DropHeroCountdown(target.label, target.date, Modifier.align(Alignment.BottomStart).padding(DropCardDefaults.inset))
+        }
+    }
+}
+
+@Composable
+private fun DropHeroCountdown(label: String, date: Instant, modifier: Modifier = Modifier) {
+    val now by rememberDropsNow(1000)
+    val text = Formatters.countdown(Duration.between(now, date))
+    Row(
+        modifier
+            .background(onPhotoGlassTint(), YardShapes.pill)
+            .border(1.dp, Color.yard.onPhoto.copy(alpha = 0.18f), YardShapes.pill)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "$label $text" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+    ) {
+        Text(label.uppercase(), style = YardFonts.micro.copy(letterSpacing = 0.1.em), color = Color.yard.onPhoto.copy(alpha = 0.72f))
+        Text(text, style = YardFonts.number(15.sp).monospacedDigits(), color = Color.yard.onPhoto)
     }
 }
 

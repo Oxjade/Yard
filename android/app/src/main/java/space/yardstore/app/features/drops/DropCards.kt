@@ -1,5 +1,8 @@
 package space.yardstore.app.features.drops
 
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.em
+import space.yardstore.app.designsystem.components.BrandArtwork
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -58,56 +61,101 @@ import java.time.Instant
 
 // Cards used by DropsView and MyDropsView. Mirrors DropCards.swift.
 
-/** Live now / entries open: a big photo card with the live pulse, brand, name and a ticking "Closes in" line. */
+/**
+ * The drop's photo, full-bleed; with no photo (or a failed load) the brand's designed artwork
+ * (its tone and initials), never a grey box with a photo glyph.
+ */
+@Composable
+fun DropArtwork(drop: Drop, modifier: Modifier = Modifier, maxPixelSize: Int = 1200) {
+    RemoteImage(
+        drop.imageUrl,
+        modifier,
+        maxPixelSize = maxPixelSize,
+        placeholder = { BrandArtwork(drop.brandName, key = drop.brand.id) },
+    )
+}
+
+/**
+ * Live now / entries open: a full-bleed photo card with a soft bottom scrim, a frosted status
+ * capsule inset 16dp (live pulse), and brand · name · countdown · rules in a clear hierarchy.
+ * Press feedback comes from the caller's [modifier] (`pressableClick`); the card adds depth.
+ */
 @Composable
 fun DropLiveCard(drop: Drop, phase: DropLivePhase, modifier: Modifier = Modifier) {
+    val shadow = Color.yard.scrim.copy(alpha = if (Color.yard.isDark) 0.5f else 0.18f)
     Box(
         modifier
             .fillMaxWidth()
             .aspectRatio(4f / 5f)
+            .shadow(14.dp, YardShapes.card, clip = false, ambientColor = shadow, spotColor = shadow)
             .clip(YardShapes.card)
             .semantics(mergeDescendants = true) { contentDescription = "${drop.name}, ${drop.brandName}, ${drop.statusLabel(phase)}" },
     ) {
-        RemoteImage(drop.imageUrl, Modifier.fillMaxSize(), maxPixelSize = 1200)
+        DropArtwork(drop, Modifier.fillMaxSize())
+        // Soft bottom scrim: the top two thirds stay clean, the text sits on a deep floor.
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         0f to Color.yard.scrim.copy(alpha = 0f),
-                        0.5f to Color.yard.scrim.copy(alpha = 0.15f),
-                        1f to Color.yard.scrim.copy(alpha = 0.78f),
+                        0.42f to Color.yard.scrim.copy(alpha = 0f),
+                        0.7f to Color.yard.scrim.copy(alpha = 0.32f),
+                        1f to Color.yard.scrim.copy(alpha = 0.84f),
                     ),
                 ),
         )
-        Row(Modifier.align(Alignment.TopStart).padding(Spacing.m), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        // A hairline inner rim so the card edge reads on both themes.
+        Box(Modifier.fillMaxSize().border(1.dp, Color.yard.onPhoto.copy(alpha = 0.08f), YardShapes.card))
+        Row(
+            Modifier.align(Alignment.TopStart).padding(DropCardDefaults.inset),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        ) {
             DropStatusBadge(drop, phase, onPhoto = true)
-            if (drop.sponsored) Tag("Sponsored", style = TagStyle.OnPhoto)
+            if (drop.sponsored) DropPhotoCapsule("Sponsored")
         }
-        Column(Modifier.align(Alignment.BottomStart).padding(Spacing.l), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            Text(drop.brandName, style = YardFonts.captionEmphasis, color = Color.yard.onPhoto.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            YardDisplayText(drop.name, size = 38.sp, color = Color.yard.onPhoto, maxLines = 2)
-            val target = drop.countdownTarget(phase, Instant.now())
-            if (target != null) {
-                val now by rememberDropsNow(1000)
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Text(target.label, style = YardFonts.caption, color = Color.yard.onPhoto)
-                    Text(
-                        Formatters.countdown(Duration.between(now, target.date)),
-                        style = YardFonts.number(15.sp).monospacedDigits(),
-                        color = Color.yard.onPhoto,
-                    )
-                }
-            }
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+        ) {
             Text(
-                "${drop.accessLabel} · ${drop.runText} · limit ${drop.limitPerCustomer}",
-                style = YardFonts.caption,
-                color = Color.yard.onPhoto.copy(alpha = 0.75f),
+                drop.brandName.uppercase(),
+                style = YardFonts.micro.copy(letterSpacing = 0.14.em),
+                color = Color.yard.onPhoto.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            YardDisplayText(drop.name, size = 40.sp, color = Color.yard.onPhoto, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+            val target = drop.countdownTarget(phase, Instant.now())
+            if (target != null) {
+                DropCardCountdown(target.label, target.date, Modifier.padding(top = Spacing.m))
+            }
+            Box(Modifier.padding(top = Spacing.m).fillMaxWidth().height(1.dp).background(Color.yard.onPhoto.copy(alpha = 0.16f)))
+            Text(
+                "${drop.accessLabel} · ${drop.runText} · limit ${drop.limitPerCustomer}",
+                style = YardFonts.caption,
+                color = Color.yard.onPhoto.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = Spacing.s),
+            )
         }
     }
+}
+
+/** "CLOSES IN" over a big ticking 01:59:45 (tabular figures, so the digits never jitter). */
+@Composable
+private fun DropCardCountdown(label: String, date: Instant, modifier: Modifier = Modifier) {
+    val now by rememberDropsNow(1000)
+    val text = Formatters.countdown(Duration.between(now, date))
+    Column(modifier.semantics(mergeDescendants = true) { contentDescription = "$label $text" }) {
+        Text(label.uppercase(), style = YardFonts.micro.copy(letterSpacing = 0.12.em), color = Color.yard.onPhoto.copy(alpha = 0.66f))
+        Text(text, style = YardFonts.number(26.sp).monospacedDigits(), color = Color.yard.onPhoto, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+object DropCardDefaults {
+    /** Inset of capsules from a photo card's edges (same on iOS). */
+    val inset = 16.dp
 }
 
 /** Upcoming: a calendar row with the release time, a thumbnail, a live countdown and the bell. */
@@ -147,11 +195,7 @@ fun DropCalendarRow(
                 )
                 Text(if (drop.isDrawWaiting(phase, now)) "Entries" else "Release", style = YardFonts.micro, color = Color.yard.ink3)
             }
-            RemoteImage(
-                drop.imageUrl,
-                Modifier.size(width = 60.dp, height = 76.dp).clip(RoundedCornerShape(Radius.small)),
-                maxPixelSize = 300,
-            )
+            DropArtwork(drop, Modifier.size(width = 60.dp, height = 76.dp).clip(RoundedCornerShape(Radius.small)), maxPixelSize = 300)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(drop.brandName, style = YardFonts.caption, color = Color.yard.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(drop.name, style = YardFonts.bodyEmphasis, color = Color.yard.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -208,8 +252,8 @@ fun DropCalendarRow(
 fun DropPastTile(drop: Drop, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         Box(Modifier.fillMaxWidth().aspectRatio(4f / 5f).clip(YardShapes.image)) {
-            RemoteImage(drop.imageUrl, Modifier.fillMaxSize(), maxPixelSize = 700)
-            Tag(drop.statusLabel(DropLivePhase.Ended), Modifier.align(Alignment.TopStart).padding(Spacing.s), style = TagStyle.OnPhoto)
+            DropArtwork(drop, Modifier.fillMaxSize(), maxPixelSize = 700)
+            DropPhotoCapsule(drop.statusLabel(DropLivePhase.Ended), modifier = Modifier.align(Alignment.TopStart).padding(Spacing.s))
         }
         Column(Modifier.padding(horizontal = Spacing.xs), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(drop.name, style = YardFonts.captionEmphasis, color = Color.yard.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -246,7 +290,7 @@ fun DropListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
-        RemoteImage(drop.imageUrl, Modifier.size(width = 72.dp, height = 90.dp).clip(RoundedCornerShape(Radius.small)), maxPixelSize = 300)
+        DropArtwork(drop, Modifier.size(width = 72.dp, height = 90.dp).clip(RoundedCornerShape(Radius.small)), maxPixelSize = 300)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
                 Text(drop.brandName, style = YardFonts.caption, color = Color.yard.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

@@ -1,5 +1,16 @@
 package space.yardstore.app.designsystem.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import space.yardstore.app.designsystem.GlassStyle
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.yardGlass
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,7 +99,8 @@ fun ProductTile(
             )
             Box(Modifier.align(Alignment.TopStart).padding(Spacing.s)) { ProductTileBadge(product) }
             if (showsSaveButton) {
-                Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { SaveHeart(product) }
+                // 44dp touch target around the 30dp disc; the disc keeps its 6dp inset.
+                Box(Modifier.align(Alignment.TopEnd)) { SaveHeart(product) }
             }
         }
         Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -127,13 +139,22 @@ private fun SaveHeart(product: Product) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val isSaved = saved.isSaved(product.id)
+    val reduce = rememberReducedMotion()
+    // The heart pops when it fills (the store flips it at once and rolls back on failure).
+    val pop = remember { Animatable(1f) }
+    var wasSaved by remember(product.id) { mutableStateOf(isSaved) }
+    LaunchedEffect(isSaved) {
+        if (isSaved && !wasSaved && !reduce) {
+            pop.snapTo(0.6f)
+            pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 520f))
+        }
+        wasSaved = isSaved
+    }
     Box(
         modifier = Modifier
-            .size(30.dp)
-            .background(Color.yard.surface.copy(alpha = 0.78f), CircleShape)
-            .border(BorderStroke(1.dp, Color.yard.line), CircleShape)
+            .size(44.dp)
             .semantics { contentDescription = if (isSaved) "Remove from saved" else "Save" }
-            .pressableClick {
+            .pressableClick(pressedScale = 0.9f) {
                 if (!session.isSignedIn) {
                     router.present(Route.SignIn)
                     return@pressableClick
@@ -149,14 +170,27 @@ private fun SaveHeart(product: Product) {
                     }
                 }
             },
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.TopEnd,
     ) {
-        Icon(
-            if (isSaved) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            contentDescription = null,
-            tint = if (isSaved) Color.yard.danger else Color.yard.ink,
-            modifier = Modifier.size(15.dp),
-        )
+        Box(
+            Modifier
+                .padding(top = 6.dp, end = 6.dp)
+                .size(30.dp)
+                .yardGlass(CircleShape, style = GlassStyle.Clear, elevation = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (isSaved) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = null,
+                tint = if (isSaved) Color.yard.danger else Color.yard.ink,
+                modifier = Modifier
+                    .size(15.dp)
+                    .graphicsLayer {
+                        scaleX = pop.value
+                        scaleY = pop.value
+                    },
+            )
+        }
     }
 }
 

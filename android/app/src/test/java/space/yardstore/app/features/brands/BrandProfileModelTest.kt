@@ -1,5 +1,7 @@
 package space.yardstore.app.features.brands
 
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -32,12 +34,17 @@ class BrandProfileModelTest {
         t.json("/api/follows/counts", """{"counts": {"brd_1": 1240}}""")
     }
 
+    private val models = mutableListOf<BrandProfileModel>()
+
     @After fun tearDown() {
+        // start() fans out several loads; one can still be in flight when a test's assertions are
+        // done. Cancel them before Main is reset, or the late resume fails the next runTest.
+        models.forEach { it.viewModelScope.cancel() }
         t.shutdown()
         Dispatchers.resetMain()
     }
 
-    private fun model(handle: String = "acme") = BrandProfileModel(handle, t.api)
+    private fun model(handle: String = "acme") = BrandProfileModel(handle, t.api).also { models += it }
 
     @Test fun loadsStorefrontProductsDropsAndFollowers() = runBlocking {
         val m = model()

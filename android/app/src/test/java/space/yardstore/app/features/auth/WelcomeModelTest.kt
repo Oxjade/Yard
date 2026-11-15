@@ -1,5 +1,8 @@
 package space.yardstore.app.features.auth
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.resetMain
@@ -31,12 +34,18 @@ class WelcomeModelTest {
         api = APIClient(APIClient.buildHttpClient(PersistentCookieJar(null)))
     }
 
+    private val models = mutableListOf<ViewModel>()
+    private fun <T : ViewModel> T.tracked(): T = also { models += it }
+
     @After fun tearDown() {
+        // Cancel the models' pending work before Main is reset (a request still in flight would
+        // resume on the missing Android Main dispatcher and fail the next runTest).
+        models.forEach { it.viewModelScope.cancel() }
         server.shutdown()
         Dispatchers.resetMain()
     }
 
-    private fun model() = WelcomeModel(api = api, base = server.url("/").toString())
+    private fun model() = WelcomeModel(api = api, base = server.url("/").toString()).tracked()
     private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code).setBody(body)
 
     private fun brand(id: String) = """{"id":"$id","handle":"h-$id","name":"Brand $id","city":"Lagos","country":"NG","categories":["tops"],"story":null,"logoSrc":"/api/media/m_$id","coverSrc":null,"verified":true,"founding":false,"foundingBadge":false,"forSale":true,"listedAt":"2026-10-01T10:00:00.000Z"}"""

@@ -1,5 +1,9 @@
 package space.yardstore.app.features.search
 
+import androidx.lifecycle.ViewModel
+import java.util.concurrent.ExecutorService
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,10 +51,21 @@ class SearchViewModelsTest {
         api = APIClient(http)
     }
 
+    /** Every model a test makes: their work is cancelled before Main is reset (see tearDown). */
+    private val models = mutableListOf<ViewModel>()
+    private fun <T : ViewModel> T.tracked(): T = also { models += it }
+
     @After fun tearDown() {
+        // A debounced search (300 ms) or a request failing on server.shutdown() can still be
+        // pending on Main when a test ends. Resumed after resetMain(), it hits the missing Android
+        // Main dispatcher and runTest reports that in whichever test runs next
+        // (UncaughtExceptionsBeforeTest). Cancel the models' work, let the main executor finish
+        // the cancellations, and only then reset Main.
+        models.forEach { it.viewModelScope.cancel() }
         server.shutdown()
-        Dispatchers.resetMain()
         main.close()
+        check((main.executor as ExecutorService).awaitTermination(5, TimeUnit.SECONDS)) { "main executor didn't drain" }
+        Dispatchers.resetMain()
     }
 
     private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)
@@ -68,7 +83,7 @@ class SearchViewModelsTest {
 
     @Test fun liveCategoriesGiveTriesAndMatches() {
         server.enqueue(json(SearchFixtures.categories))
-        val model = SearchLiveModel(api)
+        val model = SearchLiveModel(api).tracked()
         model.loadCategories()
         waitFor { model.categories.isNotEmpty() }
         assertEquals("/api/catalog/categories", take().requestUrl!!.encodedPath)
@@ -85,7 +100,7 @@ class SearchViewModelsTest {
 
     @Test fun liveSearchDebouncesAndLoads() {
         server.enqueue(json(SearchFixtures.live))
-        val model = SearchLiveModel(api)
+        val model = SearchLiveModel(api).tracked()
         model.update("ho", "USD")
         model.update("hoo", "USD")
         model.update("hood ", "USD")
@@ -120,7 +135,7 @@ class SearchViewModelsTest {
     @Test fun liveSearchErrorShowsServerMessageAndRetries() {
         server.enqueue(json("""{"error":{"code":"rate_limited","message":"Slow down a little."}}""", 429))
         server.enqueue(json(SearchFixtures.live))
-        val model = SearchLiveModel(api)
+        val model = SearchLiveModel(api).tracked()
         model.retry("hood", "USD")
         waitFor { model.phase is SearchLiveModel.Phase.Failed }
         assertEquals(SearchLiveModel.Phase.Failed("Slow down a little."), model.phase)
@@ -137,7 +152,7 @@ class SearchViewModelsTest {
     @Test fun resultsLoadTwoStepsInSearchOrder() {
         server.enqueue(json(SearchFixtures.searchPage1))
         server.enqueue(json(SearchFixtures.productsAB))
-        val model = SearchResultsModel("  hoodie ", api)
+        val model = SearchResultsModel("  hoodie ", api).tracked()
         assertEquals("hoodie", model.query)
         assertEquals(SearchResultsModel.Phase.Loading, model.phase)
         model.ensureLoaded("NGN")
@@ -178,7 +193,7 @@ class SearchViewModelsTest {
         server.enqueue(json(SearchFixtures.productsAB))
         server.enqueue(json(SearchFixtures.searchPage2))
         server.enqueue(json(SearchFixtures.productsAC))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.ensureLoaded("USD")
         waitFor { model.phase == SearchResultsModel.Phase.Loaded }
         take(); take()
@@ -201,7 +216,7 @@ class SearchViewModelsTest {
 
     @Test fun resultsFiltersAndSortGoToTheQuery() {
         server.enqueue(json(SearchFixtures.searchEmpty))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.category = "tops"
         model.inStockOnly = true
         model.sort = SearchSort.PriceDesc
@@ -226,7 +241,7 @@ class SearchViewModelsTest {
     @Test fun resultsErrorThenRetry() {
         server.enqueue(json("""{"error":{"code":"internal","message":"Search is having a moment."}}""", 500))
         server.enqueue(json(SearchFixtures.searchEmpty))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.ensureLoaded("USD")
         waitFor { model.phase is SearchResultsModel.Phase.Failed }
         assertEquals(SearchResultsModel.Phase.Failed("Search is having a moment."), model.phase)
@@ -240,7 +255,7 @@ class SearchViewModelsTest {
         server.enqueue(json(SearchFixtures.searchPage1))
         server.enqueue(json(SearchFixtures.productsAB))
         server.enqueue(json("""{"error":{"code":"network","message":"You're offline."}}""", 503))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.ensureLoaded("USD")
         waitFor { model.phase == SearchResultsModel.Phase.Loaded }
         model.loadMore("USD")
@@ -256,7 +271,7 @@ class SearchViewModelsTest {
         server.enqueue(json(SearchFixtures.productsAB))
         server.enqueue(json(SearchFixtures.searchPage1))
         server.enqueue(json(SearchFixtures.productsAB))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.ensureLoaded("USD")
         waitFor { model.phase == SearchResultsModel.Phase.Loaded }
         model.load("USD", refreshing = true)
@@ -271,7 +286,7 @@ class SearchViewModelsTest {
         server.enqueue(json(SearchFixtures.productsAB))
         server.enqueue(json(SearchFixtures.searchPage1).setBodyDelay(300, TimeUnit.MILLISECONDS))
         server.enqueue(json(SearchFixtures.productsAB))
-        val model = SearchResultsModel("hoodie", api)
+        val model = SearchResultsModel("hoodie", api).tracked()
         model.ensureLoaded("USD")
         waitFor { model.phase == SearchResultsModel.Phase.Loaded }
         take(); take()

@@ -3,6 +3,8 @@
 
 package space.yardstore.app.features.drops
 
+import space.yardstore.app.designsystem.components.YardCrossfade
+import space.yardstore.app.designsystem.Motion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -101,7 +103,8 @@ private fun DropsScreen(model: DropsViewModel) {
         }
         // Regroup every 30 s so a drop moves section when it opens or closes.
         val now by rememberDropsNow(30_000)
-        when (val state = model.state) {
+        YardCrossfade(model.state, label = "drops-state") { state ->
+        when (state) {
             DropsViewModel.LoadState.Loading -> DropsSkeleton()
             is DropsViewModel.LoadState.Failed -> EmptyState.Error(state.error) { model.reload(session.isSignedIn) }
             DropsViewModel.LoadState.Loaded -> PullToRefreshBox(
@@ -111,6 +114,7 @@ private fun DropsScreen(model: DropsViewModel) {
             ) {
                 DropsLoaded(model, model.groups(now), now)
             }
+        }
         }
     }
 }
@@ -203,7 +207,7 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
             }
             if (groups.upcoming.isNotEmpty() || model.feed(DropsViewModel.Source.Upcoming).cursor != null) {
                 item(key = "upcoming-title", span = full) {
-                    Box(bleed.padding(top = Spacing.xxl - Spacing.gridGap, bottom = Spacing.xs)) {
+                    Box(bleed.padding(top = Spacing.xl, bottom = Spacing.xxs)) {
                         SectionHeader("Upcoming", subtitle = "Set a reminder for the next release.", display = true)
                     }
                 }
@@ -238,7 +242,7 @@ private fun DropsLoaded(model: DropsViewModel, groups: DropsViewModel.Groups, no
             }
             if (groups.past.isNotEmpty()) {
                 item(key = "past-title", span = full) {
-                    Box(bleed.padding(top = Spacing.xxl - Spacing.gridGap, bottom = Spacing.xs)) {
+                    Box(bleed.padding(top = Spacing.xl, bottom = Spacing.xxs)) {
                         SectionHeader("Past drops", subtitle = "Previous releases and draws.", display = true)
                     }
                 }
@@ -267,15 +271,15 @@ private fun LazyStaggeredGridScope.bigCardSection(
 ) {
     val full = StaggeredGridItemSpan.FullLine
     item(key = "$key-title", span = full) {
-        Box(bleed.padding(top = Spacing.xxl - Spacing.gridGap, bottom = Spacing.xs)) {
+        Box(bleed.padding(top = Spacing.xl, bottom = Spacing.xxs)) {
             SectionHeader(title, subtitle = subtitle, display = true)
         }
     }
     // One 4:5 card per line on phones; 2–3 side by side on wide windows (never a 4:5 card 1200dp wide).
     for (line in drops.chunked(columns)) {
         item(key = "$key-${line.first().id}", span = full) {
-            DropsLine(line, columns, bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.m - Spacing.gridGap)) { drop ->
-                DropLiveCard(drop, drop.livePhase(now), Modifier.pressableClick { onOpen(drop) })
+            DropsLine(line, columns, bleed.padding(horizontal = Spacing.gutter).padding(top = Spacing.s)) { drop ->
+                DropLiveCard(drop, drop.livePhase(now), Modifier.pressableClick(pressedScale = Motion.PRESSED_SCALE_LARGE, pressedAlpha = 1f, haptic = true) { onOpen(drop) })
             }
         }
     }

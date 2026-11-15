@@ -1,8 +1,10 @@
 package space.yardstore.app.designsystem
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,4 +73,21 @@ object Motion {
     fun <T> fade(): FiniteAnimationSpec<T> = tween(durationMillis = 250, easing = LinearOutSlowInEasing)
     /** Standard ease for screen transitions. */
     fun <T> standard(durationMillis: Int = 300): FiniteAnimationSpec<T> = tween(durationMillis, easing = FastOutSlowInEasing)
+    /** Press compression (cards, cells, buttons): fast in, settles without bounce. */
+    fun <T> press(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 900f)
+    /** Layers entering (sheets, toasts, badges): response 0.42, a touch of life, no wobble. */
+    fun <T> emphasized(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.78f, stiffness = 224f)
+    /** Content swaps (skeleton → content, numbers): a short ease-out crossfade. */
+    fun <T> crossfade(): FiniteAnimationSpec<T> = tween(durationMillis = 220, easing = LinearOutSlowInEasing)
+    /** Push / pop between screens: emphasized decelerate, quick to start, long soft landing. */
+    fun <T> navigation(durationMillis: Int = 380): FiniteAnimationSpec<T> = tween(durationMillis, easing = EmphasizedDecelerate)
+    /** Material's emphasized-decelerate curve (iOS-like navigation feel). */
+    val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    /** Reduced motion: every token above collapses to an instant change. */
+    fun <T> instant(): FiniteAnimationSpec<T> = snap()
+
+    /** Scale a pressed card / cell / tile settles to. */
+    const val PRESSED_SCALE = 0.96f
+    /** Scale a pressed large card (drop cards, hero) settles to: less travel for big surfaces. */
+    const val PRESSED_SCALE_LARGE = 0.98f
 }
