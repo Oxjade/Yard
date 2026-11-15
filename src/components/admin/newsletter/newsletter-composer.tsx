@@ -607,6 +607,11 @@ function SendSection({ id, form, problems, flush, onProblems, onSent, onDeleted 
   const testKey = useRef(actionKey())
   const sendKey = useRef(actionKey())
   const missing = Object.entries(problems)
+  // What the count on the confirm step was for. Changing the type or audience above closes the
+  // confirm step (it shows only while this matches), and Send carries it so the server can refuse too.
+  const audienceKey = [form.kind, form.audience, form.audienceBrandId ?? "", form.audienceCountry ?? ""].join("|")
+  const [confirmedKey, setConfirmedKey] = useState<string | null>(null)
+  const confirming = step === "confirm" && count != null && confirmedKey === audienceKey
 
   async function test() {
     setError(null)
@@ -636,6 +641,7 @@ function SendSection({ id, form, problems, flush, onProblems, onSent, onDeleted 
       if (!(await flush())) return
       const r = await newsletterAudienceCount({ kind: form.kind, type: form.audience, brandId: form.audienceBrandId, country: form.audienceCountry })
       setCount(r.count)
+      setConfirmedKey(audienceKey)
       setMinAt(toLocalInput(new Date(Date.now() + NEWSLETTER_MIN_LEAD_MS)))
       setStep("confirm")
       sendKey.current = actionKey()
@@ -647,7 +653,7 @@ function SendSection({ id, form, problems, flush, onProblems, onSent, onDeleted 
   }
 
   async function send() {
-    if (count == null) return
+    if (count == null || !confirming) return
     setBusy("send")
     setError(null)
     try {
@@ -657,7 +663,8 @@ function SendSection({ id, form, problems, flush, onProblems, onSent, onDeleted 
         setError("Pick a time at least 5 minutes from now, or send it now.")
         return
       }
-      const r = await sendNewsletter(id, { when, at: atIso, expectedCount: count, idempotencyKey: sendKey.current })
+      const confirmed = { kind: form.kind, audience: form.audience, brandId: form.audience === "followers" ? form.audienceBrandId : null, country: form.audience === "country" ? form.audienceCountry : null }
+      const r = await sendNewsletter(id, { when, at: atIso, expectedCount: count, confirmed, idempotencyKey: sendKey.current })
       toast.success(when === "now" ? `Sending to ${people(count)}` : `Scheduled for ${localTime(r.campaign.scheduledFor ?? atIso!)}`, { description: when === "now" ? "A batch goes out every minute. Watch the numbers in the list." : "You can cancel the schedule until then." })
       onSent()
     } catch (e) {
@@ -703,7 +710,7 @@ function SendSection({ id, form, problems, flush, onProblems, onSent, onDeleted 
         </p>
       )}
 
-      {step === "confirm" && count != null ? (
+      {confirming ? (
         <div className="grid gap-3 rounded-[14px] border border-violet/40 bg-purple/[0.08] p-3 sm:p-4" role="group" aria-label="Confirm">
           <p className="font-display text-[1.5rem] leading-tight text-ink">
             This will send to <span className="tabular">{people(count)}</span>.
@@ -791,7 +798,7 @@ function PreviewPane({ id, form }: { id: string; form: Form }) {
   }, [id, key])
 
   return (
-    <section aria-label="Preview" className="grid min-w-0 gap-2 xl:sticky xl:top-20">
+    <section aria-label="Preview" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 xl:sticky xl:top-20">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-medium text-ink">Preview</h2>
@@ -814,7 +821,7 @@ function PreviewPane({ id, form }: { id: string; form: Form }) {
         </div>
       </div>
       {preview?.subject ? (
-        <div className="rounded-[12px] border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
+        <div className="min-w-0 rounded-[12px] border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
           <p className="truncate text-ink">
             <span className="text-ink-3">Yard · </span>
             {preview.subject}
@@ -822,7 +829,7 @@ function PreviewPane({ id, form }: { id: string; form: Form }) {
           {form.preheader ? <p className="truncate text-ink-3">{form.preheader}</p> : null}
         </div>
       ) : null}
-      <div className={cn("overflow-hidden rounded-[16px] border border-white/10 bg-[#080808]", device === "phone" ? "mx-auto w-full max-w-[390px]" : "w-full")}>
+      <div className={cn("min-w-0 overflow-hidden rounded-[16px] border border-white/10 bg-[#080808]", device === "phone" ? "mx-auto w-full max-w-[390px]" : "w-full")}>
         {preview ? (
           <iframe title="Email preview" srcDoc={preview.html} sandbox="" className={cn("block w-full border-0 bg-[#080808]", device === "phone" ? "h-[720px]" : "h-[820px]")} />
         ) : (

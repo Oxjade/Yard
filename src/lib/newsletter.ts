@@ -64,7 +64,7 @@ export const newsletterAudienceMeta: Record<NewsletterAudienceType, { label: str
   shoppers: { label: "All shoppers", body: "Everyone with a shopper account." },
   brands: { label: "All brands", body: "The owners and admins of every brand on Yard." },
   followers: { label: "Followers of a brand", body: "Shoppers who follow one brand you choose." },
-  country: { label: "Shoppers in a country", body: "Shoppers whose account says they're in one country." },
+  country: { label: "Shoppers in a country", body: "Shoppers whose latest order or checkout ships to one country." },
 }
 
 /** Tones are the Admin StatusBadge's: purple = in progress, ink edge = needs a look. */

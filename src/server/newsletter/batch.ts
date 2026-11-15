@@ -54,6 +54,15 @@ export async function reconcileCampaign(ex: Exec, campaignId: string): Promise<n
   return r.length
 }
 
+/**
+ * Recipients the campaign hasn't finished with: not handed over yet (pending) or handed to the
+ * outbox but not yet sent, failed, suppressed or stub there (queued). A campaign is 'sent' only at 0,
+ * so it stays 'sending' (and stoppable) while its tail waits in the outbox. Call after reconcile.
+ */
+export async function outstandingCount(ex: Exec, campaignId: string): Promise<number> {
+  return Number(rows<{ n: number }>(await ex.execute(sql`select count(*)::int as n from newsletter_recipients where campaign_id = ${campaignId} and status in ('pending', 'queued')`))[0]?.n ?? 0)
+}
+
 /** The campaign's counts by recipient status, plus unsubscribes from its link. */
 export async function campaignCounts(ex: Exec, campaignId: string): Promise<Record<string, number>> {
   const r = rows<{ status: string; n: number }>(await ex.execute(sql`select status, count(*)::int as n from newsletter_recipients where campaign_id = ${campaignId} group by status`))

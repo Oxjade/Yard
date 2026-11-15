@@ -13,13 +13,27 @@ import type { NewsletterAudience, NewsletterKind } from "../../lib/newsletter"
  * consent and unsubscribes (it is service mail), but never bounced addresses.
  *
  * Audiences: shoppers (kind shopper); brands (an active owner or admin of any brand, so Yard setup
- * and other team roles are left out); followers of one brand; shoppers in one country (ISO code on
- * the account).
+ * and other team roles are left out); followers of one brand; shoppers in one country (where they last shipped to, see
+ * shopperCountry).
  */
 export type Exec = { execute: (q: SQL) => Promise<unknown> }
 export type AudienceOptions = { includeDemo: boolean }
 
 const rows = <T>(r: unknown) => ((r as { rows?: T[] }).rows ?? (r as T[])) as T[]
+
+/**
+ * A shopper's country: where they last shipped to (their newest order, or newest checkout, which
+ * also covers one they didn't finish paying), else the country on the account. Sign-up never sets
+ * users.country and the Settings ship-to choice lives only in the browser, so orders and checkouts
+ * are what real accounts have. Both lookups use the (customer_id, time) indexes.
+ */
+const shopperCountry = sql`coalesce((
+    select x.c from (
+      (select o.ship_to_country as c, o.placed_at as at from order_refs o where o.customer_id = u.id and o.ship_to_country <> '' order by o.placed_at desc limit 1)
+      union all
+      (select ck.ship_to->>'country' as c, ck.created_at as at from checkouts ck where ck.customer_id = u.id and coalesce(ck.ship_to->>'country', '') <> '' order by ck.created_at desc limit 1)
+    ) x order by x.at desc limit 1
+  ), u.country)`
 
 export function audiencePredicate(audience: NewsletterAudience, kind: NewsletterKind, opts: AudienceOptions): SQL {
   const parts: SQL[] = [
@@ -36,7 +50,7 @@ export function audiencePredicate(audience: NewsletterAudience, kind: Newsletter
   if (audience.type === "shoppers") parts.push(sql`u.kind = 'shopper'`)
   else if (audience.type === "brands") parts.push(sql`exists (select 1 from brand_members bm where bm.user_id = u.id and bm.status = 'active' and bm.role in ('owner', 'admin'))`)
   else if (audience.type === "followers") parts.push(sql`exists (select 1 from shopper_follows f where f.user_id = u.id and f.brand_id = ${audience.brandId})`)
-  else parts.push(sql`u.kind = 'shopper'`, sql`upper(u.country) = ${audience.country.toUpperCase()}`)
+  else parts.push(sql`u.kind = 'shopper'`, sql`upper(${shopperCountry}) = ${audience.country.toUpperCase()}`)
   return sql.join(parts, sql` and `)
 }
 

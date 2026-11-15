@@ -7,13 +7,14 @@ import { mediaSrc } from "../media/dto"
 /**
  * A campaign's email variables (subject, heading, body, image, button), read by the email outbox
  * when it renders a bulk `newsletter` / `service_notice` row (which carries only campaignId and
- * name). A campaign's content is frozen once it leaves draft, so this caches it briefly per
- * process; a draft is never cached (test sends carry their own content anyway).
+ * name). A campaign's content is frozen once it leaves draft, so the content is cached briefly per
+ * process; its status is always read fresh (one small indexed read per email), so an email
+ * rendered after Stop is never sent on a stale 'sending'. A draft's content is never cached.
  */
 export type CampaignVars = { status: string; vars: Record<string, string | number> }
 
 const TTL_MS = 30_000
-const cache = new Map<string, { at: number; value: CampaignVars | null }>()
+const cache = new Map<string, { at: number; vars: Record<string, string | number> }>()
 
 export type CampaignRow = typeof newsletterCampaigns.$inferSelect
 
@@ -33,15 +34,21 @@ export function campaignEmailVars(c: Pick<CampaignRow, "subject" | "preheader" |
 
 export async function campaignVars(ex: Executor, campaignId: string): Promise<CampaignVars | null> {
   const hit = cache.get(campaignId)
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value
+  if (hit && Date.now() - hit.at < TTL_MS) {
+    const [s] = await ex.select({ status: newsletterCampaigns.status }).from(newsletterCampaigns).where(eq(newsletterCampaigns.id, campaignId)).limit(1)
+    if (!s) return null
+    if (s.status !== "draft") return { status: s.status, vars: hit.vars }
+  }
   const [c] = await ex.select().from(newsletterCampaigns).where(eq(newsletterCampaigns.id, campaignId)).limit(1)
-  const value = c ? { status: c.status, vars: campaignEmailVars(c) } : null
+  if (!c) return null
+  const vars = campaignEmailVars(c)
   if (cache.size > 200) cache.clear()
-  if (value && value.status !== "draft") cache.set(campaignId, { at: Date.now(), value })
-  return value
+  if (c.status !== "draft") cache.set(campaignId, { at: Date.now(), vars })
+  else cache.delete(campaignId)
+  return { status: c.status, vars }
 }
 
-/** Forgets a campaign (cancel), so the next render sees its new status at once. */
+/** Forgets a campaign's cached content (after a cancel commits). */
 export function forgetCampaign(campaignId: string) {
   cache.delete(campaignId)
 }

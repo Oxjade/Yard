@@ -58,7 +58,7 @@ them (verified end to end, below). Tokens minted before campaigns existed still 
 | All shoppers | Accounts of kind `shopper`. |
 | All brands | Active **owners and admins** of any brand (Yard setup and other team roles are left out). One email per person. |
 | Followers of a brand | Shoppers following the chosen brand (`shopper_follows`). |
-| Shoppers in a country | Shoppers whose account country is the chosen ISO code. |
+| Shoppers in a country | Shoppers whose ship-to country is the chosen ISO code: the country of their newest order (`order_refs.ship_to_country`) or newest checkout (`checkouts.ship_to.country`, paid or not), whichever is later; failing both, the account's `users.country` (only seeded accounts have one: sign-up doesn't set it, and the Settings ship-to choice lives in the browser). A shopper who has never checked out is in no country audience. |
 
 The composer shows the live count ("2. Audience · N people"); the confirm step says **"This will send
 to N people."** Send now refuses (409) if the audience changed since that count; the admin sees the new
@@ -79,7 +79,10 @@ with the template the outbox sends (`POST …/preview`, a moment after you stop 
    writes the words.
 4. **Send**: what's still missing, **Send test to me** (to the admin's own address, subject marked
    `[Test]`, 10 an hour, never swallowed by their own marketing setting), **Review and send** → the
-   confirm step (count, Now or a date and time 5 minutes to 60 days out) → Send / Schedule.
+   confirm step (count, Now or a date and time 5 minutes to 60 days out) → Send / Schedule. Changing
+   the type or audience while the confirm step is open closes it. Send carries the confirmed count and
+   the confirmed type and audience; the server refuses (409) both Send now and Schedule when either no
+   longer matches.
 
 The message is a small Markdown: a blank line starts a paragraph, `**bold**`, `[words](link)`,
 lines starting with `- ` make bullets; the toolbar inserts them. Links and the button may be Yard
@@ -102,12 +105,16 @@ right after Send now):
    campaigns, and nothing while 300 or more campaign emails still wait in the outbox (backpressure);
 3. copies the outbox's outcome onto each recipient (`sent`, `failed`, `suppressed`, `stub`), so stats
    survive the outbox's 90-day purge;
-4. marks a campaign `sent` when nobody is left to hand over (outcomes keep updating for 3 days).
+4. marks a campaign `sent` (and writes `newsletter.finished`) only once nobody is left to hand over
+   **and** the outbox has finished with every one of its emails (no recipient left `queued`). Until
+   then it stays `sending`, so **Stop sending** can still drop the tail waiting in the outbox; the panel
+   reads "Everyone handed over: N still leaving the outbox". Outcomes keep updating for 3 days.
 
 The outbox claims campaign emails **after** every other due email (a password reset never waits behind
 a campaign) and sends at most one every **`YARD_NEWSLETTER_GAP_MS`** (default 600 ms, under Resend's
 default 2 a second) to a live provider. Campaign rows store only `{ campaignId, name }`; the content is
-read from the (frozen) campaign when rendered. Campaign emails left as `stub` are never re-queued later,
+read from the (frozen) campaign when rendered: the content is cached for 30 s per process, but the
+campaign's status is read fresh for every email, so an email rendered after Stop commits is dropped. Campaign emails left as `stub` are never re-queued later,
 so a campaign that ran without a provider doesn't go out days afterwards.
 
 **No double sends.** A batch claims pending recipients `FOR UPDATE SKIP LOCKED`, inserts each outbox
@@ -118,7 +125,8 @@ nobody pending, and a recipient whose outbox row already exists is a no-op. The 
 
 **Cancel.** A scheduled campaign: **Cancel schedule** → back to draft (nothing was sent). A sending one:
 **Stop sending** → recipients not yet handed over become `cancelled`, its emails still waiting in the
-outbox are dropped, emails already sent stay sent; the status reads "Stopped".
+outbox are dropped, emails already sent stay sent; the status reads "Stopped". Send now stores no
+`scheduledFor`, so its panel shows Started, not "Scheduled for".
 
 **Cost.** One indexed query a minute when nothing is sending. While sending: one small transaction per
 batch plus the outbox's own work per email; cost scales with recipients, not page views.
@@ -146,7 +154,7 @@ and counts, never the body. Autosaves aren't audited (the draft records who edit
 | `GET/PATCH/DELETE /api/admin/newsletters/{id}` | read / autosave (with `revision`) / delete a draft |
 | `POST …/{id}/preview` | the real email of unsaved composer fields |
 | `POST …/{id}/test` `{ idempotencyKey }` | test to me (10/h) |
-| `POST …/{id}/send` `{ when, at?, expectedCount, idempotencyKey }` | send now or schedule (20/h) |
+| `POST …/{id}/send` `{ when, at?, expectedCount, confirmed: { kind, audience, brandId, country }, idempotencyKey }` | send now or schedule (20/h) |
 | `POST …/{id}/cancel` | cancel schedule / stop sending |
 | `GET …/{id}/recipients?status=&offset=` | per-recipient status |
 | `GET /api/admin/newsletters/audience?kind=&type=&brandId=&country=` | the live count |

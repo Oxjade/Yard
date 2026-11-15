@@ -208,7 +208,7 @@ function CampaignDetail({ id, onChanged }: { id: string | null; onChanged: () =>
               actions={[{ key: "cancel", label: busy ? "Cancelling…" : "Cancel schedule", icon: XCircleIcon, variant: "destructive", onSelect: () => void cancel() }]}
             />
           ) : c.status === "sending" ? (
-            <ActionBar note="Stopping keeps everyone who hasn't been handed over yet from getting it." actions={[{ key: "stop", label: busy ? "Stopping…" : "Stop sending", icon: StopCircleIcon, variant: "destructive", onSelect: () => void cancel() }]} />
+            <ActionBar note="Stopping keeps everyone whose email hasn't left yet from getting it." actions={[{ key: "stop", label: busy ? "Stopping…" : "Stop sending", icon: StopCircleIcon, variant: "destructive", onSelect: () => void cancel() }]} />
           ) : c.status === "draft" ? (
             <ActionBar actions={[{ key: "edit", label: "Open the composer", icon: PencilSimpleIcon, variant: "secondary", onSelect: () => router.push(composeHref(c.id)) }]} />
           ) : null
@@ -237,7 +237,7 @@ function DetailBody({ c }: { c: NewsletterDetailDto }) {
       {c.status === "sending" ? (
         <div className="grid gap-1.5" role="status">
           <div className="flex items-center justify-between text-[12px] text-ink-2">
-            <span>Handing over to the outbox</span>
+            <span>{n.pending ? "Handing over to the outbox" : `Everyone handed over: ${n.queued.toLocaleString("en-US")} still leaving the outbox`}</span>
             <span className="tabular">
               {handed.toLocaleString("en-US")} / {n.total.toLocaleString("en-US")}
             </span>

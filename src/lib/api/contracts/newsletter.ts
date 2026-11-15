@@ -13,7 +13,7 @@ import { NEWSLETTER_LIMITS, type NewsletterAudienceType, type NewsletterKind, ty
  *   DELETE /api/admin/newsletters/{id}             → { ok } (drafts only)
  *   POST …/{id}/preview { …unsaved fields }        → { subject, html, text }
  *   POST …/{id}/test { idempotencyKey }            → { to, created }
- *   POST …/{id}/send { when, at?, expectedCount, idempotencyKey } → { campaign }
+ *   POST …/{id}/send { when, at?, expectedCount, confirmed, idempotencyKey } → { campaign }
  *   POST …/{id}/cancel                             → { campaign }
  *   GET  …/{id}/recipients?status=&offset=         → { items, nextOffset }
  *   GET  /api/admin/newsletters/audience?kind=&type=&brandId=&country= → { count }
@@ -57,8 +57,15 @@ export const newsletterSendBody = z.strictObject({
   when: z.enum(["now", "later"]),
   /** For "later": an ISO time at least 5 minutes and at most 60 days out. */
   at: z.string().datetime({ offset: true }).optional(),
-  /** The count the admin saw on the confirm step. "Now" refuses if the audience changed since. */
+  /** The count the admin saw on the confirm step. Refused (409) if the audience changed since. */
   expectedCount: z.number().int().min(0),
+  /** The type and audience the admin saw that count for. Refused (409) if the draft now says otherwise. */
+  confirmed: z.strictObject({
+    kind: z.enum(NEWSLETTER_KINDS),
+    audience: z.enum(NEWSLETTER_AUDIENCES),
+    brandId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).nullable(),
+    country: z.string().regex(/^[A-Z]{2}$/).nullable(),
+  }),
   idempotencyKey: key,
 })
 export type NewsletterSendBody = z.infer<typeof newsletterSendBody>

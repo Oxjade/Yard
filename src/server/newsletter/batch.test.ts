@@ -3,7 +3,7 @@ import { after, before, describe, it } from "node:test"
 import { sql } from "drizzle-orm"
 import type { Exec } from "./audience"
 import { freezeAudience } from "./audience"
-import { campaignCounts, feedCampaign, reconcileCampaign, type EnqueueFn } from "./batch"
+import { campaignCounts, feedCampaign, outstandingCount, reconcileCampaign, type EnqueueFn } from "./batch"
 import { seedPeople, testDb } from "./test-db"
 
 type Db = Awaited<ReturnType<typeof testDb>>
@@ -39,6 +39,28 @@ describe("Newsletter batches", () => {
     assert.deepEqual(await feedCampaign(deps, { id: "nlc_x", template: "newsletter" }, 100), { queued: 0, remaining: 0 })
     assert.deepEqual(await feedCampaign(deps, { id: "nlc_x", template: "newsletter" }, 100), { queued: 0, remaining: 0 })
     assert.deepEqual(await outbox("nlc_x"), { n: 4, d: 4 })
+  })
+
+  it("a campaign isn't finished while its emails still wait in the outbox", async () => {
+    await t.ex.execute(sql`insert into newsletter_campaigns (id, status) values ('nlc_tail', 'sending')`)
+    await freezeAudience(t.ex, "nlc_tail", { type: "shoppers" }, "marketing", { includeDemo: false })
+    assert.equal(await outstandingCount(t.ex, "nlc_tail"), 4)
+    assert.deepEqual(await feedCampaign({ withTx: t.withTx, enqueue }, { id: "nlc_tail", template: "newsletter" }, 100), { queued: 4, remaining: 0 })
+    // Everyone handed over (remaining 0), but the outbox hasn't sent any of the 4 yet.
+    assert.equal(await outstandingCount(t.ex, "nlc_tail"), 4)
+    await t.ex.execute(sql`update email_outbox set status = 'sent', sent_at = now() where dedupe_key in (select dedupe_key from newsletter_recipients where campaign_id = 'nlc_tail' order by user_id limit 3)`)
+    await reconcileCampaign(t.ex, "nlc_tail")
+    assert.equal(await outstandingCount(t.ex, "nlc_tail"), 1)
+    // A row the outbox is still sending, or retrying later, keeps it open too.
+    await t.ex.execute(sql`update email_outbox set status = 'sending' where dedupe_key like 'newsletter:nlc_tail:%' and status = 'pending'`)
+    await reconcileCampaign(t.ex, "nlc_tail")
+    assert.equal(await outstandingCount(t.ex, "nlc_tail"), 1)
+    await t.ex.execute(sql`update email_outbox set status = 'failed' where dedupe_key like 'newsletter:nlc_tail:%' and status = 'sending'`)
+    await reconcileCampaign(t.ex, "nlc_tail")
+    assert.equal(await outstandingCount(t.ex, "nlc_tail"), 0)
+    const c = await campaignCounts(t.ex, "nlc_tail")
+    assert.equal(c.sent, 3)
+    assert.equal(c.failed, 1)
   })
 
   it("a run that dies mid-batch leaves nothing half-done; the retry sends each email once", async () => {

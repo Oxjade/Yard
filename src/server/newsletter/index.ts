@@ -21,7 +21,7 @@ import { mediaSrc } from "../media/dto"
 import { refreshVisibility } from "../media/visibility"
 import { yard } from "../state"
 import { countAudience, freezeAudience, type Exec } from "./audience"
-import { campaignCounts, feedCampaign, reconcileCampaign } from "./batch"
+import { campaignCounts, feedCampaign, outstandingCount, reconcileCampaign } from "./batch"
 import { campaignEmailVars, forgetCampaign, type CampaignRow } from "./content"
 
 /**
@@ -329,12 +329,19 @@ export async function sendCampaign(actor: AdminActor, id: string, body: Newslett
       if (lead < NEWSLETTER_MIN_LEAD_MS - 60_000) throw badRequest({ at: "Pick a time at least 5 minutes from now, or send it now." })
       if (lead > NEWSLETTER_MAX_LEAD_MS) throw badRequest({ at: "Pick a time in the next 60 days." })
     }
-    const count = await countAudience(tx as unknown as Exec, audienceOf(r), r.kind as NewsletterKind, opts())
+    // The admin confirmed a count for one type and audience: refuse if the draft now says otherwise.
+    const c = body.confirmed
+    const a = audienceOf(r)
+    const same = c.kind === r.kind && c.audience === a.type && (a.type !== "followers" || c.brandId === a.brandId) && (a.type !== "country" || c.country === a.country)
+    if (!same) throw conflict("The type or audience changed after you checked the count. Check the count and send again.")
+    const count = await countAudience(tx as unknown as Exec, a, r.kind as NewsletterKind, opts())
     if (count === 0) throw rule(r.kind === "marketing" ? "Nobody in this audience has said yes to news and offers yet, so there's no one to send to." : "There's nobody in this audience to send to.")
-    if (body.when === "now" && count !== body.expectedCount) throw conflict(`The audience changed while you were checking: it's ${count} ${count === 1 ? "person" : "people"} now. Check the count and send again.`)
+    // For both "now" and "later": the audience is frozen when it starts, but what was confirmed must be what's there now.
+    if (count !== body.expectedCount) throw conflict(`The audience changed while you were checking: it's ${count} ${count === 1 ? "person" : "people"} now. Check the count and send again.`)
     const [row] = await tx
       .update(newsletterCampaigns)
-      .set({ status: "scheduled", scheduledFor: at, sendKey: body.idempotencyKey, confirmedCount: body.expectedCount, sentByName: actor.name, updatedAt: new Date(), updatedBy: actor.userId, updatedByName: actor.name })
+      // Send now keeps no scheduled time: it starts below, and its sheet shows Started instead.
+      .set({ status: "scheduled", scheduledFor: body.when === "later" ? at : null, sendKey: body.idempotencyKey, confirmedCount: body.expectedCount, sentByName: actor.name, updatedAt: new Date(), updatedBy: actor.userId, updatedByName: actor.name })
       .where(eq(newsletterCampaigns.id, id))
       .returning()
     await writeAudit({
@@ -344,7 +351,7 @@ export async function sendCampaign(actor: AdminActor, id: string, body: Newslett
       subjectType: "newsletter",
       subjectId: id,
       ipHash,
-      meta: { kind: r.kind, subject: r.subject, audience: r.audience, audienceBrandId: r.audienceBrandId, audienceCountry: r.audienceCountry, count, scheduledFor: at.toISOString() },
+      meta: { kind: r.kind, subject: r.subject, audience: r.audience, audienceBrandId: r.audienceBrandId, audienceCountry: r.audienceCountry, count, scheduledFor: body.when === "later" ? at.toISOString() : null },
     })
     const final = body.when === "now" ? await start(tx, row, auditActor(actor)) : row
     return { campaign: await detailOf(tx, final) }
@@ -377,7 +384,8 @@ export async function cancelCampaign(actor: AdminActor, id: string, ipHash: stri
       .returning({ id: emailOutbox.id })
     const [row] = await tx.update(newsletterCampaigns).set({ status: "cancelled", cancelledAt: new Date(), finishedAt: new Date(), updatedAt: new Date(), updatedBy: actor.userId, updatedByName: actor.name }).where(eq(newsletterCampaigns.id, id)).returning()
     await reconcileCampaign(tx as unknown as Exec, id)
-    forgetCampaign(id)
+    // After the commit: a render in between would otherwise read (and cache) the old 'sending'.
+    afterCommit(() => forgetCampaign(id))
     await writeAudit({ actor: auditActor(actor), action: "newsletter.stopped", target: r.name || r.subject, subjectType: "newsletter", subjectId: id, ipHash, meta: { kind: r.kind, notHandedOver: stopped.length, droppedFromOutbox: dropped.length } })
     return { campaign: await detailOf(tx, row) }
   })
@@ -386,6 +394,7 @@ export async function cancelCampaign(actor: AdminActor, id: string, ipHash: stri
 /* ---------- The job ---------- */
 
 const SYSTEM: AuditActor = { kind: "system", name: "Newsletter" }
+
 
 /** Starts a run soon (after Send now); runs never overlap. */
 export function kickNewsletter() {
@@ -437,7 +446,9 @@ export async function runNewsletter(): Promise<{ started: number; queued: number
       budget -= fed.queued
       out.queued += fed.queued
       await reconcileCampaign(d as unknown as Exec, c.id)
-      if (fed.remaining === 0) {
+      // 'sent' only once the outbox has dealt with every email (sent, failed, suppressed or stub):
+      // until then the campaign stays 'sending', so Stop can still drop what's waiting.
+      if (fed.remaining === 0 && (await outstandingCount(d as unknown as Exec, c.id)) === 0) {
         await withTx(async (tx) => {
           const r = await load(tx, c.id, true)
           if (r.status !== "sending") return

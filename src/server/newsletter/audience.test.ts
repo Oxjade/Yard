@@ -68,6 +68,45 @@ describe("Newsletter audience: who", () => {
     assert.equal(await countAudience(t.ex, { type: "country", country: "KE" }, "marketing", real), 0)
   })
 
+  it("shoppers in a country: real accounts (no country on the account) count by where they last shipped to", async () => {
+    // Accounts made the way sign-up makes them: no users.country (and not demo).
+    for (const id of ["u_ord", "u_ck", "u_moved"]) {
+      await t.ex.execute(sql`insert into users (id, kind, name, email, demo) values (${id}, 'shopper', ${id}, ${`${id}@example.com`}, false)`)
+      await t.ex.execute(sql`insert into notification_preferences (user_id, email_marketing) values (${id}, true)`)
+    }
+    const order = async (id: string, user: string, country: string, at: string) => {
+      await t.ex.execute(sql`insert into order_groups (id, customer_id, reference) values (${`g_${id}`}, ${user}, ${`R-${id}`})`)
+      await t.ex.execute(sql`insert into order_refs (id, group_id, reference, brand_id, customer_id, placed_at, status, currency, subtotal_minor, shipping_minor, total_minor, items, ship_to_country, source)
+        values (${id}, ${`g_${id}`}, ${`R-${id}`}, 'b_one', ${user}, ${at}::timestamptz, 'placed', 'NGN', 100, 0, 100, '[]'::jsonb, ${country}, 'browser')`)
+    }
+    await order("o1", "u_ord", "KE", "2026-10-01T10:00:00Z")
+    // A checkout only (not paid): its ship-to still says where they are.
+    await t.ex.execute(sql`insert into checkouts (id, customer_id, idempotency_key, request_hash, currency, subtotal_minor, shipping_minor, total_minor, hold_key, groups, ship_to, expires_at)
+      values ('ck1', 'u_ck', 'k1', 'h1', 'KES', 100, 0, 100, 'ck1', '[]'::jsonb, '{"country":"KE","city":"Nairobi"}'::jsonb, now())`)
+    // Moved: an older order to KE, a newer one to GH. The newest wins.
+    await order("o2", "u_moved", "KE", "2026-09-01T10:00:00Z")
+    await order("o3", "u_moved", "GH", "2026-11-01T10:00:00Z")
+
+    assert.equal(await countAudience(t.ex, { type: "country", country: "KE" }, "marketing", real), 2)
+    await campaign("nlc_c1")
+    assert.equal(await freezeAudience(t.ex, "nlc_c1", { type: "country", country: "KE" }, "marketing", real), 2)
+    assert.deepEqual(await ids("nlc_c1"), ["u_ck", "u_ord"])
+    assert.equal(await countAudience(t.ex, { type: "country", country: "GH" }, "marketing", real), 2) // u_yes_gh (account) + u_moved (newest order)
+
+    // An order overrides the account's own country.
+    await order("o4", "u_yes_gh", "NG", "2026-11-10T10:00:00Z")
+    assert.equal(await countAudience(t.ex, { type: "country", country: "GH" }, "marketing", real), 1)
+    assert.equal(await countAudience(t.ex, { type: "country", country: "NG" }, "marketing", real), 2)
+
+    // Clean up so the tests below see the seed as it was.
+    await t.ex.execute(sql`delete from order_refs where id in ('o1', 'o2', 'o3', 'o4')`)
+    await t.ex.execute(sql`delete from order_groups where id in ('g_o1', 'g_o2', 'g_o3', 'g_o4')`)
+    await t.ex.execute(sql`delete from checkouts where id = 'ck1'`)
+    await t.ex.execute(sql`delete from notification_preferences where user_id in ('u_ord', 'u_ck', 'u_moved')`)
+    await t.ex.execute(sql`delete from newsletter_recipients where campaign_id = 'nlc_c1'`)
+    await t.ex.execute(sql`delete from users where id in ('u_ord', 'u_ck', 'u_moved')`)
+  })
+
   it("freezing twice adds nobody twice", async () => {
     assert.equal(await freezeAudience(t.ex, "nlc_m1", { type: "shoppers" }, "marketing", real), 2)
     assert.equal(await freezeAudience(t.ex, "nlc_m1", { type: "shoppers" }, "marketing", real), 2)
