@@ -27,14 +27,15 @@ struct YardApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // BEFORE the .environment calls: a modifier applied after them sits above them
+                // and can't read the router, follow store or session (it crashed at launch).
+                .yardPushNotifications()
                 .environment(session)
                 .environment(cart)
                 .environment(follows)
                 .environment(saved)
                 .environment(router)
                 .environment(toast)
-                // After the environment: it reads the router, follow store and session from it.
-                .yardPushNotifications()
                 .preferredColorScheme(preferredScheme)
                 .tint(Color.yard.ink)
                 .task {
