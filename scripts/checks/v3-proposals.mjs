@@ -141,13 +141,13 @@ async function main() {
   // ===== Brand notified =========================================================================
   const bNotes = await notes("brand", tobi.jar)
   const n1 = bNotes.find((n) => n.key === `proposal:${P1?.id}`)
-  check("P9 the brand gets a Studio notification linking to the review page", !!n1 && n1.title === "Yard suggested a new product" && n1.href === `/studio/products/suggestions/${P1?.id}`, JSON.stringify(n1 ?? bNotes.slice(0, 2)))
+  check("P9 the brand gets a Studio notification naming the product, linking to the review page", !!n1 && n1.title === `Yard suggested a new product: ${title}` && n1.href === `/studio/products/suggestions/${P1?.id}`, JSON.stringify(n1 ?? bNotes.slice(0, 2)))
   const mails = (await get(`/api/auth/dev?op=proposal-emails&proposalId=${P1?.id}`)).json?.emails ?? []
-  check("P10 an email row per product manager (template product_suggestion, note and review link)", mails.length >= 1 && mails.every((m) => m.template === "product_suggestion" && String(m.vars.url).includes(`/studio/products/suggestions/${P1?.id}`) && String(m.vars.note).includes(TAG)), JSON.stringify(mails).slice(0, 400))
+  check("P10 an email row per product manager (template product_suggestion, product name, note and review link)", mails.length >= 1 && mails.every((m) => m.template === "product_suggestion" && m.vars.product === title && String(m.vars.url).includes(`/studio/products/suggestions/${P1?.id}`) && String(m.vars.note).includes(TAG)), JSON.stringify(mails).slice(0, 400))
   const sList = await get("/api/studio/proposals", { jar: tobi.jar })
   check("P11 Studio lists it as waiting (pending count)", sList.status === 200 && sList.json.counts.pending >= 1 && sList.json.items.some((p) => p.id === P1?.id), sum(sList))
   const sOne = await get(`/api/studio/proposals/${P1?.id}`, { jar: tobi.jar })
-  check("P12 the brand reads it without the admin's name", sOne.status === 200 && sOne.json.proposal.createdBy === undefined && sOne.json.proposal.proposed.title === title && sOne.json.proposal.images[mediaId]?.src.includes("as=brand"), sum(sOne))
+  check("P12 the brand reads it without the admin's name; it says accepting publishes it", sOne.status === 200 && sOne.json.proposal.createdBy === undefined && sOne.json.proposal.willPublish === true && sOne.json.proposal.proposed.title === title && sOne.json.proposal.images[mediaId]?.src.includes("as=brand"), sum(sOne))
 
   // ===== Refusals ===============================================================================
   const otherB = await get(`/api/studio/proposals/${P1?.id}`, { jar: minji.jar })
@@ -200,15 +200,20 @@ async function main() {
     variants: cur.variants.filter((v) => v.status === "active").map((v) => ({ id: v.id, sku: v.sku, options: v.options, priceMinor: v.priceOverrideMinor })),
     images: cur.images.map((i) => ({ id: i.id, alt: i.alt })),
     collectionIds: cur.collectionIds,
-    stock: Object.fromEntries(cur.variants.map((v) => [v.id, v.onHand])),
+    stockDelta: {},
+    expectedVersion: cur.version,
     ...over,
   })
   const same = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody(), note: TAG }, { jar: owner.jar })
   check("P24 an edit that changes nothing → 400", same.status === 400, sum(same))
   const mId = cur.variants.find((v) => v.options.Size === "M")?.id
-  const e1 = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ priceMinor: 1200000, stock: { ...Object.fromEntries(cur.variants.map((v) => [v.id, v.onHand])), [mId]: 9 } }), note: `Winter price ${TAG}` }, { jar: owner.jar })
+  const mStock = cur.variants.find((v) => v.id === mId)?.onHand
+  const stale = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ priceMinor: 1200000, expectedVersion: cur.version + 1 }), note: TAG }, { jar: owner.jar })
+  check("P24b a form loaded from another version of the product → 409", stale.status === 409, sum(stale))
+  const e1 = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ priceMinor: 1200000, stockDelta: { [mId]: 4 } }), note: `Winter price ${TAG}` }, { jar: owner.jar })
   const E1 = e1.json?.proposal
-  check("P25 edit suggestion → 201 with only the changed fields (price, stock)", e1.status === 201 && JSON.stringify(E1?.fields) === JSON.stringify(["priceMinor", "stock"]) && E1.changes[0].before === 1500000 && E1.changes[0].after === 1200000, sum(e1))
+  const sc = E1?.changes?.find((c) => c.field === "stock")
+  check("P25 edit suggestion → 201 with only the changed fields (price, stock as a change: +4)", e1.status === 201 && JSON.stringify(E1?.fields) === JSON.stringify(["priceMinor", "stock"]) && E1.changes[0].before === 1500000 && E1.changes[0].after === 1200000 && E1.stockDelta?.[mId] === 4 && sc?.before?.[mId] === mStock && sc?.after?.[mId] === mStock + 4, sum(e1))
   const dup = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ priceMinor: 1100000 }), note: TAG }, { jar: owner.jar })
   check("P26 a second edit for the same product while one waits → 409", dup.status === 409, sum(dup))
   const n3 = (await notes("brand", tobi.jar)).find((n) => n.key === `proposal:${E1?.id}`)
@@ -220,6 +225,11 @@ async function main() {
   check("P29 nothing changed on the product", afterP?.priceMinor === 1500000, sum(after))
   const n4 = (await notes("admin", owner.jar)).find((n) => n.key === `proposal.decided:${E1?.id}`)
   check("P30 the admin is told it was declined", !!n4 && /declined your suggestion/.test(n4.title), JSON.stringify(n4))
+  // Two suggestions for the same product at once: one wins, the other is the same 409 (not a 500).
+  const race = await Promise.all([1, 2].map((i) => post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ tags: ["cotton", `race${i}`] }), note: `Race ${i} ${TAG}` }, { jar: owner.jar })))
+  const won = race.find((r) => r.status === 201)
+  check("P30b two at once for the same product → one 201, one 409", JSON.stringify(race.map((r) => r.status).sort()) === "[201,409]", race.map(sum).join(" | "))
+  if (won) await post(`/api/admin/proposals/${won.json.proposal.id}/withdraw`, {}, { jar: owner.jar })
 
   // ===== Withdraw ===============================================================================
   const e2 = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ tags: ["cotton", "kit", "winter"] }), note: `Tags ${TAG}` }, { jar: owner.jar })
@@ -236,22 +246,32 @@ async function main() {
   // ===== Update (supersede) + conflict flag =====================================================
   const e3 = await post("/api/admin/proposals", { kind: "edit", productId, product: editBody({ priceMinor: 1300000, title: `Kit Tee II ${TAG}` }), note: `Rename ${TAG}` }, { jar: owner.jar })
   const E3 = e3.json?.proposal
-  const rev = await post(`/api/admin/proposals/${E3?.id}/revise`, { product: editBody({ priceMinor: 1350000, title: `Kit Tee II ${TAG}` }), note: `Rename, new price ${TAG}` }, { jar: trust.jar })
+  const rev = await post(`/api/admin/proposals/${E3?.id}/revise`, { product: editBody({ priceMinor: 1350000, title: `Kit Tee II ${TAG}`, stockDelta: { [mId]: 2 } }), note: `Rename, new price ${TAG}` }, { jar: trust.jar })
   const E4 = rev.json?.proposal
   const oldNow = await get(`/api/admin/proposals/${E3?.id}`, { jar: owner.jar })
   check("P34 update supersedes: the old one reads “superseded”, the new one is pending", rev.status === 201 && E4?.status === "pending" && E4.supersedesId === E3?.id && oldNow.json?.proposal?.status === "superseded", `${sum(rev)} | ${sum(oldNow)}`)
   const oldBrand = await get(`/api/studio/proposals/${E3?.id}`, { jar: tobi.jar })
-  check("P35 the brand no longer sees the replaced version (404)", oldBrand.status === 404, sum(oldBrand))
+  const oldAccept = await post(`/api/studio/proposals/${E3?.id}/accept`, {}, { jar: tobi.jar })
+  check("P35 the replaced version's link (an older email) opens the latest version; answering the old one → 409", oldBrand.status === 200 && oldBrand.json.proposal.id === E4?.id && oldAccept.status === 409, `${sum(oldBrand)} | ${sum(oldAccept)}`)
+  // A sale while it waits: the suggested +2 lands on the count then, the sale is kept.
+  const sold = await post(`/api/studio/catalog/variants/${mId}/stock`, { mode: "adjust", qty: -1, reason: "correction" }, { jar: tobi.jar })
   // The brand changes the price itself before answering.
   const sp = await get(`/api/studio/catalog/products/${productId}`, { jar: tobi.jar })
   const changed = await patch(`/api/studio/catalog/products/${productId}`, { priceMinor: 1400000, expectedVersion: sp.json?.product?.version }, { jar: tobi.jar })
   const flagged = await get(`/api/studio/proposals/${E4?.id}`, { jar: tobi.jar })
   const pc = flagged.json?.proposal?.changes?.find((c) => c.field === "priceMinor")
-  check("P36 conflict flag: the price the brand changed since is flagged with its value now", changed.status === 200 && flagged.json?.proposal?.conflicts?.includes("priceMinor") && pc?.changedSince === true && pc.now === 1400000 && pc.before === 1500000 && !flagged.json.proposal.conflicts.includes("title"), `${sum(changed)} | ${sum(flagged)}`)
-  // Edit before accepting: the brand keeps Yard's name but its own price.
-  const own = await post(`/api/studio/proposals/${E4?.id}/accept`, { product: editBody({ title: `Kit Tee II ${TAG}`, priceMinor: 1400000 }) }, { jar: tobi.jar })
+  const fs = flagged.json?.proposal?.changes?.find((c) => c.field === "stock")
+  check("P36 conflict flag: the price the brand changed since is flagged with its value now; stock (a sale since) isn't, and reads from the count now", sold.status === 200 && changed.status === 200 && flagged.json?.proposal?.conflicts?.includes("priceMinor") && pc?.changedSince === true && pc.now === 1400000 && pc.before === 1500000 && !flagged.json.proposal.conflicts.includes("title") && !flagged.json.proposal.conflicts.includes("stock") && fs?.before?.[mId] === mStock - 1 && fs?.after?.[mId] === mStock + 1, `${sum(sold)} | ${sum(changed)} | ${sum(flagged)}`)
+  // Edit before accepting, from a form loaded before the brand's price change: the usual 409.
+  const staleOwn = await post(`/api/studio/proposals/${E4?.id}/accept`, { product: editBody({ title: `Kit Tee II ${TAG}`, priceMinor: 1350000, stockDelta: { [mId]: 2 } }) }, { jar: tobi.jar })
+  const stillWaiting = await get(`/api/studio/proposals/${E4?.id}`, { jar: tobi.jar })
+  check("P36b “edit before accepting” from a stale form → 409, the suggestion still waits", staleOwn.status === 409 && stillWaiting.json?.proposal?.status === "pending", `${sum(staleOwn)} | ${sum(stillWaiting)}`)
+  // Edit before accepting: the brand keeps Yard's name and stock change but its own price.
+  const fresh = (await get(`/api/studio/catalog/products/${productId}`, { jar: tobi.jar })).json?.product
+  const own = await post(`/api/studio/proposals/${E4?.id}/accept`, { product: editBody({ title: `Kit Tee II ${TAG}`, priceMinor: 1400000, stockDelta: { [mId]: 2 }, expectedVersion: fresh?.version }) }, { jar: tobi.jar })
   const final = await get(`/api/studio/catalog/products/${productId}`, { jar: tobi.jar })
-  check("P37 “edit before accepting” applies the brand's version (Yard's name, its own price)", own.status === 200 && own.json.proposal.status === "accepted" && final.json?.product?.title === `Kit Tee II ${TAG}` && final.json.product.priceMinor === 1400000, `${sum(own)} | ${sum(final)}`)
+  const finalM = final.json?.product?.variants?.find((v) => v.id === mId)?.onHand
+  check("P37 “edit before accepting” applies the brand's version (Yard's name, its own price, +2 on top of the sale)", own.status === 200 && own.json.proposal.status === "accepted" && final.json?.product?.title === `Kit Tee II ${TAG}` && final.json.product.priceMinor === 1400000 && finalM === mStock + 1, `${sum(own)} | ${finalM} vs ${mStock + 1}`)
   const audit = await get(`/api/admin/audit?actorKind=all&subjectId=${[P1?.id, E1?.id, E2?.id, E4?.id].join(",")}`, { jar: owner.jar })
   const actions = new Set((audit.json?.entries ?? audit.json?.items ?? []).map((e) => e.action))
   check("P38 audit: created, updated, withdrawn, accepted and declined are all recorded", ["catalog.proposal_created", "catalog.proposal_updated", "catalog.proposal_withdrawn", "catalog.proposal_accepted", "catalog.proposal_declined"].every((a) => actions.has(a)), [...actions].join(", ") || sum(audit))

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { MagnifyingGlassIcon, StorefrontIcon } from "@phosphor-icons/react"
+import { CaretLeftIcon, MagnifyingGlassIcon, StorefrontIcon } from "@phosphor-icons/react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { ListSkeleton } from "@/components/feedback/skeletons"
@@ -53,7 +53,7 @@ function BackHeader({ title, description }: { title: string; description: string
   return (
     <div className="grid gap-2">
       <Link href={SUGGESTIONS} className="inline-flex w-fit items-center gap-1 text-xs text-ink-2 hover:text-ink">
-        ← Suggestions
+        <CaretLeftIcon className="size-3.5" /> Suggestions
       </Link>
       <PageHeader title={title} description={description} />
     </div>
@@ -196,6 +196,9 @@ function AdminProposalEditor({ ctx, revise }: { ctx: AdminProposalContextDto; re
       backLabel: "Suggestions",
       saveLabel: revise ? "Update suggestion" : "Send to brand",
       publishNote: editing ? `The changes apply when ${ctx.brand.name} accepts them.` : `It goes live when ${ctx.brand.name} accepts it.`,
+      publishHint: "Nothing reaches shoppers until the brand accepts.",
+      byYard: true,
+      stockDelta: revise?.stockDelta,
       prefill,
       aside: (
         <Panel title="Note to the brand" description="Optional. Shown with the suggestion and in the email.">

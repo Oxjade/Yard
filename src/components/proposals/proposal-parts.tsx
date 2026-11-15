@@ -215,7 +215,8 @@ export function ProposedProduct({ detail }: { detail: ProposalDetailDto }) {
 
 /**
  * A Product for the Studio product form from a proposal's view. `asNew`: a suggested new product
- * (no ids: its variants and photos are saved as new). Otherwise the product's own ids are kept.
+ * (no ids: its variants and photos are saved as new). Otherwise the product's own ids are kept, and
+ * existing variants keep their count now: the editor adds a suggested stock change on top (stockDelta).
  */
 export function productFromView(view: ProductView, detail: Pick<ProposalDetailDto, "images" | "currency" | "brand" | "productId">, opts: { asNew: boolean; base?: Product }): Product {
   const options: ProductOption[] = []
@@ -244,7 +245,7 @@ export function productFromView(view: ProductView, detail: Pick<ProposalDetailDt
     options,
     variants: view.variants.map((v) => {
       const kept = !opts.asNew && v.id ? opts.base?.variants.find((x) => x.id === v.id) : undefined
-      return { id: opts.asNew ? "" : (v.id ?? ""), sku: v.sku, options: v.options, stock: v.id && !opts.asNew ? (view.stock[v.id] ?? kept?.stock ?? 0) : (v.initialStock ?? 0), reserved: kept?.reserved ?? 0, priceOverrideMinor: v.priceMinor }
+      return { id: opts.asNew ? "" : (v.id ?? ""), sku: v.sku, options: v.options, stock: v.id && !opts.asNew ? (kept?.stock ?? view.stock[v.id] ?? 0) : (v.initialStock ?? 0), reserved: kept?.reserved ?? 0, priceOverrideMinor: v.priceMinor }
     }),
     badges: (view.badges as Product["badges"]) ?? [],
     ...(view.processingDays ? { processingDays: view.processingDays } : { processingDays: undefined }),

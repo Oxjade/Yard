@@ -37,7 +37,7 @@ import { useStudio } from "@/lib/stores/studio"
 import { cn } from "@/lib/utils"
 import { useSettingsReady } from "@/components/studio/business/settings-store"
 import { ConfirmDialog, control, Field, inputClass, Panel, Segmented, selectClass } from "./fields"
-import { ImageManager, type FormImage, type UploadedImage } from "./image-manager"
+import { BRAND_MEDIA_COPY_FOR_YARD, ImageManager, type FormImage, type UploadedImage } from "./image-manager"
 import { OptionsBuilder } from "./options-builder"
 import { fromStudioCollection, fromStudioProduct, loadStudioCollections, loadStudioProductDtos, studioCollectionsKey } from "./live"
 import { CatalogueNote, Thumb } from "./parts"
@@ -51,6 +51,7 @@ import {
   snapshot,
   uniqueSlug,
   validate,
+  withStockDelta,
   withVariants,
   type Errors,
   type FormVariant,
@@ -255,7 +256,9 @@ function createdDescription(status: Product["status"], publishAt: string | null)
 /**
  * Suggestions from Yard: the same form, saved as a suggestion (admin) or as the brand's answer to
  * one ("Edit before accepting"). `submit` gets the body the editor would have sent to the catalogue
- * plus `stock` (on-hand counts of existing variants); it owns what happens next (it navigates).
+ * plus, for an existing product, `stockDelta` (the change per variant from the counts the form opened
+ * with, so sales meanwhile are kept) and `expectedVersion` (the version it loaded); it owns what
+ * happens next (it navigates).
  */
 export type ProposalEditor = {
   title: string
@@ -265,6 +268,12 @@ export type ProposalEditor = {
   saveLabel: string
   /** Replaces the Publishing panel's controls: when it goes live. */
   publishNote: string
+  /** A line under it (Yard's form: "Nothing reaches shoppers until the brand accepts."). */
+  publishHint?: string
+  /** Yard's team filling the form for the brand: copy names the brand, not "you", and Studio-only links are hidden. */
+  byYard?: boolean
+  /** A suggested stock change per variant, shown on top of the counts the form opens with. */
+  stockDelta?: Record<string, number>
   /** A product to start a NEW product from (a suggested new product): its variants and photos are saved as new. */
   prefill?: Product
   /** Shown first in the right column (the note to the brand). */
@@ -298,7 +307,9 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
   const collections = server?.collections ?? localCollections
 
   const proposal = server?.proposal
-  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? fromProduct(product, brand) : proposal?.prefill ? fromProduct(proposal.prefill, brand) : emptyForm(brand)))
+  // A suggested stock change shows as the count to save, while originalStock stays the count opened with.
+  const stockDelta = proposal?.stockDelta
+  const [baseline, setBaseline] = useState<ProductForm>(() => (product ? withStockDelta(fromProduct(product, brand), stockDelta) : proposal?.prefill ? fromProduct(proposal.prefill, brand) : emptyForm(brand)))
   const [form, setForm] = useState<ProductForm>(baseline)
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const [focusTick, setFocusTick] = useState(0)
@@ -366,12 +377,12 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     if (!forceSync.current && (live.current.dirty || live.current.saving)) return
     forceSync.current = false
     baseVersion.current = serverVersion
-    const fresh = fromProduct(product, brand)
+    const fresh = withStockDelta(fromProduct(product, brand), stockDelta)
     stash.current.clear()
     setBaseline(fresh)
     setForm(fresh)
     setCheckedAt(null)
-  }, [product, brand, serverVersion])
+  }, [product, brand, serverVersion, stockDelta])
   useEffect(
     () => () => {
       if (!created.current && !leaving.current) return
@@ -497,9 +508,11 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     if (proposal) {
       const { dropId: _drop, ...rest } = body
       void _drop
-      const stock: Record<string, number> = {}
-      for (const v of form.variants) if (v.id && v.originalStock !== undefined) stock[v.id] = Number(v.stock)
-      await proposal.submit({ ...rest, ...(product ? { stock } : {}) })
+      // A change from the count the form opened with, like the save below: sales since then are kept.
+      const stockDelta: Record<string, number> = {}
+      for (const v of form.variants) if (v.id && v.originalStock !== undefined && Number(v.stock) !== v.originalStock) stockDelta[v.id] = Number(v.stock) - v.originalStock
+      const expectedVersion = baseVersion.current ?? dto?.version
+      await proposal.submit({ ...rest, ...(product ? { stockDelta, ...(expectedVersion ? { expectedVersion } : {}) } : {}) })
       setCheckedAt(null)
       return
     }
@@ -922,7 +935,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
             </div>
           </Panel>
 
-          <ImageManager images={form.images} onChange={setImages} error={errors.photos} productName={form.name} library={library} upload={server?.upload} />
+          <ImageManager images={form.images} onChange={setImages} error={errors.photos} productName={form.name} library={library} upload={server?.upload} copy={proposal?.byYard ? BRAND_MEDIA_COPY_FOR_YARD : undefined} />
 
           <Panel title="Pricing" description={`In ${currency}. Shoppers see prices converted to their own currency.`}>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -962,6 +975,19 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
               {errors.processing ? (
                 <p id="pf-processing-min-error" className="text-xs text-danger">{errors.processing}</p>
               ) : (
+                proposal?.byYard ? (
+                  <p id="pf-processing-min-hint" className="text-xs leading-relaxed text-ink-3">
+                    How long {brand.name} takes to pack an order and hand it to the courier ({brand.name}&apos;s default is {brand.processingDays[0]} to {brand.processingDays[1]} days).
+                  </p>
+                ) : proposal ? (
+                  <p id="pf-processing-min-hint" className="text-xs leading-relaxed text-ink-3">
+                    How long you take to pack an order and hand it to the courier (your default is {brand.processingDays[0]} to {brand.processingDays[1]} days). Change your default in{" "}
+                    <Link href="/studio/shipping" className="font-medium text-ink underline-offset-4 hover:text-violet hover:underline">
+                      Shipping &amp; fulfilment
+                    </Link>
+                    .
+                  </p>
+                ) : (
                 <p id="pf-processing-min-hint" className="text-xs leading-relaxed text-ink-3">
                   How long you take to pack an order and hand it to the courier (your default is {brand.processingDays[0]} to {brand.processingDays[1]} days). Changes here stay in this browser for now, so shoppers&apos; delivery estimates don&apos;t use them yet. Estimates use your handling time in{" "}
                   <Link href="/studio/shipping" className="font-medium text-ink underline-offset-4 hover:text-violet hover:underline">
@@ -969,6 +995,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
                   </Link>
                   .
                 </p>
+                )
               )}
             </fieldset>
           </Panel>
@@ -978,7 +1005,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
           {proposal?.aside}
           {proposal ? (
             <Panel title="Publishing" description={proposal.publishNote}>
-              <CatalogueNote>Nothing reaches shoppers until the brand accepts.</CatalogueNote>
+              {proposal.publishHint ? <CatalogueNote>{proposal.publishHint}</CatalogueNote> : null}
             </Panel>
           ) : (
           <Panel title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>

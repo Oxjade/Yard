@@ -12,7 +12,7 @@ import type {
   ProposalSummaryDto,
 } from "@/lib/api/contracts/proposals"
 import { PROPOSAL_STATUSES } from "@/lib/api/contracts/proposals"
-import { applyChanges, changedSince, diffProposal, normalize, PROPOSAL_FIELDS, proposalFieldLabels, updateBodyOf, viewOf, type ProductView, type ProposalChanges, type ProposalField } from "@/lib/proposals"
+import { applyChanges, changedSince, diffProposal, normalize, PROPOSAL_FIELDS, proposalFieldLabels, stockAfter, updateBodyOf, viewOf, type ProductView, type ProposalChanges, type ProposalField } from "@/lib/proposals"
 import type { AdminActor, BrandActor } from "../auth/dal"
 import { writeAudit } from "../audit"
 import { db, withTx, type Executor } from "../db"
@@ -107,7 +107,7 @@ async function checkBody(d: Executor, brandId: string, body: ProposalProductBody
     if (img.id && !opts.imageIds?.has(img.id)) fields[`images.${i}.id`] = opts.productId ? "That photo isn't on this product." : "New products can't name existing photos."
     if (!img.id && !img.mediaId) fields[`images.${i}`] = "Upload a photo or keep an existing one."
   })
-  for (const id of Object.keys(body.stock ?? {})) if (!opts.variantIds?.has(id)) fields.stock = "Stock can only be set for this product's variants."
+  for (const id of Object.keys(body.stockDelta ?? {})) if (!opts.variantIds?.has(id)) fields.stockDelta = "Stock can only be set for this product's variants."
   if (Object.keys(fields).length) throw badRequest(fields)
   await assertCategory(d, body.categorySlug, body.subcategory)
   await assertSkusFree(d, brandId, body.variants, opts.productId)
@@ -201,16 +201,29 @@ async function detailOf(d: Executor, r: Listed, as: "brand" | "admin"): Promise<
   const base = (p.base ?? {}) as ProposalChanges
   const proposed = p.kind === "new" ? normalize(payload as ProductView) : current ? applyChanges(current, payload) : normalize({ ...(payload as ProductView) })
   const conflicts = p.kind === "edit" && current && p.status === "pending" ? changedSince(base, current) : []
+  const stockDelta = p.kind === "edit" ? { ...(payload.stock ?? {}) } : {}
+  // Stock is a change, not a count: while waiting it reads from the count now (sales since are kept).
+  const stockBefore = p.status === "pending" && current ? Object.fromEntries(Object.keys(stockDelta).filter((id) => id in current.stock).map((id) => [id, current.stock[id]])) : { ...(base.stock ?? {}) }
   const changes: ProposalChangeDto[] =
     p.kind === "edit"
-      ? fieldsOf(p).map((f) => ({ field: f, label: proposalFieldLabels[f], before: base[f] ?? null, after: payload[f] ?? null, ...(conflicts.includes(f) && current ? { now: current[f] } : {}), changedSince: conflicts.includes(f) }))
+      ? fieldsOf(p).map((f) =>
+          f === "stock"
+            ? { field: f, label: proposalFieldLabels[f], before: stockBefore, after: stockAfter(stockBefore, stockDelta), changedSince: false }
+            : { field: f, label: proposalFieldLabels[f], before: base[f] ?? null, after: payload[f] ?? null, ...(conflicts.includes(f) && current ? { now: current[f] } : {}), changedSince: conflicts.includes(f) },
+        )
       : []
   const imageKeys = [...proposed.images, ...(current?.images ?? []), ...((base.images as ProductView["images"]) ?? [])].map((i) => i.id ?? i.mediaId ?? "")
   const images = await imageSources(d, imageKeys, as)
   const cols = await d.select({ id: catalogCollections.id, name: catalogCollections.name }).from(catalogCollections).where(eq(catalogCollections.brandId, p.brandId))
   const variantNames: Record<string, string> = {}
   for (const v of state?.kids.variants.get(state.row.id) ?? []) variantNames[v.id] = variantLabelOf(v.options) || v.sku
-  const [b] = await d.select({ currency: brands.currency }).from(brands).where(eq(brands.id, p.brandId)).limit(1)
+  const b = await loadBrand(d, p.brandId)
+  const willPublish = p.kind === "new" ? (b ? await brandMayPublish(d, b, proposed) : false) : null
+  let productStatus: string | null = state?.row.status ?? null
+  if (!state && p.productId) {
+    const [row] = await d.select({ status: catalogProducts.status }).from(catalogProducts).where(eq(catalogProducts.id, p.productId)).limit(1)
+    productStatus = row?.status ?? null
+  }
   return {
     ...summaryOf(r, as === "admin", images),
     currency: state?.row.currency ?? b?.currency ?? "USD",
@@ -221,7 +234,15 @@ async function detailOf(d: Executor, r: Listed, as: "brand" | "admin"): Promise<
     conflicts,
     images,
     names: { collections: Object.fromEntries(cols.map((c) => [c.id, c.name])), variants: variantNames },
+    stockDelta,
+    willPublish,
+    productStatus,
   }
+}
+
+/** Whether a new product made from a suggestion goes live on acceptance, like one the brand published itself. */
+async function brandMayPublish(d: Executor, brand: { id: string; reviewStatus: string }, product: { images: unknown[]; variants: unknown[] }) {
+  return brand.reviewStatus !== "restricted" && !(await brandUnderReview(d, brand.id)) && product.images.length > 0 && product.variants.length > 0
 }
 
 async function listedById(d: Executor, id: string) {
@@ -267,9 +288,8 @@ async function announce(p: Pick<Row, "id" | "brandId" | "status">) {
 /** Tells the brand (Studio notification + email to members who can manage products). */
 async function tellBrand(tx: Executor, p: Row, productTitle: string | null) {
   const href = studioProposalHref(p.id)
-  if (p.kind === "new") await notify({ kind: "brand", id: p.brandId }, { key: brandNoticeKey(p.id), template: "proposal.new_for_brand", href })
-  else await notify({ kind: "brand", id: p.brandId }, { key: brandNoticeKey(p.id), template: "proposal.edit_for_brand", vars: { product: productTitle ?? "a product" }, href })
-  await emailBrandMembersWith(tx as never, p.brandId, "content.publish", "product_suggestion", { kind: p.kind, url: href, ...(productTitle && p.kind === "edit" ? { product: productTitle } : {}), ...(p.note ? { note: p.note } : {}) }, `proposal:${p.id}`)
+  await notify({ kind: "brand", id: p.brandId }, { key: brandNoticeKey(p.id), template: p.kind === "new" ? "proposal.new_for_brand" : "proposal.edit_for_brand", vars: { product: productTitle ?? "a product" }, href })
+  await emailBrandMembersWith(tx as never, p.brandId, "content.publish", "product_suggestion", { kind: p.kind, url: href, ...(productTitle ? { product: productTitle } : {}), ...(p.note ? { note: p.note } : {}) }, `proposal:${p.id}`)
 }
 
 /** Removes the brand's notification for a proposal that's no longer waiting (withdrawn or replaced). */
@@ -284,7 +304,8 @@ async function dropBrandNotice(tx: Executor, p: Pick<Row, "id" | "brandId">) {
 /* ------------------------------------------------------------------ admin */
 
 /** Builds the stored payload and base for a body (validated against the brand and, for edits, the product). */
-async function prepare(d: Executor, kind: ProposalKind, brandId: string, productId: string | null, body: ProposalProductBody) {
+async function prepare(d: Executor, kind: ProposalKind, brand: { id: string; name: string }, productId: string | null, body: ProposalProductBody) {
+  const brandId = brand.id
   if (kind === "new") {
     await checkBody(d, brandId, body, {})
     const view = viewOf({ ...body, stock: {} })
@@ -293,15 +314,24 @@ async function prepare(d: Executor, kind: ProposalKind, brandId: string, product
   const state = await productState(d, productId!)
   if (!state || state.row.brandId !== brandId) throw notFound("That product isn't on Yard.")
   if (state.row.status === "archived") throw rule("This product is archived. The brand has to restore it first.")
+  // Diffed against the product now, so the form must have loaded this version (or an edit the brand made meanwhile would be reverted).
+  if (body.expectedVersion === undefined) throw badRequest({ expectedVersion: "Reload the product and try again." })
+  if (body.expectedVersion !== state.row.version) throw conflict(`${brand.name} changed this product since you opened it. Reload to see their changes.`)
   const kids = state.kids
   await checkBody(d, brandId, body, {
     productId: state.row.id,
     imageIds: new Set((kids.images.get(state.row.id) ?? []).map((i) => i.id)),
     variantIds: new Set((kids.variants.get(state.row.id) ?? []).filter((v) => v.status === "active").map((v) => v.id)),
   })
-  const diff = diffProposal(state.view, viewOf(body), { defaultProcessing: await defaultProcessing(d, brandId) })
+  const diff = diffProposal(state.view, viewOf(body), { defaultProcessing: await defaultProcessing(d, brandId), stockDelta: body.stockDelta })
   if (!diff.fields.length) throw badRequest({ product: "Change at least one field to suggest it." }, "Nothing has changed yet.")
   return { payload: diff.changes as Record<string, unknown>, base: diff.base as Record<string, unknown>, baseVersion: state.row.version, baseUpdatedAt: state.row.updatedAt, title: state.row.title }
+}
+
+const alreadyWaiting = () => conflict("There's already a suggestion waiting for this product. Update that one instead.")
+const isUniqueViolation = (e: unknown): boolean => {
+  const err = e as { code?: string; cause?: unknown } | null
+  return !!err && (err.code === "23505" || isUniqueViolation(err.cause))
 }
 
 export async function createProposal(admin: AdminActor, body: AdminProposalCreateBody, ipHash: string | null) {
@@ -319,17 +349,24 @@ export async function createProposal(admin: AdminActor, body: AdminProposalCreat
       brandId = p.brandId
       productId = p.id
       const [open] = await tx.select({ id: productProposals.id }).from(productProposals).where(and(eq(productProposals.productId, p.id), eq(productProposals.kind, "edit"), eq(productProposals.status, "pending"))).limit(1)
-      if (open) throw conflict("There's already a suggestion waiting for this product. Update that one instead.")
+      if (open) throw alreadyWaiting()
     }
     const brand = await loadBrand(tx, brandId)
     if (!brand) throw notFound("That brand isn't on Yard.")
     if (brand.reviewStatus === "suspended") throw rule(`${brand.name} is suspended, so it can't take suggestions.`)
-    const prep = await prepare(tx, body.kind, brandId, productId, body.product)
+    const prep = await prepare(tx, body.kind, brand, productId, body.product)
     const now = new Date()
-    const [row] = await tx
-      .insert(productProposals)
-      .values({ id: newId("pp"), brandId, productId, kind: body.kind, payload: prep.payload, base: prep.base, baseVersion: prep.baseVersion, baseUpdatedAt: prep.baseUpdatedAt, note: body.note?.trim() || null, status: "pending", createdByAdminId: admin.userId, createdAt: now, updatedAt: now })
-      .returning()
+    let row: Row
+    try {
+      ;[row] = await tx
+        .insert(productProposals)
+        .values({ id: newId("pp"), brandId, productId, kind: body.kind, payload: prep.payload, base: prep.base, baseVersion: prep.baseVersion, baseUpdatedAt: prep.baseUpdatedAt, note: body.note?.trim() || null, status: "pending", createdByAdminId: admin.userId, createdAt: now, updatedAt: now })
+        .returning()
+    } catch (e) {
+      // Two suggestions for the same product at once: the second hits the one-pending-edit index.
+      if (isUniqueViolation(e)) throw alreadyWaiting()
+      throw e
+    }
     await writeAudit({ actor: adminAudit(admin), action: "catalog.proposal_created", target: prep.title, subjectType: "product_proposal", subjectId: row.id, brandId, ipHash, meta: { kind: body.kind, productId, fields: fieldsOf(row) } })
     await tellBrand(tx, row, prep.title)
     await announce(row)
@@ -343,7 +380,9 @@ export async function reviseProposal(admin: AdminActor, id: string, body: AdminP
     const old = await loadProposal(tx, id)
     if (!old) throw notFound("That suggestion doesn't exist.")
     if (old.status !== "pending") throw conflict("This suggestion was already answered or withdrawn, so it can't be updated.")
-    const prep = await prepare(tx, old.kind as ProposalKind, old.brandId, old.productId, body.product)
+    const brand = await loadBrand(tx, old.brandId)
+    if (!brand) throw notFound("That brand isn't on Yard.")
+    const prep = await prepare(tx, old.kind as ProposalKind, brand, old.productId, body.product)
     const now = new Date()
     const [gone] = await tx.update(productProposals).set({ status: "superseded", updatedAt: now }).where(and(eq(productProposals.id, id), eq(productProposals.status, "pending"))).returning({ id: productProposals.id })
     if (!gone) throw conflict("This suggestion was already answered or withdrawn, so it can't be updated.")
@@ -444,10 +483,20 @@ export async function adminProposalContext(q: { brandId?: string; productId?: st
 
 /* ------------------------------------------------------------------ studio */
 
-async function loadOwnProposal(d: Executor, actor: BrandActor, id: string) {
-  const r = await listedById(d, id)
-  // Another brand's suggestion doesn't exist for this brand; neither does a superseded version.
-  if (!r || r.p.brandId !== actor.brandId || r.p.status === "superseded") throw notFound("That suggestion isn't for your brand.")
+async function loadOwnProposal(d: Executor, actor: BrandActor, id: string, opts: { latest?: boolean } = {}) {
+  let r = await listedById(d, id)
+  // Another brand's suggestion doesn't exist for this brand.
+  if (!r || r.p.brandId !== actor.brandId) throw notFound("That suggestion isn't for your brand.")
+  if (r.p.status === "superseded") {
+    // Reading an old version (an earlier email's link) shows the version that replaced it; answering one is a 409.
+    if (!opts.latest) throw conflict("Yard updated this suggestion. Reload to see the latest version.")
+    for (let i = 0; i < 50 && r.p.status === "superseded"; i++) {
+      const [next] = await d.select({ id: productProposals.id }).from(productProposals).where(eq(productProposals.supersedesId, r.p.id)).limit(1)
+      const n = next ? await listedById(d, next.id) : null
+      if (!n || n.p.brandId !== actor.brandId) break
+      r = n
+    }
+  }
   return r
 }
 
@@ -464,7 +513,7 @@ export async function listStudioProposals(actor: BrandActor, q: { status: "pendi
 
 export async function getStudioProposal(actor: BrandActor, id: string) {
   const d = await db()
-  return { proposal: await detailOf(d, await loadOwnProposal(d, actor, id), "brand") }
+  return { proposal: await detailOf(d, await loadOwnProposal(d, actor, id, { latest: true }), "brand") }
 }
 
 /** Claims a pending proposal for a decision; a second decision (another tab, another member) is 409. */
@@ -491,14 +540,15 @@ export async function acceptProposal(actor: BrandActor, id: string, override: Pr
     let published = false
     let title: string
     if (row.kind === "new") {
-      const { stock: _stock, ...own } = override ?? {}
+      const { stockDelta: _stock, expectedVersion: _version, ...own } = override ?? {}
       void _stock
+      void _version
       const body = override ? productCreateBody.parse(own) : createBodyOf(normalize(payloadOf(row) as ProductView))
       const created = await createProduct(actor, body, ipHash)
       productId = created.product.id
       title = created.product.title
       // Live like a product the brand published itself, whenever the brand may publish it now.
-      const mayPublish = actor.brand.reviewStatus !== "restricted" && !(await brandUnderReview(tx, actor.brandId)) && created.product.images.length > 0 && created.product.variants.some((v) => v.status === "active")
+      const mayPublish = await brandMayPublish(tx, { id: actor.brandId, reviewStatus: actor.brand.reviewStatus }, { images: created.product.images, variants: created.product.variants.filter((v) => v.status === "active") })
       if (mayPublish) {
         await setProductStatus(actor, productId, { action: "publish", expectedVersion: created.product.version }, ipHash)
         published = true
@@ -511,15 +561,17 @@ export async function acceptProposal(actor: BrandActor, id: string, override: Pr
       if (state.row.status === "archived") throw rule("Restore this product before accepting changes to it.")
       title = state.row.title
       let changes = payloadOf(row)
-      if (override) changes = diffProposal(state.view, viewOf(override), { defaultProcessing: await defaultProcessing(tx, actor.brandId) }).changes
-      const { body, stock } = updateBodyOf(changes)
+      if (override) changes = diffProposal(state.view, viewOf(override), { defaultProcessing: await defaultProcessing(tx, actor.brandId), stockDelta: override.stockDelta }).changes
+      const { body, stockDelta } = updateBodyOf(changes)
       if (Object.keys(body).length) {
-        const updated = await updateProduct(actor, productId, productUpdateBody.parse({ ...body, expectedVersion: state.row.version }), ipHash)
+        // The brand's own form carries the version it loaded: someone else's edit since then is the usual 409.
+        const updated = await updateProduct(actor, productId, productUpdateBody.parse({ ...body, expectedVersion: override?.expectedVersion ?? state.row.version }), ipHash)
         title = updated.product.title
       }
-      for (const [variantId, qty] of Object.entries(stock)) {
-        if (!(variantId in state.view.stock)) continue
-        await adjustStock(actor, variantId, { mode: "set", qty, reason: "adjustment", note: "Suggestion from Yard" }, ipHash)
+      // A change from the count the form opened with, like the Studio editor's save: sales since then are kept.
+      for (const [variantId, qty] of Object.entries(stockDelta)) {
+        if (!(variantId in state.view.stock) || !qty) continue
+        await adjustStock(actor, variantId, { mode: "adjust", qty, reason: "adjustment", note: "Suggestion from Yard" }, ipHash)
       }
       published = state.row.status === "published"
     }

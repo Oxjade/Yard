@@ -260,10 +260,13 @@ export type PublicBrandsQuery = z.output<typeof publicBrandsQuery>
 
 /**
  * The product form's body as the editor sends it, without what only the brand sets (its address
- * and drop). `stock`: on-hand counts for the product's existing variants (edits only).
+ * and drop). Edits only: `stockDelta`, the change per existing variant from the count the form
+ * opened with (applied as an adjustment, so sales since then are kept), and `expectedVersion`, the
+ * product version the form loaded (a stale form is a 409, like the Studio editor's save).
  */
 export const proposalProductBody = productCreateBody.omit({ slug: true, dropId: true }).extend({
-  stock: z.record(safeId(), z.number().int().min(0).max(1_000_000)).optional(),
+  stockDelta: z.record(safeId(), z.number().int().min(-1_000_000).max(1_000_000)).optional(),
+  expectedVersion: z.number().int().positive().optional(),
 })
 export type ProposalProductBody = z.output<typeof proposalProductBody>
 

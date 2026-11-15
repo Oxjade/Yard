@@ -54,12 +54,19 @@ describe("proposal diff", () => {
     assert.deepEqual(e.changes.processingDays, [2, 5])
   })
 
-  it("proposes stock only for variants that stay, and only counts that differ", () => {
-    const proposed = product({ variants: [product().variants[0]], stock: { pv_m: 10, pv_l: 9 } })
-    const d = diffProposal(product(), proposed)
-    assert.deepEqual(d.changes.stock, { pv_m: 10 })
+  it("proposes stock as a change, only for variants that stay and only when non-zero", () => {
+    const proposed = product({ variants: [product().variants[0]] })
+    const d = diffProposal(product(), proposed, { stockDelta: { pv_m: 6, pv_l: 7, pv_gone: 2 } })
+    assert.deepEqual(d.changes.stock, { pv_m: 6 })
     assert.deepEqual(d.base.stock, { pv_m: 4 })
     assert.ok(d.fields.includes("variants"))
+    // The counts in the proposed view are ignored: only the change counts.
+    assert.equal("stock" in diffProposal(product(), product({ stock: { pv_m: 10, pv_l: 9 } }), { stockDelta: { pv_m: 0 } }).changes, false)
+  })
+
+  it("doesn't count the key order of a colour value as a change", () => {
+    const withColour = (values: { value: string; hex?: string }[]) => product({ options: [{ name: "Colour", values }] })
+    assert.deepEqual(diffProposal(withColour([{ hex: "#111111", value: "Black" } as { value: string; hex?: string }]), withColour([{ value: "Black", hex: "#111111" }])).fields, [])
   })
 
   it("normalises SKUs and option order before comparing", () => {
@@ -77,9 +84,13 @@ describe("conflicts and apply", () => {
     assert.deepEqual(changedSince(d.base, product({ description: "New words for the description." })), [])
   })
 
-  it("flags stock that moved since", () => {
-    const d = diffProposal(product(), product({ stock: { pv_m: 10, pv_l: 2 } }))
-    assert.deepEqual(changedSince(d.base, product({ stock: { pv_m: 3, pv_l: 2 } })), ["stock"])
+  it("keeps sales made since: stock is never flagged and the change lands on the count now", () => {
+    const d = diffProposal(product(), product(), { stockDelta: { pv_m: 6 } })
+    const now = product({ stock: { pv_m: 3, pv_l: 2 } })
+    assert.deepEqual(changedSince(d.base, now), [])
+    assert.deepEqual(applyChanges(now, d.changes).stock, { pv_m: 9, pv_l: 2 })
+    // Never below zero.
+    assert.deepEqual(applyChanges(product({ stock: { pv_m: 1, pv_l: 2 } }), { stock: { pv_m: -4 } }).stock, { pv_m: 0, pv_l: 2 })
   })
 
   it("applies only the proposed fields over the product as it is now", () => {
@@ -89,12 +100,12 @@ describe("conflicts and apply", () => {
     assert.equal(after.description, "The brand rewrote this since.")
   })
 
-  it("turns changes into a Studio update body and stock counts", () => {
-    const d = diffProposal(product(), product({ priceMinor: 39000, images: [{ id: "pi_1", alt: "" }, { mediaId: "med_new", alt: "Back" }], stock: { pv_m: 7, pv_l: 2 } }))
-    const { body: b, stock } = updateBodyOf(d.changes)
+  it("turns changes into a Studio update body and stock adjustments", () => {
+    const d = diffProposal(product(), product({ priceMinor: 39000, images: [{ id: "pi_1", alt: "" }, { mediaId: "med_new", alt: "Back" }] }), { stockDelta: { pv_m: 3, pv_l: 0 } })
+    const { body: b, stockDelta } = updateBodyOf(d.changes)
     assert.deepEqual(Object.keys(b).sort(), ["images", "priceMinor"])
     assert.deepEqual(b.images, [{ id: "pi_1", alt: "" }, { mediaId: "med_new", alt: "Back" }])
-    assert.deepEqual(stock, { pv_m: 7 })
+    assert.deepEqual(stockDelta, { pv_m: 3 })
   })
 
   it("builds a view from a form body with the server's defaults", () => {
@@ -108,7 +119,7 @@ describe("conflicts and apply", () => {
 describe("proposal contracts", () => {
   it("accepts a new-product and an edit suggestion", () => {
     assert.equal(adminProposalCreateBody.safeParse({ kind: "new", brandId: "b_1", product: body, note: "Ready for the winter drop" }).success, true)
-    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, stock: { pv_m: 3 } } }).success, true)
+    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, stockDelta: { pv_m: -3 }, expectedVersion: 4 } }).success, true)
   })
 
   it("refuses unknown fields, a missing target, a drop or slug, and long notes", () => {
@@ -117,7 +128,9 @@ describe("proposal contracts", () => {
     assert.equal(adminProposalCreateBody.safeParse({ kind: "new", brandId: "b_1", product: { ...body, slug: "danfo" } }).success, false)
     assert.equal(adminProposalCreateBody.safeParse({ kind: "new", brandId: "b_1", product: body, status: "published" }).success, false)
     assert.equal(adminProposalCreateBody.safeParse({ kind: "new", brandId: "b_1", product: body, note: "x".repeat(301) }).success, false)
-    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, stock: { pv_m: -1 } } }).success, false)
+    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, stock: { pv_m: 3 } } }).success, false)
+    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, stockDelta: { pv_m: 1.5 } } }).success, false)
+    assert.equal(adminProposalCreateBody.safeParse({ kind: "edit", productId: "p_1", product: { ...body, expectedVersion: 0 } }).success, false)
     assert.equal(adminProposalReviseBody.safeParse({ product: body, brandId: "b_2" }).success, false)
   })
 

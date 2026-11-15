@@ -47,6 +47,12 @@ export type Errors = Record<string, string | undefined>
 let colourSeq = 0
 export const colourKey = () => `col-${++colourSeq}`
 
+/** A form with suggested stock changes applied to the counts it shows; originalStock stays the count opened with. */
+export function withStockDelta(form: ProductForm, delta: Record<string, number> | undefined): ProductForm {
+  if (!delta || !Object.keys(delta).length) return form
+  return { ...form, variants: form.variants.map((v) => (v.id && v.originalStock !== undefined && delta[v.id] ? { ...v, stock: String(Math.max(0, v.originalStock + delta[v.id])) } : v)) }
+}
+
 export function fromProduct(p: Product, brand: Brand): ProductForm {
   const sizeOpt = p.options.find((o): o is Extract<ProductOption, { name: "Size" }> => o.name === "Size")
   const colourOpt = p.options.find((o): o is Extract<ProductOption, { name: "Colour" }> => o.name === "Colour")

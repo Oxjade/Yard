@@ -65,6 +65,10 @@ const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includ
 
 export type UploadedImage = Pick<ImageAsset, "src" | "width" | "height"> & { mediaId: string }
 
+export type ImageManagerCopy = { uploaded: string; choose: string; libraryTitle: string; libraryBody: string }
+const BRAND_COPY: ImageManagerCopy = { uploaded: "Uploaded to your brand media.", choose: "Choose from your photos", libraryTitle: "Your photos", libraryBody: "Photos from your products, collections and drops." }
+export const BRAND_MEDIA_COPY_FOR_YARD: ImageManagerCopy = { uploaded: "Uploaded to the brand's media.", choose: "Choose from the brand's photos", libraryTitle: "The brand's photos", libraryBody: "Photos from the brand's products." }
+
 export function ImageManager({
   images,
   onChange,
@@ -72,6 +76,7 @@ export function ImageManager({
   productName,
   library,
   upload,
+  copy = BRAND_COPY,
 }: {
   images: FormImage[]
   onChange: (update: (prev: FormImage[]) => FormImage[]) => void
@@ -80,6 +85,8 @@ export function ImageManager({
   library: ImageAsset[]
   /** Live server upload: replaces the browser-only compressed copy. */
   upload?: (file: File) => Promise<UploadedImage>
+  /** Whose media this is, in words (Yard's team filling the form for a brand reads "the brand's"). */
+  copy?: ImageManagerCopy
 }) {
   const input = useRef<HTMLInputElement>(null)
   const objectUrls = useRef(new Set<string>())
@@ -263,7 +270,7 @@ export function ImageManager({
           >
             <Upload className="size-5" />
             <span className="text-xs text-ink">Add photos</span>
-            <span className="text-[11px] text-ink-3">{images.length === 0 ? `Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. ${upload ? "Uploaded to your brand media." : "Kept in this browser until media storage is connected."}` : "or drop them here"}</span>
+            <span className="text-[11px] text-ink-3">{images.length === 0 ? `Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. ${upload ? copy.uploaded : "Kept in this browser until media storage is connected."}` : "or drop them here"}</span>
           </button>
         ) : null}
       </div>
@@ -283,7 +290,7 @@ export function ImageManager({
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <FieldMessage id="photos" error={uploadError ?? error} hint="Portrait 4:5 works best. Use the arrows or drag to reorder." />
         <Button type="button" variant="ghost" size="sm" className="-mr-2 h-10 md:h-8" disabled={left === 0} onClick={() => setLibraryOpen(true)}>
-          <ImagePlus /> Choose from your photos
+          <ImagePlus /> {copy.choose}
         </Button>
       </div>
       <PhotoLibrary
@@ -292,6 +299,7 @@ export function ImageManager({
         photos={library}
         taken={new Set(images.map((im) => im.src))}
         slots={left}
+        copy={copy}
         onAdd={(list) => {
           onChange((prev) => [...prev, ...toFormImages(list.map((im) => ({ ...im, alt: "", imageId: undefined })))].slice(0, MAX_IMAGES))
           setUploadError(null)
@@ -307,6 +315,7 @@ function PhotoLibrary({
   photos,
   taken,
   slots,
+  copy,
   onAdd,
 }: {
   open: boolean
@@ -314,6 +323,7 @@ function PhotoLibrary({
   photos: ImageAsset[]
   taken: Set<string>
   slots: number
+  copy: ImageManagerCopy
   onAdd: (list: ImageAsset[]) => void
 }) {
   const [picked, setPicked] = useState<string[]>([])
@@ -334,8 +344,8 @@ function PhotoLibrary({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="flex max-h-[min(720px,calc(100dvh-2rem))] flex-col sm:max-w-2xl" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
-          <DialogTitle>Your photos</DialogTitle>
-          <DialogDescription className="text-ink-2">Photos from your products, collections and drops. Pick up to {slots}.</DialogDescription>
+          <DialogTitle>{copy.libraryTitle}</DialogTitle>
+          <DialogDescription className="text-ink-2">{copy.libraryBody} Pick up to {slots}.</DialogDescription>
         </DialogHeader>
         <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
           <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">

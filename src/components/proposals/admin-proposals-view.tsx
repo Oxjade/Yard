@@ -42,6 +42,7 @@ const FILTERS: { value: Filter; label: string }[] = [
 const isFilter = (v: string | null): v is Filter => FILTERS.some((f) => f.value === v)
 
 export function AdminProposalsView() {
+  const { can } = useAdminSession()
   return (
     <div className="@container grid gap-3">
       <AdminPageHead
@@ -49,11 +50,13 @@ export function AdminProposalsView() {
         title="Suggestions"
         description="Products and product changes Yard suggested to brands. Nothing goes live until the brand accepts."
         actions={
-          <Button asChild size="sm" variant="primary" className="h-10 sm:h-9">
-            <Link href={`${SUGGESTIONS}/new`}>
-              <PlusIcon /> Add product for brand
-            </Link>
-          </Button>
+          can("catalog.propose") ? (
+            <Button asChild size="sm" variant="primary" className="h-10 sm:h-9">
+              <Link href={`${SUGGESTIONS}/new`}>
+                <PlusIcon /> Add product for brand
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
       <TrustGate feature="Suggestions" anyOf={["catalog.propose"]}>

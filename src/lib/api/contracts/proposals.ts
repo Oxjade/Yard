@@ -15,7 +15,8 @@ export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 export type ProposalKind = "new" | "edit"
 
 /** What a client sends: the Studio product form's body (the server checks badges and every other field). */
-export type ProposalProductInput = Omit<StudioProductCreateBody, "dropId" | "slug"> & { stock?: Record<string, number> }
+/** Edits: `stockDelta`, the change per existing variant from the count the form opened with; `expectedVersion`, the product version it loaded. */
+export type ProposalProductInput = Omit<StudioProductCreateBody, "dropId" | "slug"> & { stockDelta?: Record<string, number>; expectedVersion?: number }
 
 /* ---------- DTOs ---------- */
 
@@ -23,7 +24,7 @@ export type ProposalImageDto = { key: string; src: string; alt: string; width: n
 export type ProposalChangeDto = {
   field: ProposalField
   label: string
-  /** The value when the proposal was made. */
+  /** The value when the proposal was made (stock: the count now while waiting, then + the change). */
   before: unknown
   after: unknown
   /** The value now, when the brand changed it since. */
@@ -65,6 +66,12 @@ export type ProposalDetailDto = ProposalSummaryDto & {
   images: Record<string, ProposalImageDto>
   /** Names for the ids the form uses. */
   names: { collections: Record<string, string>; variants: Record<string, string> }
+  /** Edits: the suggested stock change per variant (+3, -2), applied on top of the count at acceptance. */
+  stockDelta: Record<string, number>
+  /** New products: whether accepting publishes it now (otherwise it's added as a draft). Null for edits. */
+  willPublish: boolean | null
+  /** The product's status now (accepted new products, and edits), or null. */
+  productStatus: string | null
 }
 
 export type ProposalListDto = { items: ProposalSummaryDto[]; total: number; counts: Record<ProposalStatus, number>; nextOffset: number | null }

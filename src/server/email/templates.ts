@@ -261,13 +261,13 @@ export const templates = {
       why: "You're getting this because you applied to sell on Yard with this address.",
     }),
   },
-  // Suggestions from Yard. `kind`: "new" | "edit"; `product`: the product's name (edits); `note`: the admin's note to the brand.
+  // Suggestions from Yard. `kind`: "new" | "edit"; `product`: the product's name (the suggested name for a new one); `note`: the admin's note to the brand.
   product_suggestion: {
     category: "account",
     required: ["brand", "url"],
     build: (x) => {
       const edit = x.kind === "edit"
-      const title = edit ? `Yard suggested changes to ${v(x, "product", "a product")}` : "Yard suggested a new product"
+      const title = edit ? `Yard suggested changes to ${v(x, "product", "a product")}` : has(x, "product") ? `Yard suggested a new product: ${v(x, "product")}` : "Yard suggested a new product"
       return {
         subject: title,
         preheader: edit ? "Nothing changes until you accept." : "Nothing goes live until you accept.",
@@ -279,7 +279,7 @@ export const templates = {
           ...(has(x, "note") ? [`Note from Yard: “${v(x, "note")}”`] : []),
           edit ? "Review each change in Studio, then accept, edit or decline. Nothing changes until you accept." : "Review it in Studio, then accept, edit or decline. Nothing goes live until you accept.",
         ],
-        facts: facts({ label: "Brand", value: v(x, "brand") }, edit && { label: "Product", value: v(x, "product") }),
+        facts: facts({ label: "Brand", value: v(x, "brand") }, has(x, "product") && { label: "Product", value: v(x, "product") }),
         action: { label: "Review in Studio", url: v(x, "url") },
         why: `You're getting this because you manage products for ${v(x, "brand")} on Yard.`,
       }

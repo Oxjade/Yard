@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -14,6 +14,7 @@ import { SessionGate } from "@/components/session/session-gate"
 import { fromStudioCollection, fromStudioProduct, loadStudioCollections, loadStudioProductDtos, studioCollectionsKey } from "@/components/studio/catalog/live"
 import { liveBrand, ProductEditor, type ProposalSubmitBody, type ServerEditor } from "@/components/studio/catalog/product-editor"
 import { ProductEditorSkeleton } from "@/components/studio/catalog/skeletons"
+import { formatDate } from "@/components/studio/catalog/utils"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import type { ProposalDetailDto, ProposalSummaryDto } from "@/lib/api/contracts/proposals"
@@ -126,10 +127,9 @@ function ProposalRows({ items }: { items: ProposalSummaryDto[] }) {
             <ProposalThumb src={p.cover} size={36} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-ink">{p.kind === "new" ? p.title : `Changes to ${p.title}`}</span>
-              <span className="block truncate text-xs text-ink-3">
-                {p.kind === "new" ? "New product" : `${p.fields.length} ${p.fields.length === 1 ? "change" : "changes"}`}, {relativeTime(p.createdAt)}
-              </span>
+              <span className="block truncate text-xs text-ink-3">{p.kind === "new" ? "New product" : `${p.fields.length} ${p.fields.length === 1 ? "change" : "changes"}`}</span>
             </span>
+            <span className="hidden shrink-0 text-[11px] text-ink-3 sm:block">{relativeTime(p.createdAt)}</span>
             <ProposalStatusBadge status={p.status} />
           </Link>
         </li>
@@ -165,6 +165,12 @@ function Review({ id }: { id: string }) {
   const [declining, setDeclining] = useState(false)
   const [why, setWhy] = useState("")
   const p = q.data?.proposal
+  const router = useRouter()
+  // An earlier version's link (an older email): the server answers with the version that replaced it.
+  const replacedBy = p && p.id !== id ? p.id : null
+  useEffect(() => {
+    if (replacedBy) router.replace(hrefOf(replacedBy))
+  }, [replacedBy, router])
 
   if (q.error && !p)
     return (
@@ -173,7 +179,7 @@ function Review({ id }: { id: string }) {
         <EmptyState title="This suggestion isn't here" body={errorMessage(q.error)} action={<Button asChild size="sm" variant="secondary"><Link href={SUGGESTIONS}>All suggestions</Link></Button>} />
       </>
     )
-  if (!p) return <ListSkeleton rows={5} />
+  if (!p || replacedBy) return <ListSkeleton rows={5} />
 
   const accept = async () => {
     setBusy("accept")
@@ -218,7 +224,7 @@ function Review({ id }: { id: string }) {
         >
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <ProposalStatusBadge status={p.status} />
-            <span className="text-xs text-ink-3">Sent {relativeTime(p.createdAt)}</span>
+            <span className="text-xs text-ink-3">Sent {formatDate(p.createdAt)}</span>
           </div>
         </PageHeader>
       </div>
@@ -272,7 +278,7 @@ function Review({ id }: { id: string }) {
               </div>
             ) : (
               <>
-                <p className="text-sm text-ink-2">{p.kind === "new" ? "Accepting adds it to your catalogue and publishes it." : "Accepting applies only the changes on the left."}</p>
+                <p className="text-sm text-ink-2">{p.kind === "new" ? (p.willPublish ? "Accepting adds it to your catalogue and publishes it." : "Accepting adds it to your catalogue as a draft. Publish it once your brand can publish.") : "Accepting applies only the changes listed here. Everything else stays as it is."}</p>
                 <Button variant="primary" disabled={!can || !!busy} loading={busy === "accept"} onClick={() => void accept()}>
                   <CheckIcon /> Accept
                 </Button>
@@ -306,7 +312,9 @@ function AnsweredNote({ p }: { p: ProposalDetailDto }) {
   if (p.status === "accepted")
     return (
       <div className="grid gap-2">
-        <p className="text-sm text-ink">You accepted this.</p>
+        <p className="text-sm text-ink">
+          You accepted this.{p.productStatus === "published" ? " The product is live." : p.productStatus === "draft" ? " The product is a draft." : p.productStatus === "scheduled" ? " The product is scheduled." : p.productStatus === "archived" ? " The product is archived." : ""}
+        </p>
         {p.productId ? (
           <Button asChild size="sm" variant="secondary">
             <Link href={`/studio/products/${encodeURIComponent(p.productId)}`}>Open the product</Link>
@@ -340,8 +348,17 @@ function EditLoader({ id }: { id: string }) {
   if (failure && !proposalQ.data) return <EmptyState title="This suggestion couldn't load" body={errorMessage(failure)} />
   if (!proposalQ.data || !productsQ.data || !collectionsQ.data || shippingQ.isLoading || !brand) return <ProductEditorSkeleton />
   const p = proposalQ.data.proposal
+  if (p.id !== id) return <ReplacedRedirect to={`${hrefOf(p.id)}/edit`} />
   if (p.status !== "pending") return <EmptyState title="This suggestion was already answered" action={<Button asChild size="sm" variant="secondary"><Link href={hrefOf(id)}>Open it</Link></Button>} />
   return <ProposalEditor p={p} brand={brand} products={productsQ.data} collections={collectionsQ.data} memberId={member!.id} />
+}
+
+function ReplacedRedirect({ to }: { to: string }) {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace(to)
+  }, [router, to])
+  return <ProductEditorSkeleton />
 }
 
 function ProposalEditor({ p, brand, products, collections, memberId }: { p: ProposalDetailDto; brand: ReturnType<typeof liveBrand>; products: Awaited<ReturnType<typeof loadStudioProductDtos>>; collections: Awaited<ReturnType<typeof loadStudioCollections>>; memberId: string }) {
@@ -374,7 +391,8 @@ function ProposalEditor({ p, brand, products, collections, memberId }: { p: Prop
       backHref: hrefOf(p.id),
       backLabel: "Suggestion",
       saveLabel: "Save and accept",
-      publishNote: p.kind === "new" ? "Saving adds it to your catalogue and publishes it." : "Saving applies your version. It keeps the product's current status.",
+      publishNote: p.kind === "new" ? (p.willPublish ? "Saving adds it to your catalogue and publishes it." : "Saving adds it to your catalogue as a draft. Publish it once your brand can publish.") : "Saving applies your version. It keeps the product's current status.",
+      stockDelta: p.stockDelta,
       prefill,
       submit,
     },
