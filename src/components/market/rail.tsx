@@ -103,12 +103,18 @@ export function Rail({
         className={cn(
           "rail -mx-4 flex gap-3 px-4 pb-2 sm:gap-4 md:-mx-8 md:px-8",
           moving ? "touch-pan-y touch-pinch-zoom overflow-x-clip select-none data-[dragging=true]:cursor-grabbing" : "snap-x snap-mandatory scroll-px-4 overflow-x-auto md:scroll-px-8",
+          // Plain rails: an end with more cards beyond it fades across the rail's gutter bleed,
+          // so a cut card reads as "more this way" rather than clipped; an end that is reached
+          // goes sharp. Only flips at the ends (a mask, no layout), never per scroll frame.
+          !moving &&
+            "[--rail-fade:16px] [mask-image:linear-gradient(to_right,transparent,#000_var(--fade-l),#000_calc(100%-var(--fade-r)),transparent)] md:[--rail-fade:32px]",
           // Marquee rails: the items size against the rail (cqw), and the ends fade across the
           // rail's own padding (its bleed into the gutter), so cards ease out of view instead of
           // being cut at the edge. A caller beside another column leaves that much gap for it.
           marquee &&
             "@container -mt-2 pt-2 [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)] md:[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]",
         )}
+        style={moving ? undefined : ({ "--fade-l": edges.start ? "0px" : "var(--rail-fade)", "--fade-r": edges.end ? "0px" : "var(--rail-fade)" } as React.CSSProperties)}
         {...(moving ? m.viewportProps : {})}
       >
         {/* A plain rail lays the items straight into the scroller (display: contents); the

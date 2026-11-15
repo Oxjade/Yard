@@ -82,6 +82,7 @@ export function MobileTabBar() {
     // Hidden, it drops by its own height plus the pin's rise and shadow, so nothing peeks over the edge.
     <nav
       aria-label="Primary"
+      data-tabbar=""
       onFocusCapture={show}
       className={cn(
         "pointer-events-none fixed inset-x-0 bottom-0 flex justify-center pb-[max(0.875rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out-quint motion-reduce:transition-none lg:hidden print:hidden",
@@ -178,12 +179,20 @@ function Pill() {
   return <motion.span layoutId="tab-pill" aria-hidden className="absolute inset-0 -z-10 rounded-full bg-purple" transition={spring.indicator} />
 }
 
-/** Icon plus label when active (the label is screen-reader-only below 380px); icon alone otherwise. */
+/**
+ * Icon plus label when active (the label is screen-reader-only below 380px); icon alone otherwise.
+ * The icon is keyed on `active`, so a tab that becomes active (a tap, or the drawer or overlay
+ * opening) lands with a small settle as its icon fills: the press's release, felt in the icon.
+ * Never on first paint, and transform only (stripped under reduced motion).
+ */
 function TabFace({ icon: I, label, active }: { icon: Icon; label: string; active: boolean }) {
+  const hydrated = useHydrated()
   return (
     <>
       {active ? <Pill /> : null}
-      <I className="size-[22px] shrink-0" weight={active ? "fill" : "regular"} aria-hidden />
+      <motion.span key={active ? "on" : "off"} initial={active && hydrated ? { scale: 0.8 } : false} animate={{ scale: 1 }} transition={transition.badge} className="inline-flex shrink-0">
+        <I className="size-[22px]" weight={active ? "fill" : "regular"} aria-hidden />
+      </motion.span>
       <span className={cn(active ? "ml-1 text-[13px] font-medium whitespace-nowrap max-[379px]:sr-only" : "sr-only")}>{label}</span>
     </>
   )

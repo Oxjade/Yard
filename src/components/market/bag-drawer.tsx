@@ -4,7 +4,7 @@ import { useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/react"
-import { AnimatePresence, motion } from "motion/react"
+import { AnimatePresence, motion, useDragControls, type PanInfo } from "motion/react"
 import { spring, transition } from "@/lib/motion"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,9 @@ import { useShippingQuote } from "./delivery/use-shipping-quote"
 export const bagButton = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label^="Cart,"], nav[aria-label="Primary"] button[aria-label^="Cart,"]')).find(canTakeFocus)
 
 /**
- * The cart drawer: a floating Liquid Glass panel that springs in from the right. On close,
+ * The cart drawer: a floating Liquid Glass panel that springs in from the right. Its header is a
+ * handle: swipe it to the right to put the drawer away (the same distance and flick speed as
+ * PhoneSheet's drag down); the close button, Escape and an outside press still work. On close,
  * focus goes back to what opened it (the Cart button in the header or the home bar, a product's
  * "View cart"), or to the visible Cart button when that control has gone (the "Added to cart"
  * bubble, a toast's action).
@@ -47,6 +49,10 @@ export function BagDrawer() {
   const bag = priceCart(lines, shipTo, currency, quote.quotes)
   const quoteFailed = !quote.isLoading && !!quote.error
   const count = bagCount(lines)
+  const drag = useDragControls()
+  const onDragEnd = (_: unknown, info: PanInfo) => {
+    if (info.offset.x > 96 || info.velocity.x > 600) setOpen(false)
+  }
   const close = () => setOpen(false)
   const focus = useFocusReturn(bagButton)
   // Removing the last line moves focus to the empty state's title (see BagGroups).
@@ -82,9 +88,21 @@ export function BagDrawer() {
                 animate={{ x: 0 }}
                 exit={{ x: "105%" }}
                 transition={transition.sheet}
+                drag="x"
+                dragControls={drag}
+                dragListener={false}
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={{ left: 0, right: 0.7 }}
+                onDragEnd={onDragEnd}
               >
                 {focus.probe}
-                <header className="flex items-center justify-between px-5 pt-5 pb-4">
+                <header
+                  className="flex touch-pan-y items-center justify-between px-5 pt-5 pb-4 select-none"
+                  onPointerDown={(e) => {
+                    if ((e.target as Element).closest("button, a")) return
+                    drag.start(e)
+                  }}
+                >
                   <DialogPrimitive.Title className="flex items-baseline gap-2">
                     <span className="font-display text-display-sm">Cart</span>
                     <span className="inline-flex text-sm text-ink-2 tabular">
@@ -93,7 +111,7 @@ export function BagDrawer() {
                       &nbsp;{count === 1 ? "item" : "items"}
                     </span>
                   </DialogPrimitive.Title>
-                  <DialogPrimitive.Close className="press inline-flex size-9 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close cart">
+                  <DialogPrimitive.Close className="press -mr-1 inline-flex size-10 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close cart">
                     <X className="size-5" />
                   </DialogPrimitive.Close>
                 </header>
@@ -135,7 +153,7 @@ export function BagDrawer() {
                       <BagGroups groups={bag.groups} currency={currency} compact onNavigate={close} focusWhenEmpty={emptyTitle} />
                       <BrandDeliveryList groups={bag.groups} state={quote} className="mt-4 px-1" title="Estimated delivery by brand" />
                     </div>
-                    <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-5">
+                    <footer data-toast-avoid="" className="border-t border-white/8 bg-black/20 px-5 pt-4 pb-[max(1.25rem,calc(env(safe-area-inset-bottom)-0.5rem))]">
                       <dl className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3 text-ink-2">
                           <dt>Subtotal</dt>

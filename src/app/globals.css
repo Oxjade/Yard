@@ -254,6 +254,8 @@
      bars, toasts and the PDP gallery budget use these instead of their own numbers. */
   --tabbar-top: calc(max(0.875rem, env(safe-area-inset-bottom)) + 3.625rem);
   --tabbar-clear: calc(var(--tabbar-top) + 1.75rem);
+  /* Where those bars sit while the home bar is slid away: just above the home indicator. */
+  --tabbar-clear-low: calc(max(0.875rem, env(safe-area-inset-bottom)) + 0.25rem);
 }
 
 /* Phones, while the header and home bar are slid away on a scroll down (chrome-autohide.ts):
@@ -261,8 +263,38 @@
    rise again with the bar (they transition `bottom`). */
 @media (max-width: 47.99rem) {
   :root[data-chrome-hidden] {
-    --tabbar-clear: calc(max(0.875rem, env(safe-area-inset-bottom)) + 0.25rem);
+    --tabbar-clear: var(--tabbar-clear-low);
   }
+}
+
+/* Phones and tablets: keyboard focus, anchor jumps and scrollIntoView stop clear of the floating
+   header, and of the home bar where there is one, instead of landing underneath them. */
+@media (max-width: 63.99rem) {
+  html {
+    scroll-padding-top: 5rem;
+  }
+  html:has(nav[data-tabbar]) {
+    scroll-padding-bottom: var(--tabbar-clear);
+  }
+}
+
+/* Side padding for fixed chrome that spans the screen (the marketplace header): the page gutter,
+   or the landscape notch and rounded corners where those are wider. Set --gutter per breakpoint. */
+@utility gutter-safe {
+  padding-left: max(var(--gutter, 1rem), env(safe-area-inset-left));
+  padding-right: max(var(--gutter, 1rem), env(safe-area-inset-right));
+}
+
+/* A floating action bar that rides on the phone home bar (the product page's add to cart,
+   "Filter and sort", the cart's checkout bar). It is placed at the low position and lifted by
+   `translate`, so following the home bar down and up is a compositor-only move on the same
+   300ms ease as the bar itself, never a `bottom` animation that re-lays out every frame. It
+   composes with Motion's own enter/exit (`transform`). */
+@utility tabbar-float {
+  position: fixed;
+  bottom: var(--tabbar-clear-low);
+  translate: 0 calc(var(--tabbar-clear-low) - var(--tabbar-clear));
+  transition: translate var(--dur-drawer) var(--ease-out-quint);
 }
 
 /* Phones: iOS Safari zooms the page in when a field under 16px gets focus, and doesn't zoom back
@@ -284,10 +316,17 @@
     @apply bg-obsidian font-sans text-ink antialiased;
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
+    /* Text size stays as set when a phone turns to landscape (iOS would otherwise enlarge it). */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   body {
     @apply min-h-dvh bg-obsidian text-ink;
     font-feature-settings: "ss01" 0;
+    /* The page runs edge to edge (viewport-fit=cover, app/layout.tsx), so in landscape the
+       page's own content steps in from the notch and the rounded corners; fixed chrome takes
+       its own insets. Zero everywhere else. */
+    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }
   ::selection {
     background: #6d19d9;

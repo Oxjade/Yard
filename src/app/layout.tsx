@@ -47,6 +47,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#080808",
   colorScheme: "dark",
+  // Edge to edge on notched phones, so the env(safe-area-inset-*) paddings the home bar, sheets,
+  // header and page body already carry take effect (without it they all read 0 and Safari
+  // letterboxes the page in landscape).
+  viewportFit: "cover",
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

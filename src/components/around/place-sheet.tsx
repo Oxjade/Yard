@@ -52,6 +52,7 @@ export function PlaceSheet({
       <SheetContent
         side="bottom"
         showCloseButton
+        dragToDismiss={false}
         className={cn("gap-0 overflow-hidden rounded-t-2xl border-white/10 bg-[var(--glass-bg-strong)] p-0 backdrop-blur-xl transition-[height] duration-300 motion-reduce:transition-none lg:inset-x-auto lg:right-1/2 lg:w-[560px] lg:translate-x-1/2 lg:rounded-2xl lg:border", expanded ? "h-[92dvh] data-[side=bottom]:h-[92dvh]" : "h-[64dvh] data-[side=bottom]:h-[64dvh]")}
       >
         <SheetTitle className="sr-only">{p ? `${p.brand.name}, ${p.name}` : "Place"}</SheetTitle>

@@ -183,7 +183,7 @@ export function ReportSheet({ open, onOpenChange, subjectType, subjectId, as, su
               )}
             </div>
           </div>
-          <SheetFooter className="gap-2 border-t border-line-soft p-4 md:p-5">
+          <SheetFooter className="gap-2 border-t border-line-soft p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-5 md:pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             {errors.form ? (
               <p role="alert" className="text-xs text-danger">
                 {errors.form}

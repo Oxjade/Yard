@@ -81,6 +81,13 @@ All shared values live in `src/app/globals.css`:
   `flyToCart()` sends the added piece's photograph into the Cart once the server accepted the
   add, `step-pop` / `step-fill` fill order progress in sequence, and `scroll-reveal` raises
   Discover sections on a scroll timeline (CSS only).
+- **Phones** — the page is edge to edge (`viewport-fit=cover`), so `env(safe-area-inset-*)`
+  is live: the body steps in from the landscape notch, fixed chrome takes its own insets
+  (`gutter-safe` for the header). Floating bars that ride the home bar (PDP add to cart,
+  "Filter and sort", the cart's checkout bar) use `tabbar-float`: placed low and lifted by
+  `translate`, so they follow the home bar on the compositor. Bottom sheets (`SheetContent
+  side="bottom"`, `PhoneSheet`) close when dragged down by their handle; the cart drawer when its
+  header is swiped right. Rails fade at an edge with more beyond it.
 
 ## Code map
 

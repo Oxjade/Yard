@@ -108,16 +108,18 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
     <header
       onFocusCapture={show}
       className={cn(
-        "pointer-events-none fixed inset-x-0 top-0 z-40 transition-transform duration-300 ease-out-quint motion-reduce:transition-none print:hidden",
+        "pointer-events-none fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] transition-transform duration-300 ease-out-quint motion-reduce:transition-none print:hidden",
         hidden && "-translate-y-full",
         solid && "pointer-events-auto border-b border-line-soft bg-obsidian",
         className,
       )}
     >
-      {/* Legibility fade — sits behind the floating items, never boxes them */}
-      {solid ? null : <div aria-hidden className={cn("absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-obsidian/80 via-obsidian/35 to-transparent transition-opacity duration-300", scrolled ? "opacity-100" : "opacity-60")} />}
+      {/* Legibility fade — sits behind the floating items, never boxes them. On phones it is
+          only for the top of the page: once scrolled, each group has its own glass, and a fade
+          across the full width would read as a black band over colour sections. */}
+      {solid ? null : <div aria-hidden className={cn("absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-obsidian/80 via-obsidian/35 to-transparent transition-opacity duration-300", scrolled ? "opacity-100 max-md:opacity-0" : "opacity-60")} />}
 
-      <div className="relative mx-auto flex h-[4.5rem] max-w-page items-center gap-6 px-4 md:px-8">
+      <div className="gutter-safe relative mx-auto flex h-[4.5rem] max-w-page items-center gap-6 md:[--gutter:2rem]">
         {/* The wordmark and links: the same positions as without the backdrop (padding offset by
             margin). Its pill overhangs the gutter by as much as the icon pill does on the right
             (8px on phones, 12px from md), so the pair sits evenly between the screen edges. */}

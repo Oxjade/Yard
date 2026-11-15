@@ -265,11 +265,11 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
               {brand.verified ? <BadgeCheck className="size-4 shrink-0 text-violet" aria-label="Verified brand" /> : null}
               {brand.foundingBadge ? <FoundingBadge compact className="max-sm:hidden" /> : null}
             </Link>
-            <div className="col-start-3 row-start-1 flex items-center gap-3">
+            <div className="col-start-3 row-start-1 flex items-center gap-3 max-[359px]:gap-2">
               {/* 40px icon with the tooltip "Message {brand}"; the brand's own Studio members see "Open Studio inbox". */}
               <MessageBrandButton brand={brand} productId={product.id} variantId={sel.variant?.id ?? null} variant="icon" className="max-lg:size-10" />
               {/* 40px on phones and tablets; the compact size beside the desktop buy box. */}
-              <FollowButton brandId={brand.id} brandName={brand.name} size="sm" className="max-lg:h-10 max-lg:px-4" />
+              <FollowButton brandId={brand.id} brandName={brand.name} size="sm" className="max-lg:h-10 max-lg:px-4 max-[359px]:px-3" />
             </div>
             <span className="col-start-2 col-end-4 row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 self-start text-xs text-ink-2">
               <span className="truncate">
@@ -444,10 +444,10 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={spring.snappy}
-            className="fixed inset-x-0 bottom-(--tabbar-clear) z-30 transition-[bottom] duration-300 ease-out-quint motion-reduce:transition-none px-3 lg:hidden"
+            className="tabbar-float inset-x-0 z-30 px-3 lg:hidden"
           >
-            <div className="glass glass-sheen mx-auto flex max-w-md items-center gap-3 rounded-2xl p-2">
-              <div className="relative h-12 w-10 shrink-0 overflow-hidden rounded-md bg-card">
+            <div className="glass-bar mx-auto flex max-w-md items-center gap-3 rounded-2xl p-2 [--glass-fill:rgba(10,10,10,0.78)]">
+              <div className="relative h-12 w-10 shrink-0 overflow-hidden rounded-[10px] bg-card ring-1 ring-white/10">
                 <Image src={product.images[0].src} alt="" fill sizes="40px" className="object-cover" />
               </div>
               <div className="min-w-0 flex-1">
