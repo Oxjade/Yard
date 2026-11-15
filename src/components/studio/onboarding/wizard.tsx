@@ -208,13 +208,16 @@ function Wizard() {
       </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
-        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 overflow-y-auto rounded-t-2xl border-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]" {...previewFocus}>
-          <SheetHeader className="pr-12">
-            <SheetTitle>Storefront preview</SheetTitle>
-            <SheetDescription>How shoppers will see your storefront so far.</SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-2">
-            <StorefrontPreview data={data} />
+        {/* The body scrolls, not the sheet, so the grab handle and the glass rim stay at the top. */}
+        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 overflow-hidden rounded-t-2xl border-white/10" {...previewFocus}>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <SheetHeader className="pr-12">
+              <SheetTitle>Storefront preview</SheetTitle>
+              <SheetDescription>How shoppers will see your storefront so far.</SheetDescription>
+            </SheetHeader>
+            <div className="px-4 pb-2">
+              <StorefrontPreview data={data} />
+            </div>
           </div>
         </SheetContent>
       </Sheet>

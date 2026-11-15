@@ -108,6 +108,10 @@ function useDragToDismiss() {
  * Bottom sheets carry a grab handle and close when dragged down (useDragToDismiss), like the
  * marketplace's PhoneSheet. A sheet with its own handle (the Around place sheet) passes
  * `dragToDismiss={false}`. Escape, the close button and an outside press still close it.
+ *
+ * Content longer than the screen scrolls in an inner body (`min-h-0 flex-1 overflow-y-auto`) on
+ * a sheet given `overflow-hidden`, never on SheetContent itself: the grab handle and the glass
+ * rim are placed on the sheet and would scroll away with its content.
  */
 function SheetContent({
   className,
@@ -115,6 +119,7 @@ function SheetContent({
   side = "right",
   showCloseButton = true,
   dragToDismiss = side === "bottom",
+  opaque = false,
   returnFocus,
   onCloseAutoFocus,
   ...props
@@ -123,6 +128,12 @@ function SheetContent({
   showCloseButton?: boolean
   /** A grab handle that closes the sheet when dragged down (bottom sheets: on by default). */
   dragToDismiss?: boolean
+  /**
+   * An opaque surface instead of glass: no backdrop blur (`glass-opaque`). Pass it whenever the
+   * sheet paints its own solid background (bg-surface and the like) or covers most of the screen,
+   * so the blur doesn't run on every animation frame with nothing to show.
+   */
+  opaque?: boolean
   /** Where focus goes on close when the control that opened the sheet is gone or disabled. */
   returnFocus?: ReturnFocus
 }) {
@@ -139,6 +150,7 @@ function SheetContent({
         data-side={side}
         className={cn(
           "glass-sheet fixed z-50 flex flex-col gap-4 overscroll-contain text-sm text-popover-foreground transition data-open:duration-300 data-closed:duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
+          opaque && "glass-opaque",
           className
         )}
         {...props}

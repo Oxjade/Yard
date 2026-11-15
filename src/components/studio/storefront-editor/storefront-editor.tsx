@@ -839,34 +839,38 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
 
       {mode === "server" ? (
         <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-          <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-lg">
-            <SheetHeader className="border-b border-line-soft pb-4">
-              <SheetTitle>Version history</SheetTitle>
-              <SheetDescription>Review a published version, or copy it into your draft. Restoring never publishes by itself.</SheetDescription>
-            </SheetHeader>
-            <div className="grid gap-3 py-5">
-              {versions.map((version) => (
-                <div key={version.version} className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft pb-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink">Version {version.version}{version.version === liveVersion.current ? " · Live" : ""}</p>
-                    <p className="text-xs text-ink-2">{formatDateTime(version.publishedAt)}{version.note ? ` · ${version.note}` : ""}</p>
+          {/* Opaque, like the other full-height Studio sheets; the body scrolls, not the sheet,
+              so the glass rim stays put. */}
+          <SheetContent opaque side="right" className="w-full gap-0 overflow-hidden bg-surface sm:max-w-lg">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <SheetHeader className="border-b border-line-soft pb-4">
+                <SheetTitle>Version history</SheetTitle>
+                <SheetDescription>Review a published version, or copy it into your draft. Restoring never publishes by itself.</SheetDescription>
+              </SheetHeader>
+              <div className="grid gap-3 py-5">
+                {versions.map((version) => (
+                  <div key={version.version} className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft pb-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink">Version {version.version}{version.version === liveVersion.current ? " · Live" : ""}</p>
+                      <p className="text-xs text-ink-2">{formatDateTime(version.publishedAt)}{version.note ? ` · ${version.note}` : ""}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="secondary" size="sm" loading={historyLoading && historySelection?.version === version.version} onClick={() => void selectVersion(version.version)}>Review</Button>
+                      {canEdit ? <Button type="button" variant="secondary" size="sm" disabled={!!conflictMessage} onClick={() => void restoreVersion(version.version)}>Restore</Button> : null}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button type="button" variant="secondary" size="sm" loading={historyLoading && historySelection?.version === version.version} onClick={() => void selectVersion(version.version)}>Review</Button>
-                    {canEdit ? <Button type="button" variant="secondary" size="sm" disabled={!!conflictMessage} onClick={() => void restoreVersion(version.version)}>Restore</Button> : null}
-                  </div>
-                </div>
-              ))}
-              {!versions.length ? <p className="text-sm text-ink-2">No published versions yet.</p> : null}
-              {historySelection ? (
-                <section aria-label={`Version ${historySelection.version} preview`} className="mt-3 grid gap-2 border-t border-line-soft pt-4">
-                  <h3 className="text-sm font-medium text-ink">Version {historySelection.version} preview</h3>
-                  <p className="text-xs text-ink-2">Published {formatDateTime(historySelection.publishedAt)}{historySelection.note ? ` · ${historySelection.note}` : ""}</p>
-                  <p className="text-sm text-ink-2">{historySelection.config.intro || "No introduction"}</p>
-                  <p className="text-xs text-ink-3">{historySelection.config.sections.filter((section) => section.enabled).map((section) => section.title ?? section.type).join(" · ") || "No visible sections"}</p>
-                  {canEdit ? <Button type="button" variant="primary" size="sm" className="mt-2 w-fit" disabled={!!conflictMessage} onClick={() => void restoreVersion(historySelection.version)}>Restore this version</Button> : null}
-                </section>
-              ) : null}
+                ))}
+                {!versions.length ? <p className="text-sm text-ink-2">No published versions yet.</p> : null}
+                {historySelection ? (
+                  <section aria-label={`Version ${historySelection.version} preview`} className="mt-3 grid gap-2 border-t border-line-soft pt-4">
+                    <h3 className="text-sm font-medium text-ink">Version {historySelection.version} preview</h3>
+                    <p className="text-xs text-ink-2">Published {formatDateTime(historySelection.publishedAt)}{historySelection.note ? ` · ${historySelection.note}` : ""}</p>
+                    <p className="text-sm text-ink-2">{historySelection.config.intro || "No introduction"}</p>
+                    <p className="text-xs text-ink-3">{historySelection.config.sections.filter((section) => section.enabled).map((section) => section.title ?? section.type).join(" · ") || "No visible sections"}</p>
+                    {canEdit ? <Button type="button" variant="primary" size="sm" className="mt-2 w-fit" disabled={!!conflictMessage} onClick={() => void restoreVersion(historySelection.version)}>Restore this version</Button> : null}
+                  </section>
+                ) : null}
+              </div>
             </div>
           </SheetContent>
         </Sheet>

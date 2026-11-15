@@ -241,7 +241,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
               opening ? (
                 <OpeningSoonTag />
               ) : productSoldOut ? (
-                <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span>
+                <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink">Sold out</span>
               ) : overlayBadge ? (
                 <ProductBadge kind={overlayBadge} />
               ) : null

@@ -65,7 +65,7 @@ export function StudioSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className={cn("gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]", className)}>
+      <SheetContent opaque side="right" className={cn("gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]", className)}>
         <SheetHeader className="gap-1 border-b border-line-soft p-4 pr-12 md:p-5 md:pr-12">
           <SheetTitle className="text-[15px] text-ink">{title}</SheetTitle>
           {description ? <SheetDescription className="text-xs text-ink-2">{description}</SheetDescription> : null}

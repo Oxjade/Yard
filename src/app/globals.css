@@ -267,12 +267,11 @@
   }
 }
 
-/* Phones and tablets: keyboard focus, anchor jumps and scrollIntoView stop clear of the floating
-   header, and of the home bar where there is one, instead of landing underneath them. */
+/* Phones and tablets: keyboard focus and scrollIntoView stop clear of the home bar where there is
+   one, instead of landing underneath it. No scroll-padding-top: it would add to the scroll-mt-*
+   that every anchor and scroll target already carries to clear the header (scroll padding and
+   scroll margin sum), and leave those 80px lower than the header needs. */
 @media (max-width: 63.99rem) {
-  html {
-    scroll-padding-top: 5rem;
-  }
   html:has(nav[data-tabbar]) {
     scroll-padding-bottom: var(--tabbar-clear);
   }
@@ -430,8 +429,24 @@
       linear-gradient(#000 0 0) content-box exclude,
       linear-gradient(#000 0 0);
   }
+  /* A glass surface that is itself the scroller (menus, selects, long dialogs): the ::before rim,
+     placed absolutely, would scroll with the content, taking the lit top edge out of view and
+     leaving the rest of the rim as a stray line partway down. These draw the rim as inset
+     shadows, which are painted on the box and stay put. (Tailwind's overflow classes are matched
+     by name, so a scrolling glass surface needs no extra class.) */
+  :is(.glass, .glass-strong, .glass-bar, .glass-panel, .glass-menu, .glass-sheet):is(.overflow-auto, .overflow-scroll, .overflow-y-auto, .overflow-y-scroll) {
+    box-shadow:
+      inset 0 1px 0 var(--glass-rim),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+      var(--glass-depth);
+  }
+  :is(.glass, .glass-strong, .glass-bar, .glass-panel, .glass-menu, .glass-sheet):is(.overflow-auto, .overflow-scroll, .overflow-y-auto, .overflow-y-scroll)::before {
+    content: none;
+  }
+  /* Small chips over photographs ("Sold out", counters): dense enough that 11px type on them
+     stays readable over a white studio photo, which the blur keeps light. */
   .glass {
-    --glass-fill: rgba(18, 18, 18, 0.62);
+    --glass-fill: rgba(18, 18, 18, 0.74);
     --glass-rim: rgba(255, 255, 255, 0.14);
   }
   .glass-strong,
@@ -461,6 +476,14 @@
     --glass-blur: 24px;
     --glass-rim: rgba(255, 255, 255, 0.15);
     --glass-depth: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+  /* A glass overlay that paints an opaque surface (sheets passing `opaque`, usually with
+     bg-surface): no backdrop to show through, so no blur running on every frame of its open, close
+     and drag animations over a screen-sized area. The rim and the depth stay. */
+  .glass-opaque {
+    --glass-fill: var(--glass-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   /* A brighter top edge, for the largest floating surfaces (drawers, the search overlay). */
   .glass-sheen {
@@ -723,14 +746,21 @@ img[data-fade="in"] {
   }
 }
 
-/* Studio and Admin headline figures (StatCard): the card answers the pointer as a whole. It
-   rises 2px and its edge brightens while hovered (no shadow animates), and its round arrow (the link) fills, so the
-   card reads as the way into its detail page. Fine pointers only: a tap goes straight through.
+/* Studio and Admin headline figures (StatCard): the card is the way into its detail page as a
+   whole (the arrow's link is stretched over it). It rises 2px and its edge brightens while
+   hovered (no shadow animates), and its round arrow fills; keyboard focus on the link lifts it the
+   same way. Hover on fine pointers only: a tap goes straight through.
    Unlayered, so the hover edge wins over the card's own border and shadow utilities. */
 .tile-lift {
   transition:
     translate var(--dur-drawer) var(--ease-settle),
     border-color var(--dur-hover) var(--ease-out-quint);
+}
+.tile-lift:has(:focus-visible) {
+  translate: 0 -2px;
+}
+.tile-lift:not(.tile-filled):has(:focus-visible) {
+  border-color: rgba(255, 255, 255, 0.13);
 }
 @media (hover: hover) and (pointer: fine) {
   .tile-lift:hover {

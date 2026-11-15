@@ -87,7 +87,7 @@ export function Filters({ filters, results, noun, singular, onClear }: { filters
             {active ? <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple px-1.5 text-[11px] tabular">{active}</span> : null}
           </Button>
         </SheetTrigger>
-        <SheetContent side="bottom" className="gap-0 rounded-t-2xl border-white/10 bg-[#0c0c0c] pb-[env(safe-area-inset-bottom)]">
+        <SheetContent opaque side="bottom" className="gap-0 rounded-t-2xl border-white/10 bg-[#0c0c0c] pb-[env(safe-area-inset-bottom)]">
           <SheetHeader className="px-4 pt-4 pb-2">
             <SheetTitle className="font-label text-[15px] text-ink">Filter {noun}</SheetTitle>
             <SheetDescription className="text-[12px] text-ink-2">Changes apply straight away.</SheetDescription>

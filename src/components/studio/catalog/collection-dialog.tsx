@@ -52,7 +52,7 @@ export function CollectionDialog(props: CollectionDialogProps) {
   const { open, onOpenChange, collection } = props
   return (
     <Sheet open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <SheetContent side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[560px]">
+      <SheetContent opaque side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[560px]">
         {open ? <CollectionForm key={`${collection?.id ?? "new"}:${collection?.version ?? 0}`} {...props} pending={pending} setPending={setPending} /> : null}
       </SheetContent>
     </Sheet>

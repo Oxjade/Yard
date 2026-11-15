@@ -22,5 +22,5 @@ export function FoundingBadge({ compact = false, className }: { compact?: boolea
 
 /** "Opening soon": a founding brand that's visible on Yard but not selling yet. */
 export function OpeningSoonTag({ className }: { className?: string }) {
-  return <span className={cn("glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] whitespace-nowrap text-ink-2", className)}>Opening soon</span>
+  return <span className={cn("glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] whitespace-nowrap text-ink", className)}>Opening soon</span>
 }

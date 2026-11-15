@@ -8,15 +8,19 @@ import type { ChipOn } from "./delta-chip"
  * the hit area extends past the circle so it is easy to tap on a phone. (The pseudo
  * element is placed against the padding box, inside the 1px border, so it reaches
  * 7px out: 26 + 2 × 7 = 40.)
+ *
+ * `stretch`: the hit area covers the whole of the nearest positioned ancestor instead (a card
+ * that is the way in as a whole, like StatCard). The link is then left unpositioned and its
+ * ::after spans the card; anything else interactive in the card sits above it (`relative z-1`).
  */
-export function ArrowLink({ href, label, on = "dark", className }: { href: string; label: string; on?: ChipOn; className?: string }) {
+export function ArrowLink({ href, label, on = "dark", stretch = false, className }: { href: string; label: string; on?: ChipOn; stretch?: boolean; className?: string }) {
   return (
     <Link
       href={href}
       aria-label={label}
       className={cn(
-        "group/arrow relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[background-color,border-color,color] duration-150 ease-out-quint",
-        "before:absolute before:-inset-[7px] before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2",
+        "group/arrow inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[background-color,border-color,color] duration-150 ease-out-quint focus-visible:outline-2 focus-visible:outline-offset-2",
+        stretch ? "after:absolute after:inset-0 after:rounded-[inherit] after:content-['']" : "relative before:absolute before:-inset-[7px] before:content-['']",
         on === "acid"
           ? "border-obsidian bg-obsidian text-acid hover:bg-obsidian/85 focus-visible:outline-obsidian"
           : on === "brand"

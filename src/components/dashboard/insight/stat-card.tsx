@@ -21,7 +21,8 @@ const tileHover = {
  * `brand` (purple) and `acid` fills are for the single most important card of each kind
  * on a page. Until `ready`, a same-size skeleton holds the numeral's place (and the change
  * chip waits), so a figure that is still loading never reads as 0.
- * Hovered with a mouse, the card rises 2px (`tile-lift`) and lights its arrow.
+ * The whole card opens `href` (the arrow's hit area is stretched over it). Hovered with a mouse, or
+ * with keyboard focus on the arrow, the card rises 2px (`tile-lift`) and lights its arrow.
  */
 export function StatCard({
   icon: Icon,
@@ -76,8 +77,9 @@ export function StatCard({
           <Icon aria-hidden className="size-4 shrink-0" />
           <span className="line-clamp-2 leading-[14px] text-balance">{label}</span>
         </h3>
-        {/* The arrow is the link; hovering anywhere on the card lights it, so the whole card reads as the way in. */}
-        <ArrowLink href={href} label={hrefLabel ?? `Open ${label.toLowerCase()}`} on={on} className={tileHover[on]} />
+        {/* The arrow is the link, and its hit area is stretched over the whole card (`stretch`):
+            the card lifts and lights the arrow on hover, and a click anywhere on it opens the page. */}
+        <ArrowLink href={href} label={hrefLabel ?? `Open ${label.toLowerCase()}`} on={on} stretch className={cn("after:rounded-[20px]", tileHover[on])} />
       </div>
       <div className="mt-5 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2">
         {ready ? (
@@ -89,7 +91,8 @@ export function StatCard({
         )}
         {ready ? <DeltaChip value={delta} on={on} context={deltaContext} /> : null}
       </div>
-      {hint ? <p className={cn("mt-2 truncate text-[12px]", variant === "acid" ? "text-obsidian/65" : filled ? "text-ink/75" : "text-ink-3")}>{hint}</p> : null}
+      {/* Above the stretched link, so a hint's tooltip trigger still takes the pointer. */}
+      {hint ? <p className={cn("relative z-1 mt-2 truncate text-[12px]", variant === "acid" ? "text-obsidian/65" : filled ? "text-ink/75" : "text-ink-3")}>{hint}</p> : null}
     </article>
   )
 }

@@ -162,7 +162,7 @@ function InboxWorkspace() {
 
       {phone ? (
         <Sheet open={!!thread} onOpenChange={(o) => !o && writeParams({ thread: null })}>
-          <SheetContent side="right" showCloseButton={false} className="gap-0 bg-surface p-0 data-[side=right]:w-full data-[side=right]:max-w-none data-[side=right]:sm:max-w-none">
+          <SheetContent opaque side="right" showCloseButton={false} className="gap-0 bg-surface p-0 data-[side=right]:w-full data-[side=right]:max-w-none data-[side=right]:sm:max-w-none">
             <SheetHeader className="sr-only">
               <SheetTitle>Conversation</SheetTitle>
               <SheetDescription>Messages with this customer</SheetDescription>
@@ -174,7 +174,7 @@ function InboxWorkspace() {
 
       {!xl ? (
         <Sheet open={contextOpen && !!thread} onOpenChange={setContextOpen}>
-          <SheetContent side="right" className="gap-0 bg-surface data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]">
+          <SheetContent opaque side="right" className="gap-0 bg-surface data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]">
             <SheetHeader className="border-b border-line-soft">
               <SheetTitle>Customer</SheetTitle>
               <SheetDescription>Their history with {session.brand.name} only.</SheetDescription>

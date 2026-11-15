@@ -21,8 +21,14 @@ export default async function n({ base }) {
   const css = src("src/app/globals.css")
   add(/--tabbar-top: calc\(max\(0\.875rem, env\(safe-area-inset-bottom\)\) \+ 3\.625rem\)/.test(css) && /--tabbar-clear: calc\(var\(--tabbar-top\) \+ 1\.75rem\)/.test(css), "tabbar clearance tokens in globals.css")
   const offsets = ["src/components/market/catalog/catalog-listing.tsx", "src/components/market/brands/directory.tsx", "src/components/market/product/product-view.tsx", "src/components/market/checkout/bag-view.tsx"]
-  const stale = offsets.filter((f) => !src(f).includes("bottom-(--tabbar-clear)") || /4\.75rem\)\]|4\.125rem\)\]/.test(src(f)))
-  add(stale.length === 0, "floating bars sit at --tabbar-clear", stale.join(", "))
+  // A bar sits at --tabbar-clear either directly (bottom-(--tabbar-clear)) or through the
+  // tabbar-float utility (placed low and lifted by translate to --tabbar-clear, compositor-only).
+  const at = css.indexOf("@utility tabbar-float")
+  const floatUtil = at < 0 ? "" : css.slice(at, css.indexOf("}", at))
+  const floatOk = /bottom: var\(--tabbar-clear-low\)/.test(floatUtil) && /translate: 0 calc\(var\(--tabbar-clear-low\) - var\(--tabbar-clear\)\)/.test(floatUtil)
+  add(floatOk, "tabbar-float utility lifts its bar to --tabbar-clear", floatUtil ? "" : "no @utility tabbar-float in globals.css")
+  const stale = offsets.filter((f) => !/\btabbar-float\b|bottom-\(--tabbar-clear\)/.test(src(f)) || /4\.75rem\)\]|4\.125rem\)\]/.test(src(f)))
+  add(stale.length === 0, "floating bars sit at --tabbar-clear (tabbar-float or bottom-(--tabbar-clear))", stale.join(", "))
 
   // §7.2: the Cart rename regression grep prints only the allowed lines.
   let grep = ""

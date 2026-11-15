@@ -91,7 +91,7 @@ export function ProductCard({
           {/* The paid-placement disclosure sits with the badges, where the quick-add capsule
               (bottom right) can never cover it; on a narrow card it wraps under the badge. */}
           <div className="flex min-w-0 flex-wrap gap-1.5">
-            {opening ? <OpeningSoonTag /> : soldOut ? <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink-2">Sold out</span> : badge ? <ProductBadge kind={badge} /> : null}
+            {opening ? <OpeningSoonTag /> : soldOut ? <span className="glass inline-flex h-6 items-center rounded-[5px] px-2 text-[11px] text-ink">Sold out</span> : badge ? <ProductBadge kind={badge} /> : null}
             {sponsored ? <SponsoredTag /> : null}
           </div>
           <div className="pointer-events-auto">

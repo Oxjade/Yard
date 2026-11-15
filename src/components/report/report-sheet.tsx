@@ -119,7 +119,7 @@ export function ReportSheet({ open, onOpenChange, subjectType, subjectId, as, su
 
   return (
     <Sheet open={open} onOpenChange={close}>
-      <SheetContent side={side} className={cn("gap-0 border-line-soft bg-surface p-0", side === "right" ? "data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]" : "max-h-[88dvh] rounded-t-2xl")}>
+      <SheetContent opaque side={side} className={cn("gap-0 border-line-soft bg-surface p-0", side === "right" ? "data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]" : "max-h-[88dvh] rounded-t-2xl")}>
         <form onSubmit={send} noValidate className="flex min-h-0 flex-1 flex-col">
           <SheetHeader className="gap-1 border-b border-line-soft p-4 pr-12 md:p-5 md:pr-12">
             <SheetTitle className="text-[15px] text-ink">Report this {word}</SheetTitle>

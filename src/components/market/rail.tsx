@@ -101,7 +101,9 @@ export function Rail({
       <div
         ref={ref}
         className={cn(
-          "rail -mx-4 flex gap-3 px-4 pb-2 sm:gap-4 md:-mx-8 md:px-8",
+          // 8px of headroom above the cards (-mt-2 pt-2): a scroller clips both axes, and a
+          // hovered card's photo frame rises 4px (media-lift), which would cut its top edge.
+          "rail -mx-4 -mt-2 flex gap-3 px-4 pt-2 pb-2 sm:gap-4 md:-mx-8 md:px-8",
           moving ? "touch-pan-y touch-pinch-zoom overflow-x-clip select-none data-[dragging=true]:cursor-grabbing" : "snap-x snap-mandatory scroll-px-4 overflow-x-auto md:scroll-px-8",
           // Plain rails: an end with more cards beyond it fades across the rail's gutter bleed,
           // so a cut card reads as "more this way" rather than clipped; an end that is reached
@@ -112,7 +114,7 @@ export function Rail({
           // rail's own padding (its bleed into the gutter), so cards ease out of view instead of
           // being cut at the edge. A caller beside another column leaves that much gap for it.
           marquee &&
-            "@container -mt-2 pt-2 [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)] md:[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]",
+            "@container [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)] md:[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]",
         )}
         style={moving ? undefined : ({ "--fade-l": edges.start ? "0px" : "var(--rail-fade)", "--fade-r": edges.end ? "0px" : "var(--rail-fade)" } as React.CSSProperties)}
         {...(moving ? m.viewportProps : {})}

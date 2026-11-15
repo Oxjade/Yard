@@ -78,7 +78,7 @@ function LocateSheets({ state, onClose, onUse, onPick }: { state: SheetState; on
   const shown = state ?? last
   return (
     <Sheet open={!!state} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-2xl border-white/10 bg-[var(--glass-bg-strong)] backdrop-blur-xl lg:bottom-6 lg:rounded-2xl lg:border">
+      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-2xl lg:bottom-6 lg:rounded-2xl lg:border">
         {shown === "denied" ? (
           <>
             <SheetHeader className="pr-12">

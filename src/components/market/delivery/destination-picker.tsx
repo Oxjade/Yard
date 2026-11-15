@@ -58,7 +58,7 @@ export function DestinationPicker({ className }: { className?: string }) {
       <>
         <Trigger label={label} open={open} className={className} onClick={() => setOpen(true)} />
         <Sheet open={open} onOpenChange={setOpen}>
-          <SheetContent side="bottom" className="max-h-[88dvh] gap-0 overflow-hidden rounded-t-2xl border-line-soft bg-surface p-0">
+          <SheetContent opaque side="bottom" className="max-h-[88dvh] gap-0 overflow-hidden rounded-t-2xl border-line-soft bg-surface p-0">
             <SheetHeader className="shrink-0 border-b border-line-soft p-4 pr-12">
               <SheetTitle className="text-[15px] text-ink">Deliver to</SheetTitle>
               <SheetDescription className="text-xs text-ink-2">Estimates and shipping prices follow your choice.</SheetDescription>

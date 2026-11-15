@@ -200,7 +200,7 @@ function CropSheet({ picked, onCancel, onSave }: { picked: Picked | null; onCanc
   const p = picked ?? last
   return (
     <Sheet open={!!picked} onOpenChange={(o) => !o && onCancel()}>
-      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-2xl border-white/10 bg-[var(--glass-bg-strong)] backdrop-blur-xl lg:bottom-6 lg:rounded-2xl lg:border">
+      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-2xl lg:bottom-6 lg:rounded-2xl lg:border">
         <SheetHeader className="pr-12">
           <SheetTitle>Position your photo</SheetTitle>
           <SheetDescription className="text-ink-2">Drag to move it. Zoom to fit your face in the circle.</SheetDescription>

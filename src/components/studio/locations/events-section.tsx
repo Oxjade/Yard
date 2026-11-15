@@ -206,7 +206,7 @@ function EventSheet({ open, initial, eventId, loc, brandId, onClose, onSaved }: 
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]">
+      <SheetContent opaque side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]">
         <form noValidate onSubmit={save} className="flex min-h-0 flex-1 flex-col">
           <SheetHeader className="border-b border-line-soft p-4 pr-12 md:p-5 md:pr-12">
             <SheetTitle className="text-[15px] text-ink">{eventId ? "Edit event" : "Add event"}</SheetTitle>

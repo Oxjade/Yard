@@ -144,7 +144,7 @@ export function FiltersControl({ filters, onChange, distanceEnabled, resultCount
       <>
         {trigger}
         <Sheet open={open} onOpenChange={onOpenChange}>
-          <SheetContent side="bottom" className="max-h-[88dvh] rounded-t-2xl border-white/10 bg-[var(--glass-bg-strong)] backdrop-blur-xl">
+          <SheetContent side="bottom" className="max-h-[88dvh] rounded-t-2xl">
             <SheetHeader className="pr-12">
               <SheetTitle>Filters</SheetTitle>
               <SheetDescription className="text-ink-2">Narrow the map and the list.</SheetDescription>

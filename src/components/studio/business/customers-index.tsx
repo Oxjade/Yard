@@ -220,7 +220,7 @@ function CustomerSheet({ customer: c, cur, onClose }: { customer: BrandCustomer 
 
   return (
     <Sheet open={!!c} onOpenChange={(v) => (!v ? onClose() : undefined)}>
-      <SheetContent side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]" {...focus}>
+      <SheetContent opaque side="right" className="gap-0 border-line-soft bg-surface p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]" {...focus}>
         {shown ? (
           <>
             <SheetHeader className="gap-3 border-b border-line-soft p-4 pr-12 md:p-5 md:pr-12">
