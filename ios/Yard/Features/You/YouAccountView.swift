@@ -32,6 +32,30 @@ struct YouAccount: Decodable, Hashable, Sendable {
         }
     }
 
+    /// `photo`: the profile photo (one size, the uploaded square), or nil for initials.
+    struct Photo: Decodable, Hashable, Sendable {
+        let mediaId: String
+        let src: String
+        let width: Int?
+        let height: Int?
+
+        init(mediaId: String, src: String, width: Int? = nil, height: Int? = nil) {
+            self.mediaId = mediaId
+            self.src = src
+            self.width = width
+            self.height = height
+        }
+
+        enum CodingKeys: String, CodingKey { case mediaId, src, width, height }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            mediaId = c.lenient(.mediaId, "")
+            src = try c.decode(String.self, forKey: .src)
+            width = c.lenientOptional(.width)
+            height = c.lenientOptional(.height)
+        }
+    }
+
     let name: String
     let email: String
     let emailVerified: Bool
@@ -40,8 +64,9 @@ struct YouAccount: Decodable, Hashable, Sendable {
     let signInProviders: [String]
     let pendingEmail: PendingEmail?
     let demo: Bool
+    let photo: Photo?
 
-    init(name: String, email: String, emailVerified: Bool, hasPassword: Bool, signInProviders: [String], pendingEmail: PendingEmail?, demo: Bool) {
+    init(name: String, email: String, emailVerified: Bool, hasPassword: Bool, signInProviders: [String], pendingEmail: PendingEmail?, demo: Bool, photo: Photo? = nil) {
         self.name = name
         self.email = email
         self.emailVerified = emailVerified
@@ -49,9 +74,10 @@ struct YouAccount: Decodable, Hashable, Sendable {
         self.signInProviders = signInProviders
         self.pendingEmail = pendingEmail
         self.demo = demo
+        self.photo = photo
     }
 
-    enum CodingKeys: String, CodingKey { case name, email, emailVerified, hasPassword, signInProviders, pendingEmail, demo }
+    enum CodingKeys: String, CodingKey { case name, email, emailVerified, hasPassword, signInProviders, pendingEmail, demo, photo }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = c.lenient(.name, "")
@@ -61,6 +87,13 @@ struct YouAccount: Decodable, Hashable, Sendable {
         signInProviders = c.lenient(.signInProviders, [String]())
         pendingEmail = c.lenientOptional(.pendingEmail)
         demo = c.lenient(.demo, false)
+        photo = c.lenientOptional(.photo)
+    }
+
+    /// Initials for the avatar (the same rule as `Shopper.initials`).
+    var initials: String {
+        let letters = name.split(separator: " ").prefix(2).compactMap { $0.first }.map { String($0) }.joined()
+        return letters.isEmpty ? "Y" : letters.uppercased()
     }
 
     /// "Google and Apple" for the sign-in note.
@@ -147,6 +180,11 @@ final class YouAccountModel {
     }
 
     var trimmedName: String { nameDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The photo endpoints answer with the whole account: take it (keeps an unsaved name draft).
+    func apply(_ next: YouAccount) {
+        account = next
+    }
     var isNameDirty: Bool { trimmedName != (account?.name ?? "") }
 
     // MARK: Load
@@ -375,7 +413,7 @@ struct YouAccountView: View {
         @Bindable var bindable = model
         content
             .yardScreenBackground()
-            .navigationTitle("Name and email")
+            .navigationTitle("Your details")
             .navigationBarTitleDisplayMode(.inline)
             .task(id: session.shopper?.id) {
                 guard !isPreview, session.isSignedIn else { return }
@@ -444,6 +482,7 @@ struct YouAccountView: View {
     private func form(_ account: YouAccount) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
+                YouProfilePhotoSection(account: account) { next in model.apply(next) }
                 nameSection(account)
                 emailSection(account)
             }

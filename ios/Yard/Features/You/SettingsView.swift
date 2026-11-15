@@ -3,7 +3,7 @@ import Observation
 
 // You › Settings, in the style of reference 08 (grouped rounded cards, icon tile per row).
 //   General: Appearance, Notifications, Ship to, Currency
-//   Account: Name and email (YouAccountView), Password, Sign-in methods (GET /api/auth/security?as=shopper,
+//   Account: Your details (YouAccountView: photo, name, email), Password, Sign-in methods (GET /api/auth/security?as=shopper,
 //            DELETE /api/auth/identities/{id}?as=shopper), Delete account, Sign out
 //   About:   Message Yard Support, Help, Terms, Privacy, Refunds, Data deletion
 
@@ -169,9 +169,16 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var account: some View {
-        YouSettingsGroup("Account", footer: "Your name goes on your orders.") {
+        YouSettingsGroup("Account", footer: "Change your photo, name and email in Your details. Your name goes on your orders.") {
             NavigationLink(value: Route.account) {
-                SettingsRow("Name and email", systemImage: "person.text.rectangle", value: session.shopper?.name)
+                SettingsRow("Your details", systemImage: "person.text.rectangle", value: session.shopper?.name) {
+                    if let shopper = session.shopper {
+                        PersonAvatar(initials: shopper.initials, photoURL: session.photoURL, localImage: session.pendingPhoto, size: 28)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.yard.ink3)
+                }
             }
             .buttonStyle(.plain)
             NavigationLink(value: Route.addresses) {

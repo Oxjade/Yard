@@ -34,6 +34,9 @@ struct Shopper: Decodable, Hashable, Sendable, Identifiable {
     /// "active" | "restricted" | "suspended".
     let status: String
     let demo: Bool
+    /// The profile photo (`/api/media/…?as=shopper`, cookie-scoped), or nil for initials.
+    /// A replaced photo gets a new media id, so a new URL: caches never show the old one.
+    let photoSrc: String?
 
     /// First name for greetings ("Hi, Ada").
     var firstName: String { name.split(separator: " ").first.map(String.init) ?? name }
@@ -44,17 +47,18 @@ struct Shopper: Decodable, Hashable, Sendable, Identifiable {
         return letters.isEmpty ? "Y" : letters.uppercased()
     }
 
-    init(id: String, name: String, email: String, status: String = "active", demo: Bool = false) {
+    init(id: String, name: String, email: String, status: String = "active", demo: Bool = false, photoSrc: String? = nil) {
         self.id = id
         self.name = name
         self.email = email
         self.status = status
         self.demo = demo
+        self.photoSrc = photoSrc
     }
 }
 
 extension Shopper {
-    enum CodingKeys: String, CodingKey { case id, name, email, status, demo }
+    enum CodingKeys: String, CodingKey { case id, name, email, status, demo, photoSrc }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -62,6 +66,8 @@ extension Shopper {
         email = c.lenient(.email, "")
         status = c.lenient(.status, "active")
         demo = c.lenient(.demo, false)
+        let photo: String? = c.lenientOptional(.photoSrc)
+        photoSrc = (photo?.isEmpty ?? true) ? nil : photo
     }
 }
 

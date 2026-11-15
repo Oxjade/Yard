@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Who is signed in. Injected at the root: `@Environment(SessionStore.self) private var session`.
 ///
@@ -18,6 +19,10 @@ final class SessionStore {
     private(set) var hasLoaded: Bool = false
     /// Last error from `refresh()` (network); the previous session is kept.
     private(set) var lastError: APIError?
+
+    /// The profile photo being uploaded (Settings › Your details): every avatar shows it at once,
+    /// before the server answers. Cleared when the upload ends, either way.
+    private(set) var pendingPhoto: UIImage?
 
     private let api: APIClient
 
@@ -51,6 +56,23 @@ final class SessionStore {
         }
     }
 
+    /// Sets (or clears) the optimistic profile photo shown while an upload runs.
+    func setPendingPhoto(_ image: UIImage?) {
+        pendingPhoto = image
+    }
+
+    /// The account's photo changed (POST/DELETE /api/account/photo answered): show the new `src`
+    /// (or the initials) straight away, then re-read the session, which carries `photoSrc`.
+    func applyPhoto(src: String?) {
+        if let s = shopper {
+            shopper = Shopper(id: s.id, name: s.name, email: s.email, status: s.status, demo: s.demo, photoSrc: src)
+        }
+        pendingPhoto = nil
+    }
+
+    /// The signed-in shopper's photo URL (resolved against the base URL), or nil.
+    var photoURL: URL? { Config.url(for: shopper?.photoSrc) }
+
     /// Call after a successful sign-in/sign-up response (the cookie is already stored): re-reads the session.
     func didSignIn() async {
         await refresh()
@@ -64,6 +86,7 @@ final class SessionStore {
             // The server always succeeds; a network failure still signs out locally.
         }
         shopper = nil
+        pendingPhoto = nil
         session = Session.signedOut
         // A signed-out phone shouldn't keep showing someone's order on the Lock Screen.
         await LiveActivityManager.shared.endAll()

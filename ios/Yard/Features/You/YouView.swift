@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The You tab root.
 /// - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
-/// - Signed in: profile header (initials avatar, greeting, name, email), one quick-links panel
+/// - Signed in: profile header (photo or initials avatar, greeting, name, email), one quick-links panel
 ///   (Orders, Saved, Following, Inbox, Drop reminders, Updates, each with a real badge when known), links (Settings, Sell on Yard), Help (Message Yard Support,
 ///   Help centre) and legal (Terms, Privacy, Refunds).
 @MainActor
@@ -106,12 +106,7 @@ struct YouView: View {
 
     private func profileHeader(_ shopper: Shopper) -> some View {
         HStack(alignment: .center, spacing: Spacing.m + Spacing.xs) {
-            Text(shopper.initials)
-                .font(.yardDisplay(24))
-                .foregroundStyle(Color.yard.onAcid)
-                .frame(width: 60, height: 60)
-                .background(Color.yard.acid, in: Circle())
-                .overlay(Circle().strokeBorder(Color.yard.scrim.opacity(0.08), lineWidth: 1))
+            PersonAvatar(initials: shopper.initials, photoURL: session.photoURL, localImage: session.pendingPhoto, size: 60)
                 .padding(3)
                 .overlay(Circle().strokeBorder(Color.yard.line, lineWidth: 1))
                 .accessibilityHidden(true)

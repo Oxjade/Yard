@@ -53,7 +53,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         NSLocationWhenInUseUsageDescription: Yard uses your location to show independent brands, pop-ups and stockists around you.
-        NSPhotoLibraryUsageDescription: Yard lets you pick photos to send to brands in your messages.
+        NSPhotoLibraryUsageDescription: Yard lets you pick photos to send to brands in your messages and to use as your profile photo.
+        NSCameraUsageDescription: Yard uses the camera when you take a new profile photo.
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageRespectsSafeAreaInsets: false
@@ -68,6 +69,27 @@ targets:
               - yard
     dependencies:
       - target: YardLiveActivity   # embeds the Live Activity widget extension
+    scheme:
+      testTargets:
+        - YardTests
+
+  # Unit tests (crop geometry, request building, view-model state). Run by CI with
+  # `xcodebuild test -scheme Yard` on a simulator.
+  YardTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: YardTests
+    dependencies:
+      - target: Yard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.yardstore.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        CODE_SIGN_STYLE: Automatic
 
   # ---------------------------------------------------------------------------------------------
   # Live Activity widget extension (owner: live-activity agent). Order tracking on the Lock Screen

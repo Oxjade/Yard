@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -37,17 +37,35 @@ jobs:
           xcodebuild -project Yard.xcodeproj -target Yard -sdk iphonesimulator -configuration Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee ../build.log
 
+      - name: Unit tests on a simulator (no signing)
+        id: test
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd ios
+          UDID=$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          echo "simulator: $UDID"
+          xcodebuild -project Yard.xcodeproj -scheme Yard -destination "id=$UDID" -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | tee ../test.log
+
       - name: Summarise
         if: always()
         run: |
+          touch test.log
+          if [ "${{ steps.build.outcome }}" = "success" ] && [ "${{ steps.test.outcome }}" = "success" ]; then RESULT=success; else RESULT=failure; fi
           {
             echo "commit: ${GITHUB_SHA}"
-            echo "result: ${{ steps.build.outcome }}"
-            echo "errors: $(grep -c ' error: ' build.log || true)"
+            echo "result: ${RESULT}"
+            echo "errors: $(cat build.log test.log | grep -c ' error: ' || true)"
+            echo "build: ${{ steps.build.outcome }} tests: ${{ steps.test.outcome }}"
+            echo "tests: $(grep -E 'Executed [0-9]+ tests?' test.log | tail -1 || true)"
             echo "----- errors (deduplicated) -----"
-            grep ' error: ' build.log | sed 's|^.*/ios/|ios/|' | sort -u | head -400 || true
+            cat build.log test.log | grep ' error: ' | sed 's|^.*/ios/|ios/|' | sort -u | head -400 || true
             echo "----- last 60 lines -----"
             tail -60 build.log
+            echo "----- last 40 test lines -----"
+            tail -40 test.log
           } > summary.txt
           cat summary.txt
 
@@ -64,6 +82,6 @@ jobs:
           cp /tmp/out/summary.txt logs/latest.txt
           git add logs && git commit -m "iOS build ${GITHUB_SHA::7}: ${{ steps.build.outcome }}" && git push origin ios-ci
 
-      - name: Fail the check when the build failed
-        if: steps.build.outcome != 'success'
+      - name: Fail the check when the build or the tests failed
+        if: steps.build.outcome != 'success' || steps.test.outcome != 'success'
         run: exit 1
