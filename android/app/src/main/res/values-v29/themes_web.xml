@@ -1,0 +1,10 @@
+<resources>
+    <!-- Applied to the in-app WebView's context so the page's prefers-color-scheme follows the app's
+         light/dark choice (WebView reads android:isLightTheme when the app targets API 33+). -->
+    <style name="ThemeOverlay.Yard.WebLight" parent="">
+        <item name="android:isLightTheme">true</item>
+    </style>
+    <style name="ThemeOverlay.Yard.WebDark" parent="">
+        <item name="android:isLightTheme">false</item>
+    </style>
+</resources>

@@ -10,6 +10,11 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
+import space.yardstore.app.app.LegalPage
+import space.yardstore.app.designsystem.components.YardSheet
+import space.yardstore.app.features.you.LegalView
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -126,6 +131,7 @@ class TabletScreenScreenshotTest(private val screen: String, private val dark: B
     @Test fun renders() = ScreenshotHarness.capture(compose, screen, "tablet", dark)
 }
 
+@OptIn(ExperimentalRoborazziApi::class)
 object ScreenshotHarness {
     fun capture(compose: ComposeContentTestRule, screen: String, size: String, dark: Boolean) {
         val context: Context = RuntimeEnvironment.getApplication()
@@ -139,13 +145,16 @@ object ScreenshotHarness {
                 compose.waitForIdle()
                 Thread.sleep(40)
             }
-            compose.onRoot().captureRoboImage("build/outputs/roborazzi/$screen-$size-${if (dark) "dark" else "light"}.png")
+            val file = "build/outputs/roborazzi/$screen-$size-${if (dark) "dark" else "light"}.png"
+            // Sheets live in their own dialog window: capture every window, not just the root view.
+            if (screen in YardScreens.windowed) captureScreenRoboImage(file) else compose.onRoot().captureRoboImage(file)
         } finally {
             server.shutdown()
         }
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 /** The screens, by file-name key. Each renders its real screen composable with preview fixtures. */
 object YardScreens {
     val phone = listOf(
@@ -154,9 +163,12 @@ object YardScreens {
         "settings-details", "settings-details-nophoto", "settings-photo-uploading", "settings-photo-failed",
         "settings-photo-failed-first", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
-        "place-detail", "root",
+        "place-detail", "root", "terms", "sign-in-sheet",
     )
-    val tablet = listOf("root", "home", "product", "brand", "shop", "drops", "inbox", "orders", "order-detail", "checkout", "sign-in", "charts")
+    val tablet = listOf("root", "home", "product", "brand", "shop", "drops", "inbox", "orders", "order-detail", "checkout", "sign-in", "charts", "terms", "sign-in-sheet")
+
+    /** Screens drawn in a dialog window (sheets). */
+    val windowed = setOf("sign-in-sheet")
 
     private const val F = "space.yardstore.app.features"
 
@@ -168,7 +180,7 @@ object YardScreens {
             YardTheme(darkTheme = dark) { RootView(container) }
             return
         }
-        YardPreview(darkTheme = dark, signedIn = screen != "sign-in") { Screen(screen) }
+        YardPreview(darkTheme = dark, signedIn = screen != "sign-in" && screen != "sign-in-sheet") { Screen(screen) }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -240,6 +252,12 @@ object YardScreens {
             "search-typing" -> SearchHomeView(model = remember { SearchPreviewData.typingModel }, initialText = "hood", initialRecents = emptyList())
             "saved" -> SavedView()
             "sign-in" -> SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
+            // Sign-in as presented by router.present(Route.SignIn): a form sheet (dialog on wide windows).
+            "sign-in-sheet" -> YardSheet(onDismissRequest = {}, skipPartiallyExpanded = true, presentAsDialogOnWide = true, dismissOnScrimTap = false) {
+                SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
+            }
+            // In Robolectric the WebView draws nothing, so this shows the loading state over the app surface.
+            "terms" -> LegalView(LegalPage.Terms)
             "welcome" -> WelcomeScreen(remember {
                 WelcomeModel(previewCategories = listOf(WelcomeCategory("tops", "Tops"), WelcomeCategory("outerwear", "Outerwear"), WelcomeCategory("bottoms", "Bottoms"), WelcomeCategory("accessories", "Accessories")))
             })

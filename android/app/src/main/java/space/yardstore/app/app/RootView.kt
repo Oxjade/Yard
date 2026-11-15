@@ -57,7 +57,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -116,6 +115,7 @@ import space.yardstore.app.designsystem.components.BackAction
 import space.yardstore.app.designsystem.components.LocalBackAction
 import space.yardstore.app.designsystem.components.LocalToastCenter
 import space.yardstore.app.designsystem.components.YardSheet
+import space.yardstore.app.designsystem.components.rememberYardSheetState
 import space.yardstore.app.designsystem.components.YardToastHost
 import space.yardstore.app.designsystem.monospacedDigits
 import space.yardstore.app.designsystem.yard
@@ -338,7 +338,9 @@ private fun shellRelevantRoute(entry: NavBackStackEntry): Route? = when {
 @Composable
 private fun RouteSheetHost(router: Router) {
     var shown by remember { mutableStateOf<Route?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Route sheets are screens with their own back stack (sign-in, its forms): a scrim tap or a swipe
+    // never closes them and loses what was typed; the × on the root screen and system back do.
+    val sheetState = rememberYardSheetState(skipPartiallyExpanded = true, dismissOnScrimTap = false)
     val dialog = LocalYardWindow.current.sheetIsDialog
     LaunchedEffect(router.sheet) {
         val target = router.sheet
@@ -356,6 +358,7 @@ private fun RouteSheetHost(router: Router) {
         sheetState = sheetState,
         // Wide windows: a centered dialog surface (max 560dp) instead of a full-width bottom sheet.
         presentAsDialogOnWide = true,
+        dismissOnScrimTap = false,
     ) {
         key(route) {
             YardToastHost(toast, Modifier.fillMaxSize()) {

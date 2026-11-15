@@ -17,8 +17,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material3.SheetValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
@@ -63,6 +67,12 @@ import space.yardstore.app.designsystem.yard
  *       YardSheetHeader("Choose size") { showSizes = false }
  *       …
  *   }
+ *
+ * Sheets that hold text input or a form (sign-in, account changes, returns) pass
+ * `dismissOnScrimTap = false`: a tap outside the card or a swipe down never closes them (and never
+ * loses what was typed); they close only with their × (call [onDismissRequest] / `sheetState.hide()`)
+ * or system back. Pickers and menus keep the default (tap outside closes). When you pass your own
+ * [sheetState], build it with [rememberYardSheetState] so the same rule applies to the swipe.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,7 +80,9 @@ fun YardSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     skipPartiallyExpanded: Boolean = false,
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded),
+    /** False for sheets with input: tapping the scrim or swiping down does nothing (× and back still close). */
+    dismissOnScrimTap: Boolean = true,
+    sheetState: SheetState = rememberYardSheetState(skipPartiallyExpanded, dismissOnScrimTap),
     showsGrabber: Boolean = true,
     /**
      * On wide windows (`LocalYardWindow.current.sheetIsDialog`) show a centered [YardDialogSheet]
@@ -81,7 +93,7 @@ fun YardSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (presentAsDialogOnWide && LocalYardWindow.current.sheetIsDialog) {
-        YardDialogSheet(onDismissRequest = onDismissRequest, modifier = modifier, content = content)
+        YardDialogSheet(onDismissRequest = onDismissRequest, modifier = modifier, dismissOnScrimTap = dismissOnScrimTap, content = content)
         return
     }
     ModalBottomSheet(
@@ -98,6 +110,30 @@ fun YardSheet(
         SheetBackdropBlur()
         content()
     }
+}
+
+/**
+ * Whether a bottom sheet may settle to Hidden from a user gesture (scrim tap, swipe down).
+ * Programmatic `hide()` (the × button, system back) is not gated by this, so form sheets still close.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+fun yardSheetAllowsGestureDismiss(target: SheetValue, dismissOnScrimTap: Boolean, canDismiss: Boolean = true): Boolean =
+    target != SheetValue.Hidden || (dismissOnScrimTap && canDismiss)
+
+/** A [SheetState] for [YardSheet] that applies the [dismissOnScrimTap] rule (and an optional live [canDismiss]). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun rememberYardSheetState(
+    skipPartiallyExpanded: Boolean = false,
+    dismissOnScrimTap: Boolean = true,
+    canDismiss: () -> Boolean = { true },
+): SheetState {
+    val allowGesture by rememberUpdatedState(dismissOnScrimTap)
+    val canDismissNow by rememberUpdatedState(canDismiss)
+    return rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded,
+        confirmValueChange = { yardSheetAllowsGestureDismiss(it, allowGesture, canDismissNow()) },
+    )
 }
 
 /**
@@ -124,7 +160,9 @@ internal fun SheetBackdropBlur(radius: Dp = 20.dp) {
 /**
  * A sheet presented as a centered dialog surface on wide windows (iPad form sheet): `bg`
  * background, 28dp corners, at most [maxWidth] wide and [maxHeight] tall (and 32dp clear of the
- * window edges), over a scrim. Tapping the scrim or Android back calls [onDismissRequest].
+ * window edges), over a scrim. Android back calls [onDismissRequest]; tapping the scrim does too
+ * unless [dismissOnScrimTap] is false (sheets with input: they close only with × or back).
+ * Taps inside the card, the keyboard opening and focus changes never dismiss it.
  * The content gets a bounded height, so `fillMaxSize()` content (a NavHost, a screen) works.
  */
 @Composable
@@ -133,16 +171,31 @@ fun YardDialogSheet(
     modifier: Modifier = Modifier,
     maxWidth: Dp = YardWindow.dialogSheetMaxWidth,
     maxHeight: Dp = 820.dp,
+    dismissOnScrimTap: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val dismiss by rememberUpdatedState(onDismissRequest)
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        // The content fills the window and draws its own scrim, so outside taps are handled below.
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnClickOutside = false,
+            dismissOnBackPress = true,
+        ),
     ) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
-                .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
+                .testTag(YardDialogSheetTags.SCRIM)
+                .then(
+                    if (dismissOnScrimTap) {
+                        Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { dismiss() }
+                    } else {
+                        Modifier
+                    },
+                )
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(32.dp),
             contentAlignment = Alignment.Center,
@@ -151,6 +204,7 @@ fun YardDialogSheet(
             val h = minOf(this.maxHeight, maxHeight)
             Column(
                 modifier
+                    .testTag(YardDialogSheetTags.CARD)
                     .size(width = w, height = h)
                     .shadow(24.dp, RoundedCornerShape(Radius.sheet), ambientColor = Color.yard.scrim.copy(alpha = 0.3f), spotColor = Color.yard.scrim.copy(alpha = 0.3f))
                     .clip(RoundedCornerShape(Radius.sheet))
@@ -163,6 +217,12 @@ fun YardDialogSheet(
             }
         }
     }
+}
+
+/** Test tags of [YardDialogSheet]'s scrim (the area around the card) and card. */
+object YardDialogSheetTags {
+    const val SCRIM = "yard-dialog-sheet-scrim"
+    const val CARD = "yard-dialog-sheet-card"
 }
 
 /** The sheet grabber (36 × 5 pill in `ink3`). */

@@ -50,10 +50,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -106,6 +104,7 @@ import space.yardstore.app.designsystem.components.ToastCenter
 import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardSheet
+import space.yardstore.app.designsystem.components.rememberYardSheetState
 import space.yardstore.app.designsystem.components.YardSheetHeader
 import space.yardstore.app.designsystem.components.YardToastHost
 import space.yardstore.app.designsystem.components.YardTopBar
@@ -527,14 +526,13 @@ internal fun YouSheet(
     /** Tall, screen-like sheets show as a centered dialog on wide windows (AGENTS › Tablet rule 7). */
     presentAsDialogOnWide: Boolean = false,
     canDismiss: () -> Boolean = { true },
+    /** False for sheets with text input: a scrim tap or swipe never closes them (× and back do). */
+    dismissOnScrimTap: Boolean = true,
     content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val canDismissNow by rememberUpdatedState(canDismiss)
-    val state = rememberModalBottomSheetState(
-        skipPartiallyExpanded = skipPartiallyExpanded,
-        confirmValueChange = { it != SheetValue.Hidden || canDismissNow() },
-    )
+    val state = rememberYardSheetState(skipPartiallyExpanded, dismissOnScrimTap) { canDismissNow() }
     val asDialog = presentAsDialogOnWide && LocalYardWindow.current.sheetIsDialog
     val close: () -> Unit = {
         // The dialog form has no sheet state to animate; it just goes.
@@ -545,6 +543,7 @@ internal fun YouSheet(
         skipPartiallyExpanded = skipPartiallyExpanded,
         sheetState = state,
         presentAsDialogOnWide = presentAsDialogOnWide,
+        dismissOnScrimTap = dismissOnScrimTap,
     ) {
         YardToastHost(LocalToastCenter.current) {
             Column(Modifier.fillMaxWidth()) { content(close) }

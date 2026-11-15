@@ -82,7 +82,7 @@ fun YouChangePasswordSheet(hasPassword: Boolean, onChanged: () -> Unit, onDismis
     var formError by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
-    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isSaving }) { close ->
+    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isSaving }, dismissOnScrimTap = false) { close ->
         fun save() {
             val next = youPasswordErrors(hasPassword, current, newPassword, confirm)
             errors = next
@@ -177,7 +177,7 @@ fun YouDeleteAccountSheet(security: YouSecurity?, onDeleted: () -> Unit, onDismi
     val cannotConfirm = youDeleteCannotConfirm(security)
     val canSubmit = youCanSubmitDelete(security, confirmText, password) && !isDeleting
 
-    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isDeleting }) { close ->
+    YouSheet(onDismiss = onDismiss, presentAsDialogOnWide = true, canDismiss = { !isDeleting }, dismissOnScrimTap = false) { close ->
         fun delete() {
             if (!canSubmit) return
             passwordError = null

@@ -1,0 +1,5 @@
+<resources>
+    <!-- Below API 29 there is no android:isLightTheme; the overlays are empty (see values-v29). -->
+    <style name="ThemeOverlay.Yard.WebLight" parent="" />
+    <style name="ThemeOverlay.Yard.WebDark" parent="" />
+</resources>

@@ -438,7 +438,11 @@ internal fun YouPhotoSheet(
 /** The square crop step, full screen and always dark (like the product photo viewer). */
 @Composable
 internal fun YouPhotoCropDialog(photo: YouPickedPhoto, onCancel: () -> Unit, onSave: (ByteArray, ImageBitmap) -> Unit) {
-    Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    // Full screen: only Cancel / Save or system back leave it (an outside tap must never drop the crop).
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
+    ) {
         YardTheme(darkTheme = true) { YouPhotoCropScreen(photo, onCancel, onSave) }
     }
 }

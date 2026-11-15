@@ -293,7 +293,13 @@ internal fun OrderDetailScreen(
     val order = model.order
     if (showsReturnSheet && order != null) {
         // A tall, screen-like form: a centered dialog on wide windows.
-        YardSheet(onDismissRequest = { showsReturnSheet = false }, skipPartiallyExpanded = true, presentAsDialogOnWide = true) {
+        YardSheet(
+            onDismissRequest = { showsReturnSheet = false },
+            skipPartiallyExpanded = true,
+            presentAsDialogOnWide = true,
+            // A form (reason, note): an outside tap or swipe must not drop what was typed.
+            dismissOnScrimTap = false,
+        ) {
             OrderReturnSheet(order, onClose = { showsReturnSheet = false }) { updated ->
                 model.order = updated
                 showsReturnSheet = false
