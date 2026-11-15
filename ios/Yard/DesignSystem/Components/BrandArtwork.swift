@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// The designed stand-in for a missing photo: a deep gradient tinted from the brand (a stable
-/// hue derived from its id or name, so a brand always gets the same colour), a soft light
-/// bloom, and the brand's wordmark (or initials, when the name is long) set very large and faint.
-/// Never a grey box with a photo glyph.
+/// The designed stand-in for a missing photo: the brand's tone as a lit gradient with its
+/// initials set large in the display face. Never a grey box with a photo glyph. Decorative.
+/// Mirrors Android's `BrandArtwork.kt`: the same tone table and hash (`YardArtwork.tone`), the
+/// same initials, so a brand gets the same colour and mark in both apps.
+/// - Cards and heroes (140pt wide or more): oversized initials bleeding off the top right, faint (13%).
+/// - Thumbnails (narrower, or `style: .initials`): the initials centred at 72%.
 ///
 ///   RemoteImage(url: drop.imageURL) { BrandArtwork(name: drop.brandName, seed: drop.brand.id) }
 ///   BrandArtwork(name: "Acme Studio", style: .initials)
 struct BrandArtwork: View {
     enum Style: Sendable {
-        /// Wordmark for short names, initials otherwise.
+        /// Oversized initials on cards and heroes; centred initials when narrower than 140pt.
         case automatic
-        /// Always initials (small thumbnails).
+        /// Always the centred thumbnail initials.
         case initials
     }
 
@@ -26,60 +28,81 @@ struct BrandArtwork: View {
     }
 
     var body: some View {
-        let tint = BrandTint(seed: seed ?? name)
+        let tone = YardArtwork.tone(seed ?? name)
+        let initials = YardArtwork.initials(name)
         GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height)
-            let mark = markText
+            let width = geo.size.width
+            let compact = style == .initials || width < 140
             ZStack {
-                LinearGradient(colors: [tint.top, tint.bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(colors: [tone.light, tone.dark], startPoint: .topLeading, endPoint: .bottomTrailing)
+                // A soft light source at the top left, as if the fabric were lit from a window.
                 RadialGradient(
-                    colors: [tint.glow.opacity(0.55), tint.glow.opacity(0)],
-                    center: UnitPoint(x: 0.22, y: 0.18),
+                    colors: [Color.yard.onPhoto.opacity(0.16), Color.yard.onPhoto.opacity(0)],
+                    center: .topLeading,
                     startRadius: 0,
-                    endRadius: max(geo.size.width, geo.size.height) * 0.75
+                    endRadius: max(width, 1) * 1.1
                 )
-                Text(mark)
-                    .font(.yardDisplay(mark.count <= 3 ? side * 0.62 : side * 0.36))
-                    .textCase(.uppercase)
-                    .tracking(-1)
-                    .foregroundStyle(Color.yard.onPhoto.opacity(0.13))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.3)
-                    .padding(.horizontal, side * 0.06)
-                    .frame(width: geo.size.width, height: geo.size.height)
+                if compact {
+                    Text(initials)
+                        .font(.yardDisplay(max(width * 0.42, 1)))
+                        .foregroundStyle(Color.yard.onPhoto.opacity(0.72))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                } else {
+                    Text(initials)
+                        .font(.yardDisplay(width * 0.78))
+                        .tracking(-0.04 * width * 0.78)
+                        .foregroundStyle(Color.yard.onPhoto.opacity(0.13))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .offset(x: width * 0.06, y: -(width * 0.08))
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .topTrailing)
+                }
             }
+            .clipped()
         }
         .accessibilityHidden(true)
     }
-
-    private var markText: String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "Y" }
-        if style == .automatic, trimmed.count <= 9 { return trimmed }
-        let words = trimmed.split(whereSeparator: { $0 == " " || $0 == "-" || $0 == "_" })
-        let letters = words.prefix(2).compactMap { $0.first }.map { String($0) }.joined()
-        return letters.isEmpty ? String(trimmed.prefix(1)) : letters
-    }
 }
 
-/// A stable, brand-specific colour set. Deterministic (FNV-1a over the seed), never random,
-/// so a brand looks the same on every screen and every launch.
-struct BrandTint: Sendable {
-    let top: Color
-    let bottom: Color
-    let glow: Color
+/// Brand placeholder tones, identical to Android's `YardArtwork` (Theme.kt).
+enum YardArtwork {
+    struct Tone: Sendable {
+        let light: Color
+        let dark: Color
+    }
 
-    init(seed: String) {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in seed.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x0000_0100_0000_01B3
-        }
-        let hue = Double(hash % 360) / 360
-        let drift = Double((hash >> 12) % 40) / 360
-        top = Color(hue: hue, saturation: 0.55, brightness: 0.36)
-        bottom = Color(hue: (hue + drift).truncatingRemainder(dividingBy: 1), saturation: 0.6, brightness: 0.1)
-        glow = Color(hue: hue, saturation: 0.35, brightness: 0.85)
+    static let tones: [(UInt32, UInt32)] = [
+        (0x5B4FB0, 0x1E1840), // violet ink
+        (0x8C3B2E, 0x2A100C), // oxblood
+        (0x3F6B5A, 0x0F2119), // bottle green
+        (0x2F5B8A, 0x0C1A2C), // workwear blue
+        (0x8A6A2F, 0x2A1F0C), // tobacco
+        (0x7A3E68, 0x240E1E), // aubergine
+        (0x4E5A63, 0x15191C), // slate
+        (0x9A5A2A, 0x2C1608), // rust
+    ]
+
+    /// The tone for `key` (a brand id, handle or name): Java/Kotlin `String.hashCode()` over
+    /// UTF-16, masked positive, modulo the table, exactly as Android picks it.
+    static func tone(_ key: String) -> Tone {
+        let pair = tones[Int(javaHash(key) & Int32.max) % tones.count]
+        return Tone(light: Color(uiColor: UIColor(yardHex: pair.0)), dark: Color(uiColor: UIColor(yardHex: pair.1)))
+    }
+
+    static func javaHash(_ s: String) -> Int32 {
+        var h: Int32 = 0
+        for unit in s.utf16 { h = h &* 31 &+ Int32(unit) }
+        return h
+    }
+
+    /// "Acme Studio" → "AS", "kumasi" → "K" (Android's `brandInitials`).
+    static func initials(_ name: String) -> String {
+        let words = name.split(whereSeparator: { $0.isWhitespace })
+        guard let first = words.first?.first else { return "Y" }
+        if words.count == 1 { return String(first).uppercased() }
+        return (String(first) + String(words[1].first!)).uppercased()
     }
 }
 

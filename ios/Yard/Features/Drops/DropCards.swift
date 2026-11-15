@@ -6,7 +6,7 @@ import SwiftUI
 /// - No photo: `BrandArtwork` (brand-tinted gradient with the brand's wordmark), never a grey box.
 /// - Top-left, inset 16pt: the frosted status capsule (pulsing acid dot when it's live).
 /// - Bottom, over a soft scrim: brand (small caps), the drop name (display), then a ticking
-///   countdown in tabular figures beside the rules line.
+///   countdown on its own row in tabular figures, a hairline, the rules line (as Android).
 struct DropLiveCard: View {
     let drop: Drop
     let phase: DropLivePhase
@@ -28,8 +28,8 @@ struct DropLiveCard: View {
                 .padding(Spacing.l)
             }
             .overlay(alignment: .bottomLeading) {
-                DropCardCaption(drop: drop, phase: phase, titleSize: 36)
-                    .padding(Spacing.l)
+                DropCardCaption(drop: drop, phase: phase, titleSize: 40)
+                    .padding([.horizontal, .bottom], 20)
             }
             .clipShape(.yardCard)
             .overlay {
@@ -43,40 +43,43 @@ struct DropLiveCard: View {
     }
 }
 
-/// The text block at the bottom of a drop photo: brand, name, countdown and rules, in that order
-/// of weight. Shared by the drop cards and the drop detail hero.
+/// The text block at the bottom of a drop photo, matching Android's DropLiveCard: brand (small
+/// caps), the name (40pt display), the ticking countdown on its own row in 26pt tabular digits,
+/// a 16% white hairline, then the rules line.
 struct DropCardCaption: View {
     let drop: Drop
     let phase: DropLivePhase
-    var titleSize: CGFloat = 36
+    var titleSize: CGFloat = 40
     var showsRules: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(drop.brandName.uppercased())
-                    .font(.yardMicro)
-                    .tracking(1.2)
-                    .foregroundStyle(Color.yard.onPhoto.opacity(0.78))
-                    .lineLimit(1)
-                Text(drop.name)
-                    .yardDisplay(titleSize)
-                    .foregroundStyle(Color.yard.onPhoto)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(drop.brandName.uppercased())
+                .font(.yardMicro)
+                .tracking(1.2)
+                .foregroundStyle(Color.yard.onPhoto.opacity(0.78))
+                .lineLimit(1)
+            Text(drop.name)
+                .yardDisplay(titleSize)
+                .foregroundStyle(Color.yard.onPhoto)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+            if let target = drop.countdownTarget(phase, now: Date()) {
+                DropTickingCountdown(label: target.label, target: target.date, digitSize: 26)
+                    .padding(.top, Spacing.m)
             }
-            HStack(alignment: .lastTextBaseline, spacing: Spacing.m) {
-                if let target = drop.countdownTarget(phase, now: Date()) {
-                    DropTickingCountdown(label: target.label, target: target.date)
-                }
-                if showsRules {
-                    Text("\(drop.accessLabel) · \(drop.runText) · limit \(drop.limitPerCustomer)")
-                        .font(.yardCaption)
-                        .foregroundStyle(Color.yard.onPhoto.opacity(0.72))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
+            if showsRules {
+                Rectangle()
+                    .fill(Color.yard.onPhoto.opacity(0.16))
+                    .frame(height: 1)
+                    .padding(.top, Spacing.m)
+                Text("\(drop.accessLabel) · \(drop.runText) · limit \(drop.limitPerCustomer)")
+                    .font(.yardCaption)
+                    .foregroundStyle(Color.yard.onPhoto.opacity(0.72))
+                    .lineLimit(1)
+                    .padding(.top, Spacing.s)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,6 +91,7 @@ struct DropCardCaption: View {
 struct DropTickingCountdown: View {
     let label: String
     let target: Date
+    var digitSize: CGFloat = 20
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -99,7 +103,7 @@ struct DropTickingCountdown: View {
                     .tracking(0.8)
                     .foregroundStyle(Color.yard.onPhoto.opacity(0.7))
                 Text(Formatters.countdown(remaining))
-                    .font(.yardNumber(20))
+                    .font(.yardNumber(digitSize))
                     .monospacedDigit()
                     .foregroundStyle(Color.yard.onPhoto)
                     .contentTransition(reduceMotion ? .identity : .numericText(countsDown: true))

@@ -11,6 +11,7 @@ struct YouView: View {
     @Environment(Router.self) private var router
     @Environment(SavedStore.self) private var saved
     @Environment(FollowStore.self) private var follows
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var webPage: YouWebPage? = nil
     @State private var badges: YouBadgesModel
@@ -51,21 +52,36 @@ struct YouView: View {
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             await session.refresh()
-            if session.isSignedIn {
-                await badges.load(force: true)
+            if let id = session.shopper?.id, session.isSignedIn {
+                await loadBadges(id, force: true)
                 await saved.load()
                 await follows.load()
             }
         }
-        // Real counts for the quick links: on sign-in change, and (throttled) on coming back here.
+        // Real counts for the quick links: on sign-in change (forced), and on coming back here.
+        // Tabs stay alive in RootView's ZStack, so a tab switch doesn't fire onAppear: watch
+        // the selected tab too. onAppear covers popping back from Inbox, Updates or Orders.
+        // Unforced reloads are throttled to 1.5 s (as Android), so a read item clears its badge.
         .task(id: session.shopper?.id ?? "signed-out") {
-            if session.isSignedIn { await badges.load(force: true) } else { badges.reset() }
+            if session.isSignedIn, let id = session.shopper?.id { await loadBadges(id, force: true) } else { badges.reset() }
         }
-        .onAppear {
-            guard session.isSignedIn else { return }
-            Task { @MainActor in await badges.load() }
+        .onAppear { refreshBadgesIfVisible() }
+        .onChange(of: router.selectedTab) { _, tab in
+            if tab == .you { refreshBadgesIfVisible() }
         }
         .youWebPage($webPage)
+    }
+
+    /// Loads the badges. The panel animates the change via `.animation` (a plain fade under Reduce Motion).
+    private func loadBadges(_ accountId: String, force: Bool) async {
+        await badges.load(accountId: accountId, force: force)
+    }
+
+    private func refreshBadgesIfVisible() {
+        guard session.isSignedIn, let id = session.shopper?.id else { return }
+        // The model drops results that arrive after an account change or reset, so this
+        // short-lived task can't write a previous account's counts.
+        Task { @MainActor in await loadBadges(id, force: false) }
     }
 
     // MARK: Header
@@ -138,9 +154,13 @@ struct YouView: View {
 
     /// One panel, six cells. Badges only from data the app loaded; hidden when unknown or zero.
     private var quickLinks: some View {
-        func countBadge(_ n: Int?) -> YouQuickLink.Badge {
+        func attentionBadge(_ n: Int?) -> YouQuickLink.Badge {
             guard let n, n > 0 else { return .none }
-            return .count(n)
+            return .attention(n)
+        }
+        func totalBadge(_ n: Int?) -> YouQuickLink.Badge {
+            guard let n, n > 0 else { return .none }
+            return .total(n)
         }
         func dotBadge(_ n: Int?) -> YouQuickLink.Badge {
             guard let n, n > 0 else { return .none }
@@ -150,26 +170,26 @@ struct YouView: View {
         let followingCount: Int? = follows.hasLoaded ? follows.items.count : nil
         let links: [YouQuickLink] = [
             YouQuickLink(title: "Orders", systemImage: "shippingbox", route: .orders,
-                         badge: countBadge(badges.ordersInProgress),
+                         badge: attentionBadge(badges.ordersInProgress),
                          accessibilityValue: (badges.ordersInProgress ?? 0) > 0 ? "\(badges.ordersInProgress ?? 0) in progress" : nil),
             YouQuickLink(title: "Saved", systemImage: "heart", route: .saved,
-                         badge: countBadge(savedCount),
+                         badge: totalBadge(savedCount),
                          accessibilityValue: (savedCount ?? 0) > 0 ? "\(savedCount ?? 0) saved" : nil),
             YouQuickLink(title: "Following", systemImage: "person.2", route: .following,
-                         badge: countBadge(followingCount),
+                         badge: totalBadge(followingCount),
                          accessibilityValue: (followingCount ?? 0) > 0 ? "\(followingCount ?? 0) brands" : nil),
             YouQuickLink(title: "Inbox", systemImage: "bubble.left.and.bubble.right", route: .inbox,
                          badge: dotBadge(badges.inboxUnread),
                          accessibilityValue: (badges.inboxUnread ?? 0) > 0 ? "\(badges.inboxUnread ?? 0) unread" : nil),
             YouQuickLink(title: "Drop reminders", systemImage: "bell.badge", route: .myDrops,
-                         badge: countBadge(badges.dropReminders),
+                         badge: totalBadge(badges.dropReminders),
                          accessibilityValue: (badges.dropReminders ?? 0) > 0 ? "\(badges.dropReminders ?? 0) set" : nil),
             YouQuickLink(title: "Updates", systemImage: "bell", route: .notifications,
-                         badge: countBadge(badges.updatesUnread),
+                         badge: attentionBadge(badges.updatesUnread),
                          accessibilityValue: (badges.updatesUnread ?? 0) > 0 ? "\(badges.updatesUnread ?? 0) unread" : nil),
         ]
         return YouQuickLinksPanel(links: links)
-            .animation(Motion.snappy, value: links.map(\.badge))
+            .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: links.map(\.badge))
     }
 
     // MARK: Invite (signed out)

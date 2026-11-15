@@ -169,11 +169,10 @@ struct HomeDropTile: View {
                 .aspectRatio(1 / HomeShape.dropRatio, contentMode: .fit)
                 .clipShape(.yardImage)
                 .overlay(alignment: .topLeading) {
-                    HStack(spacing: Spacing.xs) {
-                        DropStatusBadge(drop: drop, phase: drop.livePhase(at: Date()), onPhoto: true)
-                        if drop.sponsored { DropPhotoCapsule(text: "Sponsored") }
-                    }
-                    .padding(Spacing.s)
+                    // Compact status only: the 2-column tile (about 159pt inside on an SE) can't
+                    // hold a full status and a Sponsored capsule, so Sponsored sits in the caption.
+                    DropStatusBadge(drop: drop, phase: drop.livePhase(at: Date()), onPhoto: true, compact: true)
+                        .padding(Spacing.s)
                 }
                 .overlay(alignment: .bottomLeading) {
                     HomeDropCountdown(drop: drop).padding(Spacing.s)
@@ -184,7 +183,7 @@ struct HomeDropTile: View {
                         .font(.yardCallout.weight(.semibold))
                         .foregroundStyle(Color.yard.ink)
                         .lineLimit(1)
-                    Text([drop.brand.name ?? "", drop.accessLabel].filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text([drop.sponsored ? "Sponsored" : "", drop.brand.name ?? "", drop.accessLabel].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.yardCaption)
                         .foregroundStyle(Color.yard.ink2)
                         .lineLimit(1)

@@ -20,6 +20,7 @@ struct BrandProfileView: View {
     @Environment(ToastCenter.self) private var toast
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var model: BrandProfileModel
     @State private var tab: BrandProfileTab = .products
@@ -227,7 +228,7 @@ struct BrandProfileView: View {
                     } else if following {
                         Image(systemName: "checkmark")
                             .font(.system(size: 15, weight: .bold))
-                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                            .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.scale(scale: 0.4).combined(with: .opacity))
                     }
                     Text(following ? "Following" : "Follow")
                         .font(.yardBodyEmphasis)
@@ -249,7 +250,7 @@ struct BrandProfileView: View {
             .disabled(followBusy)
             .sensoryFeedback(.success, trigger: followTick)
             .accessibilityLabel(following ? "Following \(brand.name). Double-tap to unfollow." : "Follow \(brand.name)")
-            .animation(Motion.spring, value: following)
+            .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: following)
 
             Button {
                 guard session.isSignedIn else {

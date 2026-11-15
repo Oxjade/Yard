@@ -28,13 +28,18 @@ struct GlassIconButton: View {
                 .foregroundStyle(tint ?? Color.yard.ink)
                 .frame(width: size, height: size)
                 .yardGlass(Circle())
-                // Keep the touch target at 44pt even for the 34pt sheet close button.
-                .frame(width: max(size, 44), height: max(size, 44))
+                // A 44pt touch target even for the 34pt sheet close button, without changing
+                // layout: pad out to 44 for the hit shape, then pad back in so the button still
+                // takes `size` in its parent (YardSheetHeader keeps the circle on the gutter).
+                .padding(hitInset)
                 .contentShape(Circle())
+                .padding(-hitInset)
         }
         .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
         .accessibilityLabel(Text(accessibilityLabel))
     }
+
+    private var hitInset: CGFloat { max(0, (44 - size) / 2) }
 }
 
 #Preview("Glass — dark") {

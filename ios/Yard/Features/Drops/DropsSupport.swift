@@ -386,6 +386,27 @@ struct DropStatusBadge: View {
     let drop: Drop
     let phase: DropLivePhase
     var onPhoto: Bool = false
+    /// Short labels ("Live", "Entries", "Soon") for narrow tiles such as Home's 2-column grid,
+    /// like Android's Home tile tags. The capsule never truncates.
+    var compact: Bool = false
+
+    init(drop: Drop, phase: DropLivePhase, onPhoto: Bool = false, compact: Bool = false) {
+        self.drop = drop
+        self.phase = phase
+        self.onPhoto = onPhoto
+        self.compact = compact
+    }
+
+    private var label: String {
+        guard compact else { return drop.statusLabel(phase) }
+        switch phase {
+        case .entriesOpen: return "Entries"
+        case .earlyAccess: return "Early"
+        case .live: return "Live"
+        case .ended: return "Ended"
+        case .upcoming: return "Soon"
+        }
+    }
 
     var body: some View {
         let hot = drop.isHot(phase)
@@ -395,21 +416,24 @@ struct DropStatusBadge: View {
                     DropLivePulse(color: Color.yard.acid, size: 6)
                         .frame(width: 12, height: 12)
                 }
-                Text(drop.statusLabel(phase).uppercased())
+                Text(label.uppercased())
                     .font(.yardMicro)
                     .tracking(0.6)
                     .lineLimit(1)
+                    .fixedSize()
             }
             .foregroundStyle(Color.yard.onPhoto)
             .padding(.leading, hot ? 7 : 10)
             .padding(.trailing, 10)
-            .frame(height: 26)
+            // Padding, not a fixed height, so large Dynamic Type grows the glass (as Android does).
+            .padding(.vertical, 5)
+            .frame(minHeight: 26)
             .yardGlass(Capsule(), onPhoto: true)
         } else if hot {
             HStack(spacing: 4) {
                 DropLivePulse(color: Color.yard.onAcid, size: 6)
                     .frame(width: 12, height: 12)
-                Text(drop.statusLabel(phase).uppercased())
+                Text(label.uppercased())
                     .font(.yardMicro)
                     .lineLimit(1)
             }
@@ -419,7 +443,7 @@ struct DropStatusBadge: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(Color.yard.acid))
         } else {
-            Tag(drop.statusLabel(phase), style: .neutral)
+            Tag(label, style: .neutral)
         }
     }
 }
@@ -435,7 +459,8 @@ struct DropPhotoCapsule: View {
             .lineLimit(1)
             .foregroundStyle(Color.yard.onPhoto.opacity(0.9))
             .padding(.horizontal, 10)
-            .frame(height: 26)
+            .padding(.vertical, 5)
+            .frame(minHeight: 26)
             .yardGlass(Capsule(), onPhoto: true)
     }
 }
