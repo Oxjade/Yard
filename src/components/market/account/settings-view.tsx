@@ -145,7 +145,7 @@ export function SettingsView() {
       </header>
       <YouNav className="mt-8" />
 
-      <Section id="set-account" title="Account" description="Your photo and name show to brands you message or buy from. Changing your email sends a link to the new address first.">
+      <Section id="set-account" title="Account" description="Your name goes on your orders. Changing your email sends a link to the new address first.">
         {shopperId ? <AccountDetails as="shopper" /> : null}
       </Section>
 

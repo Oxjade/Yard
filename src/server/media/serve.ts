@@ -103,8 +103,8 @@ async function isCurrentPhoto(m: MediaRow) {
 
 /**
  * Profile photos (purpose account_photo) are shown where the person's name is shown to someone
- * else: their brand teammates (Studio team list), and brands they message or buy from (inbox,
- * customers, orders). Nothing about a person is public on Yard, so their photo never is either.
+ * else: brands they message or buy from (inbox, customers, orders). Brand teammates may open it
+ * too, though no endpoint lists teammates yet. Nothing about a person is public on Yard, so their photo never is either.
  */
 async function brandMaySeePhoto(m: MediaRow, brandId: string) {
   if (!(await isCurrentPhoto(m))) return false

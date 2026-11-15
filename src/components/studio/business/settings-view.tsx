@@ -655,7 +655,7 @@ function AccountForm({ country, onDone, live }: { country: CountryCode; onDone: 
 function YourAccountSection() {
   const member = useServerSession((s) => s.brand)
   return (
-    <Panel id="account" title="Your account" description="Your own name and sign-in email. They're yours, not the brand's: the same account you shop with.">
+    <Panel id="account" title="Your account" description="Your own photo, name and sign-in email. They're yours, not the brand's: the same account you shop with.">
       {member ? <AccountDetails as="brand" /> : <p className="text-sm text-ink-2">Sign in to Studio to change your name or email.</p>}
     </Panel>
   )

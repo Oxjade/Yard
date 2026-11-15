@@ -300,7 +300,8 @@ minutes.
 (the same way as inbox attachments). It is private, never public:
 - the person themself (`?as=shopper` for the shopper session);
 - brands: in Studio the shopper's photo comes in `conversation.customer.photoSrc` (`?as=brand`) for
-  shoppers who message or buy from that brand, and teammates see each other's;
+  shoppers who message or buy from that brand (the server also lets teammates open each other's
+  photo; no endpoint lists them yet);
 - admins see it in the Control Center (Users).
 Anyone else gets 404, and so does a replaced or removed photo for everyone but its owner. A new
 photo has a new `mediaId` and `src`, so caches never show the old one; a removed photo can still be
@@ -312,7 +313,8 @@ the initials. `GET /api/session` also carries `shopper.photoSrc` (and `brand.pho
 decision `remove-account-photo`, audited as `user.photo_removed`). The person gets a notification
 (category `content_moderation`): "Yard removed your profile photo" / "Reason: … You can add a new one
 in Settings." (href `/you/settings`), also pushed to the app. `photo` is then `null`; they can upload a
-new one. Reports don't cover people or photos (report subjects are messages, conversations, posts,
+new one. The removed file stays (content moderators only, as other removed media) and is not
+purged; it goes when the account is deleted. Reports don't cover people or photos (report subjects are messages, conversations, posts,
 places and events), so there is no "report photo" yet.
 
 Deleting the account deletes the photo files with it.

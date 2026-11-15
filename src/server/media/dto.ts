@@ -29,8 +29,8 @@ export function toMediaDto(row: MediaRow, as: "shopper" | "brand" | "admin"): Me
 
 /**
  * A person's profile photo (purpose account_photo) as `viewer` reads it, or null. Always the
- * private form (`?as=`): serve.ts decides who may open it (the person, teammates, brands they
- * talk to or buy from, admins), so the same id gives each viewer its own cookie-scoped URL.
+ * private form (`?as=`): serve.ts decides who may open it (the person, brands they talk to
+ * or buy from, admins; teammates too, though no endpoint lists them yet), so the same id gives each viewer its own cookie-scoped URL.
  */
 export function photoSrc(mediaId: string | null | undefined, viewer: "shopper" | "brand" | "admin"): string | null {
   return mediaId ? mediaSrc(mediaId, viewer) : null

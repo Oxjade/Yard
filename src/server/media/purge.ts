@@ -13,7 +13,9 @@ import { referencedAtAll } from "./visibility"
  *  - post, import, place, storefront cover and drop image files that nothing references (no post of any visibility, no place,
  *    no event, no account avatar) 7 days after they were last referenced (`unreferenced_at`, kept
  *    by refreshVisibility), or 7 days after upload for a file that was never used;
- *  - profile photos (account_photo) 7 days after they were replaced or removed;
+ *  - profile photos (account_photo) 7 days after they were replaced or removed by their owner. A
+ *    photo an admin removed (moderation_status 'removed') stays as evidence for its
+ *    user.photo_removed audit row, like other removed media, until the account is erased;
  *  - temp files of interrupted uploads older than an hour.
  * The file goes first, then the row, and the row is deleted only if it still qualifies.
  */
@@ -21,6 +23,7 @@ const orphan = sql`(
   (m.purpose = 'inbox_attachment' and m.attached_at is null and m.created_at < now() - interval '24 hours'
      and not exists (select 1 from message_attachments ma where ma.media_id = m.id))
   or (m.purpose in ('social_post', 'social_import', 'location_image', 'onboarding_image', 'storefront_cover', 'drop_image', 'account_photo')
+     and not (m.purpose = 'account_photo' and m.moderation_status = 'removed')
      and coalesce(m.unreferenced_at, m.created_at) < now() - interval '7 days' and not ${referencedAtAll})
 )`
 

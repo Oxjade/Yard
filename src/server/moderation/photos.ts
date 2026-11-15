@@ -8,7 +8,8 @@ import { assertState, audit, notify, type DecisionCtx } from "./shared"
 
 /**
  * Admin › Users: removes a person's profile photo (content.moderate). One transaction: the file is
- * marked removed (served to content moderators only, as other removed media), the account goes
+ * marked removed (served to content moderators only, as other removed media, and left out of the
+ * orphan purge so it stays until the account is erased), the account goes
  * back to initials, one audit row (user.photo_removed, with the reason), and the person gets a
  * notice with the reason (template account.photo_removed). They can add a new photo afterwards.
  */

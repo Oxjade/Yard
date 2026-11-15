@@ -16,9 +16,10 @@ import type { RequestMeta } from "./identity"
  * The signed-in person's profile photo (shopper Settings and Studio "Your account": one `users`
  * row either way). The file goes through the uploads pipeline (size caps, sniffing, metadata
  * strip) as purpose account_photo, owned by the user; users.photo_media_id points at it. A new
- * photo replaces the old one, which becomes unreferenced and is purged after 7 days. Photos are
- * private: serve.ts shows them to the person, their teammates, brands they talk to or buy from,
- * and admins. Demo accounts can't change their photo (like their email). An uploads restriction
+ * photo replaces the old one, which becomes unreferenced and is purged after 7 days (a photo an
+ * admin removed is kept as evidence until the account is erased). Photos are private: serve.ts
+ * shows them to the person, brands they talk to or buy from, and admins (it also lets teammates
+ * open each other's; no endpoint lists them yet). Demo accounts can't change their photo (like their email). An uploads restriction
  * pauses photo changes too; removing your photo always works.
  */
 

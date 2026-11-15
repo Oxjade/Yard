@@ -186,7 +186,7 @@ export function AccountPhoto({ account, as, onAccount }: { account: AccountDto; 
           ) : null}
         </div>
       ) : (
-        <p className="text-xs text-ink-3">{demo ? "Demo accounts can't change their photo." : as === "brand" ? "Shown to your team in Studio. It's the same photo as your Yard account." : "Shows to brands you message or buy from. JPEG, PNG or WebP, up to 10 MB."}</p>
+        <p className="text-xs text-ink-3">{demo ? "Demo accounts can't change their photo." : as === "brand" ? "Shows to brands you message or buy from. It's the same photo as your Yard account." : "Shows to brands you message or buy from. JPEG, PNG or WebP, up to 10 MB."}</p>
       )}
       <CropSheet picked={picked} onCancel={() => setPicked(null)} onSave={(b) => void save(b)} />
     </div>
