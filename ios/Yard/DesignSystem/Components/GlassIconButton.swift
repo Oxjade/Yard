@@ -27,11 +27,12 @@ struct GlassIconButton: View {
                 .font(.system(size: size * 0.4, weight: .semibold))
                 .foregroundStyle(tint ?? Color.yard.ink)
                 .frame(width: size, height: size)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.yard.line, lineWidth: 1))
+                .yardGlass(Circle())
+                // Keep the touch target at 44pt even for the 34pt sheet close button.
+                .frame(width: max(size, 44), height: max(size, 44))
                 .contentShape(Circle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
         .accessibilityLabel(Text(accessibilityLabel))
     }
 }

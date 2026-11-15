@@ -24,6 +24,8 @@ struct DropsView: View {
         // Regroup every 30 s so a drop moves section when it opens or closes.
         TimelineView(.periodic(from: .now, by: 30)) { context in
             content(now: context.date)
+                .transition(.opacity)
+                .animation(Motion.crossfade, value: model.state.key)
         }
         .yardScreenBackground()
         .navigationTitle("Drops")

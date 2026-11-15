@@ -630,14 +630,7 @@ struct ProductDetailView: View {
         .padding(.horizontal, Spacing.gutter)
         .padding(.top, Spacing.m)
         .padding(.bottom, Spacing.s)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.yard.line).frame(height: 1)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .yardGlassBar()
     }
 
     private var sizePillTitle: String {

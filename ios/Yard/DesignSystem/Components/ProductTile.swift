@@ -30,6 +30,7 @@ struct ProductTile: View {
     @Environment(SessionStore.self) private var session
     @Environment(Router.self) private var router
     @Environment(ToastCenter.self) private var toast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(product: Product, showsBrand: Bool = true, showsPrice: Bool = true, showsSaveButton: Bool = true, maxPixelSize: CGFloat = 700) {
         self.product = product
@@ -46,7 +47,7 @@ struct ProductTile: View {
                 .clipShape(.yardImage)
                 .overlay(alignment: .topLeading) { badge.padding(Spacing.s) }
                 .overlay(alignment: .topTrailing) {
-                    if showsSaveButton { saveButton.padding(6) }
+                    if showsSaveButton { saveButton.padding(-1) }
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(product.title)
@@ -102,11 +103,15 @@ struct ProductTile: View {
             Image(systemName: isSaved ? "heart.fill" : "heart")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isSaved ? Color.yard.danger : Color.yard.ink)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: reduceMotion ? false : isSaved)
                 .frame(width: 30, height: 30)
-                .background(.ultraThinMaterial, in: Circle())
+                .yardGlass(Circle())
+                // 30pt visual, 44pt touch target.
+                .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableButtonStyle(scale: 0.88))
         .sensoryFeedback(.impact(weight: .light), trigger: isSaved)
         .accessibilityLabel(Text(isSaved ? "Remove from saved" : "Save"))
     }

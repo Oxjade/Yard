@@ -62,6 +62,28 @@ extension View {
     }
 }
 
+// MARK: - Glass bar
+
+extension View {
+    /// A sticky bottom action bar (PDP Add to bag, Bag Checkout, Checkout Pay): the system
+    /// material with a lit top edge and hairline, extending under the home indicator.
+    func yardGlassBar() -> some View {
+        background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.yard.glassTint)
+                .overlay(alignment: .top) {
+                    VStack(spacing: 0) {
+                        Rectangle().fill(Color.yard.line).frame(height: 0.5)
+                        Rectangle().fill(Color.yard.glassEdge.opacity(0.6)).frame(height: 0.5)
+                    }
+                }
+                .shadow(color: Color.yard.scrim.opacity(0.08), radius: 12, y: -4)
+                .ignoresSafeArea(edges: .bottom)
+        }
+    }
+}
+
 // MARK: - Photo scrim
 
 /// The soft bottom gradient under text laid on a photo. Starts clear at `start` (0…1 from top)

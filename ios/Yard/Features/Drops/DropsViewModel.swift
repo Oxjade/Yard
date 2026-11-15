@@ -16,6 +16,15 @@ final class DropsViewModel {
         case loading
         case loaded
         case failed(Error)
+
+        /// A plain key for animating between states (skeleton → content cross-fade).
+        var key: Int {
+            switch self {
+            case .loading: return 0
+            case .loaded: return 1
+            case .failed: return 2
+            }
+        }
     }
 
     struct Feed {

@@ -87,7 +87,7 @@ struct ProductGallery<Overlay: View>: View {
         }
         .padding(.horizontal, Spacing.s)
         .padding(.vertical, 6)
-        .background(Color.yard.scrim.opacity(0.28), in: Capsule())
+        .yardGlass(Capsule(), onPhoto: true)
         .animation(Motion.snappy, value: index)
         .accessibilityHidden(true)
     }

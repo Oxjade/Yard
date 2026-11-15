@@ -243,10 +243,7 @@ struct BagView: View {
         }
         .padding(.horizontal, Spacing.gutter)
         .padding(.vertical, Spacing.m)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.yard.line).frame(height: 1)
-        }
+        .yardGlassBar()
     }
 
     // MARK: Actions

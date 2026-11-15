@@ -227,6 +227,7 @@ struct BrandProfileView: View {
                     } else if following {
                         Image(systemName: "checkmark")
                             .font(.system(size: 15, weight: .bold))
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
                     }
                     Text(following ? "Following" : "Follow")
                         .font(.yardBodyEmphasis)
@@ -234,15 +235,17 @@ struct BrandProfileView: View {
                 .foregroundStyle(following ? Color.yard.onPhoto : Color.yard.onPhotoInk)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(
-                    Capsule().fill(following ? Color.yard.onPhoto.opacity(0.16) : Color.yard.onPhoto)
-                )
-                .overlay(
-                    Capsule().strokeBorder(Color.yard.onPhoto.opacity(following ? 0.4 : 0), lineWidth: 1)
-                )
+                .background {
+                    // Following: the pill turns to dark glass so the photo shows through.
+                    if following {
+                        Color.clear.yardGlass(Capsule(), onPhoto: true)
+                    } else {
+                        Capsule().fill(Color.yard.onPhoto)
+                    }
+                }
                 .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle())
+            .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
             .disabled(followBusy)
             .sensoryFeedback(.success, trigger: followTick)
             .accessibilityLabel(following ? "Following \(brand.name). Double-tap to unfollow." : "Follow \(brand.name)")
@@ -259,11 +262,10 @@ struct BrandProfileView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Color.yard.onPhoto)
                     .frame(width: 54, height: 54)
-                    .background(Circle().fill(Color.yard.onPhoto.opacity(0.12)))
-                    .overlay(Circle().strokeBorder(Color.yard.onPhoto.opacity(0.35), lineWidth: 1))
+                    .yardGlass(Circle(), onPhoto: true)
                     .contentShape(Circle())
             }
-            .buttonStyle(PressableButtonStyle())
+            .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
             .accessibilityLabel("Message \(brand.name)")
         }
     }

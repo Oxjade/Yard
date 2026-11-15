@@ -100,7 +100,9 @@ struct RootView: View {
 struct TabPill: View {
     @Environment(Router.self) private var router
     @Environment(CartStore.self) private var cart
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var namespace
+    @State private var bagBounce = false
 
     var body: some View {
         let collapsed = router.isTabPillCollapsed
@@ -110,13 +112,16 @@ struct TabPill: View {
             }
         }
         .padding(5)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.yard.line, lineWidth: 1))
-        .shadow(color: Color.yard.scrim.opacity(0.22), radius: 18, y: 8)
+        .yardGlass(Capsule(), elevation: .floating)
         .scaleEffect(collapsed ? 0.86 : 1, anchor: .bottom)
-        .animation(Motion.spring, value: collapsed)
-        .animation(Motion.spring, value: router.selectedTab)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: collapsed)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: router.selectedTab)
         .sensoryFeedback(.selection, trigger: router.selectedTab)
+        // Adding to the bag lands visibly: the bag icon dips and the count rolls.
+        .onChange(of: cart.count) { old, new in
+            if new > old { bagBounce.toggle() }
+        }
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: cart.count)
     }
 
     private func tabButton(_ tab: AppTab, collapsed: Bool) -> some View {
@@ -127,6 +132,7 @@ struct TabPill: View {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
                     .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                    .symbolEffect(.bounce.down, value: reduceMotion ? false : (tab == .bag ? bagBounce : false))
                     .foregroundStyle(isSelected ? Color.yard.onAcid : Color.yard.ink)
                     .frame(width: collapsed ? 48 : 58, height: 48)
                     .background {

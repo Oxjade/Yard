@@ -109,7 +109,7 @@ struct DropDetailView: View {
                     .padding(.horizontal, Spacing.gutter)
                     .padding(.top, Spacing.s)
                     .padding(.bottom, Spacing.s)
-                    .background(.ultraThinMaterial)
+                    .yardGlassBar()
                 }
             }
         }

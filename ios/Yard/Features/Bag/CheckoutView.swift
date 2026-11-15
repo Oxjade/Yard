@@ -396,10 +396,7 @@ struct CheckoutView: View {
         .padding(.horizontal, Spacing.gutter)
         .padding(.vertical, Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.yard.line).frame(height: 1)
-        }
+        .yardGlassBar()
         .animation(Motion.spring, value: model.placeError)
         .animation(Motion.spring, value: model.phase)
     }
