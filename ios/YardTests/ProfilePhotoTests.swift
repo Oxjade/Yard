@@ -12,8 +12,8 @@ final class ProfilePhotoCropTests: XCTestCase {
         XCTAssertEqual(ProfilePhotoCrop.clampZoom(0.2), 1)
         XCTAssertEqual(ProfilePhotoCrop.clampZoom(2.5), 2.5)
         XCTAssertEqual(ProfilePhotoCrop.clampZoom(9), 4)
-        XCTAssertEqual(ProfilePhotoCrop.clampZoom(.nan), 1)
-        XCTAssertEqual(ProfilePhotoCrop.clampZoom(.infinity), 1)
+        XCTAssertEqual(ProfilePhotoCrop.clampZoom(CGFloat.nan), 1)
+        XCTAssertEqual(ProfilePhotoCrop.clampZoom(CGFloat.infinity), 1)
     }
 
     func testDisplayScaleCoversTheFrameWithTheShortSide() {
@@ -30,7 +30,7 @@ final class ProfilePhotoCropTests: XCTestCase {
         let o = ProfilePhotoCrop.clampOffset(image: wide, frame: frame, zoom: 1, offset: CGSize(width: 500, height: 50))
         XCTAssertEqual(o.width, 150, accuracy: 1e-9)
         XCTAssertEqual(o.height, 0, accuracy: 1e-9)
-        let n = ProfilePhotoCrop.clampOffset(image: wide, frame: frame, zoom: 1, offset: CGSize(width: -500, height: .nan))
+        let n = ProfilePhotoCrop.clampOffset(image: wide, frame: frame, zoom: 1, offset: CGSize(width: -500, height: CGFloat.nan))
         XCTAssertEqual(n.width, -150, accuracy: 1e-9)
         XCTAssertEqual(n.height, 0)
     }
@@ -71,7 +71,7 @@ final class ProfilePhotoCropTests: XCTestCase {
         XCTAssertEqual(ProfilePhotoCrop.outputSide(1000), 1000)
         XCTAssertEqual(ProfilePhotoCrop.outputSide(3000), 1024)
         XCTAssertEqual(ProfilePhotoCrop.outputSide(0.2), 1)
-        XCTAssertEqual(ProfilePhotoCrop.outputSide(.nan), 1)
+        XCTAssertEqual(ProfilePhotoCrop.outputSide(CGFloat.nan), 1)
     }
 
     func testZoomKeepsTheCentrePoint() {
@@ -96,7 +96,7 @@ final class ProfilePhotoCropTests: XCTestCase {
         XCTAssertGreaterThan(b, a)
         XCTAssertLessThan(b, 180)
         XCTAssertEqual(ProfilePhotoCrop.rubberBand(-150, limit: 100, dimension: 80), -a, accuracy: 1e-9)
-        XCTAssertEqual(ProfilePhotoCrop.rubberBand(.nan, limit: 100, dimension: 80), 0)
+        XCTAssertEqual(ProfilePhotoCrop.rubberBand(CGFloat.nan, limit: 100, dimension: 80), 0)
     }
 
     func testRubberZoomGivesALittleThenStops() {
