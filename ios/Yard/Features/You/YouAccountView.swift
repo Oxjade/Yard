@@ -365,13 +365,13 @@ final class YouAccountModel {
     func finishReauth(_ outcome: AuthWebOutcome) -> Bool {
         reauthFlow = nil
         switch outcome {
-        case .completed(let result):
+        case .completed(let result, let serverMessage):
             if result == "reauthed" || result == "signed_in" {
                 needsReauth = false
                 formError = nil
                 return true
             }
-            formError = AuthOAuthResult.message(for: result)
+            formError = AuthOAuthResult.message(for: result, serverMessage: serverMessage)
             return false
         case .cancelled:
             return false

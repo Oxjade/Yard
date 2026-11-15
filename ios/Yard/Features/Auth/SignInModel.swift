@@ -244,9 +244,9 @@ final class SignInModel {
         let label = webFlowButton?.label ?? "social"
         webFlowButton = nil
         switch outcome {
-        case .completed(let result):
+        case .completed(let result, let serverMessage):
             if result == "signed_in" { return true }
-            failure = AuthOAuthResult.message(for: result)
+            failure = AuthOAuthResult.message(for: result, serverMessage: serverMessage)
             return false
         case .cancelled:
             return false

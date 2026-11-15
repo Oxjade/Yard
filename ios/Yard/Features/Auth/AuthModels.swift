@@ -156,21 +156,87 @@ struct AuthOAuthStartResponse: Decodable, Sendable {
 
 // MARK: - OAuth results
 
-/// `result=` on /auth/complete → the website's wording (auth-oauth-completion.tsx).
+/// `result=` on /auth/complete (website) or yard://auth/complete (app hand-off) → the words shown.
+/// Copy mirrors src/lib/auth/oauth-results.ts (OAUTH_RESULT_MESSAGES) exactly.
 enum AuthOAuthResult {
-    static func message(for result: String) -> String {
-        switch result {
-        case "cancelled": return "Sign-in was cancelled."
-        case "invalid_state": return "This sign-in link expired or could not be verified. Start again."
-        case "error": return "The provider couldn’t complete sign-in. Try again."
-        case "not_configured": return "This sign-in provider isn’t configured on Yard yet."
-        case "identity_in_use": return "That provider account is connected to another Yard account."
-        case "already_linked": return "That provider is already connected to this account."
-        case "link_required": return "Sign in with your password before connecting this provider."
-        case "email_required": return "The provider didn’t share an email address. Try another sign-in method."
-        case "email_unverified": return "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way."
-        case "suspended": return "This account is currently unavailable."
-        default: return "Sign-in could not be completed."
+    static let successResults: Set<String> = ["signed_in", "linked", "reauthed"]
+    static let fallbackMessage = "Sign-in could not be completed."
+    /// Longest server `message` shown for a result the app doesn't know.
+    static let maxServerMessageLength = 300
+
+    static let messages: [String: String] = [
+        "cancelled": "Sign-in was cancelled.",
+        "invalid_state": "This sign-in link expired or could not be verified. Start again.",
+        "error": "The provider couldn’t complete sign-in. Try again.",
+        "not_configured": "This sign-in provider isn’t configured on Yard yet.",
+        "rate_limited": "Too many sign-in attempts. Wait a few minutes, then try again.",
+        "identity_in_use": "That provider account is connected to another Yard account.",
+        "already_linked": "That provider is already connected to this account.",
+        "link_required": "Sign in with your password before connecting this provider.",
+        "email_required": "The provider didn’t share an email address. Try another sign-in method.",
+        "email_unverified": "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way.",
+        "no_brand": "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses.",
+        "suspended": "This account is currently unavailable.",
+        "team_account": "This is a Yard team account, so it can’t shop. Sign in with a different account.",
+        "account_unavailable": "This Yard account is being deleted or is no longer available. Sign in with a different account.",
+        "reauth_mismatch": "The provider account didn’t match the account being confirmed.",
+    ]
+
+    static func isSuccess(_ result: String) -> Bool { successResults.contains(result) }
+
+    /// The words for a failed `result`: the app's own copy for a known result; otherwise the
+    /// server's `message` (trimmed, plain text, capped), else the generic fallback.
+    static func message(for result: String, serverMessage: String? = nil) -> String {
+        if let known = messages[result] { return known }
+        if isSuccess(result) { return fallbackMessage }
+        return sanitize(serverMessage) ?? fallbackMessage
+    }
+
+    /// Trims, collapses control characters/newlines to spaces, caps length. Nil when empty.
+    static func sanitize(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let space: Unicode.Scalar = " "
+        var scalars = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars {
+            let control = CharacterSet.controlCharacters.contains(scalar) || CharacterSet.newlines.contains(scalar)
+            scalars.append(control ? space : scalar)
         }
+        let flattened = String(scalars)
+        var text = flattened.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if text.count > maxServerMessageLength {
+            text = String(text.prefix(maxServerMessageLength - 1)).trimmingCharacters(in: .whitespaces) + "…"
+        }
+        return text
+    }
+}
+
+/// The query of a completion URL (`/auth/complete?result=…&provider=…&message=…`).
+struct AuthOAuthCompletion: Equatable {
+    let result: String
+    let provider: String?
+    /// Server copy for a failure; always nil for a success.
+    let message: String?
+
+    init(result: String, provider: String? = nil, message: String? = nil) {
+        self.result = result
+        self.provider = provider
+        self.message = AuthOAuthResult.isSuccess(result) ? nil : message
+    }
+
+    /// Parses `result`, `provider` and `message` (percent-decoded). A missing or empty
+    /// `result` reads as "error".
+    static func parse(_ url: URL) -> AuthOAuthCompletion {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? {
+            guard let v = items.first(where: { $0.name == name })?.value, !v.isEmpty else { return nil }
+            return v
+        }
+        return AuthOAuthCompletion(result: value("result") ?? "error", provider: value("provider"), message: value("message"))
+    }
+
+    /// The words to show; nil for a success.
+    var failureMessage: String? {
+        AuthOAuthResult.isSuccess(result) ? nil : AuthOAuthResult.message(for: result, serverMessage: message)
     }
 }
