@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { FlagIcon } from "@phosphor-icons/react"
+import { FlagIcon, ImageBrokenIcon } from "@phosphor-icons/react"
+import { useState } from "react"
 import { StatusBadge, orderStatusMeta } from "@/components/dashboard/status-badge"
 import { useNow } from "@/hooks/use-now"
 import { brandById } from "@/lib/data"
@@ -19,7 +20,7 @@ import { ServerActivity, TrustActionBar } from "@/components/admin/trust/shared"
 import { countryName, formatDate, plural, relDays } from "./format"
 import { userStatusMeta } from "./meta"
 import { useLast } from "./use-last"
-import { userActions, userAllowed, userDecision, useUserStatusBlock } from "./user-actions"
+import { photoRemovalDecision, userActions, userAllowed, userDecision, usePhotoRemovalBlock, useUserStatusBlock } from "./user-actions"
 
 /**
  * Whether an audit entry is about this account. Names aren't unique (the sample has several
@@ -42,7 +43,7 @@ const unattributable = (e: AuditEntry, user: PlatformUser) => !e.subjectId && e.
 /** "google" → "Google", "password" → "Password", "facebook" → "Facebook". */
 export const methodLabel = (m: string) => (m === "password" ? "Password" : m === "auth0" ? "Social" : m.charAt(0).toUpperCase() + m.slice(1))
 
-export type LiveUserExtras = { kind: string; methods: string[]; emailVerified: boolean; brands: string[]; adminRole: string | null }
+export type LiveUserExtras = { kind: string; methods: string[]; emailVerified: boolean; brands: string[]; adminRole: string | null; photoSrc: string | null }
 
 export function UserDetail({ id, open, onOpenChange, liveUsers }: { id: string | null; open: boolean; onOpenChange: (o: boolean) => void; liveUsers?: (PlatformUser & LiveUserExtras)[] }) {
   // Relative days count from the same today as every other Control Center page.
@@ -58,8 +59,12 @@ export function UserDetail({ id, open, onOpenChange, liveUsers }: { id: string |
   const users = liveUsers ?? storeUsers
   const { ask, dialog } = useDecision(() => document.querySelector<HTMLElement>('[data-slot="sheet-content"]'))
   const block = useUserStatusBlock()
+  const photoBlock = usePhotoRemovalBlock()
+  // A photo removed from this sheet stays hidden here until the list refetches.
+  const [removedFor, setRemovedFor] = useState<string | null>(null)
 
   if (!user) return null
+  const photo = removedFor === user.id ? null : (user.photoSrc ?? null)
 
   const reports = liveUsers ? [] : reportsFor(user)
   const orders = liveUsers ? [] : merchantOrders.filter((o) => o.customerId === user.id).sort((a, b) => b.placedAt.localeCompare(a.placedAt))
@@ -75,7 +80,7 @@ export function UserDetail({ id, open, onOpenChange, liveUsers }: { id: string |
         onOpenChange={onOpenChange}
         title={user.name}
         description={user.email}
-        lead={<Initials name={user.name} round size="lg" />}
+        lead={<Initials name={user.name} photo={photo} round size="lg" />}
         badges={
           <>
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -85,17 +90,22 @@ export function UserDetail({ id, open, onOpenChange, liveUsers }: { id: string |
         actions={
           <TrustActionBar
             note="Enforced on Yard's server across the whole marketplace. A reason is required and recorded in the audit log."
-            actions={userAllowed[user.status].map((key) => ({
-              key,
-              label: userActions[key].label,
-              icon: userActions[key].icon,
-              variant: userActions[key].button,
-              disabledReason: block,
-              onSelect: () => {
-                const d = userDecision(key, [user])
-                if (d) ask(d)
-              },
-            }))}
+            actions={[
+              ...userAllowed[user.status].map((key) => ({
+                key,
+                label: userActions[key].label,
+                icon: userActions[key].icon,
+                variant: userActions[key].button,
+                disabledReason: block,
+                onSelect: () => {
+                  const d = userDecision(key, [user])
+                  if (d) ask(d)
+                },
+              })),
+              ...(photo
+                ? [{ key: "remove-photo", label: "Remove photo", icon: ImageBrokenIcon, variant: "secondary" as const, disabledReason: photoBlock, onSelect: () => ask(photoRemovalDecision(user, () => setRemovedFor(user.id))) }]
+                : []),
+            ]}
           />
         }
       >

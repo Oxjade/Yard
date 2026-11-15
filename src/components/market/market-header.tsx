@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils"
 import { YardLogo } from "@/components/brand/yard-logo"
 import { NotificationBell } from "@/components/feedback/notification-bell"
 import { InboxHeaderButton } from "@/components/inbox/entry"
+import { PhotoOrInitials } from "@/components/media/person-photo"
+import { useServerSession } from "@/lib/session/use-server-session"
 import { bagCount } from "./bag-count"
 import { useChromeAutohide, useChromeAutohideDriver } from "./chrome-autohide"
 import { BagPop, useLgUp } from "./bag-pop"
@@ -82,6 +84,8 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
   const openBag = useCart((s) => s.open)
   const user = useSession((s) => s.user)
   const requireAuth = useSession((s) => s.requireAuth)
+  // The profile photo comes from the server session, for the same account as the local user.
+  const photo = useServerSession((s) => (s.shopper && user && s.shopper.id === user.id ? (s.shopper.photoSrc ?? null) : null))
   const [scrolled, setScrolled] = useState(false)
   const signedIn = hydrated && !!user
 
@@ -178,8 +182,10 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
               {lgUp === true ? <BagPop placement="header" /> : null}
             </div>
             {signedIn ? (
-              <Link href="/you" className="ml-1 hidden size-9 items-center justify-center rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 transition-transform duration-150 hover:scale-[1.04] active:scale-95 lg:inline-flex">
-                <span aria-hidden>{user!.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
+              <Link href="/you" className="ml-1 hidden size-9 items-center justify-center overflow-hidden rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 transition-transform duration-150 hover:scale-[1.04] active:scale-95 lg:inline-flex">
+                <PhotoOrInitials src={photo}>
+                  <span aria-hidden>{user!.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
+                </PhotoOrInitials>
                 <span className="sr-only">Your World</span>
               </Link>
             ) : (

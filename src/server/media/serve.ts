@@ -6,7 +6,7 @@ import { and, eq, gt, sql } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import { getAdmin, getBrandActor, getShopper, type Actor } from "../auth/dal"
 import { db } from "../db"
-import { auditLog, messageAttachments, messages, reports } from "../db/schema"
+import { auditLog, brandMembers, conversations, messageAttachments, messages, orderStates, reports, users } from "../db/schema"
 import { catalogImages, productProposals } from "../db/schema/catalog"
 import { CATALOG_IMAGE_PURPOSES } from "./visibility"
 import { notFound } from "../http/errors"
@@ -94,9 +94,34 @@ async function onSentMessage(mediaId: string) {
   return !!row
 }
 
+/** A profile photo that is still its owner's current one (replaced or removed photos are not shown to others). */
+async function isCurrentPhoto(m: MediaRow) {
+  const d = await db()
+  const [u] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, m.ownerId), eq(users.photoMediaId, m.id))).limit(1)
+  return !!u
+}
+
+/**
+ * Profile photos (purpose account_photo) are shown where the person's name is shown to someone
+ * else: their brand teammates (Studio team list), and brands they message or buy from (inbox,
+ * customers, orders). Nothing about a person is public on Yard, so their photo never is either.
+ */
+async function brandMaySeePhoto(m: MediaRow, brandId: string) {
+  if (!(await isCurrentPhoto(m))) return false
+  const d = await db()
+  const owner = m.ownerId
+  const [member] = await d.select({ id: brandMembers.id }).from(brandMembers).where(and(eq(brandMembers.brandId, brandId), eq(brandMembers.userId, owner))).limit(1)
+  if (member) return true
+  const [conv] = await d.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.kind, "brand"), eq(conversations.brandId, brandId), eq(conversations.customerId, owner))).limit(1)
+  if (conv) return true
+  const [order] = await d.select({ id: orderStates.orderRefId }).from(orderStates).where(and(eq(orderStates.brandId, brandId), eq(orderStates.customerId, owner))).limit(1)
+  return !!order
+}
+
 /** Decides access for a private (or removed) file. Returns the actor that may read it, or null. */
 async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Actor | null> {
   if (!as) return null
+  if (m.purpose === "account_photo") return authorisePhoto(m, as, req)
   if (as === "shopper") {
     if (m.moderationStatus === "removed") return null
     const s = await getShopper()
@@ -139,6 +164,36 @@ async function authorise(m: MediaRow, as: As | null, req: Request): Promise<Acto
   if (m.purpose === "inbox_attachment" && !(await inboxEvidence(m.id))) return null
   await auditView(a, m)
   return a
+}
+
+/**
+ * Profile photos: the person on any surface; brands per brandMaySeePhoto; any admin while it is
+ * the current photo (Users, team lists; not audited, a name-level detail like the name beside it).
+ * A photo Yard removed: admins with content.moderate only (audited, as other removed media).
+ */
+async function authorisePhoto(m: MediaRow, as: As, req: Request): Promise<Actor | null> {
+  if (as === "shopper") {
+    if (m.moderationStatus === "removed") return null
+    const s = await getShopper()
+    return s && s.userId === m.ownerId ? s : null
+  }
+  if (as === "brand") {
+    if (m.moderationStatus === "removed") return null
+    const b = await getBrandActor()
+    if (!b) return null
+    if (b.userId === m.ownerId) return b
+    return (await brandMaySeePhoto(m, b.brandId)) ? b : null
+  }
+  if (req.headers.get("sec-fetch-site") !== "same-origin") return null
+  const a = await getAdmin()
+  if (!a) return null
+  if (m.moderationStatus === "removed") {
+    if (!canAdmin(a.role, "content.moderate")) return null
+    await auditView(a, m)
+    return a
+  }
+  if (a.userId === m.ownerId || (await isCurrentPhoto(m))) return a
+  return null
 }
 
 async function auditView(a: Extract<Actor, { kind: "admin" }>, m: MediaRow) {

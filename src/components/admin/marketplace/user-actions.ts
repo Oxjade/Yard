@@ -128,3 +128,34 @@ export function userDecision(key: UserActionKey, list: PlatformUser[], { announc
     },
   }
 }
+
+/** Why "Remove photo" is unavailable here, or undefined when this admin can remove profile photos. */
+export function usePhotoRemovalBlock() {
+  const admin = useServerSession((s) => s.admin)
+  const loading = useServerSession((s) => s.status === "loading")
+  if (loading) return "Checking your admin session."
+  if (!admin) return NO_ADMIN_SESSION
+  return canAdmin(admin.role, "content.moderate") ? undefined : needsRole("content.moderate")
+}
+
+/**
+ * Removes an account's profile photo (remove-account-photo, content.moderate): the account goes
+ * back to initials, the reason is audited and sent to the person in a notice.
+ */
+export function photoRemovalDecision(user: { id: string; name: string }, onDone?: () => void): Decision {
+  return {
+    title: `Remove ${user.name}'s photo?`,
+    description: "Their account goes back to initials everywhere. They get a notice with your reason and can add a new photo.",
+    fieldLabel: "Reason, shown to them and kept in the audit log",
+    presets: ["Not a photo of a person", "Offensive or explicit", "Impersonates someone", "Contains contact details"],
+    confirmLabel: "Remove photo",
+    destructive: true,
+    run: async (reason) => {
+      const r = await decide("remove-account-photo", { id: user.id, reason })
+      pushAudit(r.audit)
+      onDone?.()
+      revalidatePrefix("admin:")
+      toast.success("Photo removed", { description: "They've been told why." })
+    },
+  }
+}

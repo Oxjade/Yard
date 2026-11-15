@@ -493,7 +493,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
       }}
       account={
         admin
-          ? { initials, name: admin.name, caption: admin.demo ? `${adminRoleLabels[admin.role]}, demo account` : adminRoleLabels[admin.role] }
+          ? { initials, name: admin.name, photo: admin.photoSrc, caption: admin.demo ? `${adminRoleLabels[admin.role]}, demo account` : adminRoleLabels[admin.role] }
           : session.status === "loading"
             ? { initials: "", name: "Control Center", caption: "Checking your session" }
             : session.status === "error"

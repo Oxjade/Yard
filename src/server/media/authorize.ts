@@ -23,7 +23,7 @@ import { refuseSampleBrand } from "../catalog/sample-guard"
  * blocks in either direction, a locked conversation, messaging restrictions and the brand's status.
  */
 export type UploadTarget = {
-  purpose: UploadPurpose
+  purpose: UploadPurpose | "account_photo"
   ownerKind: "brand" | "user"
   ownerId: string
   brandId: string | null

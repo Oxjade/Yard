@@ -56,7 +56,8 @@ export const conversationSummary = z.object({
    */
   kind: z.enum(["brand", "support"]).default("brand"),
   brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), mark: brandMark, verified: z.boolean() }),
-  customer: z.object({ id: z.string(), name: z.string() }).optional(),
+  /** Brand side only. `photoSrc`: the shopper's profile photo (/api/media/<id>?as=brand), or null for initials. */
+  customer: z.object({ id: z.string(), name: z.string(), photoSrc: z.string().nullable().optional() }).optional(),
   status: z.enum(["open", "resolved"]),
   spamState: z.enum(["none", "suspected", "confirmed"]),
   locked: z.boolean(),

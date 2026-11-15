@@ -1,0 +1,3 @@
+ALTER TABLE "media_assets" DROP CONSTRAINT "media_assets_purpose_ck";--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "photo_media_id" text;--> statement-breakpoint
+ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_purpose_ck" CHECK (purpose in ('social_post', 'inbox_attachment', 'location_image', 'social_import', 'sample', 'onboarding_image', 'storefront_cover', 'drop_image', 'account_photo'));

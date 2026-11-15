@@ -1,10 +1,11 @@
 import "server-only"
 import type { AdminProfile, BrandProfile, SessionDto, ShopperProfile } from "@/lib/api/contracts/session"
 import { getEnv } from "../env"
+import { photoSrc } from "../media/dto"
 import { getAdmin, getBrandActor, getShopper, type AdminActor, type BrandActor, type ShopperActor } from "./dal"
 
 /** Narrow profiles for GET /api/session and the demo sign-in response (§2.1). Never tokens. */
-export const shopperProfileOf = (a: ShopperActor): ShopperProfile => ({ id: a.userId, name: a.name, email: a.email, status: a.status, demo: a.demo })
+export const shopperProfileOf = (a: ShopperActor): ShopperProfile => ({ id: a.userId, name: a.name, email: a.email, status: a.status, demo: a.demo, photoSrc: photoSrc(a.photoMediaId, "shopper") })
 
 export const brandProfileOf = (a: BrandActor): BrandProfile => ({
   userId: a.userId,
@@ -14,9 +15,10 @@ export const brandProfileOf = (a: BrandActor): BrandProfile => ({
   permissions: a.permissions,
   // Yard setup works on a real founding brand: Studio reads its live data, even for a demo admin.
   demo: a.role === "yard_setup" ? false : a.demo,
+  photoSrc: photoSrc(a.photoMediaId, "brand"),
 })
 
-export const adminProfileOf = (a: AdminActor): AdminProfile => ({ id: a.userId, name: a.name, role: a.role, permissions: a.permissions, demo: a.demo })
+export const adminProfileOf = (a: AdminActor): AdminProfile => ({ id: a.userId, name: a.name, role: a.role, permissions: a.permissions, demo: a.demo, photoSrc: photoSrc(a.photoMediaId, "admin") })
 
 export async function sessionSnapshot(): Promise<SessionDto> {
   const [shopper, brand, admin] = await Promise.all([getShopper(), getBrandActor(), getAdmin()])

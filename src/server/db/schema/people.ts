@@ -16,6 +16,12 @@ export const users = pgTable(
     status: text("status").notNull().default("active"),
     demo: boolean("demo").notNull().default(true),
     readReceipts: boolean("read_receipts").notNull().default(true),
+    /**
+     * The account's profile photo: a media_assets row of purpose account_photo owned by this user.
+     * Private; served to the person, their brand teammates, brands they talk to or buy from, and
+     * admins (src/server/media/serve.ts). No foreign key, like brands.logo_media_id.
+     */
+    photoMediaId: text("photo_media_id"),
     createdAt: tz("created_at").notNull().defaultNow(),
   },
   (t) => [

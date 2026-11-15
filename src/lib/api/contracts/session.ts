@@ -9,6 +9,8 @@ export const shopperProfile = z.object({
   email: z.string(),
   status: z.enum(["active", "restricted", "suspended"]),
   demo: z.boolean(),
+  /** The profile photo (/api/media/<id>?as=shopper), or null: show initials. */
+  photoSrc: z.string().nullable().optional(),
 })
 export const brandProfile = z.object({
   userId: z.string(),
@@ -18,6 +20,8 @@ export const brandProfile = z.object({
   role: z.enum(["owner", "admin", "designer", "fulfilment", "finance", "viewer", "yard_setup"]),
   permissions: z.array(z.enum(BRAND_PERMISSIONS)),
   demo: z.boolean(),
+  /** The member's own profile photo (?as=brand), or null. */
+  photoSrc: z.string().nullable().optional(),
 })
 export const adminProfile = z.object({
   id: z.string(),
@@ -25,6 +29,8 @@ export const adminProfile = z.object({
   role: z.enum(["owner", "finance", "trust_safety", "support", "ads_ops", "engineering"]),
   permissions: z.array(z.enum(ADMIN_PERMISSIONS)),
   demo: z.boolean(),
+  /** The admin's own profile photo (?as=admin), or null. */
+  photoSrc: z.string().nullable().optional(),
 })
 export const demoAuthState = z.object({ shopper: z.boolean(), brand: z.boolean(), admin: z.boolean(), production: z.boolean() })
 

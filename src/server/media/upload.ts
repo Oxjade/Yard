@@ -3,10 +3,10 @@ import type { Actor } from "../auth/dal"
 import { badRequest, HttpError, rateLimited, rule } from "../http/errors"
 import { log } from "../log"
 import type { MediaDto, UploadPurpose } from "@/lib/api/contracts/uploads"
-import { authorizeAdminUpload, authorizeBrandUpload, authorizeShopperUpload } from "./authorize"
+import { authorizeAdminUpload, authorizeBrandUpload, authorizeShopperUpload, type UploadTarget } from "./authorize"
 import { toMediaDto } from "./dto"
 import { imageSize, mp4Info, sniff } from "./sniff"
-import { brandBytesToday, BRAND_DAILY_KIB, headerCap, kindCap, storeUpload } from "./store"
+import { brandBytesToday, BRAND_DAILY_KIB, headerCap, kindCap, storeUpload, type MediaRow } from "./store"
 import { MalformedMedia, stripMetadataBytes } from "./strip-metadata"
 
 /** Room for the multipart envelope (boundaries, part headers, the file name) around the file itself. */
@@ -22,6 +22,17 @@ const unsupported = (video: boolean) =>
 export async function handleUpload(actor: Actor, query: { purpose: UploadPurpose; conversationId?: string; brandId?: string }, req: Request): Promise<{ media: MediaDto }> {
   // 1. Authorise from the URL alone.
   const target = actor.kind === "shopper" ? await authorizeShopperUpload(actor, query) : actor.kind === "brand" ? await authorizeBrandUpload(actor, query) : await authorizeAdminUpload(actor, query)
+  const row = await ingestUpload(actor, target, req)
+  return { media: toMediaDto(row, actor.kind) }
+}
+
+/**
+ * Steps 2–6 for a target that is already authorised: the size checks before the body, one
+ * multipart `file`, sniffing, metadata stripping, dimensions, then the store. Shared by
+ * POST /api/uploads and POST /api/account/photo (purpose account_photo), so every upload gets
+ * the same limits and the same JPEG/PNG/WebP strip.
+ */
+export async function ingestUpload(actor: Actor, target: UploadTarget, req: Request): Promise<MediaRow> {
   const videoOk = target.purpose === "social_post"
 
   // 2. Size before the body: no Content-Length → 411; over the purpose's cap → 413.
@@ -83,7 +94,7 @@ export async function handleUpload(actor: Actor, query: { purpose: UploadPurpose
   // 6. Store: the file first, then one short transaction for the row.
   const row = await storeUpload({ ...target, bytes, sniffed, createdBy: actor.userId, width, height, durationMs })
   log.info(`[yard] upload ${row.id} ${target.purpose} ${row.mime} ${row.bytes} B by ${actor.kind}:${actor.userId}`)
-  return { media: toMediaDto(row, actor.kind) }
+  return row
 }
 
 function secondsToUtcMidnight() {

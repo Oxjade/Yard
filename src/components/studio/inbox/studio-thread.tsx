@@ -191,7 +191,7 @@ export function StudioThread({ conversationId, summary, session, quickReplies, c
               <ArrowLeftIcon className="size-5" />
             </button>
           ) : null}
-          {conv ? <Initials name={customerName} className="size-9" /> : <Bone className="size-9 shrink-0 rounded-full" />}
+          {conv ? <Initials name={customerName} photo={conv.customer?.photoSrc} className="size-9" /> : <Bone className="size-9 shrink-0 rounded-full" />}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               {conv ? <span className="truncate text-[0.9375rem] font-medium text-ink">{customerName}</span> : <Bone className="h-4 w-32" />}

@@ -96,7 +96,7 @@ function AbuseTable() {
       sortValue: (r) => r.user.name.toLowerCase(),
       cell: (r) => (
         <button type="button" onClick={() => open(r)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <Initials name={r.user.name} round />
+          <Initials name={r.user.name} photo={r.user.photoSrc} round />
           <span className="min-w-0">
             <span className="block max-w-[44vw] truncate font-medium text-ink group-hover:text-violet sm:max-w-[220px]">{r.user.name}</span>
             <span className="block max-w-[44vw] truncate text-[11.5px] text-ink-3 sm:max-w-[220px]">
@@ -203,7 +203,7 @@ function AbuseSheet({ row, open, quiet, d, now, onOpenChange }: { row?: AbuseRow
       onOpenChange={onOpenChange}
       title={r.user.name}
       description={r.user.email}
-      lead={<Initials name={r.user.name} round size="lg" />}
+      lead={<Initials name={r.user.name} photo={r.user.photoSrc} round size="lg" />}
       badges={
         <>
           <StatusBadge tone={st.tone}>{st.label}</StatusBadge>

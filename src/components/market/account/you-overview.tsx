@@ -22,6 +22,8 @@ import { brandById, drops as allDrops, productById, recommendBrands } from "@/li
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { PhotoOrInitials } from "@/components/media/person-photo"
 import type { Brand, MerchantOrder, Product } from "@/lib/data/types"
 import { firstName, formatDay, formatOrderMoney } from "./format"
 import { InterestEditor } from "./interest-editor"
@@ -121,6 +123,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 /** Your World overview: what's next from the brands you follow, what you saved, and your orders. */
 export function YouOverview() {
   const user = useSession((s) => s.user)!
+  const photo = useServerSession((s) => (s.shopper && s.shopper.id === user.id ? (s.shopper.photoSrc ?? null) : null))
   const onboarded = useSession((s) => s.onboarded)
   const interests = useSession((s) => s.interests)
   const following = useSaved((s) => s.following)
@@ -186,10 +189,19 @@ export function YouOverview() {
   return (
     <>
       <header>
-        <p className="text-sm text-violet">Your World</p>
-        <h1 className="mt-2 font-display text-display-lg text-ink">
-          {greeting(hour)}, {firstName(user.name)}
-        </h1>
+        <div className="flex items-center gap-4">
+          <Link href="/you/settings" aria-label="Your photo and details" className="inline-flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple text-base font-semibold text-ink ring-2 ring-black/40 md:size-16">
+            <PhotoOrInitials src={photo}>
+              <span aria-hidden>{user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
+            </PhotoOrInitials>
+          </Link>
+          <div className="min-w-0">
+            <p className="text-sm text-violet">Your World</p>
+            <h1 className="mt-2 font-display text-display-lg text-ink">
+              {greeting(hour)}, {firstName(user.name)}
+            </h1>
+          </div>
+        </div>
         <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{summary.join(" ")}</p>
       </header>
       <YouNav className="mt-8" />

@@ -2,7 +2,7 @@ import "server-only"
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import { afterCommit, db, withTx, type Tx } from "../db"
-import { brandMembers, notifications, sessions, shopperFollows, shopperReminders, shopperWishlist, users } from "../db/schema"
+import { brandMembers, mediaAssets, notifications, sessions, shopperFollows, shopperReminders, shopperWishlist, users } from "../db/schema"
 import { accountDeletions, adminMfa, authOauthStates, authTokens, mfaRecoveryCodes, oauthIdentities, userCredentials } from "../db/schema/identity"
 import { HttpError } from "../http/errors"
 import { newId } from "../ids"
@@ -12,6 +12,8 @@ import { AUTH_EMAIL_TEMPLATES, sendAuthEmail, userById, type RequestMeta } from 
 import { endSessionsForUser } from "./session"
 import { removeDevicesOf } from "../push"
 import { voidTokens } from "./tokens"
+import { unlink } from "node:fs/promises"
+import { resolveStored } from "../media/store"
 
 /**
  * Shopper account deletion (v3).
@@ -120,10 +122,19 @@ async function eraseUser(tx: Tx, userId: string) {
   await d.delete(shopperWishlist).where(eq(shopperWishlist.userId, userId))
   await d.delete(shopperReminders).where(eq(shopperReminders.userId, userId))
   await d.delete(brandMembers).where(eq(brandMembers.userId, userId))
+  // Profile photos (current and replaced): rows now, files once the erasure commits.
+  const photos = await d.delete(mediaAssets).where(and(eq(mediaAssets.purpose, "account_photo"), eq(mediaAssets.ownerKind, "user"), eq(mediaAssets.ownerId, userId))).returning({ storagePath: mediaAssets.storagePath })
+  if (photos.length)
+    afterCommit(async () => {
+      for (const p of photos) {
+        const file = resolveStored(p.storagePath)
+        if (file) await unlink(file).catch(() => {})
+      }
+    })
   // The row stays (orders, messages and audit rows reference it); everything that identifies a person goes.
   await d
     .update(users)
-    .set({ name: "Deleted shopper", email: `deleted+${userId}@deleted.invalid`, city: null, country: null, status: "suspended" })
+    .set({ name: "Deleted shopper", email: `deleted+${userId}@deleted.invalid`, city: null, country: null, status: "suspended", photoMediaId: null })
     .where(eq(users.id, userId))
   return { ran, skipped }
 }

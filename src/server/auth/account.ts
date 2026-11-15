@@ -2,7 +2,8 @@ import "server-only"
 import { and, desc, eq, gt, isNull } from "drizzle-orm"
 import { writeAudit } from "../audit"
 import { db, withTx } from "../db"
-import { users } from "../db/schema"
+import { mediaAssets, users } from "../db/schema"
+import { photoSrc } from "../media/dto"
 import { authTokens, oauthIdentities } from "../db/schema/identity"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { authLinks } from "./auth-env"
@@ -40,6 +41,20 @@ export type AccountDto = {
   signInProviders: string[]
   pendingEmail: { email: string; expiresAt: string } | null
   demo: boolean
+  /**
+   * The profile photo, or null. One size: the file as uploaded (clients send a square JPEG of
+   * about 1024 px; the media pipeline keeps no other sizes). `src` is cookie-scoped (`?as=`).
+   */
+  photo: { mediaId: string; src: string; width: number | null; height: number | null } | null
+}
+
+/** The current photo's file, or null (none, gone, or removed by Yard). */
+async function photoOf(photoMediaId: string | null | undefined, as: "shopper" | "brand") {
+  if (!photoMediaId) return null
+  const d = await db()
+  const [m] = await d.select({ id: mediaAssets.id, width: mediaAssets.width, height: mediaAssets.height, moderation: mediaAssets.moderationStatus }).from(mediaAssets).where(eq(mediaAssets.id, photoMediaId)).limit(1)
+  if (!m || m.moderation === "removed") return null
+  return { mediaId: m.id, src: photoSrc(m.id, as)!, width: m.width, height: m.height }
 }
 
 async function pendingChange(userId: string) {
@@ -54,14 +69,15 @@ async function pendingChange(userId: string) {
   return row && email ? { email, expiresAt: row.expiresAt.toISOString() } : null
 }
 
-export async function accountOf(userId: string): Promise<AccountDto> {
+export async function accountOf(userId: string, as: "shopper" | "brand" = "shopper"): Promise<AccountDto> {
   const user = await userById(userId)
   if (!user) throw notFound()
   const d = await db()
-  const [cred, ids, pending] = await Promise.all([
+  const [cred, ids, pending, photo] = await Promise.all([
     credentialsOf(userId),
     d.select({ provider: oauthIdentities.provider }).from(oauthIdentities).where(eq(oauthIdentities.userId, userId)),
     pendingChange(userId),
+    photoOf(user.photoMediaId, as),
   ])
   return {
     name: user.name,
@@ -71,6 +87,7 @@ export async function accountOf(userId: string): Promise<AccountDto> {
     signInProviders: [...new Set(ids.map((r) => r.provider))].sort(),
     pendingEmail: pending,
     demo: user.demo,
+    photo,
   }
 }
 
@@ -85,7 +102,7 @@ export async function changeName(actor: AccountActor, name: string, meta: Reques
     await d.update(users).set({ name: clean }).where(eq(users.id, actor.userId))
     await writeAudit({ actor: { kind: actor.kind, id: actor.userId, name: clean }, action: "account.name_changed", target: clean, subjectType: "user", subjectId: actor.userId, ipHash: meta.ipHash })
   })
-  return accountOf(actor.userId)
+  return accountOf(actor.userId, actor.kind)
 }
 
 /** Another account (not this one) already holds `email`. */
@@ -120,13 +137,13 @@ export async function requestEmailChange(actor: AccountActor, input: { email: st
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.changeEmail, next, { name: user.name, url: authLinks.changeEmail(t.token), expiresMinutes: t.ttlMinutes }, `change-email:${user.id}:${t.expiresAt.getTime()}`)
     await writeAudit({ actor: { kind: actor.kind, id: actor.userId, name: user.name }, action: "account.email_change_requested", target: user.name, subjectType: "user", subjectId: user.id, ipHash: meta.ipHash })
   })
-  return accountOf(user.id)
+  return accountOf(user.id, actor.kind)
 }
 
 /** Cancels a pending change: the link already sent stops working. */
 export async function cancelEmailChange(actor: AccountActor) {
   await withTx(() => voidTokens(actor.userId, ["change_email"]))
-  return accountOf(actor.userId)
+  return accountOf(actor.userId, actor.kind)
 }
 
 /**

@@ -33,6 +33,8 @@ export type ShopperActor = {
   status: "active" | "restricted" | "suspended"
   createdAt: Date
   demo: boolean
+  /** The account's profile photo (media_assets, purpose account_photo), or null. */
+  photoMediaId?: string | null
 }
 
 export type BrandSession = { sessionId: string; userId: string; activeBrandId: string; role: MemberRole }
@@ -48,6 +50,8 @@ export type BrandActor = {
   role: MemberRole
   permissions: BrandPermission[]
   demo: boolean
+  /** The member's own account photo (the same person as the shopper account), or null. */
+  photoMediaId?: string | null
 }
 
 export type AdminActor = {
@@ -58,6 +62,7 @@ export type AdminActor = {
   role: AdminRole
   permissions: AdminPermission[]
   demo: boolean
+  photoMediaId?: string | null
 }
 
 export type Actor = ShopperActor | BrandActor | AdminActor
@@ -78,7 +83,7 @@ export const getShopper = cache(async (): Promise<ShopperActor | null> => {
   if (!s) return null
   const u = await userOf(s)
   if (!u || u.status === "suspended" || (u.kind !== "shopper" && u.kind !== "brand_staff")) return null
-  return { kind: "shopper", sessionId: s.id, userId: u.id, name: u.name, email: u.email, status: u.status as ShopperActor["status"], createdAt: u.createdAt, demo: u.demo }
+  return { kind: "shopper", sessionId: s.id, userId: u.id, name: u.name, email: u.email, status: u.status as ShopperActor["status"], createdAt: u.createdAt, demo: u.demo, photoMediaId: u.photoMediaId ?? null }
 })
 
 /** An active restriction of `kind` on a user or brand, or null. */
@@ -146,6 +151,7 @@ const getBrandActorInternal = cache(async (): Promise<BrandActor | null> => {
     role,
     permissions: brandRolePermissions[role] ?? [],
     demo: u.demo,
+    photoMediaId: u.photoMediaId ?? null,
   }
 })
 
@@ -210,7 +216,7 @@ export const getAdmin = cache(async (): Promise<AdminActor | null> => {
   const [u, m] = await Promise.all([userOf(s), d.query.adminMembers.findFirst({ where: (am, { eq }) => eq(am.userId, s.userId) })])
   if (!u || u.status === "suspended" || !m) return null
   const role = m.role as AdminRole
-  return { kind: "admin", sessionId: s.id, userId: u.id, name: u.name, role, permissions: adminRolePermissions[role] ?? [], demo: u.demo }
+  return { kind: "admin", sessionId: s.id, userId: u.id, name: u.name, role, permissions: adminRolePermissions[role] ?? [], demo: u.demo, photoMediaId: u.photoMediaId ?? null }
 })
 
 export async function requireAdmin(permission: AdminPermission | "any_admin"): Promise<AdminActor> {

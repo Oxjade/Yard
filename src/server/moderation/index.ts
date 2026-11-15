@@ -12,6 +12,7 @@ import * as chartsMod from "./charts"
 import * as content from "./content"
 import * as delivery from "./delivery"
 import * as messagesMod from "./messages"
+import * as photos from "./photos"
 import * as status from "./status"
 import { priorNotes, type DecisionCtx } from "./shared"
 
@@ -45,6 +46,7 @@ export const decisionActions = {
   "add-holiday": { handler: "addHoliday", permission: "holidays.edit" },
   "remove-holiday": { handler: "removeHoliday", permission: "holidays.edit" },
   "set-user-status": { handler: "setUserStatus", permission: "users.restrict" },
+  "remove-account-photo": { handler: "removeAccountPhoto", permission: "content.moderate" },
   "add-restriction": { handler: "addRestriction", permission: "users.restrict", anyOf: ["users.restrict", "brands.restrict"] },
   "lift-restriction": { handler: "liftRestriction", permission: "users.restrict", anyOf: ["users.restrict", "brands.restrict"] },
   "set-brand-status": { handler: "setBrandStatus", permission: "brands.restrict" },
@@ -80,6 +82,7 @@ const handlers: Record<(typeof decisionActions)[DecisionAction]["handler"], Hand
   addHoliday: delivery.addHoliday,
   removeHoliday: delivery.removeHoliday,
   setUserStatus: status.setUserStatus,
+  removeAccountPhoto: photos.removeAccountPhoto,
   addRestriction: abuse.addRestriction,
   liftRestriction: abuse.liftRestriction,
   setBrandStatus: status.setBrandStatus,

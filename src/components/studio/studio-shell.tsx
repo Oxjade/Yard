@@ -576,7 +576,7 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       }
       account={
         member
-          ? { initials: initialsOf(member.name), name: member.name, caption: member.demo ? `${memberRoleLabel(member.role)}, demo account` : memberRoleLabel(member.role) }
+          ? { initials: initialsOf(member.name), name: member.name, photo: member.photoSrc, caption: member.demo ? `${memberRoleLabel(member.role)}, demo account` : memberRoleLabel(member.role) }
           : checking
             ? { initials: "", name: "Brand Studio", caption: "Checking your session" }
             : session.status === "error"

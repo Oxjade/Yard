@@ -439,7 +439,7 @@ export const abuseAlertDto = z.object({
 export type AbuseAlertDto = z.infer<typeof abuseAlertDto>
 
 export const abuseRowDto = z.object({
-  user: z.object({ id: z.string(), name: z.string(), email: z.string(), status: z.enum(["active", "restricted", "suspended"]), kind: z.string(), demo: z.boolean() }),
+  user: z.object({ id: z.string(), name: z.string(), email: z.string(), status: z.enum(["active", "restricted", "suspended"]), kind: z.string(), demo: z.boolean(), photoSrc: z.string().nullable().optional() }),
   rateLimitHits: z.number(),
   heldMessages: z.number(),
   spamMarks: z.number(),
@@ -496,6 +496,8 @@ export const decisionBodies = {
   "add-holiday": strict({ date: holidayDate, name: shownText({ min: 2, max: 80, short: "Name the holiday.", long: "Keep the name to 80 characters.", line: true }), kind: z.enum(HOLIDAY_KINDS).default("public"), estimated: z.boolean().default(false) }),
   "remove-holiday": strict({}),
   "set-user-status": strict({ status: z.enum(["active", "restricted", "suspended"]) }),
+  /** `id`: the user. Removes their current profile photo; `reason` goes in the audit row and the notice to them. */
+  "remove-account-photo": strict({}),
   "add-restriction": strict({ subjectKind: z.enum(["user", "brand"]).default("user"), kind: z.enum(["messaging", "uploads", "reports"]), duration: z.enum(["24h", "7d", "30d"]), alertId: z.string().max(80).optional() }),
   "lift-restriction": strict({}),
   /** "reinstate" restores the status the brand had before its restriction or suspension (the server reads it from the audit log; unknown → pending_review). */

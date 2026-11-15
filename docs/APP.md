@@ -213,8 +213,11 @@ use `?as=shopper` in the app (the shopper session `yard_s`). Code: `src/server/a
   "hasPassword": true,
   "signInProviders": ["apple", "auth0", "google"],   // linked sign-in identities, sorted; [] when none
   "pendingEmail": { "email": "new@example.com", "expiresAt": "ISO" } | null,
-  "demo": false }
+  "demo": false,
+  "photo": { "mediaId": "med_…", "src": "/api/media/med_…?as=shopper", "width": 1024, "height": 1024 } | null }
 ```
+
+`photo` is described under "Profile photo" below.
 
 **Name** (same rules as sign-up): trimmed, 1–80 characters, no control characters and no `<` `>`.
 400 `validation` with `fields.name` = "Enter your name." | "Keep it to 80 characters." | "Use letters,
@@ -252,3 +255,64 @@ The app should refetch `GET /api/account?as=shopper` and `GET /api/session` when
 foreground (the link is usually opened in the browser or mail app): `pendingEmail` becomes `null` and
 `email` becomes the new address. All errors use the format above; 401 without a session; 403 `csrf`
 without the write headers.
+
+## Profile photo
+
+The signed-in person's photo, shown instead of their initials. One photo per person (a shopper and a
+brand member are the same `users` row). No username or bio. Code: `src/server/auth/account-photo.ts`,
+`src/app/api/account/photo/route.ts`; files go through the same uploads pipeline as other photos
+(`src/server/media`, purpose `account_photo`).
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| GET | `/api/account?as=shopper` | – | 200 `{ "account": AccountDto }`; `account.photo` is the photo or `null` |
+| POST (or PUT) | `/api/account/photo?as=shopper` | multipart/form-data, one field `file` | 200 `{ "account": AccountDto }` with `photo` set (adds or replaces) |
+| DELETE | `/api/account/photo?as=shopper` | – | 200 `{ "account": AccountDto }` with `photo: null` (no-op when there is none) |
+
+Upload headers: `Origin`, `X-Yard-Client: 1`, `Content-Type: multipart/form-data; boundary=…` (not
+JSON) and a **`Content-Length`** (the server checks it before reading the body; chunked uploads get
+411). Send exactly one part named `file` and nothing else.
+
+**What to send.** Let the person pick a photo (camera or library), show a **square crop** step
+(drag + zoom; the website dims everything outside a circle), then upload the cropped square as a
+JPEG of at most **1024 × 1024** (quality ~0.9). Re-encoding drops EXIF and GPS on the phone; the
+server strips metadata again anyway. HEIC: convert to JPEG on the device (both platforms can decode
+it); the server reads only the bytes and accepts JPEG, PNG and WebP.
+
+**Limits.** At most 10 MB; 64–8000 px on each side; JPEG, PNG or WebP by content (the file name and
+part type are ignored). Not required to be square, but avatars are drawn round with `object-fit:
+cover`, so send a square. 10 uploads per 10 minutes and 30 a day per account; 20 removals per 10
+minutes.
+
+**Sizes.** There is one size: the file you uploaded (the media pipeline makes no thumbnails).
+`width` / `height` are its pixels. Draw it at any size with aspect-fill.
+
+**Errors** (standard error body):
+- 411 `length_required` (no Content-Length) · 413 `too_large` "This file is too large. The limit here is 10 MB."
+- 415 `unsupported_type` "Yard couldn't read this as a JPEG, PNG or WebP photo. …"
+- 422 `rule`: "This photo is smaller than 64 px on a side. Use a larger one." · "This photo is larger than 8000 px on a side. …"
+  · **"Demo accounts can't change their photo."** (upload and delete)
+- 400 `validation` `fields.file`: not multipart, no file, several files or extra fields, empty file.
+- 403 `restricted` "Uploading is paused on your account until …" (an uploads restriction; removing still works).
+- 429 `rate_limited` with `Retry-After` · 401 without a session · 403 `csrf` without the write headers.
+
+**Showing photos.** `src` is a cookie-scoped URL on the site origin: load it with the session cookie
+(the same way as inbox attachments). It is private, never public:
+- the person themself (`?as=shopper` for the shopper session);
+- brands: in Studio the shopper's photo comes in `conversation.customer.photoSrc` (`?as=brand`) for
+  shoppers who message or buy from that brand, and teammates see each other's;
+- admins see it in the Control Center (Users).
+Anyone else gets 404, and so does a replaced or removed photo for everyone but its owner. A new
+photo has a new `mediaId` and `src`, so caches never show the old one; a removed photo can still be
+cached for up to 5 minutes (`Cache-Control: private, max-age=300`). If the image fails to load, show
+the initials. `GET /api/session` also carries `shopper.photoSrc` (and `brand.photoSrc`,
+`admin.photoSrc`) for headers; refetch it after a change.
+
+**Moderation.** Admins with `content.moderate` can remove a photo with a reason (Admin › Users,
+decision `remove-account-photo`, audited as `user.photo_removed`). The person gets a notification
+(category `content_moderation`): "Yard removed your profile photo" / "Reason: … You can add a new one
+in Settings." (href `/you/settings`), also pushed to the app. `photo` is then `null`; they can upload a
+new one. Reports don't cover people or photos (report subjects are messages, conversations, posts,
+places and events), so there is no "report photo" yet.
+
+Deleting the account deletes the photo files with it.

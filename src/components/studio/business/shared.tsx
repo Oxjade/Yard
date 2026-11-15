@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useSyncExternalStore } from "react"
+import { PhotoOrInitials } from "@/components/media/person-photo"
 import Link from "next/link"
 import { ArrowsDownUpIcon as SortIcon, CaretLeftIcon as ChevronLeft } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -60,8 +61,8 @@ export function useFocusReturn(fallback?: () => HTMLElement | null | undefined) 
   }
 }
 
-/** Initials in a circle; Studio never shows shoppers' photos. */
-export function Initials({ name, className }: { name: string; className?: string }) {
+/** Initials in a circle, or the person's profile photo when they have one (`photo`: a cookie-scoped src). */
+export function Initials({ name, photo, className }: { name: string; photo?: string | null; className?: string }) {
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -69,8 +70,8 @@ export function Initials({ name, className }: { name: string; className?: string
     .map((w) => w[0]?.toUpperCase())
     .join("")
   return (
-    <span aria-hidden className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-[11px] font-medium text-ink-2", className)}>
-      {initials}
+    <span aria-hidden className={cn("inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-surface text-[11px] font-medium text-ink-2", className)}>
+      <PhotoOrInitials src={photo}>{initials}</PhotoOrInitials>
     </span>
   )
 }

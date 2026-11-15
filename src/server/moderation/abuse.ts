@@ -1,4 +1,5 @@
 import "server-only"
+import { photoSrc } from "../media/dto"
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm"
 import { db } from "../db"
 import { abuseAlerts, abuseEvents, accountRestrictions, brandMembers, conversations, messages, reports, users } from "../db/schema"
@@ -121,7 +122,7 @@ async function rowsFor(userIds: string[], since: Date): Promise<AbuseRowDto[]> {
   return people.map((u) => {
     const h = hitMap.get(u.id)
     return {
-      user: { id: u.id, name: u.name, email: u.email, status: u.status as AbuseRowDto["user"]["status"], kind: u.kind, demo: u.demo },
+      user: { id: u.id, name: u.name, email: u.email, status: u.status as AbuseRowDto["user"]["status"], kind: u.kind, demo: u.demo, photoSrc: photoSrc(u.photoMediaId, "admin") },
       rateLimitHits: Number(h?.n ?? 0),
       heldMessages: Number(heldMap.get(u.id)?.n ?? 0),
       spamMarks: Number(markMap.get(u.id)?.n ?? 0),

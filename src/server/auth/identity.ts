@@ -1,4 +1,5 @@
 import "server-only"
+import { photoSrc } from "../media/dto"
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm"
 import { adminRolePermissions, brandRolePermissions, type AdminRole, type MemberRole } from "@/lib/permissions"
 import type { AdminProfile, BrandProfile, ShopperProfile } from "@/lib/api/contracts/session"
@@ -111,11 +112,11 @@ export type AnyProfile = ShopperProfile | BrandProfile | AdminProfile
 
 export async function profileFor(actor: ActorKind, user: UserRow, brandId: string | null): Promise<AnyProfile> {
   const d = await db()
-  if (actor === "shopper") return { id: user.id, name: user.name, email: user.email, status: user.status as ShopperProfile["status"], demo: user.demo }
+  if (actor === "shopper") return { id: user.id, name: user.name, email: user.email, status: user.status as ShopperProfile["status"], demo: user.demo, photoSrc: photoSrc(user.photoMediaId, "shopper") }
   if (actor === "admin") {
     const [m] = await d.select().from(adminMembers).where(eq(adminMembers.userId, user.id)).limit(1)
     const role = (m?.role ?? "support") as AdminRole
-    return { id: user.id, name: user.name, role, permissions: adminRolePermissions[role], demo: user.demo }
+    return { id: user.id, name: user.name, role, permissions: adminRolePermissions[role], demo: user.demo, photoSrc: photoSrc(user.photoMediaId, "admin") }
   }
   const [b] = await d.select().from(brands).where(eq(brands.id, brandId ?? "")).limit(1)
   const [m] = await d
@@ -133,6 +134,7 @@ export async function profileFor(actor: ActorKind, user: UserRow, brandId: strin
     // Yard setup works on a real founding brand, so Studio reads its live data even when the admin
     // doing the setup is a demo account (demo here means "show the browser's sample brand").
     demo: role === "yard_setup" ? false : user.demo,
+    photoSrc: photoSrc(user.photoMediaId, "brand"),
   }
 }
 

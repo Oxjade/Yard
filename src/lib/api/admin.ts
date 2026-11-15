@@ -62,7 +62,7 @@ export const listDelivery = (tab: DeliveryTab, country?: string) => api<Delivery
 /** POST: a held brand note's text (audited delivery_note.viewed; Support, Trust & safety and owners). */
 export const viewHeldNote = (id: string) => api<HeldNoteViewResult>(`/api/admin/delivery/notes/${encodeURIComponent(id)}/view`, { method: "POST" })
 export const listHolidays = (country?: string) => api<{ items: HolidayDto[] }>("/api/admin/holidays", { query: { country } })
-export type AdminUserDto = { id: string; name: string; email: string; kind: "shopper" | "brand_staff" | "admin"; status: "active" | "restricted" | "suspended"; country: string | null; city: string | null; joinedAt: string; lastActive: string; emailVerified: boolean; methods: string[]; orders: number; brands: string[]; adminRole: string | null; demo: boolean }
+export type AdminUserDto = { id: string; name: string; email: string; kind: "shopper" | "brand_staff" | "admin"; status: "active" | "restricted" | "suspended"; country: string | null; city: string | null; joinedAt: string; lastActive: string; emailVerified: boolean; methods: string[]; orders: number; brands: string[]; adminRole: string | null; demo: boolean; /** The profile photo (?as=admin), or null. */ photoSrc?: string | null }
 export const listAdminUsers = () => api<{ items: AdminUserDto[]; total: number }>("/api/admin/users", { query: { limit: 500 } })
 export const listAbuse = (user?: string) => api<AbuseListDto>("/api/admin/abuse", { query: { user } })
 export const listRestrictions = (subject?: string) => api<{ items: RestrictionDto[] }>("/api/admin/restrictions", { query: { subject } })

@@ -55,7 +55,7 @@ export type ShellStatus = {
   summary: string
 }
 
-export type ShellAccount = { initials: string; name: string; caption: string }
+export type ShellAccount = { initials: string; name: string; caption: string; /** The profile photo, or null/absent for initials. */ photo?: string | null }
 
 export type ShellDestination = { label: string; href: string; icon: ShellIcon; hint?: string }
 

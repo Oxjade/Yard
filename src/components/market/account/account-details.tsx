@@ -13,6 +13,7 @@ import { errorMessage, fieldErrors } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
 import { refreshServerSession } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
+import { AccountPhoto } from "./account-photo"
 
 /** GET /api/account (src/server/auth/account.ts). */
 export type AccountDto = {
@@ -23,6 +24,8 @@ export type AccountDto = {
   signInProviders: string[]
   pendingEmail: { email: string; expiresAt: string } | null
   demo: boolean
+  /** The profile photo (one size, square), or null for initials. */
+  photo: { mediaId: string; src: string; width: number | null; height: number | null } | null
 }
 
 const providerWords: Record<string, string> = { google: "Google", apple: "Apple", auth0: "social sign-in" }
@@ -38,7 +41,7 @@ function nameProblem(n: string) {
 const dateTime = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 
 /**
- * The signed-in person's name and email, on the server (shopper Settings and Studio Settings; a
+ * The signed-in person's photo, name and email, on the server (shopper Settings and Studio Settings; a
  * brand member's account is the same person). The name saves at once. A new email is a request:
  * it asks for the current password (or, without one, a Google / Apple confirmation), sends a link
  * to the new address, and changes only once that link is opened. A pending change can be resent
@@ -159,6 +162,8 @@ export function AccountDetails({ as }: { as: "shopper" | "brand" }) {
   const providers = account.signInProviders.map((p) => providerWords[p] ?? p)
   return (
     <div className="grid gap-6">
+      <AccountPhoto account={account} as={as} onAccount={(a) => mutate(() => ({ account: a }))} />
+
       <form onSubmit={saveName} noValidate className="grid gap-1.5">
         <Label htmlFor={`acc-name-${as}`}>Name</Label>
         <div className="flex flex-wrap items-start gap-3">

@@ -19,7 +19,8 @@ import { mediaAssets } from "../db/schema"
  * the file's purpose must match the reference (post media: social_post or social_import; place
  * and event images: location_image), so a writer bug can never publish another tenant's file or
  * a shopper's inbox attachment (brand_id null) by naming its id.
- * Everything else is private, including the media of pending_review places. Removed media is
+ * Everything else is private, including the media of pending_review places and profile photos
+ * (account_photo: served by rule in serve.ts, since nothing about a person is public on Yard). Removed media is
  * always private. Never set from a request.
  *
  * It also keeps `unreferenced_at`: null while anything at all references the file (a post of any
@@ -49,6 +50,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from catalog_storefront_drafts sd where sd.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from brands lb where lb.logo_media_id = m.id)
+  or exists (select 1 from users pu where pu.photo_media_id = m.id)
   or exists (select 1 from product_proposals pp, jsonb_array_elements(coalesce(pp.payload -> 'images', '[]'::jsonb)) e where pp.status = 'pending' and e ->> 'mediaId' = m.id)
   or exists (
     select 1 from catalog_brand_onboardings o

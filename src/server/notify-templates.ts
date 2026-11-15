@@ -61,6 +61,8 @@ export const templates = {
   "social.status": { category: "social_status", build: (v) => ({ title: `${s(v.provider, "Social")} needs attention`, body: s(v.detail, "Reconnect to keep your feed updating.") }) },
   // Content and places (M, A)
   "content.removed": { category: "content_moderation", build: (v) => ({ title: `Yard removed a ${s(v.kind, "post")}`, body: `Reason: ${s(v.reason, "it broke Yard's rules")}.` }) },
+  // Admin › Users removed a person's profile photo; `reason` is the admin's reason.
+  "account.photo_removed": { category: "content_moderation", build: (v) => ({ title: "Yard removed your profile photo", body: `Reason: ${s(v.reason, "it broke Yard's rules")}. You can add a new one in Settings.` }) },
   "location.review": { category: "location_review", build: (v) => ({ title: `${s(v.place, "Your place")}: ${s(v.outcome, "reviewed")}`, body: s(v.detail, "Open Locations for the details.") }) },
   // Charts (C, M)
   // `edition` ('YYYY-MM-DD', optional) names the week, so two editions never read as one notification twice.

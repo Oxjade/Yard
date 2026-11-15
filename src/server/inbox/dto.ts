@@ -1,4 +1,5 @@
 import "server-only"
+import { photoSrc } from "../media/dto"
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import type { ConversationSummary, MessageDto } from "@/lib/api/contracts/inbox"
@@ -45,6 +46,7 @@ function summaryFields(side: Side) {
     brandName: brands.name,
     brandReview: brands.reviewStatus,
     customerName: users.name,
+    customerPhoto: users.photoMediaId,
     unread: conversationParticipants.unreadCount,
     markedUnread: conversationParticipants.markedUnread,
     archived: conversationParticipants.archived,
@@ -86,7 +88,7 @@ export function toSummary(r: SummaryRow, side: Side): ConversationSummary {
     id: c.id,
     kind: "brand",
     brand: { id: c.brandId, handle: r.brandHandle, name: r.brandName, mark: { text: staticBrand?.mark.text ?? r.brandName.slice(0, 2).toUpperCase(), style: staticBrand?.mark.style ?? "grotesk" }, verified: r.brandReview === "verified" },
-    customer: side === "brand" ? { id: c.customerId, name: r.customerName } : undefined,
+    customer: side === "brand" ? { id: c.customerId, name: r.customerName, photoSrc: photoSrc(r.customerPhoto, "brand") } : undefined,
     status: c.status as "open" | "resolved",
     // Moderation signals stay with the brand: a marked shopper never learns who marked them (§5.2).
     spamState: side === "brand" ? (c.spamState as "none" | "suspected" | "confirmed") : "none",

@@ -74,7 +74,7 @@ export function UsersView() {
   const liveUsers = useMemo<(PlatformUser & LiveUserExtras)[] | undefined>(
     () =>
       live
-        ? (directory.data?.items ?? []).map((u) => ({ id: u.id, name: u.name, email: u.email, country: u.country ?? "", joinedAt: u.joinedAt, orders: u.orders, status: u.status, reports: 0, lastActive: u.lastActive, kind: u.kind, methods: u.methods, emailVerified: u.emailVerified, brands: u.brands, adminRole: u.adminRole }))
+        ? (directory.data?.items ?? []).map((u) => ({ id: u.id, name: u.name, email: u.email, country: u.country ?? "", joinedAt: u.joinedAt, orders: u.orders, status: u.status, reports: 0, lastActive: u.lastActive, kind: u.kind, methods: u.methods, emailVerified: u.emailVerified, brands: u.brands, adminRole: u.adminRole, photoSrc: u.photoSrc ?? null }))
         : undefined,
     [live, directory.data],
   )
@@ -126,7 +126,7 @@ export function UsersView() {
       sortValue: (u) => u.name.toLowerCase(),
       cell: (u) => (
         <button type="button" onClick={() => openUser(u)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <Initials name={u.name} round />
+          <Initials name={u.name} photo={(u as Partial<LiveUserExtras>).photoSrc} round />
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink group-hover:text-violet">{u.name}</span>
             <span className="block max-w-[200px] truncate text-[11.5px] text-ink-3 md:hidden">

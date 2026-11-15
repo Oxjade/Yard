@@ -5,12 +5,13 @@ import { CheckIcon, CopyIcon, ImageBrokenIcon } from "@phosphor-icons/react"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { cn } from "@/lib/utils"
 import { initials } from "./format"
+import { PhotoOrInitials } from "@/components/media/person-photo"
 
-/** Initials in a neutral tile: brands without an uploaded logo, and shopper accounts. */
-export function Initials({ name, round = false, size = "sm" }: { name: string; round?: boolean; size?: "sm" | "lg" }) {
+/** Initials in a neutral tile: brands without an uploaded logo, and accounts (their profile photo when they have one). */
+export function Initials({ name, photo, round = false, size = "sm" }: { name: string; photo?: string | null; round?: boolean; size?: "sm" | "lg" }) {
   return (
-    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center border border-white/10 bg-white/[0.04] font-semibold text-ink-2", round ? "rounded-full" : "rounded-md", size === "lg" ? "size-11 text-[13px]" : "size-8 text-[10.5px]")}>
-      {initials(name) || "?"}
+    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center overflow-hidden border border-white/10 bg-white/[0.04] font-semibold text-ink-2", round ? "rounded-full" : "rounded-md", size === "lg" ? "size-11 text-[13px]" : "size-8 text-[10.5px]")}>
+      <PhotoOrInitials src={photo}>{initials(name) || "?"}</PhotoOrInitials>
     </span>
   )
 }

@@ -197,7 +197,7 @@ function StudioRow({ c, selected, onSelect, onUnblock, canManage }: { c: Convers
         aria-current={selected ? "true" : undefined}
         className={cn("flex min-w-0 flex-1 items-start gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
       >
-        <Initials name={name} className="mt-0.5 size-9" />
+        <Initials name={name} photo={c.customer?.photoSrc} className="mt-0.5 size-9" />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className={cn("truncate text-sm", unread ? "font-medium text-ink" : "text-ink")}>{name}</span>

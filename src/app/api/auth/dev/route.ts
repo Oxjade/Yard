@@ -33,6 +33,8 @@ import { route } from "@/server/http/route"
  * POST { op: "delete-support", email } | { …, demoUserId } | { …, brandId }
  *                                                  → deletes that kit shopper's Yard Support thread, or a brand's thread
  *                                                    whose brand-side messages all came from demo accounts (+ its notifications)
+ * POST { op: "delete-conversations", email }    → deletes that kit shopper's brand conversations (messages,
+ *                                                    attachments, the brand's new-message notifications)
  * GET  ?op=proposal-emails&proposalId=…  → { emails } queued for a suggestion (kit brands' members are demo accounts)
  * POST { op: "delete-proposals", tag }   → deletes the suggestions whose note or product name holds `tag` (must contain
  *                                          "t_v3_"), the products made from them (never ordered), and their notifications
@@ -56,6 +58,7 @@ const postBody = z.discriminatedUnion("op", [
   z.object({ op: z.literal("retire-admin"), email: z.string().max(254) }),
   z.object({ op: z.literal("expire-claim-links"), email: z.string().max(254) }),
   z.object({ op: z.literal("delete-proposals"), tag: z.string().min(8).max(80) }),
+  z.object({ op: z.literal("delete-conversations"), email: z.string().max(254) }),
   z.object({ op: z.literal("delete-support"), email: z.string().max(254).optional(), brandId: z.string().max(64).optional(), demoUserId: z.string().max(64).optional() }),
 ])
 
@@ -171,6 +174,20 @@ const postHandler = route({ auth: "public", body: postBody, maxBody: 2 * 1024 },
         if (media.length) await t.delete(mediaAssets).where(inArray(mediaAssets.id, media.map((m) => m.id)))
       })
       return { deleted: 1 }
+    }
+    case "delete-conversations": {
+      const u = await taggedUser(body.email)
+      const convs = await d.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.kind, "brand"), eq(conversations.customerId, u.id)))
+      if (!convs.length) return { deleted: 0 }
+      const ids = convs.map((c) => c.id)
+      await withTx(async () => {
+        const t = await db()
+        const media = await t.select({ id: mediaAssets.id }).from(mediaAssets).where(inArray(mediaAssets.conversationId, ids))
+        await t.delete(notifications).where(inArray(notifications.eventKey, ids.map((id) => `msg:${id}`)))
+        await t.delete(conversations).where(inArray(conversations.id, ids))
+        if (media.length) await t.delete(mediaAssets).where(inArray(mediaAssets.id, media.map((m) => m.id)))
+      })
+      return { deleted: ids.length }
     }
     case "delete-proposals": {
       if (!tagged(body.tag)) throw badRequest({ tag: `Only tags containing ${TAG}.` })

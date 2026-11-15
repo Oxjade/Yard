@@ -3,6 +3,7 @@ import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 import { db } from "../db"
 import { adminMembers, brandMembers, brands, oauthIdentities, orderStates, userCredentials, users } from "../db/schema"
 import { getEnv } from "../env"
+import { photoSrc } from "../media/dto"
 
 /** One account in the Control Center's Users directory. */
 export type AdminUserRow = {
@@ -22,6 +23,8 @@ export type AdminUserRow = {
   brands: string[]
   adminRole: string | null
   demo: boolean
+  /** The profile photo (/api/media/<id>?as=admin), or null. */
+  photoSrc: string | null
 }
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null)
@@ -53,6 +56,7 @@ export async function listAdminUsers(opts: { q?: string; limit?: number } = {}):
         country: users.country,
         city: users.city,
         demo: users.demo,
+        photoMediaId: users.photoMediaId,
         createdAt: users.createdAt,
         emailVerifiedAt: userCredentials.emailVerifiedAt,
         hasPassword: sql<boolean>`${userCredentials.passwordHash} is not null`,
@@ -110,6 +114,7 @@ export async function listAdminUsers(opts: { q?: string; limit?: number } = {}):
       brands: brandNames.get(r.id) ?? [],
       adminRole: r.adminRole ?? null,
       demo: r.demo,
+      photoSrc: photoSrc(r.photoMediaId, "admin"),
     }
   })
   return { items, total: Number(total) }

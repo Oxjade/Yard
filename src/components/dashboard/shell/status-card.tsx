@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { PhotoOrInitials } from "@/components/media/person-photo"
 import { ArrowUpRightIcon } from "@phosphor-icons/react"
 import { CountUp } from "@/components/dashboard/insight/count-up"
 import { Bone } from "@/components/feedback/skeletons"
@@ -161,9 +162,9 @@ export function AccountRow({ account }: { account: ShellAccount }) {
     <div className="flex h-10 min-w-0 items-center gap-3 pl-1.5">
       <span
         aria-hidden
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-elevated text-[11px] font-semibold text-ink-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        className="inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-elevated text-[11px] font-semibold text-ink-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
       >
-        {account.initials}
+        <PhotoOrInitials src={account.photo}>{account.initials}</PhotoOrInitials>
       </span>
       <span className="min-w-0 flex-1 transition-opacity duration-150 sidebar-collapsed:opacity-0">
         <span className="block truncate text-[13px] leading-tight text-ink">{account.name}</span>

@@ -9,7 +9,7 @@ import { purgeOrphans } from "./purge"
 export const IMPL: string = "F2-2026-11-06"
 
 export { refreshVisibility, refreshBrandMediaVisibility, mediaIdsOf } from "./visibility"
-export { mediaSrc, toMediaDto } from "./dto"
+export { mediaSrc, photoSrc, toMediaDto } from "./dto"
 export { purgeOrphans }
 
 export const jobs = { purgeOrphans }
