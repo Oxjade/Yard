@@ -588,6 +588,104 @@ img[data-fade="in"] {
   }
 }
 
+/* Media frames on cards (product, drop): the photograph's frame rises a few pixels and its rim
+   catches the light while the card under a mouse is hovered or holds keyboard focus; on touch a
+   press on the photograph's link compresses it slightly. The card carries `data-lift`, its frame
+   `media-lift` (which must be positioned and clip, as card frames already do); a card that is
+   its own frame (drop cards) carries both. Transform and
+   opacity only: the rim is a fixed inset ring that fades, never an animated shadow. */
+@layer components {
+  .media-lift {
+    transition:
+      translate var(--dur-drawer) var(--ease-settle),
+      scale var(--dur-hover) var(--ease-out-quint);
+  }
+  .media-lift::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.12),
+      inset 0 1px 0 rgb(255 255 255 / 0.14);
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease-out-quint);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    [data-lift]:hover > .media-lift,
+    [data-lift]:has(:focus-visible) > .media-lift,
+    .media-lift[data-lift]:hover,
+    .media-lift[data-lift]:has(:focus-visible) {
+      translate: 0 -4px;
+    }
+    [data-lift]:hover > .media-lift::after,
+    [data-lift]:has(:focus-visible) > .media-lift::after,
+    .media-lift[data-lift]:hover::after,
+    .media-lift[data-lift]:has(:focus-visible)::after {
+      opacity: 1;
+    }
+  }
+  @media (pointer: coarse) {
+    .media-lift:has(> a:active) {
+      scale: 0.985;
+      transition-duration: var(--dur-press);
+    }
+  }
+}
+
+/* Progress that fills in order (order tracking): reached steps pop in and the line between
+   them draws from the left, one after another (`--step-delay` per step), on first view and
+   again when a realtime update reaches a new step (the class arrives with the status). CSS
+   only, so server HTML gets it too; without motion everything is simply there. */
+@layer components {
+  .step-fill {
+    transform-origin: left center;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .step-fill {
+      animation: step-fill var(--dur-drawer) var(--ease-settle) both;
+      animation-delay: var(--step-delay, 0ms);
+    }
+    .step-pop {
+      animation: step-pop var(--dur-modal) var(--ease-settle) both;
+      animation-delay: var(--step-delay, 0ms);
+    }
+  }
+}
+@keyframes step-fill {
+  from {
+    scale: 0 1;
+  }
+}
+@keyframes step-pop {
+  from {
+    scale: 0.5;
+    opacity: 0;
+  }
+}
+
+/* Discover sections rise a little as they scroll into view (`scroll-reveal`). A scroll-driven
+   animation, so it costs no JavaScript and no observer, is tied to the scroll position (it never
+   plays late or holds content back), and shows the section in full wherever it is already on
+   screen at load. Browsers without scroll timelines, and reduced motion, simply show it. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .scroll-reveal {
+      animation: scroll-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 30%;
+    }
+  }
+}
+@keyframes scroll-reveal {
+  from {
+    opacity: 0.001;
+    translate: 0 28px;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
  * Comic pops — confirmations pop out like speech bubbles: a quick spring with a little
  * overshoot, a tail, and a hard purple offset shadow (no blur, no glow).

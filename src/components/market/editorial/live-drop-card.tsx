@@ -1,6 +1,6 @@
 "use client"
 
-import Image from "next/image"
+import { FadeImage } from "@/components/ui/fade-image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { BrandMark } from "@/components/market/brand-mark"
@@ -22,11 +22,11 @@ export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boole
   const href = `/drops/${drop.slug}`
   const draw = drop.access === "draw"
   return (
-    <article className="group/live relative grid overflow-hidden rounded-lg border border-line-soft bg-card sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <article data-lift="" className="media-lift group/live relative grid overflow-hidden rounded-lg border border-line-soft bg-card sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       {/* The picture is a second way to the drop for the pointer; the title is the link
           assistive tech and Tab use, so this one stays out of both. */}
       <Link href={href} tabIndex={-1} aria-hidden className="relative block aspect-[16/10] overflow-hidden sm:aspect-auto sm:min-h-[320px]">
-        <Image
+        <FadeImage
           src={drop.image.src}
           alt=""
           fill

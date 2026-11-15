@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { availableStock } from "@/lib/data/products"
 import { duration, ease, spring } from "@/lib/motion"
+import { flyToCart } from "@/lib/fly-to-cart"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import type { Drop, DropAccess, Product } from "@/lib/data/types"
@@ -121,6 +122,7 @@ const noPopup = { "aria-haspopup": undefined, "aria-expanded": undefined, "aria-
 
 function QuickAddButton({ product, className, closed: blocked }: { product: Product; className?: string; closed?: Closed }) {
   const add = useCart((s) => s.add)
+  const selfRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   /** Set briefly after a tap on a closed capsule, so a touch shows the reason as it explains. */
   const [explainAt, setExplainAt] = useState(0)
@@ -161,6 +163,8 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
     async (variantId: string) => {
       const before = useCart.getState().lines.find((l) => l.variantId === variantId)?.quantity ?? 0
       await add(product.id, variantId, 1)
+      // The card's photograph travels into the Cart once the add has gone in.
+      if (before < MAX_QTY_PER_LINE) flyToCart(selfRef.current?.closest("article"), selfRef.current)
       return before >= MAX_QTY_PER_LINE ? ("in-cart" as const) : ("added" as const)
     },
     { successFlashMs: 1500, onSuccess: setResult },
@@ -221,6 +225,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
 
   const button = (
     <button
+      ref={selfRef}
       type="button"
       onClick={(e) => {
         // preventDefault also keeps Radix's trigger from toggling the picker a second time.

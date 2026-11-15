@@ -139,18 +139,23 @@ export function OrderStepper({ status }: { status: MerchantOrderStatus }) {
         const done = i <= current
         const isCurrent = i === current
         return (
-          <li key={label} className="relative flex flex-col items-start" aria-current={isCurrent ? "step" : undefined}>
+          // Reached steps fill in order (globals.css step-pop / step-fill): a dot, then its line.
+          <li key={label} className="relative flex flex-col items-start" aria-current={isCurrent ? "step" : undefined} style={{ ["--step-delay" as string]: `${i * 140}ms` }}>
             <div className="flex w-full items-center">
               <span
                 className={cn(
                   "relative z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px]",
-                  done ? "border-violet bg-purple text-ink" : "border-line bg-obsidian text-ink-3",
+                  done ? "step-pop border-violet bg-purple text-ink" : "border-line bg-obsidian text-ink-3",
                   isCurrent && "ring-4 ring-purple/20",
                 )}
               >
                 {done ? <Check className="size-3.5" aria-hidden /> : i + 1}
               </span>
-              {i < steps.length - 1 ? <span className={cn("h-px flex-1", i < current ? "bg-violet" : "bg-line")} aria-hidden /> : null}
+              {i < steps.length - 1 ? (
+                <span className="relative h-px flex-1 bg-line" aria-hidden>
+                  {i < current ? <span className="step-fill absolute inset-0 bg-violet [animation-delay:calc(var(--step-delay)+70ms)]" /> : null}
+                </span>
+              ) : null}
             </div>
             <span className={cn("mt-2 pr-2 text-xs leading-snug", done ? "text-ink" : "text-ink-3")}>
               {label}

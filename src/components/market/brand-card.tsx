@@ -63,7 +63,7 @@ export function BrandCard({
   const thumbs = showProducts ? products.filter((p) => p.brandId === brand.id).slice(0, 3) : []
 
   return (
-    <article className={cn("group/brand relative flex flex-col overflow-hidden rounded-lg border border-line-soft bg-card", className)}>
+    <article data-lift="" className={cn("media-lift group/brand relative flex flex-col overflow-hidden rounded-lg border border-line-soft bg-card", className)}>
       {/* The cover is a second, mouse-only way in; the name link below is the one Tab and screen readers use. */}
       <div className="relative">
         <Link href={href} className="relative block aspect-[4/3] overflow-hidden" aria-hidden tabIndex={-1}>

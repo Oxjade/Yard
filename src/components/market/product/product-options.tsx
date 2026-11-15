@@ -1,10 +1,11 @@
 "use client"
 
-import { useId, useState } from "react"
+import { useId } from "react"
 import { MinusIcon as Minus, PlusIcon as Plus } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 import { duration, ease, spring } from "@/lib/motion"
+import { RollNumber } from "@/components/ui/roll-number"
 import { cn } from "@/lib/utils"
 import type { ColourValue } from "@/lib/data/types"
 import { LOW_STOCK, type ProductSelection } from "./use-product-selection"
@@ -164,21 +165,8 @@ export function StockLine({ selection, locked = false, closed = false, opening =
 }
 
 /** Quantity stepper, bounded by what can still be bought. */
-const roll = {
-  enter: (dir: number) => ({ y: 14 * dir, opacity: 0 }),
-  center: { y: 0, opacity: 1 },
-  exit: (dir: number) => ({ y: -14 * dir, opacity: 0 }),
-}
-
 export function QuantityStepper({ value, max, onChange, disabled = false }: { value: number; max: number; onChange: (n: number) => void; disabled?: boolean }) {
   const top = Math.max(1, max)
-  // Up rolls the number up, down rolls it down.
-  const [last, setLast] = useState(value)
-  const [dir, setDir] = useState(1)
-  if (value !== last) {
-    setDir(value > last ? 1 : -1)
-    setLast(value)
-  }
   return (
     <div className={cn("inline-flex h-12 items-center rounded-md border border-line", disabled && "opacity-45")} role="group" aria-label="Quantity">
       <button
@@ -195,20 +183,7 @@ export function QuantityStepper({ value, max, onChange, disabled = false }: { va
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           Quantity {value}
         </span>
-        <AnimatePresence mode="popLayout" initial={false} custom={dir}>
-          <motion.span
-            key={value}
-            aria-hidden
-            custom={dir}
-            variants={roll}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: duration.press, ease: ease.out }}
-          >
-            {value}
-          </motion.span>
-        </AnimatePresence>
+        <RollNumber value={value} />
       </span>
       <button
         type="button"

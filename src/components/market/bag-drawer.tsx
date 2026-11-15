@@ -5,9 +5,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ShoppingBagOpenIcon as ShoppingBag, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
-import { transition } from "@/lib/motion"
+import { spring, transition } from "@/lib/motion"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
+import { RollNumber } from "@/components/ui/roll-number"
 import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
 import { priceCart } from "@/lib/cart"
 import { formatMoney } from "@/lib/money"
@@ -86,7 +87,11 @@ export function BagDrawer() {
                 <header className="flex items-center justify-between px-5 pt-5 pb-4">
                   <DialogPrimitive.Title className="flex items-baseline gap-2">
                     <span className="font-display text-display-sm">Cart</span>
-                    <span className="text-sm text-ink-2 tabular">{count} {count === 1 ? "item" : "items"}</span>
+                    <span className="inline-flex text-sm text-ink-2 tabular">
+                      <span className="sr-only">{count}</span>
+                      <RollNumber value={count} />
+                      &nbsp;{count === 1 ? "item" : "items"}
+                    </span>
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Close className="press inline-flex size-9 items-center justify-center rounded-full text-ink-2 hover:bg-white/8 hover:text-ink" aria-label="Close cart">
                     <X className="size-5" />
@@ -103,7 +108,8 @@ export function BagDrawer() {
                 ) : null}
 
                 {bag.groups.length === 0 ? (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 pb-16 text-center">
+                  // The last line leaving (or an empty cart opening) settles the empty state in.
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring.reveal} className="flex flex-1 flex-col items-center justify-center gap-4 px-8 pb-16 text-center">
                     <span className="inline-flex size-14 items-center justify-center rounded-full border border-white/10">
                       <ShoppingBag className="size-6 text-ink-2" />
                     </span>
@@ -116,7 +122,7 @@ export function BagDrawer() {
                     <Button asChild variant="primary" onClick={close}>
                       <Link href="/brands">Discover brands</Link>
                     </Button>
-                  </div>
+                  </motion.div>
                 ) : (
                   <>
                     <div className="flex-1 overflow-y-auto px-3 pb-4 sm:px-4">
@@ -133,7 +139,10 @@ export function BagDrawer() {
                       <dl className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3 text-ink-2">
                           <dt>Subtotal</dt>
-                          <dd className="tabular text-ink">{formatMoney(bag.subtotal, currency)}</dd>
+                          <dd className="tabular text-ink">
+                            <span className="sr-only">{formatMoney(bag.subtotal, currency)}</span>
+                            <RollNumber value={bag.subtotal}>{formatMoney(bag.subtotal, currency)}</RollNumber>
+                          </dd>
                         </div>
                         <div className="flex min-h-5 items-center justify-between gap-3 text-ink-2">
                           <dt>Shipping, {bag.groups.length} {bag.groups.length === 1 ? "brand" : "brands"}</dt>
@@ -144,7 +153,10 @@ export function BagDrawer() {
                         {bag.total !== null ? (
                           <div className="flex items-center justify-between gap-3 border-t border-white/8 pt-1.5 text-ink">
                             <dt>Total</dt>
-                            <dd className="tabular">{formatMoney(bag.total, currency)}</dd>
+                            <dd className="tabular">
+                              <span className="sr-only">{formatMoney(bag.total, currency)}</span>
+                              <RollNumber value={bag.total}>{formatMoney(bag.total, currency)}</RollNumber>
+                            </dd>
                           </div>
                         ) : null}
                       </dl>

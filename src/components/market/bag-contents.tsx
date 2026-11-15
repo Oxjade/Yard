@@ -13,6 +13,7 @@ import { useCart } from "@/lib/stores/cart"
 import { cn } from "@/lib/utils"
 import type { BrandGroup, PricedLine } from "@/lib/cart"
 import type { CurrencyCode } from "@/config/markets"
+import { RollNumber } from "@/components/ui/roll-number"
 import { BrandMark } from "./brand-mark"
 
 /** A line folds away: its height closes as it fades, so the lines below rise into its place. */
@@ -185,14 +186,18 @@ function BagLine({
             <button type="button" onClick={() => onQuantity(l.variant.id, l.line.quantity - 1)} aria-label="Decrease quantity" className={stepButton}>
               <Minus className="size-3.5" />
             </button>
-            <span className="w-6 text-center text-sm tabular" aria-live="polite">{l.line.quantity}</span>
+            <span className="relative inline-flex w-6 justify-center text-sm tabular">
+              <span className="sr-only" aria-live="polite">{l.line.quantity}</span>
+              <RollNumber value={l.line.quantity} />
+            </span>
             <button type="button" onClick={() => onQuantity(l.variant.id, l.line.quantity + 1)} disabled={l.line.quantity >= l.maxQty} aria-label="Increase quantity" className={stepButton}>
               <Plus className="size-3.5" />
             </button>
           </div>
-          <motion.p key={l.total} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} className="text-sm tabular">
-            {formatMoney(l.total, currency)}
-          </motion.p>
+          <p className="text-sm tabular">
+            <span className="sr-only">{formatMoney(l.total, currency)}</span>
+            <RollNumber value={l.total}>{formatMoney(l.total, currency)}</RollNumber>
+          </p>
         </div>
         {l.notForSale ? (
           <p className="mt-1 text-[11px] break-words text-acid">{l.product.brandSummary?.name ?? "This brand"} isn&apos;t selling on Yard yet. Remove it to check out.</p>

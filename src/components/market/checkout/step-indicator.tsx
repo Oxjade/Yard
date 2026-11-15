@@ -2,7 +2,8 @@
 
 import { CheckIcon as Check } from "@phosphor-icons/react"
 import { motion } from "motion/react"
-import { spring } from "@/lib/motion"
+import { useHydrated } from "@/hooks/use-hydrated"
+import { spring, transition } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 export const checkoutSteps = [
@@ -15,6 +16,7 @@ export const checkoutSteps = [
 
 /** A real sequence, so it is numbered. The active segment slides between steps. */
 export function StepIndicator({ current, canJump, onJump }: { current: number; canJump: (step: number) => boolean; onJump: (step: number) => void }) {
+  const hydrated = useHydrated()
   return (
     <nav aria-label="Checkout progress">
       <ol className="grid grid-cols-5 gap-1.5 sm:gap-2">
@@ -25,7 +27,9 @@ export function StepIndicator({ current, canJump, onJump }: { current: number; c
           const body = (
             <>
               <span className="relative block h-0.5 overflow-hidden rounded-full bg-line">
-                {done ? <span className="absolute inset-0 bg-violet/55" /> : null}
+                {/* A step that is finished fills from the left as the active segment moves on
+                    (not on the first paint, which shows where the shopper already is). */}
+                {done ? <motion.span initial={hydrated ? { scaleX: 0 } : false} animate={{ scaleX: 1 }} transition={transition.sheet} className="absolute inset-0 origin-left bg-violet/55" /> : null}
                 {active ? <motion.span layoutId="checkout-step-bar" className="absolute inset-0 bg-purple" transition={spring.indicator} /> : null}
               </span>
               <span className="mt-2.5 flex min-w-0 items-center gap-1.5 text-xs">
@@ -36,7 +40,13 @@ export function StepIndicator({ current, canJump, onJump }: { current: number; c
                     active ? "border-purple bg-purple text-ink" : done ? "border-violet/50 text-violet" : "border-line text-ink-3",
                   )}
                 >
-                  {done ? <Check className="size-3" weight="bold" /> : i + 1}
+                  {done ? (
+                    <motion.span initial={hydrated ? { scale: 0.4, opacity: 0 } : false} animate={{ scale: 1, opacity: 1 }} transition={transition.badge} className="inline-flex">
+                      <Check className="size-3" weight="bold" />
+                    </motion.span>
+                  ) : (
+                    i + 1
+                  )}
                 </span>
                 <span className={cn("sr-only sm:not-sr-only sm:truncate", active ? "text-ink" : done ? "text-ink-2" : "text-ink-3")}>
                   <span className="sr-only">Step {i + 1}, </span>

@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowRightIcon, MagnifyingGlassIcon as Search, MapPinAreaIcon, RankingIcon, XIcon as X } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
-import { transition } from "@/lib/motion"
+import { transition, variants } from "@/lib/motion"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { chooseArea } from "@/components/around/around-store"
 import { canTakeFocus, useFocusReturn } from "@/components/ui/dialog"
@@ -217,7 +217,10 @@ export function SearchOverlay() {
                   ) : empty ? (
                     <p className="py-8 text-center text-sm text-ink-2">Nothing matches “{q}”. Try a brand name, a city or a material.</p>
                   ) : (
-                    <div className="grid gap-5">
+                    // The first results settle in group by group; groups that arrive later (brands
+                    // and products come from the server) rise in as they land; later keystrokes
+                    // update rows in place.
+                    <motion.div className="grid gap-5" initial="hidden" animate="show" variants={variants.stagger(0.04)}>
                       {/* Cities, charts and categories match on the device, so they stay while brands and products load or fail. */}
                       {loading ? (
                         <p role="status" className="text-sm text-ink-2">
@@ -235,12 +238,12 @@ export function SearchOverlay() {
                         </div>
                       ) : null}
                       {results.brands.length ? (
-                        <div>
+                        <motion.div variants={variants.rise}>
                           <p className="mb-2 text-xs text-ink-3">Brands</p>
                           <ul className="grid gap-1">
                             {results.brands.map((b) => (
                               <li key={b.brandId}>
-                                <Link href={`/brands/${b.handle}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
+                                <Link href={`/brands/${b.handle}`} onClick={close} className="press flex items-center gap-3 rounded-lg p-2 [--press-scale:0.985] hover:bg-white/6">
                                   <BrandMark brand={{ name: b.name, mark: { text: b.name.slice(0, 2).toUpperCase(), style: "condensed" } }} size="sm" />
                                   <span className="text-sm text-ink">{b.name}</span>
                                   <span className="text-xs text-ink-2">{b.city}</span>
@@ -248,15 +251,15 @@ export function SearchOverlay() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </motion.div>
                       ) : null}
                       {results.products.length ? (
-                        <div>
+                        <motion.div variants={variants.rise}>
                           <p className="mb-2 text-xs text-ink-3">Products</p>
                           <ul className="grid gap-1 sm:grid-cols-2">
                             {results.products.map((p) => (
                               <li key={p.productId}>
-                                <Link href={p.slug ? `/products/${p.slug}` : `/shop?q=${encodeURIComponent(q.trim())}`} onClick={close} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/6">
+                                <Link href={p.slug ? `/products/${p.slug}` : `/shop?q=${encodeURIComponent(q.trim())}`} onClick={close} className="press flex items-center gap-3 rounded-lg p-2 [--press-scale:0.985] hover:bg-white/6">
                                   <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface">
                                     {p.image ? <FadeImage src={p.image} alt="" fill sizes="48px" className="object-cover" /> : null}
                                   </span>
@@ -269,10 +272,10 @@ export function SearchOverlay() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </motion.div>
                       ) : null}
                       {results.cities.length ? (
-                        <div>
+                        <motion.div variants={variants.rise}>
                           <p className="mb-2 text-xs text-ink-3">Cities</p>
                           <ul className="grid gap-1">
                             {results.cities.map((c) => (
@@ -283,7 +286,7 @@ export function SearchOverlay() {
                                     close()
                                     chooseArea(c.slug, (href) => router.push(href))
                                   }}
-                                  className="flex min-h-10 w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-white/6"
+                                  className="press flex min-h-10 w-full items-center gap-3 rounded-lg p-2 text-left [--press-scale:0.985] hover:bg-white/6"
                                 >
                                   <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10">
                                     <MapPinAreaIcon className="size-4 text-ink-2" aria-hidden />
@@ -294,10 +297,10 @@ export function SearchOverlay() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </motion.div>
                       ) : null}
                       {results.charts.length ? (
-                        <div>
+                        <motion.div variants={variants.rise}>
                           <p className="mb-2 text-xs text-ink-3">Charts</p>
                           <ul className="flex flex-wrap gap-2">
                             {results.charts.map((c) => (
@@ -309,10 +312,10 @@ export function SearchOverlay() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </motion.div>
                       ) : null}
                       {results.categories.length ? (
-                        <div>
+                        <motion.div variants={variants.rise}>
                           <p className="mb-2 text-xs text-ink-3">Categories</p>
                           <div className="flex flex-wrap gap-2">
                             {results.categories.map((c) => (
@@ -321,12 +324,12 @@ export function SearchOverlay() {
                               </Link>
                             ))}
                           </div>
-                        </div>
+                        </motion.div>
                       ) : null}
                       <button type="submit" onClick={submit} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-white/10 text-sm text-ink-2 hover:bg-white/6 hover:text-ink">
                         See all products for “{q}” <ArrowRightIcon className="size-3.5" aria-hidden />
                       </button>
-                    </div>
+                    </motion.div>
                   )}
                 </div>
               </motion.div>

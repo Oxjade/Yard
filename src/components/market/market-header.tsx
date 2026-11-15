@@ -163,7 +163,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
               <HeartIcon className="size-[21px]" />
             </Link>
             <div className="relative hidden lg:block">
-              <button type="button" onClick={openBag} aria-label={cartLabel(hydrated ? count : 0)} className={floatIcon}>
+              <button type="button" onClick={openBag} aria-label={cartLabel(hydrated ? count : 0)} className={floatIcon} data-cart-target="">
                 <motion.span key={`pulse-${pulse}`} initial={pulse ? { scale: 1.22, rotate: -10 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 520, damping: 16 }} className="inline-flex">
                   <ShoppingBagOpenIcon className="size-[21px]" />
                 </motion.span>

@@ -76,7 +76,11 @@ All shared values live in `src/app/globals.css`:
   `src/lib/motion.ts` (`duration`, `ease`, `spring`, `transition`) with CSS mirrors (`--dur-*`,
   `--ease-*`); `press` is the press-feedback utility for controls that aren't `<Button>`,
   `FadeImage` fades photographs in once loaded, and `useContentReveal` / `<Loaded>` fade content
-  in over the skeleton it replaces.
+  in over the skeleton it replaces. Shopping: `media-lift` / `data-lift` lift card photographs on
+  hover and compress them on touch, `<RollNumber>` rolls quantities, counts and totals,
+  `flyToCart()` sends the added piece's photograph into the Cart once the server accepted the
+  add, `step-pop` / `step-fill` fill order progress in sequence, and `scroll-reveal` raises
+  Discover sections on a scroll timeline (CSS only).
 
 ## Code map
 

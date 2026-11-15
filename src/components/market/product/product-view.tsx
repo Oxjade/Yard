@@ -17,6 +17,7 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { productStock } from "@/lib/data/products"
 import { brandHref } from "@/lib/api/catalog-products"
 import { duration, ease, spring } from "@/lib/motion"
+import { flyToCart } from "@/lib/fly-to-cart"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
 import { useSaved } from "@/lib/stores/saved"
 import type { Brand, Drop, Product } from "@/lib/data/types"
@@ -113,9 +114,15 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
     return useSaved.persist.onFinishHydration(record)
   }, [product.id])
 
+  /** The button that made the add: where the photograph sets off from when the gallery is scrolled away. */
+  const flyFrom = useRef<Element | null>(null)
   const adding = useAsyncAction(
     async (variantId: string, quantity: number) => {
+      const before = useCart.getState().lines.find((l) => l.variantId === variantId)?.quantity ?? 0
       await add(product.id, variantId, quantity)
+      // Only a piece that actually went in travels to the Cart (the 10-per-line cap can absorb an add).
+      const after = useCart.getState().lines.find((l) => l.variantId === variantId)?.quantity ?? 0
+      if (after > before) flyToCart(document.querySelector("[data-gallery-current]"), flyFrom.current)
       sel.setQuantity(1)
       return true
     },
@@ -141,8 +148,9 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
   }
 
   /** Resolves true once the piece is in the cart. */
-  async function addToBag(grid: HTMLElement | null = sizeGridRef.current) {
+  async function addToBag(grid: HTMLElement | null = sizeGridRef.current, origin?: Element) {
     if (adding.pending || adding.succeeded) return false
+    flyFrom.current = origin ?? null
     if (action === "choose-size") {
       promptSize(grid)
       return false
@@ -347,7 +355,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                   type="button"
                   variant={addVariant}
                   size="xl"
-                  onClick={() => void addToBag()}
+                  onClick={(e) => void addToBag(undefined, e.currentTarget)}
                   loading={adding.pending}
                   success={adding.succeeded}
                   disabled={addDisabled}
@@ -479,7 +487,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                   variant={addVariant}
                   size="lg"
                   className="h-11 overflow-hidden px-4"
-                  onClick={() => void addToBag()}
+                  onClick={(e) => void addToBag(undefined, e.currentTarget)}
                   loading={adding.pending}
                   success={adding.succeeded}
                   disabled={addDisabled}
@@ -520,9 +528,9 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                   className="w-full overflow-hidden"
                   loading={adding.pending}
                   disabled={addDisabled}
-                  onClick={async () => {
+                  onClick={async (e) => {
                     // The sheet closes on success; the "Added to cart" bubble confirms.
-                    if (await addToBag(sheetGridRef.current)) setSheetOpen(false)
+                    if (await addToBag(sheetGridRef.current, e.currentTarget)) setSheetOpen(false)
                   }}
                 >
                   {addButtonContent}

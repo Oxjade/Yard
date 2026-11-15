@@ -133,6 +133,7 @@ export function MobileTabBar() {
               icon={HandbagIcon}
               active={active === "cart"}
               onClick={openCart}
+              data-cart-target=""
               badge={
                 items > 0 ? (
                   <motion.span
@@ -217,6 +218,7 @@ function TabButton({
   "aria-haspopup"?: "dialog"
   "aria-expanded"?: boolean
   "data-search-toggle"?: string
+  "data-cart-target"?: string
 }) {
   return (
     <button ref={ref} type="button" onClick={onClick} aria-label={ariaLabel} className={cn(tabBase, active ? "px-2.5 max-[379px]:px-0" : "text-ink/85 hover:text-ink")} {...aria}>

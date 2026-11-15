@@ -85,6 +85,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
         <AnimatePresence initial={false} custom={dir}>
           <motion.div
             key={image.src}
+            data-gallery-current=""
             custom={dir}
             variants={slide}
             initial="enter"

@@ -116,7 +116,7 @@ export default function DiscoverPage() {
         {/* Trending: ranked from the sample catalogue, demo and development only (production
             has no momentum ranking yet; the week's Trending board below reads the server). */}
         {demo ? (
-        <section aria-labelledby="trending-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="trending-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="trending-title">
             <SectionHeader title="Trending now" description="Ranked by this week's momentum, with at most two pieces per brand." href="/shop?sort=trending" />
           </div>
@@ -143,7 +143,7 @@ export default function DiscoverPage() {
 
         {/* Emerging brands */}
         {demo ? (
-        <section aria-labelledby="emerging-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="emerging-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="emerging-title">
             <SectionHeader title="Emerging brands" description="Smaller studios growing fastest this month. Placement here is earned, never bought." href="/brands?sort=emerging" />
           </div>
@@ -164,7 +164,7 @@ export default function DiscoverPage() {
 
         {/* Underground Index */}
         {demo ? (
-        <section aria-labelledby="index-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="index-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="index-title">
             <SectionHeader title="The Underground Index" description="Independent studios our editors think you should know. Updated every week, never for sale." href="/brands" action="All brands" />
           </div>
@@ -174,7 +174,7 @@ export default function DiscoverPage() {
 
         {/* Curated collections: sample edits, demo and development only (production has no /collections yet). */}
         {demo ? (
-        <section aria-labelledby="collections-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="collections-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="collections-title">
             <SectionHeader title="Curated collections" description="Edits across brands, put together by people rather than an algorithm." />
           </div>
@@ -210,7 +210,7 @@ export default function DiscoverPage() {
 
         {/* Featured brands with labelled sponsored slots */}
         {demo ? (
-        <section aria-labelledby="featured-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="featured-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="featured-title">
             <SectionHeader title="Featured brands" description="Editors' picks alongside sponsored slots. Paid placements are always marked." href="/brands" />
           </div>
@@ -224,7 +224,7 @@ export default function DiscoverPage() {
 
         {/* Recently discovered */}
         {demo ? (
-        <section aria-labelledby="recent-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="recent-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="recent-title">
             <SectionHeader title="Recently discovered" description="The newest studios on the platform." href="/brands?sort=newest" />
           </div>
@@ -238,7 +238,7 @@ export default function DiscoverPage() {
 
         {/* Stories: sample stories, demo and development only (production has no /stories yet). */}
         {demo ? (
-        <section aria-labelledby="stories-title" className="mt-24 md:mt-32">
+        <section aria-labelledby="stories-title" className="scroll-reveal mt-24 md:mt-32">
           <div id="stories-title">
             <SectionHeader title="Brand stories" description="Origins, process and the people behind the pieces." href="/stories" />
           </div>

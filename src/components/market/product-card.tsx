@@ -59,8 +59,9 @@ export function ProductCard({
   const isFeature = variant === "feature"
 
   return (
-    <article className={cn("group/card relative flex flex-col", isFeature && "h-full", className)}>
-      <div className={cn("relative overflow-hidden rounded-lg bg-card", ratio[variant], isFeature && "flex-1")}>
+    <article data-lift="" className={cn("group/card relative flex flex-col", isFeature && "h-full", className)}>
+      {/* media-lift (globals.css): the frame rises under a mouse and compresses under a finger. */}
+      <div className={cn("media-lift relative overflow-hidden rounded-lg bg-card", ratio[variant], isFeature && "flex-1")}>
         <Link href={href} className="absolute inset-0 z-0 block focus-visible:outline-offset-[-2px]" aria-label={`${product.name} by ${brand.name}`}>
           <FadeImage
             src={product.images[0].src}
@@ -79,7 +80,8 @@ export function ProductCard({
               alt=""
               fill
               sizes={sizes}
-              className="object-cover opacity-0 transition-opacity duration-500 ease-out-quint group-hover/card:opacity-100"
+              // The second photograph fades over the first and zooms with it, so the swap reads as one move.
+              className="object-cover opacity-0 transition-[opacity,transform] duration-[900ms] ease-out-quint group-hover/card:scale-[1.045] group-hover/card:opacity-100 group-hover/card:[transition-duration:var(--dur-image),900ms]"
             />
           ) : null}
           {isFeature ? <span className="scrim-b absolute inset-0" aria-hidden /> : null}

@@ -1,9 +1,11 @@
 "use client"
 
 import { CheckIcon as Check, PlusIcon as Plus } from "@phosphor-icons/react"
+import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { useHydrated } from "@/hooks/use-hydrated"
+import { transition } from "@/lib/motion"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
@@ -46,8 +48,27 @@ export function FollowButton({ brandId, brandName, size = "sm", className, varia
       onClick={onClick}
       className={cn("relative z-10", hitArea[size], className)}
     >
-      {active ? <Check /> : <Plus />}
-      {active ? "Following" : "Follow"}
+      {/* The plus turns into the check as the follow lands; the label crossfades with it. Only
+          after hydration, so the first paint never animates. */}
+      <span className="relative inline-flex items-center justify-center" aria-hidden>
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={active ? "on" : "off"}
+            className="inline-flex"
+            initial={hydrated ? { opacity: 0, scale: 0.5, rotate: active ? -90 : 90 } : false}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.5, transition: transition.exit }}
+            transition={transition.badge}
+          >
+            {active ? <Check weight="bold" /> : <Plus />}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span key={active ? "on" : "off"} initial={hydrated ? { opacity: 0, y: 4 } : false} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4, transition: transition.exit }} transition={transition.crossfade}>
+          {active ? "Following" : "Follow"}
+        </motion.span>
+      </AnimatePresence>
     </Button>
   )
 }
