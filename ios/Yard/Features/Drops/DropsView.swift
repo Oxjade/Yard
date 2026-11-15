@@ -74,7 +74,7 @@ struct DropsView: View {
             .refreshable { await model.reload(signedIn: session.isSignedIn) }
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.xxl) {
+                VStack(alignment: .leading, spacing: Spacing.xl + Spacing.xs) {
                     header
 
                     if !groups.live.isEmpty {
@@ -116,9 +116,9 @@ struct DropsView: View {
     // MARK: Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Drops")
-                .yardDisplay(56)
+                .yardDisplay(52)
                 .foregroundStyle(Color.yard.ink)
             Text("Limited releases from independent brands, on a schedule. Small runs, clear rules, and a reminder when each one opens.")
                 .font(.yardCallout)
@@ -130,14 +130,14 @@ struct DropsView: View {
     }
 
     private func bigCardSection(title: String, subtitle: String, drops: [Drop], now: Date, more: DropsViewModel.Source?) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        VStack(alignment: .leading, spacing: Spacing.s) {
             SectionHeader(title, subtitle: subtitle, display: true)
-            VStack(spacing: Spacing.m) {
+            VStack(spacing: Spacing.l) {
                 ForEach(drops) { drop in
                     NavigationLink(value: Route.drop(id: drop.slug)) {
                         DropLiveCard(drop: drop, phase: drop.livePhase(at: now))
                     }
-                    .buttonStyle(PressableButtonStyle())
+                    .buttonStyle(YardCardPressStyle())
                 }
             }
             .padding(.horizontal, Spacing.gutter)
@@ -148,7 +148,7 @@ struct DropsView: View {
     }
 
     private func upcomingSection(_ drops: [Drop], now: Date) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        VStack(alignment: .leading, spacing: Spacing.s) {
             SectionHeader("Upcoming", subtitle: "Set a reminder for the next release.", display: true)
             VStack(alignment: .leading, spacing: Spacing.l) {
                 ForEach(model.days(drops, now: now)) { day in
@@ -179,7 +179,7 @@ struct DropsView: View {
     }
 
     private func pastSection(_ drops: [Drop]) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        VStack(alignment: .leading, spacing: Spacing.s) {
             SectionHeader("Past drops", subtitle: "Previous releases and draws.", display: true)
             MasonryGrid(drops, extraHeight: DropPastTile.captionHeight, heightRatio: { _ in 1.25 }) { drop in
                 NavigationLink(value: Route.drop(id: drop.slug)) {
@@ -193,7 +193,7 @@ struct DropsView: View {
     }
 
     private var howDropsWork: some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        VStack(alignment: .leading, spacing: Spacing.s) {
             SectionHeader("How drops work", subtitle: "The rules are on every drop before it opens, and they don't change once it's scheduled.", display: true)
             VStack(spacing: Spacing.s) {
                 howRow("First come", "Opens to everyone at release. Pieces go to whoever checks out first.")

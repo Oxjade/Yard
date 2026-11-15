@@ -47,6 +47,10 @@ struct YardPalette: Sendable {
     let onPhoto = Color(light: UIColor(yardHex: 0xFFFFFF), dark: UIColor(yardHex: 0xFFFFFF))
     /// Text on an `onPhoto` (white) pill: #0B0B0B in both modes.
     let onPhotoInk = Color(light: UIColor(yardHex: 0x0B0B0B), dark: UIColor(yardHex: 0x0B0B0B))
+    /// The lit top edge of glass surfaces (tab pill, floating buttons, overlay pills).
+    let glassEdge = Color(light: UIColor(white: 1, alpha: 0.85), dark: UIColor(white: 1, alpha: 0.18))
+    /// A faint wash laid over glass so it reads as a surface, not a hole. Use as-is.
+    let glassTint = Color(light: UIColor(white: 1, alpha: 0.35), dark: UIColor(white: 1, alpha: 0.04))
     /// Scrim for gradients over photos (black, fixed). Use with `.opacity(…)`.
     let scrim = Color(light: UIColor(yardHex: 0x000000), dark: UIColor(yardHex: 0x000000))
 }

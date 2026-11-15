@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The You tab root.
 /// - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
-/// - Signed in: profile header (initials avatar, name, email), quick tiles (Orders, Saved, Following,
-///   Inbox, Drop reminders, Notifications), links (Settings, Sell on Yard), Help (Message Yard Support,
+/// - Signed in: profile header (initials avatar, greeting, name, email), one quick-links panel
+///   (Orders, Saved, Following, Inbox, Drop reminders, Updates, each with a real badge when known), links (Settings, Sell on Yard), Help (Message Yard Support,
 ///   Help centre) and legal (Terms, Privacy, Refunds).
 @MainActor
 struct YouView: View {
@@ -13,8 +13,16 @@ struct YouView: View {
     @Environment(FollowStore.self) private var follows
 
     @State private var webPage: YouWebPage? = nil
+    @State private var badges: YouBadgesModel
 
-    init() {}
+    init() {
+        _badges = State(initialValue: YouBadgesModel())
+    }
+
+    /// Previews only.
+    fileprivate init(badges: YouBadgesModel) {
+        _badges = State(initialValue: badges)
+    }
 
     var body: some View {
         ScrollView {
@@ -22,8 +30,10 @@ struct YouView: View {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 topBar
                 if session.isSignedIn, let shopper = session.shopper {
-                    profileHeader(shopper)
-                    tiles
+                    VStack(alignment: .leading, spacing: Spacing.l) {
+                        profileHeader(shopper)
+                        quickLinks
+                    }
                 } else if !session.hasLoaded {
                     loadingHeader
                 } else {
@@ -42,9 +52,18 @@ struct YouView: View {
         .refreshable {
             await session.refresh()
             if session.isSignedIn {
+                await badges.load(force: true)
                 await saved.load()
                 await follows.load()
             }
+        }
+        // Real counts for the quick links: on sign-in change, and (throttled) on coming back here.
+        .task(id: session.shopper?.id ?? "signed-out") {
+            if session.isSignedIn { await badges.load(force: true) } else { badges.reset() }
+        }
+        .onAppear {
+            guard session.isSignedIn else { return }
+            Task { @MainActor in await badges.load() }
         }
         .youWebPage($webPage)
     }
@@ -70,38 +89,43 @@ struct YouView: View {
     }
 
     private func profileHeader(_ shopper: Shopper) -> some View {
-        HStack(spacing: Spacing.l) {
+        HStack(alignment: .center, spacing: Spacing.m + Spacing.xs) {
             Text(shopper.initials)
-                .font(.yardDisplay(30))
+                .font(.yardDisplay(24))
                 .foregroundStyle(Color.yard.onAcid)
-                .frame(width: 72, height: 72)
+                .frame(width: 60, height: 60)
                 .background(Color.yard.acid, in: Circle())
+                .overlay(Circle().strokeBorder(Color.yard.scrim.opacity(0.08), lineWidth: 1))
+                .padding(3)
+                .overlay(Circle().strokeBorder(Color.yard.line, lineWidth: 1))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text("\(greeting()),")
-                    .font(.yardCaption)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(greeting().uppercased())
+                    .font(.yardMicro)
+                    .tracking(1.1)
                     .foregroundStyle(Color.yard.violet)
                 Text(shopper.name.isEmpty ? "Your World" : shopper.name)
-                    .yardDisplay(30)
+                    .yardDisplay(28)
                     .foregroundStyle(Color.yard.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if !shopper.email.isEmpty {
                     Text(shopper.email)
-                        .font(.yardCallout)
-                        .foregroundStyle(Color.yard.ink2)
+                        .font(.yardCaption)
+                        .foregroundStyle(Color.yard.ink3)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 0)
         }
+        .padding(.top, Spacing.xs)
         .accessibilityElement(children: .combine)
     }
 
     private var loadingHeader: some View {
         HStack(spacing: Spacing.l) {
-            Skeleton(shape: .circle).frame(width: 72, height: 72)
+            Skeleton(shape: .circle).frame(width: 66, height: 66)
             VStack(alignment: .leading, spacing: Spacing.s) {
                 Skeleton(cornerRadius: 4).frame(width: 160, height: 20)
                 Skeleton(cornerRadius: 4).frame(width: 120, height: 12)
@@ -110,18 +134,42 @@ struct YouView: View {
         }
     }
 
-    // MARK: Tiles
+    // MARK: Quick links
 
-    private var tiles: some View {
-        let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: Spacing.s), count: 3)
-        return LazyVGrid(columns: columns, spacing: Spacing.s) {
-            YouTile(title: "Orders", systemImage: "shippingbox", count: nil, route: .orders)
-            YouTile(title: "Saved", systemImage: "heart", count: saved.items.count, route: .saved)
-            YouTile(title: "Following", systemImage: "person.2", count: follows.items.count, route: .following)
-            YouTile(title: "Inbox", systemImage: "bubble.left.and.bubble.right", count: nil, route: .inbox)
-            YouTile(title: "Drop reminders", systemImage: "bell.badge", count: nil, route: .myDrops)
-            YouTile(title: "Updates", systemImage: "bell", count: nil, route: .notifications)
+    /// One panel, six cells. Badges only from data the app loaded; hidden when unknown or zero.
+    private var quickLinks: some View {
+        func countBadge(_ n: Int?) -> YouQuickLink.Badge {
+            guard let n, n > 0 else { return .none }
+            return .count(n)
         }
+        func dotBadge(_ n: Int?) -> YouQuickLink.Badge {
+            guard let n, n > 0 else { return .none }
+            return .dot(n)
+        }
+        let savedCount: Int? = saved.hasLoaded ? saved.items.count : nil
+        let followingCount: Int? = follows.hasLoaded ? follows.items.count : nil
+        let links: [YouQuickLink] = [
+            YouQuickLink(title: "Orders", systemImage: "shippingbox", route: .orders,
+                         badge: countBadge(badges.ordersInProgress),
+                         accessibilityValue: (badges.ordersInProgress ?? 0) > 0 ? "\(badges.ordersInProgress ?? 0) in progress" : nil),
+            YouQuickLink(title: "Saved", systemImage: "heart", route: .saved,
+                         badge: countBadge(savedCount),
+                         accessibilityValue: (savedCount ?? 0) > 0 ? "\(savedCount ?? 0) saved" : nil),
+            YouQuickLink(title: "Following", systemImage: "person.2", route: .following,
+                         badge: countBadge(followingCount),
+                         accessibilityValue: (followingCount ?? 0) > 0 ? "\(followingCount ?? 0) brands" : nil),
+            YouQuickLink(title: "Inbox", systemImage: "bubble.left.and.bubble.right", route: .inbox,
+                         badge: dotBadge(badges.inboxUnread),
+                         accessibilityValue: (badges.inboxUnread ?? 0) > 0 ? "\(badges.inboxUnread ?? 0) unread" : nil),
+            YouQuickLink(title: "Drop reminders", systemImage: "bell.badge", route: .myDrops,
+                         badge: countBadge(badges.dropReminders),
+                         accessibilityValue: (badges.dropReminders ?? 0) > 0 ? "\(badges.dropReminders ?? 0) set" : nil),
+            YouQuickLink(title: "Updates", systemImage: "bell", route: .notifications,
+                         badge: countBadge(badges.updatesUnread),
+                         accessibilityValue: (badges.updatesUnread ?? 0) > 0 ? "\(badges.updatesUnread ?? 0) unread" : nil),
+        ]
+        return YouQuickLinksPanel(links: links)
+            .animation(Motion.snappy, value: links.map(\.badge))
     }
 
     // MARK: Invite (signed out)
@@ -187,48 +235,8 @@ struct YouView: View {
     }
 }
 
-/// A quick tile: icon, title, optional real count.
-private struct YouTile: View {
-    let title: String
-    let systemImage: String
-    let count: Int?
-    let route: Route
-
-    var body: some View {
-        NavigationLink(value: route) {
-            VStack(alignment: .leading, spacing: Spacing.s) {
-                HStack(alignment: .top) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.yard.ink)
-                        .frame(width: 36, height: 36)
-                        .background(Color.yard.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    Spacer(minLength: 0)
-                    if let count, count > 0 {
-                        Text(Formatters.count(count))
-                            .font(.yardNumber(15))
-                            .foregroundStyle(Color.yard.ink)
-                    }
-                }
-                Text(title)
-                    .font(.yardCaptionEmphasis)
-                    .foregroundStyle(Color.yard.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-            }
-            .padding(Spacing.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .yardCard()
-            .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        }
-        .buttonStyle(PressableButtonStyle())
-        .accessibilityLabel(Text(count.map { "\(title), \($0)" } ?? title))
-    }
-}
-
 #Preview("YouView — dark") {
-    NavigationStack { YouView() }
+    NavigationStack { YouView(badges: YouBadgesModel(preview: 2, inbox: 1, updates: 4, reminders: 3)) }
         .yardPreviewEnvironment()
         .preferredColorScheme(.dark)
 }

@@ -31,14 +31,34 @@ enum Radius {
     static let sheet: CGFloat = 28
 }
 
-/// Motion tokens.
+/// Motion tokens. Define every animation here and reuse it; never hand-roll a spring in a view.
+/// Under Reduce Motion, use `Motion.resolved(_:reduceMotion:)` (or the press styles, which do it
+/// for you): movement becomes a short cross-fade or nothing.
 enum Motion {
-    /// The app's standard spring.
+    /// The app's standard spring (navigation-adjacent movement, sheets, tab selection).
     static let spring: Animation = .spring(response: 0.35, dampingFraction: 0.82)
-    /// A quicker spring for small state flips (chips, toggles).
+    /// A quicker spring for small state flips (chips, toggles, badges).
     static let snappy: Animation = .spring(response: 0.25, dampingFraction: 0.9)
+    /// Button and card compression: fast in, settles without overshoot.
+    static let press: Animation = .spring(response: 0.22, dampingFraction: 0.78)
+    /// A soft spring for things that arrive (toasts, notification rows, counts).
+    static let arrive: Animation = .spring(response: 0.42, dampingFraction: 0.86)
     /// Image fade-in.
     static let fade: Animation = .easeOut(duration: 0.25)
+    /// Skeleton to content, image to image.
+    static let crossfade: Animation = .easeInOut(duration: 0.3)
+    /// The reduced-motion stand-in: a short fade, no travel.
+    static let reduced: Animation = .easeInOut(duration: 0.15)
+
+    /// Scale for a pressed tile or small button.
+    static let pressScale: CGFloat = 0.96
+    /// Scale for a pressed large card (drop cards, product tiles): bigger surfaces move less.
+    static let cardPressScale: CGFloat = 0.98
+
+    /// `animation`, or the reduced stand-in when the person has Reduce Motion on.
+    static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation {
+        reduceMotion ? reduced : animation
+    }
 }
 
 extension Shape where Self == RoundedRectangle {

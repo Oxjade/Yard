@@ -353,17 +353,21 @@ enum DropLocalReminder {
 struct DropLivePulse: View {
     var color: Color = Color.yard.onAcid
     var size: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            PhaseAnimator([false, true]) { expanded in
-                Circle()
-                    .fill(color)
-                    .frame(width: size, height: size)
-                    .scaleEffect(expanded ? 2.6 : 1)
-                    .opacity(expanded ? 0 : 0.55)
-            } animation: { expanded in
-                expanded ? Animation.easeOut(duration: 1.1) : nil
+            // Under Reduce Motion the dot stays still: the colour alone says "live".
+            if !reduceMotion {
+                PhaseAnimator([false, true]) { expanded in
+                    Circle()
+                        .fill(color)
+                        .frame(width: size, height: size)
+                        .scaleEffect(expanded ? 2.6 : 1)
+                        .opacity(expanded ? 0 : 0.55)
+                } animation: { expanded in
+                    expanded ? Animation.easeOut(duration: 1.1) : nil
+                }
             }
             Circle()
                 .fill(color)
@@ -374,14 +378,34 @@ struct DropLivePulse: View {
     }
 }
 
-/// Status badge: acid with the live pulse when the shopper can act now, neutral otherwise.
+/// Status badge.
+/// - On a photo: a small frosted capsule (always dark glass, white text) with an acid live dot
+///   when the shopper can act now. It sits inset 16pt from the photo's corner.
+/// - Off a photo: acid with the pulse when hot, a neutral tag otherwise.
 struct DropStatusBadge: View {
     let drop: Drop
     let phase: DropLivePhase
     var onPhoto: Bool = false
 
     var body: some View {
-        if drop.isHot(phase) {
+        let hot = drop.isHot(phase)
+        if onPhoto {
+            HStack(spacing: 5) {
+                if hot {
+                    DropLivePulse(color: Color.yard.acid, size: 6)
+                        .frame(width: 12, height: 12)
+                }
+                Text(drop.statusLabel(phase).uppercased())
+                    .font(.yardMicro)
+                    .tracking(0.6)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.yard.onPhoto)
+            .padding(.leading, hot ? 7 : 10)
+            .padding(.trailing, 10)
+            .frame(height: 26)
+            .yardGlass(Capsule(), onPhoto: true)
+        } else if hot {
             HStack(spacing: 4) {
                 DropLivePulse(color: Color.yard.onAcid, size: 6)
                     .frame(width: 12, height: 12)
@@ -395,8 +419,24 @@ struct DropStatusBadge: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(Color.yard.acid))
         } else {
-            Tag(drop.statusLabel(phase), style: onPhoto ? .onPhoto : .neutral)
+            Tag(drop.statusLabel(phase), style: .neutral)
         }
+    }
+}
+
+/// A plain-text capsule on a photo matching `DropStatusBadge` (access label, "Sponsored").
+struct DropPhotoCapsule: View {
+    let text: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.yardMicro)
+            .tracking(0.6)
+            .lineLimit(1)
+            .foregroundStyle(Color.yard.onPhoto.opacity(0.9))
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .yardGlass(Capsule(), onPhoto: true)
     }
 }
 

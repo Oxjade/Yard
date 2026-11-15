@@ -118,6 +118,7 @@ struct YardButton: View {
 struct YardPillButtonStyle: ButtonStyle {
     var style: YardButton.Style = .primary
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(style: YardButton.Style = .primary) {
         self.style = style
@@ -127,20 +128,72 @@ struct YardPillButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(YardButton.foreground(for: style))
             .background(YardButton.background(for: style), in: Capsule())
+            .overlay {
+                // A brief darkening on press: the button reads as pushed even with Reduce Motion on.
+                Capsule().fill(Color.yard.scrim.opacity(configuration.isPressed ? 0.08 : 0))
+            }
             .opacity(isEnabled ? 1 : 0.4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(Motion.snappy, value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .animation(Motion.resolved(Motion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
 /// A subtle press-scale style for tappable cards and tiles (no colour change).
+/// `scale` defaults to the large-card value; Reduce Motion keeps only the dim.
 struct PressableButtonStyle: ButtonStyle {
+    var scale: CGFloat = Motion.cardPressScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(scale: CGFloat = Motion.cardPressScale) {
+        self.scale = scale
+    }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(Motion.snappy, value: configuration.isPressed)
+            .animation(Motion.resolved(Motion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
     }
+}
+
+/// Large photo cards (drop cards, hero tiles): a gentle compression and a slight darkening,
+/// so the card feels pressed into the page. Reduce Motion keeps only the darkening.
+struct YardCardPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init() {}
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .brightness(configuration.isPressed ? -0.04 : 0)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? Motion.cardPressScale : 1)
+            .animation(Motion.resolved(Motion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
+    }
+}
+
+/// Quick-link cells and other small tiles: compresses to `Motion.pressScale`, lays a highlight
+/// over `shape`, and gives a light tap on touch-down.
+struct YardTilePressStyle<S: Shape>: ButtonStyle {
+    let shape: S
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(shape: S) {
+        self.shape = shape
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                shape.fill(Color.yard.ink.opacity(configuration.isPressed ? 0.07 : 0))
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1)
+            .animation(Motion.resolved(Motion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light, intensity: 0.7), trigger: configuration.isPressed) { _, pressed in pressed }
+    }
+}
+
+extension YardTilePressStyle where S == Rectangle {
+    init() { self.init(shape: Rectangle()) }
 }
 
 #Preview("Buttons — dark") {
