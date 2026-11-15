@@ -2,7 +2,7 @@ import "server-only"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { getEnv } from "../env"
-import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, listingBackCopy, listingHeldCopy, storefrontNudgeCopy, type BrandEmailCopy } from "@/lib/brand-emails"
+import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, storefrontNudgeCopy, type BrandEmailCopy } from "@/lib/brand-emails"
 import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, type ReceiptGroup, type ReceiptLine } from "./layout"
 
 /**
@@ -45,6 +45,14 @@ type Template = { category: EmailCategory; required: readonly string[]; build: (
 
 const v = (vars: Vars, key: string, fallback = "") => String(vars[key] ?? fallback).slice(0, 300)
 const has = (vars: Vars, key: string) => vars[key] !== undefined && vars[key] !== ""
+/** The product names of a listing email (listing_held, listing_back). */
+const listingVars = (x: Vars) => ({
+  brand: v(x, "brand"),
+  product: v(x, "product"),
+  productId: has(x, "productId") ? v(x, "productId") : undefined,
+  more: Number(x.more) || 0,
+  others: has(x, "others") ? v(x, "others").split(" | ").slice(0, 2) : [],
+})
 /** "Hey Ada," (a person's first name, a brand's full name) — or nothing when there's no name (never a bare "Hi,"). */
 const hey = (vars: Vars, key = "name") => {
   const n = v(vars, key).trim()
@@ -374,16 +382,21 @@ export const templates = {
     required: ["brand"],
     build: (x) => brandCopy(applicationRejectedCopy({ brand: v(x, "brand"), name: v(x, "name"), reason: has(x, "reason") ? String(x.reason).slice(0, 500) : undefined })),
   },
-  // A listing paused or brought back by moderation (catalog/jobs.ts setProductModeration).
+  // A listing paused or brought back by moderation (catalog/jobs.ts setProductsModeration). One email per
+  // brand per decision: `more` further listings, `others` up to two of their names (" | "-separated).
+  // listing_held `state`: "live" when shoppers could see it until now. listing_back `state`: a ListingState.
   listing_held: {
     category: "account",
     required: ["brand", "product"],
-    build: (x) => brandCopy(listingHeldCopy({ brand: v(x, "brand"), product: v(x, "product"), productId: has(x, "productId") ? v(x, "productId") : undefined, reason: has(x, "reason") ? String(x.reason).slice(0, 500) : undefined })),
+    build: (x) =>
+      brandCopy(
+        listingHeldCopy({ ...listingVars(x), reason: has(x, "reason") ? String(x.reason).slice(0, 500) : undefined, wasLive: x.state === undefined || x.state === "live" }),
+      ),
   },
   listing_back: {
     category: "account",
     required: ["brand", "product"],
-    build: (x) => brandCopy(listingBackCopy({ brand: v(x, "brand"), product: v(x, "product"), productId: has(x, "productId") ? v(x, "productId") : undefined })),
+    build: (x) => brandCopy(listingBackCopy({ ...listingVars(x), state: LISTING_STATES.find((s) => s === x.state) ?? "live" })),
   },
   // An admin's one-tap email (Admin › Brands › Email the brand). `preset`: a BRAND_EMAIL_PRESETS key; `body`: up to 3,000 characters.
   brand_message: {

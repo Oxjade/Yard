@@ -30,7 +30,7 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
 
 | Email | Trigger | Once per |
 |---|---|---|
-| Still in drafts (`brand_draft_nudge`) | A product has been a draft for 12 hours: never published, not hidden by moderation, created in the last 30 days; brand not restricted or suspended, no application under review, not an unclaimed founding brand. One email per brand per run covers all its due drafts (first named, the rest counted). | product (`catalog_products.draft_nudged_at`) |
+| Still in drafts (`brand_draft_nudge`) | A product has been a draft for 12 hours **since the brand could first publish it**: the latest of its creation, the founding brand's claim (`claimed_at`) and the application's approval (`reviewed_at` of the approved onboarding), so a first product saved with an application, or drafts Yard prepared before a claim, aren't reminded about right after approval or claim. Never published, not hidden by moderation, that clock started in the last 30 days; brand not restricted or suspended, no application under review, not an unclaimed founding brand. One email per brand per run covers all its due drafts (first named, the rest counted). | product (`catalog_products.draft_nudged_at`) |
 | Publish your storefront (`brand_storefront_nudge`) | A claimed founding brand with at least one published or scheduled product, 24 hours after claiming, whose storefront was never published (`launched_at` empty), so its products are still hidden. | brand (`brands.storefront_nudged_at`) |
 
 **Still in drafts**
@@ -61,8 +61,17 @@ Queued in the same transaction as the decision and its audit row (audit `meta.em
 |---|---|
 | Application: changes needed (`brand_rejected`) | Admin › Brands › Reject on a submitted application (`reviewOnboarding`), to the applicant, with the admin's reason. |
 | You're approved (`brand_approved`, existing) | Approve on a submitted application. |
-| Listing paused (`listing_held`) | Admin › Products › Restrict listing (`setProductModeration`, hidden), with the admin's reason. |
-| Listing back (`listing_back`) | Lift restriction on a listing (un-hidden). |
+| Listing paused / on hold (`listing_held`) | Admin › Products › Restrict listing (`setProductsModeration`, hidden), with the admin's reason. |
+| Listing back / hold lifted (`listing_back`) | Lift restriction on a listing (un-hidden). |
+
+Moderation emails are **one per brand per decision**: a bulk Restrict or Lift of 10 listings from one
+brand sends that brand one email naming the first, counting the rest (`POST
+/api/admin/catalog/products/moderation`, up to 100 listings, all or nothing). The wording follows where
+each listing stands with shoppers (`listingState`, the same rules as the public catalogue):
+`listing_held` says "paused" only for a listing shoppers could see, and `listing_back` says "back on
+Yard" only for one that is live again. A draft or unpublished scheduled product, a restricted or
+suspended brand, or an unlaunched founding storefront gets "the hold is lifted" and what's left before
+it shows. A brand whose listings are in different states gets one email per state.
 
 Brand restriction and suspension keep their Studio notification (no email). Products are not
 reviewed before publishing, so lifting a restriction is the "listing approved" moment.
@@ -76,28 +85,45 @@ reviewed before publishing, so lifting a restriction is the "listing approved" m
   @support from Yard Support in Studio and a real person on the team gets back to you.
 - Button: Update my application → `/studio/onboarding`
 
-**Listing paused**
-- Subject: `{product} is taking a quick break from Yard`
-- Heading: Listing on pause
+**Listing paused** (shoppers could see it)
+- Subject: `{product} is taking a quick break from Yard` (several: `{product} and {n} more are taking a quick break from Yard`)
+- Heading: Listing on pause (several: Listings on pause)
 - We've paused {product}, so it isn't showing on Yard for now. It's safe in Studio and nothing else in
   your shop has changed. Why: "{reason}". Sort it out in Studio, then message @support when it's ready.
-  We'll take another look and get it back out there.
-- Button: Fix it in Studio → `/studio/products/{id}`
+  We'll take another look and lift the hold.
+- Button: Fix it in Studio → `/studio/products/{id}` (several: `/studio/products`)
 
-**Listing back**
-- Subject: `{product} is back on Yard 🎉`
+**Listing on hold** (a draft, or otherwise not live)
+- Subject: `{product} is on hold for now`
+- Heading: On hold for now
+- We've put a hold on {product}, so it can't go live for now. It's safe in Studio and nothing else in
+  your shop has changed. Why: "{reason}". (Same ending and button as above.)
+
+**Listing back** (live again)
+- Subject: `{product} is back on Yard 🎉` (several: `{product} and {n} more are back on Yard 🎉`)
 - Heading: Back in rotation
 - Good news: {product} is back on Yard. Shoppers can find it, save it and buy it again. Thanks for
   sorting it out. Keep the heat coming.
 - Button: View in Studio → `/studio/products/{id}`
+
+**Hold lifted** (not live yet)
+- Subject: `The hold on {product} is lifted`
+- Heading: All clear
+- Good news: we've lifted the hold on {product}. Then one of: *(not published)* It isn't published yet,
+  so publish it in Studio whenever it's ready and it shows up on Yard. / *(founding storefront not
+  published)* It shows up on Yard as soon as your storefront is published. / *(brand restricted or
+  suspended)* It shows up on Yard once your shop is fully back. Message @support if you're not sure
+  what's left. Thanks for sorting it out.
+- Button: Open in Studio → `/studio/products/{id}` (storefront case: Open my storefront → `/studio/storefront`)
 
 ## One-tap emails from Admin
 
 Admin › Brands › a brand (and the founding-brand tray once claimed) › **Email the brand**: pick a
 template, edit the prefilled subject and message, **Preview** (the real email) and **Send**. Inline in
 the tray like the claim link. Permission `brands.email` (Owner, Trust & safety, Support).
-`GET/POST /api/admin/brand-emails/{brandId}`, `POST …/preview`. Limits: 5 per brand per 24 hours
-across all admins, 30 an hour and 120 a day per admin; a retried send (same idempotency key) sends
+`GET/POST /api/admin/brand-emails/{brandId}`, `POST …/preview`. Limits: 5 per brand in any 24 hours
+(a rolling window, not the calendar day: the composer shows "{n} of 5 in 24h" and, at the cap, the
+time a slot opens again) across all admins, 30 an hour and 120 a day per admin; a retried send (same idempotency key) sends
 nothing new. Audited as `brand_email.sent` with the template and subject (never the body). The
 message is signed with the admin's first name and points replies to @support in Studio.
 
@@ -128,5 +154,5 @@ Prefilled bodies (editable):
 
 Migration `drizzle/0020_brand_emails.sql`: `brands.nudge_emails` (default on), `brands.last_nudged_at`,
 `brands.storefront_nudged_at`, `catalog_products.draft_nudged_at` and the partial index
-`catalog_products_draft_nudge_ix`. Existing drafts older than 12 hours (and younger than 30 days) get
+`catalog_products_draft_nudge_ix`. Existing drafts whose clock started 12 hours to 30 days ago get
 their one reminder on the first run after deploy.

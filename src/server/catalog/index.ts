@@ -17,7 +17,7 @@ export const IMPL: string = "CATALOG-v3-2026-11-08"
 
 export { getSellableVariants, getProductForSearch } from "./sellable"
 export { holdStock, commitHold, releaseHold, restock } from "./stock"
-export { setProductModeration } from "./jobs"
+export { MODERATION_BATCH_MAX, setProductModeration, setProductsModeration } from "./jobs"
 export { reviewOnboarding, listSubmittedOnboardings } from "./onboarding"
 export { publishScheduled, sweepExpiredHolds, nudgeBrands }
 

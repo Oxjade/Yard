@@ -26,6 +26,9 @@ const fieldClass = "h-10 rounded-md border-white/10 bg-white/[0.02] text-[13px]"
 type Draft = { preset: BrandEmailPreset; subject: string; body: string }
 const draftFor = (preset: BrandEmailPreset, brand: string): Draft => ({ preset, subject: brandEmailPresets[preset].subject(brand), body: brandEmailPresets[preset].body(brand) })
 
+/** "Tue 11:04 PM": when a capped brand can be emailed again, in the admin's own time zone. */
+const sendAgainAt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
+
 /**
  * "Email the brand" in a brand's tray (Admin › Brands and the founding-brand tray, brands.email):
  * ready-made templates as chips, an editable subject and message prefilled in Yard's voice, a
@@ -55,8 +58,9 @@ function Composer({ brandId, brandName }: { brandId: string; brandName: string }
 
   const preset = brandEmailPresets[draft.preset]
   const recipients = ctx?.recipients ?? []
+  // The cap is a rolling 24 hours, so the composer names the moment a slot opens rather than "tomorrow".
   const capped = !!ctx && ctx.sentToday >= ctx.dailyLimit
-  const blocked = ctx && !recipients.length ? (ctx.brand.claimStatus === "unclaimed" ? `${name} has no owner yet. Send the claim link first.` : `${name} has no active owner or admin to email.`) : capped ? `${name} already got ${ctx!.dailyLimit} emails from Yard today.` : null
+  const blocked = ctx && !recipients.length ? (ctx.brand.claimStatus === "unclaimed" ? `${name} has no owner yet. Send the claim link first.` : `${name} has no active owner or admin to email.`) : capped ? `${name} already got ${ctx!.dailyLimit} emails from Yard in the last 24 hours.` : null
 
   function choose(p: BrandEmailPreset) {
     setDraft(draftFor(p, name))
@@ -132,7 +136,7 @@ function Composer({ brandId, brandName }: { brandId: string; brandName: string }
     <DetailSection
       title="Email the brand"
       className="min-w-0 grid-cols-[minmax(0,1fr)]"
-      aside={ctx ? <span className="text-[11px] text-ink-3 tabular">{ctx.sentToday} of {ctx.dailyLimit} today</span> : null}
+      aside={ctx ? <span className="text-[11px] text-ink-3 tabular">{ctx.sentToday} of {ctx.dailyLimit} in 24h</span> : null}
     >
       {q.error && !ctx ? (
         <div role="alert" className={cn("grid gap-2 px-3 py-2.5 text-[12.5px] text-danger", insetClass)}>
@@ -242,7 +246,7 @@ function Composer({ brandId, brandName }: { brandId: string; brandName: string }
         ) : null}
 
         <ActionErrorNote error={failure} onReload={() => window.location.reload()} />
-        {blocked && recipients.length ? <p className="text-[11.5px] text-ink-3">{blocked} Try again tomorrow.</p> : null}
+        {blocked && recipients.length ? <p className="text-[11.5px] text-ink-3">{blocked}{capped && ctx?.nextSendAt ? ` You can send again ${sendAgainAt(ctx.nextSendAt)}.` : ""}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-8" loading={busy === "preview"} disabled={!!busy} onClick={() => void showPreview()}>
             {preview ? <EyeSlashIcon /> : <EyeIcon />} {preview ? "Hide preview" : "Preview"}

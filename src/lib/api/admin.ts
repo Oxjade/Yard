@@ -75,6 +75,9 @@ export type AdminCatalogProductsFilter = { q?: string; moderation?: "hidden" | "
 export const listAdminCatalogProducts = (f: AdminCatalogProductsFilter & { cursor?: string } = {}) => api<AdminCatalogProductsDto>("/api/admin/catalog/products", { query: { limit: 100, ...f } })
 export const moderateProduct = (id: string, body: { hidden: boolean; reason: string }) =>
   api<{ productId: string; moderationStatus: "hidden" | "ok" }>(`/api/admin/catalog/products/${encodeURIComponent(id)}/moderation`, { body })
+/** Several listings in one decision (at most 100): all or nothing, and each brand gets one email for its listings. */
+export const moderateProducts = (body: { productIds: string[]; hidden: boolean; reason: string }) =>
+  api<{ products: { productId: string; moderationStatus: "hidden" | "ok" }[]; emails: number }>("/api/admin/catalog/products/moderation", { body })
 
 /** POST /api/admin/decisions/{action}. Throws ApiError (403 forbidden, 409 conflict, …) for the dialog to show. */
 export function decide<K extends DecisionKey, T = unknown>(action: K, body: DecisionBody<K>) {

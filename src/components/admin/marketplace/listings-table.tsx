@@ -9,7 +9,7 @@ import { DataTable, type BulkAction, type Column, type RowAction } from "@/compo
 import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { useAsyncAction } from "@/hooks/use-async-action"
-import { adminKeys, listAdminCatalogProducts, moderateProduct, type AdminCatalogProductsFilter } from "@/lib/api/admin"
+import { adminKeys, listAdminCatalogProducts, moderateProducts, type AdminCatalogProductsFilter } from "@/lib/api/admin"
 import type { AdminCatalogProductDto } from "@/lib/api/contracts/admin"
 import { errorMessage } from "@/lib/api/errors"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
@@ -99,11 +99,21 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
     if (!items.length) return false
     const one = items.length === 1 ? items[0] : null
     const skipped = list.length - items.length
+    // The server sends one email per brand per decision, however many of its listings it covers.
+    const brandCount = new Set(items.map((p) => p.brandId)).size
+    const unpublished = items.filter((p) => p.status !== "published").length
+    const emails = one ? "The brand gets an email" : brandCount === 1 ? `${items[0].brandName} gets one email covering all ${items.length}` : `Each brand gets one email covering its listings (${brandCount} emails)`
     return ask({
       title: lift ? (one ? `Lift the restriction on ${one.title}?` : `Lift the restriction on ${plural(items.length)}?`) : one ? `Restrict ${one.title}?` : `Restrict ${plural(items.length)}?`,
       description: [
-        lift ? "Lifted listings can show in discovery, search and the brand's storefront again. The brand gets a short email that it's back." : "Restricted listings are held back from discovery, search and the storefront and can't be bought. The brand keeps them in Studio.",
-        lift ? null : "The brand is notified by email and sees your reason, with a link to fix it in Studio.",
+        lift ? "Lifted listings can show in discovery, search and the brand's storefront again." : "Restricted listings are held back from discovery, search and the storefront and can't be bought. The brand keeps them in Studio.",
+        lift
+          ? one
+            ? one.status === "published"
+              ? "The brand gets a short email that it's back on Yard (or that the hold is lifted, if its shop isn't live)."
+              : "The brand gets a short email that the hold is lifted. It isn't published, so the email won't say it's back on Yard."
+            : `${emails}: "back on Yard" for listings that are live again${unpublished ? `, "the hold is lifted" for ${unpublished === items.length ? "these, since they aren't published" : "the ones that aren't published"}` : ""}.`
+          : `${emails} with your reason and a link to fix it in Studio.`,
         skipped ? `${plural(skipped)} selected ${skipped === 1 ? "is" : "are"} already ${lift ? "unrestricted" : "restricted"} and ${skipped === 1 ? "is" : "are"} left as ${skipped === 1 ? "it is" : "they are"}.` : null,
       ]
         .filter(Boolean)
@@ -113,12 +123,14 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
       run: async (reason) => {
         let done = 0
         let failure: unknown = null
-        for (const p of items) {
+        // One request per 100 listings (the server's batch cap), so each brand gets one email per batch, not one per listing.
+        for (let i = 0; i < items.length; i += 100) {
           try {
-            const r = await moderateProduct(p.id, { hidden: !lift, reason })
+            const r = await moderateProducts({ productIds: items.slice(i, i + 100).map((p) => p.id), hidden: !lift, reason })
+            const next = new Map(r.products.map((x) => [x.productId, x.moderationStatus]))
             // Rows from later pages aren't refetched by the revalidation below, so they take the new state here.
-            setMore((m) => ({ ...m, items: m.items.map((x) => (x.id === r.productId ? { ...x, moderationStatus: r.moderationStatus } : x)) }))
-            done++
+            setMore((m) => ({ ...m, items: m.items.map((x) => (next.has(x.id) ? { ...x, moderationStatus: next.get(x.id)! } : x)) }))
+            done += r.products.length
           } catch (e) {
             failure = e
             break

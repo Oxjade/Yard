@@ -34,6 +34,10 @@ export type DraftCandidate = {
   brandReview: string
   brandNudges: boolean
   claimStatus: string
+  /** When a founding brand was claimed (null for ordinary brands): its owners could publish from then on. */
+  claimedAt: Date | null
+  /** When the brand's application was approved (null if it never applied): it could publish from then on. */
+  approvedAt: Date | null
   /** An onboarding application in draft, submitted or rejected: the brand can't publish yet. */
   underReview: boolean
   brandLastNudgedAt: Date | null
@@ -41,9 +45,18 @@ export type DraftCandidate = {
   storefrontUnpublished: boolean
 }
 
+/**
+ * When the 12-hour clock starts for a draft: the latest of its creation, the brand's claim (a founding
+ * brand's drafts prepared by Yard before it was claimed) and its application's approval (the first
+ * product saved with the application, which can't be published until approval).
+ */
+export function draftClockStart(c: Pick<DraftCandidate, "createdAt" | "claimedAt" | "approvedAt">): Date {
+  return new Date(Math.max(c.createdAt.getTime(), c.claimedAt?.getTime() ?? 0, c.approvedAt?.getTime() ?? 0))
+}
+
 /** Whether this product's "still in drafts" reminder is due now (the SQL in catalog/nudges.ts applies the same rules). */
 export function draftNudgeEligible(c: DraftCandidate, now: Date): boolean {
-  const age = now.getTime() - c.createdAt.getTime()
+  const age = now.getTime() - draftClockStart(c).getTime()
   if (c.status !== "draft" || c.publishedAt || c.draftNudgedAt) return false
   if (age < DRAFT_NUDGE_AFTER_MS || age > DRAFT_NUDGE_MAX_AGE_MS) return false
   if (c.moderation !== "ok") return false
@@ -175,34 +188,93 @@ export function applicationRejectedCopy(x: { brand: string; name?: string; reaso
   }
 }
 
-export function listingHeldCopy(x: { brand: string; product: string; productId?: string; reason?: string }): BrandEmailCopy {
+/**
+ * Where a listing stands with shoppers, moderation aside: "live" when shoppers can see it, otherwise
+ * what keeps it off Yard (the brand is restricted or suspended, the product isn't published, or a
+ * founding brand's storefront isn't published). The same rules as productPublicWhere.
+ */
+export type ListingState = "live" | "brand" | "unpublished" | "storefront"
+export const LISTING_STATES: readonly ListingState[] = ["live", "brand", "unpublished", "storefront"]
+
+export function listingState(x: { status: string; publishAt?: Date | null; brandReview: string; founding: boolean; launchedAt: Date | null }, now = new Date()): ListingState {
+  if (x.brandReview === "restricted" || x.brandReview === "suspended") return "brand"
+  const published = x.status === "published" || (x.status === "scheduled" && !!x.publishAt && x.publishAt.getTime() <= now.getTime())
+  if (!published) return "unpublished"
+  if (x.founding && !x.launchedAt) return "storefront"
+  return "live"
+}
+
+type ListingNames = { brand: string; product: string; productId?: string; more?: number; others?: string[] }
+
+/** "Thorn Tee", or "Thorn Tee and 3 more" when one email covers several listings. */
+function listingNames(x: ListingNames) {
+  const more = Math.max(0, Math.floor(x.more ?? 0))
+  const others = (x.others ?? []).filter(Boolean)
   return {
-    subject: `${x.product} is taking a quick break from Yard`,
-    preheader: "We've paused this listing. Here's why and how to bring it back.",
-    eyebrow: "Your listing",
-    heading: "Listing on pause",
+    more,
+    label: more ? `${x.product} and ${more} more` : x.product,
+    is: more ? "are" : "is",
+    it: more ? "them" : "it",
+    facts: [{ label: more ? "Products" : "Product", value: more > others.length ? `${[x.product, ...others].join(", ")} and ${more - others.length} more` : and([x.product, ...others]) }],
+    action: (label: string) => ({ label, url: !more && x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" }),
+  }
+}
+
+/** A listing (or several of one brand's, in one email) put on hold by moderation. `wasLive`: shoppers could see it until now. */
+export function listingHeldCopy(x: ListingNames & { reason?: string; wasLive?: boolean }): BrandEmailCopy {
+  const n = listingNames(x)
+  const live = x.wasLive !== false
+  return {
+    subject: live ? `${n.label} ${n.is} taking a quick break from Yard` : `${n.label} ${n.is} on hold for now`,
+    preheader: live ? `We've paused ${n.more ? "these listings" : "this listing"}. Here's why and how to bring ${n.it} back.` : `We've put a hold on ${n.more ? "these listings" : "this listing"}. Here's why and what to change.`,
+    eyebrow: n.more ? "Your listings" : "Your listing",
+    heading: live ? (n.more ? "Listings on pause" : "Listing on pause") : "On hold for now",
     greeting: `Hey ${x.brand},`,
     paragraphs: [
-      `We've paused ${x.product}, so it isn't showing on Yard for now. It's safe in Studio and nothing else in your shop has changed.`,
+      live
+        ? `We've paused ${n.label}, so ${n.more ? "they aren't" : "it isn't"} showing on Yard for now. ${n.more ? "They're" : "It's"} safe in Studio and nothing else in your shop has changed.`
+        : `We've put a hold on ${n.label}, so ${n.more ? "they" : "it"} can't go live for now. ${n.more ? "They're" : "It's"} safe in Studio and nothing else in your shop has changed.`,
       ...(x.reason?.trim() ? [`Why: ${quote(x.reason)}`] : []),
-      "Sort it out in Studio, then message @support when it's ready. We'll take another look and get it back out there.",
+      `Sort it out in Studio, then message @support when ${n.more ? "they're" : "it's"} ready. We'll take another look and lift the hold.`,
     ],
-    facts: [{ label: "Product", value: x.product }],
-    action: { label: "Fix it in Studio", url: x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" },
+    facts: n.facts,
+    action: n.action("Fix it in Studio"),
     why: `You're getting this because you run ${x.brand} on Yard.`,
   }
 }
 
-export function listingBackCopy(x: { brand: string; product: string; productId?: string }): BrandEmailCopy {
+/** The hold on a listing (or several) is lifted. Only a `live` one is "back on Yard"; otherwise it says what's left before it shows. */
+export function listingBackCopy(x: ListingNames & { state?: ListingState }): BrandEmailCopy {
+  const n = listingNames(x)
+  const state = x.state ?? "live"
+  if (state === "live") {
+    return {
+      subject: `${n.label} ${n.is} back on Yard 🎉`,
+      preheader: `${n.more ? "They're" : "It's"} live again. Shoppers can find ${n.it}, save ${n.it} and buy ${n.it}.`,
+      eyebrow: n.more ? "Your listings" : "Your listing",
+      heading: "Back in rotation",
+      greeting: `Hey ${x.brand},`,
+      paragraphs: [`Good news: ${n.label} ${n.is} back on Yard. Shoppers can find ${n.it}, save ${n.it} and buy ${n.it} again.`, "Thanks for sorting it out. Keep the heat coming."],
+      facts: n.facts,
+      action: n.action("View in Studio"),
+      why: `You're getting this because you run ${x.brand} on Yard.`,
+    }
+  }
+  const next =
+    state === "unpublished"
+      ? `${n.more ? "They aren't" : "It isn't"} published yet, so publish ${n.it} in Studio whenever ${n.more ? "they're" : "it's"} ready and ${n.more ? "they show" : "it shows"} up on Yard.`
+      : state === "storefront"
+        ? `${n.more ? "They show" : "It shows"} up on Yard as soon as your storefront is published.`
+        : `${n.more ? "They show" : "It shows"} up on Yard once your shop is fully back. Message @support if you're not sure what's left.`
   return {
-    subject: `${x.product} is back on Yard 🎉`,
-    preheader: "It's live again. Shoppers can find it, save it and buy it.",
-    eyebrow: "Your listing",
-    heading: "Back in rotation",
+    subject: `The hold on ${n.label} is lifted`,
+    preheader: "All clear from our side. Here's what's left before shoppers see it.",
+    eyebrow: n.more ? "Your listings" : "Your listing",
+    heading: "All clear",
     greeting: `Hey ${x.brand},`,
-    paragraphs: [`Good news: ${x.product} is back on Yard. Shoppers can find it, save it and buy it again.`, "Thanks for sorting it out. Keep the heat coming."],
-    facts: [{ label: "Product", value: x.product }],
-    action: { label: "View in Studio", url: x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" },
+    paragraphs: [`Good news: we've lifted the hold on ${n.label}.`, next, "Thanks for sorting it out."],
+    facts: n.facts,
+    action: state === "storefront" ? { label: "Open my storefront", url: "/studio/storefront" } : n.action("Open in Studio"),
     why: `You're getting this because you run ${x.brand} on Yard.`,
   }
 }

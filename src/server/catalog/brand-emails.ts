@@ -56,23 +56,30 @@ async function history(ex: Executor, brandId: string): Promise<BrandEmailHistory
   })
 }
 
+/** One-tap emails to this brand in the last 24 hours (rolling), and when the oldest of them leaves the window. */
 async function sentToday(ex: Executor, brandId: string) {
   const [row] = await ex
-    .select({ n: sql<number>`count(*)::int` })
+    .select({ n: sql<number>`count(*)::int`, oldest: sql<string | null>`min(${auditLog.at})` })
     .from(auditLog)
     .where(and(eq(auditLog.brandId, brandId), eq(auditLog.action, "brand_email.sent"), gt(auditLog.at, new Date(Date.now() - DAY_MS))))
-  return Number(row?.n) || 0
+  const n = Number(row?.n) || 0
+  return { n, nextSendAt: n >= BRAND_EMAIL_DAILY_PER_BRAND && row?.oldest ? new Date(new Date(row.oldest).getTime() + DAY_MS) : null }
 }
+
+/** "Mon 11:04 PM UTC": when a capped brand can be emailed again (the server's own clock and zone). */
+const whenUtc = (d: Date) => `${d.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC`
 
 async function context(ex: Executor, brandId: string): Promise<BrandEmailContextDto> {
   const b = await brandRow(ex, brandId)
   const leads = await brandLeads(ex, brandId)
+  const sent = await sentToday(ex, brandId)
   return {
     brand: { id: b.id, name: b.name, handle: b.handle, founding: b.founding, claimStatus: b.claimStatus },
     recipients: leads.map((l) => ({ name: l.name, email: l.email, role: l.role })),
     history: await history(ex, brandId),
-    sentToday: await sentToday(ex, brandId),
+    sentToday: sent.n,
     dailyLimit: BRAND_EMAIL_DAILY_PER_BRAND,
+    nextSendAt: sent.nextSendAt?.toISOString() ?? null,
     nudges: b.nudges,
   }
 }
@@ -93,8 +100,8 @@ export async function previewBrandEmail(actor: AdminActor, brandId: string, body
 
 /**
  * POST /api/admin/brand-emails/{brandId}: one admin email to the brand's owners and admins.
- * Idempotent per idempotencyKey (a retry sends nothing new); at most BRAND_EMAIL_DAILY_PER_BRAND a day
- * per brand across every admin; audited with the preset and subject (never the body).
+ * Idempotent per idempotencyKey (a retry sends nothing new); at most BRAND_EMAIL_DAILY_PER_BRAND in any
+ * 24 hours (rolling) per brand across every admin; audited with the preset and subject (never the body).
  */
 export async function sendBrandEmail(actor: AdminActor, brandId: string, body: BrandEmailSendBody, ipHash: string | null = null): Promise<BrandEmailSendResult> {
   return withTx(async (tx) => {
@@ -112,8 +119,10 @@ export async function sendBrandEmail(actor: AdminActor, brandId: string, body: B
     if (!leads.length) {
       throw rule(b.claimStatus === "unclaimed" ? `${b.name} has no owner yet, so there's no one to email. Send the claim link first.` : `${b.name} has no active owner or admin with an email address.`)
     }
-    const today = await sentToday(tx, brandId)
-    if (today >= BRAND_EMAIL_DAILY_PER_BRAND) throw rule(`${b.name} already got ${BRAND_EMAIL_DAILY_PER_BRAND} emails from Yard today. Give them some breathing room and try again tomorrow.`)
+    const sent = await sentToday(tx, brandId)
+    if (sent.n >= BRAND_EMAIL_DAILY_PER_BRAND) {
+      throw rule(`${b.name} already got ${BRAND_EMAIL_DAILY_PER_BRAND} emails from Yard in the last 24 hours. Give them some breathing room${sent.nextSendAt ? `: you can send again ${whenUtc(sent.nextSendAt)}` : ""}.`)
+    }
 
     const vars = { brand: b.name, preset: body.preset, subject: body.subject, body: body.body, signoff: firstName(actor.name) }
     // Render once here so a problem is a clear error, not a failed outbox row.

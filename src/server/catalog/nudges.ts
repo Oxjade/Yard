@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, eq, gt, isNull, lte, sql } from "drizzle-orm"
+import { and, asc, eq, isNull, lte, sql } from "drizzle-orm"
 import {
   DRAFT_NUDGE_AFTER_MS,
   DRAFT_NUDGE_MAX_AGE_MS,
@@ -25,7 +25,8 @@ import { notSampleBrandSql } from "./sample-guard"
  * only when a reminder is actually due. The rules live in src/lib/brand-emails.ts (unit-tested);
  * the SQL applies the same rules and the rows are checked against them again before sending.
  *
- *  - Still in drafts: a product that's been a draft for 12 hours (never published, not hidden,
+ *  - Still in drafts: a product that's been a draft for 12 hours since the brand could first publish
+ *    it (created, founding brand claimed, application approved: draftClockStart) (never published, not hidden,
  *    brand not restricted or suspended, not under review, not an unclaimed founding brand) is
  *    mentioned once. One email per brand per run covers all its due drafts; every product it
  *    covers is marked (catalog_products.draft_nudged_at), so none is ever mentioned twice.
@@ -41,6 +42,9 @@ const BATCH = 200
 /** Due drafts, oldest first (one query; catalog_products_draft_nudge_ix). */
 async function draftCandidates(now: Date): Promise<DraftCandidate[]> {
   const d = await db()
+  const dueBy = new Date(now.getTime() - DRAFT_NUDGE_AFTER_MS)
+  // When the brand's application was approved: the first product, saved with the application, couldn't be published before.
+  const approvedAt = sql<Date | null>`(select max(${brandOnboardings.reviewedAt}) from ${brandOnboardings} where ${brandOnboardings.brandId} = ${brands.id} and ${brandOnboardings.status} = 'approved')`
   const rows = await d
     .select({
       productId: catalogProducts.id,
@@ -54,6 +58,8 @@ async function draftCandidates(now: Date): Promise<DraftCandidate[]> {
       brandReview: brands.reviewStatus,
       brandNudges: brands.nudgeEmails,
       claimStatus: brands.claimStatus,
+      claimedAt: brands.claimedAt,
+      approvedAt,
       brandLastNudgedAt: brands.lastNudgedAt,
       storefrontUnpublished: sql<boolean>`(${brands.founding} and ${brands.launchedAt} is null)`,
     })
@@ -64,8 +70,11 @@ async function draftCandidates(now: Date): Promise<DraftCandidate[]> {
         eq(catalogProducts.status, "draft"),
         isNull(catalogProducts.draftNudgedAt),
         isNull(catalogProducts.publishedAt),
-        lte(catalogProducts.createdAt, new Date(now.getTime() - DRAFT_NUDGE_AFTER_MS)),
-        gt(catalogProducts.createdAt, new Date(now.getTime() - DRAFT_NUDGE_MAX_AGE_MS)),
+        // The clock starts when the brand could first publish it (draftClockStart): created, claimed, application approved.
+        lte(catalogProducts.createdAt, dueBy),
+        sql`(${brands.claimedAt} is null or ${brands.claimedAt} <= ${dueBy})`,
+        sql`not exists (select 1 from ${brandOnboardings} where ${brandOnboardings.brandId} = ${brands.id} and ${brandOnboardings.status} = 'approved' and ${brandOnboardings.reviewedAt} > ${dueBy})`,
+        sql`greatest(${catalogProducts.createdAt}, ${brands.claimedAt}, ${approvedAt}) > ${new Date(now.getTime() - DRAFT_NUDGE_MAX_AGE_MS)}`,
         eq(catalogProducts.moderationStatus, "ok"),
         eq(brands.nudgeEmails, true),
         sql`${brands.reviewStatus} not in ('restricted', 'suspended')`,
@@ -77,7 +86,7 @@ async function draftCandidates(now: Date): Promise<DraftCandidate[]> {
     )
     .orderBy(asc(catalogProducts.createdAt), asc(catalogProducts.id))
     .limit(BATCH)
-  return rows.map((r) => ({ ...r, underReview: false, storefrontUnpublished: !!r.storefrontUnpublished }))
+  return rows.map((r) => ({ ...r, approvedAt: r.approvedAt ? new Date(r.approvedAt) : null, underReview: false, storefrontUnpublished: !!r.storefrontUnpublished }))
 }
 
 /** Claimed founding brands whose storefront was never published (one query; brands_founding_ix). */

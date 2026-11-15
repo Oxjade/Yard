@@ -14,6 +14,7 @@ import {
   groupDraftNudges,
   listingBackCopy,
   listingHeldCopy,
+  listingState,
   storefrontNudgeCopy,
   storefrontNudgeEligible,
   type BrandEmailCopy,
@@ -37,6 +38,8 @@ const draft = (over: Partial<DraftCandidate> = {}): DraftCandidate => ({
   brandReview: "verified",
   brandNudges: true,
   claimStatus: "claimed",
+  claimedAt: null,
+  approvedAt: null,
   underReview: false,
   brandLastNudgedAt: null,
   storefrontUnpublished: true,
@@ -61,6 +64,22 @@ const store = (over: Partial<StorefrontCandidate> = {}): StorefrontCandidate => 
 const emoji = (c: BrandEmailCopy) => [c.subject, c.heading, ...c.paragraphs].join(" ").match(/\p{Extended_Pictographic}/gu)?.length ?? 0
 
 describe("draft reminder rules", () => {
+  it("a founding brand's drafts wait 12 hours after the claim, not after Yard prepared them", () => {
+    // Yard set the draft up days ago; the brand claimed an hour ago.
+    const c = draft({ createdAt: ago(5 * 24 * HOUR), claimedAt: ago(HOUR) })
+    assert.equal(draftNudgeEligible(c, now), false)
+    assert.equal(draftNudgeEligible(c, new Date(now.getTime() + 11 * HOUR + 1)), true)
+    assert.equal(draftNudgeEligible(draft({ createdAt: ago(5 * 24 * HOUR), claimedAt: ago(13 * HOUR) }), now), true)
+  })
+  it("a product saved with an application waits 12 hours after approval, not after submission", () => {
+    // Submitted with the application two days ago, approved 20 minutes ago.
+    const c = draft({ createdAt: ago(48 * HOUR), approvedAt: ago(HOUR / 3) })
+    assert.equal(draftNudgeEligible(c, now), false)
+    assert.equal(groupDraftNudges([c], now).length, 0)
+    assert.equal(draftNudgeEligible(draft({ createdAt: ago(48 * HOUR), approvedAt: ago(12 * HOUR) }), now), true)
+    // A draft created after approval runs on its own clock.
+    assert.equal(draftNudgeEligible(draft({ createdAt: ago(2 * HOUR), approvedAt: ago(30 * 24 * HOUR) }), now), false)
+  })
   it("a draft left 12 hours is due; one left 11 hours isn't", () => {
     assert.equal(draftNudgeEligible(draft(), now), true)
     assert.equal(draftNudgeEligible(draft({ createdAt: ago(DRAFT_NUDGE_AFTER_MS) }), now), true)
@@ -152,6 +171,47 @@ describe("brand email copy", () => {
     for (const c of all) assert.ok(emoji(c) <= 1, c.subject)
     assert.equal(emoji(applicationRejectedCopy({ brand: "N", reason: "x" })), 0)
     assert.equal(emoji(listingHeldCopy({ brand: "N", product: "T" })), 0)
+  })
+})
+
+describe("listing decision emails follow where the listing stands", () => {
+  const base = { status: "published", publishAt: null, brandReview: "verified", founding: false, launchedAt: null }
+  it("listingState: live, unpublished, unlaunched storefront, restricted brand", () => {
+    assert.equal(listingState(base, now), "live")
+    assert.equal(listingState({ ...base, status: "draft" }, now), "unpublished")
+    assert.equal(listingState({ ...base, status: "scheduled", publishAt: new Date(now.getTime() + HOUR) }, now), "unpublished")
+    assert.equal(listingState({ ...base, status: "scheduled", publishAt: ago(HOUR) }, now), "live")
+    assert.equal(listingState({ ...base, founding: true }, now), "storefront")
+    assert.equal(listingState({ ...base, founding: true, launchedAt: ago(HOUR) }, now), "live")
+    assert.equal(listingState({ ...base, brandReview: "restricted" }, now), "brand")
+    assert.equal(listingState({ ...base, status: "draft", brandReview: "suspended" }, now), "brand")
+  })
+  it("only a live listing is \"back on Yard\"; a draft hears the hold is lifted", () => {
+    const live = listingBackCopy({ brand: "N", product: "Thorn Tee", productId: "p_1", state: "live" })
+    assert.equal(live.subject, "Thorn Tee is back on Yard 🎉")
+    for (const state of ["unpublished", "storefront", "brand"] as const) {
+      const c = listingBackCopy({ brand: "N", product: "Thorn Tee", productId: "p_1", state })
+      assert.equal(c.subject, "The hold on Thorn Tee is lifted", state)
+      const text = [c.subject, c.preheader, ...c.paragraphs].join(" ")
+      assert.equal(/back on Yard|buy it/.test(text), false, state)
+      assert.equal(emoji(c), 0, state)
+    }
+    assert.ok(listingBackCopy({ brand: "N", product: "T", state: "unpublished" }).paragraphs.some((p) => p.includes("publish it in Studio")))
+    assert.equal(listingBackCopy({ brand: "N", product: "T", state: "storefront" }).action?.url, "/studio/storefront")
+  })
+  it("a held draft is \"on hold\", not \"isn't showing on Yard for now\"", () => {
+    const c = listingHeldCopy({ brand: "N", product: "Thorn Tee", productId: "p_1", reason: "x", wasLive: false })
+    assert.equal(c.subject, "Thorn Tee is on hold for now")
+    assert.ok(c.paragraphs[0].includes("can't go live for now"))
+    assert.equal(c.paragraphs.join(" ").includes("isn't showing on Yard"), false)
+  })
+  it("one email covers several listings of one brand: first named, the rest counted", () => {
+    const held = listingHeldCopy({ brand: "N", product: "Thorn Tee", productId: "p_1", more: 9, others: ["Rose Cap", "Vine Hoodie"], reason: "Counterfeit logos.", wasLive: true })
+    assert.equal(held.subject, "Thorn Tee and 9 more are taking a quick break from Yard")
+    assert.equal(held.heading, "Listings on pause")
+    assert.equal(held.action?.url, "/studio/products")
+    assert.deepEqual(held.facts, [{ label: "Products", value: "Thorn Tee, Rose Cap, Vine Hoodie and 7 more" }])
+    assert.equal(listingBackCopy({ brand: "N", product: "Thorn Tee", more: 1, others: ["Rose Cap"], state: "live" }).subject, "Thorn Tee and 1 more are back on Yard 🎉")
   })
 })
 

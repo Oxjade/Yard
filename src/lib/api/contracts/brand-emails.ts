@@ -46,9 +46,11 @@ export type BrandEmailContextDto = {
   brand: { id: string; name: string; handle: string; founding: boolean; claimStatus: string }
   recipients: BrandEmailRecipientDto[]
   history: BrandEmailHistoryItemDto[]
-  /** One-tap emails sent to this brand in the last 24 hours, and the cap. */
+  /** One-tap emails sent to this brand in the last 24 hours (a rolling window, not the calendar day), and the cap. */
   sentToday: number
   dailyLimit: number
+  /** At the cap: when the oldest of those sends turns 24 hours old and a slot opens (ISO), else null. */
+  nextSendAt: string | null
   /** Whether the brand gets reminder emails (its own setting in Studio). */
   nudges: boolean
 }
