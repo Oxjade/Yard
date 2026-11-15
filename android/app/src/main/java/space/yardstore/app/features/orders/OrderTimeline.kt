@@ -1,5 +1,12 @@
 package space.yardstore.app.features.orders
 
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.Motion
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -180,6 +187,7 @@ fun OrderTimelineView(steps: List<OrderTimelineStep>, modifier: Modifier = Modif
     Column(modifier.semantics { contentDescription = "Order progress" }) {
         steps.forEachIndexed { index, step ->
             OrderTimelineRow(
+                index = index,
                 step = step,
                 isLast = index == steps.size - 1,
                 nextState = steps.getOrNull(index + 1)?.state,
@@ -189,8 +197,18 @@ fun OrderTimelineView(steps: List<OrderTimelineStep>, modifier: Modifier = Modif
 }
 
 @Composable
-private fun OrderTimelineRow(step: OrderTimelineStep, isLast: Boolean, nextState: OrderTimelineStep.Progress?) {
+private fun OrderTimelineRow(index: Int, step: OrderTimelineStep, isLast: Boolean, nextState: OrderTimelineStep.Progress?) {
     val c = Color.yard
+    // The timeline draws itself in once, top to bottom: each dot settles, then its rail grows
+    // towards the next step. Static under reduced motion.
+    val reduce = rememberReducedMotion()
+    val drawn = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reduce && drawn.value < 1f) {
+            delay(index * 110L)
+            drawn.animateTo(1f, tween(420, easing = Motion.EmphasizedDecelerate))
+        }
+    }
     val railColor = when (nextState) {
         null -> Color.Transparent
         OrderTimelineStep.Progress.Done, OrderTimelineStep.Progress.Current, OrderTimelineStep.Progress.Stopped -> c.ink.copy(alpha = 0.5f)
@@ -221,7 +239,15 @@ private fun OrderTimelineRow(step: OrderTimelineStep, isLast: Boolean, nextState
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (step.date != null) Spacer(Modifier.height(18.dp))
-            OrderTimelineDot(step.state, Modifier.size(22.dp))
+            OrderTimelineDot(
+                step.state,
+                Modifier.size(22.dp).graphicsLayer {
+                    val k = (drawn.value * 2f).coerceAtMost(1f)
+                    scaleX = 0.5f + 0.5f * k
+                    scaleY = 0.5f + 0.5f * k
+                    alpha = k
+                },
+            )
             if (!isLast) {
                 Box(
                     Modifier
@@ -229,6 +255,10 @@ private fun OrderTimelineRow(step: OrderTimelineStep, isLast: Boolean, nextState
                         .width(1.5.dp)
                         .weight(1f)
                         .heightIn(min = 22.dp)
+                        .graphicsLayer {
+                            scaleY = ((drawn.value - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        }
                         .background(railColor),
                 )
             }
@@ -236,6 +266,10 @@ private fun OrderTimelineRow(step: OrderTimelineStep, isLast: Boolean, nextState
         Column(
             Modifier
                 .weight(1f)
+                .graphicsLayer {
+                    alpha = (drawn.value * 1.6f).coerceAtMost(1f)
+                    translationY = (1f - drawn.value) * 6.dp.toPx()
+                }
                 .padding(bottom = if (isLast) 0.dp else Spacing.xl),
             verticalArrangement = Arrangement.spacedBy(Spacing.xxs),
         ) {
@@ -264,7 +298,11 @@ fun OrderTimelineDot(state: OrderTimelineStep.Progress, modifier: Modifier = Mod
                 Box(Modifier.size(22.dp).background(c.ink, CircleShape))
                 Icon(Icons.Filled.Check, contentDescription = null, tint = c.bg, modifier = Modifier.size(12.dp))
             }
-            OrderTimelineStep.Progress.Current -> {
+            OrderTimelineStep.Progress.Current -> if (rememberReducedMotion()) {
+                // Reduced motion: a still halo instead of the pulse.
+                Box(Modifier.size(22.dp).background(c.success.copy(alpha = 0.25f), CircleShape))
+                Box(Modifier.size(14.dp).background(c.success, CircleShape))
+            } else {
                 val transition = rememberInfiniteTransition(label = "timeline-pulse")
                 val pulse by transition.animateFloat(
                     initialValue = 0f,

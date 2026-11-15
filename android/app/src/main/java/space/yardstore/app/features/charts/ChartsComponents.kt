@@ -1,5 +1,6 @@
 package space.yardstore.app.features.charts
 
+import space.yardstore.app.designsystem.components.RollingValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -127,7 +128,10 @@ fun ChartsStatChip(stat: ChartStat, modifier: Modifier = Modifier, compact: Bool
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (stat.figure.isNotEmpty()) {
-            Text(stat.figure, style = YardFonts.captionEmphasis.monospacedDigits(), color = Color.yard.ink, maxLines = 1)
+            // A refreshed figure rolls in instead of swapping.
+            RollingValue(stat.figure, label = "chart-figure") { figure ->
+                Text(figure, style = YardFonts.captionEmphasis.monospacedDigits(), color = Color.yard.ink, maxLines = 1)
+            }
         }
         if (stat.caption.isNotEmpty()) {
             Text(stat.caption, style = YardFonts.caption, color = Color.yard.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -294,20 +298,27 @@ fun ChartsPodiumCard(
                 BrandAvatar(entry.brand.name, size = if (lead) 72.dp else 48.dp)
             }
             // Rank tab
-            Text(
-                ChartsFormat.two(entry.rank),
-                style = YardFonts.display(if (lead) 64.sp else 44.sp).monospacedDigits(),
-                color = if (entry.rank == 1) Color.yard.onAcid else Color.yard.ink,
-                maxLines = 1,
-                modifier = Modifier
+            RollingValue(
+                entry.rank,
+                Modifier
                     .align(Alignment.TopStart)
                     .background(
                         if (entry.rank == 1) Color.yard.acid else Color.yard.surface,
                         RoundedCornerShape(bottomEnd = Radius.small),
-                    )
+                    ),
+                rising = { from, to -> to < from },
+                label = "podium-rank",
+            ) { rank ->
+            Text(
+                ChartsFormat.two(rank),
+                style = YardFonts.display(if (lead) 64.sp else 44.sp).monospacedDigits(),
+                color = if (rank == 1) Color.yard.onAcid else Color.yard.ink,
+                maxLines = 1,
+                modifier = Modifier
                     .padding(horizontal = if (lead) 12.dp else 9.dp)
                     .padding(top = if (lead) 4.dp else 2.dp),
             )
+            }
         }
         // Panel
         Column(
@@ -375,7 +386,10 @@ fun ChartsRow(entry: ChartEntry, period: ChartPeriod, modifier: Modifier = Modif
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.width(50.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            Text(ChartsFormat.two(entry.rank), style = YardFonts.display(34.sp).monospacedDigits(), color = Color.yard.ink, maxLines = 1)
+            // A new edition rolls the numeral: climbing slides it up, falling slides it down.
+            RollingValue(entry.rank, rising = { from, to -> to < from }, label = "chart-rank") { rank ->
+                Text(ChartsFormat.two(rank), style = YardFonts.display(34.sp).monospacedDigits(), color = Color.yard.ink, maxLines = 1)
+            }
             ChartsRankMove(entry.movement, entry.delta)
         }
 

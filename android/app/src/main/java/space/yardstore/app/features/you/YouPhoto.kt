@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -368,7 +369,7 @@ private fun youDecodeUpright(resolver: ContentResolver, uri: Uri): Pair<Bitmap, 
 internal fun youRenderCrop(photo: YouPickedPhoto, frame: Float, crop: YouCropState): Bitmap {
     val sq = YouPhotoCrop.sourceSquare(photo.size, frame, crop.zoom, crop.offset)
     val side = YouPhotoCrop.outputSide(sq.size)
-    val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+    val out = createBitmap(side, side)
     val canvas = Canvas(out)
     canvas.drawColor(0xFF080808.toInt())
     val src = Rect(sq.sx.roundToInt(), sq.sy.roundToInt(), (sq.sx + sq.size).roundToInt(), (sq.sy + sq.size).roundToInt())

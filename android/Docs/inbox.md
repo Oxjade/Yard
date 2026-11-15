@@ -64,3 +64,6 @@ Same as iOS: `GET /api/inbox/conversations`, `GET /api/inbox/conversations/{id}/
 ## Not done
 
 Same as iOS: product/order sharing from the composer, quick replies, reactions, report, typing indicator and read receipts are web-only; no unread badge.
+
+## Premium pass, round 2
+- Unread dot (`UnreadDot`) and preview colour ease out when a thread is read; skeleton → list crossfade.

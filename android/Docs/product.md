@@ -31,3 +31,8 @@ Mirrors `ios/Yard/Features/Product/` (see `ios/Docs/product.md`) file for file.
 
 ## Tests
 `app/src/test/java/space/yardstore/app/features/product/`: `ProductDetailModelTest` (MockWebServer: load, rails filtering, estimate, not found, error, estimate failure, selection/stock/actions, bag limit, opening, back-in-stock POST/DELETE, refresh failure keeps the page and returns the message, first-load failure goes to the phase) and `ProductHelpersTest` (DTO decoding, shipping formats, swatch hex, country names, initial selection, tablet gallery width).
+
+## Premium pass, round 2
+- Skeleton → page crossfade; Add to bag confirms in place ("Added to bag" with a check for 1.6 s, Confirm haptic)
+  after the cart really accepted it; size/colour chips pop on selection (Chip); photo viewer double-tap zoom and
+  swipe-to-close spring back are instant under reduced motion.

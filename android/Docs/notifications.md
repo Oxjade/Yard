@@ -40,3 +40,6 @@ Until 1 is done, no soft prompt appears (the in-app list works regardless).
 - **Remote push**: FCM, on only when `app/google-services.json` is present at build time (Docs/connect.md). Token registered with `POST /api/devices` on sign-in / app start, removed with `DELETE /api/devices` before sign-out.
 - Context menu → `DropdownMenu` on long-press.
 - No realtime refresh and no unread badge elsewhere (same as iOS).
+
+## Premium pass, round 2
+- Unread dot (`UnreadDot`) and icon tint ease when marked read / unread; skeleton → list crossfade.

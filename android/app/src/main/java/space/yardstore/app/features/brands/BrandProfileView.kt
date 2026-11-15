@@ -1,16 +1,18 @@
 package space.yardstore.app.features.brands
 
+import space.yardstore.app.designsystem.components.RollingValue
+import space.yardstore.app.designsystem.components.YardCrossfade
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.or
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -179,7 +181,9 @@ private fun BrandProfileContent(model: BrandProfileModel) {
     LaunchedEffect(model) { model.start(follows) }
 
     Box(Modifier.fillMaxSize().yardScreenBackground()) {
-        when (val phase = model.phase) {
+      // Skeleton → storefront (or → not found / error) crossfades; instant under reduced motion.
+      YardCrossfade(model.phase, Modifier.fillMaxSize(), label = "brand-phase") { phase ->
+        when (phase) {
             BrandProfileModel.Phase.Loading -> BrandProfileLoading()
             is BrandProfileModel.Phase.NotFound -> EmptyState(
                 title = "Brand not found",
@@ -197,6 +201,7 @@ private fun BrandProfileContent(model: BrandProfileModel) {
                 if (brand != null) BrandProfileLoaded(model, brand) else BrandProfileLoading()
             }
         }
+      }
         BrandProfileTopBar(model)
     }
 }
@@ -584,16 +589,36 @@ private fun BrandProfileActions(model: BrandProfileModel, brand: StorefrontBrand
     val router = LocalRouter.current
     val following = LocalFollowStore.current.isFollowing(brand.id)
     var busy by remember { mutableStateOf(false) }
-    val toggle = rememberBrandFollowAction(model, brand, busy) { busy = it }
-    val fill by animateColorAsState(if (following) c.onPhoto.copy(alpha = 0.16f) else c.onPhoto, Motion.spring(), label = "follow-fill")
-    val stroke by animateFloatAsState(if (following) 0.4f else 0f, Motion.spring(), label = "follow-stroke")
-    val fg = if (following) c.onPhoto else c.onPhotoInk
+    val reduce = rememberReducedMotion()
+    var tapped by remember { mutableStateOf(false) }
+    val follow = rememberBrandFollowAction(model, brand, busy) { busy = it }
+    val toggle = {
+        tapped = true
+        follow()
+    }
+    val fill by animateColorAsState(if (following) c.onPhoto.copy(alpha = 0.16f) else c.onPhoto, Motion.or(reduce) { Motion.spring() }, label = "follow-fill")
+    val stroke by animateFloatAsState(if (following) 0.4f else 0f, Motion.or(reduce) { Motion.spring() }, label = "follow-stroke")
+    val fg by animateColorAsState(if (following) c.onPhoto else c.onPhotoInk, Motion.or(reduce) { Motion.snappy() }, label = "follow-fg")
+    // The pill settles with a small pop when the user's own tap turns following on (the store flips
+    // optimistically and rolls back on failure, so this follows real state).
+    val pop = remember { Animatable(1f) }
+    LaunchedEffect(following) {
+        if (following && tapped && !reduce) {
+            pop.snapTo(0.94f)
+            pop.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 520f))
+        }
+        tapped = false
+    }
 
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
                 .weight(1f)
                 .height(54.dp)
+                .graphicsLayer {
+                    scaleX = pop.value
+                    scaleY = pop.value
+                }
                 .clip(YardShapes.pill)
                 .background(fill, YardShapes.pill)
                 .border(BorderStroke(1.dp, c.onPhoto.copy(alpha = stroke)), YardShapes.pill)
@@ -603,13 +628,12 @@ private fun BrandProfileActions(model: BrandProfileModel, brand: StorefrontBrand
                 .pressableClick(enabled = !busy, onClick = toggle),
             contentAlignment = Alignment.Center,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
-                if (busy) {
-                    CircularProgressIndicator(color = fg, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                } else if (following) {
-                    Icon(Icons.Filled.Check, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
+            // "Follow" ↔ "✓ Following" crossfades (instant under reduced motion).
+            YardCrossfade(following, label = "follow-label") { on ->
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                    if (on) Icon(Icons.Filled.Check, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
+                    Text(if (on) "Following" else "Follow", style = YardFonts.bodyEmphasis, color = fg)
                 }
-                Text(if (following) "Following" else "Follow", style = YardFonts.bodyEmphasis, color = fg)
             }
         }
 
@@ -650,11 +674,8 @@ private fun BrandProfileStats(model: BrandProfileModel, modifier: Modifier = Mod
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                AnimatedContent(
-                    targetState = item.value,
-                    transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
-                    label = "stat-${item.id}",
-                ) { value ->
+                // Counts roll up when they grow (a follow) and down when they shrink.
+                RollingValue(item.value, rising = { from, to -> to > from }, label = "stat-${item.id}") { value ->
                     Text(Formatters.count(value), style = YardFonts.number(28.sp), color = c.onPhoto)
                 }
                 Text(item.label, style = YardFonts.caption, color = c.onPhoto.copy(alpha = 0.68f))

@@ -49,3 +49,6 @@ Port of `ios/Yard/Features/Charts/` (website `/charts`).
 (board, lenient fallbacks, small cohort, scopes), formatting, query/filter options, and the
 ViewModel against MockWebServer (load, 429 error, failed refresh keeps board, query switch,
 default city, scopes failure), the query saver round trip / fallbacks and the tablet podium proportions.
+
+## Premium pass, round 2
+- Rank numerals (rows and podium) and stat figures roll when a refreshed edition changes them (climbing slides up).

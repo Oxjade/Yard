@@ -130,3 +130,16 @@ encoding, body encoding, error envelope, decoding errors, cookie persistence).
   `pressableClick` takes `haptic` and an `interactionSource`.
 - `BrandArtwork` (designed placeholder: brand tone + initials), `YardCrossfade` (skeleton → content),
   bag badge pop + rolling count, save-heart pop, toasts arrive with the emphasized spring.
+
+## Premium pass, round 2 (Nov 2026)
+
+- `RollingNumber` / `RollingValue` (`components/RollingNumber.kt`): a value that rolls when it changes (up when it
+  grows, down when it shrinks), instant under reduced motion. The bag badge now uses it (it was inline in RootView);
+  chart ranks / figures and brand stats use it too.
+- `UnreadDot` (`components/UnreadDot.kt`): the list-row unread dot that keeps its space and shrinks/fades out when read
+  (notifications, inbox).
+- `Chip`: background and text colours animate together (the text used to flip before the fill) with a small
+  selection pop; reduced-motion aware.
+- `YardCrossfade` is now wired on Home, Product, Brand profile, Inbox, Notifications, Orders list and Order detail
+  (skeleton → content / error / empty), keyed on the screen's phase so live updates inside a loaded screen never fade.
+- `Shopper.photoSrc` (`/api/session`) and `SessionStore.preview(signedIn, photoSrc)` for the profile photo (you.md).

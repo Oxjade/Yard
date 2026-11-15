@@ -3,6 +3,7 @@
 
 package space.yardstore.app.features.orders
 
+import space.yardstore.app.designsystem.components.YardCrossfade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -250,25 +251,28 @@ internal fun OrderDetailScreen(
         YardTopBar("Your order")
         val order = model.order
         val error = model.error
+        // Which state shows; skeleton → order (or → error) crossfades on a change of state.
+        val state = when {
+            !isPreview && !session.isSignedIn -> if (session.hasLoaded) "signed-out" else "loading"
+            model.isLoading && order == null -> "loading"
+            order != null -> "order"
+            error != null -> "error"
+            else -> "loading"
+        }
+        YardCrossfade(state, label = "order-state") { shown ->
         when {
-            !isPreview && !session.isSignedIn -> {
-                if (session.hasLoaded) {
-                    EmptyState.SignedOut(message = "Sign in to see your orders.", modifier = Modifier.adaptiveContentWidth()) {
-                        router.present(Route.SignIn)
-                    }
-                } else {
-                    OrderDetailSkeleton()
-                }
+            shown == "signed-out" -> EmptyState.SignedOut(message = "Sign in to see your orders.", modifier = Modifier.adaptiveContentWidth()) {
+                router.present(Route.SignIn)
             }
-            model.isLoading && order == null -> OrderDetailSkeleton()
-            order != null -> OrderDetailLoaded(
+            shown == "loading" -> OrderDetailSkeleton()
+            shown == "order" && order != null -> OrderDetailLoaded(
                 order = order,
                 model = model,
                 onRefresh = { orderDetailReload(id, model) },
                 onCancel = { showsCancelConfirm = true },
                 onRequestReturn = { showsReturnSheet = true },
             )
-            error != null -> {
+            shown == "error" && error != null -> {
                 if (error is APIError && error.isNotFound) {
                     EmptyState(
                         "Order unavailable",
@@ -282,6 +286,7 @@ internal fun OrderDetailScreen(
                 }
             }
             else -> OrderDetailSkeleton()
+        }
         }
     }
 

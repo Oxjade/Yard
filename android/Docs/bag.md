@@ -58,3 +58,8 @@ Same as iOS: `GET /api/cart?currency=&to=&city=` (CartStore + `BagQuoteLoader`),
   full-width Pay; no bottom pay bar.
 - Skeletons and the empty bag header follow `adaptiveContentWidth()`. `@YardTabletPreviews` on both screens.
 - The bag's "Delivering to" pill stays 32dp tall but has a 48dp touch target.
+
+## Premium pass, round 2
+- Checkout stages are numbered (1 Contact, 2 Delivery address, 3 Shipping, 4 Payment); a stage's number turns into
+  an acid check when its fields pass the form's own rules (`localErrors`) or, for shipping, when every brand has a
+  priced option (`shippingMinor`). Reduced-motion aware.

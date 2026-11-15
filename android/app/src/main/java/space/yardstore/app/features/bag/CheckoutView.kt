@@ -1,5 +1,11 @@
 package space.yardstore.app.features.bag
 
+import space.yardstore.app.designsystem.components.YardCrossfade
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.or
+import space.yardstore.app.designsystem.Motion
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -351,7 +357,13 @@ private fun CheckoutContactSection(model: CheckoutModel) {
     val session = LocalSessionStore.current
     val focus = LocalFocusManager.current
     val info = model.countryInfo
-    CheckoutSection(title = "Contact", subtitle = session.shopper?.let { "Order updates go to ${it.email}." }) {
+    val errors = model.localErrors
+    CheckoutSection(
+        title = "Contact",
+        subtitle = session.shopper?.let { "Order updates go to ${it.email}." },
+        step = 1,
+        done = "name" !in errors && "phone" !in errors,
+    ) {
         CheckoutTextField(
             label = "Full name",
             value = model.name,
@@ -378,7 +390,13 @@ private fun CheckoutAddressSection(model: CheckoutModel) {
     val rules = model.countryInfo
     val focus = LocalFocusManager.current
     val next = { focus.moveFocus(FocusDirection.Down); Unit }
-    CheckoutSection(title = "Delivery address", subtitle = "Changing the country updates shipping prices and payment options.") {
+    val errors = model.localErrors
+    CheckoutSection(
+        title = "Delivery address",
+        subtitle = "Changing the country updates shipping prices and payment options.",
+        step = 2,
+        done = listOf("line1", "city", "region", "postcode").none { it in errors },
+    ) {
         CheckoutMenuField(
             label = "Country",
             value = rules.name,
@@ -426,6 +444,8 @@ private fun CheckoutShippingSection(model: CheckoutModel, cart: Cart, onRemoveBr
     CheckoutSection(
         title = "Shipping",
         subtitle = if (cart.groups.size > 1) "Your order comes from ${cart.groups.size} brands. Each ships separately from its own studio, so parcels can arrive on different days." else null,
+        step = 3,
+        done = model.shippingMinor != null,
     ) {
         if (model.quotes.cart == null && model.quotes.error != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -455,7 +475,11 @@ private fun CheckoutShippingSection(model: CheckoutModel, cart: Cart, onRemoveBr
 @Composable
 private fun CheckoutPaymentSection(model: CheckoutModel) {
     val selected = model.effectiveMethod
-    CheckoutSection(title = "Payment", subtitle = "You pay on ${model.providerName}'s secure page. Card details are typed there, never in Yard.") {
+    CheckoutSection(
+        title = "Payment",
+        subtitle = "You pay on ${model.providerName}'s secure page. Card details are typed there, never in Yard.",
+        step = 4,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
             model.methods.forEach { m ->
                 CheckoutOptionRow(
@@ -597,13 +621,48 @@ private fun CheckoutPayButton(model: CheckoutModel, fullWidth: Boolean, onPay: (
 
 // region Pieces
 
+/** A stage's number in a small ring, turning into an acid check once the stage is complete. */
+@Composable
+private fun CheckoutStepMark(step: Int, done: Boolean, modifier: Modifier = Modifier) {
+    val reduce = rememberReducedMotion()
+    val fill by animateColorAsState(if (done) Color.yard.acid else Color.Transparent, Motion.or(reduce) { Motion.snappy() }, label = "step-fill")
+    val ring by animateColorAsState(if (done) Color.yard.acid else Color.yard.line, Motion.or(reduce) { Motion.snappy() }, label = "step-ring")
+    Box(
+        modifier
+            .size(26.dp)
+            .background(fill, CircleShape)
+            .border(1.5.dp, ring, CircleShape)
+            .clearAndSetSemantics { contentDescription = if (done) "Step $step, done" else "Step $step" },
+        contentAlignment = Alignment.Center,
+    ) {
+        YardCrossfade(done, label = "step-mark") { complete ->
+            if (complete) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.yard.onAcid, modifier = Modifier.size(15.dp))
+            } else {
+                Text("$step", style = YardFonts.captionEmphasis.monospacedDigits(), color = Color.yard.ink2)
+            }
+        }
+    }
+}
+
 /** A titled card section. */
 @Composable
-fun CheckoutSection(title: String, subtitle: String?, content: @Composable ColumnScope.() -> Unit) {
+fun CheckoutSection(
+    title: String,
+    subtitle: String?,
+    /** The stage number (1 Contact … 4 Payment), or null for sections that aren't a step. */
+    step: Int? = null,
+    /** The stage is filled in correctly right now (from the form's own rules): its number becomes a check. */
+    done: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            Text(title, style = YardFonts.title, color = Color.yard.ink)
-            if (subtitle != null) Text(subtitle, style = YardFonts.caption, color = Color.yard.ink2)
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.Top) {
+            if (step != null) CheckoutStepMark(step, done, Modifier.padding(top = 1.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Text(title, style = YardFonts.title, color = Color.yard.ink)
+                if (subtitle != null) Text(subtitle, style = YardFonts.caption, color = Color.yard.ink2)
+            }
         }
         Card {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.m), content = content)

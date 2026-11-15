@@ -1,5 +1,9 @@
 package space.yardstore.app.features.orders
 
+import space.yardstore.app.designsystem.rememberReducedMotion
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -198,13 +202,18 @@ fun OrderSuccessBadge(modifier: Modifier = Modifier, tone: OrderBadgeTone = Orde
     val glowOpacity = if (c.isDark) 0.55f else 0.28f
     val rayAlpha = if (c.isDark) 0.22f else 0.35f
 
+    // The seal lands once (a spring scale-in) and then breathes; both are still under reduced motion.
+    val reduce = rememberReducedMotion()
     val transition = rememberInfiniteTransition(label = "order-badge")
-    val phase by transition.animateFloat(
+    val breathing by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "order-badge-phase",
     )
+    val phase = if (reduce) 0.5f else breathing
+    val landed = remember(tone) { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(tone) { if (!reduce) landed.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 260f)) }
 
     Box(
         modifier
@@ -261,13 +270,24 @@ fun OrderSuccessBadge(modifier: Modifier = Modifier, tone: OrderBadgeTone = Orde
             Modifier
                 .size(92.dp)
                 .graphicsLayer {
-                    val s = 1f + 0.03f * phase
+                    val s = (1f + 0.03f * phase) * (0.6f + 0.4f * landed.value)
                     scaleX = s
                     scaleY = s
+                    alpha = landed.value.coerceIn(0f, 1f)
                 }
                 .background(fill, androidx.compose.foundation.shape.CircleShape),
         )
-        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(38.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(38.dp).graphicsLayer {
+                val s = 0.4f + 0.6f * landed.value
+                scaleX = s
+                scaleY = s
+                alpha = landed.value.coerceIn(0f, 1f)
+            },
+        )
     }
 }
 

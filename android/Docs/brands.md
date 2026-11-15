@@ -55,3 +55,9 @@ Mirrors `ios/Yard/Features/Brands` (see `ios/Docs/brands.md`).
 
 `app/src/test/java/space/yardstore/app/features/brands/`: `BrandProfileModelTest` (12),
 `BrandsDirectoryModelTest` (9, incl. saved-state restore), `BrandsSupportTest` (7) — MockWebServer with website-shaped JSON.
+
+## Premium pass, round 2
+- Follow pill: fill, ring and text colours animate together, "Follow" ↔ "✓ Following" crossfades, a small pop when
+  your own tap turns following on (FollowStore is optimistic and rolls back, so it follows real state); the busy
+  spinner is gone (the pill is disabled while the request runs). Follower / product / drop counts roll.
+  Skeleton → storefront crossfade. All instant under reduced motion.

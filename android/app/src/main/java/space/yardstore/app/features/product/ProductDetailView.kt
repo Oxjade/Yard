@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.Bolt
@@ -94,6 +95,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import space.yardstore.app.app.LegalPage
 import space.yardstore.app.app.LocalRouter
@@ -131,6 +133,7 @@ import space.yardstore.app.designsystem.components.Tag
 import space.yardstore.app.designsystem.components.TagStyle
 import space.yardstore.app.designsystem.components.Toast
 import space.yardstore.app.designsystem.components.YardButton
+import space.yardstore.app.designsystem.components.YardCrossfade
 import space.yardstore.app.designsystem.components.YardButtonSize
 import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.YardSheet
@@ -174,6 +177,14 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
     var showsSizeSheet by rememberSaveable { mutableStateOf(false) }
     var showsSizePrompt by remember { mutableStateOf(false) }
     var isAdding by remember { mutableStateOf(false) }
+    /** Briefly true after a successful add: the button confirms with a check before going back. */
+    var justAdded by remember { mutableStateOf(false) }
+    LaunchedEffect(justAdded) {
+        if (justAdded) {
+            delay(1600)
+            justAdded = false
+        }
+    }
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(model.slug) { model.start(cart.destinationCountry, cart.currency) }
@@ -236,7 +247,8 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
         scope.launch {
             try {
                 cart.add(variant.id, qty)
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                justAdded = true
                 model.quantity = 1
                 showsSizeSheet = false
                 toast.show(if (qty > 1) "$qty added to your bag" else "Added to your bag", Toast.Style.Success, Icons.Filled.ShoppingBag)
@@ -300,8 +312,9 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
             ProductBagButton(count = cart.count) { router.push(Route.Bag) }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (val phase = model.phase) {
+        // Skeleton → page (or → not found / error) crossfades instead of cutting.
+        YardCrossfade(model.phase, Modifier.weight(1f).fillMaxWidth(), label = "product-phase") { phase ->
+            when (phase) {
                 ProductDetailModel.Phase.Loading -> ProductDetailSkeleton()
                 ProductDetailModel.Phase.NotFound -> EmptyState(
                     "Product not found",
@@ -353,6 +366,7 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
                                         product = product,
                                         model = model,
                                         isAdding = isAdding,
+                                        justAdded = justAdded,
                                         showsSizePill = showsSizePill,
                                         onSave = { toggleSave(product) },
                                         onChooseSize = { showsSizeSheet = true },
@@ -945,6 +959,7 @@ private fun ProductBottomBar(
     product: Product,
     model: ProductDetailModel,
     isAdding: Boolean,
+    justAdded: Boolean,
     showsSizePill: Boolean,
     onSave: () -> Unit,
     onChooseSize: () -> Unit,
@@ -998,7 +1013,14 @@ private fun ProductBottomBar(
             Box(Modifier.weight(1f)) {
                 when (action) {
                     ProductBuyAction.Ready, ProductBuyAction.ChooseSize ->
-                        YardButton("Add to bag", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
+                        // "Added" with a check for a moment after a successful add, then back.
+                        YardCrossfade(justAdded, label = "add-to-bag") { added ->
+                            if (added) {
+                                YardButton("Added to bag", icon = Icons.Filled.Check, style = YardButtonStyle.Secondary, onClick = onAdd)
+                            } else {
+                                YardButton("Add to bag", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
+                            }
+                        }
                     ProductBuyAction.Opening -> ProductNotifyButton(model, onNotify = onNotify, onPrompt = onShowSizes)
                     ProductBuyAction.SoldOut ->
                         if (model.variant != null) {

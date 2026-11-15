@@ -1,5 +1,6 @@
 package space.yardstore.app.features.home
 
+import space.yardstore.app.designsystem.components.YardCrossfade
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -326,7 +327,9 @@ fun HomeFeedView(model: HomeFeedModel, gridState: LazyStaggeredGridState, modifi
             )
         },
     ) {
-        when (val phase = model.phase) {
+        // Skeleton → feed (or → error / empty) crossfades; instant under reduced motion.
+        YardCrossfade(model.phase, label = "home-phase") { phase ->
+        when (phase) {
             HomeFeedPhase.Idle, HomeFeedPhase.Loading -> HomeScrollColumn(bottomClearance) {
                 // Five rows at any column count (10 tiles on a phone, as iOS).
                 MasonrySkeleton(
@@ -353,6 +356,7 @@ fun HomeFeedView(model: HomeFeedModel, gridState: LazyStaggeredGridState, modifi
                     HomeFeedGrid(model, gridState, bottomClearance)
                 }
             }
+        }
         }
     }
 }

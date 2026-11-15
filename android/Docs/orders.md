@@ -64,3 +64,8 @@ Order detail › Help has "Get help from Yard" under "Message {brand}": it pushe
 text helpers, timeline, tracking snapshot, grouping/filtering) and `OrderModelsTest`
 (view models + OrdersAPI against MockWebServer: paging, errors, polling/verify/timeout, cancel,
 returns, path encoding), `OrdersTabletTest` (pane open/hand-off, readable inset, pane widths). 39 tests.
+
+## Premium pass, round 2
+- Order timeline draws itself in once (dots settle, rails grow top to bottom, text fades up, staggered 110 ms);
+  the current-step pulse and the confirmation seal's breathing are still under reduced motion; the seal lands with
+  a spring once. Orders list and order detail crossfade skeleton → content.

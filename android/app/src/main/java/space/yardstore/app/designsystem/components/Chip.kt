@@ -1,6 +1,16 @@
 package space.yardstore.app.designsystem.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import space.yardstore.app.designsystem.or
+import space.yardstore.app.designsystem.rememberReducedMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +29,6 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,10 +70,29 @@ fun Chip(
     count: Int? = null,
     onClick: () -> Unit,
 ) {
-    val bg by animateColorAsState(if (isSelected) Color.yard.ink else Color.yard.surface2, Motion.snappy(), label = "chip-bg")
-    val fg = if (isSelected) Color.yard.bg else if (isEnabled) Color.yard.ink else Color.yard.ink3
+    val reduce = rememberReducedMotion()
+    val bg by animateColorAsState(if (isSelected) Color.yard.ink else Color.yard.surface2, Motion.or(reduce) { Motion.snappy() }, label = "chip-bg")
+    val fg by animateColorAsState(
+        if (isSelected) Color.yard.bg else if (isEnabled) Color.yard.ink else Color.yard.ink3,
+        Motion.or(reduce) { Motion.snappy() },
+        label = "chip-fg",
+    )
+    // Selecting a chip settles it with a small pop (not on first show, not under reduced motion).
+    val pop = remember { Animatable(1f) }
+    var wasSelected by remember { mutableStateOf(isSelected) }
+    LaunchedEffect(isSelected) {
+        if (isSelected && !wasSelected && !reduce) {
+            pop.snapTo(0.92f)
+            pop.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 600f))
+        }
+        wasSelected = isSelected
+    }
     Row(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = pop.value
+                scaleY = pop.value
+            }
             .semantics { selected = isSelected }
             .clip(YardShapes.pill)
             .background(bg, YardShapes.pill)

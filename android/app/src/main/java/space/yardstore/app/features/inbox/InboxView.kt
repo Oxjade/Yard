@@ -1,5 +1,10 @@
 package space.yardstore.app.features.inbox
 
+import space.yardstore.app.designsystem.components.YardCrossfade
+import space.yardstore.app.designsystem.Motion
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.or
+import space.yardstore.app.designsystem.components.UnreadDot
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -445,17 +450,20 @@ private fun InboxListPane(
         AdaptiveContent(Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize()) {
                 InboxSearchField(searchText, onChange = onSearchChange)
-                when (val phase = model.phase) {
-                    InboxListModel.Phase.Idle, InboxListModel.Phase.Loading -> InboxListSkeleton()
-                    is InboxListModel.Phase.Failed -> EmptyState(
-                        title = "Couldn't load your messages.",
-                        modifier = Modifier.weight(1f),
-                        message = phase.message,
-                        icon = Icons.Outlined.WifiOff,
-                        actionTitle = "Retry",
-                        action = { model.load() },
-                    )
-                    InboxListModel.Phase.Loaded -> InboxList(model, selectedId, onOpen, Modifier.weight(1f))
+                // Skeleton → list (or → error) crossfades; instant under reduced motion.
+                YardCrossfade(model.phase, Modifier.weight(1f), label = "inbox-phase") { phase ->
+                    when (phase) {
+                        InboxListModel.Phase.Idle, InboxListModel.Phase.Loading -> InboxListSkeleton()
+                        is InboxListModel.Phase.Failed -> EmptyState(
+                            title = "Couldn't load your messages.",
+                            modifier = Modifier.fillMaxSize(),
+                            message = phase.message,
+                            icon = Icons.Outlined.WifiOff,
+                            actionTitle = "Retry",
+                            action = { model.load() },
+                        )
+                        InboxListModel.Phase.Loaded -> InboxList(model, selectedId, onOpen, Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -874,22 +882,21 @@ fun InboxConversationRow(conversation: InboxConversation, modifier: Modifier = M
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.Top) {
+                // Reading a thread eases the preview back to secondary ink (instant under reduced motion).
+                val previewColor by animateColorAsState(
+                    if (c.isUnread) Color.yard.ink else Color.yard.ink2,
+                    Motion.or(rememberReducedMotion()) { Motion.crossfade() },
+                    label = "inbox-preview",
+                )
                 Text(
                     c.previewText,
                     style = YardFonts.callout.copy(fontWeight = if (c.isUnread) FontWeight.Medium else FontWeight.Normal),
-                    color = if (c.isUnread) Color.yard.ink else Color.yard.ink2,
+                    color = previewColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Box(
-                    Modifier
-                        .padding(top = 5.dp)
-                        .size(10.dp)
-                        .alpha(if (c.isUnread) 1f else 0f)
-                        .clip(CircleShape)
-                        .background(Color.yard.violet),
-                )
+                UnreadDot(c.isUnread, Modifier.padding(top = 5.dp), size = 10.dp)
             }
             if (c.status == "resolved" || c.blockedByMe || c.archived) {
                 Row(Modifier.padding(top = Spacing.xxs), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {

@@ -3,6 +3,7 @@
 
 package space.yardstore.app.features.orders
 
+import space.yardstore.app.designsystem.components.YardCrossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -314,21 +315,24 @@ internal fun OrdersListScreen(
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
         YardTopBar("Orders")
         val error = model.error
-        when {
-            !isPreview && !session.isSignedIn -> {
-                if (session.hasLoaded) {
-                    EmptyState.SignedOut(
-                        modifier = Modifier.adaptiveContentWidth(),
-                        title = "Orders",
-                        message = "Sign in to see every order you've placed. Each brand's part of a checkout has its own status, tracking and returns.",
-                    ) { router.present(Route.SignIn) }
-                } else {
-                    OrdersListSkeleton()
-                }
-            }
-            !model.hasLoaded || (model.isLoading && model.items.isEmpty() && error == null) -> OrdersListSkeleton()
-            error != null && model.items.isEmpty() -> EmptyState.Error(error, Modifier.adaptiveContentWidth()) { model.load() }
-            model.items.isEmpty() -> OrderRefreshBox(onRefresh = { model.load() }) {
+        // Which state shows; skeleton → list (or → empty / error) crossfades on a change of state.
+        val state = when {
+            !isPreview && !session.isSignedIn -> if (session.hasLoaded) "signed-out" else "loading"
+            !model.hasLoaded || (model.isLoading && model.items.isEmpty() && error == null) -> "loading"
+            error != null && model.items.isEmpty() -> "error"
+            model.items.isEmpty() -> "empty"
+            else -> "list"
+        }
+        YardCrossfade(state, label = "orders-state") { shown ->
+        when (shown) {
+            "signed-out" -> EmptyState.SignedOut(
+                modifier = Modifier.adaptiveContentWidth(),
+                title = "Orders",
+                message = "Sign in to see every order you've placed. Each brand's part of a checkout has its own status, tracking and returns.",
+            ) { router.present(Route.SignIn) }
+            "loading" -> OrdersListSkeleton()
+            "error" -> error?.let { EmptyState.Error(it, Modifier.adaptiveContentWidth()) { model.load() } } ?: OrdersListSkeleton()
+            "empty" -> OrderRefreshBox(onRefresh = { model.load() }) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Spacer(Modifier.height(Spacing.xxxl))
                     EmptyState(
@@ -341,6 +345,7 @@ internal fun OrdersListScreen(
                 }
             }
             else -> OrdersList(model, selectedId, open)
+        }
         }
     }
 }

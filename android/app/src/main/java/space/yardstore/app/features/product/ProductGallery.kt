@@ -78,6 +78,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import space.yardstore.app.core.models.ProductImage
 import space.yardstore.app.designsystem.Motion
+import space.yardstore.app.designsystem.or
+import space.yardstore.app.designsystem.rememberReducedMotion
 import space.yardstore.app.designsystem.PreviewFixtures
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
@@ -260,6 +262,7 @@ private fun ProductPhotoViewerContent(images: List<ProductImage>, startIndex: In
     var dismissOffset by remember { mutableFloatStateOf(0f) }
     var isZoomed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val reduce = rememberReducedMotion()
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { isZoomed = false }
@@ -283,7 +286,7 @@ private fun ProductPhotoViewerContent(images: List<ProductImage>, startIndex: In
                         if (dismissOffset > 360f || velocity > 2400f) {
                             onDismiss()
                         } else {
-                            scope.launch { animate(dismissOffset, 0f, animationSpec = Motion.spring()) { v, _ -> dismissOffset = v } }
+                            scope.launch { animate(dismissOffset, 0f, animationSpec = Motion.or(reduce) { Motion.spring() }) { v, _ -> dismissOffset = v } }
                         }
                     },
                 ),
@@ -328,6 +331,7 @@ private fun ProductZoomableImage(url: String?, contentDescription: String, isCur
     var offset by remember { mutableStateOf(Offset.Zero) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
+    val reduce = rememberReducedMotion()
 
     fun clamp(o: Offset, s: Float): Offset {
         val maxX = size.width * (s - 1f) / 2f
@@ -358,7 +362,8 @@ private fun ProductZoomableImage(url: String?, contentDescription: String, isCur
                     val targetOffset = if (zoomIn) clamp((center - tap) * (to - 1f), to) else Offset.Zero
                     onZoomChange(zoomIn)
                     scope.launch {
-                        animate(0f, 1f, animationSpec = Motion.spring()) { t, _ ->
+                        // Reduced motion: the zoom lands at once.
+                        animate(0f, 1f, animationSpec = Motion.or(reduce) { Motion.spring() }) { t, _ ->
                             scale = from + (to - from) * t
                             offset = fromOffset + (targetOffset - fromOffset) * t
                         }

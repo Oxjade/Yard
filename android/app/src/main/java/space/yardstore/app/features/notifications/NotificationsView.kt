@@ -1,5 +1,10 @@
 package space.yardstore.app.features.notifications
 
+import space.yardstore.app.designsystem.components.YardCrossfade
+import space.yardstore.app.designsystem.rememberReducedMotion
+import space.yardstore.app.designsystem.or
+import androidx.compose.animation.animateColorAsState
+import space.yardstore.app.designsystem.components.UnreadDot
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -145,10 +150,13 @@ private fun NotificationsScreen(model: NotificationsViewModel) {
                 } else {
                     NotificationsSkeleton()
                 }
-                else -> when (val phase = model.phase) {
-                    NotificationsViewModel.Phase.Idle, NotificationsViewModel.Phase.Loading -> NotificationsSkeleton()
-                    is NotificationsViewModel.Phase.Failed -> EmptyState.Error(message = phase.message) { model.load().join() }
-                    NotificationsViewModel.Phase.Loaded -> NotificationsList(model)
+                // Skeleton → list (or → error) crossfades; instant under reduced motion.
+                else -> YardCrossfade(model.phase, label = "notifications-phase") { phase ->
+                    when (phase) {
+                        NotificationsViewModel.Phase.Idle, NotificationsViewModel.Phase.Loading -> NotificationsSkeleton()
+                        is NotificationsViewModel.Phase.Failed -> EmptyState.Error(message = phase.message) { model.load().join() }
+                        NotificationsViewModel.Phase.Loaded -> NotificationsList(model)
+                    }
                 }
             }
         }
@@ -355,10 +363,15 @@ fun NotificationsListRow(notification: ShopperNotification, modifier: Modifier =
             Modifier.size(40.dp).background(Color.yard.surface2, YardShapes.small).clearAndSetSemantics { },
             contentAlignment = Alignment.Center,
         ) {
+            val tint by animateColorAsState(
+                if (notification.read) Color.yard.ink2 else Color.yard.ink,
+                Motion.or(rememberReducedMotion()) { Motion.crossfade() },
+                label = "notification-tint",
+            )
             Icon(
                 notification.kind.icon,
                 contentDescription = null,
-                tint = if (notification.read) Color.yard.ink2 else Color.yard.ink,
+                tint = tint,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -381,14 +394,7 @@ fun NotificationsListRow(notification: ShopperNotification, modifier: Modifier =
             }
             Text(meta, style = YardFonts.caption, color = Color.yard.ink3, modifier = Modifier.padding(top = Spacing.xxs))
         }
-        Box(
-            Modifier
-                .padding(top = Spacing.s)
-                .size(8.dp)
-                .alpha(if (notification.read) 0f else 1f)
-                .background(Color.yard.violet, CircleShape)
-                .clearAndSetSemantics { },
-        )
+        UnreadDot(!notification.read, Modifier.padding(top = Spacing.s))
     }
 }
 

@@ -5,10 +5,8 @@ import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.togetherWith
 import space.yardstore.app.designsystem.GlassBackdrop
 import space.yardstore.app.designsystem.glassBackdropSource
 import space.yardstore.app.designsystem.rememberGlassBackdrop
@@ -113,6 +111,7 @@ import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.components.RollingNumber
 import space.yardstore.app.designsystem.components.BackAction
 import space.yardstore.app.designsystem.components.LocalBackAction
 import space.yardstore.app.designsystem.components.LocalToastCenter
@@ -420,20 +419,8 @@ private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             // The number rolls (up when it grows, down when it shrinks).
-            AnimatedContent(
-                targetState = shown,
-                transitionSpec = {
-                    if (reduce) {
-                        fadeIn(snap()) togetherWith fadeOut(snap())
-                    } else {
-                        val up = targetState > initialState
-                        (slideInVertically(Motion.snappy()) { if (up) it else -it } + fadeIn(Motion.crossfade())) togetherWith
-                            (slideOutVertically(Motion.snappy()) { if (up) -it else it } + fadeOut(Motion.crossfade()))
-                    }
-                },
-                label = "bag-count",
-            ) { n ->
-                Text(if (n > 99) "99+" else "$n", style = YardFonts.micro.monospacedDigits(), color = Color.yard.bg)
+            RollingNumber(shown, style = YardFonts.micro.monospacedDigits(), color = Color.yard.bg, label = "bag-count") { n ->
+                if (n > 99) "99+" else "$n"
             }
         }
     }
