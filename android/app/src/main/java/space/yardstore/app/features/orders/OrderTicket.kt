@@ -34,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -204,14 +206,18 @@ fun OrderSuccessBadge(modifier: Modifier = Modifier, tone: OrderBadgeTone = Orde
 
     // The seal lands once (a spring scale-in) and then breathes; both are still under reduced motion.
     val reduce = rememberReducedMotion()
-    val transition = rememberInfiniteTransition(label = "order-badge")
-    val breathing by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "order-badge-phase",
-    )
-    val phase = if (reduce) 0.5f else breathing
+    // A State, read only in the draw and graphicsLayer blocks below, so each frame redraws without
+    // recomposing. Under reduced motion there is no infinite transition at all (a still mid-phase).
+    val breathing: State<Float> = if (reduce) {
+        remember { mutableFloatStateOf(0.5f) }
+    } else {
+        rememberInfiniteTransition(label = "order-badge").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "order-badge-phase",
+        )
+    }
     val landed = remember(tone) { Animatable(if (reduce) 1f else 0f) }
     LaunchedEffect(tone) { if (!reduce) landed.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 260f)) }
 
@@ -253,6 +259,7 @@ fun OrderSuccessBadge(modifier: Modifier = Modifier, tone: OrderBadgeTone = Orde
                 }
             }
             // Breathing glow behind the seal (SwiftUI's coloured shadow).
+            val phase = breathing.value
             val glowRadius = 46.dp.toPx() + (22.dp.toPx() + 12.dp.toPx() * phase)
             drawCircle(
                 brush = Brush.radialGradient(
@@ -270,7 +277,7 @@ fun OrderSuccessBadge(modifier: Modifier = Modifier, tone: OrderBadgeTone = Orde
             Modifier
                 .size(92.dp)
                 .graphicsLayer {
-                    val s = (1f + 0.03f * phase) * (0.6f + 0.4f * landed.value)
+                    val s = (1f + 0.03f * breathing.value) * (0.6f + 0.4f * landed.value)
                     scaleX = s
                     scaleY = s
                     alpha = landed.value.coerceIn(0f, 1f)

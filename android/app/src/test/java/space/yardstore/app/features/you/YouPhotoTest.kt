@@ -359,6 +359,23 @@ class YouPhotoTest {
         assertNull(model.problem)
     }
 
+    @Test fun bindResetsOnlyWhenTheShopperChanges() {
+        val model = YouPhotoModel(api, root)
+        model.bind("sh_1")
+        model.previewState(null, failed = YouPhotoProblem("Your photo wasn't saved. Try again.", retry = true))
+        // A fresh composition after an activity recreation binds the same shopper again: kept.
+        model.bind("sh_1")
+        assertNotNull(model.pending)
+        assertNotNull(model.problem)
+        // Another account (or signed out): forgotten.
+        model.bind("sh_2")
+        assertNull(model.pending)
+        assertNull(model.problem)
+        model.previewState(null, failed = YouPhotoProblem("x"))
+        model.bind(null)
+        assertNull(model.pending)
+    }
+
     // endregion
 }
 

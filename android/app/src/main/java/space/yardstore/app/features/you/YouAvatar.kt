@@ -69,29 +69,29 @@ fun YouAvatar(
         contentAlignment = Alignment.Center,
     ) {
         Text(initials, style = YardFonts.display(initialsSize), color = Color.yard.onAcid)
-        when {
-            preview != null -> Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            else -> {
-                if (underlay != null) Image(underlay, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                val resolved = remember(photoSrc) { Config.url(photoSrc) }
-                if (resolved != null) {
-                    val context = LocalContext.current
-                    val px = with(LocalDensity.current) { size.roundToPx() }.coerceIn(48, 512)
-                    val request = remember(resolved, px) {
-                        ImageRequest.Builder(context).data(resolved).size(px * 2).crossfade(false).build()
-                    }
-                    var loaded by remember(resolved) { mutableStateOf(false) }
-                    val alpha by animateFloatAsState(if (loaded) 1f else 0f, Motion.or(reduce) { Motion.fade() }, label = "avatar-fade")
-                    AsyncImage(
-                        model = request,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha },
-                        onState = { loaded = it is AsyncImagePainter.State.Success },
-                    )
-                }
-            }
+        if (preview == null && underlay != null) {
+            Image(underlay, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
+        // The saved photo stays composed under a preview, so when an upload fails it is already
+        // loaded and shows at once (no second fade-in from nothing).
+        val resolved = remember(photoSrc) { Config.url(photoSrc) }
+        if (resolved != null) {
+            val context = LocalContext.current
+            val px = with(LocalDensity.current) { size.roundToPx() }.coerceIn(48, 512)
+            val request = remember(resolved, px) {
+                ImageRequest.Builder(context).data(resolved).size(px * 2).crossfade(false).build()
+            }
+            var loaded by remember(resolved) { mutableStateOf(false) }
+            val alpha by animateFloatAsState(if (loaded) 1f else 0f, Motion.or(reduce) { Motion.fade() }, label = "avatar-fade")
+            AsyncImage(
+                model = request,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha },
+                onState = { loaded = it is AsyncImagePainter.State.Success },
+            )
+        }
+        if (preview != null) Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         // A hairline ring lifts the disc (or the photo) off the page.
         Box(Modifier.fillMaxSize().border(BorderStroke(1.dp, Color.yard.ink.copy(alpha = 0.08f)), CircleShape))
     }

@@ -151,7 +151,8 @@ object YardScreens {
     val phone = listOf(
         "home", "product", "brand", "brands", "shop", "categories", "drops", "drop-detail", "bag", "checkout",
         "order-confirmation", "order-detail", "orders", "inbox", "conversation", "you", "you-photo", "settings", "charts",
-        "settings-details", "settings-details-nophoto", "settings-photo-uploading", "settings-photo-failed", "photo-crop",
+        "settings-details", "settings-details-nophoto", "settings-photo-uploading", "settings-photo-failed",
+        "settings-photo-failed-first", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
         "place-detail", "root",
     )
@@ -212,6 +213,15 @@ object YardScreens {
                 YouPhotoModel().also { it.previewState(FakeImages.photo("crop-preview", 600, 600).asImageBitmap(), uploading = 0.62f) }
             })
             "settings-photo-failed" -> YouDetails(FakeYardBackend.account, remember {
+                YouPhotoModel().also {
+                    it.previewState(
+                        FakeImages.photo("crop-preview", 600, 600).asImageBitmap(),
+                        failed = YouPhotoProblem("You're offline. Check your connection and try again.", retry = true),
+                    )
+                }
+            })
+            // A first photo whose upload failed: the initials show (dimmed), never the unsaved crop.
+            "settings-photo-failed-first" -> YouDetails(FakeYardBackend.account.copy(photo = null), remember {
                 YouPhotoModel().also {
                     it.previewState(
                         FakeImages.photo("crop-preview", 600, 600).asImageBitmap(),

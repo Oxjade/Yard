@@ -142,8 +142,13 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     var showsSheet by rememberSaveable { mutableStateOf(false) }
+    /** The sheet opens straight on "Remove your photo?" (the Remove button), not on its options. */
+    var sheetConfirmsRemoval by rememberSaveable { mutableStateOf(false) }
     var cameraUri by rememberSaveable { mutableStateOf<String?>(null) }
-    /** The last photo uploaded from here: drawn under the saved one while it loads (no initials flash). */
+    /**
+     * The last photo saved from here (set only once its upload succeeded): drawn under the saved
+     * one while it loads, so a replace never flashes the initials. Never drawn while a save failed.
+     */
     var lastSaved by remember { mutableStateOf<ImageBitmap?>(null) }
     val demo = account.demo
     val hasPhoto = account.photo != null
@@ -193,7 +198,10 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
                         pressedScale = Motion.PRESSED_SCALE,
                         onClickLabel = if (hasPhoto || pending != null) "Change photo" else "Add photo",
                         haptic = true,
-                    ) { showsSheet = true }
+                    ) {
+                        sheetConfirmsRemoval = false
+                        showsSheet = true
+                    }
                     .semantics { contentDescription = if (hasPhoto || pending != null) "Your photo" else "No photo. Your initials show instead." },
                 contentAlignment = Alignment.Center,
             ) {
@@ -202,7 +210,7 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
                     initials = youInitials(account.name),
                     size = 80.dp,
                     preview = if (failed) null else pending?.preview,
-                    underlay = lastSaved,
+                    underlay = if (failed) null else lastSaved,
                     modifier = Modifier.graphicsLayer { alpha = if (failed) 0.6f else 1f },
                 )
                 if (busy == Busy.Upload) YouUploadRing(model.progress)
@@ -231,7 +239,10 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
                     fullWidth = false,
                     isLoading = model.isOpening,
                     enabled = !demo && busy == null,
-                ) { showsSheet = true }
+                ) {
+                    sheetConfirmsRemoval = false
+                    showsSheet = true
+                }
                 if (hasPhoto && pending == null) {
                     YardButton(
                         "Remove",
@@ -241,7 +252,10 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
                         fullWidth = false,
                         isLoading = busy == Busy.Remove,
                         enabled = !demo && busy == null,
-                    ) { showsSheet = true }
+                    ) {
+                        sheetConfirmsRemoval = true
+                        showsSheet = true
+                    }
                 }
                 if (busy == Busy.Upload) {
                     Text("Uploading… ${(model.progress * 100).toInt()}%", style = YardFonts.caption.copy(fontFeatureSettings = "tnum"), color = Color.yard.ink3)
@@ -257,7 +271,11 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     if (problem.retry && model.pending != null) {
                         YardButton("Try again", style = YardButtonStyle.Secondary, size = YardButtonSize.Small, fullWidth = false, enabled = model.busy == null) {
-                            model.retry { onSaved(it) }
+                            val preview = model.pending?.preview
+                            model.retry { next ->
+                                lastSaved = preview
+                                onSaved(next)
+                            }
                         }
                     }
                     if (problem.signIn) {
@@ -277,6 +295,7 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
         YouPhotoSheet(
             hasPhoto = hasPhoto && model.pending == null,
             canTakePhoto = canTakePhoto,
+            confirmsRemoval = sheetConfirmsRemoval && hasPhoto && model.pending == null,
             onDismiss = { showsSheet = false },
             onLibrary = {
                 showsSheet = false
@@ -317,8 +336,10 @@ internal fun YouPhotoSection(account: YouAccount, accountModel: YouAccountModel,
             photo,
             onCancel = { model.cancelCrop() },
             onSave = { jpeg, preview ->
-                lastSaved = preview
-                model.save(jpeg, preview) { onSaved(it) }
+                model.save(jpeg, preview) { next ->
+                    lastSaved = preview // only now: a failed or discarded crop never stands in for the saved photo
+                    onSaved(next)
+                }
             },
         )
     }
@@ -351,17 +372,22 @@ private fun YouUploadRing(progress: Float) {
     }
 }
 
-/** Library / camera / remove. Remove asks first, inside the sheet (like cancelling an order). */
+/**
+ * Library / camera / remove. Remove asks first, inside the sheet (like cancelling an order).
+ * [confirmsRemoval] opens it straight on that question (the Remove button); "Keep photo" then
+ * closes the sheet instead of stepping back to the options.
+ */
 @Composable
 internal fun YouPhotoSheet(
     hasPhoto: Boolean,
     canTakePhoto: Boolean,
+    confirmsRemoval: Boolean = false,
     onDismiss: () -> Unit,
     onLibrary: () -> Unit,
     onCamera: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var confirming by rememberSaveable { mutableStateOf(false) }
+    var confirming by rememberSaveable { mutableStateOf(confirmsRemoval) }
     YouSheet(onDismiss = onDismiss) { close ->
         YardCrossfade(confirming, label = "photo-sheet") { asking ->
             if (!asking) {
@@ -400,7 +426,7 @@ internal fun YouPhotoSheet(
                     )
                     Spacer(Modifier.height(Spacing.s))
                     YardButton("Remove photo", style = YardButtonStyle.Destructive, onClick = onRemove)
-                    YardButton("Keep photo", style = YardButtonStyle.Secondary) { confirming = false }
+                    YardButton("Keep photo", style = YardButtonStyle.Secondary) { if (confirmsRemoval) close() else confirming = false }
                 }
             }
         }

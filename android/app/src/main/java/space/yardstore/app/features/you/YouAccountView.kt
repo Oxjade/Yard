@@ -317,7 +317,7 @@ fun YouAccountView() {
     val photo: YouPhotoModel = viewModel { YouPhotoModel() }
 
     LaunchedEffect(session.shopper?.id) {
-        photo.reset()
+        photo.bind(session.shopper?.id) // resets only when the account changed, not on a recreation
         if (session.isSignedIn) model.load() else model.reset()
     }
     // The link is usually opened in the mail app or browser: re-read when Yard comes back, and

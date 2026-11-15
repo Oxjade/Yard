@@ -513,6 +513,22 @@ class YouPhotoModel(
         problem = failed
     }
 
+    private var bound = false
+    private var boundTo: String? = null
+
+    /**
+     * Ties the model to a shopper. Called on every fresh composition of Your details (including
+     * after an activity recreation, which this ViewModel survives), so it resets only when the
+     * shopper really changed: another account, or signed out. An upload in flight, a failed one
+     * and an open crop step survive a dark-mode or locale switch.
+     */
+    fun bind(shopperId: String?) {
+        if (bound && boundTo == shopperId) return
+        if (bound) reset()
+        bound = true
+        boundTo = shopperId
+    }
+
     /** Signed out / another account: forget everything. */
     fun reset() {
         job?.cancel()
