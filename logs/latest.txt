@@ -1,12 +1,12 @@
-commit: 078f190de5024304c0e43e4218fc60dcaeb13043
+commit: 39781463f7db2bcda4fd87d1429216e4ec928a56
 result: success
 errors: 0
 ----- errors (deduplicated) -----
 ----- last 60 lines -----
 
-SwiftDriverJobDiscovery normal arm64 Compiling Metrics.swift, Money.swift, MyDropsView.swift, NotificationSettingsView.swift, NotificationsModels.swift, NotificationsPush.swift, NotificationsView.swift, NotificationsViewModel.swift, OrderConfirmationView.swift, OrderDetailView.swift, OrderModels.swift, OrderStatus.swift, OrderTicket.swift, OrderTimeline.swift, OrdersAPI.swift, OrdersListView.swift, PlaceDetailView.swift, PreviewSupport.swift, PriceText.swift, Product.swift, ProductDetailModel.swift, ProductDetailModels.swift, ProductDetailView.swift, ProductGallery.swift (in target 'Yard' from project 'Yard')
+SwiftDriverJobDiscovery normal arm64 Compiling APIClient.swift, APIError.swift, AddressesView.swift, AppearanceView.swift, AroundComponents.swift, AroundFixtures.swift, AroundLocationManager.swift, AroundModels.swift, AroundTime.swift, AroundView.swift, AroundViewModel.swift, AuthComponents.swift, AuthModels.swift, AuthService.swift, AuthWebSheet.swift, BagAPI.swift, BagMarkets.swift, BagPaymentSafariView.swift, BagView.swift, Brand.swift, BrandArtwork.swift, BrandAvatar.swift, BrandConversationView.swift, BrandProfileModel.swift, BrandProfileView.swift (in target 'Yard' from project 'Yard')
 
-SwiftDriverJobDiscovery normal arm64 Compiling BrandsDirectoryView.swift, BrandsSupport.swift, Card.swift, Cart.swift, CartStore.swift, CategoriesView.swift, ChartsComponents.swift, ChartsFiltersSheet.swift, ChartsModels.swift, ChartsView.swift, ChartsViewModel.swift, CheckoutModel.swift, CheckoutView.swift, Chip.swift, CollectionView.swift, Config.swift, ConversationView.swift, Decoding.swift, Drop.swift, DropCards.swift, DropDetailView.swift, DropDetailViewModel.swift, DropsSupport.swift, DropsView.swift (in target 'Yard' from project 'Yard')
+SwiftDriverJobDiscovery normal arm64 Compiling SignInModel.swift, SignInView.swift, Skeleton.swift, Storefront.swift, SupportAPI.swift, SupportConversationView.swift, Tag.swift, Theme.swift, Toast.swift, TrackingCard.swift, Typography.swift, WelcomeModel.swift, WelcomeView.swift, YardApp.swift, YardButton.swift, YardLogo.swift, YardOrderActivityAttributes.swift, YardSheet.swift, YouAccountSheets.swift, YouAccountView.swift, YouQuickLinks.swift, YouSupport.swift, YouView.swift, GeneratedAssetSymbols.swift (in target 'Yard' from project 'Yard')
 
 SwiftDriver\ Compilation Yard normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
@@ -31,8 +31,8 @@ ProcessInfoPlistFile /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulato
 ExtractAppIntentsMetadata (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Yard --sdk-root /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk --xcode-version 16F6 --platform-family iOS --deployment-target 17.0 --bundle-identifier space.yardstore.app --output /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app --target-triple arm64-apple-ios17.0-simulator --target-triple x86_64-apple-ios17.0-simulator --binary-file /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Yard --dependency-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard_dependency_info.dat --dependency-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard_dependency_info.dat --stringsdata-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --stringsdata-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.SwiftFileList --source-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.SwiftFileList --metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.SwiftConstValuesFileList --swift-const-vals-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
-2026-11-14 14:35:18.899 appintentsmetadataprocessor[4446:15808] Starting appintentsmetadataprocessor export
-2026-11-14 14:35:18.906 appintentsmetadataprocessor[4446:15808] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+2026-11-15 00:17:50.815 appintentsmetadataprocessor[7556:25471] Starting appintentsmetadataprocessor export
+2026-11-15 00:17:50.820 appintentsmetadataprocessor[7556:25471] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 
 CopySwiftLibs /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
@@ -46,8 +46,8 @@ ValidateEmbeddedBinary /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimula
 AppIntentsSSUTraining (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Info.plist --temp-dir-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/ssu --bundle-id space.yardstore.app --product-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app --extracted-metadata-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Metadata.appintents --metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyMetadataFileList --archive-ssu-assets
-2026-11-14 14:35:18.930 appintentsnltrainingprocessor[4448:15811] Parsing options for appintentsnltrainingprocessor
-2026-11-14 14:35:18.931 appintentsnltrainingprocessor[4448:15811] No AppShortcuts found - Skipping.
+2026-11-15 00:17:50.859 appintentsnltrainingprocessor[7560:25480] Parsing options for appintentsnltrainingprocessor
+2026-11-15 00:17:50.859 appintentsnltrainingprocessor[7560:25480] No AppShortcuts found - Skipping.
 
 RegisterExecutionPolicyException /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
