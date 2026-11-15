@@ -14,6 +14,8 @@ import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import space.yardstore.app.app.LegalPage
 import space.yardstore.app.designsystem.components.YardSheet
+import space.yardstore.app.designsystem.components.BackAction
+import space.yardstore.app.designsystem.components.LocalBackAction
 import space.yardstore.app.features.you.LegalView
 import org.junit.Rule
 import org.junit.Test
@@ -254,7 +256,10 @@ object YardScreens {
             "sign-in" -> SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
             // Sign-in as presented by router.present(Route.SignIn): a form sheet (dialog on wide windows).
             "sign-in-sheet" -> YardSheet(onDismissRequest = {}, skipPartiallyExpanded = true, presentAsDialogOnWide = true, dismissOnScrimTap = false) {
-                SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
+                // RouteSheetHost provides the close action in the app: the X is the sheet's only on-screen way out.
+                CompositionLocalProvider(LocalBackAction provides BackAction(isClose = true) {}) {
+                    SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview()) })
+                }
             }
             // In Robolectric the WebView draws nothing, so this shows the loading state over the app surface.
             "terms" -> LegalView(LegalPage.Terms)

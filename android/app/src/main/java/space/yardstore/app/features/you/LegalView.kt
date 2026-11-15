@@ -6,6 +6,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import android.net.Uri
 import android.view.ContextThemeWrapper
 import android.webkit.WebResourceResponse
@@ -55,6 +57,8 @@ import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.GlassIconButton
 import space.yardstore.app.designsystem.components.Skeleton
 import space.yardstore.app.designsystem.components.YardTopBar
+import space.yardstore.app.designsystem.components.BackAction
+import space.yardstore.app.designsystem.components.LocalBackAction
 import space.yardstore.app.designsystem.components.yardScreenBackground
 import space.yardstore.app.designsystem.yard
 import java.io.IOException
@@ -65,7 +69,9 @@ import java.io.IOException
  *
  * The page is requested with `?view=app` (website contract: content only, no site header, tab bar,
  * footer or overlays) and in the app's light/dark choice. Links to other `/legal/` pages stay in the
- * WebView (with `?view=app`); any other link opens in a Custom Tab.
+ * WebView (with `?view=app`); any other link opens in a Custom Tab. After following such a link, system
+ * back and the bar's back button step back through the WebView's history before leaving the screen, and
+ * the bar title follows the page on screen.
  */
 @Composable
 fun LegalView(page: LegalPage) {
@@ -76,9 +82,22 @@ fun LegalView(page: LegalPage) {
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var reloadToken by remember { mutableIntStateOf(0) }
+    // In-WebView navigation between legal pages: history, the page on screen, and the live WebView.
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var title by remember(page) { mutableStateOf(page.title) }
+    // History carried across a retry or a light/dark switch (both make a new WebView).
+    val savedHistory = remember { arrayOfNulls<Bundle>(1) }
+    val goBack = { webView?.takeIf { it.canGoBack() }?.goBack() }
+
+    // System back steps back through the legal pages first (the error view keeps no WebView history).
+    BackHandler(enabled = canGoBack && errorMessage == null) { goBack() }
+
+    val screenBack = LocalBackAction.current
+    val back = if (canGoBack && errorMessage == null) BackAction(isClose = false) { goBack() } else screenBack
 
     Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        YardTopBar(page.title, actions = {
+        YardTopBar(title, back = back, actions = {
             GlassIconButton(Icons.Outlined.OpenInBrowser, "Open in browser", size = 38.dp) {
                 WebPages.open(context, pageUrl, dark)
             }
@@ -108,6 +127,15 @@ fun LegalView(page: LegalPage) {
                                 errorMessage = message
                             },
                             onExternal = { link -> openExternal(context, link, dark) },
+                            onHistory = { view, url ->
+                                canGoBack = view.canGoBack()
+                                AppWebView.legalPath(url, Config.baseHttpUrl)?.let { path ->
+                                    title = LegalPage.forPath(path)?.title ?: "Legal"
+                                }
+                            },
+                            savedHistory = savedHistory,
+                            onCreated = { webView = it },
+                            onReleased = { if (webView === it) { webView = null; canGoBack = false } },
                         )
                     }
                 }
@@ -157,11 +185,16 @@ private fun YouLegalWebView(
     onFinish: () -> Unit,
     onFail: (String) -> Unit,
     onExternal: (String) -> Unit,
+    onHistory: (WebView, String) -> Unit,
+    savedHistory: Array<Bundle?>,
+    onCreated: (WebView) -> Unit,
+    onReleased: (WebView) -> Unit,
 ) {
     val start by rememberUpdatedState(onStart)
     val finish by rememberUpdatedState(onFinish)
     val fail by rememberUpdatedState(onFail)
     val external by rememberUpdatedState(onExternal)
+    val history by rememberUpdatedState(onHistory)
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -195,7 +228,12 @@ private fun YouLegalWebView(
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
+                        if (view != null && url != null) history(view, url)
                         if (!failed) finish()
+                    }
+
+                    override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                        history(view, url)
                     }
 
                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
@@ -210,10 +248,18 @@ private fun YouLegalWebView(
                         fail("The page couldn't be loaded (${errorResponse?.statusCode ?: "error"}). Try again in a moment.")
                     }
                 }
-                loadUrl(url)
+                // Back from a retry or theme switch: the same pages, in the same order, the current one reloaded.
+                val restored = savedHistory[0]?.let { restoreState(it) }
+                savedHistory[0] = null
+                if (restored == null || restored.size == 0) loadUrl(url)
+                onCreated(this)
             }
         },
-        onRelease = { it.destroy() },
+        onRelease = {
+            savedHistory[0] = Bundle().also { b -> it.saveState(b) }
+            onReleased(it)
+            it.destroy()
+        },
     )
 }
 

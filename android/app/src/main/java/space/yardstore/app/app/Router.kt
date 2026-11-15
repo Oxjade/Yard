@@ -44,6 +44,12 @@ enum class LegalPage(val title: String, val path: String) {
     Privacy("Privacy", "/legal/privacy"),
     Refunds("Refunds", "/legal/refunds"),
     DataDeletion("Data deletion", "/legal/data-deletion"),
+    ;
+
+    companion object {
+        /** The page at site path [path] (e.g. `/legal/privacy`), or null for any other path. */
+        fun forPath(path: String?): LegalPage? = entries.firstOrNull { it.path == path?.trimEnd('/') }
+    }
 }
 
 /**

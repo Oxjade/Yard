@@ -47,6 +47,12 @@ object AppWebView {
         return path == "/legal" || path.startsWith("/legal/")
     }
 
+    /** The site path of a `/legal/…` page [url] (no trailing slash, no query), or null when it isn't one. */
+    fun legalPath(url: String, base: HttpUrl): String? {
+        if (!isLegalPage(url, base)) return null
+        return url.toHttpUrlOrNull()?.encodedPath?.trimEnd('/')
+    }
+
     /** Decide what a main-frame navigation to [url] does inside the WebView. */
     fun route(url: String, base: HttpUrl): Navigation = when {
         !isLegalPage(url, base) -> Navigation.External(url)

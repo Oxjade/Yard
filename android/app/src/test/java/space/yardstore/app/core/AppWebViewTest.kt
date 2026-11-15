@@ -61,4 +61,14 @@ class AppWebViewTest {
             AppWebView.route("mailto:privacy@yardstore.space", base),
         )
     }
+
+    @Test fun mapsLegalUrlsToTheirPage() {
+        assertEquals("/legal/privacy", AppWebView.legalPath("https://www.yardstore.space/legal/privacy/?view=app#x", base))
+        assertEquals(null, AppWebView.legalPath("https://yardstore.space/support", base))
+        assertEquals(space.yardstore.app.app.LegalPage.Privacy,
+            space.yardstore.app.app.LegalPage.forPath(AppWebView.legalPath("https://yardstore.space/legal/privacy?view=app", base)))
+        assertEquals(space.yardstore.app.app.LegalPage.DataDeletion, space.yardstore.app.app.LegalPage.forPath("/legal/data-deletion"))
+        assertEquals(null, space.yardstore.app.app.LegalPage.forPath("/legal"))
+        assertEquals(null, space.yardstore.app.app.LegalPage.forPath(null))
+    }
 }
