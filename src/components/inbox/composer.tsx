@@ -336,7 +336,7 @@ export function Composer({ apiRef, disabledReason, onSend, onTyping, uploadTarge
               onClick={submit}
               disabled={!ready}
               aria-label="Send message"
-              className={cn("inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] duration-150 active:scale-95 focus-visible:outline-2 focus-visible:outline-violet", ready ? "bg-acid text-obsidian hover:bg-acid/85" : "bg-white/[0.08] text-ink-3")}
+              className={cn("inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-[background-color,scale] duration-150 active:scale-95 active:duration-(--dur-press) focus-visible:outline-2 focus-visible:outline-violet", ready ? "bg-acid text-obsidian hover:bg-acid/85" : "bg-white/[0.08] text-ink-3")}
             >
               <ArrowUpIcon className="size-5" weight="bold" />
             </button>

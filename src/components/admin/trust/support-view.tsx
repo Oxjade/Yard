@@ -169,7 +169,7 @@ function CaseRow({ c, selected, onSelect }: { c: SupportCaseDto; selected: boole
   const unread = c.unread > 0
   const preview = c.lastMessage ? `${c.lastMessage.side === "support" ? "Yard Support: " : ""}${c.lastMessage.preview}` : "No messages yet"
   return (
-    <button type="button" onClick={onSelect} aria-current={selected ? "true" : undefined} className={cn("flex w-full items-start gap-3 rounded-lg px-2.5 py-3 text-left transition-colors focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}>
+    <button type="button" onClick={onSelect} aria-current={selected ? "true" : undefined} className={cn("press flex w-full items-start gap-3 rounded-lg px-2.5 py-3 text-left [--press-scale:0.985] focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}>
       <PartyIcon kind={c.party.kind} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">

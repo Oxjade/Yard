@@ -705,6 +705,42 @@ img[data-fade="in"] {
   }
 }
 
+/* Something small that has just arrived rises a few pixels into place (`rise-in`): a field's
+   inline error, a chat message that came in while the thread was open, an empty state. It runs
+   once, when the element is inserted, so a re-render never replays it. `--rise` sets the
+   distance (6px by default). Transform and opacity only; reduced motion just shows it. */
+@layer components {
+  @media (prefers-reduced-motion: no-preference) {
+    .rise-in {
+      animation: rise-in var(--dur-modal) var(--ease-settle) both;
+    }
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--rise, 6px);
+  }
+}
+
+/* Studio and Admin headline figures (StatCard): the card answers the pointer as a whole. It
+   rises 2px and its edge brightens while hovered (no shadow animates), and its round arrow (the link) fills, so the
+   card reads as the way into its detail page. Fine pointers only: a tap goes straight through.
+   Unlayered, so the hover edge wins over the card's own border and shadow utilities. */
+.tile-lift {
+  transition:
+    translate var(--dur-drawer) var(--ease-settle),
+    border-color var(--dur-hover) var(--ease-out-quint);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tile-lift:hover {
+    translate: 0 -2px;
+  }
+  .tile-lift:not(.tile-filled):hover {
+    border-color: rgba(255, 255, 255, 0.13);
+  }
+}
+
 /* Discover sections rise a little as they scroll into view (`scroll-reveal`). A scroll-driven
    animation, so it costs no JavaScript and no observer, is tied to the scroll position (it never
    plays late or holds content back), and shows the section in full wherever it is already on

@@ -203,12 +203,12 @@ export function ReasonDialog({
               placeholder="What you checked and why you're doing this"
             />
             {error ? (
-              <p id={`${id}-error`} className="text-xs text-danger">{error}</p>
+              <p key="error" id={`${id}-error`} className="rise-in text-xs text-danger [--rise:3px]">{error}</p>
             ) : (
-              <p id={`${id}-help`} className="text-xs text-ink-3">Recorded with your name and the time. It can&apos;t be edited later.</p>
+              <p key="help" id={`${id}-help`} className="text-xs text-ink-3">Recorded with your name and the time. It can&apos;t be edited later.</p>
             )}
             {failed ? (
-              <p id={`${id}-failed`} role="alert" className="text-xs text-danger">{errorMessage(failure, FAILED)} Your reason is still here: try again.</p>
+              <p id={`${id}-failed`} role="alert" className="rise-in text-xs text-danger [--rise:3px]">{errorMessage(failure, FAILED)} Your reason is still here: try again.</p>
             ) : null}
           </div>
           <DialogFooter>

@@ -25,7 +25,7 @@ export function ArrowLink({ href, label, on = "dark", className }: { href: strin
         className,
       )}
     >
-      <ArrowUpRightIcon aria-hidden className="size-3.5 transition-transform duration-200 ease-out-quint group-hover/arrow:translate-x-px group-hover/arrow:-translate-y-px" />
+      <ArrowUpRightIcon aria-hidden className="size-3.5 transition-transform duration-200 ease-out-quint group-hover/arrow:translate-x-px group-hover/arrow:-translate-y-px group-hover/tile:translate-x-px group-hover/tile:-translate-y-px" />
     </Link>
   )
 }

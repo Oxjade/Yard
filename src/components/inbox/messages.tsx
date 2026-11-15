@@ -235,6 +235,7 @@ export function MessageList({ side, messages, pending, otherName, theyreTyping, 
   }, [messages, side])
   const seen = receipts.enabled && newestOwn && receipts.theirs && receipts.theirs.upToSeq >= newestOwn.seq ? receipts.theirs : null
 
+  const arrived = useArrivals(items, side)
   const at = (it: Item) => (it.kind === "message" ? it.m.createdAt : it.p.createdAt)
   const who = (it: Item) => (it.kind === "message" ? it.m.side : side)
 
@@ -269,9 +270,10 @@ export function MessageList({ side, messages, pending, otherName, theyreTyping, 
                 showAuthor={showAuthor}
                 productHref={productHref}
                 seen={newestOwn?.id === it.m.id ? seen : null}
+                arrived={arrived.has(key)}
               />
             ) : (
-              <PendingBubble p={it.p} startsGroup={startsGroup} endsGroup={endsGroup} onRetry={onRetry} onDiscard={onDiscard} />
+              <PendingBubble p={it.p} startsGroup={startsGroup} endsGroup={endsGroup} onRetry={onRetry} onDiscard={onDiscard} arrived={arrived.has(key)} />
             )}
           </Fragment>
         )
@@ -280,6 +282,28 @@ export function MessageList({ side, messages, pending, otherName, theyreTyping, 
       <Lightbox items={lightbox?.items ?? []} index={lightbox?.index ?? null} onClose={() => setLightbox(null)} />
     </div>
   )
+}
+
+const itemKey = (it: Item) => (it.kind === "message" ? it.m.id : `p:${it.p.clientId}`)
+
+/**
+ * Which items arrived while the thread was open, so they can rise into place (`rise-in`): a
+ * message of theirs that came in live, and one of yours the moment you send it (its pending
+ * bubble). The thread as first shown, a page of older messages, a switch to another thread (any
+ * batch of more than two at once) and your own message replacing its pending bubble on
+ * confirmation are drawn as they are, so nothing replays and nothing flickers.
+ */
+function useArrivals(items: Item[], side: ThreadSide) {
+  const [state, setState] = useState(() => ({ known: new Set(items.map(itemKey)), arrived: new Set<string>() }))
+  const added = items.filter((it) => !state.known.has(itemKey(it)))
+  if (added.length) {
+    const known = new Set(state.known)
+    for (const it of added) known.add(itemKey(it))
+    const tail = new Set(items.slice(-2).map(itemKey))
+    const fresh = added.length <= 2 ? added.filter((it) => tail.has(itemKey(it)) && (it.kind === "pending" || it.m.side !== side)) : []
+    setState({ known, arrived: fresh.length ? new Set([...state.arrived, ...fresh.map(itemKey)]) : state.arrived })
+  }
+  return state.arrived
 }
 
 const bubbleBase = "max-w-full px-3.5 py-2 text-[0.9375rem] leading-snug break-words whitespace-pre-wrap"
@@ -307,6 +331,7 @@ function Bubble({
   productHref,
   seen,
   showAuthor,
+  arrived = false,
 }: {
   m: MessageDto
   side: ThreadSide
@@ -322,6 +347,8 @@ function Bubble({
   productHref: (slug: string) => string
   seen: { upToSeq: number; at: string | null } | null
   showAuthor?: boolean
+  /** Came in while the thread was open: rises into place once. */
+  arrived?: boolean
 }) {
   const [menu, setMenu] = useState(false)
   // On touch, a tap on the bubble reveals its actions; a long press reacts.
@@ -349,7 +376,7 @@ function Bubble({
   }
 
   return (
-    <div data-seq={m.seq} className={cn("group/msg flex flex-col", own ? "items-end" : "items-start", startsGroup ? "mt-3" : "mt-1")}>
+    <div data-seq={m.seq} className={cn("group/msg flex flex-col", own ? "items-end" : "items-start", startsGroup ? "mt-3" : "mt-1", arrived && "rise-in [--rise:8px]")}>
       {m.safetyNotice && !own ? (
         <p className="mb-1.5 flex max-w-[min(32rem,85%)] items-start gap-1.5 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-ink">
           <ShieldWarningIcon className="mt-px size-3.5 shrink-0 text-ink-2" aria-hidden />
@@ -444,11 +471,11 @@ function Bubble({
   )
 }
 
-function PendingBubble({ p, startsGroup, endsGroup, onRetry, onDiscard }: { p: Pending; startsGroup: boolean; endsGroup: boolean; onRetry: (id: string) => void; onDiscard: (id: string) => void }) {
+function PendingBubble({ p, startsGroup, endsGroup, onRetry, onDiscard, arrived = false }: { p: Pending; startsGroup: boolean; endsGroup: boolean; onRetry: (id: string) => void; onDiscard: (id: string) => void; arrived?: boolean }) {
   const failed = p.status === "failed"
   const text = p.payload.body ?? ""
   return (
-    <div className={cn("flex flex-col items-end", startsGroup ? "mt-3" : "mt-1")} aria-busy={!failed}>
+    <div className={cn("flex flex-col items-end", startsGroup ? "mt-3" : "mt-1", arrived && "rise-in [--rise:8px]")} aria-busy={!failed}>
       <div className={cn("flex max-w-[min(32rem,80%)] flex-col items-end gap-1.5", !failed && "opacity-60")}>
         {p.preview.product ? (
           <div className="rounded-xl border border-line-soft bg-card px-3 py-2 text-sm text-ink">

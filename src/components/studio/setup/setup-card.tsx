@@ -83,7 +83,8 @@ export function SetupCard({ className }: { className?: string }) {
         </Button>
       </div>
       <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.06]" aria-hidden>
-        <div className="h-full rounded-full bg-ink" style={{ width: `${(data.done / data.total) * 100}%` }} />
+        {/* Scaled, not sized, so a step done elsewhere slides the bar on the compositor when the refetch lands. */}
+        <div className="h-full origin-left rounded-full bg-ink transition-[scale] duration-500 ease-settle" style={{ scale: `${data.done / data.total} 1` }} />
       </div>
       <ul className="mt-4 grid gap-1 @3xl:grid-cols-2 @3xl:gap-2">
         {data.items.map((item) => {
@@ -94,17 +95,9 @@ export function SetupCard({ className }: { className?: string }) {
                 href={copy.href}
                 className="group flex min-h-14 items-start gap-3 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-violet"
               >
-                <span
-                  className={cn(
-                    "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border",
-                    item.done ? "border-purple bg-purple text-ink" : "border-white/20 text-transparent",
-                  )}
-                  aria-hidden
-                >
-                  <CheckIcon weight="bold" className="size-3" />
-                </span>
+                <Tick done={item.done} />
                 <span className="min-w-0 flex-1">
-                  <span className={cn("block text-[13.5px]", item.done ? "text-ink-2 line-through decoration-white/25" : "text-ink")}>
+                  <span className={cn("block text-[13.5px] transition-colors duration-300", item.done ? "text-ink-2 line-through decoration-white/25" : "text-ink")}>
                     {copy.title}
                     <span className="sr-only">{item.done ? ", done" : ", not done yet"}</span>
                   </span>
@@ -117,6 +110,27 @@ export function SetupCard({ className }: { className?: string }) {
         })}
       </ul>
     </section>
+  )
+}
+
+/**
+ * The round check. A step that was open when the card first showed and is done by the next
+ * fetch (shipping saved, then back to the Overview) ticks in with a pop (`step-pop`); steps
+ * already done are simply drawn done.
+ */
+function Tick({ done }: { done: boolean }) {
+  const [doneAtFirst] = useState(done)
+  return (
+    <span
+      className={cn(
+        "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-300",
+        done ? "border-purple bg-purple text-ink" : "border-white/20 text-transparent",
+        done && !doneAtFirst && "step-pop",
+      )}
+      aria-hidden
+    >
+      <CheckIcon weight="bold" className="size-3" />
+    </span>
   )
 }
 

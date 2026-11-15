@@ -200,7 +200,7 @@ function ConversationRow({ c, selected, onSelect }: { c: ConversationSummary; se
         type="button"
         onClick={() => onSelect(c)}
         aria-current={selected ? "true" : undefined}
-        className={cn("flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left transition-colors focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
+        className={cn("press flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left [--press-scale:0.985] focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
       >
         {brand ? <BrandMark brand={brand} size="sm" className="size-10" /> : <span className="size-10 shrink-0 rounded-md border border-white/12" />}
         <span className="min-w-0 flex-1">
@@ -241,7 +241,7 @@ export function SupportRow({ c, selected, onSelect, mark }: { c: ConversationSum
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className={cn("flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left transition-colors focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
+      className={cn("press flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left [--press-scale:0.985] focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
     >
       {mark}
       <span className="min-w-0 flex-1">

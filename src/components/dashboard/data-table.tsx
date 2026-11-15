@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "r
 import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, ArrowsDownUpIcon as ArrowUpDown, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, DotsThreeIcon as MoreHorizontal, ArrowCounterClockwiseIcon as RotateCcw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { RollNumber } from "@/components/ui/roll-number"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Bone } from "@/components/feedback/skeletons"
@@ -467,7 +468,12 @@ export function DataTable<T>({
                       key={id}
                       data-state={isSel ? "selected" : undefined}
                       data-highlighted={lit ? "" : undefined}
-                      className={cn("transition-colors duration-150 hover:bg-white/[0.025]", lit && "bg-purple/[0.07] shadow-[inset_2px_0_0_var(--color-violet)]", isSel && "bg-purple/10 hover:bg-purple/14")}
+                      className={cn(
+                        // Hover: a step lighter than the panel. Selected: purple with the violet edge the highlighted row uses, so a selection reads at a glance down the left side.
+                        "transition-[background-color,box-shadow] duration-150 ease-out-quint hover:bg-white/[0.035]",
+                        lit && "bg-purple/[0.07] shadow-[inset_2px_0_0_var(--color-violet)]",
+                        isSel && "bg-purple/10 shadow-[inset_2px_0_0_var(--color-violet)] hover:bg-purple/[0.14]",
+                      )}
                     >
                       {hasSelect ? (
                         <td className={cn("px-4", cellPad)}>
@@ -612,7 +618,7 @@ function BulkBar<T>({
   // Leaving: the bar can't be used while it animates out, and focus return skips it.
   const present = useIsPresent()
   const shown = rows.length
-  const btn = "inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-[12.5px] transition-[background-color,color,transform,opacity] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 aria-disabled:cursor-progress aria-disabled:opacity-60 sm:h-7 sm:px-2.5"
+  const btn = "inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-[12.5px] transition-[background-color,color,scale,opacity] duration-150 active:scale-[0.97] active:duration-(--dur-press) disabled:pointer-events-none disabled:opacity-40 aria-disabled:cursor-progress aria-disabled:opacity-60 sm:h-7 sm:px-2.5"
   return (
     <motion.div
       ref={barRef}
@@ -630,7 +636,12 @@ function BulkBar<T>({
         the count on the first line, the search note on the next, then the actions with Clear
         selection at the end of their line. Wider: one line, Clear selection at the far end.
       */}
-      <span className="text-ink tabular max-sm:basis-full">{shown ? `${shown} selected` : `${total} selected`}</span>
+      {/* The count rolls as rows are ticked and unticked; the live text beside it is what's read. */}
+      <span className="inline-flex items-baseline gap-1 text-ink tabular max-sm:basis-full">
+        <RollNumber value={shown || total} />
+        <span aria-hidden>selected</span>
+        <span className="sr-only">{shown ? `${shown} selected` : `${total} selected`}</span>
+      </span>
       {hiddenCount ? (
         <span className="flex flex-wrap items-center gap-x-2 text-xs text-ink-2 max-sm:basis-full">
           <span>{shown ? `${hiddenCount} more ${hiddenCount === 1 ? "is" : "are"} hidden by your search and won't be included.` : `Your search hides ${total === 1 ? "the selected row" : total === 2 ? "both selected rows" : `all ${total} selected rows`}. Clear it to act on ${total === 1 ? "it" : "them"}.`}</span>

@@ -2,6 +2,8 @@
 
 import { useRef } from "react"
 import { motion } from "motion/react"
+import { RollNumber } from "@/components/ui/roll-number"
+import { spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 /**
@@ -56,11 +58,17 @@ export function StatusTabs<T extends string>({
               tabIndex={on ? 0 : -1}
               onClick={() => onChange(t.value)}
               onKeyDown={(e) => onKeyDown(e, i)}
-              className={cn("relative inline-flex h-10 items-center gap-2 rounded-t-md px-3 text-sm outline-none transition-colors focus-visible:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-inset", on ? "text-ink" : "text-ink-2 hover:text-ink")}
+              className={cn("press relative inline-flex h-10 items-center gap-2 rounded-t-md px-3 text-sm outline-none [--press-scale:0.97] focus-visible:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-inset", on ? "text-ink" : "text-ink-2 hover:text-ink")}
             >
               {t.label}
-              {t.count !== undefined ? <span className={cn("rounded-[4px] px-1.5 text-[11px] leading-4 tabular", on ? "bg-white/10 text-ink" : "bg-white/[0.05] text-ink-3")}>{t.count}</span> : null}
-              {on ? <motion.span layoutId={`${id}-underline`} aria-hidden className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-purple" transition={{ type: "spring", stiffness: 500, damping: 40 }} /> : null}
+              {/* Counts roll when they change under the reader (an order ships, a product publishes). */}
+              {t.count !== undefined ? (
+                <span className={cn("inline-flex rounded-[4px] px-1.5 text-[11px] leading-4 tabular transition-colors duration-150", on ? "bg-white/10 text-ink" : "bg-white/[0.05] text-ink-3")}>
+                  <RollNumber value={t.count} />
+                  <span className="sr-only">{t.count}</span>
+                </span>
+              ) : null}
+              {on ? <motion.span layoutId={`${id}-underline`} aria-hidden className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-purple" transition={spring.indicator} /> : null}
             </button>
           )
         })}

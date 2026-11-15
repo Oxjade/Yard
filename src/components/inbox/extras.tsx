@@ -45,7 +45,7 @@ export function QuickActionRail({ actions, label = "Quick actions" }: { actions:
           disabled={disabled}
           aria-pressed={pressed}
           className={cn(
-            "flex h-[92px] w-[132px] shrink-0 flex-col justify-between rounded-2xl border bg-card p-3 text-left transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-violet disabled:opacity-40",
+            "flex h-[92px] w-[132px] shrink-0 flex-col justify-between rounded-2xl border bg-card p-3 text-left transition-[background-color,border-color,scale] duration-150 active:scale-[0.98] active:duration-(--dur-press) focus-visible:outline-2 focus-visible:outline-violet disabled:opacity-40",
             pressed ? "border-purple/60 bg-purple/15" : "border-line-soft hover:border-white/12 hover:bg-elevated",
           )}
         >

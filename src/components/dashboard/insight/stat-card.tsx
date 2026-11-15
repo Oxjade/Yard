@@ -8,12 +8,20 @@ import { surfaceClass } from "./insight-panel"
 
 type Variant = "default" | "brand" | "acid"
 
+/** The arrow's own hover look, shown while the pointer is anywhere on the card (`group/tile`). */
+const tileHover = {
+  acid: "group-hover/tile:bg-obsidian/85",
+  brand: "group-hover/tile:bg-white group-hover/tile:text-purple",
+  dark: "group-hover/tile:border-ink group-hover/tile:bg-ink group-hover/tile:text-obsidian",
+} as const
+
 /**
  * KPI card: small icon and tracked label, a round arrow to the detail page, a big numeral
  * that counts up on first view, and the change against the previous period.
  * `brand` (purple) and `acid` fills are for the single most important card of each kind
  * on a page. Until `ready`, a same-size skeleton holds the numeral's place (and the change
  * chip waits), so a figure that is still loading never reads as 0.
+ * Hovered with a mouse, the card rises 2px (`tile-lift`) and lights its arrow.
  */
 export function StatCard({
   icon: Icon,
@@ -49,7 +57,8 @@ export function StatCard({
   return (
     <article
       className={cn(
-        "relative flex min-w-0 flex-col p-4 md:p-5",
+        "group/tile tile-lift relative flex min-w-0 flex-col p-4 md:p-5",
+        filled && "tile-filled",
         variant === "acid"
           ? "rounded-[20px] bg-acid text-obsidian"
           : variant === "brand"
@@ -67,7 +76,8 @@ export function StatCard({
           <Icon aria-hidden className="size-4 shrink-0" />
           <span className="line-clamp-2 leading-[14px] text-balance">{label}</span>
         </h3>
-        <ArrowLink href={href} label={hrefLabel ?? `Open ${label.toLowerCase()}`} on={on} />
+        {/* The arrow is the link; hovering anywhere on the card lights it, so the whole card reads as the way in. */}
+        <ArrowLink href={href} label={hrefLabel ?? `Open ${label.toLowerCase()}`} on={on} className={tileHover[on]} />
       </div>
       <div className="mt-5 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2">
         {ready ? (

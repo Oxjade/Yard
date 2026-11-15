@@ -3,7 +3,7 @@
 import { useId, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AnimatePresence, motion } from "motion/react"
+import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { toast } from "sonner"
 import {
   SealCheckIcon as BadgeCheck,
@@ -43,7 +43,7 @@ import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
 import { isServerQueueTab, useServerAuditTrail, useServerQueueTotal, useServerQueues, type ServerQueueTab } from "@/components/admin/trust/overview-queues"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"
-import { chartEasing, chartIn } from "@/lib/motion"
+import { chartEasing, chartIn, transition } from "@/lib/motion"
 import { adminUser, failedJobs, healthServices, platformOverview, transactions, webhookFailures, type Refund } from "@/lib/data/admin"
 import { campaignTypes, type CampaignType } from "@/lib/data/ads"
 import { convert, formatMoney, formatNumber, formatPercent } from "@/lib/money"
@@ -278,9 +278,10 @@ function DecisionQueue({ className }: { className?: string }) {
   // that opened it, or, when the decision removed that row, on the next decision or the tab.
   function restoreFocus(e: Event) {
     e.preventDefault()
-    const next = opener.current?.isConnected
+    // A decided row may still be sliding out (data-leaving): its buttons are on their way out too.
+    const next = opener.current?.isConnected && !opener.current.closest("[data-leaving]")
       ? opener.current
-      : (panelRef.current?.querySelector<HTMLElement>("li button:not([disabled])") ?? tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]'))
+      : (panelRef.current?.querySelector<HTMLElement>("li:not([data-leaving]) button:not([disabled])") ?? tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]'))
     next?.focus()
   }
 
@@ -401,15 +402,18 @@ function DecisionQueue({ className }: { className?: string }) {
         ) : (
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={springs.pill} className="flex flex-1 flex-col">
-              <ul className={cn("admin-divide", rows.length === 0 && "flex flex-1 flex-col")}>
+              {/* A decided row slides out to the right while the rows below close the gap (popLayout),
+                  and the tab's count rolls down with it; the last one hands over to "Queue clear". */}
+              <ul className={cn("admin-divide relative", rows.length === 0 && "flex flex-1 flex-col")}>
+                <AnimatePresence mode="popLayout" initial={false}>
                 {rows.length === 0 ? (
-                  <li className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+                  <motion.li key="queue-clear" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: transition.crossfade }} exit={{ opacity: 0, transition: transition.exit }} className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
                     <p className="text-[13px] text-ink">Queue clear</p>
                     <p className="mt-1 text-[12px] text-ink-2">Nothing here needs a decision right now.</p>
-                  </li>
+                  </motion.li>
                 ) : (
                   rows.map((r) => (
-                    <motion.li key={r.id} layout transition={springs.pill} className="group flex min-h-[65px] items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.02] md:px-5">
+                    <QueueRow key={r.id}>
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 items-center gap-2">
                           <p className="min-w-0 truncate text-[13px] text-ink">{r.title}</p>
@@ -422,9 +426,10 @@ function DecisionQueue({ className }: { className?: string }) {
                       </div>
                       {r.amount ? <p className="hidden text-[13px] text-ink tabular sm:block">{r.amount}</p> : null}
                       <div className="shrink-0 sm:flex sm:w-[4.5rem] sm:justify-end">{r.action}</div>
-                    </motion.li>
+                    </QueueRow>
                   ))
                 )}
+                </AnimatePresence>
               </ul>
               {tab === "payouts" && scheduled ? (
                 <p className="border-t border-[var(--admin-hairline)] px-4 py-3 text-[12px] text-ink-3 md:px-5">
@@ -437,6 +442,23 @@ function DecisionQueue({ className }: { className?: string }) {
       </div>
       <ReasonDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)} title={confirm?.title ?? ""} description={confirm?.description ?? ""} confirmLabel={confirm?.label ?? "Confirm"} onConfirm={run} onCloseAutoFocus={restoreFocus} />
     </Panel>
+  )
+}
+
+/** One decision row. While it slides out it is marked `data-leaving` and inert, so neither a click nor focus can land on it. */
+function QueueRow({ children }: { children: React.ReactNode }) {
+  const present = useIsPresent()
+  return (
+    <motion.li
+      layout
+      data-leaving={present ? undefined : ""}
+      inert={!present}
+      transition={springs.pill}
+      exit={{ opacity: 0, x: 16, transition: transition.exit }}
+      className="group flex min-h-[65px] items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.025] md:px-5"
+    >
+      {children}
+    </motion.li>
   )
 }
 

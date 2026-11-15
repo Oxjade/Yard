@@ -43,7 +43,7 @@ function useResetOnOpen(open: boolean, reset: () => void) {
 
 function FormError({ children }: { children: React.ReactNode }) {
   return (
-    <p role="alert" className="text-sm text-danger">
+    <p role="alert" className="rise-in text-sm text-danger [--rise:3px]">
       {children}
     </p>
   )

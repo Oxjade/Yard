@@ -2,6 +2,7 @@
 
 import { useId, useRef } from "react"
 import { motion } from "motion/react"
+import { RollNumber } from "@/components/ui/roll-number"
 import { cn } from "@/lib/utils"
 import { springs } from "./motion"
 
@@ -78,7 +79,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "relative isolate inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet",
+              "press relative isolate inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap [--press-scale:0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet",
               size === "sm" ? "h-10 px-3 text-[12px] sm:h-7 sm:px-2.5" : "h-10 px-3 text-[12.5px] sm:h-8",
               on ? "text-ink" : "text-ink-2 hover:text-ink",
             )}
@@ -90,11 +91,13 @@ export function Segmented<T extends string>({
             ) : o.count !== undefined ? (
               <span
                 className={cn(
-                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] leading-none tabular",
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] leading-none tabular transition-colors duration-200",
                   on ? "bg-black/25 text-ink" : o.count > 0 && (o.countTone ?? countTone) === "attention" ? "border border-ink/70 text-ink" : o.count > 0 ? "border border-white/10 text-ink-2" : "border border-white/10 text-ink-3",
                 )}
               >
-                {o.count}
+                {/* A decision taken elsewhere ticks the count down in place. */}
+                <RollNumber value={o.count} />
+                <span className="sr-only">{o.count}</span>
               </span>
             ) : null}
           </button>

@@ -39,8 +39,9 @@ export function control(id: string, error?: string, hint?: boolean) {
 }
 
 export function FieldMessage({ id, error, hint }: { id: string; error?: string; hint?: React.ReactNode }) {
-  if (error) return <p id={`${id}-error`} className="text-xs text-danger">{error}</p>
-  if (hint) return <p id={`${id}-hint`} className="text-xs text-ink-3">{hint}</p>
+  // Keyed, so an error that replaces the hint is a new element and rises in (a fix brings the hint straight back).
+  if (error) return <p key="error" id={`${id}-error`} className="rise-in text-xs text-danger [--rise:3px]">{error}</p>
+  if (hint) return <p key="hint" id={`${id}-hint`} className="text-xs text-ink-3">{hint}</p>
   return null
 }
 

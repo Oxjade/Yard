@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LayoutGroup, motion } from "motion/react"
+import { RollNumber } from "@/components/ui/roll-number"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { followInPlace } from "@/hooks/use-search-param"
 import { spring } from "@/lib/motion"
@@ -109,7 +110,7 @@ function NavItem({
       }}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group/nav relative isolate flex w-full items-center gap-3 rounded-xl pr-2 pl-3 transition-colors duration-150",
+        "group/nav press relative isolate flex w-full items-center gap-3 rounded-xl pr-2 pl-3 [--press-scale:0.98]",
         density === "dense" ? "h-9 text-[13px] sidebar-shorter:h-8" : "h-10 text-sm sidebar-short:h-9 sidebar-shorter:h-8",
         active ? "text-ink" : "text-ink-2 hover:text-ink",
       )}
@@ -142,7 +143,15 @@ function NavItem({
             attention ? "border-white/35 text-ink" : "border-white/15 text-ink-2",
           )}
         >
-          {item.badge}
+          {/* Numeric badges (unread, to fulfil) roll as realtime updates change them. */}
+          {typeof item.badge === "number" ? (
+            <>
+              <RollNumber value={item.badge} />
+              <span className="sr-only">{item.badge}</span>
+            </>
+          ) : (
+            item.badge
+          )}
           {item.badgeLabel ? <span className="sr-only"> {item.badgeLabel}</span> : null}
         </span>
       ) : null}
