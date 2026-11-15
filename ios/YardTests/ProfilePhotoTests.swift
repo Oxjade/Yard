@@ -396,7 +396,7 @@ final class YouProfilePhotoModelTests: XCTestCase {
         )
         let failed = await model.remove()
         XCTAssertNil(failed)
-        XCTAssertEqual(model.problem?.text, "You've removed your photo a lot. Try again in 60 s.")
+        XCTAssertEqual(model.problem?.text, "Too many (about 60 s).")
         XCTAssertEqual(model.removedCount, 0)
         let removed = await model.remove()
         XCTAssertNotNil(removed)
