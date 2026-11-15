@@ -5,7 +5,6 @@ import { callbackFailureUrl, completeUrl, handleOAuthCallback } from "@/server/a
 import { getEnv } from "@/server/env"
 import { HttpError } from "@/server/http/errors"
 import { route } from "@/server/http/route"
-import { log } from "@/server/log"
 
 /**
  * The provider's redirect back to Yard.
@@ -31,7 +30,7 @@ const inner = route({ auth: "public", query: callbackQuery, rate: { key: "auth.o
   const provider = providerOf(params.provider)
   if (params.provider !== "google" && params.provider !== "apple" && params.provider !== "auth0") return Response.redirect(completeUrl(provider, "invalid_state"), 302)
   const vals = [query.code, query.state, query.error, query.user]
-  if (vals.some((v) => typeof v === "string" && CONTROL.test(v))) return redirect(await callbackFailureUrl(provider, query.state && !CONTROL.test(query.state) ? query.state : null))
+  if (vals.some((v) => typeof v === "string" && CONTROL.test(v))) return redirect(await callbackFailureUrl(provider, query.state && !CONTROL.test(query.state) ? query.state : null, "control characters in the query"))
   const to = await handleOAuthCallback(provider, { code: query.code ?? null, state: query.state ?? null, error: query.error ?? null, appleUser: query.user ?? null }, metaOf(req, ipHash))
   return redirect(to)
 })
@@ -40,12 +39,12 @@ export async function GET(req: NextRequest, context: { params: Promise<Record<st
   const res = await inner(req, context)
   if (res.status === 302) return res
   const p = (await context.params).provider
-  log.warn(`[yard] auth: oauth callback refused with ${res.status}; sent to /auth/complete (or the app) as invalid_state`)
   const state = req.nextUrl.searchParams.get("state")
   const provider = providerOf(typeof p === "string" ? p : undefined)
   try {
-    return redirect(await callbackFailureUrl(provider, state && state.length <= 4096 && !CONTROL.test(state) ? state : null))
+    return redirect(await callbackFailureUrl(provider, state && state.length <= 4096 && !CONTROL.test(state) ? state : null, `callback refused with ${res.status}`))
   } catch {
+    // callbackFailureUrl logged the refusal line before anything in it could throw.
     return Response.redirect(completeUrl(provider, "invalid_state"), 302)
   }
 }

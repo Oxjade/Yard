@@ -47,10 +47,12 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
      | `account_unavailable` | This Yard account is being deleted or is no longer available. Sign in with a different account. |
 
      `team_account`: the provider account belongs to a Yard team (admin) account, which can't hold a
-     shopper session. `account_unavailable`: the linked Yard account is gone or its deletion is
-     pending. Neither links anything: an identity is only linked to an existing account after it
+     shopper session. `account_unavailable`: the Yard account linked to the identity (or, for a new
+     identity, the one with its verified email) is gone or its deletion is pending. Neither links anything: an identity is only linked to an existing account after it
      passed the checks for this sign-in. Each refusal is logged on the server as one line,
-     `[yard] auth: <provider> <mode>/<actor> refused: <result> (<reason>)`.
+     `[yard] auth: <provider> <mode>/<actor> refused: <result> (<reason>)`. When an exception caused
+     it (state lookup, code exchange, an unexpected throw), a separate `log.error` diagnostic with the
+     stack precedes that line.
 4. The app calls `POST /api/auth/oauth/app-exchange` `{ code, verifier }`:
    - 200 `{ status: "signed_in", result: "signed_in", isNew, provider, actor, profile }` and the session
      cookie (`yard_s` for a shopper, `yard_b` for a brand; `__Host-` prefixed on https). `profile` is the

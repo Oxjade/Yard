@@ -151,9 +151,9 @@ async function isAppState(provider: ProviderId, state: string | null) {
   }
 }
 
-/** The failure redirect for a callback that couldn't be handled at all (the route's backstop). */
-export async function callbackFailureUrl(provider: ProviderId, state: string | null, result: OAuthResult = "invalid_state") {
-  log.warn(refusalLine(provider, null, null, result, "callback could not be handled"))
+/** The failure redirect for a callback that couldn't be handled at all (the route's backstop). Logs the one refusal line. */
+export async function callbackFailureUrl(provider: ProviderId, state: string | null, reason = "callback could not be handled", result: OAuthResult = "invalid_state") {
+  log.warn(refusalLine(provider, null, null, result, reason))
   return outcomeUrl(await isAppState(provider, state), provider, result)
 }
 
@@ -247,8 +247,9 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor
   const existing = await findUserByEmail(p.email)
   if (existing) {
     if (existing.demo) return { result: "link_required", reason: "email is a demo account's", userId: existing.id }
-    if (await deletionPending(existing.id)) return { result: "link_required", reason: "email's account has deletion pending", userId: existing.id }
     if (!p.emailVerified) return { result: "link_required", reason: "provider email unverified", userId: existing.id }
+    // Only for a verified email (so an unverified claim learns nothing new about the account).
+    if (await deletionPending(existing.id)) return { result: "account_unavailable", reason: "email's account has deletion pending", userId: existing.id } // password sign-in refuses it too, so "link" would lead nowhere
     const already = await sameProviderIdentity(provider, existing.id, p.subject)
     if (already) return { result: "link_required", reason: "another identity of this provider is linked", userId: existing.id } // a different account of the same provider is linked already
     // Checked before linking: a refused account gets no identity and no email confirmation.
@@ -277,14 +278,16 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor
 /** The callback. Never throws: every outcome is a redirect URL. */
 export async function handleOAuthCallback(provider: ProviderId, input: CallbackInput, meta: RequestMeta): Promise<string> {
   let row: Awaited<ReturnType<typeof claimState>> = null
+  let stateThrew = false
   try {
     row = await claimState(provider, input.state)
   } catch (e) {
-    log.error(`[yard] auth: ${provider} state check failed`, e)
+    stateThrew = true
+    log.error(`[yard] auth: ${provider} state check threw (diagnostic; the refusal line follows)`, e)
   }
   if (!row) {
     const appFlow = await isAppState(provider, input.state)
-    log.warn(refusalLine(provider, null, null, "invalid_state", `state missing, used, expired or from another browser${appFlow ? ", app flow" : ""}`))
+    log.warn(refusalLine(provider, null, null, "invalid_state", `${stateThrew ? "state check threw" : "state missing, used, expired or from another browser"}${appFlow ? ", app flow" : ""}`))
     return outcomeUrl(appFlow, provider, "invalid_state")
   }
   const mode = row.mode as OAuthMode
@@ -304,7 +307,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     profile = await getProvider(provider).exchange({ code: input.code, codeVerifier: verifier, nonce: row.nonce, appleUser: input.appleUser })
   } catch (e) {
     if (e instanceof ProviderNotConfigured) return done("not_configured", "provider has no keys")
-    log.error(`[yard] auth: ${provider} exchange failed`, e)
+    log.error(`[yard] auth: ${provider} exchange threw (diagnostic; the refusal line follows)`, e)
     return done("error", "code exchange failed")
   }
   // Auth0 fronts many social connections; only a provider-verified email is trusted (no
@@ -350,7 +353,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
       return done("signed_in")
     })
   } catch (e) {
-    log.error(`[yard] auth: ${provider} callback failed`, e)
+    log.error(`[yard] auth: ${provider} callback threw (diagnostic; the refusal line follows)`, e)
     return done("error", "callback threw")
   }
 }
