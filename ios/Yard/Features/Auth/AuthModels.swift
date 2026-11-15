@@ -224,10 +224,15 @@ struct AuthOAuthCompletion: Equatable {
         self.message = AuthOAuthResult.isSuccess(result) ? nil : message
     }
 
-    /// Parses `result`, `provider` and `message` (percent-decoded). A missing or empty
-    /// `result` reads as "error".
+    /// Parses `result`, `provider` and `message` (form-decoded: the server builds the
+    /// query with URLSearchParams, so '+' means a space and %2B a literal plus). A missing
+    /// or empty `result` reads as "error".
     static func parse(_ url: URL) -> AuthOAuthCompletion {
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        if let query = components?.percentEncodedQuery {
+            components?.percentEncodedQuery = query.replacingOccurrences(of: "+", with: "%20")
+        }
+        let items = components?.queryItems ?? []
         func value(_ name: String) -> String? {
             guard let v = items.first(where: { $0.name == name })?.value, !v.isEmpty else { return nil }
             return v

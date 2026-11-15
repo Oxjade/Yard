@@ -13,6 +13,12 @@ final class AuthOAuthResultTests: XCTestCase {
         XCTAssertEqual(c.message, "This is a Yard team account.")
     }
 
+    func testParsesPlusAsSpaceAndEncodedPlusAsPlus() {
+        let c = AuthOAuthCompletion.parse(u("yard://auth/complete?result=brand_new&provider=google&message=Too+many+sign-in+attempts.+1%2B1"))
+        XCTAssertEqual(c.message, "Too many sign-in attempts. 1+1")
+        XCTAssertEqual(c.failureMessage, "Too many sign-in attempts. 1+1")
+    }
+
     func testParsesWebsiteCompletionURL() {
         let c = AuthOAuthCompletion.parse(u("https://yardstore.space/auth/complete?result=cancelled&provider=google"))
         XCTAssertEqual(c.result, "cancelled")
