@@ -65,10 +65,12 @@ against MockWebServer.
 ## Premium pass (Nov 2026)
 
 - Cards (`DropLiveCard`): full-bleed photo with a soft bottom scrim and depth (shadow + inner rim);
-  with no photo, `BrandArtwork` (the brand's tone from `YardArtwork.tones` + oversized initials),
+  with no photo, `BrandArtwork` (the brand's tone from `YardArtwork.tones` + the oversized `BrandCard.monogram`, the same letters as `BrandAvatar`),
   never a grey box. The status is a smoked-glass capsule (`DropPhotoCapsule`) inset 16dp
   (`DropCardDefaults.inset`) with the acid live pulse (static under reduced motion). Brand (tracked
   small caps) → name (display) → "CLOSES IN" + a 1 s ticking countdown in tabular figures → hairline
   → rules line. Press: 0.98 scale + haptic. Same capsules/artwork on past tiles, calendar thumbnails,
-  "Your drops" rows and the drop detail hero (which also carries a ticking countdown capsule).
+  "Your drops" rows and the drop detail hero (status / access capsules only: the one ticking
+  countdown is the release card's). Capsule fill is black at 60% so 11sp white text holds ≥ 4.5:1
+  even over a white photo (no backdrop blur behind it).
 - Section headers kept, spacing tightened; loading → content crossfades (`YardCrossfade`).

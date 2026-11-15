@@ -4,8 +4,6 @@
 package space.yardstore.app.features.drops
 
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.unit.em
-import space.yardstore.app.designsystem.onPhotoGlassTint
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -279,28 +277,6 @@ private fun DropHero(drop: Drop, phase: DropLivePhase) {
             DropPhotoCapsule(drop.accessLabel)
             if (drop.sponsored) DropPhotoCapsule("Sponsored")
         }
-        // The countdown rides on the hero too, bottom left, ticking every second.
-        drop.countdownTarget(phase, Instant.now())?.let { target ->
-            DropHeroCountdown(target.label, target.date, Modifier.align(Alignment.BottomStart).padding(DropCardDefaults.inset))
-        }
-    }
-}
-
-@Composable
-private fun DropHeroCountdown(label: String, date: Instant, modifier: Modifier = Modifier) {
-    val now by rememberDropsNow(1000)
-    val text = Formatters.countdown(Duration.between(now, date))
-    Row(
-        modifier
-            .background(onPhotoGlassTint(), YardShapes.pill)
-            .border(1.dp, Color.yard.onPhoto.copy(alpha = 0.18f), YardShapes.pill)
-            .padding(horizontal = 12.dp, vertical = 7.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "$label $text" },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
-    ) {
-        Text(label.uppercase(), style = YardFonts.micro.copy(letterSpacing = 0.1.em), color = Color.yard.onPhoto.copy(alpha = 0.72f))
-        Text(text, style = YardFonts.number(15.sp).monospacedDigits(), color = Color.yard.onPhoto)
     }
 }
 

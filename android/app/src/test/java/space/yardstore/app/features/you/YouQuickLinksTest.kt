@@ -110,4 +110,26 @@ class YouQuickLinksTest {
         assertNull(m.ordersInProgress)
         assertNull(m.activeReminders)
     }
+
+    @Test fun resetCancelsALoadInFlight() = runTest {
+        // Account A's answer is slow; sign-out (reset) then account B's refresh must win.
+        val inboxCalls = java.util.concurrent.atomic.AtomicInteger()
+        val f = HomeFakeServer { path, _ ->
+            when (path) {
+                "/api/inbox/unread" ->
+                    if (inboxCalls.getAndIncrement() == 0) json("""{"conversations":7}""").setBodyDelay(400, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    else json("""{"conversations":1}""")
+                else -> errorJson(500, "Something went wrong on our side.")
+            }
+        }.also { fake = it }
+        val m = YouBadgesModel(f.api).also { model = it }
+        m.refresh(signedIn = true)
+        m.reset()
+        m.refresh(signedIn = true) // must not be swallowed by the cancelled load
+        m.awaitLoad()
+        assertEquals(1, m.unreadConversations)
+        Thread.sleep(600) // past the slow response: the old account's 7 never lands
+        assertEquals(1, m.unreadConversations)
+        assertEquals(2, inboxCalls.get())
+    }
 }

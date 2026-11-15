@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forum
@@ -113,7 +112,6 @@ class YouBadgesModel(private val api: APIClient = APIClient.shared) : ViewModel(
     /** Reloads (at most every [minIntervalMs] unless [force]); signed out clears everything. */
     fun refresh(signedIn: Boolean, force: Boolean = false, minIntervalMs: Long = 1500, now: Long = System.currentTimeMillis()) {
         if (!signedIn) {
-            job?.cancel()
             reset()
             return
         }
@@ -124,7 +122,10 @@ class YouBadgesModel(private val api: APIClient = APIClient.shared) : ViewModel(
         job = viewModelScope.launch { load() }
     }
 
+    /** Clears every count and cancels a load in flight (so a previous account's answer can't land). */
     fun reset() {
+        job?.cancel()
+        job = null
         unreadConversations = null
         unreadNotifications = null
         ordersInProgress = null
@@ -188,7 +189,7 @@ internal fun youLinks(
 /** Quick-link cells per row: 3 on phones (3 × 2), all 6 in one row on wide windows. */
 internal fun youTileColumns(window: space.yardstore.app.designsystem.YardWindow): Int = if (window.isWide) 6 else 3
 
-private val PanelShape = RoundedCornerShape(22.dp)
+private val PanelShape = YardShapes.card
 private val CellHeight = 78.dp
 
 /** The quick-links panel (signed in). */

@@ -64,6 +64,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import space.yardstore.app.app.AppTab
 import space.yardstore.app.app.LegalPage
 import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.app.LocalTabPillClearance
@@ -111,10 +112,13 @@ fun YouView() {
     val shopper = session.shopper
     val badges: YouBadgesModel = viewModel { YouBadgesModel() }
     val signedIn = session.isSignedIn
-    // Live link state: on sign-in changes and whenever You comes back into view (back from Inbox
-    // after reading, from Orders, from the app switcher).
+    // Live link state: on sign-in changes and whenever You comes back into view: the You tab is
+    // selected (hidden tabs stay composed and RESUMED, so a tab switch fires no ON_RESUME), back
+    // from Inbox / Orders within You's stack, or back from the app switcher while You is showing.
+    val youSelected = router.selectedTab == AppTab.You
     LaunchedEffect(shopper?.id) { if (shopper == null) badges.reset() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { badges.refresh(signedIn) }
+    LaunchedEffect(youSelected) { if (youSelected) badges.refresh(signedIn) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (youSelected) badges.refresh(signedIn) }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,

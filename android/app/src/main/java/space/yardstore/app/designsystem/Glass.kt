@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
@@ -148,10 +147,19 @@ fun Modifier.yardGlass(
                     blurLayer.record(size = small) {
                         scale(factor, factor, pivot = Offset.Zero) { drawLayer(content) }
                     }
-                    val offset = here.positionInRoot() - source.positionInRoot()
+                    // Map through the glass's own layer transform (e.g. the collapsed tab pill's
+                    // 0.86 scale): this draw happens in UNSCALED local space and the layer scales
+                    // it afterwards, so place the backdrop by where our origin really lands in the
+                    // source and undo the on-screen scale. Otherwise the blur shrinks and drifts
+                    // against the real content (up to ~18dp at the collapsed pill's ends).
+                    val origin = source.localPositionOf(here, Offset.Zero)
+                    val edge = source.localPositionOf(here, Offset(size.width, 0f))
+                    val onScreen = if (size.width > 0f) ((edge.x - origin.x) / size.width).takeIf { it > 0f } ?: 1f else 1f
                     clipPath(path) {
-                        translate(-offset.x, -offset.y) {
-                            scale(1f / factor, 1f / factor, pivot = Offset.Zero) { drawLayer(blurLayer) }
+                        scale(1f / onScreen, 1f / onScreen, pivot = Offset.Zero) {
+                            translate(-origin.x, -origin.y) {
+                                scale(1f / factor, 1f / factor, pivot = Offset.Zero) { drawLayer(blurLayer) }
+                            }
                         }
                     }
                 }
@@ -166,6 +174,13 @@ fun Modifier.yardGlass(
         }
 }
 
+/**
+ * How dense the smoked-glass fill under labels on photos is. These capsules get no backdrop blur,
+ * so the fill alone must carry 11sp white text: at 0.6 black over a pure white photo the capsule
+ * is about #666 and white reads at ~5.7:1 (0.38 gave ~2.7:1).
+ */
+const val OnPhotoGlassAlpha = 0.6f
+
 /** A photo-friendly glass capsule fill for labels ON photos (status pills): dark smoked glass. */
 @Composable
-fun onPhotoGlassTint(): Color = Color.yard.scrim.copy(alpha = 0.38f)
+fun onPhotoGlassTint(): Color = Color.yard.scrim.copy(alpha = OnPhotoGlassAlpha)

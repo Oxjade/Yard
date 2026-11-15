@@ -140,15 +140,17 @@ private fun SaveHeart(product: Product) {
     val scope = rememberCoroutineScope()
     val isSaved = saved.isSaved(product.id)
     val reduce = rememberReducedMotion()
-    // The heart pops when it fills (the store flips it at once and rolls back on failure).
+    // The heart pops when the user's own tap fills it (the store flips it at once and rolls back
+    // on failure). Armed only by a save tap, so the store loading (app start, sign-in, back to a
+    // grid) never pops hearts the user didn't just touch.
     val pop = remember { Animatable(1f) }
-    var wasSaved by remember(product.id) { mutableStateOf(isSaved) }
+    var popArmed by remember(product.id) { mutableStateOf(false) }
     LaunchedEffect(isSaved) {
-        if (isSaved && !wasSaved && !reduce) {
+        if (isSaved && popArmed && !reduce) {
             pop.snapTo(0.6f)
             pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 520f))
         }
-        wasSaved = isSaved
+        popArmed = false
     }
     Box(
         modifier = Modifier
@@ -160,6 +162,7 @@ private fun SaveHeart(product: Product) {
                     return@pressableClick
                 }
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                popArmed = !isSaved
                 scope.launch {
                     try {
                         saved.toggle(product.id)

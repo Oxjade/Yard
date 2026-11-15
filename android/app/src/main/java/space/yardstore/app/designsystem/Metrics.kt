@@ -80,7 +80,7 @@ object Motion {
     /** Content swaps (skeleton → content, numbers): a short ease-out crossfade. */
     fun <T> crossfade(): FiniteAnimationSpec<T> = tween(durationMillis = 220, easing = LinearOutSlowInEasing)
     /** Push / pop between screens: emphasized decelerate, quick to start, long soft landing. */
-    fun <T> navigation(durationMillis: Int = 380): FiniteAnimationSpec<T> = tween(durationMillis, easing = EmphasizedDecelerate)
+    fun <T> navigation(durationMillis: Int = 320): FiniteAnimationSpec<T> = tween(durationMillis, easing = EmphasizedDecelerate)
     /** Material's emphasized-decelerate curve (iOS-like navigation feel). */
     val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     /** Reduced motion: every token above collapses to an instant change. */

@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import space.yardstore.app.core.models.BrandCard
 import space.yardstore.app.designsystem.YardArtwork
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.yard
@@ -34,7 +35,7 @@ import space.yardstore.app.designsystem.yard
 @Composable
 fun BrandArtwork(name: String, modifier: Modifier = Modifier, key: String? = null) {
     val (light, dark) = remember(key, name) { YardArtwork.tone(key ?: name) }
-    val initials = remember(name) { brandInitials(name) }
+    val initials = remember(name) { BrandCard.monogram(name) }
     BoxWithConstraints(
         modifier
             .fillMaxSize()
@@ -81,15 +82,5 @@ fun BrandArtwork(name: String, modifier: Modifier = Modifier, key: String? = nul
                     .offset(x = maxWidth * 0.06f, y = -(maxWidth * 0.08f)),
             )
         }
-    }
-}
-
-/** "Acme Studio" → "AS", "kumasi" → "K". */
-fun brandInitials(name: String): String {
-    val words = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-    return when {
-        words.isEmpty() -> "Y"
-        words.size == 1 -> words[0].take(1).uppercase()
-        else -> (words[0].take(1) + words[1].take(1)).uppercase()
     }
 }

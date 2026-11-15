@@ -102,7 +102,7 @@ internal val pushExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> E
 internal val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
     { slideInHorizontally(Motion.navigation()) { -it / 4 } + fadeIn(Motion.navigation(), initialAlpha = 0.6f) }
 internal val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
-    { slideOutHorizontally(Motion.navigation(320)) { it } }
+    { slideOutHorizontally(Motion.navigation()) { it } }
 
 private inline fun <reified T : Route> NavGraphBuilder.routeDestination(
     noinline content: @Composable (NavBackStackEntry, Route) -> Unit,
