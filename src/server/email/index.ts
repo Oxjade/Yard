@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNull, lte, notInArray, or, lt, sql } from "dri
 import { afterCommit, db, withTx, type Executor, type Tx } from "../db"
 import { users } from "../db/schema"
 import { emailOutbox, notificationPreferences } from "../db/schema/engagement"
+import { newsletterRecipients } from "../db/schema/newsletter"
 import { newId } from "../ids"
 import { log } from "../log"
 import { getEnv } from "../env"
@@ -27,6 +28,7 @@ export {
   suppress,
   unsubscribeToken,
   readUnsubscribeToken,
+  applyUnsubscribe,
   OPTIONAL_CATEGORIES,
   type Preferences,
   type PreferencesPatch,
@@ -49,6 +51,28 @@ const LOCK_MS = 2 * 60_000
  * never re-queued.
  */
 const SECRET_TEMPLATES: readonly string[] = ["verification", "reset", "magic_link", "team_invite", "founding_claim"]
+
+/**
+ * Newsletter campaign emails (Admin › Newsletter). Bulk rows carry only { campaignId, name }; the
+ * content is read from the campaign when the row is rendered. They are claimed after every other
+ * due row (a password reset never waits behind a campaign), sent at most one per BULK_GAP_MS to a
+ * live provider (Resend's default limit is 2 a second), never re-queued from 'stub', and a
+ * cancelled campaign's rows are dropped.
+ */
+export const BULK_TEMPLATES: readonly string[] = ["newsletter", "service_notice"]
+const BULK_GAP_MS = Math.max(100, Number(process.env.YARD_NEWSLETTER_GAP_MS) || 600)
+/** A deliver run stops taking bulk rows after this long, so it never runs into the next minute's run. */
+const BULK_RUN_MS = 45_000
+const isBulk = (template: string) => BULK_TEMPLATES.includes(template)
+
+/** Fills a bulk Newsletter row's content from its campaign; null = the campaign is gone or cancelled. Other rows pass through. */
+async function withCampaign(ex: Executor, template: string, vars: Record<string, string | number>): Promise<Record<string, string | number> | null> {
+  if (!isBulk(template) || vars.body !== undefined || typeof vars.campaignId !== "string") return vars
+  const { campaignVars } = await import("../newsletter/content")
+  const c = await campaignVars(ex, vars.campaignId)
+  if (!c || c.status === "cancelled" || c.status === "draft") return null
+  return { ...c.vars, ...vars }
+}
 const SECRET_RETENTION = "8 days"
 /** Finished rows are deleted after this. */
 const ROW_RETENTION = "90 days"
@@ -74,7 +98,8 @@ function cleanVars(vars: Record<string, string | number>) {
     if (typeof v === "number") out[k] = Number.isFinite(v) ? v : 0
     // `items` is the order receipt's JSON (templates.ts parses it defensively); `body` is an admin's
     // message to a brand (brand_message, up to 3,000 characters); everything else is a short value.
-    else if (typeof v === "string") out[k] = v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, k === "items" ? 12_000 : k === "body" ? 3_200 : 500)
+    // A Newsletter test send carries its own body (up to 8,000 characters, the composer's limit).
+    else if (typeof v === "string") out[k] = v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, k === "items" ? 12_000 : k === "body" ? 8_000 : 500)
   }
   return out
 }
@@ -102,7 +127,9 @@ export async function enqueueEmail(tx: Tx | Executor, input: EnqueueEmailInput):
     lastError = "The recipient address isn't valid."
   } else {
     try {
-      renderEmail(key, vars, { unsubscribeUrl: null })
+      const full = await withCampaign(tx, key, vars)
+      if (!full) throw new Error("The campaign was cancelled.")
+      renderEmail(key, full, { unsubscribeUrl: null })
     } catch (e) {
       status = "failed"
       lastError = e instanceof Error ? e.message.slice(0, 300) : "render failed"
@@ -144,7 +171,8 @@ async function claimDue(): Promise<(typeof emailOutbox.$inferSelect)[]> {
       .select()
       .from(emailOutbox)
       .where(and(inArray(emailOutbox.status, ["pending", "sending"]), lte(emailOutbox.nextAttemptAt, now), or(isNull(emailOutbox.lockedUntil), lt(emailOutbox.lockedUntil, now))))
-      .orderBy(asc(emailOutbox.nextAttemptAt))
+      // Campaign emails go after everything else that's due.
+      .orderBy(sql`case when ${inArray(emailOutbox.template, [...BULK_TEMPLATES])} then 1 else 0 end`, asc(emailOutbox.nextAttemptAt))
       .limit(BATCH)
     if (!rows.length) return []
     await tx
@@ -170,11 +198,26 @@ export async function deliverDue(): Promise<{ sent: number; failed: number; stub
   try {
     const provider = emailProvider()
     const from = emailFrom()
-    for (let round = 0; round < 8; round++) {
+    const started = Date.now()
+    let lastBulk = 0
+    let outOfTime = false
+    for (let round = 0; round < 8 && !outOfTime; round++) {
       const rows = await claimDue()
       if (!rows.length) break
       for (const row of rows) {
         const key = resolveTemplate(row.template) as EmailTemplateKey | null
+        const bulk = isBulk(row.template)
+        if (bulk && provider.live) {
+          // Out of time for campaign mail this run: let the lock lapse and the next run take it.
+          if (outOfTime || Date.now() - started > BULK_RUN_MS) {
+            outOfTime = true
+            await (await db()).update(emailOutbox).set({ status: "pending", lockedUntil: null }).where(eq(emailOutbox.id, row.id))
+            continue
+          }
+          const wait = lastBulk + BULK_GAP_MS - Date.now()
+          if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+          lastBulk = Date.now()
+        }
         const d = await db()
         // A finished row (anything but a retry) keeps no credential-bearing link; dev keeps stub links (the local mailbox).
         const finish = (set: Partial<typeof emailOutbox.$inferInsert>) => {
@@ -193,9 +236,17 @@ export async function deliverDue(): Promise<{ sent: number; failed: number; stub
           continue
         }
         const optional = !TRANSACTIONAL.has(templateCategory(key))
+        const vars = await withCampaign(d, row.template, row.vars)
+        if (!vars) {
+          await finish({ status: "suppressed", lastError: "The campaign was cancelled." })
+          counts.suppressed++
+          continue
+        }
+        // A campaign's unsubscribe link names the campaign, so its stats count the unsubscribe.
+        const ref = bulk && typeof row.vars.campaignId === "string" ? row.vars.campaignId : null
         let rendered
         try {
-          rendered = renderEmail(key, row.vars, { unsubscribeUrl: optional ? unsubscribePageUrl(row.toEmail, row.category as OptionalCategory) : null })
+          rendered = renderEmail(key, vars, { unsubscribeUrl: optional ? unsubscribePageUrl(row.toEmail, row.category as OptionalCategory, ref) : null })
         } catch (e) {
           await finish({ status: "failed", lastError: e instanceof Error ? e.message.slice(0, 300) : "render failed" })
           counts.failed++
@@ -203,7 +254,7 @@ export async function deliverDue(): Promise<{ sent: number; failed: number; stub
         }
         const headers: Record<string, string> = { "X-Yard-Email-Id": row.id }
         if (optional) {
-          headers["List-Unsubscribe"] = `<${unsubscribeApiUrl(row.toEmail, row.category as OptionalCategory)}>`
+          headers["List-Unsubscribe"] = `<${unsubscribeApiUrl(row.toEmail, row.category as OptionalCategory, ref)}>`
           headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         }
         const result = await provider.send({ to: row.toEmail, from, subject: rendered.subject, text: rendered.text, html: rendered.html, headers })
@@ -238,7 +289,8 @@ export async function requeueStubbed(): Promise<number> {
   const rows = await d
     .update(emailOutbox)
     .set({ status: "pending", nextAttemptAt: new Date(), attempts: 0, lastError: null })
-    .where(and(eq(emailOutbox.status, "stub"), notInArray(emailOutbox.template, [...SECRET_TEMPLATES]), sql`${emailOutbox.createdAt} > now() - interval '2 days'`))
+    // Campaign emails are never re-queued: a campaign that ran without a provider doesn't go out days later.
+    .where(and(eq(emailOutbox.status, "stub"), notInArray(emailOutbox.template, [...SECRET_TEMPLATES, ...BULK_TEMPLATES]), sql`${emailOutbox.createdAt} > now() - interval '2 days'`))
     .returning({ id: emailOutbox.id })
   return rows.length
 }
@@ -303,6 +355,7 @@ export const jobs = {
 export async function eraseCustomerData(tx: Tx | Executor, userId: string): Promise<{ erased: number }> {
   const [u] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1)
   await tx.delete(notificationPreferences).where(eq(notificationPreferences.userId, userId))
+  await tx.delete(newsletterRecipients).where(eq(newsletterRecipients.userId, userId))
   if (!u?.email) return { erased: 0 }
   const rows = await tx
     .delete(emailOutbox)

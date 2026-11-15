@@ -4,7 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm"
 import type { NotificationDto } from "@/lib/api/contracts/notifications"
 import { afterCommit, db } from "../db"
 import { pushDevices, PUSH_PLATFORMS } from "../db/schema/engagement"
-import { getPreferencesMany, type OptionalCategory } from "../email/preferences"
+import { getPreferencesMany, type InAppCategory } from "../email/preferences"
 import { newId } from "../ids"
 import { log } from "../log"
 import { yard } from "../state"
@@ -156,7 +156,7 @@ const SENDERS: Partial<Record<PushPlatform, Sender>> = { android: sendFcm }
 
 /* ---------- Fan-out ---------- */
 
-async function deliver(shopperId: string, n: NotificationDto, pref: OptionalCategory | null) {
+async function deliver(shopperId: string, n: NotificationDto, pref: InAppCategory | null) {
   let userIds = [shopperId]
   if (pref) {
     const prefs = await getPreferencesMany(userIds)
@@ -181,7 +181,7 @@ async function deliver(shopperId: string, n: NotificationDto, pref: OptionalCate
  * it can't open, and admin ones have no app. Add brand pushes with a brand app (and store which
  * actor registered each device).
  */
-export function queuePush(recipient: { kind: "shopper" | "brand" | "admin"; id: string }, n: NotificationDto, pref: OptionalCategory | null = null) {
+export function queuePush(recipient: { kind: "shopper" | "brand" | "admin"; id: string }, n: NotificationDto, pref: InAppCategory | null = null) {
   if (recipient.kind !== "shopper") return
   const shopperId = recipient.id
   afterCommit(() => {

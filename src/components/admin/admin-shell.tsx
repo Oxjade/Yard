@@ -33,6 +33,7 @@ import {
   CalendarXIcon,
   ProhibitIcon,
   LifebuoyIcon,
+  EnvelopeSimpleIcon,
   SparkleIcon,
 } from "@phosphor-icons/react"
 import { AppShell, type ShellNavGroup, type ShellSearch } from "@/components/dashboard/app-shell"
@@ -273,6 +274,7 @@ const search: ShellSearch = {
     { label: "Holidays", href: "/admin/delivery?tab=holidays", icon: CalendarXIcon, hint: "Marketplace" },
     { label: "Abuse", href: "/admin/users?tab=abuse", icon: ProhibitIcon, hint: "Marketplace" },
     { label: "Support queue", href: "/admin/support", icon: LifebuoyIcon, hint: "Marketplace" },
+    { label: "Newsletter", href: "/admin/newsletter", icon: EnvelopeSimpleIcon, hint: "Marketplace" },
     { label: "Product suggestions", href: "/admin/products/suggestions", icon: SparkleIcon, hint: "Marketplace" },
     { label: "Add product for brand", href: "/admin/products/suggestions/new", icon: SparkleIcon, hint: "Marketplace" },
     { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
@@ -404,6 +406,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
         ...when(!money.live || sees("shipping.view"), { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon }),
         ...when(sees("shipping.view"), { href: "/admin/delivery", label: "Delivery", icon: TruckIcon, badge: q(c?.delivery), badgeLabel: "open issues", tone: "attention" }),
         ...when(sees("support.manage"), { href: "/admin/support", label: "Support", icon: LifebuoyIcon, badge: q(c?.support), badgeLabel: "unread", tone: "attention" }),
+        ...when(sees("comms.newsletter"), { href: "/admin/newsletter", label: "Newsletter", icon: EnvelopeSimpleIcon }),
       ],
     },
     {

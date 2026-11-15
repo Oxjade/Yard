@@ -59,6 +59,8 @@ export function normalizeSearchQuery(query: Pick<z.output<typeof searchQuery>, "
 export const suggestQuery = z.object({ q: z.string().max(100).default(""), scoped: z.enum(["1"]).optional(), ...searchScopeFields })
 
 const prefFlags = z.strictObject({ drops: z.boolean().optional(), price_drops: z.boolean().optional(), back_in_stock: z.boolean().optional(), brand_news: z.boolean().optional() })
-export const preferencesPatchBody = z.strictObject({ email: prefFlags.optional(), inApp: prefFlags.optional() })
+/** Email also has `marketing` (news and offers from Yard, opt-in); it has no in-app twin. */
+const emailFlags = prefFlags.extend({ marketing: z.boolean().optional() })
+export const preferencesPatchBody = z.strictObject({ email: emailFlags.optional(), inApp: prefFlags.optional() })
 export const prefsQuery = z.object({ as: z.enum(["shopper", "brand", "admin"]) })
 export const unsubscribeQuery = z.object({ token: z.string().min(10).max(600) })

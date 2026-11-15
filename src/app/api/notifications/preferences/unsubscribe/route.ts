@@ -1,10 +1,10 @@
 import { withTx } from "@/server/db"
-import { readUnsubscribeToken, suppress } from "@/server/email"
+import { applyUnsubscribe, readUnsubscribeToken } from "@/server/email"
 import { unsubscribeQuery } from "@/server/follows/contracts"
 import { badRequest } from "@/server/http/errors"
 import { route } from "@/server/http/route"
 
-const labels: Record<string, string> = { all: "all optional emails", drops: "drop emails", price_drops: "price-drop emails", back_in_stock: "back-in-stock emails", brand_news: "brand news" }
+const labels: Record<string, string> = { all: "all optional emails", drops: "drop emails", price_drops: "price-drop emails", back_in_stock: "back-in-stock emails", brand_news: "brand news", marketing: "news and offers from Yard" }
 
 function read(token: string) {
   const t = readUnsubscribeToken(token)
@@ -25,6 +25,7 @@ export const GET = route({ auth: "public", query: unsubscribeQuery, rate: { key:
  */
 export const POST = route({ auth: "public", csrf: false, query: unsubscribeQuery, rate: { key: "unsubscribe", limit: 30, windowSec: 60, anonGlobal: 1000 } }, async ({ query }) => {
   const t = read(query.token)
-  await withTx((tx) => suppress(t.email, t.category, "unsubscribe", tx))
+  // Marketing (or everything) also switches the account's "News and offers from Yard" off; a campaign's link counts in its stats.
+  await withTx((tx) => applyUnsubscribe(tx, t))
   return { unsubscribed: true, category: t.category, label: labels[t.category] }
 })

@@ -696,6 +696,7 @@ function EmailsSection() {
             </Label>
           </div>
           {q.data && !canEdit ? <p className="text-xs text-ink-3">Only the brand&apos;s owners and admins can change this.</p> : null}
+          <YardNewsSetting />
         </div>
       )}
     </Panel>
@@ -710,5 +711,28 @@ function HelpSection() {
         <Link href="/studio/support">Contact Yard Support</Link>
       </Button>
     </Panel>
+  )
+}
+
+/**
+ * Your own "News and offers from Yard" (the Newsletter), for the signed-in person rather than the
+ * brand: consent-based, off until switched on. Notices about Yard's terms still reach everyone.
+ */
+function YardNewsSetting() {
+  const q = useApi("studio.prefs.marketing", () => api<{ preferences: { email: Record<string, boolean> } }>("/api/notifications/preferences?as=brand"))
+  const save = useAsyncAction(async (on: boolean) => {
+    const r = await api<{ preferences: { email: Record<string, boolean> } }>("/api/notifications/preferences?as=brand", { method: "PATCH", body: { email: { marketing: on } } })
+    q.mutate(r)
+    toast.success(on ? "You're on the list" : "News and offers switched off", { description: on ? "Yard's news, drops and offers land in your inbox. Unsubscribe from any of them." : "Important notices about Yard still reach you." })
+  })
+  const on = q.data?.preferences.email.marketing === true
+  return (
+    <div className="flex items-start gap-3 border-t border-line-soft pt-3">
+      <Switch id="emails-marketing" checked={on} disabled={!q.data || save.pending} onCheckedChange={(v) => void save.run(v)} className="mt-0.5" />
+      <Label htmlFor="emails-marketing" className="grid gap-0.5 font-normal">
+        <span className="text-sm text-ink">News and offers from Yard</span>
+        <span className="text-xs text-ink-3">Just for you, not your whole team. Yard&apos;s news, tips for sellers and offers, now and then. Off unless you switch it on.</span>
+      </Label>
+    </div>
   )
 }

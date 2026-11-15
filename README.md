@@ -230,6 +230,10 @@ decision emails (application sent back, listing paused or back) and the admin's 
 (Admin › Brands › a brand › Email the brand) all go through the email outbox. Every email, its
 trigger, schedule and copy: [docs/BRAND-EMAILS.md](docs/BRAND-EMAILS.md).
 
+Admin › Newsletter writes and sends campaigns to shoppers and brands (marketing to people who opted
+in, or service notices to everyone) through the same outbox, a bounded batch a minute:
+[docs/NEWSLETTER.md](docs/NEWSLETTER.md).
+
 ## Environment variables
 
 `.env.example` is safe to copy to `.env.local` as it is: demo sign-in and demo seeding stay off

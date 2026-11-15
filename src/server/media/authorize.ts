@@ -119,6 +119,13 @@ export async function authorizeBrandUpload(actor: BrandActor, q: Query): Promise
  * from then on. Any other brand, purpose or state is refused.
  */
 export async function authorizeAdminUpload(actor: AdminActor, q: Query): Promise<UploadTarget> {
+  // Newsletter hero images (Admin › Newsletter, comms.newsletter): the admin's own file, public
+  // only while a campaign uses it (visibility.ts), so the email can load it.
+  if (q.purpose === "newsletter_image") {
+    if (!canAdmin(actor.role, "comms.newsletter")) throw forbidden()
+    if (q.conversationId || q.brandId) throw badRequest({ purpose: "Newsletter images don't belong to a brand or a conversation." })
+    return { purpose: "newsletter_image", ownerKind: "user", ownerId: actor.userId, brandId: null, conversationId: null, targetBrandId: null }
+  }
   // Suggestions from Yard: product photos an admin with catalog.propose adds to a suggestion. They
   // belong to that brand (owner_kind brand, a catalogue purpose), so its members see them before
   // accepting, and they move onto the product as they are. Private until a published product uses them.

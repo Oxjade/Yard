@@ -1,5 +1,6 @@
 import "server-only"
 import { getEnv } from "../env"
+import { newsletterBlocksText, type NewsletterBlock, type NewsletterRun } from "@/lib/newsletter"
 
 /**
  * Yard's branded email layout (ENGAGEMENT v3). Templates (templates.ts) describe an email as
@@ -25,6 +26,11 @@ export type EmailContent = {
   heading: string
   greeting?: string
   paragraphs: string[]
+  /**
+   * Rich blocks after the paragraphs (the Newsletter body: paragraphs with bold and links, bullet
+   * lists). Every link was already checked by renderEmail; text is escaped here.
+   */
+  blocks?: NewsletterBlock[]
   /** "full": the card's width (drop covers); "product": a 240px product shot. */
   hero?: { src: string; alt: string; size?: "full" | "product" } | null
   facts?: Fact[]
@@ -159,6 +165,29 @@ ${r.total ? `<tr><td style="padding:10px 0 0;font-family:${BODY};font-size:15px;
 ${head}${perforation}${groups}${perforation}${sums}${ship}</table>`
 }
 
+function runsHtml(runs: NewsletterRun[]) {
+  return runs
+    .map((r) => {
+      const t = esc(r.text).replace(/\n/g, "<br>")
+      if (r.href) return `<a href="${esc(r.href)}" target="_blank" style="color:${C.acid};text-decoration:underline;font-weight:600">${r.bold ? `<strong>${t}</strong>` : t}</a>`
+      return r.bold ? `<strong style="color:${C.ink};font-weight:700">${t}</strong>` : t
+    })
+    .join("")
+}
+
+function blocksHtml(blocks: NewsletterBlock[], leadFirst: boolean) {
+  return blocks
+    .map((b, i) => {
+      const color = leadFirst && i === 0 ? C.ink : C.soft
+      if (b.kind === "p") return `<p style="margin:0 0 16px;font-family:${BODY};font-size:16px;line-height:25px;color:${color}">${runsHtml(b.runs)}</p>`
+      const items = b.items
+        .map((it) => `<tr><td width="22" valign="top" style="padding:0 0 10px;font-family:${BODY};font-size:16px;line-height:25px;color:${C.acid};font-weight:700">&bull;</td><td valign="top" style="padding:0 0 10px;font-family:${BODY};font-size:16px;line-height:25px;color:${color}">${runsHtml(it)}</td></tr>`)
+        .join("")
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px">${items}</table>`
+    })
+    .join("\n")
+}
+
 /* ---------- Document ---------- */
 
 export function layoutHtml(c: EmailContent): string {
@@ -222,6 +251,7 @@ ${c.eyebrow ? `<div style="font-family:${BODY};font-size:12px;line-height:16px;f
 ${c.hero ? (c.hero.size === "product" ? `<img src="${esc(c.hero.src)}" width="240" alt="${esc(c.hero.alt)}" style="display:block;width:240px;max-width:100%;height:auto;border:0;border-radius:12px;margin:0 0 24px;${bg(C.elevated)}">` : `<img src="${esc(c.hero.src)}" width="518" alt="${esc(c.hero.alt)}" style="display:block;width:100%;max-width:518px;height:auto;border:0;border-radius:12px;margin:0 0 24px;${bg(C.elevated)}">`) : ""}
 ${c.greeting ? p(c.greeting, true) : ""}
 ${c.paragraphs.map((t, i) => p(t, !c.greeting && i === 0)).join("\n")}
+${c.blocks?.length ? blocksHtml(c.blocks, !c.greeting && !c.paragraphs.length) : ""}
 ${c.facts?.length ? factsTable(c.facts) : ""}
 ${c.receipt ? receiptBlock(c.receipt) : ""}
 ${c.steps?.steps.length ? stepsBlock(c.steps) : ""}
@@ -244,6 +274,7 @@ export function layoutText(c: EmailContent): string {
   const out: string[] = [c.heading.toUpperCase(), ""]
   if (c.greeting) out.push(c.greeting, "")
   for (const p of c.paragraphs) out.push(p, "")
+  if (c.blocks?.length) for (const p of newsletterBlocksText(c.blocks)) out.push(p, "")
   if (c.facts?.length) out.push(...c.facts.map((r) => `${r.label}: ${r.value}`), "")
   if (c.receipt) {
     const r = c.receipt

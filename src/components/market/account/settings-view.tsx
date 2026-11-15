@@ -91,6 +91,8 @@ export function SettingsView() {
   const reminders = useSaved((s) => s.notify.length)
   const anyChannel = prefs.email || prefs.push
   const [lastChange, setLastChange] = useState<string | null>(null)
+  // News and offers from Yard (the Newsletter): consent-based, off until switched on; email only. Signed in only.
+  const [marketing, setMarketing] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!shopperId) return
@@ -98,6 +100,7 @@ export function SettingsView() {
     void api<{ preferences: { email: Record<string, boolean>; inApp: Record<string, boolean> } }>("/api/notifications/preferences?as=shopper")
       .then(({ preferences }) => {
         if (!active) return
+        setMarketing(preferences.email.marketing === true)
         setNotifications({
           newProducts: preferences.inApp.brand_news,
           drops: preferences.inApp.drops,
@@ -130,8 +133,10 @@ export function SettingsView() {
     // Email on sends the topics that are on; off stops them all.
     const emailPatch =
       key === "email"
-        ? { email: value ? { drops: prefs.drops, price_drops: prefs.promotions, back_in_stock: true, brand_news: prefs.newProducts || prefs.collections } : { drops: false, price_drops: false, back_in_stock: false, brand_news: false } }
+        ? { email: value ? { drops: prefs.drops, price_drops: prefs.promotions, back_in_stock: true, brand_news: prefs.newProducts || prefs.collections } : { drops: false, price_drops: false, back_in_stock: false, brand_news: false, marketing: false } }
         : null
+    // Email back on never opts anyone into marketing: that stays their own separate choice.
+    if (key === "email" && !value) setMarketing((m) => (m === null ? m : false))
     const patch = topicPatch ?? emailPatch
     if (patch) void api("/api/notifications/preferences?as=shopper", { method: "PATCH", body: patch }).catch(() => toast.error("Notification settings weren’t saved. Try again."))
   }
@@ -177,6 +182,27 @@ export function SettingsView() {
             <Row key={c.key} id={`n-${c.key}`} label={c.label} body={c.body} checked={prefs[c.key]} onChange={(v) => change(c.key, `${c.label} notifications`, v)} />
           ))}
         </div>
+        {shopperId && marketing !== null ? (
+          <>
+            <h3 className="mt-8 text-xs text-ink-3">From Yard</h3>
+            <div className="mt-3 divide-y divide-line-soft">
+              <Row
+                id="n-marketing"
+                label="News and offers from Yard"
+                body="Drops, picks and offers from the Yard team, by email. Off unless you switch it on, and every one has an unsubscribe link. Important notices about your account or our terms still reach you."
+                checked={marketing}
+                onChange={(v) => {
+                  setMarketing(v)
+                  setLastChange(`News and offers from Yard ${v ? "on" : "off"}. Saved.`)
+                  void api("/api/notifications/preferences?as=shopper", { method: "PATCH", body: { email: { marketing: v } } }).catch(() => {
+                    setMarketing(!v)
+                    toast.error("That setting wasn’t saved. Try again.")
+                  })
+                }}
+              />
+            </div>
+          </>
+        ) : null}
         {!anyChannel ? <p className="mt-5 text-xs text-acid">Email and push are both off. Updates still appear in Notifications and your Following feed, but nothing will be sent to you.</p> : null}
         <div className="mt-5 border-t border-line-soft pt-4">
           <SavedNote message={lastChange} idle="Changes save as you switch." />

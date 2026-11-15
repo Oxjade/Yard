@@ -33,6 +33,7 @@ const features: Record<string, () => Promise<FeatureModule>> = {
   drops: () => import("./drops"),
   follows: () => import("./follows"),
   search: () => import("./search"),
+  newsletter: () => import("./newsletter"),
 }
 
 /** F1's own hourly purge: event log > 24 h, expired sessions and OAuth states, expired buckets. */
@@ -118,6 +119,9 @@ export function startSchedulers() {
   })
   // Reminder emails to brands (drafts left 12 h, unpublished founding storefronts): one bounded query per kind each run.
   every(9 * MIN, 30 * MIN, () => runFeatureJob("catalog", "nudgeBrands"))
+  // Newsletter campaigns (Admin › Newsletter): starts due ones and feeds the email outbox a bounded
+  // batch (YARD_NEWSLETTER_PER_MINUTE, default 100). One indexed query a minute when nothing is sending.
+  every(2 * MIN, MIN, () => runFeatureJob("newsletter", "run"))
   every(4 * MIN, 5 * MIN, () => runFeatureJob("payments", "expireCheckouts"))
   every(6 * MIN, 15 * MIN, () => runFeatureJob("payments", "retryRefunds"))
   every(8 * MIN, 30 * MIN, () => runFeatureJob("payments", "reconcileTransfers"))

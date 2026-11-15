@@ -3,6 +3,7 @@ import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { getEnv } from "../env"
 import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, storefrontNudgeCopy, type BrandEmailCopy } from "@/lib/brand-emails"
+import { newsletterGreeting, newsletterKindMeta, newsletterLink, parseNewsletterBody, type NewsletterBlock } from "@/lib/newsletter"
 import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, type ReceiptGroup, type ReceiptLine } from "./layout"
 
 /**
@@ -11,10 +12,13 @@ import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, typ
  * and cut to 300 characters, and every link must be a Yard path or an absolute URL on Yard's own
  * origin, so a caller can't turn an email into a phishing link.
  */
-export type EmailCategory = "account" | "orders" | "payouts" | "drops" | "price_drops" | "back_in_stock" | "brand_news"
+export type EmailCategory = "account" | "orders" | "payouts" | "drops" | "price_drops" | "back_in_stock" | "brand_news" | "marketing" | "service"
 
-/** Transactional mail ignores preferences (only bounces and complaints stop it). */
-export const TRANSACTIONAL: ReadonlySet<EmailCategory> = new Set(["account", "orders", "payouts"])
+/**
+ * Transactional mail ignores preferences (only bounces and complaints stop it). `service` is the
+ * Newsletter's service notice (policy and service changes, sent to everyone).
+ */
+export const TRANSACTIONAL: ReadonlySet<EmailCategory> = new Set(["account", "orders", "payouts", "service"])
 
 type Vars = Record<string, string | number>
 /** What a template describes. Plain strings only: layout.ts escapes everything; renderEmail checks links and images. */
@@ -26,6 +30,8 @@ type Built = {
   heading: string
   greeting?: string
   paragraphs: string[]
+  /** Rich blocks after the paragraphs (Newsletter bodies); links are checked like the action's. */
+  blocks?: NewsletterBlock[]
   action?: { label: string; url: string }
   /** Optional hero image: a Yard path or a URL on Yard's origin (anything else is dropped). */
   image?: string
@@ -41,7 +47,11 @@ type Built = {
   /** A footer link (a Yard path), e.g. where to switch reminders off. */
   footerLink?: { lead: string; label: string; url: string }
 }
-type Template = { category: EmailCategory; required: readonly string[]; build: (v: Vars) => Built }
+/**
+ * `outbound`: links (the action and rich blocks) may also be absolute https URLs off Yard's origin
+ * (Newsletter campaigns an admin wrote, e.g. a lookbook or Instagram). Everything else is Yard-only.
+ */
+type Template = { category: EmailCategory; required: readonly string[]; build: (v: Vars) => Built; outbound?: true }
 
 const v = (vars: Vars, key: string, fallback = "") => String(vars[key] ?? fallback).slice(0, 300)
 const has = (vars: Vars, key: string) => vars[key] !== undefined && vars[key] !== ""
@@ -82,6 +92,38 @@ const WHY: Record<EmailCategory, string> = {
   price_drops: "You're getting this because you saved this piece on Yard.",
   back_in_stock: "You're getting this because you asked us to tell you when this piece came back.",
   brand_news: "You're getting this because you follow this brand on Yard.",
+  marketing: newsletterKindMeta.marketing.why,
+  service: newsletterKindMeta.service.why,
+}
+
+/**
+ * A Newsletter campaign (Admin › Newsletter). The admin wrote every word: `subject`, `preheader`,
+ * `heading`, `body` (the composer's small Markdown), an optional `image` (a Yard media path) with
+ * `imageAlt`, and an optional button (`buttonLabel` + `buttonUrl`). `name` greets the recipient when
+ * `greet` is 1. Bulk outbox rows carry only `campaignId` and `name`: the delivery worker fills the
+ * rest from the campaign (src/server/newsletter/content.ts) right before rendering. `test` = 1
+ * prefixes the subject with "[Test]".
+ */
+function newsletterBuild(kind: "marketing" | "service") {
+  return (x: Vars): Built => {
+    if (!has(x, "subject") || !has(x, "heading") || !has(x, "body")) throw new Error(`email template ${kind === "marketing" ? "newsletter" : "service_notice"}: the campaign content is missing`)
+    const { blocks } = parseNewsletterBody(String(x.body).slice(0, 8000), getEnv().publicOrigin)
+    const label = v(x, "buttonLabel").trim()
+    const url = String(x.buttonUrl ?? "").slice(0, 500).trim()
+    const subject = v(x, "subject").slice(0, 120)
+    return {
+      subject: Number(x.test) === 1 ? `[Test] ${subject}` : subject,
+      preheader: v(x, "preheader").slice(0, 140),
+      eyebrow: newsletterKindMeta[kind].eyebrow,
+      heading: v(x, "heading").slice(0, 80),
+      greeting: Number(x.greet) === 0 ? undefined : (newsletterGreeting(v(x, "name")) ?? undefined),
+      paragraphs: [],
+      blocks,
+      ...(label && url ? { action: { label: label.slice(0, 40), url } } : {}),
+      ...(has(x, "image") ? { image: v(x, "image"), imageAlt: v(x, "imageAlt").slice(0, 160), imageSize: "full" as const } : {}),
+      why: newsletterKindMeta[kind].why,
+    }
+  }
 }
 
 const RETURN_REASON_LABELS: Record<string, string> = { too_small: "Too small", too_large: "Too large", not_as_described: "Not as described", damaged: "Arrived damaged", wrong_item: "Wrong item sent", unwanted: "Changed their mind", other: "Other" }
@@ -406,6 +448,21 @@ export const templates = {
       const preset = String(x.preset)
       if (!isBrandEmailPreset(preset)) throw new Error(`email template brand_message: unknown preset "${preset.slice(0, 40)}"`)
       return brandCopy(brandMessageCopy({ brand: v(x, "brand"), preset, subject: v(x, "subject").slice(0, 160), body: String(x.body).slice(0, 3200), signoff: v(x, "signoff") }))
+    },
+  },
+
+  /* ---------- Newsletter (Admin › Newsletter) ---------- */
+  newsletter: { category: "marketing", required: [], outbound: true, build: newsletterBuild("marketing") },
+  service_notice: { category: "service", required: [], outbound: true, build: newsletterBuild("service") },
+  // "Send test to me": the campaign exactly as written (`kind` picks the look), to the admin's own
+  // address. Account mail, so the admin's own marketing setting never swallows it.
+  newsletter_test: {
+    category: "account",
+    required: ["kind"],
+    outbound: true,
+    build: (x) => {
+      const kind = x.kind === "service" ? "service" : "marketing"
+      return { ...newsletterBuild(kind)({ ...x, test: 1 }), why: `This is a test of your ${kind === "service" ? "service notice" : "marketing campaign"}. Recipients see: "${newsletterKindMeta[kind].why}"${kind === "marketing" ? " plus an Unsubscribe link." : ""}` }
     },
   },
 
@@ -751,7 +808,8 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
   const missing = t.required.filter((k) => vars[k] === undefined || vars[k] === "")
   if (missing.length) throw new Error(`email template ${key} is missing ${missing.join(", ")}`)
   const b = t.build(vars)
-  const action = b.action ? { label: b.action.label, url: safeLink(b.action.url) } : null
+  const link = t.outbound ? (u: string) => newsletterLink(u, getEnv().publicOrigin) : safeLink
+  const action = b.action ? { label: b.action.label, url: link(b.action.url) } : null
   if (b.action && !action?.url) throw new Error(`email template ${key}: the link must be a Yard path or a URL on Yard's origin`)
   // A footer link off Yard's origin is dropped (it's a convenience, not the email's point).
   const footer = b.footerLink ? safeLink(b.footerLink.url) : null
@@ -764,6 +822,8 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
     heading: b.heading,
     greeting: b.greeting,
     paragraphs: b.paragraphs,
+    // Block links were resolved when parsed; they are checked again with this template's rule.
+    blocks: b.blocks?.map((bl) => (bl.kind === "p" ? { kind: "p" as const, runs: bl.runs.map((r) => (r.href ? { ...r, href: link(r.href) ?? undefined } : r)) } : { kind: "ul" as const, items: bl.items.map((it) => it.map((r) => (r.href ? { ...r, href: link(r.href) ?? undefined } : r))) })),
     hero: hero ? { src: hero, alt: b.imageAlt ?? "", size: b.imageSize ?? "product" } : null,
     facts: b.facts,
     receipt,

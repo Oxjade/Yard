@@ -10,17 +10,18 @@ import { log } from "../log"
 import { sha256hex } from "../security/crypto"
 import type { Sniffed } from "./sniff"
 
-export type MediaPurpose = "social_post" | "inbox_attachment" | "location_image" | "social_import" | "sample" | "onboarding_image" | "storefront_cover" | "drop_image" | "account_photo"
+export type MediaPurpose = "social_post" | "inbox_attachment" | "location_image" | "social_import" | "sample" | "onboarding_image" | "storefront_cover" | "drop_image" | "account_photo" | "newsletter_image"
 /** Purposes a person uploads through the pipeline (POST /api/uploads, or POST /api/account/photo for account_photo). */
-export type UploadablePurpose = "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover" | "drop_image" | "account_photo"
+export type UploadablePurpose = "social_post" | "inbox_attachment" | "location_image" | "onboarding_image" | "storefront_cover" | "drop_image" | "account_photo" | "newsletter_image"
 export type MediaRow = typeof mediaAssets.$inferSelect
 
 /** Size caps by purpose and kind (§5.4 step 2). */
-export const MEDIA_CAPS = { inbox_attachment: 8 << 20, social_post_image: 10 << 20, social_post_video: 50 << 20, location_image: 10 << 20, onboarding_image: 10 << 20, storefront_cover: 10 << 20, drop_image: 10 << 20, account_photo: 10 << 20, social_import_image: 10 << 20, social_import_video: 50 << 20 } as const
+export const MEDIA_CAPS = { inbox_attachment: 8 << 20, social_post_image: 10 << 20, social_post_video: 50 << 20, location_image: 10 << 20, onboarding_image: 10 << 20, storefront_cover: 10 << 20, drop_image: 10 << 20, account_photo: 10 << 20, newsletter_image: 10 << 20, social_import_image: 10 << 20, social_import_video: 50 << 20 } as const
 
 /** The largest file a purpose takes before its kind is known (the Content-Length check). */
 export function headerCap(purpose: UploadablePurpose) {
   if (purpose === "account_photo") return MEDIA_CAPS.account_photo
+  if (purpose === "newsletter_image") return MEDIA_CAPS.newsletter_image
   return purpose === "social_post" ? MEDIA_CAPS.social_post_video : purpose === "inbox_attachment" ? MEDIA_CAPS.inbox_attachment : purpose === "onboarding_image" ? MEDIA_CAPS.onboarding_image : purpose === "storefront_cover" ? MEDIA_CAPS.storefront_cover : MEDIA_CAPS.location_image
 }
 
@@ -31,6 +32,7 @@ export function kindCap(purpose: UploadablePurpose, kind: "image" | "video") {
   if (purpose === "onboarding_image") return MEDIA_CAPS.onboarding_image
   if (purpose === "storefront_cover") return MEDIA_CAPS.storefront_cover
   if (purpose === "drop_image") return MEDIA_CAPS.drop_image
+  if (purpose === "newsletter_image") return MEDIA_CAPS.newsletter_image
   return purpose === "inbox_attachment" ? MEDIA_CAPS.inbox_attachment : MEDIA_CAPS.location_image
 }
 

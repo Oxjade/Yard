@@ -148,6 +148,13 @@
       "when": 1794773501306,
       "tag": "0020_brand_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794775937929,
+      "tag": "0021_newsletter",
+      "breakpoints": true
     }
   ]
 }

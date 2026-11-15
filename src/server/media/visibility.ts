@@ -51,6 +51,7 @@ export const referencedAtAll = sql.raw(`(
   or exists (select 1 from catalog_storefront_versions sv where sv.config ->> 'coverMediaId' = m.id)
   or exists (select 1 from brands lb where lb.logo_media_id = m.id)
   or exists (select 1 from users pu where pu.photo_media_id = m.id)
+  or exists (select 1 from newsletter_campaigns nc where nc.hero_media_id = m.id)
   or exists (select 1 from product_proposals pp, jsonb_array_elements(coalesce(pp.payload -> 'images', '[]'::jsonb)) e where pp.status = 'pending' and e ->> 'mediaId' = m.id)
   or exists (
     select 1 from catalog_brand_onboardings o
@@ -111,6 +112,7 @@ export async function refreshVisibility(mediaIds: string[]): Promise<void> {
         select 1 from drops d join brands b on b.id = d.brand_id
         where ${listed("b")} and d.brand_id = m.brand_id and m.owner_kind = 'brand' and m.purpose in ${CATALOG_PURPOSES}
           and d.status in ('scheduled', 'live', 'ended') and d.image = m.id)
+      or (m.purpose = 'newsletter_image' and exists (select 1 from newsletter_campaigns nc where nc.hero_media_id = m.id))
     ) then 'public' else 'private' end,
     unreferenced_at = case when ${referencedAtAll} then null else coalesce(m.unreferenced_at, now()) end
     where m.id in (${sql.join(

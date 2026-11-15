@@ -14,7 +14,7 @@ import { users } from "./people"
  */
 
 const EMAIL_STATUSES = ["pending", "sending", "sent", "failed", "suppressed", "stub"] as const
-const EMAIL_CATEGORIES = ["account", "orders", "payouts", "drops", "price_drops", "back_in_stock", "brand_news"] as const
+const EMAIL_CATEGORIES = ["account", "orders", "payouts", "drops", "price_drops", "back_in_stock", "brand_news", "marketing", "service"] as const
 const SUPPRESSION_REASONS = ["unsubscribe", "bounce", "complaint", "manual"] as const
 const DROP_ACCESS = ["first_come", "draw", "early_access"] as const
 const DROP_STATUSES = ["draft", "scheduled", "live", "ended", "cancelled"] as const
@@ -75,7 +75,11 @@ export const emailSuppressions = pgTable(
   ],
 )
 
-/** Per-user notification preferences. No row = defaults (everything on). */
+/**
+ * Per-user notification preferences. No row = defaults: every topic email on, except
+ * `email_marketing` (news and offers from Yard, the Newsletter), which is consent-based per the
+ * privacy policy ("With your consent, to send you marketing emails") and starts off.
+ */
 export const notificationPreferences = pgTable("notification_preferences", {
   userId: text("user_id")
     .primaryKey()
@@ -84,6 +88,8 @@ export const notificationPreferences = pgTable("notification_preferences", {
   emailPriceDrops: boolean("email_price_drops").notNull().default(true),
   emailBackInStock: boolean("email_back_in_stock").notNull().default(true),
   emailBrandNews: boolean("email_brand_news").notNull().default(true),
+  /** News and offers from Yard (Admin › Newsletter, marketing campaigns). Opt-in: off until the person switches it on. */
+  emailMarketing: boolean("email_marketing").notNull().default(false),
   inappDrops: boolean("inapp_drops").notNull().default(true),
   inappPriceDrops: boolean("inapp_price_drops").notNull().default(true),
   inappBackInStock: boolean("inapp_back_in_stock").notNull().default(true),

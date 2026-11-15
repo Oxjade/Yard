@@ -21,7 +21,7 @@ export const SOCIAL_PROVIDERS = ["instagram", "tiktok"] as const
 export const SOCIAL_MODES = ["live", "sandbox"] as const
 
 export const MEDIA_OWNER_KINDS = ["brand", "user", "system"] as const
-export const MEDIA_PURPOSES = ["social_post", "inbox_attachment", "location_image", "social_import", "sample", "onboarding_image", "storefront_cover", "drop_image", "account_photo"] as const
+export const MEDIA_PURPOSES = ["social_post", "inbox_attachment", "location_image", "social_import", "sample", "onboarding_image", "storefront_cover", "drop_image", "account_photo", "newsletter_image"] as const
 export const MEDIA_MIMES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"] as const
 export const MEDIA_VISIBILITIES = ["private", "public"] as const
 export const MEDIA_MODERATION = ["ok", "pending", "removed"] as const
@@ -118,3 +118,10 @@ export const COMPLAINT_STATUSES = ["open", "waiting_brand", "brand_responded", "
 
 export const AUDIT_ACTOR_KINDS = ["admin", "brand", "shopper", "system"] as const
 export const RECIPIENT_KINDS = ["shopper", "brand", "admin"] as const
+
+/** Admin › Newsletter (src/lib/newsletter.ts). */
+export const NEWSLETTER_KINDS = ["marketing", "service"] as const
+export const NEWSLETTER_STATUSES = ["draft", "scheduled", "sending", "sent", "cancelled"] as const
+export const NEWSLETTER_AUDIENCES = ["shoppers", "brands", "followers", "country"] as const
+/** One recipient of a campaign: pending (not queued yet), queued (in the email outbox), then what the outbox did with it. */
+export const NEWSLETTER_RECIPIENT_STATUSES = ["pending", "queued", "sent", "failed", "suppressed", "stub", "cancelled"] as const

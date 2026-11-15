@@ -6,7 +6,7 @@ import { newId } from "../ids"
 import { recipientChannel, toNotificationDto } from "../notify"
 import { queuePush } from "../push"
 import { publish } from "../realtime/bus"
-import type { OptionalCategory } from "./preferences"
+import type { InAppCategory } from "./preferences"
 
 /**
  * In-app notifications for ENGAGEMENT events (drops, draws, price drops, back in stock). Same row
@@ -31,11 +31,11 @@ const templates = {
   "drop.draw_closed_for_brand": { category: "drop_update", pref: null, build: (v: Vars) => ({ title: `Draw complete: ${s(v.drop)}`, body: `${count(v.winners, "winner", "winners")} from ${count(v.entries, "entry", "entries")}.` }) },
   "wishlist.price_drop": { category: "price_drop", pref: "price_drops", build: (v: Vars) => ({ title: `Price drop: ${s(v.product)}`, body: `Now ${s(v.price)}${v.was ? `, was ${s(v.was)}` : ""}.` }) },
   "wishlist.back_in_stock": { category: "back_in_stock", pref: "back_in_stock", build: (v: Vars) => ({ title: `Back in stock: ${s(v.product)}`, body: `${s(v.brand, "The brand")} restocked it.` }) },
-} as const satisfies Record<string, { category: string; pref: OptionalCategory | null; build: (v: Vars) => { title: string; body: string } }>
+} as const satisfies Record<string, { category: string; pref: InAppCategory | null; build: (v: Vars) => { title: string; body: string } }>
 
 export type EngagementTemplate = keyof typeof templates
 
-export function inAppPref(template: EngagementTemplate): OptionalCategory | null {
+export function inAppPref(template: EngagementTemplate): InAppCategory | null {
   return templates[template].pref
 }
 
