@@ -682,6 +682,8 @@ struct OrderReturnSheet: View {
             }
         }
         .background(Color.yard.bg.ignoresSafeArea())
+        // Holds a typed note: only the X closes it.
+        .interactiveDismissDisabled()
         .yardSheet(detents: [.large])
     }
 

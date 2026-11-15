@@ -57,6 +57,8 @@ struct YouChangePasswordSheet: View {
             .padding(.bottom, Spacing.xl)
         }
         .scrollDismissesKeyboard(.interactively)
+        // A form: only the X closes it, so a stray swipe never throws away what was typed.
+        .interactiveDismissDisabled()
         .yardSheet(detents: [.large])
         .yardToastHost(toast)
     }
@@ -187,7 +189,8 @@ struct YouDeleteAccountSheet: View {
             .padding(.bottom, Spacing.xl)
         }
         .scrollDismissesKeyboard(.interactively)
-        .interactiveDismissDisabled(isDeleting)
+        // A form: only the X or "Keep my account" closes it.
+        .interactiveDismissDisabled()
         .yardSheet(detents: [.large])
         .yardToastHost(toast)
     }

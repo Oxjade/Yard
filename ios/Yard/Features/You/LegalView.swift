@@ -2,20 +2,27 @@ import SwiftUI
 import WebKit
 
 /// A legal page (Terms, Privacy, Refunds, Data deletion): the website's page in an in-app web view,
-/// so the text is always the one in force. `page.path` is the website path.
+/// so the text is always the one in force. It loads `page.path` with `?view=app`, which makes the
+/// site render only the page content (no header, tab bar, footer or overlays). Links to other
+/// `/legal/` pages stay inside with `?view=app`; any other link opens in Safari View Controller.
 @MainActor
 struct LegalView: View {
     let page: LegalPage
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isLoading = true
     @State private var errorMessage: String? = nil
     @State private var reloadToken = 0
+    @State private var externalPage: YouWebPage? = nil
 
     init(page: LegalPage) {
         self.page = page
     }
 
-    private var url: URL { Config.webURL(page.path) }
+    /// The in-app form of the page (`…/legal/terms?view=app`).
+    private var url: URL { AppWebLinks.appViewURL(path: page.path, base: Config.baseURL) }
+    /// The full website page, for "Open in Safari".
+    private var siteURL: URL { Config.webURL(page.path) }
 
     var body: some View {
         ZStack {
@@ -28,12 +35,15 @@ struct LegalView: View {
             } else {
                 YouLegalWebView(
                     url: url,
+                    base: Config.baseURL,
                     reloadToken: reloadToken,
+                    colorScheme: colorScheme,
                     onFinish: { isLoading = false },
                     onFail: { message in
                         isLoading = false
                         errorMessage = message
-                    }
+                    },
+                    onOpenExternal: { link in openExternally(link) }
                 )
                 .opacity(isLoading ? 0 : 1)
                 if isLoading {
@@ -47,11 +57,21 @@ struct LegalView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Link(destination: url) {
+                Link(destination: siteURL) {
                     Image(systemName: "safari")
                 }
                 .accessibilityLabel(Text("Open in Safari"))
             }
+        }
+        .youWebPage($externalPage)
+    }
+
+    private func openExternally(_ link: URL) {
+        let scheme = link.scheme?.lowercased() ?? ""
+        if scheme == "http" || scheme == "https" {
+            externalPage = YouWebPage(url: link)
+        } else {
+            UIApplication.shared.open(link)
         }
     }
 
@@ -70,15 +90,20 @@ struct LegalView: View {
     }
 }
 
-/// WKWebView wrapper. Reloads when `reloadToken` changes.
+/// WKWebView wrapper. Reloads when `reloadToken` changes; follows the app's colour scheme so the
+/// page's `prefers-color-scheme` matches the app; transparent so the app background shows while
+/// the page paints (never a blank black view).
 private struct YouLegalWebView: UIViewRepresentable {
     let url: URL
+    let base: URL
     let reloadToken: Int
+    let colorScheme: ColorScheme
     let onFinish: () -> Void
     let onFail: (String) -> Void
+    let onOpenExternal: (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onFinish: onFinish, onFail: onFail)
+        Coordinator(base: base, onFinish: onFinish, onFail: onFail, onOpenExternal: onOpenExternal)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -86,31 +111,122 @@ private struct YouLegalWebView: UIViewRepresentable {
         config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
+        view.allowsBackForwardNavigationGestures = true
         view.isOpaque = false
         view.backgroundColor = .clear
         view.scrollView.backgroundColor = .clear
+        view.underPageBackgroundColor = UIColor(Color.yard.bg)
+        view.overrideUserInterfaceStyle = Self.style(for: colorScheme)
         context.coordinator.lastToken = reloadToken
-        view.load(URLRequest(url: url))
+        view.load(Self.request(url))
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.onFinish = onFinish
         context.coordinator.onFail = onFail
+        context.coordinator.onOpenExternal = onOpenExternal
+        let style = Self.style(for: colorScheme)
+        if view.overrideUserInterfaceStyle != style {
+            view.overrideUserInterfaceStyle = style
+        }
         if context.coordinator.lastToken != reloadToken {
             context.coordinator.lastToken = reloadToken
-            view.load(URLRequest(url: url))
+            view.load(Self.request(url))
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    static func request(_ url: URL) -> URLRequest {
+        URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30)
+    }
+
+    static func style(for scheme: ColorScheme) -> UIUserInterfaceStyle {
+        scheme == .dark ? .dark : .light
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        let base: URL
         var onFinish: () -> Void
         var onFail: (String) -> Void
+        var onOpenExternal: (URL) -> Void
         var lastToken: Int = 0
+        /// The last url this coordinator rewrote to, so a server that drops `view=app` cannot loop.
+        private var lastRewrite: URL? = nil
 
-        init(onFinish: @escaping () -> Void, onFail: @escaping (String) -> Void) {
+        init(base: URL, onFinish: @escaping () -> Void, onFail: @escaping (String) -> Void, onOpenExternal: @escaping (URL) -> Void) {
+            self.base = base
             self.onFinish = onFinish
             self.onFail = onFail
+            self.onOpenExternal = onOpenExternal
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let target = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let scheme = target.scheme?.lowercased() ?? ""
+            if scheme == "about" || scheme == "data" || scheme == "blob" {
+                decisionHandler(.allow)
+                return
+            }
+            if scheme != "http" && scheme != "https" {
+                // mailto:, tel:, … go to the system.
+                decisionHandler(.cancel)
+                onOpenExternal(target)
+                return
+            }
+            // Sub-frame loads (embedded content) stay as they are.
+            if let frame = navigationAction.targetFrame, !frame.isMainFrame {
+                decisionHandler(.allow)
+                return
+            }
+            let opensNewWindow = navigationAction.targetFrame == nil
+            switch AppWebLinks.route(target, base: base) {
+            case .allow:
+                lastRewrite = nil
+                if opensNewWindow {
+                    decisionHandler(.cancel)
+                    webView.load(YouLegalWebView.request(target))
+                } else {
+                    decisionHandler(.allow)
+                }
+            case .rewrite(let inApp):
+                if lastRewrite == inApp && !opensNewWindow {
+                    // The server keeps dropping view=app: load what it sends rather than loop.
+                    lastRewrite = nil
+                    decisionHandler(.allow)
+                } else {
+                    lastRewrite = inApp
+                    decisionHandler(.cancel)
+                    webView.load(YouLegalWebView.request(inApp))
+                }
+            case .external(let link):
+                decisionHandler(.cancel)
+                onOpenExternal(link)
+            }
+        }
+
+        /// `target="_blank"` links when the navigation delegate did not already handle them.
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            if let target = navigationAction.request.url {
+                switch AppWebLinks.route(target, base: base) {
+                case .allow: webView.load(YouLegalWebView.request(target))
+                case .rewrite(let inApp): webView.load(YouLegalWebView.request(inApp))
+                case .external(let link): onOpenExternal(link)
+                }
+            }
+            return nil
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -125,9 +241,16 @@ private struct YouLegalWebView: UIViewRepresentable {
             report(error)
         }
 
+        /// The page's process was killed (memory pressure): reload instead of showing a blank view.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            webView.reload()
+        }
+
         private func report(_ error: Error) {
             let ns = error as NSError
             if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
+            // WebKitErrorFrameLoadInterruptedByPolicyChange: our own cancel + reload.
+            if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
             onFail(APIError.network(error).message)
         }
     }

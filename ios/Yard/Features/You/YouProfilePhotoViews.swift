@@ -386,7 +386,8 @@ struct ProfilePhotoCropView: View {
         .background(Color.yard.bg.ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .sensoryFeedback(.impact(weight: .light), trigger: settleTick)
-        .interactiveDismissDisabled(isSaving)
+        // Closed only by Cancel or Save photo.
+        .interactiveDismissDisabled()
     }
 
     private var header: some View {

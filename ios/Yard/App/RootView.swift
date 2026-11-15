@@ -41,6 +41,8 @@ struct RootView: View {
                 RouteView(route: route)
                     .yardRouteDestinations()
             }
+            // Sign in / create account holds typed input: it closes with its X only.
+            .interactiveDismissDisabled(route == .signIn)
             .yardToastHost(toast)
         }
         .yardToastHost(toast)
