@@ -156,7 +156,7 @@ struct ProductPhotoViewer: View {
 
             TabView(selection: $index) {
                 ForEach(Array(images.enumerated()), id: \.offset) { offset, image in
-                    ProductZoomableImage(url: image.url, isZoomed: $isZoomed)
+                    ProductZoomableImage(url: image.url, photoAspectRatio: image.aspectRatio, isZoomed: $isZoomed)
                         .tag(offset)
                 }
             }
@@ -214,6 +214,8 @@ struct ProductPhotoViewer: View {
 @MainActor
 private struct ProductZoomableImage: View {
     let url: URL?
+    /// The photo's width / height from the API, if known (else read from the loaded image).
+    let photoAspectRatio: Double?
     @Binding var isZoomed: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -223,12 +225,13 @@ private struct ProductZoomableImage: View {
     @State private var lastOffset: CGSize = .zero
 
     static let maxScale: CGFloat = 5
+    static let maxPixelSize: CGFloat = 2000
     static let doubleTapScale: CGFloat = 2.5
 
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            RemoteImage(url: url, contentMode: .fit, maxPixelSize: 2000)
+            RemoteImage(url: url, contentMode: .fit, maxPixelSize: Self.maxPixelSize)
                 .frame(width: size.width, height: size.height)
                 .scaleEffect(scale)
                 .offset(offset)
@@ -268,9 +271,35 @@ private struct ProductZoomableImage: View {
         return s
     }
 
-    /// How far a photo zoomed to `scale` may pan before its edge leaves the screen edge.
+    /// The photo's aspect ratio: the API's, else the decoded image's, else the container's.
+    private func photoAspect(in size: CGSize) -> CGFloat {
+        if let ratio = photoAspectRatio, ratio.isFinite, ratio > 0 { return CGFloat(ratio) }
+        if let url, let image = ImagePipeline.shared.cachedImage(for: url, maxPixelSize: Self.maxPixelSize),
+           image.size.width > 0, image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        guard size.width > 0, size.height > 0 else { return 1 }
+        return size.width / size.height
+    }
+
+    /// The photo's drawn size at 1× (`.fit`: letterboxed when its shape differs from the screen's).
+    static func fittedSize(aspect: CGFloat, in size: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0, aspect.isFinite, aspect > 0 else { return size }
+        if aspect > size.width / size.height {
+            return CGSize(width: size.width, height: size.width / aspect)
+        }
+        return CGSize(width: size.height * aspect, height: size.height)
+    }
+
+    /// How far a photo zoomed to `scale` may pan before its edge comes inside the screen edge
+    /// (0 on an axis where the zoomed photo still fits the screen: it stays centred there).
+    static func panLimits(fitted: CGSize, scale: CGFloat, in size: CGSize) -> CGSize {
+        CGSize(width: max(0, (fitted.width * scale - size.width) / 2),
+               height: max(0, (fitted.height * scale - size.height) / 2))
+    }
+
     private func limits(scale: CGFloat, in size: CGSize) -> CGSize {
-        CGSize(width: max(0, size.width * (scale - 1) / 2), height: max(0, size.height * (scale - 1) / 2))
+        Self.panLimits(fitted: Self.fittedSize(aspect: photoAspect(in: size), in: size), scale: scale, in: size)
     }
 
     private func clamp(_ o: CGSize, scale: CGFloat, in size: CGSize) -> CGSize {

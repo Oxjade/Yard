@@ -67,11 +67,12 @@ final class ProfilePhotoCropTests: XCTestCase {
         }
     }
 
-    func testOutputSideNeverScalesUpAndCapsAt1024() {
+    func testOutputSideStaysBetweenTheServerMinimumAnd1024() {
         XCTAssertEqual(ProfilePhotoCrop.outputSide(1000), 1000)
         XCTAssertEqual(ProfilePhotoCrop.outputSide(3000), 1024)
-        XCTAssertEqual(ProfilePhotoCrop.outputSide(0.2), 1)
-        XCTAssertEqual(ProfilePhotoCrop.outputSide(CGFloat.nan), 1)
+        XCTAssertEqual(ProfilePhotoCrop.outputSide(25), 64)
+        XCTAssertEqual(ProfilePhotoCrop.outputSide(0.2), 64)
+        XCTAssertEqual(ProfilePhotoCrop.outputSide(CGFloat.nan), 64)
     }
 
     func testZoomKeepsTheCentrePoint() {
@@ -124,6 +125,14 @@ final class ProfilePhotoCropTests: XCTestCase {
         let decoded = try XCTUnwrap(UIImage(data: jpeg))
         XCTAssertEqual(decoded.size.width * decoded.scale, 1024)
         XCTAssertEqual(decoded.size.height * decoded.scale, 1024)
+    }
+
+    func testSmallPhotoZoomedInStillMeetsTheServerMinimum() throws {
+        let image = Self.solidImage(CGSize(width: 100, height: 100))
+        let jpeg = try XCTUnwrap(ProfilePhotoCrop.renderJPEG(image, frame: 300, zoom: 4, offset: .zero))
+        let decoded = try XCTUnwrap(UIImage(data: jpeg))
+        XCTAssertGreaterThanOrEqual(decoded.size.width * decoded.scale, 64)
+        XCTAssertGreaterThanOrEqual(decoded.size.height * decoded.scale, 64)
     }
 
     static func solidImage(_ size: CGSize, scale: CGFloat = 1) -> UIImage {
@@ -237,9 +246,15 @@ final class ProfilePhotoCopyTests: XCTestCase {
         XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(429, "rate_limited")), "You've changed your photo a lot. Try again in 10 min.")
         XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(422, "rule", "Demo accounts can't change their photo.")), "Demo accounts can't change their photo.")
         XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(422, "rule", "This photo is smaller than 64 px on a side. Use a larger one.")), "This photo is smaller than 64 px on a side. Use a larger one.")
-        XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(401, "unauthorized")), "Sign in again to change your photo.")
+        XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(401, "unauthorized")), "Server says no.")
+        XCTAssertTrue(ProfilePhotoCopy.needsSignIn(failure(401, "unauthorized")))
+        XCTAssertFalse(ProfilePhotoCopy.needsSignIn(failure(422, "rule")))
         XCTAssertEqual(ProfilePhotoCopy.uploadError(failure(-1, "decoding")), "Your photo wasn't saved. Try again.")
         XCTAssertEqual(ProfilePhotoCopy.removeError(failure(422, "rule", "Demo accounts can't change their photo.")), "Demo accounts can't change their photo.")
+        // Removal uses the website's errorMessage: the server's sentence, plus the wait when known.
+        XCTAssertEqual(ProfilePhotoCopy.removeError(failure(429, "rate_limited", "Too many changes. Try again later.", retryAfter: 180)), "Too many changes. Try again later (about 3 min).")
+        XCTAssertEqual(ProfilePhotoCopy.removeError(failure(429, "rate_limited", "Too many changes. Try again later.")), "Too many changes. Try again later.")
+        XCTAssertEqual(ProfilePhotoCopy.removeError(failure(-1, "decoding")), "Your photo wasn't removed. Try again.")
     }
 
     func testRetryableLikeTheWebsite() {

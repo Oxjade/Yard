@@ -462,19 +462,36 @@ struct CheckoutStages: View {
     }
 
     var body: some View {
-        HStack(spacing: Spacing.xs) {
-            ForEach(Stage.allCases, id: \.rawValue) { (stage: Stage) in
-                if stage != .bag {
-                    Capsule()
-                        .fill(stage.rawValue <= current.rawValue ? Color.yard.ink.opacity(0.5) : Color.yard.line)
-                        .frame(width: 14, height: 1.5)
+        // The four pills when they fit; at large text on a narrow phone, one line that names
+        // the step (never pills cut down to "D…").
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Spacing.xs) {
+                ForEach(Stage.allCases, id: \.rawValue) { (stage: Stage) in
+                    if stage != .bag {
+                        Capsule()
+                            .fill(stage.rawValue <= current.rawValue ? Color.yard.ink.opacity(0.5) : Color.yard.line)
+                            .frame(width: 14, height: 1.5)
+                    }
+                    pill(stage)
                 }
-                pill(stage)
             }
+            compact
         }
         .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: current)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Step \(current.rawValue + 1) of \(Stage.allCases.count): \(current.title)"))
+    }
+
+    private var compact: some View {
+        Text("Step \(current.rawValue + 1) of \(Stage.allCases.count) · \(current.title)")
+            .font(.yardCaptionEmphasis)
+            .foregroundStyle(Color.yard.onAcid)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Spacing.s)
+            .padding(.vertical, 4)
+            .frame(minHeight: 24)
+            .background(Color.yard.acid, in: Capsule())
     }
 
     private func pill(_ stage: Stage) -> some View {

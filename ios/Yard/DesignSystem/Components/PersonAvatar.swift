@@ -37,10 +37,14 @@ struct PersonAvatar: View {
     /// Decode at 3× the point size (one size on the server: the uploaded square, ≤1024 px).
     static func pixelSize(for size: CGFloat) -> CGFloat { min(1024, max(64, size * 3)) }
 
+    /// The local preview, else the loaded photo, else (the moment `photoURL` changes, before
+    /// `load()` runs) whatever the cache already holds for the new URL, such as the square the
+    /// app just uploaded: no flash of initials between the preview and the server photo.
     private var shownImage: UIImage? {
         if let localImage { return localImage }
-        guard let photoURL, loadedURL == photoURL else { return nil }
-        return loaded
+        guard let photoURL else { return nil }
+        if loadedURL == photoURL, let loaded { return loaded }
+        return ImagePipeline.shared.cachedImage(for: photoURL, maxPixelSize: PersonAvatar.pixelSize(for: size))
     }
 
     var body: some View {

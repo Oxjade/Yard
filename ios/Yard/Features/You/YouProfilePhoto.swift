@@ -71,10 +71,12 @@ enum ProfilePhotoCrop {
         return CGRect(x: sx, y: sy, width: size, height: size)
     }
 
-    /// The uploaded square's side: the cropped area, never scaled up, at most `outputMax`.
+    /// The uploaded square's side: the cropped area, at most `outputMax`, and never under the
+    /// server's `minSide` (a small photo zoomed in is scaled up to 64 px rather than refused).
     static func outputSide(_ sourceSize: CGFloat) -> Int {
-        guard sourceSize.isFinite else { return 1 }
-        return max(1, min(outputMax, Int(sourceSize.rounded())))
+        let floor = Int(minSide)
+        guard sourceSize.isFinite else { return floor }
+        return max(floor, min(outputMax, Int(sourceSize.rounded())))
     }
 
     /// Zooming keeps the point under the frame's centre where it is: the offset scales with the
@@ -286,7 +288,10 @@ private final class ProfilePhotoUploadDelegate: NSObject, URLSessionTaskDelegate
 // MARK: - Copy
 
 enum ProfilePhotoCopy {
-    static let footer = "Shows to brands you message or buy from."
+    static let footer = "Shows to brands you message or buy from. JPEG, PNG or WebP, up to 10 MB."
+    static let removeTitle = "Remove your photo?"
+    static let removeMessage = "Brands see your initials instead. You can add a new photo any time."
+    static let keepPhoto = "Keep photo"
     static let demo = "Demo accounts can't change their photo."
     static let saved = "Photo saved"
     static let removed = "Photo removed"
@@ -307,17 +312,26 @@ enum ProfilePhotoCopy {
         if api.status == 413 { return "Photos can be up to 10 MB." }
         if api.status == 415 { return "Yard couldn't read this as a JPEG, PNG or WebP photo. Try another one." }
         if api.status == 429 { return "You've changed your photo a lot. Try again in \(formatWait(failure.retryAfter ?? 600))." }
-        if api.status == 401 { return "Sign in again to change your photo." }
         if api.status == -1 || api.message.isEmpty { return uploadFallback }
         return api.message
     }
 
+    /// The website's `errorMessage(e, "Your photo wasn't removed. Try again.")`: the server's
+    /// message, with "(about 3 min)" added to a rate limit when `Retry-After` came back.
     static func removeError(_ failure: ProfilePhotoFailure) -> String {
         let api = failure.api
-        if api.status == 429 { return "You've removed your photo a lot. Try again in \(formatWait(failure.retryAfter ?? 600))." }
-        if api.status == 401 { return "Sign in again to change your photo." }
         if api.status == -1 || api.message.isEmpty { return removeFallback }
+        if api.code == "rate_limited" || api.status == 429, let wait = failure.retryAfter {
+            var base = api.message
+            if base.hasSuffix(".") { base.removeLast() }
+            return "\(base) (about \(formatWait(wait)))."
+        }
         return api.message
+    }
+
+    /// A 401: the session ended, so the problem offers Sign in (as Android does).
+    static func needsSignIn(_ failure: ProfilePhotoFailure) -> Bool {
+        failure.api.status == 401
     }
 
     /// The website's retry rule: sending again could work offline, when rate limited, or on a 5xx.
@@ -354,6 +368,8 @@ final class YouProfilePhotoModel {
         let text: String
         /// Try again sends the same square once more.
         let canRetry: Bool
+        /// The session ended (401): offer Sign in.
+        var signIn: Bool = false
     }
 
     private(set) var busy: Busy = .idle
@@ -434,7 +450,7 @@ final class YouProfilePhotoModel {
         } catch {
             let failure = Self.failure(error)
             if failure.api.isCancelled { return nil }
-            problem = Problem(text: ProfilePhotoCopy.removeError(failure), canRetry: false)
+            problem = Problem(text: ProfilePhotoCopy.removeError(failure), canRetry: false, signIn: ProfilePhotoCopy.needsSignIn(failure))
             return nil
         }
     }
@@ -462,7 +478,7 @@ final class YouProfilePhotoModel {
                 pendingJPEG = nil
                 return nil
             }
-            problem = Problem(text: ProfilePhotoCopy.uploadError(failure), canRetry: ProfilePhotoCopy.isRetryable(failure))
+            problem = Problem(text: ProfilePhotoCopy.uploadError(failure), canRetry: ProfilePhotoCopy.isRetryable(failure), signIn: ProfilePhotoCopy.needsSignIn(failure))
             return nil
         }
     }

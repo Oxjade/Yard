@@ -7,7 +7,7 @@ import AVFoundation
 
 /// The profile photo row at the top of Your details: tap the avatar (or Add/Change photo) to pick
 /// from the library or take one with the camera, then position it in the crop screen. Remove asks
-/// first (the app's confirmation dialog, as Disconnect and Cancel order do).
+/// first, from the Remove button and from the chooser alike (as Android's photo sheet does).
 @MainActor
 struct YouProfilePhotoSection: View {
     let account: YouAccount
@@ -15,7 +15,9 @@ struct YouProfilePhotoSection: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(ToastCenter.self) private var toast
+    @Environment(Router.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var model = YouProfilePhotoModel()
     @State private var showsChooser = false
@@ -42,7 +44,12 @@ struct YouProfilePhotoSection: View {
                 .padding(.horizontal, Spacing.xs)
                 .accessibilityAddTraits(.isHeader)
             Card {
-                HStack(alignment: .center, spacing: Spacing.l) {
+                // At accessibility text sizes the buttons go under the avatar, so their labels
+                // get the card's full width (the YouQuickLinks pattern).
+                let layout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: Spacing.m))
+                    : AnyLayout(HStackLayout(alignment: .center, spacing: Spacing.l))
+                layout {
                     avatarButton
                     VStack(alignment: .leading, spacing: Spacing.s) {
                         YardButton(
@@ -74,15 +81,18 @@ struct YouProfilePhotoSection: View {
                 Button("Take photo") { openCamera() }
             }
             if hasPhoto && model.pendingImage == nil {
-                Button("Remove photo", role: .destructive) { remove() }
+                Button("Remove photo", role: .destructive) {
+                    // Same confirmation as the Remove button; shown once this dialog has gone.
+                    Task { @MainActor in confirmsRemove = true }
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Remove your photo?", isPresented: $confirmsRemove, titleVisibility: .visible) {
+        .confirmationDialog(ProfilePhotoCopy.removeTitle, isPresented: $confirmsRemove, titleVisibility: .visible) {
             Button("Remove photo", role: .destructive) { remove() }
-            Button("Cancel", role: .cancel) {}
+            Button(ProfilePhotoCopy.keepPhoto, role: .cancel) {}
         } message: {
-            Text("Brands will see your initials instead.")
+            Text(ProfilePhotoCopy.removeMessage)
         }
         .photosPicker(isPresented: $showsLibrary, selection: $libraryItem, matching: .images, preferredItemEncoding: .compatible)
         .onChange(of: libraryItem) { _, item in
@@ -159,14 +169,20 @@ struct YouProfilePhotoSection: View {
                     .font(.yardCaption)
                     .foregroundStyle(Color.yard.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.pendingJPEG != nil && !model.isBusy {
+                let keepsSquare = model.pendingJPEG != nil && !model.isBusy
+                if keepsSquare || problem.signIn {
                     HStack(spacing: Spacing.s) {
-                        if problem.canRetry {
+                        if keepsSquare && problem.canRetry {
                             YardButton("Try again", systemImage: "arrow.clockwise", style: .ghost, size: .small, fullWidth: false) { retry() }
                         }
-                        YardButton("Discard", style: .ghost, size: .small, fullWidth: false) {
-                            model.discard()
-                            session.setPendingPhoto(nil)
+                        if problem.signIn {
+                            YardButton("Sign in", style: .secondary, size: .small, fullWidth: false) { router.present(.signIn) }
+                        }
+                        if keepsSquare {
+                            YardButton("Discard", style: .ghost, size: .small, fullWidth: false) {
+                                model.discard()
+                                session.setPendingPhoto(nil)
+                            }
                         }
                     }
                 }
@@ -236,24 +252,36 @@ struct YouProfilePhotoSection: View {
 
     private func save(_ result: ProfilePhotoCropResult) {
         session.setPendingPhoto(result.preview)
+        let preview = result.preview
         Task { @MainActor in
-            let next = await model.save(jpeg: result.jpeg, preview: result.preview)
-            finishUpload(next)
+            let next = await model.save(jpeg: result.jpeg, preview: preview)
+            finishUpload(next, preview: preview)
         }
     }
 
     private func retry() {
-        if let image = model.pendingImage { session.setPendingPhoto(image) }
+        let preview = model.pendingImage
+        if let preview { session.setPendingPhoto(preview) }
         Task { @MainActor in
             let next = await model.retry()
-            finishUpload(next)
+            finishUpload(next, preview: preview)
         }
     }
 
-    private func finishUpload(_ next: YouAccount?) {
+    /// The avatar sizes that show the signed-in shopper's photo: Settings row, You header, this card.
+    private static let avatarSizes: [CGFloat] = [28, 60, 88]
+
+    private func finishUpload(_ next: YouAccount?, preview: UIImage?) {
         guard let next else {
             session.setPendingPhoto(nil)
             return
+        }
+        // The square just uploaded IS the new photo: put it in the image cache under the new URL
+        // so every avatar keeps showing it (no flash of initials while the URL downloads).
+        if let preview, let url = Config.url(for: next.photo?.src) {
+            for size in Self.avatarSizes {
+                ImagePipeline.shared.store(preview, for: url, maxPixelSize: PersonAvatar.pixelSize(for: size))
+            }
         }
         onAccount(next)
         session.applyPhoto(src: next.photo?.src)
@@ -337,6 +365,8 @@ struct ProfilePhotoCropView: View {
                     .font(.yardCaption)
                     .foregroundStyle(Color.yard.danger)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             }
             Spacer(minLength: 0)
             VStack(spacing: Spacing.s) {
@@ -344,7 +374,12 @@ struct ProfilePhotoCropView: View {
                 YardButton("Cancel", style: .secondary) { onDone(nil) }
                     .disabled(isSaving)
             }
+            // The square gives way first: Save photo and Cancel always keep their room.
+            .layoutPriority(1)
         }
+        // The square takes drags, so this screen doesn't scroll; capping the text keeps the
+        // header, controls and buttons on screen at the largest sizes on SE-class heights.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .padding(.horizontal, Spacing.gutter)
         .padding(.vertical, Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -364,7 +399,10 @@ struct ProfilePhotoCropView: View {
                 .font(.yardCallout)
                 .foregroundStyle(Color.yard.ink2)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .layoutPriority(1)
         .padding(.top, Spacing.s)
     }
 

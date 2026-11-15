@@ -42,20 +42,25 @@
 
 - `YouProfilePhoto.swift`: crop geometry (`ProfilePhotoCrop`, a port of the website's
   `photo-crop.ts`, plus rubber-band helpers), picked-photo prep (`ProfilePhotoPrep`: ImageIO
-  decode incl. HEIC, upright, scale 1, ≤4096 px working copy, 64 px minimum), the API
+  decode incl. HEIC, upright, scale 1, ≤4096 px working copy, 64 px minimum; a small photo
+  zoomed in is scaled up so the upload is never under 64 px), the API
   (`ProfilePhotoAPI`: POST/DELETE `/api/account/photo?as=shopper`, one multipart part `file`,
   explicit Content-Length, upload progress via a task delegate, `Retry-After` kept), the website's
-  copy (`ProfilePhotoCopy`) and the state model (`YouProfilePhotoModel`: optimistic preview,
+  copy (`ProfilePhotoCopy`; removal errors use the website's `errorMessage`, a 401 offers Sign in
+  as Android does) and the state model (`YouProfilePhotoModel`: optimistic preview,
   progress, error, Try again / Discard, remove).
 - `YouProfilePhotoViews.swift`: the Photo card at the top of Your details (tap the avatar or
   Add/Change photo → Choose from library (PhotosPicker, no permission) / Take photo
-  (UIImagePickerController, `NSCameraUsageDescription`) / Remove photo), Remove asks first with the
-  app's confirmation dialog, and the full-screen crop step (drag + pinch + double-tap + slider,
+  (UIImagePickerController, `NSCameraUsageDescription`) / Remove photo), Remove asks first ("Remove your photo?",
+  Remove photo / Keep photo, Android's wording) from both the button and the chooser, and the full-screen crop step (drag + pinch + double-tap + slider,
   rubber-band edges that settle with `Motion.spring`, clamp only under Reduce Motion, circle mask,
   VoiceOver adjustable zoom and move actions). Output: JPEG ≤1024 px, quality 0.9 (no EXIF).
 - `DesignSystem/Components/PersonAvatar.swift`: photo or initials on acid, initials while loading
   and on failure, optimistic local image first. Used in the You header, the Settings "Your details"
   row and the photo card. `SessionStore.pendingPhoto` / `applyPhoto(src:)` make every avatar update
-  at once; a replaced photo has a new media id, so a new URL (no stale cache).
+  at once; a replaced photo has a new media id, so a new URL (no stale cache). After a successful
+  upload the uploaded square is put in `ImagePipeline`'s memory cache under the new URL
+  (`store(_:for:maxPixelSize:)`, at 28/60/88 pt), so avatars go preview → photo with no initials
+  flash.
 - Tests: `ios/YardTests/ProfilePhotoTests.swift` (geometry, rendering, prep, multipart request,
   copy, decoding, model state). CI runs them on a simulator after the build.

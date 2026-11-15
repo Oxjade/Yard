@@ -116,6 +116,8 @@ struct NotificationsView: View {
                                         row(item)
                                     }
                                 }
+                                // The unread wash is a plain rectangle: keep it inside the card's corners.
+                                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                             }
                         }
                     }
