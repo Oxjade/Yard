@@ -50,7 +50,8 @@ final class YouBadgesModel {
     func load(accountId: String, force: Bool = false) async {
         if accountId != self.accountId {
             // A different shopper: never show the previous account's counts, even briefly.
-            reset()
+            // (From nil the values are already clear, or are preview fixtures to keep.)
+            if self.accountId != nil { reset() } else { generation += 1 }
             self.accountId = accountId
         } else if !force, let lastLoad, Date().timeIntervalSince(lastLoad) < Self.minInterval {
             return
