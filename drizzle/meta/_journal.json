@@ -141,6 +141,13 @@
       "when": 1794701896356,
       "tag": "0019_account_photo",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794773501306,
+      "tag": "0020_brand_emails",
+      "breakpoints": true
     }
   ]
 }

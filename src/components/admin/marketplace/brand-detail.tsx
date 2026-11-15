@@ -15,6 +15,7 @@ import { useAdmin } from "@/lib/stores/admin"
 import { sampleOnly, useAdminBrowserAudit, useAdminSampleData } from "../sample"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
+import { BrandEmailSection } from "./brand-email-section"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { AdminImg, ServerActivity, TrustActionBar, useAdminSession } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
@@ -116,6 +117,8 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
           })}
         </ul>
       </DetailSection>
+
+      {app.brandId ? <BrandEmailSection brandId={app.brandId} brandName={app.brandName} /> : null}
 
       <DetailSection title="Notes">
         <div className={insetClass}>

@@ -18,6 +18,9 @@ import { api, ApiError } from "@/lib/api/client"
 import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
 import { errorMessage } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
+import { brandEmailKeys, getStudioEmailSettings, updateStudioEmailSettings } from "@/lib/api/brand-emails"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { AccountDetails } from "@/components/market/account/account-details"
 import { toast } from "sonner"
@@ -44,6 +47,7 @@ const sections = [
   { id: "returns", label: "Returns" },
   { id: "team", label: "Team" },
   { id: "fees", label: "Fees" },
+  { id: "emails", label: "Emails from Yard" },
   { id: "account", label: "Your account" },
   { id: "help", label: "Help" },
 ] as const
@@ -127,6 +131,7 @@ export function SettingsView() {
             <ReturnsSection />
             <TeamSection />
             <FeesPanel />
+            <EmailsSection />
             <YourAccountSection />
             <HelpSection />
           </div>
@@ -657,6 +662,42 @@ function YourAccountSection() {
   return (
     <Panel id="account" title="Your account" description="Your own photo, name and sign-in email. They're yours, not the brand's: the same account you shop with.">
       {member ? <AccountDetails as="brand" /> : <p className="text-sm text-ink-2">Sign in to Studio to change your name or email.</p>}
+    </Panel>
+  )
+}
+
+/**
+ * Emails from Yard: the brand's switch for reminder emails (a product left in drafts, a storefront
+ * never published). Owners and admins change it; decisions about the brand always send.
+ */
+function EmailsSection() {
+  const member = useServerSession((s) => s.brand)
+  const q = useApi(member ? `${brandEmailKeys.studio}:${member.brand.id}` : null, () => getStudioEmailSettings())
+  const save = useAsyncAction(async (on: boolean) => {
+    const r = await updateStudioEmailSettings(on)
+    q.mutate(r)
+    toast.success(on ? "Reminders are back on" : "Reminders switched off", { description: on ? "We'll nudge you if something's sitting in drafts." : "No more nudges. Decisions about your brand still reach you." })
+  })
+  const nudges = q.data?.nudges ?? true
+  const canEdit = !!q.data?.canEdit
+  return (
+    <Panel id="emails" title="Emails from Yard" description="Friendly nudges when something in your shop is almost ready, like a product sitting in drafts or a storefront that isn't published yet.">
+      {!member ? (
+        <p className="text-sm text-ink-2">Sign in to Studio to change your brand&apos;s emails.</p>
+      ) : q.error && !q.data ? (
+        <p role="alert" className="text-sm text-danger">{errorMessage(q.error, "Couldn't load your email settings.")}</p>
+      ) : (
+        <div className="grid gap-3">
+          <div className="flex items-start gap-3">
+            <Switch id="emails-nudges" checked={nudges} disabled={!q.data || !canEdit || save.pending} onCheckedChange={(v) => void save.run(v)} className="mt-0.5" />
+            <Label htmlFor="emails-nudges" className="grid gap-0.5 font-normal">
+              <span className="text-sm text-ink">Reminder emails</span>
+              <span className="text-xs text-ink-3">At most one a day, sent to your brand&apos;s owners and admins. Emails about Yard&apos;s decisions (an application, a paused listing) always reach you.</span>
+            </Label>
+          </div>
+          {q.data && !canEdit ? <p className="text-xs text-ink-3">Only the brand&apos;s owners and admins can change this.</p> : null}
+        </div>
+      )}
     </Panel>
   )
 }

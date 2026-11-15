@@ -1,0 +1,315 @@
+/**
+ * Brand emails from Yard: the copy of every email Yard sends a brand about its shop (reminders,
+ * decisions and the admin's one-tap messages), the admin presets, and the reminder rules. Pure (no
+ * "server-only", no database), so the Admin composer, the email templates (src/server/email/templates.ts)
+ * and `tsx --test` all read the same words and rules.
+ *
+ * Tone: warm, playful, short. At most one emoji per email (in the heading). Never sarcastic,
+ * never fake urgency. Decision emails stay kind and say exactly what to do next.
+ */
+
+/* ---------- Reminder rules (catalog/nudges.ts runs them every 30 minutes) ---------- */
+
+const HOUR = 3600_000
+/** A draft gets its reminder once it's been a draft this long. */
+export const DRAFT_NUDGE_AFTER_MS = 12 * HOUR
+/** Drafts older than this are left alone (a shelved idea, not a forgotten listing). */
+export const DRAFT_NUDGE_MAX_AGE_MS = 30 * 24 * HOUR
+/** At most one reminder per brand in this window, whatever triggered it. */
+export const NUDGE_COOLDOWN_MS = 24 * HOUR
+/** A claimed founding brand with products but no published storefront hears about it this long after claiming. */
+export const STOREFRONT_NUDGE_AFTER_MS = 24 * HOUR
+/** Products named in one reminder (the rest are counted). */
+export const DRAFT_NUDGE_NAMED = 3
+
+export type DraftCandidate = {
+  productId: string
+  brandId: string
+  title: string
+  status: string
+  createdAt: Date
+  publishedAt: Date | null
+  draftNudgedAt: Date | null
+  moderation: string
+  brandReview: string
+  brandNudges: boolean
+  claimStatus: string
+  /** An onboarding application in draft, submitted or rejected: the brand can't publish yet. */
+  underReview: boolean
+  brandLastNudgedAt: Date | null
+  /** Founding brand whose storefront was never published. */
+  storefrontUnpublished: boolean
+}
+
+/** Whether this product's "still in drafts" reminder is due now (the SQL in catalog/nudges.ts applies the same rules). */
+export function draftNudgeEligible(c: DraftCandidate, now: Date): boolean {
+  const age = now.getTime() - c.createdAt.getTime()
+  if (c.status !== "draft" || c.publishedAt || c.draftNudgedAt) return false
+  if (age < DRAFT_NUDGE_AFTER_MS || age > DRAFT_NUDGE_MAX_AGE_MS) return false
+  if (c.moderation !== "ok") return false
+  if (c.brandReview === "restricted" || c.brandReview === "suspended") return false
+  if (!c.brandNudges || c.underReview || c.claimStatus === "unclaimed") return false
+  if (c.brandLastNudgedAt && now.getTime() - c.brandLastNudgedAt.getTime() < NUDGE_COOLDOWN_MS) return false
+  return true
+}
+
+export type DraftNudge = { brandId: string; products: { id: string; title: string }[]; storefrontUnpublished: boolean }
+
+/** One reminder per brand per run, oldest draft first, covering every due draft of that brand (each is marked so it's never sent again). */
+export function groupDraftNudges(candidates: DraftCandidate[], now: Date): DraftNudge[] {
+  const out = new Map<string, DraftNudge>()
+  for (const c of [...candidates].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.productId.localeCompare(b.productId))) {
+    if (!draftNudgeEligible(c, now)) continue
+    const g = out.get(c.brandId) ?? { brandId: c.brandId, products: [], storefrontUnpublished: c.storefrontUnpublished }
+    if (!g.products.some((p) => p.id === c.productId)) g.products.push({ id: c.productId, title: c.title })
+    out.set(c.brandId, g)
+  }
+  return [...out.values()]
+}
+
+export type StorefrontCandidate = {
+  brandId: string
+  founding: boolean
+  claimStatus: string
+  claimedAt: Date | null
+  launchedAt: Date | null
+  storefrontNudgedAt: Date | null
+  brandReview: string
+  brandNudges: boolean
+  brandLastNudgedAt: Date | null
+  /** Published or scheduled products: what shoppers would see the moment the storefront goes live. */
+  readyProducts: number
+}
+
+/** A claimed founding brand with ready products whose storefront was never published, a day after claiming: once per brand. */
+export function storefrontNudgeEligible(c: StorefrontCandidate, now: Date): boolean {
+  if (!c.founding || c.claimStatus !== "claimed" || c.launchedAt || c.storefrontNudgedAt) return false
+  if (!c.claimedAt || now.getTime() - c.claimedAt.getTime() < STOREFRONT_NUDGE_AFTER_MS) return false
+  if (c.readyProducts < 1 || !c.brandNudges) return false
+  if (c.brandReview === "restricted" || c.brandReview === "suspended") return false
+  if (c.brandLastNudgedAt && now.getTime() - c.brandLastNudgedAt.getTime() < NUDGE_COOLDOWN_MS) return false
+  return true
+}
+
+/* ---------- Copy ---------- */
+
+/** What one brand email says (templates.ts adds the layout, link checks and escaping). */
+export type BrandEmailCopy = {
+  subject: string
+  preheader: string
+  eyebrow?: string
+  heading: string
+  greeting?: string
+  paragraphs: string[]
+  action?: { label: string; url: string }
+  facts?: { label: string; value: string }[]
+  note?: string
+  why: string
+  footerLink?: { lead: string; label: string; url: string }
+}
+
+/** Where a brand switches reminders off (Studio › Settings › Emails from Yard). */
+export const NUDGE_SETTINGS_PATH = "/studio/settings#emails"
+const optOut = { lead: "Not into reminders?", label: "Switch them off in Studio settings", url: NUDGE_SETTINGS_PATH }
+const SUPPORT_LINE = "Questions? Message @support from Yard Support in Studio and a real person on the team gets back to you."
+const quote = (s: string) => `“${s.trim().replace(/^["“]|["”]$/g, "")}”`
+const and = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? ""))
+
+export function draftNudgeCopy(x: { brand: string; product: string; productId?: string; more?: number; others?: string[]; storefrontUnpublished?: boolean }): BrandEmailCopy {
+  const more = Math.max(0, Math.floor(x.more ?? 0))
+  const others = (x.others ?? []).filter(Boolean)
+  return {
+    subject: more ? `Your ${x.product} (and ${more} more) are chilling in drafts` : `Your ${x.product} is chilling in drafts`,
+    preheader: "One tap and it's live. Shoppers can't cop what they can't see.",
+    eyebrow: "Yard Studio",
+    heading: "Still in drafts 👀",
+    greeting: x.brand ? `Hey ${x.brand},` : undefined,
+    paragraphs: [
+      more ? `${x.product} and ${more === 1 ? "another piece are" : `${more} other pieces are`} saved in Studio, but they're still drafts, so nobody on Yard can see them yet.` : `${x.product} is saved in Studio, but it's still a draft, so nobody on Yard can see it yet.`,
+      "If it's ready, give it one last look (photos, sizes, price) and hit Publish. That's the whole move.",
+      ...(x.storefrontUnpublished ? ["One more thing: your storefront isn't published yet either. Publish it from Storefront in Studio so the whole Yard can find you."] : []),
+      "Still cooking? No stress, it'll wait for you.",
+    ],
+    facts: [{ label: "In drafts", value: x.product }, ...(others.length ? [{ label: "Also in drafts", value: more > others.length ? `${others.join(", ")} and ${more - others.length} more` : and(others) }] : [])],
+    action: { label: more ? "Finish and publish" : `Publish ${x.product.length > 24 ? "it" : x.product}`, url: x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" },
+    why: `You're getting this because ${x.brand || "your brand"} has a product in drafts on Yard.`,
+    footerLink: optOut,
+  }
+}
+
+export function storefrontNudgeCopy(x: { brand: string; products?: number }): BrandEmailCopy {
+  const n = Math.max(0, Math.floor(x.products ?? 0))
+  return {
+    subject: `${x.brand}, your storefront is ready for its moment`,
+    preheader: "Your pieces are set. Publish the storefront and the doors open.",
+    eyebrow: "Yard Studio",
+    heading: "Open the doors ✨",
+    greeting: `Hey ${x.brand},`,
+    paragraphs: [
+      `${n > 1 ? `${n} pieces are` : n === 1 ? "Your first piece is" : "Your pieces are"} ready in Studio, but your storefront hasn't been published yet, so shoppers can't find ${x.brand} on Yard.`,
+      "Open Storefront in Studio, check your banner and story, and hit Publish. Everything shows up the moment it's live.",
+      "Want a second pair of eyes first? Message @support in Studio and we'll take a look.",
+    ],
+    action: { label: "Publish my storefront", url: "/studio/storefront" },
+    why: `You're getting this because you run ${x.brand} on Yard and its storefront isn't published yet.`,
+    footerLink: optOut,
+  }
+}
+
+export function applicationRejectedCopy(x: { brand: string; name?: string; reason?: string }): BrandEmailCopy {
+  const first = x.name?.trim().split(/\s+/)[0]
+  return {
+    subject: `A few tweaks and ${x.brand} is good to go`,
+    preheader: "We went through your application. Here's what to change before you resubmit.",
+    eyebrow: "Your application",
+    heading: "Almost there",
+    greeting: first ? `Hey ${first},` : `Hey ${x.brand},`,
+    paragraphs: [
+      `Thanks for applying to sell ${x.brand} on Yard. We went through everything and we can't approve it just yet.`,
+      ...(x.reason?.trim() ? [`Here's what the team said: ${quote(x.reason)}`] : []),
+      "Make those changes in Studio and resubmit whenever you're ready. Everything you entered is saved, so it's a quick fix, not a fresh start.",
+      SUPPORT_LINE,
+    ],
+    action: { label: "Update my application", url: "/studio/onboarding" },
+    why: "You're getting this because you applied to sell on Yard with this address.",
+  }
+}
+
+export function listingHeldCopy(x: { brand: string; product: string; productId?: string; reason?: string }): BrandEmailCopy {
+  return {
+    subject: `${x.product} is taking a quick break from Yard`,
+    preheader: "We've paused this listing. Here's why and how to bring it back.",
+    eyebrow: "Your listing",
+    heading: "Listing on pause",
+    greeting: `Hey ${x.brand},`,
+    paragraphs: [
+      `We've paused ${x.product}, so it isn't showing on Yard for now. It's safe in Studio and nothing else in your shop has changed.`,
+      ...(x.reason?.trim() ? [`Why: ${quote(x.reason)}`] : []),
+      "Sort it out in Studio, then message @support when it's ready. We'll take another look and get it back out there.",
+    ],
+    facts: [{ label: "Product", value: x.product }],
+    action: { label: "Fix it in Studio", url: x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" },
+    why: `You're getting this because you run ${x.brand} on Yard.`,
+  }
+}
+
+export function listingBackCopy(x: { brand: string; product: string; productId?: string }): BrandEmailCopy {
+  return {
+    subject: `${x.product} is back on Yard 🎉`,
+    preheader: "It's live again. Shoppers can find it, save it and buy it.",
+    eyebrow: "Your listing",
+    heading: "Back in rotation",
+    greeting: `Hey ${x.brand},`,
+    paragraphs: [`Good news: ${x.product} is back on Yard. Shoppers can find it, save it and buy it again.`, "Thanks for sorting it out. Keep the heat coming."],
+    facts: [{ label: "Product", value: x.product }],
+    action: { label: "View in Studio", url: x.productId ? `/studio/products/${encodeURIComponent(x.productId)}` : "/studio/products" },
+    why: `You're getting this because you run ${x.brand} on Yard.`,
+  }
+}
+
+/* ---------- Admin one-tap emails ---------- */
+
+export const BRAND_EMAIL_PRESETS = ["finish_listing", "publish_storefront", "payout_account", "photos", "custom"] as const
+export type BrandEmailPreset = (typeof BRAND_EMAIL_PRESETS)[number]
+
+export const isBrandEmailPreset = (v: string): v is BrandEmailPreset => (BRAND_EMAIL_PRESETS as readonly string[]).includes(v)
+
+type PresetDef = {
+  label: string
+  /** One line in the composer: when to use it. */
+  hint: string
+  heading: string
+  subject: (brand: string) => string
+  body: (brand: string) => string
+  action: { label: string; url: string }
+}
+
+export const brandEmailPresets: Record<BrandEmailPreset, PresetDef> = {
+  finish_listing: {
+    label: "Finish your listing",
+    hint: "Products sitting in drafts",
+    heading: "So close 👀",
+    subject: (b) => `${b}, your drafts are so close`,
+    body: () =>
+      "Your products are saved in Studio but still sitting in drafts, which means shoppers can't see them yet.\n\nGive them one last look (photos, sizes, price) and hit Publish. That's it, you're live.\n\nNeed a hand with anything? We're right here.",
+    action: { label: "Open my products", url: "/studio/products" },
+  },
+  publish_storefront: {
+    label: "Publish your storefront",
+    hint: "Storefront set up but never published",
+    heading: "Open the doors ✨",
+    subject: (b) => `${b}, let's open the doors`,
+    body: () => "Your storefront is set up but not published yet, so Yard shoppers can't find you.\n\nHead to Storefront in Studio, check your banner and story, and hit Publish. Your pieces show up the moment it's live.",
+    action: { label: "Open my storefront", url: "/studio/storefront" },
+  },
+  payout_account: {
+    label: "Add a payout account",
+    hint: "No payout account on file",
+    heading: "Where should the money go? 💸",
+    subject: (b) => `Let's get ${b} paid`,
+    body: () =>
+      "You're nearly ready to sell, but there's no payout account on file yet, so we've got nowhere to send your earnings.\n\nIt takes about two minutes: Studio, then Settings, then Payouts. Only the last four digits ever show in Studio.",
+    action: { label: "Add my payout account", url: "/studio/settings#payouts" },
+  },
+  photos: {
+    label: "Photos need love",
+    hint: "Photos that don't do the pieces justice",
+    heading: "Give your photos some love 📸",
+    subject: () => "Your pieces deserve better photos",
+    body: () =>
+      "Your pieces look great, but a few of the photos aren't doing them justice yet.\n\nQuick wins: natural light, a clean background, the whole piece in frame and a close-up of the details. Shoppers buy what they can see.\n\nSwap them in Studio whenever you're ready.",
+    action: { label: "Update my photos", url: "/studio/products" },
+  },
+  custom: {
+    label: "Custom message",
+    hint: "Write your own",
+    heading: "Hey from Yard 👋",
+    subject: () => "A quick note from Yard",
+    body: () => "",
+    action: { label: "Open Studio", url: "/studio" },
+  },
+}
+
+export const BRAND_EMAIL_SUBJECT_MAX = 120
+export const BRAND_EMAIL_BODY_MAX = 3000
+/** Manual emails to one brand in 24 hours (any admin). */
+export const BRAND_EMAIL_DAILY_PER_BRAND = 5
+
+/** Paragraphs of an admin-written body: blank lines split them; single newlines become spaces. */
+export function bodyParagraphs(body: string): string[] {
+  return body
+    .replace(/\r\n?/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 12)
+}
+
+export function brandMessageCopy(x: { brand: string; preset: BrandEmailPreset; subject: string; body: string; signoff?: string }): BrandEmailCopy {
+  const p = brandEmailPresets[x.preset]
+  const paragraphs = bodyParagraphs(x.body)
+  return {
+    subject: x.subject.trim(),
+    preheader: (paragraphs[0] ?? x.subject).slice(0, 140),
+    eyebrow: "A note from Yard",
+    heading: p.heading,
+    greeting: `Hey ${x.brand},`,
+    paragraphs,
+    action: p.action,
+    note: `${x.signoff?.trim() ? `${x.signoff.trim().split(/\s+/)[0]} from the Yard team. ` : "The Yard team. "}Want to reply? Message @support from Yard Support in Studio and it comes straight to us.`,
+    why: `You're getting this because you run ${x.brand} on Yard.`,
+  }
+}
+
+/* ---------- Sent history (Admin › Brands) ---------- */
+
+/** Audit actions that put an email in a brand's inbox, with how the history names them. */
+export const brandEmailHistoryLabels: Record<string, string> = {
+  "brand_email.sent": "Email from Yard",
+  "brand_email.draft_nudge": "Reminder: still in drafts",
+  "brand_email.storefront_nudge": "Reminder: publish your storefront",
+  "onboarding.rejected": "Application: changes needed",
+  "onboarding.approved": "Application approved",
+  "catalog.product_hidden": "Listing paused",
+  "catalog.product_unhidden": "Listing back on Yard",
+}

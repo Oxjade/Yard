@@ -102,7 +102,8 @@ export function ListingsTable({ ask, loading }: { ask: (d: Decision) => void | P
     return ask({
       title: lift ? (one ? `Lift the restriction on ${one.title}?` : `Lift the restriction on ${plural(items.length)}?`) : one ? `Restrict ${one.title}?` : `Restrict ${plural(items.length)}?`,
       description: [
-        lift ? "Lifted listings can show in discovery, search and the brand's storefront again." : "Restricted listings are held back from discovery, search and the storefront and can't be bought. The brand keeps them in Studio.",
+        lift ? "Lifted listings can show in discovery, search and the brand's storefront again. The brand gets a short email that it's back." : "Restricted listings are held back from discovery, search and the storefront and can't be bought. The brand keeps them in Studio.",
+        lift ? null : "The brand is notified by email and sees your reason, with a link to fix it in Studio.",
         skipped ? `${plural(skipped)} selected ${skipped === 1 ? "is" : "are"} already ${lift ? "unrestricted" : "restricted"} and ${skipped === 1 ? "is" : "are"} left as ${skipped === 1 ? "it is" : "they are"}.` : null,
       ]
         .filter(Boolean)

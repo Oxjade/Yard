@@ -1,5 +1,6 @@
 import "server-only"
 import { publishScheduled } from "./jobs"
+import { nudgeBrands } from "./nudges"
 import { sweepExpiredHolds } from "./stock"
 
 /**
@@ -10,6 +11,7 @@ import { sweepExpiredHolds } from "./stock"
  * Scheduler jobs (register in src/server/schedulers.ts as feature "catalog"):
  *  - jobs.publishScheduled   every minute
  *  - jobs.sweepExpiredHolds  every minute
+ *  - jobs.nudgeBrands        every 30 minutes (reminder emails to brands, catalog/nudges.ts)
  */
 export const IMPL: string = "CATALOG-v3-2026-11-08"
 
@@ -17,6 +19,6 @@ export { getSellableVariants, getProductForSearch } from "./sellable"
 export { holdStock, commitHold, releaseHold, restock } from "./stock"
 export { setProductModeration } from "./jobs"
 export { reviewOnboarding, listSubmittedOnboardings } from "./onboarding"
-export { publishScheduled, sweepExpiredHolds }
+export { publishScheduled, sweepExpiredHolds, nudgeBrands }
 
-export const jobs = { publishScheduled, sweepExpiredHolds }
+export const jobs = { publishScheduled, sweepExpiredHolds, nudgeBrands }

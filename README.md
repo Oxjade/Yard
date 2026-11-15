@@ -223,6 +223,13 @@ rebinding) can't pass the CSRF check.
   current month's link between fraud evidence is lost). `YARD_ENCRYPTION_KEY` seals social
   tokens only; rotate it with `YARD_ENCRYPTION_KEY_PREVIOUS` set to the old key.
 
+## Brand emails
+
+Reminders to brands (a product left in drafts for 12 hours, a founding storefront never published),
+decision emails (application sent back, listing paused or back) and the admin's one-tap emails
+(Admin › Brands › a brand › Email the brand) all go through the email outbox. Every email, its
+trigger, schedule and copy: [docs/BRAND-EMAILS.md](docs/BRAND-EMAILS.md).
+
 ## Environment variables
 
 `.env.example` is safe to copy to `.env.local` as it is: demo sign-in and demo seeding stay off

@@ -116,6 +116,8 @@ export function startSchedulers() {
     await runFeatureJob("catalog", "publishScheduled")
     await runFeatureJob("catalog", "sweepExpiredHolds")
   })
+  // Reminder emails to brands (drafts left 12 h, unpublished founding storefronts): one bounded query per kind each run.
+  every(9 * MIN, 30 * MIN, () => runFeatureJob("catalog", "nudgeBrands"))
   every(4 * MIN, 5 * MIN, () => runFeatureJob("payments", "expireCheckouts"))
   every(6 * MIN, 15 * MIN, () => runFeatureJob("payments", "retryRefunds"))
   every(8 * MIN, 30 * MIN, () => runFeatureJob("payments", "reconcileTransfers"))

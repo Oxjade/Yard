@@ -2,6 +2,7 @@ import "server-only"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { getEnv } from "../env"
+import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, listingBackCopy, listingHeldCopy, storefrontNudgeCopy, type BrandEmailCopy } from "@/lib/brand-emails"
 import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, type ReceiptGroup, type ReceiptLine } from "./layout"
 
 /**
@@ -37,6 +38,8 @@ type Built = {
   showUrl?: boolean
   /** Footer "why you're getting this"; defaults per category. */
   why?: string
+  /** A footer link (a Yard path), e.g. where to switch reminders off. */
+  footerLink?: { lead: string; label: string; url: string }
 }
 type Template = { category: EmailCategory; required: readonly string[]; build: (v: Vars) => Built }
 
@@ -59,6 +62,9 @@ const minutes = (x: Vars, fallback: string) => {
 const facts = (...rows: (Fact | false | null | undefined)[]) => rows.filter((r): r is Fact => !!r && !!r.value)
 const by = (x: Vars) => (has(x, "brand") ? ` by ${v(x, "brand")}` : "")
 const heroOf = (x: Vars, alt: string, imageSize: "full" | "product" = "product") => (has(x, "image") ? { image: v(x, "image"), imageAlt: alt, imageSize } : {})
+
+/** A brand email's copy (src/lib/brand-emails.ts) as a template's Built. */
+const brandCopy = (c: BrandEmailCopy): Built => ({ ...c })
 
 const WHY: Record<EmailCategory, string> = {
   account: "You're getting this because of activity on your Yard account.",
@@ -339,6 +345,57 @@ export const templates = {
     }),
   },
 
+  /* ---------- Brand emails (copy in src/lib/brand-emails.ts) ---------- */
+  // "Still in drafts" reminder (catalog/nudges.ts). `more`: further drafts in the same reminder; `others`: up to two of their names, " | "-separated.
+  brand_draft_nudge: {
+    category: "account",
+    required: ["brand", "product"],
+    build: (x) =>
+      brandCopy(
+        draftNudgeCopy({
+          brand: v(x, "brand"),
+          product: v(x, "product"),
+          productId: has(x, "productId") ? v(x, "productId") : undefined,
+          more: Number(x.more) || 0,
+          others: has(x, "others") ? v(x, "others").split(" | ").slice(0, 2) : [],
+          storefrontUnpublished: x.storefront === "unpublished",
+        }),
+      ),
+  },
+  // "Publish your storefront" reminder for a claimed founding brand (catalog/nudges.ts). `products`: ready products.
+  brand_storefront_nudge: {
+    category: "account",
+    required: ["brand"],
+    build: (x) => brandCopy(storefrontNudgeCopy({ brand: v(x, "brand"), products: Number(x.products) || 0 })),
+  },
+  // An application sent back (catalog/onboarding.ts reviewOnboarding). `reason`: the admin's note.
+  brand_rejected: {
+    category: "account",
+    required: ["brand"],
+    build: (x) => brandCopy(applicationRejectedCopy({ brand: v(x, "brand"), name: v(x, "name"), reason: has(x, "reason") ? String(x.reason).slice(0, 500) : undefined })),
+  },
+  // A listing paused or brought back by moderation (catalog/jobs.ts setProductModeration).
+  listing_held: {
+    category: "account",
+    required: ["brand", "product"],
+    build: (x) => brandCopy(listingHeldCopy({ brand: v(x, "brand"), product: v(x, "product"), productId: has(x, "productId") ? v(x, "productId") : undefined, reason: has(x, "reason") ? String(x.reason).slice(0, 500) : undefined })),
+  },
+  listing_back: {
+    category: "account",
+    required: ["brand", "product"],
+    build: (x) => brandCopy(listingBackCopy({ brand: v(x, "brand"), product: v(x, "product"), productId: has(x, "productId") ? v(x, "productId") : undefined })),
+  },
+  // An admin's one-tap email (Admin › Brands › Email the brand). `preset`: a BRAND_EMAIL_PRESETS key; `body`: up to 3,000 characters.
+  brand_message: {
+    category: "account",
+    required: ["brand", "preset", "subject", "body"],
+    build: (x) => {
+      const preset = String(x.preset)
+      if (!isBrandEmailPreset(preset)) throw new Error(`email template brand_message: unknown preset "${preset.slice(0, 40)}"`)
+      return brandCopy(brandMessageCopy({ brand: v(x, "brand"), preset, subject: v(x, "subject").slice(0, 160), body: String(x.body).slice(0, 3200), signoff: v(x, "signoff") }))
+    },
+  },
+
   /* ---------- Orders ---------- */
   order_confirmation: {
     category: "orders",
@@ -612,6 +669,10 @@ const ALIASES: Record<string, EmailTemplateKey> = {
   team_invitation: "team_invite",
   brand_invite: "team_invite",
   claim: "founding_claim",
+  onboarding_rejected: "brand_rejected",
+  application_rejected: "brand_rejected",
+  draft_nudge: "brand_draft_nudge",
+  storefront_nudge: "brand_storefront_nudge",
   founding: "founding_claim",
   order_confirmed: "order_confirmation",
   order: "order_confirmation",
@@ -679,6 +740,8 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
   const b = t.build(vars)
   const action = b.action ? { label: b.action.label, url: safeLink(b.action.url) } : null
   if (b.action && !action?.url) throw new Error(`email template ${key}: the link must be a Yard path or a URL on Yard's origin`)
+  // A footer link off Yard's origin is dropped (it's a convenience, not the email's point).
+  const footer = b.footerLink ? safeLink(b.footerLink.url) : null
   // Images are optional: one that isn't on Yard's origin is dropped, never rendered.
   const hero = b.image ? safeLink(b.image) : null
   const receipt = b.receipt ? { ...b.receipt, groups: b.receipt.groups.map((g) => ({ ...g, lines: g.lines.map((l) => ({ ...l, image: l.image ? safeLink(l.image) : null })) })) } : null
@@ -697,6 +760,7 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
     note: b.note,
     why: b.why ?? WHY[t.category],
     unsubscribeUrl: opts.unsubscribeUrl ?? null,
+    footerLink: footer ? { lead: b.footerLink!.lead, label: b.footerLink!.label, url: footer } : null,
   }
   // One line, whatever a variable held (a subject is a mail header).
   const subject = b.subject.replace(/\s+/g, " ").trim()

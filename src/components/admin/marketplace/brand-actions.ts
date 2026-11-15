@@ -203,7 +203,7 @@ export function brandDecision(key: BrandActionKey, list: BrandApplication[], { a
   const onboardingLine = onboarding.length
     ? key === "approve"
       ? "Approving verifies the brand on Yard's server, so its team can open Studio. Its first product stays a draft until they publish it."
-      : "Rejecting returns the application to the applicant, who can edit and resubmit. They see your reason."
+      : "Rejecting returns the application to the applicant, who can edit and resubmit. They get an email with your reason and what to do next."
     : null
   const studioApp = apps.find((a) => a.brandId === STUDIO_BRAND_ID)
   return {

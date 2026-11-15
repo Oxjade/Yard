@@ -38,6 +38,8 @@ export type EmailContent = {
   /** "Why you're getting this" line in the footer. */
   why: string
   unsubscribeUrl?: string | null
+  /** A footer link after the "why" line ("Not into reminders? Switch them off in Studio settings."), already checked against Yard's origin. */
+  footerLink?: { lead: string; label: string; url: string } | null
 }
 
 /* ---------- Tokens (the app's) ---------- */
@@ -164,7 +166,7 @@ export function layoutHtml(c: EmailContent): string {
   const logo = `${f.origin}/brand/yard-logo-email-acid.png`
   const p = (t: string, first: boolean) => `<p style="margin:0 0 16px;font-family:${BODY};font-size:16px;line-height:25px;color:${first ? C.ink : C.soft}">${esc(t)}</p>`
   const footerLines = [
-    `<p style="margin:0 0 10px">${esc(c.why)}${c.unsubscribeUrl ? ` <a href="${esc(c.unsubscribeUrl)}" style="color:${C.ink};text-decoration:underline">Unsubscribe</a> or <a href="${esc(`${f.origin}/you/settings`)}" style="color:${C.ink};text-decoration:underline">manage notifications</a>.` : ""}</p>`,
+    `<p style="margin:0 0 10px">${esc(c.why)}${c.unsubscribeUrl ? ` <a href="${esc(c.unsubscribeUrl)}" style="color:${C.ink};text-decoration:underline">Unsubscribe</a> or <a href="${esc(`${f.origin}/you/settings`)}" style="color:${C.ink};text-decoration:underline">manage notifications</a>.` : ""}${c.footerLink ? ` ${esc(c.footerLink.lead)} <a href="${esc(c.footerLink.url)}" style="color:${C.ink};text-decoration:underline">${esc(c.footerLink.label)}</a>.` : ""}</p>`,
     `<p style="margin:0 0 10px">Questions? <a href="mailto:${esc(f.support)}" style="color:${C.ink};text-decoration:underline">${esc(f.support)}</a></p>`,
     f.socials.length ? `<p style="margin:0 0 10px">${f.socials.map((s) => `<a href="${esc(s.url)}" style="color:${C.ink};text-decoration:none;font-weight:500">${esc(s.label)}</a>`).join(`<span style="color:${C.line}">&nbsp;&nbsp;/&nbsp;&nbsp;</span>`)}</p>` : "",
     `<p style="margin:0">&copy; ${new Date().getUTCFullYear()} Yard${f.address ? ` &middot; ${esc(f.address)}` : ""}</p>`,
@@ -264,6 +266,7 @@ export function layoutText(c: EmailContent): string {
   if (c.note) out.push(c.note, "")
   out.push("—", c.why)
   if (c.unsubscribeUrl) out.push(`Unsubscribe: ${c.unsubscribeUrl}`)
+  if (c.footerLink) out.push(`${c.footerLink.lead} ${c.footerLink.label}: ${c.footerLink.url}`)
   out.push(`Questions? ${f.support}`)
   if (f.socials.length) out.push(f.socials.map((s) => `${s.label}: ${s.url}`).join("  "))
   out.push(`© ${new Date().getUTCFullYear()} Yard${f.address ? ` · ${f.address}` : ""}`)

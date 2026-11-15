@@ -72,8 +72,9 @@ function cleanVars(vars: Record<string, string | number>) {
   for (const [k, v] of Object.entries(vars ?? {}).slice(0, 30)) {
     if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(k)) continue
     if (typeof v === "number") out[k] = Number.isFinite(v) ? v : 0
-    // `items` is the order receipt's JSON (templates.ts parses it defensively); everything else is a short value.
-    else if (typeof v === "string") out[k] = v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, k === "items" ? 12_000 : 500)
+    // `items` is the order receipt's JSON (templates.ts parses it defensively); `body` is an admin's
+    // message to a brand (brand_message, up to 3,000 characters); everything else is a short value.
+    else if (typeof v === "string") out[k] = v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, k === "items" ? 12_000 : k === "body" ? 3_200 : 500)
   }
   return out
 }

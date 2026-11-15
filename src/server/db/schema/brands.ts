@@ -42,6 +42,15 @@ export const brands = pgTable(
     /** The admin who created a founding brand, and their idempotency key for that create. */
     createdBy: text("created_by").references((): AnyPgColumn => users.id),
     creationKey: text("creation_key"),
+    /**
+     * Friendly reminder emails from Yard (draft and storefront nudges, catalog/nudges.ts). An owner
+     * or admin switches them off in Studio settings; decision emails are never affected.
+     */
+    nudgeEmails: boolean("nudge_emails").notNull().default(true),
+    /** The last reminder email sent to this brand (a 24-hour cooldown between reminders). */
+    lastNudgedAt: tz("last_nudged_at"),
+    /** Set when the "publish your storefront" reminder went out (once per brand). */
+    storefrontNudgedAt: tz("storefront_nudged_at"),
   },
   (t) => [
     uniqueIndex("brands_handle_ux").on(t.handle),

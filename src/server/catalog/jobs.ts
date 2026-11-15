@@ -6,6 +6,7 @@ import { withTx } from "../db"
 import { brands } from "../db/schema"
 import { catalogProducts } from "../db/schema/catalog"
 import { notFound } from "../http/errors"
+import { emailBrandLeads } from "../orders/brand-email"
 import { catalogChanged } from "./hooks"
 import { brandUnderReview } from "./studio"
 
@@ -43,7 +44,8 @@ export async function publishScheduled(): Promise<{ published: number }> {
 /**
  * Admin moderation: hides (or un-hides) a product. Hidden products drop out of every public read
  * and of getSellableVariants at once. For an admin route (content.moderate) or the moderation
- * module to call; writes the audit row in the same transaction.
+ * module to call; writes the audit row in the same transaction. The brand's owners and admins are
+ * emailed (listing_held with the reason, listing_back when it returns) from the outbox after commit.
  */
 export async function setProductModeration(actor: AdminActor, input: { productId: string; hidden: boolean; reason: string; ipHash?: string | null }) {
   return withTx(async (tx) => {
@@ -54,6 +56,18 @@ export async function setProductModeration(actor: AdminActor, input: { productId
       .update(catalogProducts)
       .set({ moderationStatus: input.hidden ? "hidden" : "ok", moderationReason: input.hidden ? input.reason.slice(0, 500) : null, moderatedAt: now, moderatedBy: actor.userId, version: p.version + 1, updatedAt: now })
       .where(eq(catalogProducts.id, p.id))
+    // The people who run the brand hear about it: why it's paused and where to fix it, or that it's back.
+    // Only on a real change (hiding a hidden product again sends nothing).
+    const changed = (p.moderationStatus === "hidden") !== input.hidden
+    const emailed = changed
+      ? await emailBrandLeads(
+          tx,
+          p.brandId,
+          input.hidden ? "listing_held" : "listing_back",
+          { product: p.title, productId: p.id, ...(input.hidden ? { reason: input.reason.slice(0, 500) } : {}) },
+          `${input.hidden ? "listing_held" : "listing_back"}:${p.id}:${p.version + 1}`,
+        )
+      : 0
     await writeAudit({
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },
       action: input.hidden ? "catalog.product_hidden" : "catalog.product_unhidden",
@@ -63,6 +77,7 @@ export async function setProductModeration(actor: AdminActor, input: { productId
       brandId: p.brandId,
       reason: input.reason,
       ipHash: input.ipHash ?? null,
+      meta: { template: input.hidden ? "listing_held" : "listing_back", emailed },
     })
     catalogChanged({ products: [p.id] })
     return { productId: p.id, moderationStatus: input.hidden ? "hidden" : "ok" }

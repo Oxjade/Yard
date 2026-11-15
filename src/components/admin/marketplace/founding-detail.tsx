@@ -35,6 +35,7 @@ import { categories } from "@/lib/data"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { cn } from "@/lib/utils"
 import { CopyValue, Initials } from "./bits"
+import { BrandEmailSection } from "./brand-email-section"
 import { DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, formatDate, formatDateTime } from "./format"
 
@@ -541,6 +542,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
 
       <ClaimSection brand={b} onSaved={saved} />
       <BadgeSection brand={b} onSaved={saved} />
+      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} /> : null}
       {unclaimed ? <ProfileSection key={`${b.id}:${b.logo?.mediaId}:${b.banner?.mediaId}`} brand={b} onSaved={saved} disabled={onHold} /> : null}
 
       <DetailSection title="Activity">

@@ -70,9 +70,12 @@ export const catalogProducts = pgTable(
     updatedAt: tz("updated_at").notNull().defaultNow(),
     createdBy: text("created_by").references(() => users.id),
     updatedBy: text("updated_by").references(() => users.id),
+    /** Set when the "still in drafts" reminder went out for this product (once per product, catalog/nudges.ts). */
+    draftNudgedAt: tz("draft_nudged_at"),
   },
   (t) => [
     uniqueIndex("catalog_products_slug_ux").on(t.slug),
+    index("catalog_products_draft_nudge_ix").on(t.createdAt).where(raw("status = 'draft' and draft_nudged_at is null and published_at is null")),
     index("catalog_products_brand_status_ix").on(t.brandId, t.status),
     index("catalog_products_public_ix").on(t.status, t.moderationStatus, t.createdAt),
     index("catalog_products_category_ix").on(t.categorySlug),

@@ -338,6 +338,21 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       .update(brandOnboardings)
       .set({ status: input.decision === "approve" ? "approved" : "rejected", reviewedAt: now, reviewedBy: actor.userId, reviewNote: input.note?.slice(0, 1000) ?? null, updatedAt: now, revision: row.revision + 1 })
       .where(eq(brandOnboardings.id, row.id))
+    let emailed = 0
+    if (input.decision === "reject") {
+      // Tell the applicant what to change (transactional: the decision is theirs to act on).
+      const [named] = await tx.select({ name: brands.name }).from(brands).where(eq(brands.id, row.brandId)).limit(1)
+      const [applicant] = await tx.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, row.userId)).limit(1)
+      if (applicant?.email) {
+        await enqueueEmail(tx, {
+          template: "brand_rejected",
+          to: applicant.email,
+          vars: { name: applicant.name ?? "", brand: named?.name ?? (row.data as { brand?: { name?: string } }).brand?.name ?? "Your brand", reason: input.note?.trim() ?? "" },
+          dedupeKey: `brand_rejected:${row.id}:${row.revision + 1}`,
+        })
+        emailed = 1
+      }
+    }
     if (input.decision === "approve") {
       const [brand] = await tx.update(brands).set({ reviewStatus: "verified" }).where(eq(brands.id, row.brandId)).returning({ id: brands.id, country: brands.country, city: brands.city, currency: brands.currency })
       const data = row.data as { storefront?: { coverMediaId?: string | null }; product?: { images?: { mediaId?: string }[] } }
@@ -374,6 +389,7 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
           vars: { name: applicant.name ?? "", brand: brandName, ...(named?.handle ? { handle: named.handle } : {}), url: "/studio" },
           dedupeKey: `brand_approved:${row.id}:${row.revision + 1}`,
         })
+        emailed = 1
       }
       const approvedBrandId = row.brandId
       afterCommit(() => notify({ kind: "brand", id: approvedBrandId }, { key: `brand.approved:${row.id}`, template: "brand.approved", vars: { brand: brandName }, href: "/studio/support" }).then(() => undefined))
@@ -387,6 +403,7 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       brandId: row.brandId,
       reason: input.note ?? null,
       ipHash: input.ipHash ?? null,
+      meta: { template: input.decision === "approve" ? "brand_approved" : "brand_rejected", emailed },
     })
     catalogChanged({ brands: [row.brandId] })
     return { onboardingId: row.id, status: input.decision === "approve" ? "approved" : "rejected", brandId: row.brandId }
