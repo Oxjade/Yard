@@ -65,3 +65,19 @@ enum AppWebLinks {
         host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
+
+/// Stops a rewrite loop when the server drops `view=app` (locale / www / slash redirects).
+/// Each target is rewritten at most once per navigation chain; a second request for the
+/// same rewrite is allowed as-is. Allowing a navigation does not reset the guard — only a
+/// finished load, a failure, or a new user-initiated link does.
+struct AppViewRewriteGuard {
+    private var rewritten: Set<URL> = []
+
+    /// True when `target` should be loaded (first rewrite in this chain); false means allow the
+    /// server's url instead of rewriting again.
+    mutating func shouldRewrite(to target: URL) -> Bool {
+        rewritten.insert(target).inserted
+    }
+
+    mutating func reset() { rewritten.removeAll() }
+}

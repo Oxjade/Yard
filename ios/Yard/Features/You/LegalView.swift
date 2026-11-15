@@ -151,8 +151,8 @@ private struct YouLegalWebView: UIViewRepresentable {
         var onFail: (String) -> Void
         var onOpenExternal: (URL) -> Void
         var lastToken: Int = 0
-        /// The last url this coordinator rewrote to, so a server that drops `view=app` cannot loop.
-        private var lastRewrite: URL? = nil
+        /// Rewrites done in the current navigation chain, so a server that drops `view=app` cannot loop.
+        private var rewriteGuard = AppViewRewriteGuard()
 
         init(base: URL, onFinish: @escaping () -> Void, onFail: @escaping (String) -> Void, onOpenExternal: @escaping (URL) -> Void) {
             self.base = base
@@ -187,9 +187,10 @@ private struct YouLegalWebView: UIViewRepresentable {
                 return
             }
             let opensNewWindow = navigationAction.targetFrame == nil
+            // A new tap starts a new chain; redirects and our own loads stay in the current one.
+            if navigationAction.navigationType == .linkActivated { rewriteGuard.reset() }
             switch AppWebLinks.route(target, base: base) {
             case .allow:
-                lastRewrite = nil
                 if opensNewWindow {
                     decisionHandler(.cancel)
                     webView.load(YouLegalWebView.request(target))
@@ -197,14 +198,13 @@ private struct YouLegalWebView: UIViewRepresentable {
                     decisionHandler(.allow)
                 }
             case .rewrite(let inApp):
-                if lastRewrite == inApp && !opensNewWindow {
-                    // The server keeps dropping view=app: load what it sends rather than loop.
-                    lastRewrite = nil
-                    decisionHandler(.allow)
-                } else {
-                    lastRewrite = inApp
+                if opensNewWindow || rewriteGuard.shouldRewrite(to: inApp) {
                     decisionHandler(.cancel)
                     webView.load(YouLegalWebView.request(inApp))
+                } else {
+                    // Already rewritten to this url in this chain and the server dropped
+                    // view=app again: load what it sends rather than loop.
+                    decisionHandler(.allow)
                 }
             case .external(let link):
                 decisionHandler(.cancel)
@@ -230,6 +230,7 @@ private struct YouLegalWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            rewriteGuard.reset()
             onFinish()
         }
 
@@ -251,6 +252,7 @@ private struct YouLegalWebView: UIViewRepresentable {
             if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
             // WebKitErrorFrameLoadInterruptedByPolicyChange: our own cancel + reload.
             if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
+            rewriteGuard.reset()
             onFail(APIError.network(error).message)
         }
     }

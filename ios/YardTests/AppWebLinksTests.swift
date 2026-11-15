@@ -66,4 +66,29 @@ final class AppWebLinksTests: XCTestCase {
                        "http://192.168.1.20:3000/legal/terms?view=app")
         XCTAssertTrue(AppWebLinks.isLegalPage(u("http://192.168.1.20:3000/legal/terms"), base: dev))
     }
+
+    // MARK: - Rewrite loop guard
+
+    func testRewriteGuardRewritesOncePerChainThenAllows() {
+        var guardState = AppViewRewriteGuard()
+        let inApp = u("https://yardstore.space/legal/terms?view=app")
+        XCTAssertTrue(guardState.shouldRewrite(to: inApp))
+        // Server redirect dropped view=app, route() asks for the same rewrite again: allow instead.
+        XCTAssertFalse(guardState.shouldRewrite(to: inApp))
+        XCTAssertFalse(guardState.shouldRewrite(to: inApp))
+    }
+
+    func testRewriteGuardTracksTargetsIndependently() {
+        var guardState = AppViewRewriteGuard()
+        XCTAssertTrue(guardState.shouldRewrite(to: u("https://yardstore.space/legal/terms?view=app")))
+        XCTAssertTrue(guardState.shouldRewrite(to: u("https://yardstore.space/legal/privacy?view=app")))
+    }
+
+    func testRewriteGuardResetStartsANewChain() {
+        var guardState = AppViewRewriteGuard()
+        let inApp = u("https://yardstore.space/legal/refunds?view=app")
+        XCTAssertTrue(guardState.shouldRewrite(to: inApp))
+        guardState.reset()
+        XCTAssertTrue(guardState.shouldRewrite(to: inApp))
+    }
 }
