@@ -74,6 +74,10 @@ class AroundMapController {
     var isUnavailable by mutableStateOf(false)
         internal set
 
+    /** Where the shopper is when the "you" dot is off screen (the page's `youHint`); wide screens list it in the side panel. */
+    var youHint by mutableStateOf<String?>(null)
+        internal set
+
     /** Bumped when the WebView's renderer died, so the composable builds a fresh one. */
     internal var generation by mutableIntStateOf(0)
         private set
@@ -116,6 +120,13 @@ class AroundMapController {
         return if (wide) AroundFrame(widthDp - 96, heightDp - 96) else AroundFrame(widthDp - 32, heightDp - 56 - peekDp - 16)
     }
 
+    /**
+     * The camera that frames [region] in the free part of the map ([frame]: under the title, above
+     * the sheet's peek) with the website's `fitTo` margin, not against the whole map.
+     */
+    private fun regionCamera(region: AroundRegion): AroundGlobeCamera =
+        frame()?.let { AroundGlobeBridge.cameraFor(region, it, wide) } ?: AroundGlobeBridge.cameraFor(region, widthDp, heightDp, wide)
+
     /** Flies the camera to show [region] (iOS `withAnimation { position = .region(r) }`). */
     fun flyTo(region: AroundRegion, animated: Boolean = true) {
         if (widthDp <= 0 || heightDp <= 0) {
@@ -124,7 +135,7 @@ class AroundMapController {
             return
         }
         pendingRegion = null
-        flyTo(AroundGlobeBridge.cameraFor(region, widthDp, heightDp, wide), animated)
+        flyTo(regionCamera(region), animated)
     }
 
     /** Flies to [camera] (the website's `flyTo`: speed 1.6, curve 1.4; a jump under reduced motion). */
@@ -202,12 +213,13 @@ class AroundMapController {
             AroundGlobeEvent.Ready -> {
                 ready = true
                 isUnavailable = false
+                youHint = null
                 // The screen around the map first (the camera's padding depends on it), then the
                 // camera the page opens on, the pins, the selection and the "you" dot.
                 chromeMessage?.let { send(it) }
                 send(AroundGlobeBridge.motionMessage(reducedMotion))
                 val cam = pendingRegion?.takeIf { widthDp > 0 && heightDp > 0 }
-                    ?.let { AroundGlobeBridge.cameraFor(it, widthDp, heightDp, wide) }
+                    ?.let { regionCamera(it) }
                     ?: camera
                     ?: AroundGlobeBridge.globeCamera(wide)
                 pendingRegion = null
@@ -226,6 +238,7 @@ class AroundMapController {
             is AroundGlobeEvent.Streets -> Unit
             is AroundGlobeEvent.Fallback -> isUnavailable = true
             is AroundGlobeEvent.CityTapped -> onCityTapped(event.slug)
+            is AroundGlobeEvent.YouHint -> youHint = event.text
         }
     }
 

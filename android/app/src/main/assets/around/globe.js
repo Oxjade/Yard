@@ -16,6 +16,7 @@
 //     you {lat,lng} | {}              chrome {wide, peek, covered}     motion {reduced}
 //   JS → Kotlin  YardAndroid.post(JSON)
 //     ready · placeTapped {id} · cameraIdle {lat,lng,zoom,west,south,east,north,user} ·
+//     youHint {text|null} ·
 //     streets {state} · fallback {reason} · cityTapped {slug}
 
 import * as ml from "./vendor/maplibre-gl.js"
@@ -718,11 +719,21 @@ function syncYou() {
   } else if (showDot && youMarker) youMarker.setLngLat([you.lng, you.lat])
   if (hint !== youHint) {
     youHint = hint
-    const note = $("note")
-    note.hidden = !hint
-    note.textContent = hint || ""
+    // Wide screens show the hint in the side panel under the places count (around-app.tsx
+    // DesktopPanel), never over the map; phones show it in the note above the sheet.
+    post({ type: "youHint", text: hint })
+    syncNote()
     relayout()
   }
+}
+
+/** The "you" hint over the map: phones only (the website's `note={desktop ? null : youHint}`). */
+function syncNote() {
+  const note = $("note")
+  if (!note) return
+  const text = chrome.wide ? null : youHint
+  note.hidden = !text
+  note.textContent = text || ""
 }
 
 function syncTitle() {
@@ -1032,6 +1043,7 @@ window.yardGlobe = {
           map.setPadding(padding())
           if (wasWide !== chrome.wide) applyGestures()
         }
+        syncNote()
         renderCredits()
         if (fallbackShown) layoutFallback()
         return

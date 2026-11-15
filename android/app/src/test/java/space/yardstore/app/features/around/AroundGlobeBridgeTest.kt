@@ -118,6 +118,8 @@ class AroundGlobeBridgeTest {
         assertEquals(AroundGlobeEvent.Streets(false), AroundGlobeBridge.parse("""{"type":"streets","state":"failed"}"""))
         assertEquals(AroundGlobeEvent.Fallback("webgl"), AroundGlobeBridge.parse("""{"type":"fallback","reason":"webgl"}"""))
         assertEquals(AroundGlobeEvent.CityTapped("lagos"), AroundGlobeBridge.parse("""{"type":"cityTapped","slug":"lagos"}"""))
+        assertEquals(AroundGlobeEvent.YouHint("You're 12 km north of the map centre"), AroundGlobeBridge.parse("""{"type":"youHint","text":"You're 12 km north of the map centre"}"""))
+        assertEquals(AroundGlobeEvent.YouHint(null), AroundGlobeBridge.parse("""{"type":"youHint","text":null}"""))
         assertEquals(AroundGlobeEvent.Streets(false), AroundGlobeBridge.parse("""{"type":"streets","state":"loading"}"""))
 
         val idle = AroundGlobeBridge.parse(
@@ -183,6 +185,26 @@ class AroundGlobeBridgeTest {
         // Half the span is one zoom level closer.
         val closer = AroundGlobeBridge.cameraFor(region.copy(latitudeDelta = 0.2, longitudeDelta = 0.2), 390.0, 600.0)
         assertTrue(abs(closer.zoom - cam.zoom - 1.0) <= 0.05)
+    }
+
+    @Test fun cameraForRegionFitsThePaddedFrameWithTheWebsiteMargin() {
+        // Phone map 390 × 700 dp, sheet peek 174: the page pads 56 on top and 174 + 16 below, 16 a
+        // side, so the free frame is 358 × 454 — and the website's fitBounds leaves 56 more round it.
+        val frame = AroundFrame(390.0 - 32, 700.0 - 56 - 174 - 16)
+        val region = AroundRegion(AroundCoordinate(6.5, 3.4), 1.2, 0.3) // tall: height decides
+        val raw = AroundGlobeBridge.cameraFor(region, 390.0, 700.0)
+        val cam = AroundGlobeBridge.cameraFor(region, frame)
+        assertEquals(AroundGlobeBridge.cameraFor(region, 358.0 - 112, 454.0 - 112), cam)
+        assertTrue(raw.zoom - cam.zoom > 0.6)
+        // The region's height on screen at that zoom fits inside the frame minus the margin.
+        val north = Math.toRadians(region.center.latitude + 0.6)
+        val south = Math.toRadians(region.center.latitude - 0.6)
+        fun merc(phi: Double) = Math.log(Math.tan(Math.PI / 4 + phi / 2))
+        val px = 512.0 * Math.pow(2.0, cam.zoom) * (merc(north) - merc(south)) / (2 * Math.PI)
+        assertTrue("region is $px dp tall", px <= 454.0 - 112)
+        // A frame smaller than the margin still frames something rather than going negative.
+        val small = AroundGlobeBridge.cameraFor(region, AroundFrame(100.0, 80.0))
+        assertTrue(small.zoom in AroundGlobeBridge.MIN_ZOOM..AroundGlobeBridge.MAX_ZOOM)
     }
 
     @Test fun cameraForClampsAndOpensOnTheGlobe() {

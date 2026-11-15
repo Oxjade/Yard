@@ -56,6 +56,12 @@ sealed interface AroundGlobeEvent {
 
     /** A city button on the simplified map was tapped. */
     data class CityTapped(val slug: String) : AroundGlobeEvent
+
+    /**
+     * "You're N km <direction> of the map centre" when the "you" dot is off screen, else null. Wide
+     * screens show it in the side panel (the page keeps it off the map there); phones over the map.
+     */
+    data class YouHint(val text: String?) : AroundGlobeEvent
 }
 
 object AroundGlobeBridge {
@@ -186,6 +192,7 @@ object AroundGlobeBridge {
             "streets" -> AroundGlobeEvent.Streets(str("state") == "ready")
             "fallback" -> AroundGlobeEvent.Fallback(str("reason") ?: "error")
             "cityTapped" -> str("slug")?.takeIf { it.isNotEmpty() }?.let { AroundGlobeEvent.CityTapped(it) }
+            "youHint" -> AroundGlobeEvent.YouHint(str("text")?.takeIf { it.isNotBlank() })
             else -> null
         }
     }
@@ -214,6 +221,20 @@ object AroundGlobeBridge {
      * as the website's `fitPoints` does: MapLibre's world is 512·2^z px wide. A region spanning most
      * of the world is the opening globe.
      */
+    /** The website's `fitTo` margin (`fitBounds(…, { padding: 56 })`), on top of the map's own padding. */
+    const val FIT_MARGIN_DP = 56.0
+
+    /**
+     * The camera that shows [region] inside [frame] (the map minus the page's padding, see
+     * `AroundMapController.frame()`), leaving the website's [FIT_MARGIN_DP] round it. The page
+     * centres on the padded frame, so the region lands between the title and the sheet's peek.
+     */
+    fun cameraFor(region: AroundRegion, frame: AroundFrame, wide: Boolean = false): AroundGlobeCamera {
+        val w = (frame.width - 2 * FIT_MARGIN_DP).coerceAtLeast(frame.width / 2)
+        val h = (frame.height - 2 * FIT_MARGIN_DP).coerceAtLeast(frame.height / 2)
+        return cameraFor(region, w, h, wide)
+    }
+
     fun cameraFor(region: AroundRegion, widthDp: Double, heightDp: Double, wide: Boolean = false): AroundGlobeCamera {
         if (region.longitudeDelta >= 300.0 || region.latitudeDelta >= 150.0) {
             return globeCamera(wide).copy(latitude = region.center.latitude.coerceIn(-60.0, 60.0), longitude = region.center.longitude)

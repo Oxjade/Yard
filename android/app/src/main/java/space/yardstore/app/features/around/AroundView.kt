@@ -327,6 +327,8 @@ internal fun AroundScreen(model: AroundViewModel) {
                     onRetry = { model.loadNow() },
                     onShowAll = { showAll() },
                     onBrowseBrands = { leave(AroundExit.Push(Route.BrandsDirectory)) },
+                    // Wide screens: the "you" hint sits in the panel, never over the map (around-app.tsx DesktopPanel).
+                    youHint = if (sidePanel) map.youHint else null,
                     kindChips = {
                         AroundKindChips(kinds) { k ->
                             kindNames = (if (k in kinds) kinds - k else kinds + k).map { it.name }
@@ -496,9 +498,10 @@ fun AroundPlacesList(
     onShowAll: () -> Unit,
     onBrowseBrands: () -> Unit,
     modifier: Modifier = Modifier,
+    youHint: String? = null,
     kindChips: (@Composable () -> Unit)? = null,
 ) {
-    AdaptiveContent(modifier.fillMaxSize()) { AroundPlacesLazyList(places, totalCount, isLoading, error, isLocated, selectedId, now, logo, distanceText, onSelect, onRetry, onShowAll, onBrowseBrands, kindChips) }
+    AdaptiveContent(modifier.fillMaxSize()) { AroundPlacesLazyList(places, totalCount, isLoading, error, isLocated, selectedId, now, logo, distanceText, onSelect, onRetry, onShowAll, onBrowseBrands, youHint, kindChips) }
 }
 
 /** The website's quick kind chips (filters.tsx `KindChips`): a sideways-scrolling row. */
@@ -524,6 +527,7 @@ private fun AroundPlacesLazyList(
     onRetry: suspend () -> Unit,
     onShowAll: () -> Unit,
     onBrowseBrands: () -> Unit,
+    youHint: String?,
     kindChips: (@Composable () -> Unit)?,
 ) {
     LazyColumn(
@@ -535,6 +539,8 @@ private fun AroundPlacesLazyList(
             Column(Modifier.padding(bottom = Spacing.xs), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 YardDisplayText("Around", size = 30.sp)
                 Text(aroundListSubtitle(places.size, totalCount, isLoading, error != null, isLocated), style = YardFonts.caption, color = Color.yard.ink2)
+                // Where the shopper is when the "you" dot isn't on screen (wide screens only: in the panel, so it never covers a pin).
+                if (youHint != null) Text(youHint, style = YardFonts.caption, color = Color.yard.ink2)
             }
         }
         if (kindChips != null && totalCount > 0) item(key = "kinds", contentType = "kinds") { kindChips() }
