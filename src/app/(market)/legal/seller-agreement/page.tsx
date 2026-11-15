@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { LEGAL_COLUMN } from "@/components/market/legal-page"
 import Link from "next/link"
 import { SELLER_AGREEMENT_VERSION } from "@/lib/api/contracts/founding"
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = { title: "Seller agreement" }
  */
 export default function SellerAgreementPage() {
   return (
-    <div className="mx-auto max-w-2xl px-4 pt-28 pb-16 md:px-8 md:pt-32">
+    <div className={LEGAL_COLUMN}>
       <h1 className="font-display text-display-lg text-ink">Seller agreement</h1>
       <p className="mt-3 text-sm text-ink-3">Version {SELLER_AGREEMENT_VERSION}</p>
       <div className="mt-8 grid gap-4 text-[0.9375rem] leading-relaxed text-ink-2">
@@ -20,7 +21,8 @@ export default function SellerAgreementPage() {
         <p>
           The full text is being finalised and will be published on this page. If you&apos;re claiming your store and want to read the complete terms before you accept, reply to the email Yard sent you and we&apos;ll send them to you.
         </p>
-        <p>
+        {/* Not in the apps' app view: the app has its own way back. */}
+        <p className="app-view:hidden">
           <Link href="/" className="text-violet underline-offset-4 hover:underline">
             Back to Yard
           </Link>

@@ -57,6 +57,22 @@ const nextConfig = (phase: string): NextConfig => {
     // bundling it breaks those paths, so the server requires it from node_modules instead. (pg, the
     // Postgres driver, is on Next's own external list.)
     serverExternalPackages: ["@electric-sql/pglite"],
+    // The apps open the legal and help pages in a WebView as /legal/<page>?view=app and
+    // /support?view=app: the same pages, served from src/app/app-view, whose layout has no
+    // marketplace chrome (no header, home bar, footer, search or overlays) and follows the system
+    // light or dark scheme. Decided here, before rendering, so the chrome never flashes and the
+    // pages stay prerendered. Without the parameter nothing changes.
+    async rewrites() {
+      const app = [{ type: "query" as const, key: "view", value: "app" }]
+      return {
+        beforeFiles: [
+          { source: "/legal/:page", has: app, destination: "/app-view/legal/:page" },
+          { source: "/support", has: app, destination: "/app-view/support" },
+        ],
+        afterFiles: [],
+        fallback: [],
+      }
+    },
     // Every page and route except /api/media/*, which sets its own stricter headers. No page frames
     // our own origin (the Studio PreviewFrame is a div), so frame-ancestors 'none' breaks nothing.
     // HSTS is set by the reverse proxy (deploy/), so a local http:// run isn't pinned to https.

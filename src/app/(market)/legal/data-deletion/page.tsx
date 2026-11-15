@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { LEGAL_COLUMN } from "@/components/market/legal-page"
 import { Suspense } from "react"
 import { Bone } from "@/components/feedback/skeletons"
 import { DataDeletionStatus } from "./status"
@@ -11,7 +12,7 @@ export const metadata: Metadata = { title: "Data deletion request", robots: { in
  */
 export default function DataDeletionPage() {
   return (
-    <div className="mx-auto max-w-2xl px-4 pt-28 pb-16 md:px-8 md:pt-32">
+    <div className={LEGAL_COLUMN}>
       <h1 className="font-display text-display-lg text-ink">Data deletion request</h1>
       <p className="mt-3 text-ink-2">When you remove Yard from Instagram and ask for your data to be deleted, Yard deletes the posts and photos it imported from your account.</p>
       <div className="mt-10">

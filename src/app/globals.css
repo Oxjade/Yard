@@ -94,6 +94,8 @@
  */
 
 @custom-variant dark (&:is(.dark *));
+/* Inside the apps' app view (src/app/app-view/layout.tsx, `?view=app`). */
+@custom-variant app-view (&:where([data-view="app"] *));
 
 @theme {
   /* Surfaces */
@@ -256,6 +258,34 @@
   --tabbar-clear: calc(var(--tabbar-top) + 1.75rem);
   /* Where those bars sit while the home bar is slid away: just above the home indicator. */
   --tabbar-clear-low: calc(max(0.875rem, env(safe-area-inset-bottom)) + 0.25rem);
+}
+
+/* App view (`?view=app`, src/app/app-view/layout.tsx): the legal and help pages inside the iOS
+   and Android apps' WebViews follow the system scheme the WebView passes, so they match the app
+   around them. Dark is the site's own palette; light takes the apps' light palette (Theme.kt). The
+   rest of the site stays dark-only. */
+@media (prefers-color-scheme: light) {
+  :root:has([data-view="app"]) {
+    color-scheme: light;
+    --color-obsidian: #f6f5f1;
+    --color-surface: #ffffff;
+    --color-card: #ffffff;
+    --color-elevated: #efede7;
+    --color-line: rgba(0, 0, 0, 0.1);
+    --color-line-soft: rgba(0, 0, 0, 0.08);
+    --color-purple: #6d28d9;
+    --color-violet: #6d28d9;
+    --color-ink: #0b0b0b;
+    --color-ink-2: #5b5b55;
+    --color-ink-3: #5b5b55;
+    --color-danger: #d92d20;
+    --background: #f6f5f1;
+    --foreground: #0b0b0b;
+    --card-foreground: #0b0b0b;
+    --muted: #efede7;
+    --muted-foreground: #5b5b55;
+    --border: rgba(0, 0, 0, 0.1);
+  }
 }
 
 /* Phones, while the header and home bar are slid away on a scroll down (chrome-autohide.ts):

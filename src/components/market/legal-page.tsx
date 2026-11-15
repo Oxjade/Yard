@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import Link from "next/link"
+import { AppViewLink } from "@/components/app-view/app-view"
 
 /** Yard's support address. Hard-coded: these pages are prerendered and never read the environment. */
 export const SUPPORT_EMAIL = "support@yardstore.space"
@@ -10,13 +10,16 @@ export const LEGAL_UPDATED = "13 November 2026"
 /** The operator's details, for the owner to fill in. */
 export const OPERATOR = "[Company legal name], [registered address], Lagos, Nigeria"
 
+/** The page column of /support and the /legal pages: below the header on the site, near the top in the apps' app view. */
+export const LEGAL_COLUMN = "mx-auto max-w-2xl px-4 pt-28 pb-16 md:px-8 md:pt-32 app-view:pt-6 app-view:pb-[max(2.5rem,env(safe-area-inset-bottom))] md:app-view:pt-10"
+
 /**
  * The shared frame for /support and the /legal pages: the same column and type as
  * /legal/seller-agreement, with a heading, a "last updated" line and the sections.
  */
 export function LegalPage({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-2xl px-4 pt-28 pb-16 md:px-8 md:pt-32">
+    <div className={LEGAL_COLUMN}>
       <h1 className="font-display text-display-lg text-ink">{title}</h1>
       <p className="mt-3 text-sm text-ink-3">Last updated: {LEGAL_UPDATED}</p>
       {intro ? <div className="mt-8 grid gap-4 text-[0.9375rem] leading-relaxed text-ink-2">{intro}</div> : null}
@@ -40,13 +43,13 @@ export function LegalList({ children }: { children: ReactNode }) {
   return <ul className="grid list-disc gap-2 pl-5 marker:text-ink-3">{children}</ul>
 }
 
-/** An in-text link, styled like the seller agreement's. */
+/** An in-text link, styled like the seller agreement's. In the app view, links to the other legal pages keep ?view=app. */
 export function LegalLink({ href, children }: { href: string; children: ReactNode }) {
   const className = "text-violet underline-offset-4 hover:underline"
   if (href.startsWith("mailto:") || href.startsWith("http")) {
     return <a href={href} className={className}>{children}</a>
   }
-  return <Link href={href} className={className}>{children}</Link>
+  return <AppViewLink href={href} className={className}>{children}</AppViewLink>
 }
 
 /** The support address as a mail link. */

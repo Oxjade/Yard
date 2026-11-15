@@ -15,7 +15,8 @@ export default function SupportPage() {
       intro={
         <>
           <p>Need help with an order, your account or selling on Yard? Message Yard Support and a person on the Yard team replies in your inbox. You can also email us at <SupportEmail />.</p>
-          <div>
+          {/* Not in the apps' app view: the apps open Yard Support in their own Inbox. */}
+          <div className="app-view:hidden">
             <MessageSupportButton variant="primary" />
           </div>
           <p>We aim to reply within 2 business days (Monday to Friday, excluding Nigerian public holidays). Brands can message Yard Support from Studio.</p>
