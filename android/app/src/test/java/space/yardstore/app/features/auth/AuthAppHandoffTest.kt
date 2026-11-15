@@ -104,6 +104,16 @@ class AuthAppHandoffTest {
         assertEquals("a b", AuthHandoffCallback.parse("yard://auth/complete?result=a%20b")!!.result)
     }
 
+    @Test fun parsesServerMessage() {
+        val cb = AuthHandoffCallback.parse("yard://auth/complete?result=team_account&provider=auth0&message=This%20is%20a%20Yard%20team%20account%2C%20so%20it%20can%E2%80%99t%20shop.")!!
+        assertEquals("team_account", cb.result)
+        assertEquals("This is a Yard team account, so it can’t shop.", cb.message)
+        assertEquals("a b", AuthHandoffCallback.parse("yard://auth/complete?result=x&message=+a%0A%0Ab+")!!.message)
+        assertNull(AuthHandoffCallback.parse("yard://auth/complete?result=x&message=")!!.message)
+        assertNull(AuthHandoffCallback.parse("yard://auth/complete?result=x")!!.message)
+        assertEquals(AuthOAuthResult.MESSAGE_LIMIT, AuthHandoffCallback.parse("yard://auth/complete?result=x&message=" + "m".repeat(2000))!!.message!!.length)
+    }
+
     @Test fun onlyTheHandoffLinkMatches() {
         assertTrue(AuthHandoffCallback.matches("yard://auth/complete?code=a"))
         assertFalse(AuthHandoffCallback.matches("yard://auth/magic?token=a"))
@@ -173,6 +183,35 @@ class AuthAppHandoffTest {
         assertEquals(AuthAppHandoff.Outcome.Failed("That provider account is connected to another Yard account."), outcome)
         assertEquals(0, server.requestCount)
         assertNull(store.peek())
+    }
+
+    @Test fun newResultsUseAppWordsAndUnknownUsesServerMessage() = runBlocking {
+        AuthAppHandoff.begin(google, server.url("/"))
+        assertEquals(
+            AuthAppHandoff.Outcome.Failed("Too many sign-in attempts. Wait a few minutes, then try again."),
+            AuthAppHandoff.complete("yard://auth/complete?result=rate_limited&provider=google&message=Other%20words", session = null),
+        )
+        AuthAppHandoff.begin(google, server.url("/"))
+        assertEquals(
+            AuthAppHandoff.Outcome.Failed("This Yard account is being deleted or is no longer available. Sign in with a different account."),
+            AuthAppHandoff.complete("yard://auth/complete?result=account_unavailable&provider=google", session = null),
+        )
+        AuthAppHandoff.begin(google, server.url("/"))
+        assertEquals(
+            AuthAppHandoff.Outcome.Failed("Something the app hasn't heard of."),
+            AuthAppHandoff.complete("yard://auth/complete?result=future_thing&provider=google&message=Something%20the%20app%20hasn%27t%20heard%20of.", session = null),
+        )
+        AuthAppHandoff.begin(google, server.url("/"))
+        assertEquals(
+            AuthAppHandoff.Outcome.Failed("Sign-in could not be completed."),
+            AuthAppHandoff.complete("yard://auth/complete?result=future_thing&provider=google", session = null),
+        )
+        AuthAppHandoff.begin(google, server.url("/"))
+        assertEquals(
+            AuthAppHandoff.Outcome.Failed("Sign-in could not be completed."),
+            AuthAppHandoff.complete("yard://auth/complete?result=signed_in&provider=google&message=Injected", session = null),
+        )
+        assertEquals(0, server.requestCount)
     }
 
     @Test fun codeWithoutPendingOrExpiredIsInvalidState() = runBlocking {

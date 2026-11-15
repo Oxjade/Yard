@@ -142,21 +142,62 @@ data class AuthAppExchangeResponse(
 
 // endregion
 
-/** `result=` on /auth/complete and yard://auth/complete → the website's wording (auth-oauth-completion.tsx). */
+/**
+ * `result=` on /auth/complete and yard://auth/complete → the website's wording
+ * (src/lib/auth/oauth-results.ts OAUTH_RESULT_MESSAGES; keep the copy identical).
+ */
 object AuthOAuthResult {
-    fun message(result: String): String = when (result) {
-        "cancelled" -> "Sign-in was cancelled."
-        "invalid_state" -> "This sign-in link expired or could not be verified. Start again."
-        "error" -> "The provider couldn’t complete sign-in. Try again."
-        "not_configured" -> "This sign-in provider isn’t configured on Yard yet."
-        "identity_in_use" -> "That provider account is connected to another Yard account."
-        "already_linked" -> "That provider is already connected to this account."
-        "link_required" -> "Sign in with your password before connecting this provider."
-        "email_required" -> "The provider didn’t share an email address. Try another sign-in method."
-        "email_unverified" -> "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way."
-        "no_brand" -> "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses."
-        "suspended" -> "This account is currently unavailable."
-        "reauth_mismatch" -> "The provider account didn’t match the account being confirmed."
-        else -> "Sign-in could not be completed."
+    const val FALLBACK = "Sign-in could not be completed."
+
+    /** Longest server message the app shows (characters). */
+    const val MESSAGE_LIMIT = 300
+
+    /** Successful results: never worded from the server's `message`. */
+    val SUCCESS_RESULTS = setOf("signed_in", "linked", "reauthed")
+
+    val MESSAGES: Map<String, String> = mapOf(
+        "cancelled" to "Sign-in was cancelled.",
+        "invalid_state" to "This sign-in link expired or could not be verified. Start again.",
+        "error" to "The provider couldn’t complete sign-in. Try again.",
+        "not_configured" to "This sign-in provider isn’t configured on Yard yet.",
+        "rate_limited" to "Too many sign-in attempts. Wait a few minutes, then try again.",
+        "identity_in_use" to "That provider account is connected to another Yard account.",
+        "already_linked" to "That provider is already connected to this account.",
+        "link_required" to "Sign in with your password before connecting this provider.",
+        "email_required" to "The provider didn’t share an email address. Try another sign-in method.",
+        "email_unverified" to "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way.",
+        "no_brand" to "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses.",
+        "suspended" to "This account is currently unavailable.",
+        "team_account" to "This is a Yard team account, so it can’t shop. Sign in with a different account.",
+        "account_unavailable" to "This Yard account is being deleted or is no longer available. Sign in with a different account.",
+        "reauth_mismatch" to "The provider account didn’t match the account being confirmed.",
+    )
+
+    /**
+     * The words for a failed [result]: the app's own for a known result; for one it doesn't know, the
+     * server's [serverMessage] (already cleaned by [serverMessage]) or [FALLBACK]. A success never
+     * shows the server's words.
+     */
+    fun message(result: String, serverMessage: String? = null): String {
+        MESSAGES[result]?.let { return it }
+        if (result in SUCCESS_RESULTS) return FALLBACK
+        return serverMessage(serverMessage) ?: FALLBACK
+    }
+
+    /**
+     * The server's `message=` as plain text: control characters become spaces, runs of whitespace
+     * collapse, trimmed, at most [MESSAGE_LIMIT] characters (ending in "…" when cut). Null when empty.
+     */
+    fun serverMessage(raw: String?): String? {
+        if (raw == null) return null
+        val clean = raw.map { if (Character.isISOControl(it) || Character.isWhitespace(it)) ' ' else it }
+            .joinToString("")
+            .replace(Regex(" {2,}"), " ")
+            .trim()
+        if (clean.isEmpty()) return null
+        if (clean.length <= MESSAGE_LIMIT) return clean
+        var cut = MESSAGE_LIMIT - 1
+        if (Character.isHighSurrogate(clean[cut - 1])) cut -= 1
+        return clean.substring(0, cut).trimEnd() + "…"
     }
 }

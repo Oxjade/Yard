@@ -24,7 +24,7 @@ import kotlin.coroutines.cancellation.CancellationException
 //   1. [AuthAppHandoff.begin] makes a PKCE verifier, keeps it (survives process death, 10 minutes)
 //      and returns GET /api/auth/oauth/{provider}/app-start?client=android&challenge=…&mode=signin&actor=shopper[&connection=…]
 //   2. The Custom Tab runs the provider; the website's callback redirects to
-//      yard://auth/complete?code=…&result=signed_in&provider=…&mode=…&actor=…  (or ?result=<error>&provider=…)
+//      yard://auth/complete?code=…&result=signed_in&provider=…&mode=…&actor=…  (or ?result=<error>&provider=…&message=…)
 //   3. MainActivity hands that link to [AuthAppHandoff.complete]: POST /api/auth/oauth/app-exchange
 //      { code, verifier } sets the session cookie in the app's own cookie jar, then GET /api/session.
 //   4. SignInView picks up [AuthAppHandoff.outcome] and carries on exactly like a sign-in made in the
@@ -56,6 +56,8 @@ data class AuthHandoffCallback(
     val provider: String?,
     val mode: String?,
     val actor: String?,
+    /** The server's words for a failure (`message=`), cleaned by [AuthOAuthResult.serverMessage]; null when absent. */
+    val message: String? = null,
 ) {
     companion object {
         /** True for `yard://auth/complete` (with or without a query). */
@@ -76,6 +78,7 @@ data class AuthHandoffCallback(
                 provider = query["provider"]?.takeIf { it.isNotEmpty() },
                 mode = query["mode"]?.takeIf { it.isNotEmpty() },
                 actor = query["actor"]?.takeIf { it.isNotEmpty() },
+                message = AuthOAuthResult.serverMessage(query["message"]),
             )
         }
 
@@ -254,7 +257,7 @@ object AuthAppHandoff {
         val pending = store.take()
         val label = pending?.label?.takeIf { it.isNotEmpty() } ?: "social"
         val result: Outcome = when {
-            callback.code == null -> Outcome.Failed(AuthOAuthResult.message(callback.result))
+            callback.code == null -> Outcome.Failed(AuthOAuthResult.message(callback.result, callback.message))
             pending == null || pending.isExpired(clock()) -> Outcome.Failed(AuthOAuthResult.message("invalid_state"))
             else -> exchange(callback, pending, label, session)
         }
