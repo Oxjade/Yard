@@ -42,6 +42,21 @@ Make sure each connection returns an email: Facebook needs the `email` permissio
 "Request email from users" enabled in the X developer app. Accounts without a verified email are
 refused.
 
+**Let people pick another Google account.** Yard sends `prompt=login` on every Auth0 sign-in, so
+Auth0 never silently reuses its own session (a phone's Custom Tab keeps it). Google, behind Auth0,
+still signs straight into the one Google account the browser has unless the `google-oauth2`
+connection asks for its account chooser. Auth0 does not forward `prompt` by itself; set it on the
+connection once with the Management API (keep the connection's other `options`; a PATCH replaces
+the whole `options` object, so GET it first and send it back with this key added):
+
+```
+PATCH /api/v2/connections/{google-oauth2 connection id}
+{ "options": { …existing options…, "upstream_params": { "prompt": { "value": "select_account" } } } }
+```
+
+Check it: start a sign-in, and Google should show "Choose an account" even with one account
+signed in.
+
 | Connection name (`AUTH0_CONNECTIONS`) | Button |
 |---|---|
 | `google-oauth2` | Continue with Google |

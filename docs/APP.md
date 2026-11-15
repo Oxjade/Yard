@@ -14,15 +14,43 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
 2. It opens a Custom Tab at
    `GET /api/auth/oauth/{google|apple|auth0}/app-start?client=android&challenge=<challenge>&mode=signin&actor=shopper|brand[&connection=<auth0 connection>]`
    - 302 to the provider (same start as `POST …/start`: state row, `yard_oauth` binding cookie on the Custom Tab, PKCE with the provider);
-   - 302 `yard://auth/complete?result=not_configured&provider=<p>` when the provider has no keys;
-   - 302 `yard://auth/complete?result=error&provider=<p>` for any other refusal (rate limit, unknown connection);
+   - 302 `yard://auth/complete?result=not_configured&provider=<p>&message=…` when the provider has no keys;
+   - 302 `yard://auth/complete?result=rate_limited&provider=<p>&message=…` after too many starts from one address;
+   - 302 `yard://auth/complete?result=error&provider=<p>&message=…` for any other refusal (e.g. an unknown connection);
    - 400 JSON for bad parameters (client not android|ios, challenge not `/^[A-Za-z0-9_-]{43}$/`, mode not signin).
 3. The provider returns to the usual `/api/auth/oauth/{provider}/callback`. For an app flow it opens
    no session in the Custom Tab; it stores a single-use hand-off code (sha256 only, 120 s) and redirects:
    - success: `yard://auth/complete?code=<43 chars>&result=signed_in&provider=<p>&mode=signin&actor=<a>`
-   - failure: `yard://auth/complete?result=<result>&provider=<p>` (no code). Results, as on /auth/complete:
-     `cancelled`, `invalid_state`, `error`, `not_configured`, `link_required`, `email_required`,
-     `email_unverified`, `no_brand`, `suspended`.
+   - failure: `yard://auth/complete?result=<result>&provider=<p>&message=<words>` (no code). `message` is
+     the sentence the website shows for that result (URL-encoded). Show the app's own words for the
+     results below; for any result the app doesn't know, show `message` as it is (and if it is
+     missing, "Sign-in could not be completed."). Never show the raw result code.
+
+     Every sign-in start (website and app, Google and Auth0) shows the provider's account chooser:
+     Google gets `prompt=select_account`, Auth0 `prompt=login` (so its session cookie in the Custom
+     Tab is never silently reused; see docs/AUTH0.md for the Google chooser behind Auth0). A refused
+     sign-in can therefore always be retried with another account.
+
+     | `result` | Words (same as /auth/complete; source: src/lib/auth/oauth-results.ts) |
+     |---|---|
+     | `cancelled` | Sign-in was cancelled. |
+     | `invalid_state` | This sign-in link expired or could not be verified. Start again. |
+     | `error` | The provider couldn’t complete sign-in. Try again. |
+     | `not_configured` | This sign-in provider isn’t configured on Yard yet. |
+     | `rate_limited` | Too many sign-in attempts. Wait a few minutes, then try again. |
+     | `link_required` | Sign in with your password before connecting this provider. |
+     | `email_required` | The provider didn’t share an email address. Try another sign-in method. |
+     | `email_unverified` | That account’s email address isn’t verified with the provider. Verify it there, or sign in another way. |
+     | `no_brand` (brand only) | This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses. |
+     | `suspended` | This account is currently unavailable. |
+     | `team_account` (shopper) | This is a Yard team account, so it can’t shop. Sign in with a different account. |
+     | `account_unavailable` | This Yard account is being deleted or is no longer available. Sign in with a different account. |
+
+     `team_account`: the provider account belongs to a Yard team (admin) account, which can't hold a
+     shopper session. `account_unavailable`: the linked Yard account is gone or its deletion is
+     pending. Neither links anything: an identity is only linked to an existing account after it
+     passed the checks for this sign-in. Each refusal is logged on the server as one line,
+     `[yard] auth: <provider> <mode>/<actor> refused: <result> (<reason>)`.
 4. The app calls `POST /api/auth/oauth/app-exchange` `{ code, verifier }`:
    - 200 `{ status: "signed_in", result: "signed_in", isNew, provider, actor, profile }` and the session
      cookie (`yard_s` for a shopper, `yard_b` for a brand; `__Host-` prefixed on https). `profile` is the

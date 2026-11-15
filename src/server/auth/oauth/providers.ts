@@ -75,6 +75,7 @@ function google(cfg: { clientId: string; clientSecret: string }): SignInProvider
       u.searchParams.set("scope", "openid email profile")
       u.searchParams.set("state", state)
       u.searchParams.set("nonce", nonce)
+      // Always the account chooser, so a signed-in browser or Custom Tab can still pick another account.
       u.searchParams.set("prompt", "select_account")
       if (codeChallenge) {
         u.searchParams.set("code_challenge", codeChallenge)
@@ -166,6 +167,11 @@ function auth0(cfg: NonNullable<ReturnType<typeof authEnv>["auth0"]>): SignInPro
       u.searchParams.set("state", state)
       u.searchParams.set("nonce", nonce)
       if (connection && allowed.has(connection)) u.searchParams.set("connection", connection)
+      // Never reuse the Auth0 session cookie (a Custom Tab keeps it): every round trip goes back to
+      // the social provider, so the person can pick another account. Google itself only shows its
+      // account chooser when the google-oauth2 connection forwards prompt=select_account
+      // (upstream_params, docs/AUTH0.md §2); Auth0 doesn't pass `prompt` on by itself.
+      u.searchParams.set("prompt", "login")
       if (codeChallenge) {
         u.searchParams.set("code_challenge", codeChallenge)
         u.searchParams.set("code_challenge_method", "S256")

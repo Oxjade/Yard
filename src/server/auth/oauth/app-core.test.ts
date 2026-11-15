@@ -44,6 +44,14 @@ test("the app's completion URL carries a code only on success", () => {
   assert.equal(appCompleteUrl({ result: "not_configured", provider: "auth0" }), "yard://auth/complete?result=not_configured&provider=auth0")
 })
 
+test("a failure carries the server's words in `message`; a success never does", () => {
+  const msg = "This is a Yard team account, so it can’t shop. Sign in with a different account."
+  const fail = new URL(appCompleteUrl({ result: "team_account", provider: "auth0", message: msg }))
+  assert.deepEqual(Object.fromEntries(fail.searchParams), { result: "team_account", provider: "auth0", message: msg })
+  const ok = new URL(appCompleteUrl({ code: "c".repeat(43), result: "signed_in", provider: "google", mode: "signin", actor: "shopper", message: msg }))
+  assert.equal(ok.searchParams.has("message"), false)
+})
+
 test("only android and ios are app clients", () => {
   assert.equal(isAppClient("android"), true)
   assert.equal(isAppClient("ios"), true)

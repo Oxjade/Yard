@@ -11,7 +11,9 @@
 //   AUTH0_CLIENT_SECRET=mock-client-secret
 //   AUTH0_CONNECTIONS=google-oauth2,facebook
 //   YARD_TRUSTED_PROXY_HOPS=1
-// Env for the kit: YARD_BASE (server origin, default http://localhost:3210), AUTH0_MOCK_PORT (3291).
+// Env for the kit: YARD_BASE (server origin, default http://localhost:3210), AUTH0_MOCK_PORT (3291),
+// AUTH0_KIT_ADMIN_EMAIL (optional: a non-demo admin's email on that data dir, e.g. made with
+// `npm run admin:create`; runs the team_account checks).
 import { randomBytes } from "node:crypto"
 import { startAuth0Mock } from "./auth0-mock.mjs"
 
@@ -90,7 +92,7 @@ async function main() {
   const s1 = await yard("POST", "/api/auth/oauth/auth0/start", { body: { mode: "signin", actor: "shopper", connection: "facebook" }, jar: new Jar() })
   const u = s1.json?.url ? new URL(s1.json.url) : null
   check(
-    "start: authorize URL at the issuer with PKCE, state, nonce, scope, connection",
+    "start: authorize URL at the issuer with PKCE, state, nonce, scope, connection, prompt=login",
     s1.status === 200 &&
       u?.origin === `http://127.0.0.1:${MOCK_PORT}` &&
       u.pathname === "/authorize" &&
@@ -99,6 +101,7 @@ async function main() {
       !!u.searchParams.get("state") &&
       !!u.searchParams.get("nonce") &&
       u.searchParams.get("connection") === "facebook" &&
+      u.searchParams.get("prompt") === "login" &&
       u.searchParams.get("redirect_uri") === `${BASE}/api/auth/oauth/auth0/callback`,
     s1,
   )
@@ -144,6 +147,39 @@ async function main() {
   check("no email: refused (result=email_required)", ne.result === "email_required", ne.result)
   const uvExisting = await signIn({ sub: `google-oauth2|${RUN}5`, email, email_verified: false })
   check("unverified email matching an existing account: refused, no session", uvExisting.result === "email_unverified" && !(await session(uvExisting.jar))?.shopper, uvExisting.result)
+
+  // App start: same authorize URL (prompt=login); refusals land in the app with the server's words.
+  const challenge = randomBytes(32).toString("base64url").slice(0, 43)
+  const as = await yard("GET", `/api/auth/oauth/auth0/app-start?client=android&challenge=${challenge}&mode=signin&actor=shopper&connection=google-oauth2`, { jar: new Jar() })
+  const asUrl = as.location ? new URL(as.location) : null
+  check("app-start: 302 to the issuer with prompt=login", as.status === 302 && asUrl?.pathname === "/authorize" && asUrl.searchParams.get("prompt") === "login", { status: as.status, location: as.location })
+  const asBad = await yard("GET", `/api/auth/oauth/auth0/app-start?client=android&challenge=${challenge}&mode=signin&actor=shopper&connection=myspace`, { jar: new Jar() })
+  const asBadUrl = asBad.location ? new URL(asBad.location) : null
+  check("app-start: unknown connection → yard://auth/complete?result=error with message", asBad.status === 302 && asBadUrl?.protocol === "yard:" && asBadUrl.searchParams.get("result") === "error" && !!asBadUrl.searchParams.get("message"), asBad.location)
+
+  // A team (admin) account's email on the shopper button: team_account, and nothing is linked.
+  const adminEmail = process.env.AUTH0_KIT_ADMIN_EMAIL?.trim().toLowerCase()
+  if (adminEmail) {
+    const t1 = await signIn({ sub: `google-oauth2|${RUN}adm`, email: adminEmail, email_verified: true, name: "Team Member" })
+    check("admin email on the shopper button: team_account, no session", t1.result === "team_account" && !(await session(t1.jar))?.shopper, t1.result)
+    const t2 = await signIn({ sub: `google-oauth2|${RUN}adm`, email: adminEmail, email_verified: true, name: "Team Member" })
+    check("again with the same identity: team_account again (still not linked, still not a silent error)", t2.result === "team_account", t2.result)
+    // The app flow: the same refusal, with the words, in yard://auth/complete.
+    mock.nextUser({ sub: `google-oauth2|${RUN}adm`, email: adminEmail, email_verified: true })
+    const jar = new Jar()
+    const st = await yard("GET", `/api/auth/oauth/auth0/app-start?client=android&challenge=${challenge}&mode=signin&actor=shopper&connection=google-oauth2`, { jar })
+    const au2 = st.location ? await fetch(st.location, { redirect: "manual" }) : null
+    const cb2 = au2?.headers.get("location") ? new URL(au2.headers.get("location")) : null
+    const back2 = cb2 ? await yard("GET", cb2.pathname + cb2.search, { jar }) : null
+    const end = back2?.location ? new URL(back2.location) : null
+    check(
+      "app flow, admin email: yard://auth/complete?result=team_account&message=…",
+      end?.protocol === "yard:" && end.searchParams.get("result") === "team_account" && end.searchParams.get("message") === "This is a Yard team account, so it can’t shop. Sign in with a different account." && !end.searchParams.get("code"),
+      back2?.location,
+    )
+  } else {
+    console.log("SKIP team_account checks (set AUTH0_KIT_ADMIN_EMAIL)")
+  }
 
   // State / browser binding
   const other = await signIn({ sub: `google-oauth2|${RUN}1`, email, email_verified: true }, { callbackJar: new Jar() })

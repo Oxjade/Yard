@@ -50,9 +50,10 @@ export const hashHandoffCode = (code: string) => createHash("sha256").update(cod
 
 /**
  * yard://auth/complete?… Success carries code, result, provider, mode and actor; a failure only
- * result and provider (no code).
+ * result, provider and, when given, `message`: the words the website shows for that result, so an
+ * app shows them for a result it doesn't know yet (no code).
  */
-export function appCompleteUrl(p: { result: string; provider?: string | null; code?: string | null; mode?: string | null; actor?: string | null }) {
+export function appCompleteUrl(p: { result: string; provider?: string | null; code?: string | null; mode?: string | null; actor?: string | null; message?: string | null }) {
   const q = new URLSearchParams()
   if (p.code) q.set("code", p.code)
   q.set("result", p.result)
@@ -60,6 +61,8 @@ export function appCompleteUrl(p: { result: string; provider?: string | null; co
   if (p.code) {
     if (p.mode) q.set("mode", p.mode)
     if (p.actor) q.set("actor", p.actor)
+  } else if (p.message) {
+    q.set("message", p.message)
   }
   return `${APP_COMPLETE_URL}?${q.toString()}`
 }

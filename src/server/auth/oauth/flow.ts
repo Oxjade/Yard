@@ -17,6 +17,7 @@ import { assertEligible, credentialsOf, deletionPending, findUserByEmail, openSe
 import { limitOauthStart } from "../limits"
 import { markReauth } from "../session-auth"
 import { auth0ConnectionOfSubject } from "../../../lib/auth/auth0"
+import { eligibilityResult, OAUTH_SUCCESS_RESULTS, oauthResultMessage, refusalLine, type OAuthResult } from "../../../lib/auth/oauth-results"
 import { appCompleteUrl, HANDOFF_TTL_MS, newHandoffCode, type AppClient } from "./app-core"
 import { auth0Connections, getProvider, ProviderNotConfigured, providerLabel, type ProviderId, type ProviderProfile } from "./providers"
 
@@ -40,24 +41,7 @@ import { auth0Connections, getProvider, ProviderNotConfigured, providerLabel, ty
 export type OAuthMode = "signin" | "link" | "reauth"
 export type OAuthActor = "shopper" | "brand"
 
-export const OAUTH_RESULTS = [
-  "signed_in",
-  "linked",
-  "reauthed",
-  "cancelled",
-  "invalid_state",
-  "error",
-  "not_configured",
-  "identity_in_use",
-  "already_linked",
-  "link_required",
-  "email_required",
-  "email_unverified",
-  "no_brand",
-  "suspended",
-  "reauth_mismatch",
-] as const
-export type OAuthResult = (typeof OAUTH_RESULTS)[number]
+export { OAUTH_RESULTS, type OAuthResult } from "../../../lib/auth/oauth-results"
 
 const STATE_TTL_MS = 10 * 60_000
 const bindingCookie = () => (getEnv().cookieSecure ? "__Host-" : "") + "yard_oauth"
@@ -138,7 +122,7 @@ export function completeUrl(provider: ProviderId, result: OAuthResult, extra: { 
 
 /** Where an OAuth outcome goes: /auth/complete in a browser, yard://auth/complete for an app flow. */
 function outcomeUrl(app: boolean, provider: ProviderId, result: OAuthResult, extra: { mode?: OAuthMode; actor?: OAuthActor } = {}) {
-  return app ? appCompleteUrl({ result, provider }) : completeUrl(provider, result, extra)
+  return app ? appCompleteUrl({ result, provider, message: oauthResultMessage(result) }) : completeUrl(provider, result, extra)
 }
 
 /** The state's row id when its MAC is valid (the row itself may be used, expired or gone). */
@@ -169,6 +153,7 @@ async function isAppState(provider: ProviderId, state: string | null) {
 
 /** The failure redirect for a callback that couldn't be handled at all (the route's backstop). */
 export async function callbackFailureUrl(provider: ProviderId, state: string | null, result: OAuthResult = "invalid_state") {
+  log.warn(refusalLine(provider, null, null, result, "callback could not be handled"))
   return outcomeUrl(await isAppState(provider, state), provider, result)
 }
 
@@ -224,43 +209,69 @@ async function linkIdentity(provider: ProviderId, userId: string, p: ProviderPro
   await d.insert(oauthIdentities).values({ id: newId("oid"), userId, provider, subject: p.subject, email: p.email, emailVerified: p.emailVerified ? 1 : 0, lastUsedAt: new Date() })
 }
 
+type SignInRefusal = { result: OAuthResult; reason: string; userId?: string }
+
+/** Whether `user` may hold a session of `actor`: its brand for a brand session, or why not. */
+async function eligibility(actor: OAuthActor, user: UserRow, brandId: string | null): Promise<{ brandId: string | null } | SignInRefusal> {
+  try {
+    return { brandId: await assertEligible(actor, user, brandId) }
+  } catch (e) {
+    if (!(e instanceof HttpError)) throw e
+    return { result: eligibilityResult(actor, e.code), reason: `not eligible: ${e.code}, kind ${user.kind}`, userId: user.id }
+  }
+}
+
 /**
- * Resolves (or creates) the user for a sign-in. Returns the user or a result explaining why not.
- * `out.created` says whether this sign-in created the account (the app asks "shop or sell").
+ * Resolves (or creates) the user for a sign-in as `actor`, and checks it may hold that session
+ * before anything is linked: an identity is never attached to an existing account that then
+ * can't sign in this way (a team account on the shopper button, say). Returns the user and its
+ * brand, or the refusal. `out.created` says whether this sign-in created the account (the app
+ * asks "shop or sell").
  */
-async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, out: { created: boolean } = { created: false }): Promise<UserRow | OAuthResult> {
+async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor: OAuthActor, brandId: string | null, out: { created: boolean } = { created: false }): Promise<{ user: UserRow; brandId: string | null } | SignInRefusal> {
   const d = await db()
   const known = await identityBySubject(provider, p.subject)
   if (known) {
-    await d.update(oauthIdentities).set({ lastUsedAt: new Date(), email: p.email ?? known.email }).where(eq(oauthIdentities.id, known.id))
     const u = await userById(known.userId)
-    if (!u || (await deletionPending(u.id))) return "error"
+    if (!u) return { result: "account_unavailable", reason: "identity's user is gone", userId: known.userId }
+    if (await deletionPending(u.id)) return { result: "account_unavailable", reason: "deletion pending", userId: u.id }
     // Demo sign-in only ever opens DEMO accounts, and only through the demo route: an identity that
     // got linked to a demo account must not open a real session on it.
-    if (u.demo) return "link_required"
-    return u
+    if (u.demo) return { result: "link_required", reason: "identity is on a demo account", userId: u.id }
+    const ok = await eligibility(actor, u, brandId)
+    if ("result" in ok) return ok
+    await d.update(oauthIdentities).set({ lastUsedAt: new Date(), email: p.email ?? known.email }).where(eq(oauthIdentities.id, known.id))
+    return { user: u, brandId: ok.brandId }
   }
-  if (!p.email) return "email_required"
+  if (!p.email) return { result: "email_required", reason: "provider shared no email" }
   const existing = await findUserByEmail(p.email)
   if (existing) {
-    if (existing.demo || (await deletionPending(existing.id))) return "link_required"
-    if (!p.emailVerified) return "link_required"
+    if (existing.demo) return { result: "link_required", reason: "email is a demo account's", userId: existing.id }
+    if (await deletionPending(existing.id)) return { result: "link_required", reason: "email's account has deletion pending", userId: existing.id }
+    if (!p.emailVerified) return { result: "link_required", reason: "provider email unverified", userId: existing.id }
     const already = await sameProviderIdentity(provider, existing.id, p.subject)
-    if (already) return "link_required" // a different account of the same provider is linked already
+    if (already) return { result: "link_required", reason: "another identity of this provider is linked", userId: existing.id } // a different account of the same provider is linked already
+    // Checked before linking: a refused account gets no identity and no email confirmation.
+    const ok = await eligibility(actor, existing, brandId)
+    if ("result" in ok) return ok
     // The provider verified this email, so it signs straight into the matching Yard account and
     // marks the Yard email as confirmed (no "sign in with your password first" detour).
     const cred = await credentialsOf(existing.id)
     if (!cred?.emailVerifiedAt) await upsertCredentials(existing.id, { emailVerifiedAt: new Date() })
     await linkIdentity(provider, existing.id, p)
-    return existing
+    return { user: existing, brandId: ok.brandId }
   }
   const id = newId("u")
   await d.insert(users).values({ id, kind: "shopper", name: nameFrom(p), email: p.email, status: "active", demo: false })
   await upsertCredentials(id, { emailVerifiedAt: p.emailVerified ? new Date() : null })
   await linkIdentity(provider, id, p)
   const u = await userById(id)
-  if (u) out.created = true
-  return u ?? "error"
+  if (!u) return { result: "error", reason: "new account not readable" }
+  out.created = true
+  // A new account is a shopper: a brand sign-in still gets no_brand (the account stays, for shopping or applying).
+  const ok = await eligibility(actor, u, brandId)
+  if ("result" in ok) return ok
+  return { user: u, brandId: ok.brandId }
 }
 
 /** The callback. Never throws: every outcome is a redirect URL. */
@@ -271,64 +282,65 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
   } catch (e) {
     log.error(`[yard] auth: ${provider} state check failed`, e)
   }
-  if (!row) return outcomeUrl(await isAppState(provider, input.state), provider, "invalid_state")
+  if (!row) {
+    const appFlow = await isAppState(provider, input.state)
+    log.warn(refusalLine(provider, null, null, "invalid_state", `state missing, used, expired or from another browser${appFlow ? ", app flow" : ""}`))
+    return outcomeUrl(appFlow, provider, "invalid_state")
+  }
   const mode = row.mode as OAuthMode
   const actor = row.actor as OAuthActor
   const app = row.appClient && row.appChallenge ? { client: row.appClient as AppClient, challenge: row.appChallenge } : null
-  const done = (result: OAuthResult) => outcomeUrl(!!app, provider, result, { mode, actor })
-  if (input.error) return done("cancelled")
-  if (!input.code) return done("invalid_state")
+  // Every outcome goes through here; each refusal is logged once (user id at most, never an email).
+  const done = (result: OAuthResult, reason?: string, userId?: string | null) => {
+    if (!OAUTH_SUCCESS_RESULTS.includes(result)) log.warn(refusalLine(provider, mode, actor, result, [reason, userId ? `user ${userId}` : null, app ? `app ${app.client}` : null].filter(Boolean).join(", ")))
+    return outcomeUrl(!!app, provider, result, { mode, actor })
+  }
+  if (input.error) return done("cancelled", `provider error ${input.error.slice(0, 40).replace(/[^\w.-]/g, "")}`)
+  if (!input.code) return done("invalid_state", "no code")
 
   let profile: ProviderProfile
   try {
     const verifier = row.codeVerifierEnc ? open(row.codeVerifierEnc, vaultAad(row.id)) : null
     profile = await getProvider(provider).exchange({ code: input.code, codeVerifier: verifier, nonce: row.nonce, appleUser: input.appleUser })
   } catch (e) {
-    if (e instanceof ProviderNotConfigured) return done("not_configured")
+    if (e instanceof ProviderNotConfigured) return done("not_configured", "provider has no keys")
     log.error(`[yard] auth: ${provider} exchange failed`, e)
-    return done("error")
+    return done("error", "code exchange failed")
   }
   // Auth0 fronts many social connections; only a provider-verified email is trusted (no
   // account is created or linked, and no session opened, on an unverified or missing one).
   if (provider === "auth0") {
-    if (!profile.email) return done("email_required")
-    if (!profile.emailVerified) return done("email_unverified")
+    if (!profile.email) return done("email_required", "no email in ID token")
+    if (!profile.emailVerified) return done("email_unverified", "email not verified by the provider")
   }
 
   try {
     // link / reauth must land in the same session that started it.
     if (mode !== "signin" && !app) {
       const current = actor === "shopper" ? await getShopper() : await getBrandActor()
-      if (!current || current.userId !== row.userId || current.sessionId !== row.sessionId) return done("invalid_state")
-      if (current.demo) return done("error") // defence in depth: start refuses demo sessions; never link or re-auth a demo account
+      if (!current || current.userId !== row.userId || current.sessionId !== row.sessionId) return done("invalid_state", "not the session that started it", row.userId)
+      if (current.demo) return done("error", "demo session", current.userId) // defence in depth: start refuses demo sessions; never link or re-auth a demo account
       return await withTx(async () => {
         const known = await identityBySubject(provider, profile.subject)
         if (mode === "reauth") {
-          if (!known || known.userId !== current.userId) return done("reauth_mismatch")
+          if (!known || known.userId !== current.userId) return done("reauth_mismatch", known ? "identity is another account's" : "identity not linked", current.userId)
           await markReauth(current.sessionId, current.userId)
           return done("reauthed")
         }
-        if (known) return done(known.userId === current.userId ? "linked" : "identity_in_use")
+        if (known) return known.userId === current.userId ? done("linked") : done("identity_in_use", "identity is another account's", current.userId)
         const same = await sameProviderIdentity(provider, current.userId, profile.subject)
-        if (same) return done("already_linked")
+        if (same) return done("already_linked", "another identity of this provider is linked", current.userId)
         await linkIdentity(provider, current.userId, profile)
         await writeAudit({ actor: { kind: actor === "brand" ? "brand" : "shopper", id: current.userId, name: current.name }, action: "auth.identity_linked", target: providerLabel(provider), subjectType: "user", subjectId: current.userId, ipHash: meta.ipHash, meta: { provider } })
         return done("linked")
       })
     }
-    if (mode !== "signin") return done("invalid_state") // app flows only sign in (start refuses the rest)
+    if (mode !== "signin") return done("invalid_state", "app flow not signin") // app flows only sign in (start refuses the rest)
     return await withTx(async () => {
       const created = { created: false }
-      const resolved = await resolveSignInUser(provider, profile, created)
-      if (typeof resolved === "string") return done(resolved)
-      let brandId: string | null
-      try {
-        brandId = await assertEligible(actor, resolved, row!.brandId)
-      } catch (e) {
-        if (e instanceof HttpError && e.code === "suspended") return done("suspended")
-        if (e instanceof HttpError) return done(actor === "brand" ? "no_brand" : "error")
-        throw e
-      }
+      const outcome = await resolveSignInUser(provider, profile, actor, row!.brandId, created)
+      if ("result" in outcome) return done(outcome.result, outcome.reason, outcome.userId)
+      const { user: resolved, brandId } = outcome
       if (app) {
         // The Custom Tab gets no session: the app exchanges this code (with its verifier) for one.
         const code = await createHandoff({ userId: resolved.id, actor, brandId, provider, mode, result: "signed_in", isNew: created.created, ...app })
@@ -339,7 +351,7 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     })
   } catch (e) {
     log.error(`[yard] auth: ${provider} callback failed`, e)
-    return done("error")
+    return done("error", "callback threw")
   }
 }
 

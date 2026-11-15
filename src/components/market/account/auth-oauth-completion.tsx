@@ -5,26 +5,12 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api/client"
+import { isOAuthResult, OAUTH_RESULT_MESSAGES, oauthResultMessage } from "@/lib/auth/oauth-results"
 import type { SessionDto } from "@/lib/api/contracts/session"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { clearOnboardingAuthReturn, OAUTH_REAUTH_CHANNEL, takeOnboardingAuthReturn, takeReauthReturn, type OAuthReauthMessage } from "@/lib/session/auth-return"
 import { refreshServerSession, getServerSessionState } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
-
-const messages = new Map<string, string>(Object.entries({
-  cancelled: "Sign-in was cancelled.",
-  invalid_state: "This sign-in link expired or could not be verified. Start again.",
-  error: "The provider couldn’t complete sign-in. Try again.",
-  not_configured: "This sign-in provider isn’t configured on Yard yet.",
-  identity_in_use: "That provider account is connected to another Yard account.",
-  already_linked: "That provider is already connected to this account.",
-  link_required: "Sign in with your password before connecting this provider.",
-  email_required: "The provider didn’t share an email address. Try another sign-in method.",
-  email_unverified: "That account’s email address isn’t verified with the provider. Verify it there, or sign in another way.",
-  no_brand: "This account doesn’t have a brand workspace yet. Apply to sell on Yard to open one, or sign in with the account your brand uses.",
-  suspended: "This account is currently unavailable.",
-  reauth_mismatch: "The provider account didn’t match the account being confirmed.",
-}))
 
 type Completion = { result: string; message: string; success: boolean }
 
@@ -78,7 +64,7 @@ export function AuthOAuthCompletion() {
             ok = actor === "brand" ? !!session.brand && !session.brand.demo : !!session.shopper && !session.shopper.demo
             void refreshServerSession()
           }
-          const message = ok ? "Your identity was confirmed." : result === "reauthed" ? "Yard couldn’t confirm this. Close this window and try again." : (messages.get(result) ?? "Your identity couldn’t be confirmed.")
+          const message = ok ? "Your identity was confirmed." : result === "reauthed" ? "Yard couldn’t confirm this. Close this window and try again." : ((isOAuthResult(result) ? OAUTH_RESULT_MESSAGES[result] : undefined) ?? "Your identity couldn’t be confirmed.")
           const handed = reportReauth({ type: "yard:oauth-reauth", actor, ok, message: ok ? undefined : message })
           if (!handed && active) setContinueTo(takeReauthReturn() ?? (actor === "brand" ? "/studio" : "/you"))
           if (active) setCompletion({ result, success: ok, message: ok ? (handed ? "Your identity was confirmed. Returning you to Studio…" : "Your identity was confirmed. Go back and press the button again to finish.") : message })
@@ -107,7 +93,7 @@ export function AuthOAuthCompletion() {
           return
         }
         clearOnboardingAuthReturn()
-        if (active) setCompletion({ result, success: false, message: messages.get(result) ?? "Sign-in could not be completed." })
+        if (active) setCompletion({ result, success: false, message: oauthResultMessage(result) })
       } catch {
         clearOnboardingAuthReturn()
         if (active) setCompletion({ result, success: false, message: "Yard couldn’t refresh your sign-in. Check your connection, then try again." })
