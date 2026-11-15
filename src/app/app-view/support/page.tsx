@@ -1,2 +1,2 @@
-/** /support?view=app (src/proxy.ts rewrites it here): the same page, without the marketplace chrome. */
+/** /support?view=app (the rewrites() in next.config.ts send it here): the same page, without the marketplace chrome. */
 export { default, metadata } from "@/app/(market)/support/page"

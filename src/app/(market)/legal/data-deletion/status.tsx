@@ -9,9 +9,14 @@ import { dataDeletionStatus } from "@/lib/api/contracts/social"
 import { isNotFound } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
 
-/** The request's status for its confirmation code: Received or Completed, nothing else. */
+/** The request's status for its confirmation code (?code=): Received or Completed, nothing else. Nothing without a code. */
 export function DataDeletionStatus() {
   const code = useSearchParams().get("code")?.trim() ?? ""
+  if (!code) return null
+  return <RequestStatus code={code} />
+}
+
+function RequestStatus({ code }: { code: string }) {
   const valid = /^[A-Za-z0-9_-]{16,40}$/.test(code)
   const { data, error, isLoading, revalidate } = useApi(valid ? `/api/social/data-deletion/${encodeURIComponent(code)}` : null, (k) => api<{ status: "received" | "completed" }>(k, { schema: dataDeletionStatus }), { revalidateOnFocus: false })
 
