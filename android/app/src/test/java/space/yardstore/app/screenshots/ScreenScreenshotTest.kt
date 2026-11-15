@@ -65,6 +65,20 @@ import space.yardstore.app.features.search.SearchLiveModel
 import space.yardstore.app.features.search.SearchPreviewData
 import space.yardstore.app.features.you.SettingsView
 import space.yardstore.app.features.you.YouView
+import space.yardstore.app.features.you.YouAccount
+import space.yardstore.app.features.you.YouAccountModel
+import space.yardstore.app.features.you.YouAccountView
+import space.yardstore.app.features.you.YouPhotoModel
+import space.yardstore.app.features.you.YouPhotoProblem
+import space.yardstore.app.features.you.YouPickedPhoto
+import space.yardstore.app.features.you.YouPhotoCropScreen
+import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.core.stores.SessionStore
+import space.yardstore.app.designsystem.components.YardTopBar
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import java.time.Instant
 
 /**
@@ -136,7 +150,8 @@ object ScreenshotHarness {
 object YardScreens {
     val phone = listOf(
         "home", "product", "brand", "brands", "shop", "categories", "drops", "drop-detail", "bag", "checkout",
-        "order-confirmation", "order-detail", "orders", "inbox", "conversation", "you", "settings", "charts",
+        "order-confirmation", "order-detail", "orders", "inbox", "conversation", "you", "you-photo", "settings", "charts",
+        "settings-details", "settings-details-nophoto", "settings-photo-uploading", "settings-photo-failed", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
         "place-detail", "root",
     )
@@ -188,6 +203,25 @@ object YardScreens {
             "conversation" -> InboxThreadScreen(remember { InboxThreadPreviewData.model() }, autoLoad = false)
             "you" -> YouView()
             "settings" -> SettingsView()
+            "you-photo" -> CompositionLocalProvider(LocalSessionStore provides remember { SessionStore.preview(true, photoSrc = FakeYardBackend.accountPhoto.src) }) {
+                YouView()
+            }
+            "settings-details" -> YouAccountView()
+            "settings-details-nophoto" -> YouDetails(FakeYardBackend.account.copy(photo = null), remember { YouPhotoModel() })
+            "settings-photo-uploading" -> YouDetails(FakeYardBackend.account, remember {
+                YouPhotoModel().also { it.previewState(FakeImages.photo("crop-preview", 600, 600).asImageBitmap(), uploading = 0.62f) }
+            })
+            "settings-photo-failed" -> YouDetails(FakeYardBackend.account, remember {
+                YouPhotoModel().also {
+                    it.previewState(
+                        FakeImages.photo("crop-preview", 600, 600).asImageBitmap(),
+                        failed = YouPhotoProblem("You're offline. Check your connection and try again.", retry = true),
+                    )
+                }
+            })
+            "photo-crop" -> YardTheme(darkTheme = true) {
+                YouPhotoCropScreen(remember { YouPickedPhoto(FakeImages.photo("crop-source", 1600, 1200)) }, onCancel = {}, onSave = { _, _ -> })
+            }
             "charts" -> ChartsView()
             "search" -> SearchHomeView(
                 model = remember { SearchLiveModel.preview("", emptyList(), emptyList(), SearchPreviewData.categories) },
@@ -212,6 +246,16 @@ object YardScreens {
                 onBack = {}, onExit = {}, previewDetail = AroundFixtures.detail,
             )
             else -> error("Unknown screen $screen")
+        }
+    }
+
+    /** Settings › Your details, loaded, with a given account and photo state (no network). */
+    @Composable
+    private fun YouDetails(account: YouAccount, photo: YouPhotoModel) {
+        val model = remember { YouAccountModel().also { it.apply(account) } }
+        Column(Modifier.fillMaxSize()) {
+            YardTopBar("Your details")
+            Reflect.PrivateComposable("$F.you.YouAccountViewKt", "YouAccountContent", model, account, Modifier.weight(1f), photo)
         }
     }
 }

@@ -36,11 +36,38 @@ Settings › Account › Your details is a page (two-pane: `YouSettingsPage.Acco
 - `GET/PATCH /api/inbox/settings` `{ readReceipts }`
 - Sign out: `SessionStore.signOut()`.
 
+## Profile photo (YouPhoto.kt, YouPhotoViews.kt, YouAvatar.kt)
+docs/APP.md › Profile photo; website `account-photo.tsx` + `photo-crop.ts`.
+- Settings › Your details › Photo: tap the avatar (camera badge) or Change photo → an action sheet: Choose from library
+  (system photo picker, `PickVisualMedia`, no permission), Take photo (the camera app via `TakePicture` into
+  `cacheDir/photos` through the `…photos` FileProvider; no CAMERA permission is declared, so none is needed — Android's
+  equivalent of iOS's usage strings; hidden without a camera), Remove photo (confirmed inside the same sheet, like
+  "Cancel this order?"; there is no modal dialog).
+- Opening: the website's checks (JPEG/PNG/WebP/HEIC, ≤ 10 MB, not empty, ≥ 64 px), decoded upright (ImageDecoder on
+  API 28+, which also reads HEIC; BitmapFactory + EXIF rotation below), long side capped at 4096 px.
+- Crop: full-screen, always dark (like the product photo viewer). Drag, pinch around the fingers, double-tap 1×↔2×,
+  zoom slider and ± buttons (1–4×); the photo always covers the square; outside the circle is dimmed. Double-tap /
+  button zoom animate with `Motion.spring()`, instant under reduced motion. TalkBack custom actions move and zoom.
+- Save: crop → JPEG ≤ 1024 px, quality 90 (re-encode drops EXIF/GPS) → `POST /api/account/photo?as=shopper`, one
+  multipart part `file` built by `APIClient.makeMultipartRequest` (Origin + X-Yard-Client; fixed length, so
+  `Content-Length`, never chunked), wrapped to report progress. Optimistic: the crop shows at once with a progress
+  ring; failure brings the saved photo back dimmed with the reason, Try again (network, 429, 5xx) and Discard.
+- Copy (website): 413 "Photos can be up to 10 MB.", 415 "Yard couldn't read this as a JPEG, PNG or WebP photo. Try
+  another one.", 429 "You've changed your photo a lot. Try again in N min." (`Retry-After`), 422 / others = the
+  server's message (incl. "Demo accounts can't change their photo."), 401 → message + Sign in. Demo accounts see the
+  controls disabled and that sentence.
+- Showing it: `YouAvatar` (photo over the acid initials disc; initials on missing/failed/404; fades in, instant under
+  reduced motion) in the You header (`session.shopper.photoSrc`, added to `Shopper`), the Settings "Your details" row
+  and Your details. After a change: the account from the response is applied, `session.refresh()` re-reads
+  `photoSrc`, and the old URL is evicted from Coil's memory and disk caches (new photos get new URLs anyway).
+- Not done: the upload runs in the Your details view model, so leaving that screen mid-upload cancels it (the old photo
+  stays); brand-side photos (`conversation.customer.photoSrc`) are Studio-only and not in the app.
+
 ## Helpers (YouSupport.kt)
 `YouMarkets` (copy of src/config/markets.ts), `YouRegion` (ship-to in `Config.preferences` key `yard.shipTo`, `yard.currencyChosen`), `YouWebPage` (Help / Sell / web settings via `WebPages`), `YouSettingsGroup`, `YouToggleRow`, `YouTextField`, `YouSkeletonRow`, `Modifier.youRowClick`, security DTOs.
 
 ## Tests
-`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer), `YouQuickLinksTest` (badge rules, live counts, throttle, partial failure, reset cancels a load in flight), `YouAccountTest` (16: name/email rules, AccountDto, exact request bodies, error mapping, reauth, pending/cancel/refresh, change-email confirm). Models take `(api, root)` so tests can point them at the mock server.
+`app/src/test/java/space/yardstore/app/features/you/`: `YouTabletTest` (settings page → route mapping, tile columns), `YouModelsTest` (DTO decoding/encoding, password and delete rules, markets, reauth detection) and `YouViewModelsTest` (`YouNotificationsModel`, `YouSecurityModel` against MockWebServer), `YouQuickLinksTest` (badge rules, live counts, throttle, partial failure, reset cancels a load in flight), `YouPhotoTest` (crop math, picked-file checks, the multipart request + Content-Length + progress, error copy for 413/415/422/401/429/5xx, optimistic save / retry / discard / remove), `YouAccountTest` (16: name/email rules, AccountDto, exact request bodies, error mapping, reauth, pending/cancel/refresh, change-email confirm). Models take `(api, root)` so tests can point them at the mock server.
 
 ## Differences from iOS
 - Web pages open in Custom Tabs, not SFSafariViewController. Legal WebView shares the system WebView cookie store (iOS used a non-persistent store); it doesn't force dark styling of the web page (iOS doesn't either).

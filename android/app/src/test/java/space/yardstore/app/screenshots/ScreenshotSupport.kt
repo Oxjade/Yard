@@ -49,6 +49,9 @@ import space.yardstore.app.features.home.HomeInboxUnread
 import space.yardstore.app.features.home.HomeNotificationsResponse
 import space.yardstore.app.features.inbox.InboxConversation
 import space.yardstore.app.features.inbox.InboxConversationsPage
+import space.yardstore.app.features.you.YouAccount
+import space.yardstore.app.features.you.YouAccountPhoto
+import space.yardstore.app.features.you.YouAccountResponse
 import space.yardstore.app.features.you.YouSecurity
 
 // Screenshot-test plumbing: a fake Yard backend (MockWebServer), a fake Coil image pipeline and
@@ -96,6 +99,13 @@ object FakeYardBackend {
         @Suppress("UNCHECKED_CAST")
         get() = Reflect.objectProperty("space.yardstore.app.features.inbox.InboxPreviewData", "rows") as List<InboxConversation>
 
+    /** A signed-in person with a profile photo (docs/APP.md › Profile photo). */
+    val accountPhoto = YouAccountPhoto(mediaId = "med_fake", src = "/api/media/med_fake?as=shopper", width = 1024, height = 1024)
+    val account = YouAccount(
+        name = "Ada Obi", email = "ada@example.com", emailVerified = true, hasPassword = true,
+        signInProviders = listOf("google"), photo = accountPhoto,
+    )
+
     fun respond(request: RecordedRequest): MockResponse {
         val url = request.requestUrl ?: return notFound
         val path = url.encodedPath
@@ -131,6 +141,7 @@ object FakeYardBackend {
             path == "/api/inbox/conversations" -> json(InboxConversationsPage(items = inboxRows))
             path == "/api/charts/scopes" -> json(ChartsFiltersPreview.scopes)
             path == "/api/charts" -> json(ChartsPreviewData.board)
+            path == "/api/account" -> json(YouAccountResponse(account))
             path == "/api/auth/security" -> json(YouSecurity(method = "password", emailVerified = true, hasPassword = true))
             else -> notFound
         }

@@ -1,6 +1,11 @@
 package space.yardstore.app.features.you
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
@@ -362,7 +367,7 @@ private fun SettingsAccount(
 ) {
     val s = model.security
     YouSettingsGroup("Account", footer = "Change your name and email in Your details. Your name goes on your orders.") {
-        SettingsRow("Your details", Icons.Outlined.Badge, detailsModifier, value = shopperName)
+        YouDetailsRow(detailsModifier, shopperName)
         SettingsRow("Addresses", Icons.Outlined.Place, addressesModifier)
         when (model.phase) {
             YouSecurityModel.Phase.Idle, YouSecurityModel.Phase.Loading -> YouSkeletonRow()
@@ -404,6 +409,31 @@ private fun SettingsAccount(
                 SettingsRow("Apple", Icons.Outlined.PhoneIphone, Modifier.youRowClick(onClick = onConnectOnWeb), value = "Connect on the web")
             }
         }
+    }
+}
+
+/** "Your details" with the person's own avatar (photo or initials) where the other rows have an icon. */
+@Composable
+private fun YouDetailsRow(modifier: Modifier, shopperName: String?) {
+    val shopper = LocalSessionStore.current.shopper
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .padding(horizontal = Spacing.m, vertical = Spacing.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+    ) {
+        if (shopper != null) {
+            YouAvatar(shopper.photoSrc, shopper.initials, 36.dp, initialsSize = 14.sp)
+        } else {
+            Box(Modifier.size(36.dp).background(Color.yard.surface2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Badge, contentDescription = null, tint = Color.yard.ink, modifier = Modifier.size(18.dp))
+            }
+        }
+        Text("Your details", style = YardFonts.body, color = Color.yard.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (shopperName != null) Text(shopperName, style = YardFonts.callout, color = Color.yard.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.yard.ink3, modifier = Modifier.size(18.dp))
     }
 }
 

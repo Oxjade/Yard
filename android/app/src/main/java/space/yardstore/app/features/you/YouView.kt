@@ -96,7 +96,7 @@ import java.time.LocalTime
 /**
  * The You tab root. Mirrors YouView.swift.
  * - Signed out: an invite card (Sign in / Create account, both present SignInView) plus help and legal links.
- * - Signed in: profile header (initials avatar, greeting, name, email), one quick-links panel
+ * - Signed in: profile header (photo or initials avatar, greeting, name, email), one quick-links panel
  *   (Orders, Saved, Following, Inbox, Drop reminders, Updates, with their live counts), links (Settings, Sell on Yard), Help (Message Yard Support,
  *   Help centre) and legal (Terms, Privacy, Refunds).
  */
@@ -207,17 +207,8 @@ private fun YouProfileHeader(shopper: Shopper) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
-        // Acid disc with the initials, set in the display face; a hairline ring lifts it off the page.
-        Box(
-            Modifier
-                .size(64.dp)
-                .background(Color.yard.acid, CircleShape)
-                .border(BorderStroke(1.dp, Color.yard.ink.copy(alpha = 0.08f)), CircleShape)
-                .clearAndSetSemantics {},
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(shopper.initials, style = YardFonts.display(26.sp), color = Color.yard.onAcid)
-        }
+        // The profile photo, or the acid disc with the initials in the display face.
+        YouAvatar(shopper.photoSrc, shopper.initials, 64.dp, initialsSize = 26.sp)
         Column(Modifier.weight(1f)) {
             // An editorial kicker: small caps, tracked out, above the name.
             Text(

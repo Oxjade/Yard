@@ -26,6 +26,11 @@ data class Shopper(
     /** "active" | "restricted" | "suspended". */
     val status: String = "active",
     val demo: Boolean = false,
+    /**
+     * The profile photo (`/api/media/med_…?as=shopper`, cookie-scoped), or null: show [initials].
+     * A replaced photo gets a new URL, so image caches never show the old one.
+     */
+    val photoSrc: String? = null,
 ) {
     /** First name for greetings ("Hi, Ada"). */
     val firstName: String get() = name.split(" ").firstOrNull { it.isNotEmpty() } ?: name

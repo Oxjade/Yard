@@ -116,9 +116,9 @@ class SessionStore(private val api: APIClient = APIClient.shared) {
         const val BEFORE_SIGN_OUT_TIMEOUT_MS: Long = 3_000
 
         /** Previews only: a store that looks signed in (or out) without the network. */
-        fun preview(signedIn: Boolean = true): SessionStore {
+        fun preview(signedIn: Boolean = true, photoSrc: String? = null): SessionStore {
             val store = SessionStore(APIClient.shared)
-            if (signedIn) store.shopper = Shopper(id = "preview", name = "Ada Obi", email = "ada@example.com")
+            if (signedIn) store.shopper = Shopper(id = "preview", name = "Ada Obi", email = "ada@example.com", photoSrc = photoSrc)
             store.hasLoaded = true
             return store
         }

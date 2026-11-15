@@ -109,6 +109,8 @@ data class YouAccount(
     val signInProviders: List<String> = emptyList(),
     val pendingEmail: YouPendingEmail? = null,
     val demo: Boolean = false,
+    /** The profile photo, or null (initials show). See YouPhoto.kt. */
+    val photo: YouAccountPhoto? = null,
 ) {
     /** "Google and Apple" for the note under the email (auth0 reads as social sign-in, as on the website). */
     val providerWords: List<String>
@@ -190,6 +192,12 @@ class YouAccountModel(
     var needsReauth by mutableStateOf(false); private set
 
     fun load() = viewModelScope.launch { fetch() }
+
+    /** A newer account from another call (the photo endpoints answer with the whole account). */
+    fun apply(next: YouAccount) {
+        account = next
+        phase = Phase.Loaded
+    }
 
     /** GET /api/account?as=shopper. Keeps what it has on a failed refresh. */
     suspend fun fetch() {
@@ -306,8 +314,12 @@ fun YouAccountView() {
     val session = LocalSessionStore.current
     val router = LocalRouter.current
     val model: YouAccountModel = viewModel { YouAccountModel() }
+    val photo: YouPhotoModel = viewModel { YouPhotoModel() }
 
-    LaunchedEffect(session.shopper?.id) { if (session.isSignedIn) model.load() else model.reset() }
+    LaunchedEffect(session.shopper?.id) {
+        photo.reset()
+        if (session.isSignedIn) model.load() else model.reset()
+    }
     // The link is usually opened in the mail app or browser: re-read when Yard comes back, and
     // whenever the session's email changes (e.g. the link was opened in the app).
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (session.isSignedIn && model.account != null) model.load() }
@@ -326,14 +338,14 @@ fun YouAccountView() {
                     message = phase.message,
                     modifier = Modifier.weight(1f).adaptiveContentWidth(),
                 ) { model.fetch() }
-                YouAccountModel.Phase.Loaded -> model.account?.let { YouAccountContent(model, it, Modifier.weight(1f)) }
+                YouAccountModel.Phase.Loaded -> model.account?.let { YouAccountContent(model, it, Modifier.weight(1f), photo) }
             }
         }
     }
 }
 
 @Composable
-private fun YouAccountContent(model: YouAccountModel, account: YouAccount, modifier: Modifier) {
+private fun YouAccountContent(model: YouAccountModel, account: YouAccount, modifier: Modifier, photo: YouPhotoModel) {
     Column(
         modifier
             .fillMaxWidth()
@@ -348,6 +360,7 @@ private fun YouAccountContent(model: YouAccountModel, account: YouAccount, modif
                 .padding(top = Spacing.m, bottom = Spacing.xxl),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl),
         ) {
+            YouPhotoSection(account, model, photo)
             YouNameSection(model, account)
             YouEmailSection(model, account)
         }
@@ -673,5 +686,6 @@ private fun YouAccountPendingLight() = YardPreview(darkTheme = false) {
             pendingEmail = YouPendingEmail("ada.new@example.com", "2026-11-15T10:00:00Z"),
         ),
         Modifier.fillMaxSize(),
+        remember { YouPhotoModel() },
     )
 }

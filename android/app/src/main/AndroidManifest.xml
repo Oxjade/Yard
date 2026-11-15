@@ -69,6 +69,18 @@
         </activity>
         <receiver android:name=".features.drops.DropReminderReceiver" android:exported="false" />
 
+        <!-- Settings › Your details › Photo: the camera app writes its capture into the app cache
+             through this provider (no CAMERA permission: the camera app takes the picture). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/yard_photo_paths" />
+        </provider>
+
         <!-- Push (FCM). Firebase only starts when app/google-services.json was present at build
              time; otherwise this service never runs. See Docs/connect.md. -->
         <service
@@ -93,6 +105,9 @@
     <queries>
         <intent>
             <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
     </queries>
 </manifest>
