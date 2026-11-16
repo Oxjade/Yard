@@ -518,6 +518,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
       open={open}
       onOpenChange={onOpenChange}
       title={b.name}
+      recordKey={b.id}
       description={`@${b.handle}, ${b.city}, ${countryName(b.country)}`}
       lead={b.logo ? <AdminImg src={b.logo.src} alt="" className="size-11 shrink-0 rounded-md border border-white/10" /> : <Initials name={b.name} size="lg" />}
       badges={

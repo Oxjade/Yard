@@ -72,6 +72,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
       open={open}
       onOpenChange={onOpenChange}
       title={app.brandName}
+      recordKey={app.id}
       description={`@${app.handle}, ${countryName(app.country)}`}
       lead={<Initials name={app.brandName} size="lg" />}
       badges={

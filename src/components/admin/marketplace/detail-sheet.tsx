@@ -24,6 +24,7 @@ export function DetailSheet({
   open,
   onOpenChange,
   title,
+  recordKey,
   description,
   lead,
   badges,
@@ -33,6 +34,9 @@ export function DetailSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
+  /** Identifies the record shown. The body scrolls back to the top when it changes; defaults
+   * to the title. Pass a stable id when the tray can rename its own record in place. */
+  recordKey?: string
   description?: React.ReactNode
   lead?: React.ReactNode
   badges?: React.ReactNode
@@ -50,11 +54,13 @@ export function DetailSheet({
     openedOn.current = window.location.pathname
   }, [open])
   // A record opened while the sheet is already up (another record, a deep link) starts at its
-  // top too, never at the scroll position of the one before.
+  // top too, never at the scroll position of the one before. Keyed on the record, not its
+  // display title, so renaming the open record doesn't throw the reader back to the top.
   const bodyRef = useRef<HTMLDivElement>(null)
+  const scrollKey = recordKey ?? title
   useLayoutEffect(() => {
     if (open && bodyRef.current) bodyRef.current.scrollTop = 0
-  }, [open, title])
+  }, [open, scrollKey])
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
