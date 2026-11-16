@@ -94,7 +94,7 @@ export function ProductsPageSkeleton() {
         description={productsCopy.description}
         actions={
           <Button asChild variant="primary" size="sm" className="h-10 md:h-8">
-            <Link href="/studio/products/new"><Plus /> Add product</Link>
+            <Link href="/studio/products/quick"><Plus /> Add product</Link>
           </Button>
         }
       >

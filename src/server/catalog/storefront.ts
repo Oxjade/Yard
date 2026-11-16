@@ -193,3 +193,21 @@ export async function getStorefrontVersion(actor: BrandActor, version: number) {
   if (!v) throw notFound("That storefront version doesn't exist.")
   return { version: v.version, config: v.config, note: v.note, publishedAt: v.publishedAt.toISOString(), publishedBy: v.publishedBy }
 }
+
+/**
+ * The brand's image logo, set by the brand itself (Studio's storefront editor and "Set up your
+ * shop"). The same rules as the founding-brand logo Yard sets (founding.ts updateFoundingBrand):
+ * one of the brand's own image uploads, stored on brands.logo_media_id, shown wherever the brand's
+ * mark is (BrandMark) and public once the brand is listed (media/visibility.ts). Null goes back
+ * to the text mark. It applies at once: a logo isn't part of the storefront draft.
+ */
+export async function setBrandLogo(actor: BrandActor, body: { logoMediaId: string | null }, ipHash: string | null) {
+  return withTx(async (tx) => {
+    if (body.logoMediaId) await assertBrandImages(tx, actor.brandId, [body.logoMediaId], "logoMediaId")
+    const [b] = await tx.update(brands).set({ logoMediaId: body.logoMediaId }).where(eq(brands.id, actor.brandId)).returning({ id: brands.id, name: brands.name })
+    if (!b) throw notFound()
+    await writeAudit({ actor: auditActor(actor), action: body.logoMediaId ? "brand.logo_set" : "brand.logo_removed", target: b.name, subjectType: "brand", subjectId: actor.brandId, brandId: actor.brandId, ipHash, meta: {} })
+    catalogChanged({ brands: [actor.brandId] })
+    return { logoSrc: body.logoMediaId ? `/api/media/${encodeURIComponent(body.logoMediaId)}?as=brand` : null }
+  })
+}

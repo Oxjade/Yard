@@ -17,7 +17,7 @@ import { WarningIcon as AlertTriangle, ArchiveIcon as Archive, ArrowCounterClock
 import { toast } from "sonner"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
+import { productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -28,7 +28,6 @@ import { useAsyncAction } from "@/hooks/use-async-action"
 import { useNow } from "@/hooks/use-now"
 import { duration, ease } from "@/lib/motion"
 import { currencies } from "@/config/markets"
-import { products as seedProducts } from "@/lib/data"
 import { brandById, STUDIO_BRAND_ID } from "@/lib/data/brands"
 import { categories, categoryBySlug } from "@/lib/data/catalog"
 import type { Brand, CategorySlug, Collection, Drop, Product, Variant } from "@/lib/data/types"
@@ -42,14 +41,11 @@ import { OptionsBuilder } from "./options-builder"
 import { fromStudioCollection, fromStudioProduct, loadStudioCollections, loadStudioProductDtos, studioCollectionsKey } from "./live"
 import { CatalogueNote, Thumb } from "./parts"
 import {
-  buildImages,
-  buildOptions,
   colourKey,
   emptyForm,
   errorTargets,
   fromProduct,
   snapshot,
-  uniqueSlug,
   validate,
   withStockDelta,
   withVariants,
@@ -57,11 +53,16 @@ import {
   type FormVariant,
   type ProductForm,
 } from "./product-form-model"
-import { SaveBar, useLeaveGuard } from "./save-bar"
+import { PublishBar, SaveBar, useLeaveGuard } from "./save-bar"
+import { liveProductBody, localProductFrom } from "./product-save"
+import { announceDraft, announcePublished, ListingPill, publishSavedProduct } from "./listing-feedback"
+import { useListingFacts } from "@/components/studio/setup/use-listing"
+import { brandHidden, QUICK_ADD_HREF } from "@/lib/listing-guide"
+import { LightningIcon as Lightning, XIcon as XClose } from "@phosphor-icons/react"
 import { ProductEditorSkeleton } from "./skeletons"
 import { restoreProductStatuses, setProductStatuses, useBrandCollections, useCatalogReady } from "./store"
 import { ChipInput } from "./tag-input"
-import { autoSku, brandPhotos, formatDate, formatDateTime, MAX_TAGS, parseMoney, plural, productIdFor, slugify, toLocalInput } from "./utils"
+import { autoSku, brandPhotos, formatDate, formatDateTime, MAX_TAGS, parseMoney, plural, slugify, toLocalInput } from "./utils"
 
 /** Products deleted from their own page, so the page doesn't flash "not found" while it navigates away. */
 const deletedHere = new Set<string>()
@@ -223,7 +224,7 @@ function LiveProductEditorRoute({ id, member }: { id?: string; member: LiveMembe
  * brand profile's. The form names that default in its hint for every product; a new product, or
  * one without a time of its own, starts from it, and a product saved with its own time keeps that.
  */
-function useSettingsBrand(brand: Brand) {
+export function useSettingsBrand(brand: Brand) {
   const ready = useSettingsReady()
   const sessionBrand = useServerSession((s) => s.brand?.brand.id ?? null)
   const server = useApi<StudioShippingDto>(ready && sessionBrand === brand.id ? `${STUDIO_SHIPPING_KEY}:${brand.id}` : null, () => getStudioShipping(), { revalidateOnFocus: false })
@@ -241,7 +242,7 @@ function BackLink({ href = "/studio/products", label = "Products" }: { href?: st
 }
 
 const statusCopy: Record<"draft" | "published" | "scheduled", string> = {
-  draft: "Only you can see it. Publish when it's ready.",
+  draft: "Drafts are invisible to shoppers. Publish to put it on Yard.",
   published: "Marked ready to sell in your catalogue.",
   scheduled: "Pick a go-live time. Until then it stays unpublished.",
 }
@@ -319,6 +320,8 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
   /** Archived on this page: the banner's restore puts back the status it had before. */
   const [archivedFrom, setArchivedFrom] = useState<ReturnType<typeof setProductStatuses> | null>(null)
   const now = useNow(60_000)
+  /** Live brands: whether the brand itself is visible yet (a founding brand before its storefront isn't). */
+  const listing = useListingFacts()
 
   const currency = brand.currency
   const symbol = currencies[currency].symbol
@@ -397,6 +400,20 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     [brand],
   )
 
+  // A deep link from the Overview guide (#photos-panel, #pf-name, #variants-panel,
+  // #publishing-panel) lands on that part of the form once it has rendered.
+  useEffect(() => {
+    const target = window.location.hash.slice(1)
+    if (!target) return
+    const frame = requestAnimationFrame(() => {
+      const el = document.getElementById(target)
+      if (!el) return
+      el.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+      if (el instanceof HTMLInputElement) el.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
   // Move focus to the first field that needs fixing after a failed save.
   useEffect(() => {
     if (!focusTick) return
@@ -467,43 +484,12 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
   /* ---------- actions ---------- */
 
   /** The catalogue write, then stock counts, then the publication status (which needs a fresh version). */
-  async function commitLive() {
+  async function commitLive(form: ProductForm) {
     setSaving(true)
     const dto = server?.dto
     if (server && product && !dto && !server.proposal) throw new Error("This product needs to be reloaded before it can be saved.")
-    const name = form.name.trim()
-    const alts = buildImages(form.images, name, brand)
-    const images = form.images.map((im, index) => {
-      if (im.imageId) return { id: im.imageId, alt: alts[index].alt }
-      if (im.mediaId) return { mediaId: im.mediaId, alt: alts[index].alt }
-      throw new Error("One or more photos didn't finish uploading. Remove them and add them again.")
-    })
+    const body: StudioProductCreateBody = liveProductBody(form, { brand, product, collections })
     const publishAt = form.status === "scheduled" ? new Date(form.publishAt).toISOString() : null
-    const body: StudioProductCreateBody = {
-      title: name,
-      description: form.description.trim(),
-      details: product?.details ?? [],
-      categorySlug: form.category,
-      subcategory: form.subcategory || null,
-      tags: form.tags,
-      badges: product?.badges ?? ["new"],
-      priceMinor: parseMoney(form.price, currency)!,
-      compareAtMinor: form.compareAt.trim() ? parseMoney(form.compareAt, currency) : null,
-      processingDays: [Number(form.processingMin), Number(form.processingMax)],
-      dropId: product?.dropId ?? null,
-      options: buildOptions(form).map((option) =>
-        option.name === "Size"
-          ? { name: option.name, values: option.values.map((value) => ({ value })) }
-          : { name: option.name, values: option.values.map((value) => ({ value: value.name, hex: value.hex })) },
-      ),
-      variants: form.variants.map((v) =>
-        v.id
-          ? { id: v.id, sku: v.sku.trim().toUpperCase(), options: v.options, priceMinor: v.priceOverrideMinor ?? null }
-          : { sku: v.sku.trim().toUpperCase(), options: v.options, priceMinor: null, initialStock: Number(v.stock) },
-      ),
-      images,
-      collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
-    }
 
     if (proposal) {
       const { dropId: _drop, ...rest } = body
@@ -574,8 +560,9 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
       })
     }
 
+    announce({ id: saved.id, name: saved.title, slug: saved.slug, version: saved.version, status: saved.status as Product["status"], was: product?.status ?? "draft", publishAt: saved.publishAt })
+
     if (isNew) {
-      toast.success("Product created", { description: createdDescription(saved.status as Product["status"], saved.publishAt) })
       setCheckedAt(null)
       created.current = true
       router.replace(`/studio/products/${saved.id}`)
@@ -593,73 +580,21 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     setSaving(false)
   }
 
-  function commit(now: number) {
-    if (server) return commitLive()
+  function commit(now: number, form: ProductForm) {
+    if (server) return commitLive(form)
     setSaving(true)
 
     const store = useStudio.getState()
-    const name = form.name.trim()
-    const taken = new Set([...seedProducts, ...store.products].flatMap((p) => [p.slug, p.id]))
-    const slug = product?.slug ?? uniqueSlug(name, taken)
-    const id = product?.id ?? productIdFor(slug)
-    const live = store.products.find((p) => p.id === id)
-
-    let next = Math.max(-1, ...(product?.variants ?? []).map((v) => Number(/_v(\d+)$/.exec(v.id)?.[1] ?? -1))) + 1
-    const adjustments: { variantId: string; delta: number }[] = []
-    const variants: Variant[] = form.variants.map((v) => {
-      const sku = v.sku.trim().toUpperCase()
-      const qty = Number(v.stock)
-      if (v.id) {
-        const current = live?.variants.find((x) => x.id === v.id)
-        const base = current?.stock ?? v.originalStock ?? qty
-        const delta = qty - (v.originalStock ?? qty)
-        if (delta !== 0) adjustments.push({ variantId: v.id, delta })
-        return { id: v.id, sku, options: v.options, stock: base, reserved: current?.reserved ?? v.reserved }
-      }
-      return { id: `${id}_v${next++}`, sku, options: v.options, stock: qty, reserved: 0 }
-    })
-
-    const publishAt = form.status === "scheduled" ? new Date(form.publishAt).toISOString() : null
-    const days: [number, number] = [Number(form.processingMin), Number(form.processingMax)]
-    // Compared with the brand profile, which products without their own time fall back to; a
-    // product seeded from a different Settings default keeps that time explicitly.
-    const ownDays = days[0] !== profile.processingDays[0] || days[1] !== profile.processingDays[1]
-    const saved: Product = {
-      ...(product ?? {}),
-      id,
-      slug,
-      brandId: brand.id,
-      name,
-      description: form.description.trim(),
-      details: product?.details ?? [],
-      category: form.category as CategorySlug,
-      subcategory: form.subcategory,
-      tags: form.tags,
-      price: parseMoney(form.price, currency)!,
-      compareAt: form.compareAt.trim() ? parseMoney(form.compareAt, currency)! : undefined,
-      currency,
-      images: buildImages(form.images, name, brand),
-      options: buildOptions(form),
-      variants,
-      badges: product?.badges ?? ["new"],
-      status: form.status,
-      createdAt: product?.createdAt ?? new Date(now).toISOString(),
-      updatedAt: new Date(now).toISOString(),
-      publishAt: publishAt ?? undefined,
-      // Only a product that differs from the brand's default keeps its own processing time.
-      processingDays: ownDays ? days : undefined,
-      collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
-      dropId: product?.dropId,
-      stats: product?.stats ?? { views7d: 0, wishlists: 0, sales30d: 0, trend: 0 },
-    }
+    const { saved, adjustments, publishAt } = localProductFrom(form, { brand, profile, product, collections, now })
+    const id = saved.id
 
     store.upsertProduct(saved)
     for (const a of adjustments) store.adjustStock(id, a.variantId, a.delta, "adjustment", "Edited on the product page")
 
+    announce({ id, name: saved.name, slug: saved.slug, status: saved.status, was: product?.status ?? "draft", publishAt })
     if (isNew) {
-      // The page moves to the new product, so say what happened. An edit says it in place:
-      // the header button checks and rests as "Saved", and the save bar leaves.
-      toast.success("Product created", { description: createdDescription(saved.status, publishAt) })
+      // The page moves to the new product, so say what happened (announce, above). An edit to a
+      // published product says it in place: the header button checks and rests as "Saved".
       // Stop checking while the page moves: the new product's own SKUs would now read as taken.
       setCheckedAt(null)
       created.current = true
@@ -676,7 +611,26 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     setSaving(false)
   }
 
-  const saveAction = useAsyncAction((now: number) => commit(now), {
+  /**
+   * What a save means for shoppers, said once: a first publish is celebrated, any publish offers
+   * "View it on Yard", a draft is reminded that nobody can see it (with "Publish now"), and a new
+   * scheduled product says when it goes live. Suggestions from Yard never get here.
+   */
+  function announce(r: { id: string; name: string; slug: string; version?: number; status: Product["status"]; was: Product["status"]; publishAt: string | null | undefined }) {
+    const first = !allProducts.some((p) => p.id !== r.id && (p.status === "published" || p.status === "scheduled"))
+    const hidden = brandHidden(listing)
+    if (r.status === "published" && r.was !== "published") {
+      announcePublished(r, { first, hidden, viewable: !!server, onOpen: (href) => router.push(href) })
+      return
+    }
+    if (r.status === "draft") {
+      announceDraft(r, { isNew, onPublish: () => void publishSavedProduct(r, { live: !!server, first, hidden, onOpen: (href) => router.push(href) }) })
+      return
+    }
+    if (isNew) toast.success("Product created", { description: createdDescription(r.status, r.publishAt ?? null) })
+  }
+
+  const saveAction = useAsyncAction((now: number, f: ProductForm) => commit(now, f), {
     error: server
       ? "Your product couldn't be saved. Check your connection and try again."
       : "Your product couldn't be saved. This browser's storage may be full: remove a large photo, then save again.",
@@ -713,11 +667,16 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     toast.error("Your product couldn't be saved", { description: own ?? "Check your connection and try again." })
   }
 
-  /** Validates first: a failed check keeps every value, lists what to fix and focuses the first field. */
-  function save() {
+  /**
+   * Validates first: a failed check keeps every value, lists what to fix and focuses the first
+   * field. `override` saves with a change on top (Publish: the same save with status published).
+   */
+  function save(override?: Partial<ProductForm>) {
     if (saveAction.pending || saving) return
     const now = Date.now()
-    const errs = validate(form, { brand, otherSkus, original, now })
+    const next = override ? { ...form, ...override } : form
+    if (override) setForm(next)
+    const errs = validate(next, { brand, otherSkus, original, now })
     setCheckedAt(now)
     if (Object.values(errs).some(Boolean)) {
       setFocusTick((t) => t + 1)
@@ -725,8 +684,11 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     }
     // The save buttons already read "Preparing photos" and are disabled; this is a safety net.
     if (processing) return
-    void saveAction.run(now)
+    void saveAction.run(now, next)
   }
+
+  /** Publish from the header, the save bar or the phone bar: the same save, as published. */
+  const publishNow = () => save({ status: "published" })
 
   /** The form goes back to the last save in place: the change is visible, so no toast. */
   function discard() {
@@ -817,7 +779,6 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     toast.success("Product deleted", { description: `${product.name} was removed from your catalogue.` })
   }
 
-  const status = productStatusMeta[form.status]
   const price = parseMoney(form.price, currency)
   const compare = form.compareAt.trim() ? parseMoney(form.compareAt, currency) : null
   const off = price && compare && compare > price ? Math.round((1 - price / compare) * 100) : null
@@ -828,14 +789,17 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
   const restoreTo = server ? "draft" : archivedFrom?.[0]?.status
   const restoreLabel = restoreTo && restoreTo !== "draft" && restoreTo !== "archived" ? `Restore as ${productStatusMeta[restoreTo].label.toLowerCase()}` : "Restore as draft"
   const toRestore = () => document.getElementById("pf-restore")
+  /** A draft (new or saved) offers Publish beside Save; Save then reads "Save draft". */
+  const draft = !proposal && form.status === "draft" && !archived
+  const savedDraft = draft && !isNew && !dirty && baseline.status === "draft"
 
   return (
-    <div className={cn("grid gap-6", dirty && "pb-24")}>
+    <div className={cn("grid gap-6", (dirty || savedDraft) && "pb-24 md:pb-0", dirty && "md:pb-24")}>
       <div className="grid gap-2">
         <BackLink href={proposal?.backHref} label={proposal?.backLabel} />
         <PageHeader
           title={proposal ? proposal.title : isNew ? "New product" : product.name}
-          description={proposal ? proposal.description : isNew ? "Add photos, a price and the sizes you stock. Save it as a draft until it's ready." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
+          description={proposal ? proposal.description : isNew ? "Add photos, a price and the sizes you stock, then publish. Drafts are invisible to shoppers." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
           actions={
             <>
               <Button id="pf-back" type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => guard.leave(proposal?.backHref ?? "/studio/products")}>{isNew || dirty || proposal ? "Cancel" : "Back"}</Button>
@@ -844,20 +808,26 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
               <Button
                 type="submit"
                 form="product-form"
-                variant={proposal ? (dirty ? "secondary" : "primary") : dirty || !isNew ? "secondary" : "primary"}
+                variant={proposal ? (dirty ? "secondary" : "primary") : dirty || !isNew || draft ? "secondary" : "primary"}
                 size="sm"
                 className="h-10 md:h-8"
-                loading={busy}
+                loading={busy && !draft}
                 success={!proposal && saveAction.succeeded && !dirty}
-                disabled={processing || (!proposal && !dirty && !isNew && !saveAction.succeeded)}
+                disabled={processing || (draft && busy) || (!proposal && !dirty && !isNew && !saveAction.succeeded)}
               >
-                {proposal ? proposal.saveLabel : isNew ? "Save product" : dirty ? "Save" : "Saved"}
+                {proposal ? proposal.saveLabel : draft && (isNew || dirty) ? "Save draft" : isNew ? "Save product" : dirty ? "Save" : "Saved"}
               </Button>
+              {draft ? (
+                // The one acid button while nothing else carries it; with the save bar up, the bar's Publish does.
+                <Button type="button" variant={dirty ? "secondary" : "primary"} size="sm" className="h-10 md:h-8" loading={busy} disabled={processing} onClick={publishNow}>
+                  Publish
+                </Button>
+              ) : null}
             </>
           }
         >
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {proposal ? null : <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}
+            {proposal ? null : <ListingPill status={isNew ? "draft" : baseline.status} hidden={brandHidden(listing)} size="lg" />}
             {/* The header button's check says it visually; this says it to screen readers. */}
             <span role="status" className="sr-only">{!isNew && saveAction.succeeded && !dirty ? "Changes saved" : ""}</span>
             <AnimatePresence initial={false}>
@@ -871,6 +841,8 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
           </div>
         </PageHeader>
       </div>
+
+      {isNew && !proposal ? <QuickAddTip /> : null}
 
       <AnimatePresence initial={false}>
         {errorList.length ? (
@@ -1008,7 +980,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
               {proposal.publishHint ? <CatalogueNote>{proposal.publishHint}</CatalogueNote> : null}
             </Panel>
           ) : (
-          <Panel title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>
+          <Panel id="publishing-panel" title="Publishing" description={archived ? "Restore the product to change how it's published." : statusCopy[form.status as keyof typeof statusCopy]}>
             {archived ? (
               server ? <CatalogueNote>Restore this product to make changes to how it&apos;s published.</CatalogueNote> : <CatalogueNote />
             ) : (
@@ -1120,12 +1092,15 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
       <SaveBar
         visible={dirty}
         label={processing ? "Preparing photos" : isNew ? "Unsaved product" : "Unsaved changes"}
-        saveLabel={proposal ? proposal.saveLabel : isNew ? "Save product" : "Save"}
-        onSave={save}
+        saveLabel={proposal ? proposal.saveLabel : draft ? "Save draft" : isNew ? "Save product" : "Save"}
+        onSave={() => save()}
+        publish={draft ? { label: "Publish", onClick: publishNow } : undefined}
         onDiscard={() => setDialog("discard")}
         saving={busy}
         blocked={processing}
       />
+
+      <PublishBar visible={savedDraft} onPublish={publishNow} publishing={busy} label={listing && brandHidden(listing) ? "Draft: hidden until you publish" : "Draft: only you can see this"} />
 
       {guard.dialog}
       <ConfirmDialog
@@ -1160,6 +1135,52 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
         </>
       ) : null}
     </div>
+  )
+}
+
+const QUICK_TIP_KEY = "yard-studio-quick-add-tip"
+
+/**
+ * The full editor's one tip for newcomers: Quick add does the same job in five small steps.
+ * Dismissed for good on this browser (storage wrapped: blocked storage just shows it again).
+ */
+function QuickAddTip() {
+  const [hidden, setHidden] = useState(true)
+  useEffect(() => {
+    let seen = false
+    try {
+      seen = window.localStorage.getItem(QUICK_TIP_KEY) === "dismissed"
+    } catch {
+      // Storage refused: show it.
+    }
+    // Read after mount (storage isn't available on the server render).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHidden(seen)
+  }, [])
+  if (hidden) return null
+  function dismiss() {
+    try {
+      window.localStorage.setItem(QUICK_TIP_KEY, "dismissed")
+    } catch {
+      // Hidden for this visit only.
+    }
+    setHidden(true)
+  }
+  return (
+    <aside aria-label="Tip" className="rise-in flex items-start gap-3 rounded-lg border border-line-soft bg-surface p-3 pr-2 sm:items-center">
+      <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-acid/15 text-acid sm:mt-0" aria-hidden>
+        <Lightning weight="fill" className="size-3.5" />
+      </span>
+      <p className="min-w-0 flex-1 text-[13px] text-ink-2">
+        <span className="text-ink">First time here?</span> Quick add lists a product in 5 baby steps, one question at a time.{" "}
+        <Link href={QUICK_ADD_HREF} className="font-medium whitespace-nowrap text-ink underline-offset-4 hover:text-violet hover:underline">
+          Try Quick add
+        </Link>
+      </p>
+      <Button type="button" variant="ghost" size="icon-sm" className="size-10 shrink-0 text-ink-3 md:size-8" aria-label="Dismiss tip" onClick={dismiss}>
+        <XClose />
+      </Button>
+    </aside>
   )
 }
 

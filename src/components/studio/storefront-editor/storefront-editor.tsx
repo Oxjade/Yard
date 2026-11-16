@@ -3,7 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { motion } from "motion/react"
-import { ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, EyeIcon as Eye } from "@phosphor-icons/react"
+import { ArrowUpRightIcon as ArrowUpRight, ClockCounterClockwiseIcon as History, EyeIcon as Eye, SparkleIcon as Sparkle } from "@phosphor-icons/react"
 import { Tabs as TabsPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -689,6 +689,13 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
               {t}
             </span>
           ))}
+          {canEdit && mode === "server" && !liveDocument ? (
+            // Nothing published yet: the guided flow is one tap away.
+            <Link href="/studio/storefront/quick" className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-dashed border-ink/40 px-2.5 text-xs text-ink hover:border-ink">
+              <Sparkle weight="fill" aria-hidden className="size-3.5 text-acid" />
+              Not published yet: set it up step by step
+            </Link>
+          ) : null}
           <Link href={`/brands/${brand.handle}`} target="_blank" className="inline-flex items-center gap-1 rounded-sm text-xs text-violet hover:underline">
             View storefront
             <ArrowUpRight className="size-3.5" aria-hidden />
@@ -704,7 +711,6 @@ function Editor({ mode, serverContext, canEdit = true, brandId, brand, storefron
         </div>
       ) : null}
       {!canEdit ? <p className="text-sm text-ink-2">Your role can view this storefront but can&apos;t edit or publish it.</p> : null}
-
       <div className="grid min-h-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] xl:gap-6">
         <TabsPrimitive.Root value={tab} onValueChange={(v) => setTab(v as Tab)} asChild>
           <aside aria-label="Storefront settings" className="flex min-h-0 flex-col rounded-lg border border-line-soft bg-card">

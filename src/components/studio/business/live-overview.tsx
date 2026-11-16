@@ -85,7 +85,7 @@ export function LiveOverview({ member }: { member: BrandProfile }) {
             className="w-full @2xl:w-auto [&>button]:flex-1 @2xl:[&>button]:flex-none"
           />
           <Button asChild variant="primary" className="h-10 rounded-full px-4">
-            <Link href="/studio/products/new">
+            <Link href="/studio/products/quick">
               <PlusIcon weight="bold" /> Add product
             </Link>
           </Button>

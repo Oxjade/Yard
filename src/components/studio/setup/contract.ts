@@ -12,6 +12,20 @@ export const setupStatusDto = z.object({
   items: z.array(z.object({ key: z.enum(SETUP_ITEMS), done: z.boolean() })),
   done: z.number(),
   total: z.number(),
+  /** "List your first product in 3 minutes" (src/lib/listing-guide.ts): where the brand stands. */
+  listing: z
+    .object({
+      products: z.number(),
+      live: z.number(),
+      focus: z.object({ id: z.string(), title: z.string(), images: z.number(), stock: z.number() }).nullable(),
+      founding: z.boolean(),
+      launched: z.boolean(),
+      payoutAccount: z.boolean(),
+      logo: z.boolean(),
+      banner: z.boolean(),
+      shopPublished: z.boolean(),
+    })
+    .optional(),
 })
 export type SetupStatusDto = z.infer<typeof setupStatusDto>
 

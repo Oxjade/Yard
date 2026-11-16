@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { motion } from "motion/react"
-import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
+import { CameraIcon as Camera, ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, CheckIcon as Check, ImageSquareIcon as ImagePlus, CircleNotchIcon as Loader2, UploadSimpleIcon as Upload, XIcon as X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { ImageAsset } from "@/lib/data/types"
@@ -77,6 +77,7 @@ export function ImageManager({
   library,
   upload,
   copy = BRAND_COPY,
+  quick = false,
 }: {
   images: FormImage[]
   onChange: (update: (prev: FormImage[]) => FormImage[]) => void
@@ -87,8 +88,11 @@ export function ImageManager({
   upload?: (file: File) => Promise<UploadedImage>
   /** Whose media this is, in words (Yard's team filling the form for a brand reads "the brand's"). */
   copy?: ImageManagerCopy
+  /** Quick add: no panel chrome (the step has its own heading), a bigger drop zone and, on phones, "Take a photo". */
+  quick?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const camera = useRef<HTMLInputElement>(null)
   const objectUrls = useRef(new Set<string>())
   const [dragKey, setDragKey] = useState<string | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)
@@ -168,8 +172,9 @@ export function ImageManager({
 
   const describedBy = error || uploadError ? "photos-error" : "photos-hint"
 
+  const Shell = quick ? QuickShell : Panel
   return (
-    <Panel
+    <Shell
       id="photos-panel"
       title="Photos"
       description="The first photo is the cover. Drag to reorder."
@@ -265,15 +270,37 @@ export function ImageManager({
             className={cn(
               "flex aspect-[4/5] flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-line bg-surface/40 px-2 text-center text-ink-2 outline-none transition-colors hover:border-violet/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-violet",
               images.length === 0 && "col-span-2 aspect-auto py-10 sm:col-span-4",
+              images.length === 0 && quick && "min-h-56 gap-2 border-2 py-12 text-ink",
               error && "border-danger/70",
             )}
           >
-            <Upload className="size-5" />
-            <span className="text-xs text-ink">Add photos</span>
+            <Upload className={quick && images.length === 0 ? "size-7" : "size-5"} />
+            <span className={quick && images.length === 0 ? "text-base font-medium text-ink" : "text-xs text-ink"}>{quick && images.length === 0 ? "Upload photos" : "Add photos"}</span>
             <span className="text-[11px] text-ink-3">{images.length === 0 ? `Drop files here or click to choose. JPG, PNG or WebP, up to 15 MB each. ${upload ? copy.uploaded : "Kept in this browser until media storage is connected."}` : "or drop them here"}</span>
           </button>
         ) : null}
       </div>
+      {quick && left > 0 ? (
+        <>
+          {/* Phones and tablets: straight to the camera. The upload button above still offers the library. */}
+          <Button type="button" variant="secondary" className="mt-2 h-12 w-full rounded-xl pointer-fine:hidden" onClick={() => camera.current?.click()}>
+            <Camera aria-hidden /> Take a photo
+          </Button>
+          <input
+            ref={camera}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => {
+              addFiles(e.target.files)
+              e.target.value = ""
+            }}
+          />
+        </>
+      ) : null}
       <input
         ref={input}
         type="file"
@@ -288,10 +315,12 @@ export function ImageManager({
         }}
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <FieldMessage id="photos" error={uploadError ?? error} hint="Portrait 4:5 works best. Use the arrows or drag to reorder." />
-        <Button type="button" variant="ghost" size="sm" className="-mr-2 h-10 md:h-8" disabled={left === 0} onClick={() => setLibraryOpen(true)}>
-          <ImagePlus /> {copy.choose}
-        </Button>
+        <FieldMessage id="photos" error={uploadError ?? error} hint={quick ? "The first photo is the cover. Use the arrows or drag to reorder." : "Portrait 4:5 works best. Use the arrows or drag to reorder."} />
+        {quick && !library.length ? null : (
+          <Button type="button" variant="ghost" size="sm" className="-mr-2 h-10 md:h-8" disabled={left === 0} onClick={() => setLibraryOpen(true)}>
+            <ImagePlus /> {copy.choose}
+          </Button>
+        )}
       </div>
       <PhotoLibrary
         open={libraryOpen}
@@ -305,8 +334,13 @@ export function ImageManager({
           setUploadError(null)
         }}
       />
-    </Panel>
+    </Shell>
   )
+}
+
+/** Quick add's frame for the photos: the step already has the heading, so no panel title. */
+function QuickShell({ id, children }: { id?: string; title: string; description?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
+  return <div id={id}>{children}</div>
 }
 
 function PhotoLibrary({

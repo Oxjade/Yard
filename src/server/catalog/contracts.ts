@@ -174,6 +174,8 @@ export type StorefrontConfigInput = z.output<typeof storefrontConfig>
 
 export const storefrontDraftBody = z.strictObject({ config: storefrontConfig, baseRevision: z.number().int().min(0) })
 export const storefrontPublishBody = z.strictObject({ draftRevision: z.number().int().positive(), expectedVersion: z.number().int().min(0), note: safeLine({ max: 200 }).optional() })
+/** PUT /api/studio/storefront/logo: the brand's image logo (an own storefront_cover upload), or null for the text mark. */
+export const storefrontLogoBody = z.strictObject({ logoMediaId: safeId().nullable() })
 
 /* ---------- Onboarding ---------- */
 

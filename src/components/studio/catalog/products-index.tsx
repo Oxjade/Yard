@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation"
 import { ArchiveIcon as Archive, ArrowCounterClockwiseIcon as Restore, CopyIcon as Copy, PackageIcon as Package, PaperPlaneTiltIcon as Send, PencilSimpleIcon as Pencil, PlusIcon as Plus, TrashIcon as Trash } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
-import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { SuggestionsBanner } from "@/components/proposals/studio-proposals"
-import { StatusBadge, productStatusMeta } from "@/components/dashboard/status-badge"
+import { productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNow } from "@/hooks/use-now"
@@ -30,6 +29,10 @@ import { productsCopy } from "./page-copy"
 import { CatalogueNote, ProductStock, Thumb } from "./parts"
 import { uniqueSlug } from "./product-form-model"
 import { StatusTabs } from "./status-tabs"
+import { ListingPill } from "./listing-feedback"
+import { useListingFacts } from "@/components/studio/setup/use-listing"
+import { brandHidden, FULL_EDITOR_HREF, QUICK_ADD_HREF } from "@/lib/listing-guide"
+import { LightningIcon as Lightning, TimerIcon as Timer } from "@phosphor-icons/react"
 import { productUpdatedAt, restoreProductStatuses, setProductStatuses, useCatalogReady } from "./store"
 import { formatDateTime, plural, productIdFor, relativeDay, totalAvailable } from "./utils"
 
@@ -125,6 +128,7 @@ export function ProductsIndex() {
   const products = useMemo(() => (live ? (liveProducts.data ?? []).map(fromStudioProduct) : localProducts), [live, liveProducts.data, localProducts])
   const liveDtos = useMemo(() => new Map((liveProducts.data ?? []).map((product) => [product.id, product])), [liveProducts.data])
   const orders = useStudio((s) => s.orders)
+  const hidden = brandHidden(useListingFacts())
 
   const [tab, setTab] = useState<Tab>("all")
   const [category, setCategory] = useState<CategorySlug | "all">("all")
@@ -315,7 +319,7 @@ export function ProductsIndex() {
               <ProductStock available={totalAvailable(p)} />
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-2 sm:hidden">
-              <StatusBadge tone={productStatusMeta[p.status].tone}>{productStatusMeta[p.status].label}</StatusBadge>
+              <ListingPill status={p.status} hidden={hidden} />
               {p.status === "scheduled" && p.publishAt ? <ScheduledAt at={p.publishAt} now={now} /> : null}
             </span>
           </span>
@@ -328,10 +332,9 @@ export function ProductsIndex() {
       hideBelow: "sm",
       sortValue: (p) => statusRank[p.status],
       cell: (p) => {
-        const meta = productStatusMeta[p.status]
         return (
           <span className="grid justify-items-start gap-1">
-            <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+            <ListingPill status={p.status} hidden={hidden} />
             {p.status === "scheduled" && p.publishAt ? <ScheduledAt at={p.publishAt} now={now} /> : null}
           </span>
         )
@@ -418,9 +421,14 @@ export function ProductsIndex() {
         title={productsCopy.title}
         description={productsCopy.description}
         actions={
-          <Button asChild variant="primary" size="sm" className="h-10 md:h-8">
-            <Link href="/studio/products/new"><Plus /> Add product</Link>
-          </Button>
+          <>
+            <Button asChild variant="ghost" size="sm" className="h-10 md:h-8">
+              <Link href={FULL_EDITOR_HREF}>Full editor</Link>
+            </Button>
+            <Button asChild variant="primary" size="sm" className="h-10 md:h-8">
+              <Link href={QUICK_ADD_HREF}><Plus /> Add product</Link>
+            </Button>
+          </>
         }
       >
         <CatalogueNote className="mt-3">{live ? "Changes here are saved to this brand's live catalogue and reach shoppers straight away." : undefined}</CatalogueNote>
@@ -434,16 +442,7 @@ export function ProductsIndex() {
           <Button size="sm" variant="secondary" className="h-10 sm:h-8" onClick={() => void liveProducts.revalidate()}>Try again</Button>
         </div>
       ) : ready && products.length === 0 ? (
-        <EmptyState
-          icon={Package}
-          title="Add your first product"
-          body="Add photos, a price and the sizes you stock. It stays a draft until you publish it."
-          action={
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/studio/products/new"><Plus /> Add product</Link>
-            </Button>
-          }
-        />
+        <FirstProductEmpty />
       ) : (
         <div className="grid gap-4">
           <StatusTabs id="product-status" label="Product status" value={tab} onChange={setTab} controls="product-list" tabs={tabOrder.map((t) => ({ ...t, count: ready ? counts[t.value] : undefined }))} />
@@ -522,4 +521,31 @@ function ScheduledAt({ at, now }: { at: string; now: number | null }) {
   const due = now !== null && Date.parse(at) <= now
   if (due) return <span className="text-[11px] whitespace-nowrap text-acid">Time passed, not published</span>
   return <span className="text-[11px] whitespace-nowrap text-ink-3 tabular">{formatDateTime(at)}</span>
+}
+
+/**
+ * No products yet: one friendly promise and one big button into Quick add, with the full
+ * editor as a quiet second way in.
+ */
+function FirstProductEmpty() {
+  return (
+    <section aria-labelledby="first-product-title" className="rise-in flex flex-col items-center rounded-2xl border border-dashed border-line px-5 py-12 text-center sm:py-16">
+      <span className="mb-5 inline-flex size-14 items-center justify-center rounded-full border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.015] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_20px_-10px_rgba(0,0,0,0.8)]">
+        <Package className="size-6 text-ink-2" aria-hidden />
+      </span>
+      <h2 id="first-product-title" className="text-xl font-medium tracking-tight text-balance text-ink">Add your first product</h2>
+      <p className="mt-2 max-w-sm text-sm text-pretty text-ink-2">Five tiny steps: photos, a name, a price, sizes, publish. Most brands are live in about 3 minutes.</p>
+      <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-ink-3">
+        <Timer aria-hidden className="size-3.5" /> About 3 minutes
+      </p>
+      <Button asChild variant="primary" size="lg" className="mt-6 h-14 w-full max-w-xs rounded-full text-base">
+        <Link href={QUICK_ADD_HREF}>
+          <Lightning weight="fill" aria-hidden /> Add your first product
+        </Link>
+      </Button>
+      <Link href={FULL_EDITOR_HREF} className="mt-3 inline-flex min-h-10 items-center px-2 text-[13px] text-ink-2 underline-offset-4 hover:text-ink hover:underline">
+        Use the full editor
+      </Link>
+    </section>
+  )
 }

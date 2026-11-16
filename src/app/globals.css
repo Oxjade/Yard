@@ -1092,3 +1092,29 @@ img[data-fade="in"] {
     mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent);
   }
 }
+
+/* Quick add's success burst (studio/catalog/quick-add.tsx): a few bits fall and fade once.
+   Transform and opacity only; with reduced motion the burst isn't rendered at all. */
+@media (prefers-reduced-motion: no-preference) {
+  .quick-confetti {
+    animation: quick-confetti 1.6s var(--ease-settle) both;
+  }
+}
+.quick-confetti {
+  opacity: 0;
+}
+@keyframes quick-confetti {
+  0% {
+    opacity: 1;
+    translate: 0 -12px;
+    rotate: 0deg;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: var(--drift, 0px) 260px;
+    rotate: var(--spin, 90deg);
+  }
+}

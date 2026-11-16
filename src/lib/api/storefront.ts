@@ -155,6 +155,11 @@ export function publishStudioStorefront(draftRevision: number, expectedVersion: 
   })
 }
 
+/** The brand's image logo (an own storefront_cover upload), or null for the text mark. Applies at once. */
+export function setStudioBrandLogo(logoMediaId: string | null) {
+  return api<{ logoSrc: string | null }>("/api/studio/storefront/logo", { method: "PUT", body: { logoMediaId } })
+}
+
 export function getStudioStorefrontVersion(version: number, signal?: AbortSignal) {
   return api<StorefrontVersionResponse>(`/api/studio/storefront/versions/${version}`, { signal })
 }

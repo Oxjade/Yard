@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { spring } from "@/lib/motion"
+import { cn } from "@/lib/utils"
 import { ConfirmDialog } from "./fields"
 
 /**
@@ -20,6 +21,7 @@ export function SaveBar({
   saving,
   blocked,
   saveLabel = "Save",
+  publish,
 }: {
   visible: boolean
   label: string
@@ -30,15 +32,17 @@ export function SaveBar({
   /** Save can't run yet (photos still being prepared); the label says why. */
   blocked?: boolean
   saveLabel?: string
+  /** A draft's save bar also offers Publish (acid), and Save turns secondary ("Save draft"). */
+  publish?: { label: string; onClick: () => void }
 }) {
   return (
     <AnimatePresence>
-      {visible ? <SaveBarPanel key="save-bar" label={label} onSave={onSave} onDiscard={onDiscard} saving={saving} blocked={blocked} saveLabel={saveLabel} /> : null}
+      {visible ? <SaveBarPanel key="save-bar" label={label} onSave={onSave} onDiscard={onDiscard} saving={saving} blocked={blocked} saveLabel={saveLabel} publish={publish} /> : null}
     </AnimatePresence>
   )
 }
 
-function SaveBarPanel({ label, onSave, onDiscard, saving, blocked, saveLabel }: { label: string; onSave: () => void; onDiscard: () => void; saving?: boolean; blocked?: boolean; saveLabel: string }) {
+function SaveBarPanel({ label, onSave, onDiscard, saving, blocked, saveLabel, publish }: { label: string; onSave: () => void; onDiscard: () => void; saving?: boolean; blocked?: boolean; saveLabel: string; publish?: { label: string; onClick: () => void } }) {
   // Marked while it slides away, so a dialog opened from it (Discard) returns focus elsewhere.
   const present = useIsPresent()
   return (
@@ -52,13 +56,49 @@ function SaveBarPanel({ label, onSave, onDiscard, saving, blocked, saveLabel }: 
     >
       <div role="region" aria-label="Unsaved changes" data-toast-avoid="" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-2 rounded-2xl py-2 pr-2 pl-4 sm:gap-3">
         <span className="size-2 shrink-0 rounded-full bg-acid" aria-hidden />
-        <p className="min-w-0 flex-1 truncate text-sm text-ink" aria-live="polite">{label}</p>
-        <Button type="button" variant="secondary" size="sm" className="h-10 sm:h-8" onClick={onDiscard} disabled={saving}>Discard</Button>
-        <Button type="button" variant="primary" size="sm" className="h-10 sm:h-8" onClick={onSave} loading={saving} disabled={blocked}>
+        <p className={cn("min-w-0 flex-1 truncate text-sm text-ink", publish && "max-sm:sr-only")} aria-live="polite">{label}</p>
+        {publish ? <span className="flex-1 sm:hidden" aria-hidden /> : null}
+        <Button type="button" variant={publish ? "ghost" : "secondary"} size="sm" className={cn("h-10 sm:h-8", publish && "px-2.5")} onClick={onDiscard} disabled={saving}>Discard</Button>
+        <Button type="button" variant={publish ? "secondary" : "primary"} size="sm" className="h-10 sm:h-8" onClick={onSave} loading={saving && !publish} disabled={blocked || (saving && !!publish)}>
           {saveLabel}
         </Button>
+        {publish ? (
+          <Button type="button" variant="primary" size="sm" className="h-10 sm:h-8" onClick={publish.onClick} loading={saving} disabled={blocked}>
+            {publish.label}
+          </Button>
+        ) : null}
       </div>
     </motion.div>
+  )
+}
+
+/**
+ * Phones only: a saved draft keeps a sticky Publish within thumb reach, with the reason it
+ * matters ("only you can see this"). Same glass bar as the save bar, which replaces it while
+ * there are unsaved changes.
+ */
+export function PublishBar({ visible, onPublish, publishing, label = "Draft: only you can see this" }: { visible: boolean; onPublish: () => void; publishing?: boolean; label?: string }) {
+  return (
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          key="publish-bar"
+          initial={{ y: 96, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 96, opacity: 0 }}
+          transition={spring.drawer}
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+        >
+          <div role="region" aria-label="Publish" data-toast-avoid="" className="glass-strong glass-sheen pointer-events-auto mx-auto flex max-w-3xl items-center gap-3 rounded-2xl py-2 pr-2 pl-4">
+            <span className="size-2 shrink-0 rounded-full border border-dashed border-ink" aria-hidden />
+            <p className="min-w-0 flex-1 truncate text-sm text-ink">{label}</p>
+            <Button type="button" variant="primary" className="h-11 rounded-xl px-5" onClick={onPublish} loading={publishing}>
+              Publish
+            </Button>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }
 

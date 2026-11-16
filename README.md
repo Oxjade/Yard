@@ -230,6 +230,47 @@ decision emails (application sent back, listing paused or back) and the admin's 
 (Admin › Brands › a brand › Email the brand) all go through the email outbox. Every email, its
 trigger, schedule and copy: [docs/BRAND-EMAILS.md](docs/BRAND-EMAILS.md).
 
+## Listing help in Studio
+
+Brands should go from nothing to a live product in about 3 minutes, and never mistake a draft
+for a listing (drafts are invisible; a founding brand also stays hidden until its storefront is
+published).
+
+- **Quick add** (`/studio/products/quick`, `src/components/studio/catalog/quick-add.tsx`): one
+  question per screen: photos (camera on phones), name + kind of piece + a line of description,
+  price, sizes and stock (colour optional), then a shopper-view preview with **Publish** or
+  **Save as draft**, and a success screen (View it on Yard, Share link, Add another). Every "Add
+  product" in Studio opens it, with "Use the full editor" beside it. It uses the full editor's form
+  model, validation and request body (`product-save.ts`), so both make the same product. Progress
+  is kept on the device (`localStorage` `yard-quick-add:<brandId>`, wrapped) and resumed; nothing
+  reaches the server until Publish or Save as draft.
+- **Set up your shop** (`/studio/storefront/quick`, `storefront-editor/shop-setup.tsx`): Add your
+  logo (upload or camera, square and round crop preview), Add a banner (the real storefront hero
+  at computer and phone widths), Tell people who you are (the storefront line; the city is shown
+  and changed through Yard Support, since brands have no API for it), Looks fire? (preview) and
+  **Publish my shop** (a founding brand launches), then "Your shop is live 🎉". Uploads use the
+  editor's own `useUpload` (`POST /api/uploads`, `storefront_cover`); the banner and line autosave
+  to the storefront draft; publishing is the editor's publish. The logo is the brand's own:
+  `PUT /api/studio/storefront/logo { logoMediaId | null }` (content.publish; one of the brand's
+  uploads, the same check as the founding-brand logo; applies at once, audited
+  `brand.logo_set` / `brand.logo_removed`). The full editor's Content tab now uploads it too
+  ("Logo and banner"), with a "Do it step by step" tip, and an unpublished storefront shows a
+  callout to the flow.
+- **Overview checklist** (the Overview's setup card, merged): "List your first product in 3
+  minutes": Add photos, Name & price, Sizes & stock, Publish, Logo & banner, Publish your shop
+  (a founding brand's counts once launched) and Add a payout account (owner, admin, finance). Live from
+  `GET /api/studio/setup` → `listing` (`src/server/setup/index.ts`); the rules are pure and
+  tested (`src/lib/listing-guide.ts`). A draft left behind ticks what it has and deep-links into
+  that product (`#photos-panel`, `#pf-name`, `#variants-panel`, `#publishing-panel`). "Hide this"
+  is per brand per browser; the card turns into "Set up the new features" once it's all done.
+- **Draft vs Live**: the editor header and the products list say "Draft: only you can see this",
+  "Live on Yard" or "Published: storefront not live yet". A draft has Publish beside Save (and a
+  sticky Publish bar on phones); saving a draft toasts "Publish now"; the first publish is a small
+  celebration with "View it on Yard". The full editor shows one dismissible tip pointing at Quick
+  add for new products.
+- No server-side UI preferences exist, so "seen/hidden" lives in `localStorage` (every access in
+  try/catch; blocked storage just shows the help again).
+
 Admin › Newsletter writes and sends campaigns to shoppers and brands (marketing to people who opted
 in, or service notices to everyone) through the same outbox, a bounded batch a minute:
 [docs/NEWSLETTER.md](docs/NEWSLETTER.md).

@@ -56,6 +56,8 @@ export function ProductCard({
   const opening = product.brandSummary?.forSale === false
   const soldOut = !opening && productStock(product) === 0
   const href = `/products/${product.slug}`
+  // A brand's own uploads (/api/media/…, cookie-scoped: Studio's Quick add preview) can't go through the image optimiser.
+  const unoptimized = product.images[0].src.startsWith("/api/")
   const isFeature = variant === "feature"
 
   return (
@@ -68,6 +70,7 @@ export function ProductCard({
             alt={product.images[0].alt}
             fill
             preload={priority}
+            unoptimized={unoptimized}
             sizes={isFeature ? "(min-width: 768px) 50vw, 100vw" : sizes}
             className={cn(
               "object-cover transition-[transform,filter] duration-[900ms] ease-out-quint group-hover/card:scale-[1.045]",
@@ -78,6 +81,7 @@ export function ProductCard({
             <Image
               src={product.images[1].src}
               alt=""
+              unoptimized={product.images[1].src.startsWith("/api/")}
               fill
               sizes={sizes}
               // The second photograph fades over the first and zooms with it, so the swap reads as one move.

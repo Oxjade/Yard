@@ -269,7 +269,8 @@ function StudioLocalResults({ query, go }: { query: string; go: (href: string) =
 const search: ShellSearch = {
   placeholder: "Search orders, products, customers, conversations",
   destinations: [
-    { label: "Add a product", href: "/studio/products/new", icon: PlusIcon, hint: "Catalogue" },
+    { label: "Add a product", href: "/studio/products/quick", icon: PlusIcon, hint: "Quick add" },
+    { label: "Set up your shop: logo and banner", href: "/studio/storefront/quick", icon: StorefrontIcon, hint: "Storefront" },
     { label: "Social connections", href: "/studio/social?tab=connections", icon: ShareNetworkIcon, hint: "Brand" },
     { label: "Content Studio", href: "/studio/social?tab=content", icon: ImagesSquareIcon, hint: "Brand" },
     { label: "Upload content", href: "/studio/social?tab=content&upload=1", icon: UploadSimpleIcon, hint: "Brand" },
@@ -292,7 +293,7 @@ const yardSetupSearch: ShellSearch = {
   ...search,
   placeholder: "Search products",
   destinations: [
-    { label: "Add a product", href: "/studio/products/new", icon: PlusIcon, hint: "Catalogue" },
+    { label: "Add a product", href: "/studio/products/quick", icon: PlusIcon, hint: "Quick add" },
     { label: "Holidays & closures", href: "/studio/shipping#holidays", icon: CalendarXIcon, hint: "Shipping" },
   ],
 }
