@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowSquareOutIcon, ImageSquareIcon, LinkSimpleIcon, SealCheckIcon, StopCircleIcon, TrashSimpleIcon, XIcon } from "@phosphor-icons/react"
 import { StatusBadge } from "@/components/dashboard/status-badge"
-import { AdminImg, ServerActivity } from "@/components/admin/trust/shared"
+import { AdminImg, ServerActivity, useAdminSession } from "@/components/admin/trust/shared"
 import { ActionErrorNote, ReauthCodeField, actionError, useReauth, type ActionError } from "@/components/admin/finance/reauth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -540,10 +540,11 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
         ]}
       />
 
+      <ProductsSection brand={b} />
       <ClaimSection brand={b} onSaved={saved} />
       <BadgeSection brand={b} onSaved={saved} />
-      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} /> : null}
       {unclaimed ? <ProfileSection key={`${b.id}:${b.logo?.mediaId}:${b.banner?.mediaId}`} brand={b} onSaved={saved} disabled={onHold} /> : null}
+      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} /> : null}
 
       <DetailSection title="Activity">
         <ServerActivity subjectIds={[b.id]} extra={b.createdAt ? [{ at: `${b.createdAt}T00:00:00.000Z`, label: "Founding brand created" }] : []} empty="No activity recorded yet." />
@@ -561,6 +562,34 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
         </ul>
       </DetailSection>
     </DetailSheet>
+  )
+}
+
+/**
+ * Helping the brand list, first after the facts: how many products are published and how many
+ * aren't yet. Unclaimed, Yard lists them itself through Open in Studio (the footer); claimed, it
+ * suggests products the owner accepts before anything goes live.
+ */
+function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
+  const canPropose = useAdminSession().can("catalog.propose")
+  const unpublished = b.products.total - b.products.published
+  return (
+    <DetailSection title="Products" aside={<span className="text-[11px] text-ink-3 tabular">{b.products.published} published, {unpublished} not yet</span>}>
+      <p className="text-[12px] text-ink-3">
+        {b.products.total ? "Drafts aren't visible to shoppers until they're published." : "No products yet."}
+        {b.claimStatus === "claimed" ? "" : " Add and publish them with Open in Studio below, as Yard setup."}
+      </p>
+      {b.claimStatus === "claimed" && canPropose ? (
+        <ul className="grid gap-1.5">
+          <li>
+            <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(b.id)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
+          </li>
+          <li>
+            <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(b.id)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${b.name}`} />
+          </li>
+        </ul>
+      ) : null}
+    </DetailSection>
   )
 }
 

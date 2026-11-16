@@ -98,6 +98,8 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
         ]}
       />
 
+      {app.brandId ? <ProductsSection brandId={app.brandId} brandName={app.brandName} products={app.products} canPropose={canPropose} /> : null}
+
       {app.application ? <ApplicationSection data={app.application} /> : null}
 
       <DetailSection title="Verification" aside={<span className="text-[11px] text-ink-3 tabular">{done} of {checklist.length} complete</span>}>
@@ -118,8 +120,6 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
         </ul>
       </DetailSection>
 
-      {app.brandId ? <BrandEmailSection brandId={app.brandId} brandName={app.brandName} /> : null}
-
       <DetailSection title="Notes">
         <div className={insetClass}>
           <div className="px-3 py-2.5">
@@ -139,6 +139,8 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
         </div>
         <NoteForm key={app.id} brandName={app.brandName} />
       </DetailSection>
+
+      {app.brandId ? <BrandEmailSection brandId={app.brandId} brandName={app.brandName} /> : null}
 
       <DetailSection title="Activity">
         {app.brandId ? (
@@ -169,19 +171,32 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
               <LinkRow href={`/admin/finance?tab=payouts&focus=po_${app.handle}`} label="Payouts and ledger" hint="This brand's payout in Finance" />
             </li>
           ) : null}
-          {app.brandId && canPropose ? (
-            <>
-              <li>
-                <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(app.brandId)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
-              </li>
-              <li>
-                <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(app.brandId)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${app.brandName}`} />
-              </li>
-            </>
-          ) : null}
         </ul>
       </DetailSection>
     </DetailSheet>
+  )
+}
+
+/**
+ * Helping the brand list: first after the facts, since that's what an admin usually opens a brand
+ * for. Add a product for the brand (it accepts the suggestion before anything goes live) or see
+ * what Yard already suggested. Only the product count on file is known here, not drafts vs published.
+ */
+function ProductsSection({ brandId, brandName, products, canPropose }: { brandId: string; brandName: string; products: number; canPropose: boolean }) {
+  return (
+    <DetailSection title="Products" aside={<span className="text-[11px] text-ink-3 tabular">{plural(products, "product")} on file</span>}>
+      <p className="text-[12px] text-ink-3">Drafts aren&apos;t visible to shoppers until the brand publishes them.</p>
+      {canPropose ? (
+        <ul className="grid gap-1.5">
+          <li>
+            <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(brandId)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
+          </li>
+          <li>
+            <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(brandId)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${brandName}`} />
+          </li>
+        </ul>
+      ) : null}
+    </DetailSection>
   )
 }
 

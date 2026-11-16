@@ -1,8 +1,8 @@
 "use client"
 
-import { useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { toast } from "sonner"
-import { EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react"
+import { CaretDownIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react"
 import { ActionErrorNote, actionError, type ActionError } from "@/components/admin/finance/reauth"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
@@ -18,10 +18,12 @@ import { BRAND_EMAIL_BODY_MAX, BRAND_EMAIL_PRESETS, BRAND_EMAIL_SUBJECT_MAX, bra
 import { useNow } from "@/hooks/use-now"
 import { cn } from "@/lib/utils"
 import { useAdminSession } from "@/components/admin/trust/shared"
-import { DetailSection, insetClass } from "./detail-sheet"
+import { insetClass } from "./detail-sheet"
 import { formatDateTime, plural, relDays } from "./format"
 
 const fieldClass = "h-10 rounded-md border-white/10 bg-white/[0.02] text-[13px]"
+
+type EmailsQuery = ReturnType<typeof useApi<BrandEmailContextDto>>
 
 type Draft = { preset: BrandEmailPreset; subject: string; body: string }
 const draftFor = (preset: BrandEmailPreset, brand: string): Draft => ({ preset, subject: brandEmailPresets[preset].subject(brand), body: brandEmailPresets[preset].body(brand) })
@@ -35,17 +37,66 @@ const sendAgainAt = (iso: string) => new Date(iso).toLocaleString(undefined, { w
  * preview of the real email, and Send. It goes to the brand's owners and admins from the outbox;
  * every send is audited and listed under "Sent lately" with the reminders and decision emails.
  * Inline in the tray like the claim link, never a dialog.
+ *
+ * Collapsed by default to one row ("Email the brand", n of 5 in 24h): opening a brand is for
+ * looking at it and helping it list, so the composer only opens when asked, and only then takes
+ * focus (the subject). Collapsing keeps the draft.
  */
 export function BrandEmailSection({ brandId, brandName }: { brandId: string; brandName: string }) {
   const session = useAdminSession()
   if (!session.can("brands.email")) return null
-  return <Composer key={brandId} brandId={brandId} brandName={brandName} />
+  return <EmailSection key={brandId} brandId={brandId} brandName={brandName} />
 }
 
-function Composer({ brandId, brandName }: { brandId: string; brandName: string }) {
+function EmailSection({ brandId, brandName }: { brandId: string; brandName: string }) {
   const id = useId()
-  const now = useNow(60_000)
   const q = useApi(brandEmailKeys.one(brandId), () => getBrandEmails(brandId), { revalidateOnFocus: true })
+  const ctx = q.data
+  const [open, setOpen] = useState(false)
+  // Mounted on first open and kept (hidden) after, so collapsing never throws a draft away.
+  const [mounted, setMounted] = useState(false)
+  const focusOnOpen = useRef(false)
+
+  useEffect(() => {
+    if (!open || !focusOnOpen.current) return
+    focusOnOpen.current = false
+    document.getElementById(`${id}-subject`)?.focus()
+  }, [open, id])
+
+  function toggle() {
+    if (!open) {
+      setMounted(true)
+      focusOnOpen.current = true
+    }
+    setOpen(!open)
+  }
+
+  return (
+    <section className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`${id}-panel`}
+        onClick={toggle}
+        className={cn("flex min-h-12 w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:border-white/[0.13] hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet", insetClass)}
+      >
+        <EnvelopeSimpleIcon className="size-4 shrink-0 text-ink-2" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block font-label text-[13px] text-ink">Email the brand</span>
+          <span className="block text-[11.5px] text-ink-3">{open ? "Templates, preview and what Yard sent lately" : "Templates for drafts, storefront and payout, with a preview"}</span>
+        </span>
+        {ctx ? <span className="shrink-0 text-[11px] text-ink-3 tabular">{ctx.sentToday} of {ctx.dailyLimit} in 24h</span> : null}
+        <CaretDownIcon className={cn("size-4 shrink-0 text-ink-3 transition-transform duration-150", open && "rotate-180")} aria-hidden />
+      </button>
+      <div id={`${id}-panel`} hidden={!open} className="min-w-0">
+        {mounted ? <Composer id={id} brandId={brandId} brandName={brandName} q={q} /> : null}
+      </div>
+    </section>
+  )
+}
+
+function Composer({ id, brandId, brandName, q }: { id: string; brandId: string; brandName: string; q: EmailsQuery }) {
+  const now = useNow(60_000)
   const ctx = q.data
   const name = ctx?.brand.name ?? brandName
   const [draft, setDraft] = useState<Draft>(() => draftFor("finish_listing", name))
@@ -133,11 +184,7 @@ function Composer({ brandId, brandName }: { brandId: string; brandName: string }
   }
 
   return (
-    <DetailSection
-      title="Email the brand"
-      className="min-w-0 grid-cols-[minmax(0,1fr)]"
-      aside={ctx ? <span className="text-[11px] text-ink-3 tabular">{ctx.sentToday} of {ctx.dailyLimit} in 24h</span> : null}
-    >
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
       {q.error && !ctx ? (
         <div role="alert" className={cn("grid gap-2 px-3 py-2.5 text-[12.5px] text-danger", insetClass)}>
           <p>{errorMessage(q.error, "Couldn't load this brand's emails.")}</p>
@@ -258,7 +305,7 @@ function Composer({ brandId, brandName }: { brandId: string; brandName: string }
       </form>
 
       <History ctx={ctx} now={now} />
-    </DetailSection>
+    </div>
   )
 }
 

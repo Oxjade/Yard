@@ -49,6 +49,12 @@ export function DetailSheet({
     opener.current = currentOpener()
     openedOn.current = window.location.pathname
   }, [open])
+  // A record opened while the sheet is already up (another record, a deep link) starts at its
+  // top too, never at the scroll position of the one before.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (open && bodyRef.current) bodyRef.current.scrollTop = 0
+  }, [open, title])
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -78,7 +84,7 @@ export function DetailSheet({
           </div>
           {badges ? <div className="flex flex-wrap items-center gap-1.5">{badges}</div> : null}
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain">
           <div className="grid gap-6 p-5">{children}</div>
         </div>
         {actions ? <div className={cn("border-t bg-[#0c0c0c] p-4 pb-[max(1rem,env(safe-area-inset-bottom))]", hairline)}>{actions}</div> : null}
