@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { SealCheckIcon, SparkleIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, RocketLaunchIcon, SealCheckIcon, SparkleIcon, WalletIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label"
 import { countries, type CountryCode } from "@/config/markets"
 import { ApiError } from "@/lib/api/client"
 import { fieldErrors } from "@/lib/api/errors"
-import { acceptClaim, previewClaim, type ClaimPreviewDto } from "@/lib/api/founding"
+import { acceptClaim, previewClaim, type ClaimAcceptDto, type ClaimPreviewDto } from "@/lib/api/founding"
+import { CLAIM_GOES_LIVE_COPY, PAYOUT_NUDGE_COPY, shopDisplay } from "@/lib/publish-for-brand"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { useServerSession } from "@/lib/session/use-server-session"
 
@@ -19,8 +20,10 @@ import { useServerSession } from "@/lib/session/use-server-session"
  * /auth/claim?token=: a founding brand's owner claims the store Yard set up for them. The token
  * stays in the URL and is only ever POSTed (never stored in the browser). The page previews the
  * link, then the owner signs in (an existing account with the invited email) or creates their
- * account here, accepts the seller agreement and becomes the brand's owner. Studio then opens on
- * Settings → Payouts: selling starts once the payout account is saved.
+ * account here, accepts the seller agreement and becomes the brand's owner. When the shop goes
+ * live on claim ("Go live when they claim", or Yard already published it) the page says
+ * "You're live 🎉" with the shop's link and the payout nudge; otherwise Studio opens on
+ * Settings → Payouts. Either way selling starts once the payout account is saved.
  */
 
 type Refusal = { kind: "invalid" | "expired" | "revoked" | "used" | "on_hold" | "error"; message: string }
@@ -63,6 +66,7 @@ export function AuthClaim() {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ message: string; reload?: boolean; signIn?: boolean } | null>(null)
   const [errors, setErrors] = useState<{ name?: string; password?: string; acceptAgreement?: string }>({})
+  const [live, setLive] = useState<{ brand: string; shop: ClaimAcceptDto["shop"] } | null>(null)
   const current = state?.key === key ? state : null
 
   useEffect(() => {
@@ -97,6 +101,11 @@ export function AuthClaim() {
     try {
       const r = await acceptClaim({ token, acceptAgreement: true, agreementVersion: preview.agreementVersion, ...(creating ? { name: name.trim(), password } : {}) })
       await afterIdentityChange("studio")
+      if (r.shop?.live) {
+        setLive({ brand: preview.brand.name, shop: r.shop })
+        window.scrollTo({ top: 0 })
+        return
+      }
       // Settings → Payouts, with the note that selling starts once the payout account is saved.
       const [path, hash] = r.redirect.split("#")
       router.replace(`${path}${path.includes("?") ? "&" : "?"}claimed=1${hash ? `#${hash}` : ""}`)
@@ -118,6 +127,7 @@ export function AuthClaim() {
     }
   }
 
+  if (live) return <LiveNow brand={live.brand} shop={live.shop} />
   if (!token)
     return (
       <Refused
@@ -141,6 +151,12 @@ export function AuthClaim() {
         </p>
         <h1 className="mt-3 font-display text-display-lg text-balance break-words text-ink">Claim {p.brand.name}</h1>
         <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Thank you for being one of the first brands on Yard. Your store is ready: we set it up for you. Claim it to become its owner, then add your payout account in Studio to start selling.</p>
+        {p.goesLive ? (
+          <p className="mt-4 flex items-start gap-2.5 rounded-lg border border-violet/30 bg-violet/10 px-4 py-3 text-sm leading-relaxed text-ink">
+            <RocketLaunchIcon weight="fill" aria-hidden className="mt-0.5 size-4 shrink-0 text-violet" />
+            <span className="min-w-0">{CLAIM_GOES_LIVE_COPY}</span>
+          </p>
+        ) : null}
       </header>
 
       <dl className="grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
@@ -269,6 +285,58 @@ export function AuthClaim() {
           </Button>
         </form>
       )}
+    </div>
+  )
+}
+
+/** After the claim, when the shop went live: the link, and the payout account as the one thing left. */
+function LiveNow({ brand, shop }: { brand: string; shop: ClaimAcceptDto["shop"] }) {
+  const display = shopDisplay(typeof window === "undefined" ? "yardstore.space" : window.location.origin, shop.handle)
+  const payoutHref = "/studio/settings?claimed=1#payouts"
+  return (
+    <div className="grid max-w-xl gap-8">
+      <header>
+        <p className="inline-flex items-center gap-1.5 text-xs text-violet">
+          <SealCheckIcon weight="fill" aria-hidden className="size-3.5" />
+          {brand} is yours
+        </p>
+        <h1 className="mt-3 font-display text-display-lg text-balance break-words text-ink" tabIndex={-1} ref={(el) => el?.focus()}>
+          You&apos;re live 🎉
+        </h1>
+        <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Your shop went live the moment you claimed it, so shoppers can find you now. Change anything later in Studio.</p>
+      </header>
+
+      <div className="grid gap-1 rounded-lg border border-line bg-card px-4 py-3">
+        <p className="text-xs text-ink-3">Your shop</p>
+        <Link href={shop.url} className="min-w-0 text-base font-medium break-all text-violet underline-offset-4 hover:underline">
+          {display}
+        </Link>
+        <p className="text-xs text-ink-3">{shop.liveProducts === 1 ? "1 product live" : `${shop.liveProducts} products live`}</p>
+      </div>
+
+      {shop.payoutAccount ? null : (
+        <section aria-labelledby="claim-live-payout" className="grid gap-3 rounded-lg border border-acid/40 bg-acid/10 p-4">
+          <h2 id="claim-live-payout" className="flex items-center gap-2 text-base font-medium text-ink">
+            <WalletIcon weight="fill" aria-hidden className="size-4 text-acid" />
+            One thing left
+          </h2>
+          <p className="text-sm leading-relaxed text-ink-2">{PAYOUT_NUDGE_COPY.replace(/^One thing left: a/, "A")}</p>
+          <Button asChild variant="primary" size="lg" className="w-full sm:w-fit">
+            <Link href={payoutHref}>Add payout account</Link>
+          </Button>
+        </section>
+      )}
+
+      <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
+        <Button asChild variant={shop.payoutAccount ? "primary" : "secondary"}>
+          <Link href={shop.url}>
+            See my shop <ArrowSquareOutIcon aria-hidden />
+          </Link>
+        </Button>
+        <Button asChild variant="secondary">
+          <Link href="/studio">Open Studio</Link>
+        </Button>
+      </div>
     </div>
   )
 }

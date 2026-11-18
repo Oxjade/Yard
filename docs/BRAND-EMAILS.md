@@ -9,7 +9,7 @@ development, prints each email to the server log.
 
 - Copy and rules: `src/lib/brand-emails.ts` (pure, unit-tested in `src/lib/brand-emails.test.ts`).
 - Templates: `src/server/email/templates.ts` (`brand_draft_nudge`, `brand_storefront_nudge`,
-  `brand_rejected`, `listing_held`, `listing_back`, `brand_message`).
+  `brand_rejected`, `listing_held`, `listing_back`, `brand_message`, `brand_shop_live`).
 - Recipients: the brand's active **owners and admins** (`brandLeads` in
   `src/server/orders/brand-email.ts`); Yard setup is never a recipient. An application email goes to
   the applicant.
@@ -64,6 +64,9 @@ Queued in the same transaction as the decision and its audit row (audit `meta.em
 | Listing paused / on hold (`listing_held`) | Admin › Products › Restrict listing (`setProductsModeration`, hidden), with the admin's reason. |
 | Listing back / hold lifted (`listing_back`) | Lift restriction on a listing (un-hidden). |
 
+| You're live (`brand_shop_live`, variant `yard`) | Admin › Brands (or the founding tray) › **Publish storefront for {brand}** (`POST /api/admin/brand-storefronts/{brandId}`), audited `brand.storefront_published_by_yard` with `meta.emailed`. Once per brand (dedupe key `brand_shop_live:yard:{brandId}`); pressing again when the shop is already live is a no-op. An unclaimed founding brand has no owner yet, so nobody is emailed; it gets the claim variant when it's claimed. |
+| You're live (`brand_shop_live`, variant `claim`) | The owner claims a founding brand and its shop is live right after (it went live on claim with **Go live when they claim**, or Yard had already published it). Audited `founding.claim_went_live` with `meta.emailed`. Once per brand (`brand_shop_live:claim:{brandId}`). |
+
 Moderation emails are **one per brand per decision**: a bulk Restrict or Lift of 10 listings from one
 brand sends that brand one email naming the first, counting the rest (`POST
 /api/admin/catalog/products/moderation`, up to 100 listings, all or nothing). The wording follows where
@@ -75,6 +78,24 @@ it shows. A brand whose listings are in different states gets one email per stat
 
 Brand restriction and suspension keep their Studio notification (no email). Products are not
 reviewed before publishing, so lifting a restriction is the "listing approved" moment.
+
+**You're live** (Yard published it)
+- Subject: `{brand}, your shop is live on Yard 🎉`
+- Preview: We put your shop live for you. Shoppers can find you now.
+- Heading: You're live 🎉
+- Hey {brand}, We put your shop live for you, so shoppers can find you now.
+  Your shop: **yardstore.space/brands/{handle}** (a link; the host is `YARD_PUBLIC_URL`'s).
+  Change anything in Studio anytime. ("Studio" links to `/studio`.)
+  *(No payout account yet:)* One thing left: add your payout account so shoppers can buy. Takes about 2
+  minutes. **Add my payout account** → `/studio/settings#payouts`
+- Button: See my shop → `/brands/{handle}`
+
+**You're live** (on claim)
+- Subject: `You claimed {brand} and you're live 🎉`
+- Preview: Your shop went live the moment you claimed it. Shoppers can find you now.
+- Heading: You're live 🎉
+- Hey {brand}, Your shop went live the moment you claimed it, so shoppers can find you now. (Then the
+  same shop link, Studio line, payout line and button as above.)
 
 **Application: changes needed**
 - Subject: `A few tweaks and {brand} is good to go`
@@ -151,6 +172,9 @@ Prefilled bodies (editable):
 - **Custom message**: empty, the admin writes it.
 
 ## Data
+
+Migration `drizzle/0022_go_live_on_claim.sql`: `brands.go_live_on_claim` (default off, so existing
+founding brands keep their behaviour; new founding brands are created with it on).
 
 Migration `drizzle/0020_brand_emails.sql`: `brands.nudge_emails` (default on), `brands.last_nudged_at`,
 `brands.storefront_nudged_at`, `catalog_products.draft_nudged_at` and the partial index

@@ -36,6 +36,7 @@ import { afterIdentityChange } from "@/lib/session/identity"
 import { cn } from "@/lib/utils"
 import { CopyValue, Initials } from "./bits"
 import { BrandEmailSection } from "./brand-email-section"
+import { PublishForBrandSection } from "./publish-for-brand-section"
 import { DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, formatDate, formatDateTime } from "./format"
 
@@ -542,6 +543,18 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
       />
 
       <ProductsSection brand={b} />
+      {b.storefrontPublished ? null : (
+        <PublishForBrandSection
+          brandId={b.id}
+          brandName={b.name}
+          onPublished={() => {
+            void getFoundingBrand(b.id)
+              .then((r) => saved(r.brand))
+              .catch(() => q.revalidate())
+          }}
+        />
+      )}
+      {unclaimed ? <GoLiveSection brand={b} onSaved={saved} disabled={onHold} /> : null}
       <ClaimSection brand={b} onSaved={saved} />
       <BadgeSection brand={b} onSaved={saved} />
       {unclaimed ? <ProfileSection key={`${b.id}:${b.logo?.mediaId}:${b.banner?.mediaId}`} brand={b} onSaved={saved} disabled={onHold} /> : null}
@@ -557,7 +570,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
             {b.storefrontPublished ? (
               <LinkRow href={`/brands/${b.handle}`} label="View storefront" hint={`/brands/${b.handle}`} />
             ) : (
-              <p className="rounded-[10px] border border-dashed border-white/10 px-3 py-2.5 text-[12px] text-ink-3">No public storefront yet. It appears once it&apos;s published in Studio.</p>
+              <p className="rounded-[10px] border border-dashed border-white/10 px-3 py-2.5 text-[12px] text-ink-3">No public storefront yet. It appears once it&apos;s published{b.goLiveOnClaim && unclaimed ? ", or the moment the owner claims it" : ""}.</p>
             )}
           </li>
         </ul>
@@ -580,10 +593,14 @@ function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
         {b.products.total ? "Drafts aren't visible to shoppers until they're published." : "No products yet."}
         {b.claimStatus === "claimed" ? "" : " Add and publish them with Open in Studio below, as Yard setup."}
       </p>
-      {b.claimStatus === "claimed" && canPropose ? (
+      {canPropose && (b.claimStatus === "claimed" || b.goLiveOnClaim) ? (
         <ul className="grid gap-1.5">
           <li>
-            <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(b.id)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
+            <LinkRow
+              href={`/admin/products/suggestions/new?brand=${encodeURIComponent(b.id)}`}
+              label="Add product for brand"
+              hint={b.claimStatus === "claimed" ? "The brand accepts it before it goes live" : "Accepted and live the moment they claim"}
+            />
           </li>
           <li>
             <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(b.id)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${b.name}`} />
@@ -768,6 +785,46 @@ function ClaimSection({ brand: b, onSaved }: { brand: FoundingBrandRow; onSaved:
           </Button>
         </div>
       </form>
+    </DetailSection>
+  )
+}
+
+/**
+ * "Go live when they claim": when the owner claims the brand, its Yard-prepared storefront is
+ * published and Yard's pending product suggestions are accepted, so the shop opens at once.
+ * On for brands created since the switch existed; older ones keep it off until an admin flips it.
+ */
+function GoLiveSection({ brand: b, onSaved, disabled }: { brand: FoundingBrandRow; onSaved: (b: FoundingBrandRow) => void; disabled: boolean }) {
+  const id = useId()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function toggle(on: boolean) {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await updateFoundingBrand(b.id, { goLiveOnClaim: on })
+      onSaved(r.brand)
+      toast.success(on ? "Goes live when they claim" : "Stays hidden after the claim", { description: on ? "The storefront and Yard's suggestions go live the moment the owner claims." : "The owner publishes the storefront from Studio after claiming." })
+    } catch (cause) {
+      setError(errorMessage(cause, "The setting couldn't be changed. Try again."))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <DetailSection title="Going live">
+      <div className={cn("flex items-center justify-between gap-3 px-3 py-2.5", insetClass)}>
+        <Label htmlFor={`${id}-golive`} className="grid min-w-0 gap-0.5 text-[13px] leading-snug font-normal text-ink-2">
+          <span className="text-ink">Go live when they claim</span>
+          <span className="text-[11.5px] text-ink-3">Publishes the storefront and accepts Yard&apos;s waiting product suggestions the moment the owner claims.</span>
+        </Label>
+        <Switch id={`${id}-golive`} checked={b.goLiveOnClaim} disabled={busy || disabled} onCheckedChange={(v) => void toggle(v)} />
+      </div>
+      {error ? (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
     </DetailSection>
   )
 }

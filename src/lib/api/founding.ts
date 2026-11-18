@@ -20,8 +20,16 @@ export type ClaimPreviewDto = {
   expiresAt: string
   agreementVersion: string
   agreementUrl: string
+  /** The shop goes live the moment it's claimed. */
+  goesLive: boolean
 }
-export type ClaimAcceptDto = { status: "signed_in"; actor: "brand"; brandId: string; redirect: string }
+export type ClaimAcceptDto = {
+  status: "signed_in"
+  actor: "brand"
+  brandId: string
+  redirect: string
+  shop: { live: boolean; handle: string; url: string; payoutAccount: boolean; liveProducts: number }
+}
 
 export const foundingKeys = {
   list: "admin:founding:list",
@@ -45,3 +53,20 @@ export const acceptClaim = (body: { token: string; acceptAgreement: boolean; agr
 
 /** A fresh idempotency key for one user action (reused on that action's retries). */
 export const actionKey = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "")
+
+/* ---------- Publish storefront for a brand (Admin › Brands; brands.restrict) ---------- */
+
+export type PublishForBrandPreviewDto = {
+  brand: { id: string; name: string; handle: string; founding: boolean; claimStatus: string }
+  published: boolean
+  checklist: { items: { key: "logo" | "banner" | "intro" | "products"; label: string; done: boolean; value?: string }[]; warning: string | null }
+  blocked: string | null
+  payoutAccount: boolean
+  goLiveOnClaim: boolean
+}
+export type PublishForBrandDto = { created: boolean; version: number | null; emailed: number; preview: PublishForBrandPreviewDto }
+
+export const publishForBrandKey = (brandId: string) => `admin:brand-storefront:${brandId}`
+const storefrontOf = (brandId: string) => `/api/admin/brand-storefronts/${encodeURIComponent(brandId)}`
+export const getPublishForBrand = (brandId: string) => api<PublishForBrandPreviewDto>(storefrontOf(brandId))
+export const publishForBrand = (brandId: string) => api<PublishForBrandDto>(storefrontOf(brandId), { method: "POST" })

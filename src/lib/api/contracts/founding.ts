@@ -65,6 +65,8 @@ export const foundingPatchBody = z
     /** The storefront banner: becomes the draft's coverMediaId. null removes it. */
     bannerMediaId: safeId().nullable().optional(),
     foundingBadge: z.boolean().optional(),
+    /** "Go live when they claim": publish the Yard-prepared shop and accept Yard's suggestions on claim. Unclaimed only. */
+    goLiveOnClaim: z.boolean().optional(),
   })
   .refine((b) => Object.keys(b).length > 0, { error: "Send at least one change." })
 export type FoundingPatchBody = z.infer<typeof foundingPatchBody>
@@ -118,6 +120,8 @@ export type FoundingBrandRow = {
   claimedBy: { id: string; name: string } | null
   hasPayoutAccount: boolean
   storefrontPublished: boolean
+  /** "Go live when they claim" (on by default for brands created since it existed). */
+  goLiveOnClaim: boolean
   products: { total: number; published: number }
   claimLink: { id: string; email: string; status: "pending" | "expired"; createdAt: string; expiresAt: string } | null
 }

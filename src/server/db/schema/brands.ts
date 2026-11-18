@@ -32,6 +32,12 @@ export const brands = pgTable(
     claimedBy: text("claimed_by").references((): AnyPgColumn => users.id),
     /** Set on the first storefront publish. A founding brand is public only from then on. */
     launchedAt: tz("launched_at"),
+    /**
+     * "Go live when they claim" (Admin › Founding tray): when the owner claims the brand, its
+     * Yard-prepared storefront is published and Yard's pending product suggestions are accepted in
+     * the same flow (auth/claims.ts). On for founding brands created from 0022 on; off for older ones.
+     */
+    goLiveOnClaim: boolean("go_live_on_claim").notNull().default(false),
     story: text("story"),
     logoMediaId: text("logo_media_id"),
     /** Handles only (no @, no URL). */

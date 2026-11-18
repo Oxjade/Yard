@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm"
 import { SELLER_AGREEMENT_VERSION, type ClaimAcceptBody } from "@/lib/api/contracts/founding"
 import { writeAudit } from "../audit"
 import { catalogChanged } from "../catalog/hooks"
+import { goLiveAfterClaim } from "../catalog/publish-for-brand"
 import { db, withTx } from "../db"
 import { adminMembers, brandMembers, brands, users } from "../db/schema"
 import { brandInvites } from "../db/schema/identity"
@@ -90,6 +91,8 @@ export async function previewClaim(token: string, shopper: ShopperActor | null, 
     expiresAt: invite.expiresAt.toISOString(),
     agreementVersion: SELLER_AGREEMENT_VERSION,
     agreementUrl: "/legal/seller-agreement",
+    /** The shop goes live the moment it's claimed ("Go live when they claim"), or Yard already put it live. */
+    goesLive: brand.goLiveOnClaim || !!brand.launchedAt,
   }
 }
 
@@ -191,7 +194,18 @@ export async function acceptClaim(input: ClaimAcceptBody, shopper: ShopperActor 
     await notifyAdmins("brands.founding", { key: `founding-claimed:${b.id}`, template: "founding.claimed", vars: { brand: b.name, owner: user.name }, href: `/admin/brands?tab=founding&brand=${b.id}` })
     catalogChanged({ reindexBrands: [b.id] })
     const session = await openSession({ actor: "brand", user, brandId: b.id, method: "claim", meta })
-    return { profile: session.profile, brandId: b.id }
+    return { profile: session.profile, brandId: b.id, user: { id: user.id, name: user.name } }
   })
-  return { status: "signed_in" as const, actor: "brand" as const, profile: out.profile, brandId: out.brandId, redirect: CLAIM_REDIRECT }
+  // Committed: the claim stands whatever happens next. "Go live when they claim" publishes the
+  // Yard-prepared shop and accepts Yard's suggestions now (catalog/publish-for-brand.ts; never throws).
+  const shop = await goLiveAfterClaim({ brandId: out.brandId, user: out.user, ipHash: meta.ipHash })
+  return {
+    status: "signed_in" as const,
+    actor: "brand" as const,
+    profile: out.profile,
+    brandId: out.brandId,
+    /** Live: the page shows "You're live 🎉" with the shop link and the payout nudge. Otherwise Studio opens on Payouts. */
+    shop: { live: shop.live, handle: shop.handle, url: `/brands/${shop.handle}`, payoutAccount: shop.payoutAccount, liveProducts: shop.liveProducts },
+    redirect: CLAIM_REDIRECT,
+  }
 }

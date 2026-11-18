@@ -119,6 +119,8 @@ export type BrandEmailCopy = {
   note?: string
   why: string
   footerLink?: { lead: string; label: string; url: string }
+  /** Paragraphs with links, after `paragraphs` (e.g. the shop's address). Plain text runs; templates.ts checks every link. */
+  linkParagraphs?: { text: string; href?: string; bold?: boolean }[][]
 }
 
 /** Where a brand switches reminders off (Studio › Settings › Emails from Yard). */
@@ -166,6 +168,30 @@ export function storefrontNudgeCopy(x: { brand: string; products?: number }): Br
     action: { label: "Publish my storefront", url: "/studio/storefront" },
     why: `You're getting this because you run ${x.brand} on Yard and its storefront isn't published yet.`,
     footerLink: optOut,
+  }
+}
+
+/**
+ * "Your shop is live": Yard published the brand's storefront for it (Admin › Publish storefront for
+ * {brand}), or it went live the moment the owner claimed it ("Go live when they claim").
+ * `shop` is how the link reads ("yardstore.space/brands/handle"); `payout` false adds the payout nudge.
+ */
+export function shopLiveCopy(x: { brand: string; handle: string; shop: string; variant: "yard" | "claim"; payout: boolean }): BrandEmailCopy {
+  const claim = x.variant === "claim"
+  return {
+    subject: claim ? `You claimed ${x.brand} and you're live 🎉` : `${x.brand}, your shop is live on Yard 🎉`,
+    preheader: claim ? "Your shop went live the moment you claimed it. Shoppers can find you now." : "We put your shop live for you. Shoppers can find you now.",
+    eyebrow: "Yard Studio",
+    heading: "You're live 🎉",
+    greeting: `Hey ${x.brand},`,
+    paragraphs: [claim ? "Your shop went live the moment you claimed it, so shoppers can find you now." : "We put your shop live for you, so shoppers can find you now."],
+    linkParagraphs: [
+      [{ text: "Your shop: " }, { text: x.shop, href: `/brands/${x.handle}`, bold: true }],
+      [{ text: "Change anything in " }, { text: "Studio", href: "/studio" }, { text: " anytime." }],
+      ...(x.payout ? [] : [[{ text: "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes. " }, { text: "Add my payout account", href: "/studio/settings#payouts" }]]),
+    ],
+    action: { label: "See my shop", url: `/brands/${x.handle}` },
+    why: `You're getting this because you run ${x.brand} on Yard.`,
   }
 }
 
@@ -380,6 +406,8 @@ export const brandEmailHistoryLabels: Record<string, string> = {
   "brand_email.sent": "Email from Yard",
   "brand_email.draft_nudge": "Reminder: still in drafts",
   "brand_email.storefront_nudge": "Reminder: publish your storefront",
+  "brand.storefront_published_by_yard": "Your shop is live (Yard published it)",
+  "founding.claim_went_live": "You claimed it and you're live",
   "onboarding.rejected": "Application: changes needed",
   "onboarding.approved": "Application approved",
   "catalog.product_hidden": "Listing paused",

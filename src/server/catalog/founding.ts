@@ -1,6 +1,7 @@
 import "server-only"
 import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm"
 import { countryTimeZone } from "@/lib/data/zones"
+import { GO_LIVE_ON_CLAIM_DEFAULT } from "@/lib/publish-for-brand"
 import { CLAIM_LINK_DAYS, type FoundingBrandRow, type FoundingCreateBody, type FoundingPatchBody, type FoundingStatus } from "@/lib/api/contracts/founding"
 import { writeAudit } from "../audit"
 import { requestScope, type AdminActor } from "../auth/dal"
@@ -151,6 +152,7 @@ async function rowsFor(d: Executor, list: (typeof brands.$inferSelect)[]): Promi
       claimedBy: claimer ? { id: claimer.id, name: claimer.name } : null,
       hasPayoutAccount,
       storefrontPublished: live.some((v) => v.brandId === b.id),
+      goLiveOnClaim: b.goLiveOnClaim,
       products: { total: c?.total ?? 0, published: c?.published ?? 0 },
       claimLink: link ? { id: link.id, email: link.email, status: pendingLive ? "pending" : "expired", createdAt: link.createdAt.toISOString(), expiresAt: link.expiresAt.toISOString() } : null,
     }
@@ -230,6 +232,7 @@ export async function createFoundingBrand(actor: AdminActor, body: FoundingCreat
           founding: true,
           foundingBadge: true,
           claimStatus: "unclaimed",
+          goLiveOnClaim: GO_LIVE_ON_CLAIM_DEFAULT,
           story: body.story?.trim() || null,
           instagram: body.instagram || null,
           tiktok: body.tiktok || null,
@@ -261,11 +264,12 @@ export async function createFoundingBrand(actor: AdminActor, body: FoundingCreat
 export async function updateFoundingBrand(actor: AdminActor, brandId: string, body: FoundingPatchBody, ipHash: string | null) {
   return withTx(async (tx) => {
     const b = await loadFounding(tx, brandId, true)
-    const profileKeys = (Object.keys(body) as (keyof FoundingPatchBody)[]).filter((k) => k !== "foundingBadge")
+    const profileKeys = (Object.keys(body) as (keyof FoundingPatchBody)[]).filter((k) => k !== "foundingBadge" && k !== "goLiveOnClaim")
     if (profileKeys.length) {
       assertUnclaimed(b, "editing its profile from the Control Center")
       assertNotOnHold(b)
     }
+    if (body.goLiveOnClaim !== undefined) assertUnclaimed(b, "changing when it goes live")
     const patch: Partial<typeof brands.$inferInsert> = {}
     if (body.name !== undefined) patch.name = body.name.trim()
     if (body.city !== undefined) {
@@ -276,6 +280,7 @@ export async function updateFoundingBrand(actor: AdminActor, brandId: string, bo
     if (body.instagram !== undefined) patch.instagram = body.instagram || null
     if (body.tiktok !== undefined) patch.tiktok = body.tiktok || null
     if (body.foundingBadge !== undefined) patch.foundingBadge = body.foundingBadge
+    if (body.goLiveOnClaim !== undefined) patch.goLiveOnClaim = body.goLiveOnClaim
     if (body.logoMediaId) await assertBrandImages(tx, b.id, [body.logoMediaId], "logoMediaId")
     if (body.bannerMediaId) await assertBrandImages(tx, b.id, [body.bannerMediaId], "bannerMediaId")
     if (body.logoMediaId !== undefined) patch.logoMediaId = body.logoMediaId
@@ -296,7 +301,16 @@ export async function updateFoundingBrand(actor: AdminActor, brandId: string, bo
     const changed = Object.keys(body)
     await writeAudit({
       actor: adminAudit(actor),
-      action: changed.length === 1 && body.foundingBadge !== undefined ? (body.foundingBadge ? "founding.badge_on" : "founding.badge_off") : "founding.updated",
+      action:
+        changed.length === 1 && body.foundingBadge !== undefined
+          ? body.foundingBadge
+            ? "founding.badge_on"
+            : "founding.badge_off"
+          : changed.length === 1 && body.goLiveOnClaim !== undefined
+            ? body.goLiveOnClaim
+              ? "founding.go_live_on_claim_on"
+              : "founding.go_live_on_claim_off"
+            : "founding.updated",
       target: b.name,
       subjectType: "brand",
       subjectId: b.id,

@@ -16,6 +16,7 @@ import { sampleOnly, useAdminBrowserAudit, useAdminSampleData } from "../sample"
 import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
 import { BrandEmailSection } from "./brand-email-section"
+import { PublishForBrandSection } from "./publish-for-brand-section"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { AdminImg, ServerActivity, TrustActionBar, useAdminSession } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
@@ -100,6 +101,8 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
       />
 
       {app.brandId ? <ProductsSection brandId={app.brandId} brandName={app.brandName} products={app.products} canPropose={canPropose} /> : null}
+
+      {app.brandId && app.status !== "pending_review" && (!app.onboardingId || app.reviewed) ? <PublishForBrandSection brandId={app.brandId} brandName={app.brandName} /> : null}
 
       {app.application ? <ApplicationSection data={app.application} /> : null}
 

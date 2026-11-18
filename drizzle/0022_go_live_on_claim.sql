@@ -1,0 +1,1 @@
+ALTER TABLE "brands" ADD COLUMN "go_live_on_claim" boolean DEFAULT false NOT NULL;
