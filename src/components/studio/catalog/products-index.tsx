@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { SuggestionsBanner } from "@/components/proposals/studio-proposals"
+import { WebsitePiecesSection } from "@/components/studio/catalog/website-pieces"
 import { productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -442,6 +443,7 @@ export function ProductsIndex() {
       </PageHeader>
 
       {member ? <SuggestionsBanner /> : null}
+      {member ? <WebsitePiecesSection /> : null}
 
       {loadError ? (
         <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 sm:flex-row sm:items-center">

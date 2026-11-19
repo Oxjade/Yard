@@ -46,6 +46,14 @@ export const templates = {
         ? { title: `Yard suggested ${Number(v.count)} new products`, body: "Review them in Studio. Nothing goes live until you accept." }
         : { title: v.product ? `Yard suggested a new product: ${s(v.product, "a product")}` : "Yard suggested a new product", body: "Review it in Studio. Nothing goes live until you accept." },
   },
+  // A website watch found new pieces on the brand's own site (catalog/importer/watch.ts), once per check.
+  "website.new_for_brand": {
+    category: "product_suggestion",
+    build: (v) => {
+      const n = Math.max(1, Number(v.count) || 1)
+      return { title: n === 1 ? "1 new piece from your website is waiting" : `${n} new pieces from your website are waiting`, body: "Add them to Yard in one tap." }
+    },
+  },
   "proposal.edit_for_brand": { category: "product_suggestion", build: (v) => ({ title: `Yard suggested changes to ${s(v.product, "a product")}`, body: "Review them in Studio. Nothing changes until you accept." }) },
   // `outcome`: "accepted" | "declined".
   "proposal.decided_for_admin": { category: "product_suggestion", build: (v) => ({ title: `${s(v.brand, "The brand")} ${v.outcome === "accepted" ? "accepted" : "declined"} your suggestion`, body: `${s(v.product, "A product")}. Open Suggestions for the details.` }) },

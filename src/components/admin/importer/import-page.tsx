@@ -19,6 +19,7 @@ import { currencies, currencyCodes, type CurrencyCode } from "@/config/markets"
 import { IMPORT_PLATFORM_LABELS, ONE_SIZE, type ImportBrandContextDto, type ImportDetailDto, type ImportItemDto, type ImportItemStatus, type ImportProductDto, type ImportSummaryDto } from "@/lib/api/contracts/imports"
 import { brandImportKey, brandImportsKey, getBrandImport, listBrandImports, runBrandImport, startBrandImportScan } from "@/lib/api/imports"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
+import { WatchPanel } from "./website-watch"
 import { choiceOf, draftOf, draftProblems, sizesEditable, stockLabels, withCurrency, type ImportDraft } from "@/lib/importer"
 import { formatMoney } from "@/lib/money"
 import { cn } from "@/lib/utils"
@@ -66,6 +67,20 @@ function ImportFromWebsite({ brandId }: { brandId: string }) {
         <PageHeader title="Import from website" description={brand ? `Copy ${brand.name}'s products from their own shop into Suggestions from Yard. Photos are copied into Yard; nothing goes live until ${brand.claimStatus === "unclaimed" ? (brand.goLiveOnClaim ? "they claim the brand" : "they claim and accept") : "they accept"}.` : undefined} />
       </div>
       {!brand ? <ListSkeleton rows={4} /> : importId ? <ImportJob key={importId} id={importId} brand={brand} /> : <ScanStep brand={brand} recent={list.data?.imports ?? []} />}
+      {brand ? <WatchSection brandId={brandId} importId={importId} imports={list.data?.imports ?? []} /> : null}
+    </div>
+  )
+}
+
+/** Keep watching the site (docs/IMPORTER.md › Watching a website): offered once a scan has read it. */
+function WatchSection({ brandId, importId, imports }: { brandId: string; importId: string | null; imports: ImportSummaryDto[] }) {
+  // The import on screen (its scan may have finished since the list loaded), else the latest one that read the site.
+  const shown = imports.find((i) => i.id === importId)
+  const current = shown ?? imports.find((i) => i.platform && i.status !== "scanning" && i.status !== "failed")
+  return (
+    <div className="grid gap-3 border-t border-white/[0.06] pt-5">
+      <h2 className="text-[15px] font-medium text-ink">Watching their website</h2>
+      <WatchPanel brandId={brandId} importId={importId ?? current?.id} importHost={current ? hostOf(current.sourceUrl) : null} canStart={!!importId || !!current} />
     </div>
   )
 }

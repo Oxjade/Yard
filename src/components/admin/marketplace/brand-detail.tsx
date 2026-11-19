@@ -24,6 +24,7 @@ import { ActivityList, DetailSection, DetailSheet, Facts, LinkRow, insetClass } 
 import { categoryName, countryName, daysSince, formatDate, plural, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { useLast } from "./use-last"
+import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
 
 const NOTE_ACTION = "Added internal note"
 
@@ -190,6 +191,7 @@ function ProductsSection({ appId, brandId, brandName, products, canPropose }: { 
   return (
     <DetailSection title="Products" aside={<span className="text-[11px] text-ink-3 tabular">{plural(products, "product")} on file</span>}>
       <p className="text-[12px] text-ink-3">Drafts aren&apos;t visible to shoppers until the brand publishes them.</p>
+      {canPropose ? <WebsitePiecesTray key={brandId} brandId={brandId} /> : null}
       {canPropose ? (
         <ul className="grid gap-1.5">
           <li>

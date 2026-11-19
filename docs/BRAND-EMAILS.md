@@ -9,7 +9,8 @@ development, prints each email to the server log.
 
 - Copy and rules: `src/lib/brand-emails.ts` (pure, unit-tested in `src/lib/brand-emails.test.ts`).
 - Templates: `src/server/email/templates.ts` (`brand_draft_nudge`, `brand_storefront_nudge`,
-  `brand_rejected`, `listing_held`, `listing_back`, `brand_message`, `brand_shop_live`).
+  `brand_rejected`, `listing_held`, `listing_back`, `brand_message`, `brand_shop_live`,
+  `brand_website_pieces`).
 - Recipients: the brand's active **owners and admins** (`brandLeads` in
   `src/server/orders/brand-email.ts`); Yard setup is never a recipient. An application email goes to
   the applicant.
@@ -32,6 +33,7 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
 |---|---|---|
 | Still in drafts (`brand_draft_nudge`) | A product has been a draft for 12 hours **since the brand could first publish it**: the latest of its creation, the founding brand's claim (`claimed_at`) and the application's approval (`reviewed_at` of the approved onboarding), so a first product saved with an application, or drafts Yard prepared before a claim, aren't reminded about right after approval or claim. Never published, not hidden by moderation, that clock started in the last 30 days; brand not restricted or suspended, no application under review, not an unclaimed founding brand. One email per brand per run covers all its due drafts (first named, the rest counted). | product (`catalog_products.draft_nudged_at`) |
 | Publish your storefront (`brand_storefront_nudge`) | A claimed founding brand with at least one published or scheduled product, 24 hours after claiming, whose storefront was never published (`launched_at` empty), so its products are still hidden. | brand (`brands.storefront_nudged_at`) |
+| New from your website (`brand_website_pieces`) | A website watch (docs/IMPORTER.md › Watching a website) found pieces on the brand's own site that aren't on Yard yet. Claimed brands only; respects **Emails from Yard** but not the one-a-day cooldown (it comes at most once per check, every 6 hours, and only when something is new). The Studio notification is sent either way. Audited `brand_email.website_pieces` with `meta.emailed` and `meta.optedOut`. | check (`brand_website_pieces:{runId}`) |
 
 **Still in drafts**
 - Subject: `Your {product} is chilling in drafts` (several: `Your {product} (and {n} more) are chilling in drafts`)
@@ -42,6 +44,16 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
   *(Founding brand not launched:)* One more thing: your storefront isn't published yet either. Publish it
   from Storefront in Studio so the whole Yard can find you. Still cooking? No stress, it'll wait for you.
 - Button: Publish {product} → `/studio/products/{id}`
+
+**New from your website**
+- Subject: `{n} new pieces from your website are waiting` (one: `1 new piece from your website is waiting`)
+- Preview: Add them to Yard in one tap.
+- Heading: Fresh from your site ✨
+- Hey {brand}, {n} new pieces from your website are waiting. Add them to Yard in one tap.
+  We copied the photos, name, price and sizes from your site. Tap Add to Yard and it goes live in your
+  shop, or Not this one and we won't ask again.
+- Button: Add them to Yard → `/studio/products#from-website`
+- Notification: "{n} new pieces from your website are waiting" / "Add them to Yard in one tap."
 
 **Publish your storefront**
 - Subject: `{brand}, your storefront is ready for its moment`

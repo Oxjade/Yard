@@ -81,7 +81,11 @@ export function startUrlOf(input: string): URL {
   return labeldShopUrl(u) ?? u
 }
 
-export async function scanSite(input: string, deps: { fetch: SiteFetch; normalize: NormalizeContext; existing: Existing; maxProducts?: number; progress?: (p: Partial<ImportProgressDto>) => void }): Promise<ScanOutcome> {
+/**
+ * `platform` (a watch run): only that adapter is tried, and a site that lists nothing new isn't
+ * handed to the next adapter. `skipPage`: product pages the caller already knows (ScanContext).
+ */
+export async function scanSite(input: string, deps: { fetch: SiteFetch; normalize: NormalizeContext; existing: Existing; maxProducts?: number; progress?: (p: Partial<ImportProgressDto>) => void; platform?: ImportPlatform; skipPage?: (url: string) => boolean }): Promise<ScanOutcome> {
   const start = startUrlOf(input)
   const progress = deps.progress ?? (() => {})
   const maxProducts = Math.min(IMPORT_MAX_PRODUCTS, deps.maxProducts ?? IMPORT_MAX_PRODUCTS)
@@ -101,14 +105,14 @@ export async function scanSite(input: string, deps: { fetch: SiteFetch; normaliz
       home = { url: page.url, html: page.text }
     }
   }
-  const ctx = { start, home, fetch: deps.fetch, maxProducts, progress }
+  const ctx = { start, home, fetch: deps.fetch, maxProducts, progress, skipPage: deps.skipPage }
   let last: { platform: ImportPlatform; brand: ImportBrandDto; warnings: string[] } | null = null
-  for (const a of ADAPTERS) {
-    if (a.detect(ctx) === "no") continue
+  for (const a of deps.platform ? ADAPTERS.filter((x) => x.id === deps.platform) : ADAPTERS) {
+    if (!deps.platform && a.detect(ctx) === "no") continue
     const r = await a.scan(ctx)
     if (!r) continue
     last = { platform: a.id, brand: r.brand, warnings: r.warnings }
-    if (!r.products.length) continue
+    if (!r.products.length && !deps.platform) continue
     const products = r.products.map((p) => normalizeProduct(p, deps.normalize)).filter((p): p is ImportProductDto => !!p)
     progress({ phase: "done", productsFound: products.length, note: null })
     return { platform: a.id, startUrl: start.toString(), brand: r.brand, products: markDuplicates(products, deps.existing), warnings: [...notes, ...r.warnings] }

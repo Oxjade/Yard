@@ -241,7 +241,7 @@ async function detailOf(d: Executor, r: Listed, as: "brand" | "admin"): Promise<
 }
 
 /** Whether a new product made from a suggestion goes live on acceptance, like one the brand published itself. */
-async function brandMayPublish(d: Executor, brand: { id: string; reviewStatus: string }, product: { images: unknown[]; variants: unknown[] }) {
+export async function brandMayPublish(d: Executor, brand: { id: string; reviewStatus: string }, product: { images: unknown[]; variants: unknown[] }) {
   return brand.reviewStatus !== "restricted" && !(await brandUnderReview(d, brand.id)) && product.images.length > 0 && product.variants.length > 0
 }
 

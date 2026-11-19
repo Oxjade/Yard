@@ -39,6 +39,7 @@ import { BrandEmailSection } from "./brand-email-section"
 import { PublishForBrandSection } from "./publish-for-brand-section"
 import { DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
 import { categoryName, countryName, formatDate, formatDateTime } from "./format"
+import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
 
 /*
  * The founding-brand tray (owner only, brands.founding): the inline create form, and one brand's
@@ -596,6 +597,7 @@ function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
         {b.products.total ? "Drafts aren't visible to shoppers until they're published." : "No products yet."}
         {b.claimStatus === "claimed" ? "" : " Add and publish them with Open in Studio below, as Yard setup."}
       </p>
+      {canImport ? <WebsitePiecesTray key={b.id} brandId={b.id} /> : null}
       {canImport ? (
         <LinkRow
           href={`/admin/brands/${encodeURIComponent(b.id)}/import`}

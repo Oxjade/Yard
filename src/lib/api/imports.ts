@@ -1,5 +1,5 @@
 import { api } from "./client"
-import type { ImportDetailDto, ImportListDto, ImportRunBody, ImportScanBody } from "./contracts/imports"
+import type { AdminWatchDto, ImportDetailDto, ImportListDto, ImportRunBody, ImportScanBody, StudioSitePiecesDto } from "./contracts/imports"
 
 /** Typed wrappers over /api/admin/brand-imports (Import from website, docs/IMPORTER.md). */
 
@@ -13,3 +13,16 @@ export const runBrandImport = (id: string, body: ImportRunBody) => api<{ import:
 
 export const brandImportsKey = (brandId: string) => `admin.brand_imports:${brandId}`
 export const brandImportKey = (id: string) => `admin.brand_import:${id}`
+
+/* ---------- watching a website ---------- */
+
+export const getBrandWatch = (brandId: string) => api<AdminWatchDto>("/api/admin/brand-watch", { query: { brandId } })
+export const setBrandWatch = (body: { brandId: string; enabled: boolean; importId?: string }) => api<AdminWatchDto>("/api/admin/brand-watch", { method: "PUT", body })
+export const checkBrandWatch = (brandId: string, resume?: boolean) => api<AdminWatchDto>("/api/admin/brand-watch/check", { body: resume ? { brandId, resume } : { brandId } })
+export const actOnWebsitePiece = (id: string, action: "approve" | "skip" | "dismiss_change") => api<AdminWatchDto>(`/api/admin/website-pieces/${encodeURIComponent(id)}`, { body: { action } })
+export const approveAllWebsitePieces = (brandId: string) => api<AdminWatchDto & { taken: number }>("/api/admin/website-pieces", { body: { brandId, action: "approve_all" } })
+export const brandWatchKey = (brandId: string) => `admin.brand_watch:${brandId}`
+
+export const listStudioWebsitePieces = () => api<StudioSitePiecesDto>("/api/studio/catalog/website-pieces")
+export const actOnStudioWebsitePiece = (id: string, action: "add" | "skip") => api<StudioSitePiecesDto & { productId?: string; published?: boolean }>(`/api/studio/catalog/website-pieces/${encodeURIComponent(id)}`, { body: { action } })
+export const STUDIO_WEBSITE_PIECES_KEY = "studio.website_pieces"

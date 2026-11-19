@@ -172,6 +172,29 @@ export function storefrontNudgeCopy(x: { brand: string; products?: number }): Br
 }
 
 /**
+ * "New from your website": a website watch (docs/IMPORTER.md › Watching a website) found pieces on
+ * the brand's own site that aren't on Yard yet. Once per check with new pieces; a reminder, so it
+ * respects the brand's "Emails from Yard" switch.
+ */
+export function websitePiecesCopy(x: { brand: string; count: number }): BrandEmailCopy {
+  const n = Math.max(1, Math.floor(x.count || 1))
+  return {
+    subject: n === 1 ? "1 new piece from your website is waiting" : `${n} new pieces from your website are waiting`,
+    preheader: `Add ${n === 1 ? "it" : "them"} to Yard in one tap.`,
+    eyebrow: "Yard Studio",
+    heading: "Fresh from your site ✨",
+    greeting: x.brand ? `Hey ${x.brand},` : undefined,
+    paragraphs: [
+      `${n} new ${n === 1 ? "piece" : "pieces"} from your website ${n === 1 ? "is" : "are"} waiting. Add ${n === 1 ? "it" : "them"} to Yard in one tap.`,
+      "We copied the photos, name, price and sizes from your site. Tap Add to Yard and it goes live in your shop, or Not this one and we won't ask again.",
+    ],
+    action: { label: n === 1 ? "Add it to Yard" : "Add them to Yard", url: "/studio/products#from-website" },
+    why: `You're getting this because Yard watches ${x.brand || "your brand"}'s website for new pieces.`,
+    footerLink: optOut,
+  }
+}
+
+/**
  * "Your shop is live": Yard published the brand's storefront for it (Admin › Publish storefront for
  * {brand}), or it went live the moment the owner claimed it ("Go live when they claim").
  * `shop` is how the link reads ("yardstore.space/brands/handle"); `payout` false adds the payout nudge.
@@ -406,6 +429,7 @@ export const brandEmailHistoryLabels: Record<string, string> = {
   "brand_email.sent": "Email from Yard",
   "brand_email.draft_nudge": "Reminder: still in drafts",
   "brand_email.storefront_nudge": "Reminder: publish your storefront",
+  "brand_email.website_pieces": "New from your website",
   "brand.storefront_published_by_yard": "Your shop is live (Yard published it)",
   "founding.claim_went_live": "You claimed it and you're live",
   "onboarding.rejected": "Application: changes needed",

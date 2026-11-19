@@ -130,3 +130,13 @@ export const NEWSLETTER_RECIPIENT_STATUSES = ["pending", "queued", "sent", "fail
 export const IMPORT_PLATFORMS = ["shopify", "woocommerce", "labeld", "generic"] as const
 export const IMPORT_STATUSES = ["scanning", "scanned", "importing", "done", "failed"] as const
 export const IMPORT_ITEM_STATUSES = ["queued", "created", "skipped", "failed"] as const
+/**
+ * Website watch (docs/IMPORTER.md › Watching a website): a watched site is checking (active) or
+ * paused after repeated failures. A piece is one product Yard has seen on a brand's site:
+ * imported (created by an import), ignored (seen and passed over: unticked at import, or on the
+ * site when watching started), waiting (new, for admin or brand to approve), approving (taken by
+ * one side, photos copying), approved (in Yard), skipped (rejected; never offered again).
+ */
+export const WATCH_STATUSES = ["active", "paused"] as const
+export const SITE_PIECE_STATUSES = ["imported", "ignored", "waiting", "approving", "approved", "skipped"] as const
+export const SITE_PIECE_SIDES = ["admin", "brand"] as const

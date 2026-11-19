@@ -26,6 +26,11 @@ export type ScanContext = {
   fetch: SiteFetch
   maxProducts: number
   progress(p: Partial<ImportProgressDto>): void
+  /**
+   * A watch run (watch.ts) passes this: true for a product page it already knows and doesn't need
+   * again (a piece passed over or waiting), so a re-scan reads only new pages and the pieces in Yard.
+   */
+  skipPage?: (url: string) => boolean
 }
 
 export type AdapterResult = { brand: ImportBrandDto; products: RawProduct[]; warnings: string[] }

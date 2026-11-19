@@ -174,6 +174,7 @@ export const labeld: Adapter = {
       ctx.progress({ phase: "products", productPages: queue.length })
       await eachLimit(batch, 2, async (url) => {
         if (products.length >= ctx.maxProducts) return
+        if (ctx.skipPage?.(url)) return
         let page
         try {
           page = await ctx.fetch.get(url, { accept: "text/html" })

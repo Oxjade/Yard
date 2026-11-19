@@ -2,7 +2,7 @@ import "server-only"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { getEnv } from "../env"
-import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, shopLiveCopy, storefrontNudgeCopy, type BrandEmailCopy } from "@/lib/brand-emails"
+import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, shopLiveCopy, storefrontNudgeCopy, websitePiecesCopy, type BrandEmailCopy } from "@/lib/brand-emails"
 import { shopDisplay } from "@/lib/publish-for-brand"
 import { newsletterGreeting, newsletterKindMeta, newsletterLink, parseNewsletterBody, type NewsletterBlock } from "@/lib/newsletter"
 import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, type ReceiptGroup, type ReceiptLine } from "./layout"
@@ -421,6 +421,12 @@ export const templates = {
     required: ["brand"],
     build: (x) => brandCopy(storefrontNudgeCopy({ brand: v(x, "brand"), products: Number(x.products) || 0 })),
   },
+  // "New from your website" (catalog/importer/watch.ts): `count` new pieces found by one check. A reminder (opt-out-able).
+  brand_website_pieces: {
+    category: "account",
+    required: ["brand", "count"],
+    build: (x) => brandCopy(websitePiecesCopy({ brand: v(x, "brand"), count: Number(x.count) || 1 })),
+  },
   // "You're live 🎉": Yard published the shop for the brand (`variant` "yard") or it went live on claim
   // ("claim"); catalog/publish-for-brand.ts. `handle`: the brand's handle; `payout` 0 adds the payout nudge.
   brand_shop_live: {
@@ -757,6 +763,7 @@ const ALIASES: Record<string, EmailTemplateKey> = {
   application_rejected: "brand_rejected",
   draft_nudge: "brand_draft_nudge",
   storefront_nudge: "brand_storefront_nudge",
+  website_pieces: "brand_website_pieces",
   shop_live: "brand_shop_live",
   founding: "founding_claim",
   order_confirmed: "order_confirmation",

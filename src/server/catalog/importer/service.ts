@@ -26,7 +26,7 @@ import type { AdminActor } from "../../auth/dal"
 import { db, withTx, type Executor } from "../../db"
 import { adminMembers, brands, users } from "../../db/schema"
 import { catalogCategories, catalogProducts, productProposals, storefrontDrafts } from "../../db/schema/catalog"
-import { catalogImportItems, catalogImports } from "../../db/schema/imports"
+import { catalogImportItems, catalogImports, catalogSitePieces } from "../../db/schema/imports"
 import { shippingProfiles } from "../../db/schema/shipping"
 import { badRequest, conflict, forbidden, HttpError, notFound, rateLimited, rule } from "../../http/errors"
 import { newId } from "../../ids"
@@ -42,6 +42,7 @@ import { refuseSampleBrand } from "../sample-guard"
 import { FetchRefused, IMAGE_CAP, safeGet } from "./fetch"
 import { proposalBodyOf, type Existing } from "./normalize"
 import { scanSite, siteFetcher, startUrlOf } from "./scan"
+import { recordImportSeen } from "./seen"
 import { cleanUrl, ImportUrlError } from "./url"
 
 /**
@@ -67,24 +68,24 @@ const auditActor = (a: AdminActor) => ({ kind: "admin" as const, id: a.userId, n
 
 /* ---------- brand and permission ---------- */
 
-async function loadBrand(d: Executor, brandId: string) {
+export async function loadBrand(d: Executor, brandId: string) {
   refuseSampleBrand(brandId)
   const [b] = await d.select().from(brands).where(eq(brands.id, brandId)).limit(1)
   if (!b) throw notFound("That brand isn't on Yard.")
   return b
 }
-type BrandRow = Awaited<ReturnType<typeof loadBrand>>
+export type BrandRow = Awaited<ReturnType<typeof loadBrand>>
 
-const isUnclaimedFounding = (b: BrandRow) => b.founding && b.claimStatus === "unclaimed"
+export const isUnclaimedFounding = (b: BrandRow) => b.founding && b.claimStatus === "unclaimed"
 
 /** catalog.propose is checked by the route; an unclaimed founding brand is Yard setup territory (brands.founding). */
-function assertMayImport(admin: AdminActor, b: BrandRow) {
+export function assertMayImport(admin: AdminActor, b: BrandRow) {
   if (!canAdmin(admin.role, "catalog.propose")) throw forbidden()
   if (isUnclaimedFounding(b) && !canAdmin(admin.role, "brands.founding")) throw forbidden(`Only Yard owners can import products for ${b.name} before it's claimed.`)
   if (b.reviewStatus === "suspended") throw rule(`${b.name} is suspended, so it can't take suggestions.`)
 }
 
-async function brandContext(d: Executor, admin: AdminActor, b: BrandRow): Promise<ImportBrandContextDto> {
+export async function brandContext(d: Executor, admin: AdminActor, b: BrandRow): Promise<ImportBrandContextDto> {
   const [draft] = await d.select({ config: storefrontDrafts.config }).from(storefrontDrafts).where(eq(storefrontDrafts.brandId, b.id)).limit(1)
   const unclaimed = isUnclaimedFounding(b)
   return {
@@ -101,14 +102,14 @@ async function brandContext(d: Executor, admin: AdminActor, b: BrandRow): Promis
   }
 }
 
-async function categories(d: Executor) {
+export async function categories(d: Executor) {
   const rows = await d.select({ slug: catalogCategories.slug, name: catalogCategories.name, subcategories: catalogCategories.subcategories }).from(catalogCategories).orderBy(asc(catalogCategories.position))
   return rows.map((r) => ({ slug: r.slug, name: r.name, subcategories: r.subcategories ?? [] }))
 }
 
 /** What the brand already has, for the duplicate check: product names, waiting or accepted suggestions, and earlier imports. */
-async function existingFor(d: Executor, brandId: string): Promise<Existing> {
-  const [products, proposals, items] = await Promise.all([
+export async function existingFor(d: Executor, brandId: string): Promise<Existing> {
+  const [products, proposals, items, pieces] = await Promise.all([
     d
       .select({ title: catalogProducts.title })
       .from(catalogProducts)
@@ -121,11 +122,16 @@ async function existingFor(d: Executor, brandId: string): Promise<Existing> {
       .select({ url: catalogImportItems.sourceUrl, updatedAt: catalogImportItems.updatedAt })
       .from(catalogImportItems)
       .where(and(eq(catalogImportItems.brandId, brandId), eq(catalogImportItems.status, "created"))),
+    // Pieces a website watch brought into Yard (watch.ts) count as imported too.
+    d
+      .select({ url: catalogSitePieces.sourceUrl, updatedAt: catalogSitePieces.updatedAt })
+      .from(catalogSitePieces)
+      .where(and(eq(catalogSitePieces.brandId, brandId), eq(catalogSitePieces.status, "approved"))),
   ])
   const day = (x: Date) => x.toISOString().slice(0, 10)
   return {
     titles: [...products.map((p) => ({ title: p.title, what: `“${p.title}” in the catalogue` })), ...proposals.filter((p) => p.title).map((p) => ({ title: p.title!, what: p.status === "pending" ? `a waiting suggestion, “${p.title}”` : `an accepted suggestion, “${p.title}”` }))],
-    sourceUrls: items.map((i) => ({ url: i.url, what: `suggested ${day(i.updatedAt)}` })),
+    sourceUrls: [...items.map((i) => ({ url: i.url, what: `suggested ${day(i.updatedAt)}` })), ...pieces.map((i) => ({ url: i.url, what: `added from the website ${day(i.updatedAt)}` }))],
   }
 }
 
@@ -350,7 +356,7 @@ export async function startImport(admin: AdminActor, id: string, body: ImportRun
 /* ---------- the runner ---------- */
 
 /** An admin as the runner acts for them: their role now (a revoked admin's import stops). */
-async function jobActor(userId: string): Promise<AdminActor | null> {
+export async function jobActor(userId: string): Promise<AdminActor | null> {
   const d = await db()
   const [u] = await d.select().from(users).where(eq(users.id, userId)).limit(1)
   const [m] = await d.select().from(adminMembers).where(eq(adminMembers.userId, userId)).limit(1)
@@ -388,7 +394,7 @@ async function claimNext(): Promise<Row | null> {
 
 const SYSTEM = { kind: "system" as const, name: "Website import" }
 
-function messageOf(e: unknown, fallback: string) {
+export function messageOf(e: unknown, fallback: string) {
   if (e instanceof FetchRefused || e instanceof ImportUrlError) return e.message
   if (e instanceof HttpError) {
     const field = e.fields ? Object.entries(e.fields)[0] : null
@@ -465,11 +471,17 @@ export function imageFetchUrl(raw: string) {
   }
 }
 
-/** Downloads one photo and stores it as a brand upload of `purpose`, through the upload pipeline. */
-async function copyImage(admin: AdminActor, brandId: string, url: string, purpose: "social_post" | "storefront_cover") {
+/** Downloads one photo from a brand's site (the importer's fetch rules: SSRF-safe, 10 MB cap). */
+export async function downloadPhoto(url: string) {
   const res = await safeGet(imageFetchUrl(url), { accept: "image/jpeg,image/png,image/webp;q=0.9,image/*;q=0.5", maxBytes: IMAGE_CAP })
+  return res.body
+}
+
+/** Downloads one photo and stores it as a brand upload of `purpose`, through the upload pipeline. */
+export async function copyImage(admin: AdminActor, brandId: string, url: string, purpose: "social_post" | "storefront_cover") {
+  const bytes = await downloadPhoto(url)
   const target = await authorizeAdminUpload(admin, { purpose, brandId })
-  const row = await ingestBytes(admin, target, res.body)
+  const row = await ingestBytes(admin, target, bytes)
   return row.id
 }
 
@@ -614,6 +626,12 @@ async function runImport(r: Row) {
     } catch (e) {
       log.error("[yard] telling the brand about imported suggestions failed", e)
     }
+  }
+  // What this import created, and what it passed over, is "seen" for a website watch (seen.ts).
+  try {
+    await recordImportSeen(r.id)
+  } catch (e) {
+    log.error("[yard] recording an import's pieces as seen failed", e)
   }
   const counts = (await countsFor(d, [r.id])).get(r.id) ?? emptyCounts()
   await d

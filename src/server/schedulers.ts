@@ -120,6 +120,10 @@ export function startSchedulers() {
   // Import from website (admin): picks up a scan or import a restart interrupted (a new one is kicked at once).
   // Its own chain, so a long import never delays the scheduled publish above. One indexed query when idle.
   every(2 * MIN, MIN, () => runFeatureJob("catalog", "runImports"))
+  // Watched brand websites (Admin › Import from website › Keep watching): every 15 minutes, checks the
+  // sites that are due (each every YARD_IMPORTER_WATCH_HOURS, default 6) for new pieces, at most
+  // YARD_IMPORTER_WATCH_PER_RUN (4) brands a run. One indexed query when nothing is due.
+  every(23 * MIN, 15 * MIN, () => runFeatureJob("catalog", "watchSites"))
   // Reminder emails to brands (drafts left 12 h, unpublished founding storefronts): one bounded query per kind each run.
   every(9 * MIN, 30 * MIN, () => runFeatureJob("catalog", "nudgeBrands"))
   // Newsletter campaigns (Admin › Newsletter): starts due ones and feeds the email outbox a bounded

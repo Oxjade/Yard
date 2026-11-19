@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { currencyCodes } from "@/config/markets"
 import { safeId, safeLine, safeText } from "./common"
-import { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES } from "./enums"
+import { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES, SITE_PIECE_STATUSES, WATCH_STATUSES } from "./enums"
 
 /**
  * Import from website (Admin › Brands › a brand › Products › Import from website, docs/IMPORTER.md).
@@ -12,7 +12,7 @@ import { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES } from "./enums
  * server-only: the admin page validates with the same rules as /api/admin/brand-imports.
  */
 
-export { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES }
+export { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES, SITE_PIECE_STATUSES, WATCH_STATUSES }
 export type ImportPlatform = (typeof IMPORT_PLATFORMS)[number]
 export const IMPORT_PLATFORM_LABELS: Record<ImportPlatform, string> = { shopify: "Shopify", woocommerce: "WooCommerce", labeld: "Labeld", generic: "Product pages (schema.org)" }
 
@@ -168,3 +168,85 @@ export const importRunBody = z.strictObject({
 export type ImportRunBody = z.output<typeof importRunBody>
 
 export const importListQuery = z.object({ brandId: safeId() })
+
+/* ---------- watching a website (docs/IMPORTER.md › Watching a website) ---------- */
+
+export type WatchStatus = (typeof WATCH_STATUSES)[number]
+export type SitePieceStatus = (typeof SITE_PIECE_STATUSES)[number]
+
+/** A brand's watched website as Admin shows it. */
+export type WatchDto = {
+  brandId: string
+  sourceUrl: string
+  platform: ImportPlatform
+  enabled: boolean
+  status: WatchStatus
+  /** Why it paused itself after repeated failures. */
+  pausedNote: string | null
+  failures: number
+  lastError: string | null
+  lastScanAt: string | null
+  lastOkAt: string | null
+  nextScanAt: string | null
+  /** A check is running now (Check now, or the scheduler). */
+  checking: boolean
+  lastRun: { new: number; changes: number; requests: number; products: number } | null
+  everyHours: number
+}
+
+/** One "New from your website" piece (waiting for approval), as either side previews it. */
+export type SitePieceDto = {
+  id: string
+  title: string
+  sourceUrl: string
+  /** Photos as the site serves them (copied into Yard only on approval). */
+  images: string[]
+  priceMinor: number | null
+  currency: string | null
+  /** The price Yard will use, in the brand's currency (converted at Yard's reference rate when the site's differs). */
+  yardPriceMinor: number | null
+  sizes: string[]
+  availability: ImportAvailability
+  description: string
+  warnings: string[]
+  status: SitePieceStatus
+  /** Who took it, while an approval is running. */
+  taken: "admin" | "brand" | null
+  firstSeenAt: string
+  /** The last approval that failed, when one did. */
+  error: string | null
+}
+
+/** A price change or sell-out on a piece already in Yard: flagged, never applied. */
+export type SiteChangeDto = {
+  id: string
+  title: string
+  sourceUrl: string
+  price: { from: number; to: number; currency: string | null } | null
+  soldOut: boolean
+  at: string
+  productId: string | null
+  proposalId: string | null
+}
+
+export type AdminWatchDto = { brand: ImportBrandContextDto; watch: WatchDto | null; pieces: SitePieceDto[]; changes: SiteChangeDto[]; seen: number }
+export type StudioSitePiecesDto = { items: SitePieceDto[]; count: number; mayAdd: boolean; site: string | null; currency: string }
+
+/** PUT /api/admin/brand-watch */
+export const watchSetBody = z.strictObject({
+  brandId: safeId(),
+  enabled: z.boolean(),
+  /** The import whose address (and platform) to watch; the brand's latest scanned one when left out. */
+  importId: safeId().optional(),
+})
+export type WatchSetBody = z.output<typeof watchSetBody>
+
+/** POST /api/admin/brand-watch/check */
+export const watchCheckBody = z.strictObject({ brandId: safeId(), resume: z.boolean().optional() })
+
+/** POST /api/admin/website-pieces/{id} */
+export const adminPieceActionBody = z.strictObject({ action: z.enum(["approve", "skip", "dismiss_change"]) })
+/** POST /api/admin/website-pieces */
+export const adminPiecesBulkBody = z.strictObject({ brandId: safeId(), action: z.literal("approve_all") })
+/** POST /api/studio/website-pieces/{id} */
+export const studioPieceActionBody = z.strictObject({ action: z.enum(["add", "skip"]) })

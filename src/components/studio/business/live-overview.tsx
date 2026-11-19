@@ -12,6 +12,7 @@ import { InsightPanel } from "@/components/dashboard/insight/insight-panel"
 import { Segmented } from "@/components/dashboard/insight/segmented"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { SetupCard } from "@/components/studio/setup/setup-card"
+import { WebsitePiecesCard } from "@/components/studio/catalog/website-pieces"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { api, ApiError } from "@/lib/api/client"
 import type { StudioOverviewDto } from "@/lib/api/contracts/orders"
@@ -100,6 +101,7 @@ export function LiveOverview({ member }: { member: BrandProfile }) {
 
       {/* Server-backed setup guidance; nothing when dismissed or all done. */}
       <SetupCard className="mt-6" />
+      <WebsitePiecesCard className="mt-6" />
 
       {failed ? (
         <div role="alert" className="mt-6 flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-line px-6 py-14 text-center">

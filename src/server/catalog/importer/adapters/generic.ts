@@ -129,6 +129,7 @@ export const generic: Adapter = {
       ctx.progress({ phase: "products", productPages: Math.min(candidates.length, budget) })
       await eachLimit(batch, 2, async (url) => {
         if (products.length >= ctx.maxProducts) return
+        if (ctx.skipPage?.(url)) return
         try {
           const page = await ctx.fetch.get(url, { accept: "text/html" })
           if (!page.contentType.includes("html")) return

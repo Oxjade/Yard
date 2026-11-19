@@ -3,6 +3,7 @@ import { publishScheduled } from "./jobs"
 import { nudgeBrands } from "./nudges"
 import { sweepExpiredHolds } from "./stock"
 import { runImports } from "./importer/service"
+import { watchSites } from "./importer/watch"
 
 /**
  * CATALOG contract (backend v3). Other areas call exactly these:
@@ -14,6 +15,7 @@ import { runImports } from "./importer/service"
  *  - jobs.sweepExpiredHolds  every minute
  *  - jobs.nudgeBrands        every 30 minutes (reminder emails to brands, catalog/nudges.ts)
  *  - jobs.runImports         every minute (Import from website: resumes scans and imports, importer/service.ts)
+ *  - jobs.watchSites         every 15 minutes (watched brand websites: due checks, a few brands a run, importer/watch.ts)
  */
 export const IMPL: string = "CATALOG-v3-2026-11-08"
 
@@ -23,4 +25,4 @@ export { MODERATION_BATCH_MAX, setProductModeration, setProductsModeration } fro
 export { reviewOnboarding, listSubmittedOnboardings } from "./onboarding"
 export { publishScheduled, sweepExpiredHolds, nudgeBrands }
 
-export const jobs = { publishScheduled, sweepExpiredHolds, nudgeBrands, runImports: () => runImports() }
+export const jobs = { publishScheduled, sweepExpiredHolds, nudgeBrands, runImports: () => runImports(), watchSites: () => watchSites() }

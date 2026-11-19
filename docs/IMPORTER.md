@@ -121,6 +121,114 @@ photos not yet copied (each copied photo is recorded before the next). A suggest
 already created in an import are never created again; a new scan of the same URL flags them
 "Imported before" and leaves them unticked. Source URLs are stored per item.
 
+## Watching a website
+
+After an import (or from the import page once a scan has read the site), an admin can switch on
+**Keep watching {site} for new pieces** for that brand. It is off by default, admin only
+(`catalog.propose`, plus `brands.founding` for an unclaimed founding brand), and one website per
+brand: the address and platform of the import on screen (else the brand's latest scan). Switching
+it on again with another import replaces the address. Stored in `catalog_watches` (migration 0024):
+source URL, adapter, last check, next check, failures, pause note.
+
+**The check.** Job `catalog.watchSites` (`src/server/schedulers.ts`) runs every 15 minutes and
+checks the watches that are due, at most `YARD_IMPORTER_WATCH_PER_RUN` brands a run (default 4),
+most overdue first. Each site is checked every `YARD_IMPORTER_WATCH_HOURS` hours (default 6), with
+±10 % spread per brand so brands switched on together drift apart. When nothing is due a run is one
+indexed query. A check goes through the importer's own fetcher (the same address checks, 2 requests
+at a time, 350 ms apart, `YardImporter/1.0` user agent, `YARD_IMPORTER_PROXY`), tries only the
+adapter the watch was set up with, and reads only what it needs: the listing (home page, sitemap or
+`products.json` / Store API pages), product pages it has never seen, and the pages of pieces already
+in Yard (for changes). Pieces passed over or waiting are not read again. At most 120 requests per
+check; for 813israw.labeld.app (4 products, 2 in Yard) a check is 4 requests. **Admin › Check now**
+runs one at once (6 an hour per brand).
+
+**Cost.** No paid service is called. Each check is a handful of outbound HTTP requests to the brand's
+own site, so the cost is flat in time: with the defaults, at most 4 brands × 4 runs an hour = 16
+checks an hour, about 96 brands per 6-hour cycle (raise `YARD_IMPORTER_WATCH_PER_RUN` past that).
+Photos are copied into Yard **only when a piece is approved** (lazily), so a piece that's skipped
+never costs storage.
+
+**Failures.** A failed check (site down, refused, no products found) is retried after 6, 12, 24,
+then 48 hours; the fifth failure in a row **pauses** the watch with a note Admin shows ("Paused
+after 5 failed checks in a row. The last one said: …"). **Resume and check now** clears it.
+
+### New pieces only
+
+`catalog_site_pieces` is everything Yard has seen on a brand's site, one row per address
+(`url_key`: no protocol, `www`, trailing slash; the source id matches too):
+
+| Status | Meaning |
+|---|---|
+| `imported` | Created by an import (with its suggestion). |
+| `ignored` | Seen and passed over: **unticked or skipped at import**, a duplicate by name of something in Yard, or on the site when watching started. |
+| `waiting` | New: in "New from their website" (Admin) and "New from your website" (Studio). |
+| `approving` | Taken by one side; photos copying. |
+| `approved` | Added (a suggestion from Yard, or a product the brand created). |
+| `skipped` | Rejected by the brand ("Not this one") or Yard ("Skip"). |
+
+Every import records what its scan found when it finishes (`seen.ts recordImportSeen`), and
+switching watching on records every earlier import of the brand, so only products that appear on
+the site **after** are new. Anything with a row is never offered again; a skipped piece never comes
+back. The first check of a brand with nothing recorded (no import) records the site as it is.
+
+**Changes on their site.** For pieces in Yard (`imported`, `approved`) a check compares the site's
+price and availability with the baseline (as imported or approved): a different price in the same
+currency, or sold out where it was available, is **flagged** in "Changes on their site" (import
+page, and a count in the brand tray), with Suggest a change / Open suggestion and Dismiss (which
+takes the site's value as the new baseline). Yard's product is never changed. A flag clears itself
+when the site goes back.
+
+### Approval: either side, first wins
+
+- **Admin** (brand tray › Products, and the import page): "New from their website (N)", each with
+  Approve / Skip, and Approve all. **Approve makes the normal Suggestion from Yard** (`createProposal`,
+  with the brand told by notification and email); the brand accepts it in Studio. For an unclaimed
+  founding brand with **Go live when they claim**, the claim accepts it, so there Yard's approval is
+  effectively final. Approve all takes every waiting piece for Yard at once (so the brand can't add
+  one twice), then adds them in the background; the brand hears once for the batch.
+- **Brand** (Studio › Products, "New from your website (N)", plus a card on Overview): a preview
+  (the site's photos, price in the brand's currency, sizes, description) with **Add to Yard** and
+  **Not this one** (`content.publish`). Add to Yard copies the photos as the brand's uploads and
+  creates the product as the brand (`createProduct`, then `setProductStatus` publish when the brand
+  may publish: the same path as accepting a suggestion), so it's live at once if the shop is.
+- **First wins** (`pieces-db.ts`): approving first takes the row (`waiting → approving`, one
+  conditional UPDATE, with a 3-minute claim), copies the photos (each recorded, so a retry reuses
+  them), then creates the suggestion or product and marks the row `approved` **in one transaction**
+  that only commits while that side still holds the row. Skip is one conditional UPDATE from
+  `waiting`. The other side gets 409 ("The brand already added this piece", "Yard got to this piece
+  first") and the item leaves its list. A failed approval puts the row back to waiting with the
+  reason. An approval a crash interrupted is finished by the next job run (Yard's) or put back (a
+  brand's).
+- One tap uses the importer's preview rules with no one editing: the site's price (a price in
+  another of Yard's currencies converted at the reference rate), sizes and stock as the site shows
+  them (none shown: 0), the guessed category. A piece with no price, or in a currency Yard doesn't
+  convert, can't be added in one tap and says so.
+
+**Telling the brand.** One notification and one email per check that found new pieces ("3 new
+pieces from your website are waiting. Add them to Yard in one tap."), linking to
+`/studio/products#from-website`; the email respects the brand's reminder switch
+(docs/BRAND-EMAILS.md). Unclaimed brands aren't told. Admin sees the count in the brand tray and on
+the import page.
+
+**Audit.** `catalog.watch_started`, `catalog.watch_stopped`, `catalog.watch_checked`,
+`catalog.watch_resumed`, `catalog.watch_scanned`, `catalog.watch_failed`, `catalog.watch_paused`,
+`catalog.website_piece_approved` (admin), `catalog.website_piece_added` (brand),
+`catalog.website_piece_skipped`, `catalog.website_pieces_approve_all`,
+`catalog.website_change_dismissed`, `brand_email.website_pieces`.
+
+**Trying it locally.** Import a site with only some products ticked, switch watching on and press
+Check now: nothing is new (the unticked ones are seen). To see new pieces, make Yard forget some
+pieces, then Check now:
+
+```sql
+-- the brand's pieces passed over at import become unseen; the next check offers them as new
+DELETE FROM catalog_site_pieces WHERE brand_id = '<brandId>' AND status = 'ignored';
+```
+
+With the embedded database, stop the server first and run it through PGlite
+(`new PGlite("<data dir>/production/pg")` for `start:demo`, `<data dir>/development/pg` for dev).
+The saved Labeld pages in `fixtures/` drive the same flow in `watch.test.ts`.
+
 ## API
 
 | Method | Path | |
@@ -129,10 +237,19 @@ already created in an import are never created again; a new scan of the same URL
 | POST | `/api/admin/brand-imports` | `{ brandId, url, consent: true }` → 201, starts a scan |
 | GET | `/api/admin/brand-imports/{id}` | progress, found products, per-item results |
 | POST | `/api/admin/brand-imports/{id}/import` | `{ products: [...], profile?, note? }` → 202 |
+| GET | `/api/admin/brand-watch?brandId=` | the watch, waiting pieces, changes, seen count |
+| PUT | `/api/admin/brand-watch` | `{ brandId, enabled, importId? }`: watching on or off |
+| POST | `/api/admin/brand-watch/check` | `{ brandId, resume? }`: Check now (and Resume) |
+| POST | `/api/admin/website-pieces/{id}` | `{ action: "approve" \| "skip" \| "dismiss_change" }` |
+| POST | `/api/admin/website-pieces` | `{ brandId, action: "approve_all" }` → 202 |
+| GET | `/api/studio/catalog/website-pieces` | the brand's waiting pieces (any member) |
+| POST | `/api/studio/catalog/website-pieces/{id}` | `{ action: "add" \| "skip" }` (`content.publish`) |
 
 Code: `src/server/catalog/importer/` (`url.ts`, `fetch.ts`, `html.ts`, `normalize.ts`,
-`scan.ts`, `adapters/`, `service.ts`), the page `src/components/admin/importer/import-page.tsx`,
+`scan.ts`, `adapters/`, `service.ts`; watching: `watch.ts`, `watch-rules.ts`, `pieces-db.ts`,
+`seen.ts`), the page `src/components/admin/importer/import-page.tsx` (watching:
+`website-watch.tsx`; Studio: `src/components/studio/catalog/website-pieces.tsx`),
 shared rules `src/lib/importer.ts`, contracts `src/lib/api/contracts/imports.ts`. Tests:
-`src/server/catalog/importer/importer.test.ts` with saved pages in `fixtures/` (the Labeld pages
+`src/server/catalog/importer/importer.test.ts` and `watch.test.ts` with saved pages in `fixtures/` (the Labeld pages
 are real pages of 813israw.labeld.app with personal details redacted; the Shopify, WooCommerce and
 generic fixtures are hand-written in those APIs' shapes).
