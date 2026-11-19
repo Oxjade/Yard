@@ -1,0 +1,7 @@
+[
+{"id":51,"name":"Àdìrẹ Shirt","permalink":"https://shop.example.org/product/adire-shirt/","type":"variable","description":"<p>Hand-dyed cotton shirt.</p>","short_description":"","prices":{"price":"3500000","regular_price":"4000000","sale_price":"3500000","currency_code":"NGN","currency_minor_unit":2,"price_range":null},"images":[{"src":"https://shop.example.org/wp-content/uploads/2026/10/adire-1.jpg"},{"src":"https://shop.example.org/wp-content/uploads/2026/10/adire-2.jpg"}],
+ "attributes":[{"id":1,"name":"Size","taxonomy":"pa_size","has_variations":true,"terms":[{"id":10,"name":"Small","slug":"small"},{"id":11,"name":"Large","slug":"large"}]},{"id":0,"name":"Fabric","taxonomy":null,"has_variations":false,"terms":[{"id":0,"name":"Cotton","slug":"cotton"}]}],
+ "variations":[{"id":511,"attributes":[{"name":"Size","value":"small"}]},{"id":512,"attributes":[{"name":"Size","value":"large"}]}],
+ "is_in_stock":true,"is_on_backorder":false,"categories":[{"name":"Shirts"}],"tags":[{"name":"adire"}]},
+{"id":52,"name":"Brass Ring","permalink":"https://shop.example.org/product/brass-ring/","type":"simple","description":"","short_description":"<p>Hand-cast brass.</p>","prices":{"price":"1800000","regular_price":"1800000","sale_price":"1800000","currency_code":"NGN","currency_minor_unit":2},"images":[],"attributes":[],"variations":[],"is_in_stock":false,"is_on_backorder":false,"categories":[{"name":"Jewellery"}],"tags":[]}
+]

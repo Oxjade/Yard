@@ -585,7 +585,10 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
  * suggests products the owner accepts before anything goes live.
  */
 function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
-  const canPropose = useAdminSession().can("catalog.propose")
+  const session = useAdminSession()
+  const canPropose = session.can("catalog.propose")
+  // Before the claim the import is Yard setup territory (brands.founding), like Open in Studio.
+  const canImport = canPropose && (b.claimStatus === "claimed" || session.can("brands.founding")) && b.reviewStatus !== "suspended"
   const unpublished = b.products.total - b.products.published
   return (
     <DetailSection title="Products" aside={<span className="text-[11px] text-ink-3 tabular">{b.products.published} published, {unpublished} not yet</span>}>
@@ -593,6 +596,13 @@ function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
         {b.products.total ? "Drafts aren't visible to shoppers until they're published." : "No products yet."}
         {b.claimStatus === "claimed" ? "" : " Add and publish them with Open in Studio below, as Yard setup."}
       </p>
+      {canImport ? (
+        <LinkRow
+          href={`/admin/brands/${encodeURIComponent(b.id)}/import`}
+          label="Import from website"
+          hint={b.claimStatus === "claimed" ? `Copy ${b.name}'s products from their own shop` : b.goLiveOnClaim ? "From their own shop, live the moment they claim" : "From their own shop, as suggestions for the owner"}
+        />
+      ) : null}
       {canPropose && (b.claimStatus === "claimed" || b.goLiveOnClaim) ? (
         <ul className="grid gap-1.5">
           <li>

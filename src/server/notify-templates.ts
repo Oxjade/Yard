@@ -38,7 +38,14 @@ export const templates = {
   // `who`: the shopper's name, or the brand's name; `party`: "shopper" | "brand".
   "support.new_for_admin": { category: "support_message", build: (v) => ({ title: `Support: new message from ${s(v.who, v.party === "brand" ? "a brand" : "a shopper")}`, body: v.party === "brand" ? "A brand wrote to Yard Support. Open the Support queue to reply." : "A shopper wrote to Yard Support. Open the Support queue to reply." }) },
   // Suggestions from Yard (product proposals). Never the admin's note or name: the review page shows the note.
-  "proposal.new_for_brand": { category: "product_suggestion", build: (v) => ({ title: v.product ? `Yard suggested a new product: ${s(v.product, "a product")}` : "Yard suggested a new product", body: "Review it in Studio. Nothing goes live until you accept." }) },
+  // `count` (the website importer's batch): "Yard suggested 12 new products".
+  "proposal.new_for_brand": {
+    category: "product_suggestion",
+    build: (v) =>
+      Number(v.count) > 1
+        ? { title: `Yard suggested ${Number(v.count)} new products`, body: "Review them in Studio. Nothing goes live until you accept." }
+        : { title: v.product ? `Yard suggested a new product: ${s(v.product, "a product")}` : "Yard suggested a new product", body: "Review it in Studio. Nothing goes live until you accept." },
+  },
   "proposal.edit_for_brand": { category: "product_suggestion", build: (v) => ({ title: `Yard suggested changes to ${s(v.product, "a product")}`, body: "Review them in Studio. Nothing changes until you accept." }) },
   // `outcome`: "accepted" | "declined".
   "proposal.decided_for_admin": { category: "product_suggestion", build: (v) => ({ title: `${s(v.brand, "The brand")} ${v.outcome === "accepted" ? "accepted" : "declined"} your suggestion`, body: `${s(v.product, "A product")}. Open Suggestions for the details.` }) },

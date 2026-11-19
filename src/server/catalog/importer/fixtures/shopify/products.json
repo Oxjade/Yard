@@ -1,0 +1,9 @@
+{"products":[
+{"id":7001,"title":"Danfo Heavyweight Hoodie","handle":"danfo-heavyweight-hoodie","body_html":"<p>Heavyweight <strong>480 gsm</strong> fleece.</p><ul><li>Puff print</li><li>Made in Lagos</li></ul>","vendor":"Test Label","product_type":"Hoodies","tags":["fleece","winter"],"options":[{"name":"Size","position":1,"values":["S","M","L"]},{"name":"Color","position":2,"values":["Black","Sand"]}],"variants":[
+ {"id":1,"title":"S / Black","option1":"S","option2":"Black","option3":null,"price":"45000.00","compare_at_price":"52000.00","available":true},
+ {"id":2,"title":"M / Black","option1":"M","option2":"Black","option3":null,"price":"45000.00","compare_at_price":"52000.00","available":true},
+ {"id":3,"title":"L / Black","option1":"L","option2":"Black","option3":null,"price":"45000.00","compare_at_price":null,"available":false},
+ {"id":4,"title":"M / Sand","option1":"M","option2":"Sand","option3":null,"price":"47000.00","compare_at_price":null,"available":true}],
+ "images":[{"src":"https://cdn.shopify.com/s/files/1/0001/products/hoodie-front.jpg?v=1"},{"src":"https://cdn.shopify.com/s/files/1/0001/products/hoodie-back.jpg?v=1"}]},
+{"id":7002,"title":"Tote Bag","handle":"tote-bag","body_html":"","product_type":"","tags":"canvas, bags","options":[{"name":"Title","position":1,"values":["Default Title"]}],"variants":[{"id":9,"title":"Default Title","option1":"Default Title","option2":null,"option3":null,"price":"12500.00","compare_at_price":null,"available":true}],"images":[{"src":"//cdn.shopify.com/s/files/1/0001/products/tote.jpg"}]}
+]}

@@ -33,8 +33,6 @@ export async function handleUpload(actor: Actor, query: { purpose: UploadPurpose
  * the same limits and the same JPEG/PNG/WebP strip.
  */
 export async function ingestUpload(actor: Actor, target: UploadTarget, req: Request): Promise<MediaRow> {
-  const videoOk = target.purpose === "social_post"
-
   // 2. Size before the body: no Content-Length → 411; over the purpose's cap → 413.
   const declared = req.headers.get("content-length")
   if (declared === null || !/^\d+$/.test(declared.trim())) throw lengthRequired()
@@ -58,8 +56,25 @@ export async function ingestUpload(actor: Actor, target: UploadTarget, req: Requ
   if (file.size === 0) throw badRequest({ file: "This file is empty." })
   if (file.size > cap) throw tooLarge(cap)
 
+  return ingestBytes(actor, target, Buffer.from(await file.arrayBuffer()), { checkedDaily: true })
+}
+
+/**
+ * Steps 3–6 for bytes that are already in memory and under the purpose's cap: sniff, size, strip
+ * metadata, read the dimensions, store. ingestUpload ends here, and so does the website importer
+ * (catalog/importer), so a photo copied from a brand's site gets exactly an upload's checks and
+ * processing. The brand's daily volume is checked unless the caller already did (checkedDaily).
+ */
+export async function ingestBytes(actor: Actor, target: UploadTarget, raw: Buffer, opts: { checkedDaily?: boolean } = {}): Promise<MediaRow> {
+  const videoOk = target.purpose === "social_post"
+  const cap = headerCap(target.purpose)
+  if (raw.length === 0) throw badRequest({ file: "This file is empty." })
+  if (raw.length > cap) throw tooLarge(cap)
+  if (!opts.checkedDaily && target.brandId && (await brandBytesToday(target.brandId)) * 1024 + raw.length > BRAND_DAILY_KIB * 1024) {
+    throw rateLimited(secondsToUtcMidnight(), "Your brand has uploaded 2 GB today, Yard's daily limit. Try again tomorrow.")
+  }
+
   // 3. Sniff the bytes; the client's name and type are ignored.
-  const raw = Buffer.from(await file.arrayBuffer())
   const sniffed = sniff(raw.subarray(0, 64))
   if (!sniffed) throw unsupported(videoOk)
   if (sniffed.kind === "video" && !videoOk) throw unsupported(false)

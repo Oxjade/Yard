@@ -292,6 +292,24 @@ async function tellBrand(tx: Executor, p: Row, productTitle: string | null) {
   await emailBrandMembersWith(tx as never, p.brandId, "content.publish", "product_suggestion", { kind: p.kind, url: href, ...(productTitle ? { product: productTitle } : {}), ...(p.note ? { note: p.note } : {}) }, `proposal:${p.id}`)
 }
 
+/**
+ * One notification and one email for a batch of new suggestions (the website importer): "Yard
+ * suggested N new products", linking to the first. Keyed by the import, so a resumed run never
+ * tells the brand twice.
+ */
+export async function tellBrandOfImport(importId: string, brandId: string, proposalIds: string[]) {
+  if (!proposalIds.length) return
+  const first = proposalIds[0]
+  const href = proposalIds.length === 1 ? studioProposalHref(first) : "/studio/products/suggestions"
+  await withTx(async (tx) => {
+    const [p] = await tx.select().from(productProposals).where(eq(productProposals.id, first)).limit(1)
+    const title = p ? ((p.payload as ProposalChanges).title ?? null) : null
+    const vars = proposalIds.length === 1 ? { product: title ?? "a product" } : { count: proposalIds.length }
+    await notify({ kind: "brand", id: brandId }, { key: `proposal-import:${importId}`, template: "proposal.new_for_brand", vars, href })
+    await emailBrandMembersWith(tx as never, brandId, "content.publish", "product_suggestion", { kind: "new", url: href, ...(proposalIds.length === 1 ? (title ? { product: title } : {}) : { count: proposalIds.length }) }, `proposal-import:${importId}`)
+  })
+}
+
 /** Removes the brand's notification for a proposal that's no longer waiting (withdrawn or replaced). */
 async function dropBrandNotice(tx: Executor, p: Pick<Row, "id" | "brandId">) {
   const rows = await tx
@@ -334,7 +352,11 @@ const isUniqueViolation = (e: unknown): boolean => {
   return !!err && (err.code === "23505" || isUniqueViolation(err.cause))
 }
 
-export async function createProposal(admin: AdminActor, body: AdminProposalCreateBody, ipHash: string | null) {
+/**
+ * `quiet` (the website importer): the brand isn't told about this one suggestion; the import tells
+ * it once about all of them (tellBrandOfImport). `auditMeta` is added to the audit row.
+ */
+export async function createProposal(admin: AdminActor, body: AdminProposalCreateBody, ipHash: string | null, opts: { quiet?: boolean; auditMeta?: Record<string, unknown> } = {}) {
   return withTx(async (tx) => {
     let brandId: string
     let productId: string | null = null
@@ -367,8 +389,8 @@ export async function createProposal(admin: AdminActor, body: AdminProposalCreat
       if (isUniqueViolation(e)) throw alreadyWaiting()
       throw e
     }
-    await writeAudit({ actor: adminAudit(admin), action: "catalog.proposal_created", target: prep.title, subjectType: "product_proposal", subjectId: row.id, brandId, ipHash, meta: { kind: body.kind, productId, fields: fieldsOf(row) } })
-    await tellBrand(tx, row, prep.title)
+    await writeAudit({ actor: adminAudit(admin), action: "catalog.proposal_created", target: prep.title, subjectType: "product_proposal", subjectId: row.id, brandId, ipHash, meta: { kind: body.kind, productId, fields: fieldsOf(row), ...opts.auditMeta } })
+    if (!opts.quiet) await tellBrand(tx, row, prep.title)
     await announce(row)
     return { proposal: await detailOf(tx, (await listedById(tx, row.id))!, "admin") }
   })

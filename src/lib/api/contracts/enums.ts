@@ -125,3 +125,8 @@ export const NEWSLETTER_STATUSES = ["draft", "scheduled", "sending", "sent", "ca
 export const NEWSLETTER_AUDIENCES = ["shoppers", "brands", "followers", "country"] as const
 /** One recipient of a campaign: pending (not queued yet), queued (in the email outbox), then what the outbox did with it. */
 export const NEWSLETTER_RECIPIENT_STATUSES = ["pending", "queued", "sent", "failed", "suppressed", "stub", "cancelled"] as const
+
+/** Import from website (docs/IMPORTER.md): which adapter read the site, the import's state, and each product's outcome. */
+export const IMPORT_PLATFORMS = ["shopify", "woocommerce", "labeld", "generic"] as const
+export const IMPORT_STATUSES = ["scanning", "scanned", "importing", "done", "failed"] as const
+export const IMPORT_ITEM_STATUSES = ["queued", "created", "skipped", "failed"] as const

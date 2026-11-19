@@ -117,6 +117,9 @@ export function startSchedulers() {
     await runFeatureJob("catalog", "publishScheduled")
     await runFeatureJob("catalog", "sweepExpiredHolds")
   })
+  // Import from website (admin): picks up a scan or import a restart interrupted (a new one is kicked at once).
+  // Its own chain, so a long import never delays the scheduled publish above. One indexed query when idle.
+  every(2 * MIN, MIN, () => runFeatureJob("catalog", "runImports"))
   // Reminder emails to brands (drafts left 12 h, unpublished founding storefronts): one bounded query per kind each run.
   every(9 * MIN, 30 * MIN, () => runFeatureJob("catalog", "nudgeBrands"))
   // Newsletter campaigns (Admin › Newsletter): starts due ones and feeds the email outbox a bounded

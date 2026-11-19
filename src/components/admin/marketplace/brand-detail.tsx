@@ -100,7 +100,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
         ]}
       />
 
-      {app.brandId ? <ProductsSection brandId={app.brandId} brandName={app.brandName} products={app.products} canPropose={canPropose} /> : null}
+      {app.brandId ? <ProductsSection appId={app.id} brandId={app.brandId} brandName={app.brandName} products={app.products} canPropose={canPropose} /> : null}
 
       {app.brandId && app.status !== "pending_review" && (!app.onboardingId || app.reviewed) ? <PublishForBrandSection brandId={app.brandId} brandName={app.brandName} /> : null}
 
@@ -186,7 +186,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
  * for. Add a product for the brand (it accepts the suggestion before anything goes live) or see
  * what Yard already suggested. Only the product count on file is known here, not drafts vs published.
  */
-function ProductsSection({ brandId, brandName, products, canPropose }: { brandId: string; brandName: string; products: number; canPropose: boolean }) {
+function ProductsSection({ appId, brandId, brandName, products, canPropose }: { appId: string; brandId: string; brandName: string; products: number; canPropose: boolean }) {
   return (
     <DetailSection title="Products" aside={<span className="text-[11px] text-ink-3 tabular">{plural(products, "product")} on file</span>}>
       <p className="text-[12px] text-ink-3">Drafts aren&apos;t visible to shoppers until the brand publishes them.</p>
@@ -194,6 +194,9 @@ function ProductsSection({ brandId, brandName, products, canPropose }: { brandId
         <ul className="grid gap-1.5">
           <li>
             <LinkRow href={`/admin/products/suggestions/new?brand=${encodeURIComponent(brandId)}`} label="Add product for brand" hint="The brand accepts it before it goes live" />
+          </li>
+          <li>
+            <LinkRow href={`/admin/brands/${encodeURIComponent(brandId)}/import?from=${encodeURIComponent(`/admin/brands?review=${appId}`)}`} label="Import from website" hint={`Copy ${brandName}'s products from their own shop`} />
           </li>
           <li>
             <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(brandId)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${brandName}`} />
