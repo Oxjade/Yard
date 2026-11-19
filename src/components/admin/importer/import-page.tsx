@@ -89,10 +89,11 @@ function WatchSection({ brandId, importId, imports }: { brandId: string; importI
 
 const STEPS = ["Scan", "Review", "Import"] as const
 
-function Steps({ at }: { at: 0 | 1 | 2 }) {
+/** The step list at the top of a multi-step importer page (Create brand from website passes its own). */
+export function Steps({ at, steps = STEPS }: { at: number; steps?: readonly string[] }) {
   return (
     <ol className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px]" aria-label="Steps">
-      {STEPS.map((s, i) => (
+      {steps.map((s, i) => (
         <li key={s} className={cn("flex items-center gap-2", i === at ? "text-ink" : i < at ? "text-ink-2" : "text-ink-3")} aria-current={i === at ? "step" : undefined}>
           <span className={cn("inline-flex size-5 items-center justify-center rounded-full border text-[11px] tabular", i === at ? "border-acid bg-acid text-obsidian" : i < at ? "border-white/20 text-ink-2" : "border-white/10")}>{i < at ? "✓" : i + 1}</span>
           {s}
@@ -210,7 +211,7 @@ function ScanStep({ brand, recent }: { brand: ImportBrandContextDto; recent: Imp
   )
 }
 
-const hostOf = (u: string) => {
+export const hostOf = (u: string) => {
   try {
     return new URL(u).hostname.replace(/^www\./, "")
   } catch {
@@ -285,11 +286,11 @@ function ImportJob({ id, brand }: { id: string; brand: ImportBrandContextDto }) 
 
 const PHASES: Record<ImportDetailDto["progress"]["phase"], string> = { start: "Starting", detect: "Reading the home page", listing: "Finding the products", products: "Reading product pages", images: "Copying photos", done: "Finishing" }
 
-function ScanProgress({ imp }: { imp: ImportDetailDto }) {
+export function ScanProgress({ imp, steps }: { imp: Pick<ImportDetailDto, "progress" | "sourceUrl">; steps?: readonly string[] }) {
   const p = imp.progress
   return (
     <div className="grid gap-5">
-      <Steps at={0} />
+      <Steps at={0} steps={steps} />
       <div className={cn("grid max-w-2xl gap-3 p-4 sm:p-5", panel)} aria-live="polite" aria-busy="true">
         <p className="flex items-center gap-2 text-[14px] text-ink">
           <CircleNotchIcon className="size-4 animate-spin text-violet motion-reduce:animate-none" aria-hidden /> Scanning {hostOf(imp.sourceUrl)}
@@ -321,7 +322,7 @@ function ScanProgress({ imp }: { imp: ImportDetailDto }) {
 /* ---------- step 2: review ---------- */
 
 type Cat = ImportDetailDto["categories"][number]
-const catValue = (slug: string, sub: string | null) => (sub ? `${slug}::${sub}` : slug)
+export const catValue = (slug: string, sub: string | null) => (sub ? `${slug}::${sub}` : slug)
 
 function Review({ imp, brand, onStarted, onNewScan }: { imp: ImportDetailDto; brand: ImportBrandContextDto; onStarted: (i: ImportDetailDto) => void; onNewScan: () => void }) {
   const id = useId()
@@ -510,7 +511,8 @@ function SiteProfile({ site, brand, canProfile, applied, profile, setProfile }: 
   )
 }
 
-function ProductRow({ idBase, p, d, brand, categories, problems, serverError, onChange }: { idBase: string; p: ImportProductDto; d: ImportDraft; brand: ImportBrandContextDto; categories: Cat[]; problems: ReturnType<typeof draftProblems>; serverError?: string; onChange: (patch: Partial<ImportDraft> | ((d: ImportDraft) => ImportDraft)) => void }) {
+/** One scanned product in a review: tick, photo, editable title, price, currency, category, sizes and stock. Shared with Create brand from website. */
+export function ProductRow({ idBase, p, d, brand, categories, problems, serverError, onChange }: { idBase: string; p: ImportProductDto; d: ImportDraft; brand: Pick<ImportBrandContextDto, "currency" | "name">; categories: Cat[]; problems: ReturnType<typeof draftProblems>; serverError?: string; onChange: (patch: Partial<ImportDraft> | ((d: ImportDraft) => ImportDraft)) => void }) {
   const labels = stockLabels(p, d)
   const editableSizes = sizesEditable(p)
   const currencyOptions = useMemo(() => [...new Set([d.currency, brand.currency, ...currencyCodes])].filter((c) => c in currencies) as CurrencyCode[], [d.currency, brand.currency])
@@ -530,7 +532,7 @@ function ProductRow({ idBase, p, d, brand, categories, problems, serverError, on
           )}
           {p.images.length > 1 ? <span className="absolute right-1 bottom-1 rounded bg-obsidian/85 px-1 text-[10px] text-ink tabular">{p.images.length}</span> : null}
         </div>
-        <div className="grid min-w-0 flex-1 gap-1">
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-1">
           <div className="flex flex-wrap items-center gap-2">
             {p.duplicate ? <StatusBadge tone="attention">Possible duplicate</StatusBadge> : null}
             {p.availability === "out_of_stock" ? <StatusBadge tone="muted">Sold out on the site</StatusBadge> : null}
@@ -714,7 +716,7 @@ function Results({ imp, onMore, onNewScan }: { imp: ImportDetailDto; onMore: () 
         ) : (
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="primary" size="sm" className="h-10 sm:h-9">
-              <Link href={`/admin/products/suggestions?brand=${encodeURIComponent(imp.brandId)}&status=all`}>Open {brand.name}&apos;s suggestions</Link>
+              <Link href={`/admin/products/suggestions?brand=${encodeURIComponent(brand.id)}&status=all`}>Open {brand.name}&apos;s suggestions</Link>
             </Button>
             {remaining > 0 ? (
               <Button type="button" variant="secondary" size="sm" className="h-10 sm:h-9" onClick={onMore}>
@@ -742,7 +744,7 @@ function Results({ imp, onMore, onNewScan }: { imp: ImportDetailDto; onMore: () 
   )
 }
 
-function ResultRow({ it, p }: { it: ImportItemDto; p: ImportProductDto | undefined }) {
+export function ResultRow({ it, p }: { it: ImportItemDto; p: ImportProductDto | undefined }) {
   const m = ITEM_META[it.status]
   return (
     <li className={cn("flex items-start gap-3 px-3 py-2.5", panel)}>

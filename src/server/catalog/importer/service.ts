@@ -2,6 +2,7 @@ import "server-only"
 import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { foundingPatchBody } from "@/lib/api/contracts/founding"
+import { guessMarket } from "@/lib/from-website"
 import {
   IMPORT_ITEM_STATUSES,
   IMPORT_MAX_IMAGES,
@@ -172,8 +173,8 @@ function summaryOf(r: Row, counts: Record<ImportItemStatus, number> | undefined)
 
 const progressOf = (r: Row): ImportProgressDto => ({ phase: "start", pagesFetched: 0, productsFound: 0, productPages: 0, note: null, ...(r.progress as Partial<ImportProgressDto>) })
 
-async function detailOf(d: Executor, admin: AdminActor, r: Row): Promise<ImportDetailDto> {
-  const b = await loadBrand(d, r.brandId)
+/** An import as the review and progress screens show it, without the brand context (a "Create brand from website" scan has no brand yet). */
+export async function importCore(d: Executor, r: Row): Promise<Omit<ImportDetailDto, "context">> {
   const items = await d
     .select({ i: catalogImportItems, proposalStatus: productProposals.status })
     .from(catalogImportItems)
@@ -200,15 +201,21 @@ async function detailOf(d: Executor, admin: AdminActor, r: Row): Promise<ImportD
       proposalStatus: proposalStatus ?? null,
       images: { done: (i.mediaIds as (string | null)[]).filter(Boolean).length, total: i.imagesTotal },
       cover: ((id) => (id ? `/api/media/${encodeURIComponent(id)}?as=admin` : null))((i.mediaIds as (string | null)[]).find(Boolean)),
+      price: ((c) => (c && typeof c.priceMinor === "number" && typeof c.currency === "string" ? { minor: c.priceMinor, currency: c.currency } : null))(i.choice as { priceMinor?: unknown; currency?: unknown } | null),
       updatedAt: i.updatedAt.toISOString(),
     })),
     profile: profile ?? null,
     categories: await categories(d),
-    context: await brandContext(d, admin, b),
   }
 }
 
-async function loadImport(d: Executor, id: string) {
+async function detailOf(d: Executor, admin: AdminActor, r: Row): Promise<ImportDetailDto> {
+  if (!r.brandId) throw notFound("That import doesn't exist.")
+  const b = await loadBrand(d, r.brandId)
+  return { ...(await importCore(d, r)), context: await brandContext(d, admin, b) }
+}
+
+export async function loadImport(d: Executor, id: string) {
   if (!/^imp_[\w-]{1,64}$/.test(id)) throw notFound("That import doesn't exist.")
   const [r] = await d.select().from(catalogImports).where(eq(catalogImports.id, id)).limit(1)
   if (!r) throw notFound("That import doesn't exist.")
@@ -232,6 +239,8 @@ export async function listImports(admin: AdminActor, brandId: string): Promise<I
 export async function getImport(admin: AdminActor, id: string): Promise<{ import: ImportDetailDto }> {
   const d = await db()
   const r = await loadImport(d, id)
+  // A brand-less "Create brand from website" scan is read through its own page (from-website.ts).
+  if (!r.brandId) throw notFound("That import doesn't exist.")
   assertMayImport(admin, await loadBrand(d, r.brandId))
   return { import: await detailOf(d, admin, r) }
 }
@@ -280,6 +289,7 @@ export async function startImport(admin: AdminActor, id: string, body: ImportRun
   const row = await withTx(async (tx) => {
     const r = await loadImport(tx, id)
     const [locked] = await tx.select().from(catalogImports).where(eq(catalogImports.id, r.id)).for("update").limit(1)
+    if (!locked.brandId) throw conflict("This scan has no brand yet. Create the brand first.")
     const b = await loadBrand(tx, locked.brandId)
     assertMayImport(admin, b)
     if (locked.status === "scanning") throw conflict("The scan is still running. Wait for the products to appear.")
@@ -415,15 +425,24 @@ async function failImport(r: Row, message: string) {
     .update(catalogImportItems)
     .set({ status: "failed", reason: message, updatedAt: new Date() })
     .where(and(eq(catalogImportItems.importId, r.id), eq(catalogImportItems.status, "queued")))
-  await writeAudit({ actor: SYSTEM, action: "catalog.import_failed", target: r.sourceUrl, subjectType: "catalog_import", subjectId: r.id, brandId: r.brandId, meta: { error: message, status: r.status } })
+  await writeAudit({ actor: SYSTEM, action: "catalog.import_failed", target: r.sourceUrl, subjectType: "catalog_import", subjectId: r.id, brandId: r.brandId ?? undefined, meta: { error: message, status: r.status } })
+}
+
+/**
+ * The currency a brand-less scan (Create brand from website) normalises prices against before
+ * anyone has chosen one: Labeld is NGN, else the address's country, else NGN (Yard's home market).
+ * The review screen picks the brand's currency from the products afterwards.
+ */
+export function prospectCurrency(url: string) {
+  return guessMarket({ siteUrl: url, platform: null, location: null, productCurrencies: [] }).currency ?? "NGN"
 }
 
 async function runScan(r: Row) {
   if (r.attempts > MAX_ATTEMPTS) return failImport(r, "The scan was interrupted too many times. Start a new one.")
   const d = await db()
-  const b = await loadBrand(d, r.brandId)
+  const b = r.brandId ? await loadBrand(d, r.brandId) : null
   const cats = await categories(d)
-  const existing = await existingFor(d, b.id)
+  const existing = b ? await existingFor(d, b.id) : { titles: [], sourceUrls: [] }
   const fetcher = siteFetcher((u, o) => safeGet(u, o))
   const state: ImportProgressDto = { phase: "start", pagesFetched: 0, productsFound: 0, productPages: 0, note: null }
   let lastWrite = 0
@@ -436,7 +455,9 @@ async function runScan(r: Row) {
     chain = chain.then(() => touch(r.id, { progress: snap })).catch((e) => log.error("[yard] import progress write failed", e))
   }
   try {
-    const out = await scanSite(r.sourceUrl, { fetch: fetcher, normalize: { brandCurrency: b.currency, brandCategory: b.categories[0] ?? null, categories: cats }, existing, progress })
+    const out = await scanSite(r.sourceUrl, { fetch: fetcher, normalize: { brandCurrency: b?.currency ?? prospectCurrency(r.sourceUrl), brandCategory: b?.categories[0] ?? null, categories: cats }, existing, progress })
+    // No brand yet: "this brand sells in" is decided on the review screen, not here.
+    if (!b) for (const p of out.products) p.warnings = p.warnings.filter((w) => !w.includes("; this brand sells in "))
     await chain
     await d
       .update(catalogImports)
@@ -452,7 +473,7 @@ async function runScan(r: Row) {
         updatedAt: new Date(),
       })
       .where(eq(catalogImports.id, r.id))
-    await writeAudit({ actor: SYSTEM, action: "catalog.import_scanned", target: new URL(out.startUrl).hostname, subjectType: "catalog_import", subjectId: r.id, brandId: r.brandId, meta: { platform: out.platform, products: out.products.length, duplicates: out.products.filter((p) => p.duplicate).length, requests: fetcher.requests() } })
+    await writeAudit({ actor: SYSTEM, action: "catalog.import_scanned", target: new URL(out.startUrl).hostname, subjectType: "catalog_import", subjectId: r.id, brandId: r.brandId ?? undefined, meta: { platform: out.platform, products: out.products.length, duplicates: out.products.filter((p) => p.duplicate).length, requests: fetcher.requests() } })
   } catch (e) {
     await chain
     await failImport(r, messageOf(e, "The scan failed. Try again, or check the address."))
@@ -575,6 +596,7 @@ async function runImport(r: Row) {
   const admin = await jobActor(r.createdBy)
   let b: BrandRow
   try {
+    if (!r.brandId) throw conflict("This scan has no brand yet.")
     b = await loadBrand(d, r.brandId)
     if (!admin) throw forbidden("The admin who started this import can't use the Control Center any more.")
     assertMayImport(admin, b)

@@ -1,12 +1,13 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowSquareOutIcon, EyeIcon, LinkSimpleIcon, PlusIcon, SealIcon, TrashSimpleIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, EyeIcon, GlobeIcon, LinkSimpleIcon, PlusIcon, SealIcon, TrashSimpleIcon } from "@phosphor-icons/react"
 import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
-import { AdminImg } from "@/components/admin/trust/shared"
+import { AdminImg, useAdminSession } from "@/components/admin/trust/shared"
 import { PanelError } from "@/components/admin/ui/panel"
 import { Button } from "@/components/ui/button"
 import { useAsyncAction } from "@/hooks/use-async-action"
@@ -28,6 +29,8 @@ import { useSearchParam, writeParams } from "./url-state"
  */
 export function FoundingPanel({ phone }: { phone: boolean }) {
   const router = useRouter()
+  // Create brand from website also imports products as suggestions (catalog.propose).
+  const canFromWebsite = useAdminSession().can("catalog.propose")
   const q = useApi<FoundingListDto>(foundingKeys.list, () => listFoundingBrands(), { refreshInterval: 60_000 })
   const target = useSearchParam("brand")
   // Later pages, loaded on request, and rows changed here since the list was read.
@@ -158,12 +161,33 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
         loading={loading}
         search={{ placeholder: "Search founding brands, handles or emails", text: (b) => [b.name, b.handle, b.city, countryName(b.country), b.claimLink?.email ?? "", foundingStatusMeta[b.status].label].join(" ") }}
         toolbar={
-          <Button type="button" size="sm" variant="primary" className="h-10 shrink-0 sm:h-9" onClick={() => writeParams({ brand: "new" })}>
-            <PlusIcon /> {phone ? "New" : "Create founding brand"}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {canFromWebsite ? (
+              <Button asChild size="sm" variant="secondary" className="h-10 shrink-0 sm:h-9">
+                <Link href="/admin/brands/founding/from-website">
+                  <GlobeIcon /> {phone ? "From website" : "Create brand from website"}
+                </Link>
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" variant="primary" className="h-10 shrink-0 sm:h-9" onClick={() => writeParams({ brand: "new" })}>
+              <PlusIcon /> {phone ? "New" : "Create founding brand"}
+            </Button>
+          </div>
         }
         rowActions={rowActions}
-        empty={{ title: "No founding brands yet", body: "Create the first brands yourself, set them up in Studio, then send each owner a claim link.", action: <Button size="sm" variant="secondary" onClick={() => writeParams({ brand: "new" })}>Create founding brand</Button> }}
+        empty={{
+          title: "No founding brands yet",
+          body: "Create the first brands yourself, set them up in Studio, then send each owner a claim link.",
+          action: canFromWebsite ? (
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/admin/brands/founding/from-website">Create brand from website</Link>
+            </Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => writeParams({ brand: "new" })}>
+              Create founding brand
+            </Button>
+          ),
+        }}
         initialPageSize={25}
         minWidth={300}
       />

@@ -1,5 +1,6 @@
 import { api } from "./client"
 import type { FoundingBrandRow, FoundingCreateBody, FoundingPatchBody } from "./contracts/founding"
+import type { WebsiteCreateBody, WebsiteScanBody, WebsiteScanDto } from "./contracts/from-website"
 
 /**
  * Typed wrappers for the founding-brands endpoints: the Control Center's list, create tray and
@@ -70,3 +71,11 @@ export const publishForBrandKey = (brandId: string) => `admin:brand-storefront:$
 const storefrontOf = (brandId: string) => `/api/admin/brand-storefronts/${encodeURIComponent(brandId)}`
 export const getPublishForBrand = (brandId: string) => api<PublishForBrandPreviewDto>(storefrontOf(brandId))
 export const publishForBrand = (brandId: string) => api<PublishForBrandDto>(storefrontOf(brandId), { method: "POST" })
+
+/* ---------- Create brand from website (Admin › Brands › Founding) ---------- */
+
+const fromWebsite = "/api/admin/founding-brands/from-website"
+export const websiteScanKey = (importId: string) => `admin:founding:from-website:${importId}`
+export const startWebsiteScan = (body: WebsiteScanBody) => api<WebsiteScanDto>(fromWebsite, { body })
+export const getWebsiteScan = (importId: string) => api<WebsiteScanDto>(`${fromWebsite}/${encodeURIComponent(importId)}`)
+export const createStoreFromWebsite = (importId: string, body: WebsiteCreateBody) => api<WebsiteScanDto>(`${fromWebsite}/${encodeURIComponent(importId)}/create`, { body })

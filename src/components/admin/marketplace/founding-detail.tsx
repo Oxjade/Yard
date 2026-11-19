@@ -70,7 +70,7 @@ function slugifyHandle(name: string) {
 }
 
 /** A label, its control and the field's error (or hint) under it. */
-function Field({ id, label, error, hint, className, children }: { id: string; label: string; error?: string; hint?: React.ReactNode; className?: string; children: React.ReactNode }) {
+export function Field({ id, label, error, hint, className, children }: { id: string; label: string; error?: string; hint?: React.ReactNode; className?: string; children: React.ReactNode }) {
   return (
     <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
       <Label htmlFor={id} className="text-[12px] text-ink-2">
@@ -89,7 +89,7 @@ function Field({ id, label, error, hint, className, children }: { id: string; la
     </div>
   )
 }
-const describedBy = (id: string, error?: string, hint?: unknown) => (error ? `${id}-error` : hint ? `${id}-hint` : undefined)
+export const describedBy = (id: string, error?: string, hint?: unknown) => (error ? `${id}-error` : hint ? `${id}-hint` : undefined)
 
 /** A staged image (logo or banner): picked here, uploaded only when the form is saved. */
 type Staged = { file: File; preview: string } | null
@@ -195,7 +195,8 @@ const emptyCreate: CreateFields = { name: "", handle: "", category: "", city: ""
 
 type HandleCheck = { handle: string; state: "checking" | "available" | "taken" | "error"; message?: string }
 
-function useHandleCheck(handle: string) {
+/** The live "is this handle free" check the create forms show (debounced, the server's onboarding rules). */
+export function useHandleCheck(handle: string) {
   const [check, setCheck] = useState<HandleCheck | null>(null)
   useEffect(() => {
     if (handle.length < 3) return
@@ -669,8 +670,11 @@ function SetupBar({ brand: b, disabledReason }: { brand: FoundingBrandRow; disab
   )
 }
 
-/** The claim link: who it's for, when it expires, and the inline composer to send, re-send or revoke it. */
-function ClaimSection({ brand: b, onSaved }: { brand: FoundingBrandRow; onSaved: (b: FoundingBrandRow) => void }) {
+/**
+ * The claim link: who it's for, when it expires, and the inline composer to send, re-send or
+ * revoke it. Also the last step of Create brand from website (`onIssued` hears the link, shown once).
+ */
+export function ClaimSection({ brand: b, onSaved, onIssued }: { brand: FoundingBrandRow; onSaved: (b: FoundingBrandRow) => void; onIssued?: (link: { url: string; email: string }) => void }) {
   const id = useId()
   const link = b.claimLink
   const [email, setEmail] = useState(link?.email ?? "")
@@ -711,6 +715,7 @@ function ClaimSection({ brand: b, onSaved }: { brand: FoundingBrandRow; onSaved:
       if (!(await reauth.verify())) return
       const r = await issueClaimLink(b.id, { email: v, idempotencyKey: key.current })
       setIssued({ url: r.url, email: r.link.email, expiresAt: r.link.expiresAt })
+      onIssued?.({ url: r.url, email: r.link.email })
       key.current = actionKey()
       toast.success(r.created ? `Claim link sent to ${r.link.email}` : "That link was already sent", { description: "Copy it from the tray if you want to share it yourself. It's shown only now." })
       const fresh = await getFoundingBrand(b.id).catch(() => null)

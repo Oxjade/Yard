@@ -229,6 +229,58 @@ With the embedded database, stop the server first and run it through PGlite
 (`new PGlite("<data dir>/production/pg")` for `start:demo`, `<data dir>/development/pg` for dev).
 The saved Labeld pages in `fixtures/` drive the same flow in `watch.test.ts`.
 
+## Create brand from website
+
+Founding-brand onboarding in one page: **paste, check, send**. Admin › Brands › Founding › **Create
+brand from website** opens `/admin/brands/founding/from-website` (owners: `brands.founding`, plus
+`catalog.propose`). It is the pieces above put together, not a second system
+(`src/server/catalog/from-website.ts`, page `src/components/admin/importer/from-website-page.tsx`,
+rules `src/lib/from-website.ts`):
+
+1. **Scan.** Paste the site and tick the required **"This brand agreed to us building their Yard
+   store from their website"**. The importer's own scan runs on a `catalog_imports` row with no
+   brand yet (`brand_id` is null until Create store, migration 0025); consent and admin are stored
+   and audited (`catalog.import_scan_started`, `meta.newFoundingBrand`). 10 scans an hour per site.
+   `?import=<id>` resumes the page.
+2. **Review**, one screen:
+   - **Brand card**, every field editable: name (the site's), handle (from the site's subdomain or
+     domain, `813israw.labeld.app` → `813israw`, else from the name; the first free one of it and
+     `-studio`, `-official`, `-yard`, `-2`…, then checked live as typed), category (the products'
+     most common), city, country and currency (best guesses with the reason shown: a Labeld shop is
+     NG/NGN; the city only when the site names one, from its JSON-LD address or a line like
+     "Lagos State, Nigeria"; else the products' currency and the domain's country code), logo and
+     banner chosen from the site's images (its own logo and banner first, then product photos, or
+     none), bio, Instagram and TikTok. Changing the currency converts every product price at Yard's
+     reference rate.
+   - **Duplicates**: a founding or normal brand with the same website (an import or watch of the
+     same host), a similar handle (same without hyphens, one inside the other from 5 characters, or
+     one typo apart from 6) or the same name is listed with a link to it. It warns; it doesn't block.
+   - **Products**: the import page's own rows (tick, select all, title, price, currency, category,
+     sizes, stock).
+   - Three switches, all on: **Go live when they claim**, **Keep watching their website for new
+     pieces**, **Show Founding brand badge**.
+3. **Create store** (`POST …/from-website/{importId}/create`): everything that could refuse the
+   import is checked first, then `createFoundingBrand` (unclaimed, starter shipping, storefront
+   draft with the bio as intro), the scan is attached to the brand, a switch turned off is written
+   with `updateFoundingBrand`, the chosen logo and banner become the scan's site images and
+   `startImport` runs (products as Suggestions from Yard; logo and banner copied into the brand and
+   the draft by the import's storefront step), then `setWatch`. The page shows each step until the
+   import is done.
+   **Idempotent:** the request key (kept in the tab's session storage per scan) is the founding
+   brand's creation key, so a double click, a retry or a reload replays it; `planCreate` works out
+   what's still missing from what exists (brand, scan attached, switches, import started, watch), and
+   one Create store per key runs at a time in a process. A scan is only ever attached to one brand.
+4. **Summary and claim link:** "{Brand} is ready: 4 products, logo, banner, goes live when they
+   claim", a preview of the shop as it opens on claim (banner, logo, intro, the products as Yard
+   copied them), and the founding tray's own claim composer (owner's email, Send claim link, the
+   same endpoint and re-auth). The link is shown once to copy, with **Open their claim page** and
+   **Send it on WhatsApp**.
+
+Audit: `catalog.import_scan_started`, `founding.created`, `founding.created_from_website` (the
+switches, product count, logo and banner), `founding.go_live_on_claim_off` / `founding.badge_off`
+when switched off, `catalog.import_started` and the import's own rows, `founding.updated` (logo and
+banner), `catalog.watch_started`, `founding.claim_link_issued`.
+
 ## API
 
 | Method | Path | |
@@ -244,6 +296,9 @@ The saved Labeld pages in `fixtures/` drive the same flow in `watch.test.ts`.
 | POST | `/api/admin/website-pieces` | `{ brandId, action: "approve_all" }` → 202 |
 | GET | `/api/studio/catalog/website-pieces` | the brand's waiting pieces (any member) |
 | POST | `/api/studio/catalog/website-pieces/{id}` | `{ action: "add" \| "skip" }` (`content.publish`) |
+| POST | `/api/admin/founding-brands/from-website` | `{ url, consent: true }` → 201, a scan with no brand yet |
+| GET | `/api/admin/founding-brands/from-website/{importId}` | progress, products, suggestion, duplicates, and the brand once created |
+| POST | `/api/admin/founding-brands/from-website/{importId}/create` | `{ brand, logoUrl, bannerUrl, products, goLiveOnClaim, watch, foundingBadge }` → 201 (200 replay) |
 
 Code: `src/server/catalog/importer/` (`url.ts`, `fetch.ts`, `html.ts`, `normalize.ts`,
 `scan.ts`, `adapters/`, `service.ts`; watching: `watch.ts`, `watch-rules.ts`, `pieces-db.ts`,

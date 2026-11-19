@@ -15,9 +15,11 @@ export const catalogImports = pgTable(
   "catalog_imports",
   {
     id: text("id").primaryKey(),
-    brandId: text("brand_id")
-      .notNull()
-      .references(() => brands.id),
+    /**
+     * Null while a "Create brand from website" scan has no brand yet (Admin › Brands › Founding,
+     * src/server/catalog/from-website.ts): Create store creates the founding brand and sets it.
+     */
+    brandId: text("brand_id").references(() => brands.id),
     /** The address as the admin pasted it, tracking parameters removed. */
     sourceUrl: text("source_url").notNull(),
     /** Where the scan started (a Labeld marketplace page becomes the brand's own shop). */

@@ -1,4 +1,5 @@
 import type { ImportAvailability, ImportBrandDto } from "@/lib/api/contracts/imports"
+import { cityIn, countryIn } from "@/lib/from-website"
 import { htmlToText, isType, jsonLd, ldImages, ldText, linkRel, meta, type LdNode } from "../html"
 import type { RawProduct } from "../normalize"
 import { sameSite } from "../url"
@@ -60,7 +61,29 @@ export function brandFromHtml(html: string, pageUrl: string): ImportBrandDto {
     banner: abs(pick("image") ?? meta(html, "og:image")),
     description: description ? htmlToText(description, 2000) : null,
     socials: socialsOf(sameAs),
+    location: locationOf(html, own),
   }
+}
+
+/**
+ * Where the brand says it is: its own JSON-LD address (locality, region, country), else the first
+ * short line of the page that names a Yard city, else one that names a Yard country. Only a hint
+ * for "Create brand from website"; the admin confirms it.
+ */
+export function locationOf(html: string, own: LdNode[] = []): string | null {
+  for (const n of own) {
+    const a = (Array.isArray(n.address) ? n.address[0] : n.address) as LdNode | string | undefined
+    if (typeof a === "string" && a.trim()) return a.trim().slice(0, 160)
+    if (a && typeof a === "object") {
+      const parts = [ldText(a.addressLocality), ldText(a.addressRegion), ldText((a.addressCountry as LdNode | undefined)?.name ?? a.addressCountry)].filter((x): x is string => !!x)
+      if (parts.length) return parts.join(", ").slice(0, 160)
+    }
+  }
+  const lines = htmlToText(html, 20_000)
+    .split("\n")
+    .map((l) => l.replace(/^•\s*/, "").trim())
+    .filter((l) => l.length >= 4 && l.length <= 120)
+  return lines.find((l) => cityIn(l)) ?? lines.find((l) => countryIn(l)) ?? null
 }
 
 const AVAILABILITY: Record<string, ImportAvailability> = {

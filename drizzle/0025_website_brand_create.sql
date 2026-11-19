@@ -1,0 +1,1 @@
+ALTER TABLE "catalog_imports" ALTER COLUMN "brand_id" DROP NOT NULL;

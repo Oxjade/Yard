@@ -68,6 +68,8 @@ export type ImportBrandDto = {
   banner: string | null
   description: string | null
   socials: { instagram: string | null; tiktok: string | null; links: string[] }
+  /** Where the site says the brand is ("Minimal Street · Lagos State, Nigeria"); absent on scans before it was read. */
+  location?: string | null
 }
 
 export type ImportProgressDto = { phase: "start" | "detect" | "listing" | "products" | "images" | "done"; pagesFetched: number; productsFound: number; productPages: number; note: string | null }
@@ -84,6 +86,8 @@ export type ImportItemDto = {
   images: { done: number; total: number }
   /** The first photo as copied into Yard (admin media URL), once there is one. */
   cover: string | null
+  /** The price the admin chose (the suggestion's), when the item was ticked. */
+  price: { minor: number; currency: string } | null
   updatedAt: string
 }
 
@@ -103,7 +107,8 @@ export type ImportBrandContextDto = {
 
 export type ImportSummaryDto = {
   id: string
-  brandId: string
+  /** Null while a "Create brand from website" scan has no brand yet. */
+  brandId: string | null
   sourceUrl: string
   platform: ImportPlatform | null
   status: ImportStatus

@@ -19,7 +19,8 @@ import { baselineOf } from "./watch-rules"
 export async function recordImportSeen(importId: string) {
   const d = await db()
   const [r] = await d.select().from(catalogImports).where(eq(catalogImports.id, importId)).limit(1)
-  if (!r) return { imported: 0, ignored: 0 }
+  if (!r?.brandId) return { imported: 0, ignored: 0 }
+  const brandId = r.brandId
   const found = (r.found ?? []) as unknown as ImportProductDto[]
   if (!found.length) return { imported: 0, ignored: 0 }
   const items = await d.select().from(catalogImportItems).where(eq(catalogImportItems.importId, r.id))
@@ -30,7 +31,7 @@ export async function recordImportSeen(importId: string) {
   for (const p of found) {
     const it = byKey.get(p.key)
     const created = it?.status === "created"
-    const base = { brandId: r.brandId, urlKey: urlKey(p.sourceUrl), sourceUrl: p.sourceUrl, sourceId: p.sourceId, title: (it?.title ?? p.title).slice(0, 200), origin: "import" as const, baseline: baselineOf(p), lastSeenAt: now, updatedAt: now }
+    const base = { brandId, urlKey: urlKey(p.sourceUrl), sourceUrl: p.sourceUrl, sourceId: p.sourceId, title: (it?.title ?? p.title).slice(0, 200), origin: "import" as const, baseline: baselineOf(p), lastSeenAt: now, updatedAt: now }
     if (created) {
       imported++
       await d
