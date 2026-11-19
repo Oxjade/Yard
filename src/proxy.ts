@@ -116,7 +116,14 @@ async function checkPage(request: NextRequest, check: PageCheck): Promise<NextRe
   try {
     const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) })
     if (!res.ok) return NextResponse.next()
-    const body = (await res.json()) as { exists?: unknown }
+    const body = (await res.json()) as { exists?: unknown; opensSoon?: unknown }
+    // A founding brand's piece or storefront before launch: the page answers "opens soon" (200,
+    // like the other hidden-but-known pages), never indexed.
+    if (body.exists !== false && body.opensSoon === true) {
+      const next = NextResponse.next()
+      next.headers.set("X-Robots-Tag", "noindex, nofollow")
+      return next
+    }
     if (body.exists !== false) return NextResponse.next()
   } catch {
     return NextResponse.next()

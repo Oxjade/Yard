@@ -620,7 +620,8 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
     const first = !allProducts.some((p) => p.id !== r.id && (p.status === "published" || p.status === "scheduled"))
     const hidden = brandHidden(listing)
     if (r.status === "published" && r.was !== "published") {
-      announcePublished(r, { first, hidden, viewable: !!server, onOpen: (href) => router.push(href) })
+      // No "View it on Yard" until the listing facts say whether the shop is live.
+      announcePublished(r, { first, hidden, viewable: !!server && !!listing, onOpen: (href) => router.push(href) })
       return
     }
     if (r.status === "draft") {

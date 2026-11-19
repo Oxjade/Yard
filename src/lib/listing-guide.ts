@@ -116,7 +116,7 @@ export type ListingTone = "draft" | "live" | "waiting" | "archived"
 export function listingPill(status: string, brand: { hidden: boolean } = { hidden: false }): { label: string; short: string; tone: ListingTone; hint: string } {
   if (status === "published") {
     return brand.hidden
-      ? { label: "Published: storefront not live yet", short: "Waiting on storefront", tone: "waiting", hint: "Shoppers see it as soon as your storefront is published." }
+      ? { label: "Published: shop not live yet", short: "Shop not live yet", tone: "waiting", hint: "Shoppers see it as soon as you publish your shop." }
       : { label: "Live on Yard", short: "Live on Yard", tone: "live", hint: "Shoppers can find it, save it and buy it." }
   }
   if (status === "scheduled") return { label: "Scheduled: not live yet", short: "Scheduled", tone: "waiting", hint: "It goes live at its go-live time." }

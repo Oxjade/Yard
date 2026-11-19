@@ -3,7 +3,8 @@ import { getBrand, getDrop } from "@/lib/data"
 import { loadDrop } from "../drops/service"
 import { getEnv } from "../env"
 import { HttpError } from "../http/errors"
-import { publicCollection, publicProduct, publicStorefront } from "./public"
+import { opensSoonBrand, opensSoonProduct, publicCollection, publicProduct, publicStorefront } from "./public"
+import type { PageVisibility } from "@/lib/page-visibility"
 import { isSampleBrand, isSampleDrop, isSampleProduct } from "@/lib/data/sample-ids"
 import { sampleOff } from "./sample-guard"
 
@@ -56,6 +57,31 @@ export async function brandPageExists(handle: string) {
 }
 
 export const collectionPageExists = (handle: string, collection: string) => found(() => publicCollection(handle, collection))
+
+/**
+ * A product page's state (src/lib/page-visibility.ts): "public", "opens-soon" (published, but its
+ * founding brand hasn't published its storefront yet) or "none". The public check comes first, so
+ * a listed product never costs the second read.
+ */
+export async function productPageState(slug: string): Promise<PageVisibility> {
+  if (await productPageExists(slug)) return "public"
+  if (sampleOff() && isSampleProduct(slug)) return "none"
+  return (await opensSoonProduct(slug)) ? "opens-soon" : "none"
+}
+
+/** A storefront's state: "public", "opens-soon" (a founding brand that hasn't launched) or "none". */
+export async function brandPageState(handle: string): Promise<PageVisibility> {
+  if (await brandPageExists(handle)) return "public"
+  if (sampleOff() && isSampleBrand(handle)) return "none"
+  return (await opensSoonBrand(handle)) ? "opens-soon" : "none"
+}
+
+/** Every kind's state; drops and collections are only ever "public" or "none". */
+export async function pageState(kind: PageKind, key: string, sub?: string): Promise<PageVisibility> {
+  if (kind === "product") return productPageState(key)
+  if (kind === "brand") return brandPageState(key)
+  return (await pageExists(kind, key, sub)) ? "public" : "none"
+}
 
 export function pageExists(kind: PageKind, key: string, sub?: string) {
   switch (kind) {

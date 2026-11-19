@@ -3,7 +3,7 @@
 import { EyeSlashIcon, HourglassIcon, StorefrontIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { revalidatePrefix } from "@/lib/api/use-api"
-import { listingPill, type ListingTone } from "@/lib/listing-guide"
+import { listingPill, SHOP_SETUP_HREF, type ListingTone } from "@/lib/listing-guide"
 import { cn } from "@/lib/utils"
 import { setProductStatuses } from "./store"
 import { publishError, publishLiveProduct } from "./product-save"
@@ -60,17 +60,18 @@ export type PublishedProduct = { id: string; name: string; slug: string }
 
 /**
  * After a publish. The brand's first one is a small celebration; every one says where it is
- * and offers "View it on Yard". A founding brand whose storefront isn't published yet is told
- * the one thing left (its products are hidden until then). `viewable` is false for the sample
- * store, whose products never reach the marketplace.
+ * and offers "View it on Yard". A founding brand whose shop isn't published yet is told the one
+ * thing left, with "Publish my shop" in place of "View it on Yard" (its products answer "opens
+ * soon" to shoppers until then). `viewable` is false for the sample store, whose products never
+ * reach the marketplace, and while the brand's listing facts are still loading.
  */
 export function announcePublished(p: PublishedProduct, opts: { first: boolean; hidden: boolean; viewable: boolean; onOpen?: (href: string) => void }) {
   revalidatePrefix("/api/studio/setup")
   if (opts.hidden) {
     toast.success(opts.first ? "Published! One last step 🎉" : `${p.name} is published`, {
-      description: "Shoppers see it once your storefront is published. That's the last step.",
+      description: "Shoppers see it once your shop is live. Publish your shop: that's the last step.",
       duration: 10_000,
-      action: { label: "Open Storefront", onClick: () => opts.onOpen?.("/studio/storefront") },
+      action: { label: "Publish my shop", onClick: () => (opts.onOpen ? opts.onOpen(SHOP_SETUP_HREF) : window.location.assign(SHOP_SETUP_HREF)) },
     })
     return
   }
@@ -80,6 +81,16 @@ export function announcePublished(p: PublishedProduct, opts: { first: boolean; h
     return
   }
   toast.success(`${p.name} is live on Yard`, { description: "Shoppers can see it now.", action: view })
+}
+
+/** After a bulk publish while the brand's shop isn't published yet: published, but not visible. */
+export function announceHiddenBulkPublish(count: number, onOpen: (href: string) => void) {
+  revalidatePrefix("/api/studio/setup")
+  toast.success(`Published ${count} ${count === 1 ? "product" : "products"}. One last step`, {
+    description: `Shoppers see ${count === 1 ? "it" : "them"} once your shop is live. Publish your shop: that's the last step.`,
+    duration: 10_000,
+    action: { label: "Publish my shop", onClick: () => onOpen(SHOP_SETUP_HREF) },
+  })
 }
 
 /**

@@ -87,7 +87,8 @@ describe("draft vs live pill", () => {
   it("published is live only when the brand is visible", () => {
     assert.equal(listingPill("published").label, "Live on Yard")
     assert.equal(listingPill("published", { hidden: true }).tone, "waiting")
-    assert.match(listingPill("published", { hidden: true }).label, /storefront/)
+    assert.match(listingPill("published", { hidden: true }).label, /shop not live yet/)
+    assert.equal(listingPill("published", { hidden: true }).short, "Shop not live yet")
   })
   it("scheduled and archived say they aren't live", () => {
     assert.equal(listingPill("scheduled").tone, "waiting")

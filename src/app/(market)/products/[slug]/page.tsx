@@ -10,7 +10,10 @@ import { brandHref, catalogBrand, toCatalogProduct } from "@/lib/api/catalog-pro
 import { brandById, categories, categoryBySlug, drops, products } from "@/lib/data"
 import type { Brand } from "@/lib/data/types"
 import { initialDropPhase } from "@/lib/drops"
-import { listPublicProducts, publicProduct } from "@/server/catalog/public"
+import { listPublicProducts, memberPreviewProduct, opensSoonProduct, publicProduct } from "@/server/catalog/public"
+import { viewerActsForBrand } from "@/server/catalog/opens-soon"
+import { MemberPreviewBanner } from "@/components/market/opens-soon"
+import { opensSoonTitle, opensSoonPieceLine } from "@/lib/page-visibility"
 import { HttpError } from "@/server/http/errors"
 import { currentDropForProduct } from "@/server/drops/service"
 import { getEnv } from "@/server/env"
@@ -35,22 +38,38 @@ export function generateStaticParams() {
   return products.filter((p) => p.status === "published").map((p) => ({ slug: p.slug }))
 }
 
+/**
+ * The public product, or (preview: true) the brand member's own preview of a piece whose founding
+ * brand hasn't opened its shop yet. Anyone else gets null for that piece (the layout shows them
+ * "opens soon").
+ */
 async function findProduct(slug: string) {
   try {
     const result = await publicProduct(slug)
     const product = toCatalogProduct(result.product)
-    return { product, brandSummary: product.brandSummary! }
+    return { product, brandSummary: product.brandSummary!, preview: false }
   } catch (error) {
-    if (error instanceof HttpError && error.status === 404) return null
-    throw error
+    if (!(error instanceof HttpError && error.status === 404)) throw error
   }
+  const soon = await opensSoonProduct(slug)
+  if (!soon || !(await viewerActsForBrand(soon.brand.id))) return null
+  const preview = await memberPreviewProduct(slug, soon.brand.id)
+  if (!preview) return null
+  const product = toCatalogProduct(preview.product)
+  return { product, brandSummary: product.brandSummary!, preview: true }
 }
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const { slug } = await params
   const result = await findProduct(slug)
-  if (!result) return { title: "Product not found" }
+  if (!result) {
+    // Opens soon: the brand, never the piece (and never indexed).
+    const soon = await opensSoonProduct(slug)
+    if (soon) return { title: opensSoonTitle(soon.brand.name), description: opensSoonPieceLine, robots: { index: false, follow: false } }
+    return { title: "Product not found" }
+  }
   const { product, brandSummary } = result
+  if (result.preview) return { title: `Preview: ${product.name}`, robots: { index: false, follow: false } }
   return {
     title: `${product.name} by ${brandSummary.name}`,
     description: product.description,
@@ -61,8 +80,12 @@ export async function generateMetadata({ params }: PageProps<"/products/[slug]">
 export default async function ProductPage({ params }: PageProps<"/products/[slug]">) {
   const { slug } = await params
   const result = await findProduct(slug)
-  if (!result) notFound()
-  const { product } = result
+  if (!result) {
+    // The layout shows "opens soon" in this page's place; nothing to render here.
+    if (await opensSoonProduct(slug)) return null
+    notFound()
+  }
+  const { product, preview } = result
 
   const brand: Brand = catalogBrand(product, getEnv().seedDemo ? brandById.get(product.brandId) : undefined)
   const category = categoryBySlug.get(product.category) ?? { slug: product.category, name: categories.find((c) => c.slug === product.category)?.name ?? product.category }
@@ -81,7 +104,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
-      <ViewBeacon kind="product_view" productId={product.id} />
+      {preview ? <MemberPreviewBanner what={product.name} /> : <ViewBeacon kind="product_view" productId={product.id} />}
       <ProductBreadcrumb product={product} category={category} brand={brand} />
 
       <ProductView product={product} brand={brand} drop={drop} dropPanel={liveDrop ? <LiveProductDrop slug={liveDrop.slug} /> : undefined}>

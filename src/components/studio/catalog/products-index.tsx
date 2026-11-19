@@ -29,7 +29,7 @@ import { productsCopy } from "./page-copy"
 import { CatalogueNote, ProductStock, Thumb } from "./parts"
 import { uniqueSlug } from "./product-form-model"
 import { StatusTabs } from "./status-tabs"
-import { ListingPill } from "./listing-feedback"
+import { announceHiddenBulkPublish, ListingPill } from "./listing-feedback"
 import { useListingFacts } from "@/components/studio/setup/use-listing"
 import { brandHidden, FULL_EDITOR_HREF, QUICK_ADD_HREF } from "@/lib/listing-guide"
 import { LightningIcon as Lightning, TimerIcon as Timer } from "@phosphor-icons/react"
@@ -194,7 +194,14 @@ export function ProductsIndex() {
     const targets = list.filter((p) => p.status !== "published")
     if (!targets.length) return
     if (live) {
-      reportStatus("publish", await runLiveStatus(targets, "publish"))
+      const result = await runLiveStatus(targets, "publish")
+      // A founding brand before its shop is published: say they're not visible yet, and the fix.
+      if (hidden && result.changed) {
+        announceHiddenBulkPublish(result.changed, (href) => router.push(href))
+        reportStatus("publish", { changed: 0, errors: result.errors })
+        return
+      }
+      reportStatus("publish", result)
       return
     }
     const previous = setProductStatuses(targets.map((p) => p.id), "published")

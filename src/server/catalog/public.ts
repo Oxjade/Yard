@@ -7,9 +7,12 @@ import { brands } from "../db/schema"
 import { catalogCategories, catalogCollectionProducts, catalogCollections, catalogProducts, catalogVariants, storefrontVersions } from "../db/schema/catalog"
 import { notFound } from "../http/errors"
 import { loadChildren, toPublicProduct } from "./dto"
+import { mediaSrc } from "../media/dto"
 import type { PublicBrandsQuery, PublicProductsQuery } from "./contracts"
 import type { PublicBrandCard, PublicBrandsPage } from "@/lib/api/public-brands"
 import { brandForSaleSql, brandLaunchedSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
+import { brandPageVisibility, productPageVisibility } from "@/lib/page-visibility"
+import { refusedSampleBrand } from "./sample-guard"
 
 /**
  * Public catalogue reads. Every read goes through productPublicWhere (published, not hidden,
@@ -109,6 +112,95 @@ export async function publicProduct(slugOrId: string) {
     const kids = await loadChildren(d, [row.p.id])
     return { product: { ...toPublicProduct(row.p, kids), brand: row.brand } }
   })
+}
+
+/** What an "opens soon" page may show of a brand: who it is, never what it sells. */
+export type OpensSoonBrand = {
+  id: string
+  handle: string
+  name: string
+  /** The logo's public address, or null. A founding brand's logo stays private until launch (media/visibility.ts), so shoppers usually get the monogram. */
+  logoSrc: string | null
+  /** The logo upload, for the brand's own members (served to them with ?as=brand). */
+  logoMediaId: string | null
+}
+
+/** The brand columns the visibility rule (src/lib/page-visibility.ts) and the opens-soon page need. */
+const visibilityBrandCols = {
+  id: brands.id,
+  handle: brands.handle,
+  name: brands.name,
+  logoMediaId: brands.logoMediaId,
+  logoPublic: sql<boolean>`exists (select 1 from media_assets lm where lm.id = ${brands.logoMediaId} and lm.visibility = 'public' and lm.moderation_status <> 'removed')`,
+  founding: brands.founding,
+  launchedAt: brands.launchedAt,
+  reviewStatus: brands.reviewStatus,
+}
+type VisibilityBrandRow = { id: string; handle: string; name: string; logoMediaId: string | null; logoPublic: boolean; founding: boolean; launchedAt: Date | null; reviewStatus: string }
+const visibilityBrand = (b: VisibilityBrandRow) => ({ founding: b.founding, launchedAt: b.launchedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id) })
+const toOpensSoonBrand = (b: VisibilityBrandRow): OpensSoonBrand => ({
+  id: b.id,
+  handle: b.handle,
+  name: b.name,
+  logoSrc: b.logoMediaId && b.logoPublic ? mediaSrc(b.logoMediaId) : null,
+  logoMediaId: b.logoMediaId,
+})
+
+/**
+ * A product that is ready (published, moderation ok) but whose founding brand hasn't opened its
+ * shop yet (page-visibility.ts "opens-soon"), or null. Only the brand and the product's id, slug
+ * and title come back: the page shows the brand, never the piece's photos, price or details.
+ */
+export async function opensSoonProduct(slugOrId: string): Promise<{ brand: OpensSoonBrand; product: { id: string; slug: string; title: string } } | null> {
+  await requestScope()
+  return memo(`catalog:opens-soon:product:${slugOrId}`, TTL, async () => {
+    const d = await db()
+    const [row] = await d
+      .select({ id: catalogProducts.id, slug: catalogProducts.slug, title: catalogProducts.title, status: catalogProducts.status, publishAt: catalogProducts.publishAt, moderationStatus: catalogProducts.moderationStatus, brand: visibilityBrandCols })
+      .from(catalogProducts)
+      .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+      .where(or(eq(catalogProducts.slug, slugOrId), eq(catalogProducts.id, slugOrId)))
+      .limit(1)
+    if (!row || productPageVisibility(row, visibilityBrand(row.brand)) !== "opens-soon") return null
+    return { brand: toOpensSoonBrand(row.brand), product: { id: row.id, slug: row.slug, title: row.title } }
+  })
+}
+
+/** A founding brand that hasn't opened its shop yet (page-visibility.ts "opens-soon"), or null. */
+export async function opensSoonBrand(handleOrId: string): Promise<OpensSoonBrand | null> {
+  await requestScope()
+  return memo(`catalog:opens-soon:brand:${handleOrId}`, TTL, async () => {
+    const d = await db()
+    const [row] = await d
+      .select(visibilityBrandCols)
+      .from(brands)
+      .where(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)))
+      .limit(1)
+    if (!row || brandPageVisibility(visibilityBrand(row)) !== "opens-soon") return null
+    return toOpensSoonBrand(row)
+  })
+}
+
+/**
+ * The owner's preview of an opens-soon product: the same shape as publicProduct, for the brand
+ * `brandId` only (the caller has checked the viewer is that brand's member). Not memoised: it is
+ * never served to a shopper. Null unless it is that brand's opens-soon product.
+ */
+export async function memberPreviewProduct(slugOrId: string, brandId: string) {
+  await requestScope()
+  const d = await db()
+  const [row] = await d
+    .select({ p: catalogProducts, brand: brandSummary, vis: visibilityBrandCols })
+    .from(catalogProducts)
+    .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+    .where(and(or(eq(catalogProducts.slug, slugOrId), eq(catalogProducts.id, slugOrId)), eq(catalogProducts.brandId, brandId)))
+    .limit(1)
+  if (!row || productPageVisibility(row.p, visibilityBrand(row.vis)) !== "opens-soon") return null
+  const kids = await loadChildren(d, [row.p.id])
+  const dto = toPublicProduct(row.p, kids)
+  // Its photos are private until the shop opens: the member reads them as the brand.
+  const images = dto.images.map((image) => (image.mediaId ? { ...image, src: mediaSrc(image.mediaId, "brand") } : image))
+  return { product: { ...dto, images, brand: row.brand } }
 }
 
 export async function publicCategories() {

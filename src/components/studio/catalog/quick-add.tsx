@@ -39,7 +39,7 @@ import { commissionLabel, commissionRateAt } from "@/lib/commission"
 import { brandById, STUDIO_BRAND_ID } from "@/lib/data/brands"
 import { categories, categoryBySlug } from "@/lib/data/catalog"
 import type { Brand, CategorySlug, Product } from "@/lib/data/types"
-import { brandHidden, FULL_EDITOR_HREF } from "@/lib/listing-guide"
+import { brandHidden, FULL_EDITOR_HREF, SHOP_SETUP_HREF } from "@/lib/listing-guide"
 import { formatMoney } from "@/lib/money"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { useStudio } from "@/lib/stores/studio"
@@ -351,7 +351,7 @@ function QuickAdd({ profile, products, live }: { profile: Brand; products: Produ
       <Success
         result={result}
         hidden={hidden}
-        viewable={!!live}
+        viewable={!!live && !!listing}
         headingRef={heading}
         onAnother={startOver}
         onPublished={(r) => setResult(r)}
@@ -861,7 +861,7 @@ function ReviewStep({ form, brand, hidden, onEdit }: { form: ProductForm; brand:
       </dl>
       <p className="text-[13px] text-pretty text-ink-2">
         <span className="text-ink">Publish</span> puts it on Yard right away. <span className="text-ink">Save as draft</span> keeps it hidden: only you can see drafts.
-        {hidden ? " Your storefront isn't published yet, so it shows up once that's live too." : ""}
+        {hidden ? " Your shop isn't live yet, so it shows up once you publish your shop too." : ""}
       </p>
     </>
   )
@@ -917,7 +917,7 @@ function Success({
   const title = published ? (hidden ? "Published! One last step 🎉" : "It's live on Yard 🎉") : "Saved as a draft"
   const body = published
     ? hidden
-      ? `${p.name} is ready. Your storefront isn't published yet, so shoppers can't see it. Publish the storefront and everything goes live.`
+      ? `${p.name} is ready. Your shop isn't live yet, so shoppers can't see it. Publish your shop and everything goes live.`
       : `${p.name} is out in the world. Shoppers can find it, save it and buy it.`
     : `Only you can see ${p.name}. Publish it whenever you're ready and it goes live on Yard.`
 
@@ -936,8 +936,8 @@ function Success({
         {published ? (
           hidden ? (
             <Button asChild variant="primary" className="h-12 rounded-xl text-[15px]">
-              <Link href="/studio/storefront">
-                <Storefront aria-hidden /> Publish my storefront
+              <Link href={SHOP_SETUP_HREF}>
+                <Storefront aria-hidden /> Publish my shop
               </Link>
             </Button>
           ) : viewable ? (

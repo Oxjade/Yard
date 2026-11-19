@@ -11,7 +11,8 @@ import type { Brand } from "@/lib/data/types"
 import { toCatalogProduct, type PublicCatalogProduct } from "@/lib/api/catalog-products"
 import { storefrontBrandFromApi, storefrontConfigFromDto, storefrontDropsFromApi, type StorefrontConfigDto } from "@/lib/api/storefront"
 import { requestScope } from "@/server/auth/dal"
-import { listPublicBrands, listPublicProducts, publicStorefront } from "@/server/catalog/public"
+import { listPublicBrands, listPublicProducts, opensSoonBrand, publicStorefront } from "@/server/catalog/public"
+import { opensSoonBrandLine, opensSoonTitle } from "@/lib/page-visibility"
 import { getEnv } from "@/server/env"
 import { listPublicDrops } from "@/server/drops/service"
 import { HttpError } from "@/server/http/errors"
@@ -35,7 +36,12 @@ export async function generateMetadata({ params }: PageProps<"/brands/[handle]">
     const result = await publicStorefront(handle)
     return { title: result.brand.name, description: (result.storefront?.config?.intro as string | undefined) ?? undefined }
   } catch (error) {
-    if (error instanceof HttpError && error.status === 404) return { title: "Brand not found" }
+    if (error instanceof HttpError && error.status === 404) {
+      // A founding brand before launch: the layout shows "opens soon" (never indexed).
+      const soon = await opensSoonBrand(handle)
+      if (soon) return { title: opensSoonTitle(soon.name), description: opensSoonBrandLine, robots: { index: false, follow: false } }
+      return { title: "Brand not found" }
+    }
     throw error
   }
 }
@@ -80,8 +86,10 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
     try {
       data = await publicStorefront(handle)
     } catch (error) {
-      if (error instanceof HttpError && error.status === 404) notFound()
-      throw error
+      if (!(error instanceof HttpError && error.status === 404)) throw error
+      // A founding brand before launch: the layout shows "opens soon" in this page's place.
+      if (await opensSoonBrand(handle)) return null
+      notFound()
     }
     await requestScope()
     const [productPage, dropPage] = await Promise.all([
