@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { HeartIcon as Heart, PackageIcon as Package, SparkleIcon as Sparkles, StorefrontIcon as Storefront } from "@phosphor-icons/react"
+import { PackageIcon as Package } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
 import { DropCard } from "@/components/market/drop-card"
 import { ProductCard } from "@/components/market/product-card"
@@ -22,14 +22,11 @@ import { brandById, drops as allDrops, productById, recommendBrands } from "@/li
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
-import { useServerSession } from "@/lib/session/use-server-session"
-import { PhotoOrInitials } from "@/components/media/person-photo"
 import type { Brand, MerchantOrder, Product } from "@/lib/data/types"
-import { firstName, formatDay, formatOrderMoney } from "./format"
+import { formatDay, formatOrderMoney } from "./format"
 import { InterestEditor } from "./interest-editor"
 import { isSampleCheckout, OrderStatusBadge, SampleChip } from "./order-status"
-import { InboxSummaryCard } from "@/components/inbox/entry"
-import { YouNav } from "./you-nav"
+import { YouAccountList } from "./you-account-list"
 import { LiveBrandCard } from "@/components/market/brands/live-brand-card"
 import { FollowButton } from "@/components/market/follow-button"
 import { loadLiveProducts } from "@/lib/api/live-catalog"
@@ -122,9 +119,6 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** Your World overview: what's next from the brands you follow, what you saved, and your orders. */
 export function YouOverview() {
-  const user = useSession((s) => s.user)!
-  const photo = useServerSession((s) => (s.shopper && s.shopper.id === user.id ? (s.shopper.photoSrc ?? null) : null))
-  const onboarded = useSession((s) => s.onboarded)
   const interests = useSession((s) => s.interests)
   const following = useSaved((s) => s.following)
   const wishlist = useSaved((s) => s.wishlist)
@@ -186,48 +180,23 @@ export function YouOverview() {
     onTheWay ? `${plural(onTheWay, "parcel is", "parcels are")} on the way.` : null,
   ].filter(Boolean)
 
+  const followCount = sampleData ? rowBrands.length : followedBrands.length
+  const ordersSection = server === null || !!server?.failed || hasRecent
+
   return (
-    <>
-      <header>
-        <div className="flex items-center gap-4">
-          <Link href="/you/settings" aria-label="Your photo and details" className="inline-flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple text-base font-semibold text-ink ring-2 ring-black/40 md:size-16">
-            <PhotoOrInitials src={photo}>
-              <span aria-hidden>{user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
-            </PhotoOrInitials>
-          </Link>
-          <div className="min-w-0">
-            <p className="text-sm text-violet">Your World</p>
-            <h1 className="mt-2 font-display text-display-lg text-ink">
-              {greeting(hour)}, {firstName(user.name)}
-            </h1>
-          </div>
-        </div>
-        <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{summary.join(" ")}</p>
-      </header>
-      <YouNav className="mt-8" />
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-14">
+      <aside className="lg:sticky lg:top-28 lg:self-start">
+        <YouAccountList onTheWay={onTheWay} />
+      </aside>
 
-      {/* Unread count and the 3 latest conversations; nothing when signed out (§7.3). */}
-      <InboxSummaryCard className="mt-10" />
-
-      {!onboarded ? (
-        <div className="mt-10 flex flex-col gap-4 rounded-lg border border-line-soft bg-card p-5 sm:flex-row sm:items-center sm:justify-between md:p-6">
-          <div className="flex items-start gap-4">
-            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-purple/15 text-violet">
-              <Sparkles className="size-5" aria-hidden />
-            </span>
-            <div>
-              <p className="text-base text-ink">Tell us what you&apos;re into</p>
-              <p className="mt-1 text-sm text-ink-2">Three quick picks, under a minute. They tune Discover and the brands we suggest.</p>
-            </div>
-          </div>
-          <Button asChild variant="primary">
-            <Link href="/welcome?next=/you">Personalise</Link>
-          </Button>
-        </div>
-      ) : null}
+      <div className="min-w-0 [&>section:first-child]:mt-0 [&>div:first-child]:mt-0">
+      <section aria-labelledby="you-summary" className="mt-0">
+        <h2 id="you-summary" className="font-display text-display-sm text-ink uppercase">{greeting(hour)}</h2>
+        <p className="mt-3 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{summary.join(" ")}</p>
+      </section>
 
       {!sampleData && liveQuery.error && !liveQuery.data ? (
-        <section aria-labelledby="you-drops" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-drops" className="mt-16 md:mt-20">
           <div id="you-drops"><SectionHeader title="Upcoming drops" href="/drops" /></div>
           <div role="alert" className="grid max-w-xl gap-3 rounded-lg border border-line-soft bg-card p-5">
             <p className="text-sm text-ink">Upcoming drops couldn&apos;t be loaded.</p>
@@ -236,7 +205,7 @@ export function YouOverview() {
           </div>
         </section>
       ) : liveDrops.length ? (
-        <section aria-labelledby="you-drops" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-drops" className="mt-16 md:mt-20">
           <div id="you-drops">
             <SectionHeader
               title={followedLive.length ? "Coming from brands you follow" : "Upcoming drops"}
@@ -251,7 +220,7 @@ export function YouOverview() {
       ) : null}
 
       {drops.length ? (
-        <section aria-labelledby="you-drops" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-drops" className="mt-16 md:mt-20">
           <div id="you-drops">
             <SectionHeader
               title={followedUpcoming.length ? "Coming from brands you follow" : "Upcoming drops"}
@@ -271,7 +240,8 @@ export function YouOverview() {
         </section>
       ) : null}
 
-      <section aria-labelledby="you-brands" className="mt-24 md:mt-32">
+      {followCount ? (
+      <section aria-labelledby="you-brands" className="mt-16 md:mt-20">
         <div id="you-brands">
           <SectionHeader title="Brands you follow" description="Their new pieces, collections, drops and stories arrive in Following." href={(sampleData ? rowBrands.length : followedBrands.length) ? "/following" : undefined} action="Open your feed" />
         </div>
@@ -295,28 +265,25 @@ export function YouOverview() {
               <BrandCard key={b.id} brand={b} variant="row" />
             ))}
           </div>
-        ) : (
-          <InlineEmpty icon={Storefront} title="No brands yet" body="Follow a studio to see its drops and new pieces here first." href="/brands" action="Browse brands" />
-        )}
+        ) : null}
       </section>
+      ) : null}
 
-      <section aria-labelledby="you-saved" className="mt-24 md:mt-32">
+      {saved.length ? (
+      <section aria-labelledby="you-saved" className="mt-16 md:mt-20">
         <div id="you-saved">
           <SectionHeader title="Saved pieces" description={saved.length > 4 ? `The latest 4 of ${saved.length}.` : "Everything you've hearted, from every brand."} href={saved.length ? "/wishlist" : undefined} />
         </div>
-        {saved.length ? (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4">
-            {saved.slice(0, 4).map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
-        ) : (
-          <InlineEmpty icon={Heart} title="Nothing saved yet" body="Tap the heart on any piece to keep it here." href="/shop" action="Browse the shop" />
-        )}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4">
+          {saved.slice(0, 4).map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
+        </div>
       </section>
+      ) : null}
 
       {viewed.length ? (
-        <section aria-labelledby="you-viewed" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-viewed" className="mt-16 md:mt-20">
           <div id="you-viewed">
             <SectionHeader title="Recently viewed" description="Pick up where you left off." />
           </div>
@@ -329,7 +296,7 @@ export function YouOverview() {
       ) : null}
 
       {recommended.length ? (
-        <section aria-labelledby="you-recommended" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-recommended" className="mt-16 md:mt-20">
           <div id="you-recommended">
             <SectionHeader
               title="Brands you might like"
@@ -347,7 +314,7 @@ export function YouOverview() {
       ) : null}
 
       {liveRecommended.length ? (
-        <section aria-labelledby="you-recommended" className="mt-24 md:mt-32">
+        <section aria-labelledby="you-recommended" className="mt-16 md:mt-20">
           <div id="you-recommended">
             <SectionHeader title="Brands on Yard" description="Independent studios with their own storefront." href="/brands" action="All brands" />
           </div>
@@ -361,7 +328,8 @@ export function YouOverview() {
         </section>
       ) : null}
 
-      <div className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-16 md:mt-32 lg:grid-cols-2 lg:gap-12">
+      <div className="mt-16 grid grid-cols-[minmax(0,1fr)] gap-16 md:mt-20 xl:grid-cols-2 xl:gap-12">
+        {ordersSection ? (
         <section aria-labelledby="you-orders">
           <div id="you-orders">
             <SectionHeader title="Recent orders" description="Each brand ships its own part of a checkout." href={hasRecent ? "/you/orders" : undefined} action="All orders" />
@@ -438,10 +406,9 @@ export function YouOverview() {
                 )
               })}
             </ul>
-          ) : (
-            <InlineEmpty icon={Package} title="No orders yet" body="Every brand's order and tracking shows up here." href="/shop" action="Start shopping" />
-          )}
+          ) : null}
         </section>
+        ) : null}
 
         <section aria-labelledby="you-interests">
           <div id="you-interests">
@@ -450,6 +417,7 @@ export function YouOverview() {
           <InterestEditor />
         </section>
       </div>
-    </>
+      </div>
+    </div>
   )
 }

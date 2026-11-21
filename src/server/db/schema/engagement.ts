@@ -115,10 +115,40 @@ export const pushDevices = pgTable(
     platform: text("platform").notNull(),
     token: text("token").notNull(),
     appVersion: text("app_version"),
+    /**
+     * The app on this device can open Studio (it sent `studio: true` when it registered). Only these
+     * devices get Studio pushes (new orders, messages to the brand, low stock, payouts), so an older
+     * shopper-only app never gets a Studio link it can't open (docs/APP.md › Studio in the app).
+     */
+    studio: boolean("studio").notNull().default(false),
     createdAt: tz("created_at").notNull().defaultNow(),
     lastSeenAt: tz("last_seen_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("push_devices_token_ux").on(t.token), index("push_devices_user_ix").on(t.userId, t.platform), oneOf("push_devices_platform_ck", "platform", PUSH_PLATFORMS)],
+)
+
+/**
+ * A brand member's Studio push choices, per brand (one person can be on several teams). No row =
+ * every topic on. Topics: orders (a new paid order), messages (a shopper wrote to the brand), low
+ * stock (a sale left a variant at 3 or fewer), payouts (a payout was sent). Push only: Studio's
+ * in-app notifications and emails are unchanged.
+ */
+export const studioPushPreferences = pgTable(
+  "studio_push_preferences",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    brandId: text("brand_id")
+      .notNull()
+      .references(() => brands.id),
+    orders: boolean("orders").notNull().default(true),
+    messages: boolean("messages").notNull().default(true),
+    lowStock: boolean("low_stock").notNull().default(true),
+    payouts: boolean("payouts").notNull().default(true),
+    updatedAt: tz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.brandId] }), index("studio_push_preferences_brand_ix").on(t.brandId)],
 )
 
 /* ---------- Drops ---------- */

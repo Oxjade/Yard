@@ -52,7 +52,11 @@ export const tokenCacheMs = (expiresInSec: number) => Math.max(60, (Number.isFin
 
 export const fcmSendUrl = (projectId: string) => `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`
 
-export type PushNotice = { id: string; kind: string; title: string; body: string; url: string }
+/**
+ * `data`: extra string fields for the app (Studio pushes add scope, brandId and link; see
+ * docs/APP.md › Studio in the app). They never replace url, kind or id.
+ */
+export type PushNotice = { id: string; kind: string; title: string; body: string; url: string; data?: Record<string, string> }
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
@@ -67,7 +71,7 @@ export function buildFcmMessage(token: string, n: PushNotice) {
     message: {
       token,
       notification: { title: cut(n.title, 120), body: cut(n.body, 240) },
-      data: { url: n.url, kind: n.kind, id: n.id },
+      data: { ...(n.data ?? {}), url: n.url, kind: n.kind, id: n.id },
       android: { priority: "high", notification: { channel_id: ANDROID_CHANNEL_ID, color: ANDROID_COLOR, tag: n.id } },
     },
   }

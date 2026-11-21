@@ -183,6 +183,13 @@
       "when": 1795099100722,
       "tag": "0025_website_brand_create",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795302699234,
+      "tag": "0026_studio_app",
+      "breakpoints": true
     }
   ]
 }

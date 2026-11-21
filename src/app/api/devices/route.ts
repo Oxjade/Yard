@@ -8,7 +8,7 @@ import { registerDevice, removeDevice } from "@/server/push"
  * Push devices for the Yard apps (src/server/push). Either session the app holds counts: the
  * shopper session first, else a brand member's session (Yard setup sessions don't). 401 without one.
  *
- * POST   /api/devices { platform: "android" | "ios", token (≤ 4096), appVersion? }  → 204
+ * POST   /api/devices { platform: "android" | "ios", token (≤ 4096), appVersion?, studio? }  → 204
  *        Upserts by token: a token another account registered moves to this one; last_seen_at is bumped.
  * DELETE /api/devices { token }  → 204 (removes it only if it is the caller's; call it before signing out)
  *
@@ -25,7 +25,7 @@ async function deviceOwner() {
 const rate = { key: "push.devices", limit: 30, windowSec: 600 }
 
 export const POST = route({ auth: "public", body: pushDeviceBody, maxBody: 8 * 1024, rate }, async ({ body }) => {
-  await registerDevice(await deviceOwner(), { platform: body.platform, token: body.token, appVersion: body.appVersion ?? null })
+  await registerDevice(await deviceOwner(), { platform: body.platform, token: body.token, appVersion: body.appVersion ?? null, studio: body.studio })
   return noContent()
 })
 

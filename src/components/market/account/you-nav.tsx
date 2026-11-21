@@ -34,13 +34,11 @@ const fadeMask: Record<Exclude<Fade, "none">, string> = {
 }
 
 /**
- * The sub-navigation of Your World. The underline travels between tabs with a shared layoutId.
- * On phones the strip scrolls sideways: it opens with the current tab in view, and an edge
- * fades while there are more tabs beyond it.
+ * The counts Your World shows next to each place (its tabs and the /you list): follows, saved,
+ * checkouts, unread conversations and drop reminders. `orders` is null while the server's count
+ * is unknown (`ordersLoading` while it loads). Shared by YouNav and YouAccountList.
  */
-export function YouNav({ className }: { className?: string }) {
-  const pathname = usePathname()
-  const hydrated = useHydrated()
+export function useYouCounts() {
   const following = useSaved((s) => s.following.length)
   const wishlist = useSaved((s) => s.wishlist.length)
   const localOrders = useOrders((s) => s.groups.length)
@@ -60,6 +58,19 @@ export function YouNav({ className }: { className?: string }) {
   ]).size : null
   const unread = useUnread("market")
   const counts = { following, wishlist, orders, inbox: signedIn && unread ? unread : 0, drops: shopper?.demo ? localDropCount : serverDropCount }
+  const shipped = server === undefined ? null : (server?.counts?.shipped ?? null)
+  return { counts, ordersLoading: orders === null && server === null, shipped }
+}
+
+/**
+ * The sub-navigation of Your World. The underline travels between tabs with a shared layoutId.
+ * On phones the strip scrolls sideways: it opens with the current tab in view, and an edge
+ * fades while there are more tabs beyond it.
+ */
+export function YouNav({ className }: { className?: string }) {
+  const pathname = usePathname()
+  const hydrated = useHydrated()
+  const { counts, ordersLoading } = useYouCounts()
   const navRef = useRef<HTMLElement>(null)
   const [fade, setFade] = useState<Fade>("none")
 
@@ -112,7 +123,7 @@ export function YouNav({ className }: { className?: string }) {
                 className={cn("relative flex h-11 items-center gap-2 px-3 text-sm transition-colors", active ? "text-ink" : "text-ink-2 hover:text-ink")}
               >
                 {item.label}
-                {"count" in item && item.count === "orders" && hydrated && orders === null && server === null ? (
+                {"count" in item && item.count === "orders" && hydrated && ordersLoading ? (
                   <span className="inline-block h-3 w-3 rounded-sm skeleton align-middle" aria-hidden />
                 ) : count ? (
                   <span className="tabular text-xs text-ink-3">

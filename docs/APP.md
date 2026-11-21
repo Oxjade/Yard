@@ -65,13 +65,14 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
 
 ## Push notifications
 
-- `POST /api/devices { platform: "android"|"ios", token (≤ 4096), appVersion? }` → 204. Upsert by token.
+- `POST /api/devices { platform: "android"|"ios", token (≤ 4096), appVersion?, studio? }` → 204. Upsert by token. `studio: true`: the app can open Studio, so this device also gets Studio pushes (see "Studio in the app").
 - `DELETE /api/devices { token }` → 204 (only the caller's token). Call it before signing out.
 - Both need the app's shopper session, or a brand member's session; 401 without one; 400 on bad input.
 
 Every in-app notification for a shopper (src/server/notify.ts, src/server/email/inapp.ts) is also
 pushed after commit to that shopper's Android devices, in the background (src/server/push). Brand
-and admin notifications are not pushed: the app is the shopper app and has no Studio routes. Optional categories follow the in-app preference. The FCM message:
+pushes go only to devices registered with `studio: true` (see "Studio in the app › Push for brands");
+admin notifications are not pushed. Optional categories follow the in-app preference. The FCM message:
 
 ```json
 { "token": "…", "notification": { "title": "…", "body": "…" },
@@ -348,3 +349,366 @@ purged; it goes when the account is deleted. Reports don't cover people or photo
 places and events), so there is no "report photo" yet.
 
 Deleting the account deletes the photo files with it.
+
+## Studio in the app
+
+Approved brand members can run their shop from the app ("Studio mode"), and anyone can apply to
+sell from it. Everything below uses the same Route Handlers as the website's Studio, with the same
+headers and error body as the rest of this document (writes: `Origin`, `X-Yard-Client: 1`,
+`Content-Type: application/json`; errors `{ "error": { "code", "message", "fields"? } }`). Money is
+always integer minor units with an ISO currency code. Times are ISO 8601 UTC.
+
+Code: `src/server/studio-app/` (session switch, short application, dashboard, push preferences),
+`src/server/push/studio.ts` (Studio pushes), `src/lib/api/contracts/studio-app.ts` (shapes).
+
+**Category-neutral.** Yard is not fashion-only. Never hard-code a category list or apparel words in
+the app: render category chips from `GET /api/catalog/categories` (below), call things "products"
+(or "pieces"/"items") and "shop"/"brand", and treat "Size" as just one option name among others
+(products may have no options at all).
+
+### 1. Sessions: shopper → Studio
+
+The app signs in as a shopper (`yard_s`, see the sections above). A Studio session is a separate
+**brand session** (`yard_b`) in the same cookie jar; Studio endpoints (`/api/studio/…`) read only
+`yard_b`. Keep both cookies; never send one in place of the other.
+
+**Which brands does this account belong to?** `GET /api/session` now carries `shopper.brands`
+(an array, `[]` when none; only on this endpoint, not in sign-in responses):
+
+```json
+{ "shopper": { "id": "u_…", "name": "Ada Nwosu", "email": "ada@example.com", "status": "active", "demo": false, "photoSrc": null,
+    "brands": [
+      { "id": "b_…", "handle": "kachi-studio", "name": "Kachi Studio",
+        "logoSrc": "/api/media/med_…" | "/api/media/med_…?as=brand" | null,
+        "initials": "KS",
+        "role": "owner" | "admin" | "designer" | "fulfilment" | "finance" | "viewer",
+        "status": "pending_review" | "approved" | "claimed" | "restricted" | "suspended",
+        "canOpenStudio": true }
+    ] },
+  "brand": BrandProfile | null, "admin": null, "demoAuth": { … }, "sampleData": false }
+```
+
+- Only **active** memberships are listed (an invite not yet accepted is not), oldest first. Yard's
+  own set-up access to founding brands is never listed.
+- `status`: `pending_review` (application waiting for Yard, Studio opens but nothing can go live),
+  `approved` (verified), `claimed` (a founding brand Yard set up and the owner claimed; treat as
+  approved), `restricted` (Studio opens; publishing and replies are paused), `suspended` (Studio
+  does not open: `canOpenStudio: false`).
+- `logoSrc`: a public logo loads without a cookie; one ending `?as=brand` loads only once the brand
+  session is open. Until then (or when it fails or is null) draw `initials`.
+- Show "Studio mode" when at least one brand has `canOpenStudio: true`. With several brands, let the
+  person pick one.
+
+**Open Studio (no second login):**
+
+| Method | Path | Session | Body | Success |
+|---|---|---|---|---|
+| POST | `/api/studio/session/switch` | shopper `yard_s` | `{ "brandId": "b_…" }` | 200 `{ "actor": "brand", "profile": BrandProfile }` + `Set-Cookie: yard_b` (`__Host-yard_b` on https) |
+
+- `BrandProfile` is `GET /api/session`'s `brand`: `{ userId, name, brand: { id, handle, name, reviewStatus: "pending_review"|"verified"|"restricted"|"suspended", logoSrc }, role, permissions: string[], demo, photoSrc }`.
+  Use `permissions` to hide actions the role can't take (`orders.fulfil`, `content.publish`,
+  `inbox.read`, `inbox.reply`, `inbox.manage`, `shipping.manage`, `locations.manage`, `social.connect`).
+  Payouts are visible to roles `owner`, `admin`, `finance` only.
+- Errors: 401 without a shopper session; 403 `forbidden` "You aren't a member of this brand." (any
+  brand the account isn't an active member of, including made-up ids; no cookie is set); 403
+  `suspended` for a suspended brand; 400 `validation` for a bad id; 429 `rate_limited` (30/min).
+- It replaces this client's previous brand session. To change brand, call it again with the other
+  id. (`POST /api/auth/brand/switch { brandId }` with an open brand session also works and keeps the
+  session's re-confirmation time.)
+- The brand session lasts 7 days at most (idle 7 days). When any `/api/studio/…` call answers 401,
+  call the switch again (silently), then retry once; if the switch itself is 401, the shopper session
+  is gone: sign in again.
+- **No MFA** for brand sessions (only Yard admin sessions need it). The brand session inherits the
+  shopper session's sign-in method and its *last re-confirmation time*; it never counts as a fresh
+  re-confirmation by itself.
+- **Re-confirm for money actions.** Paid-order cancels, refunds, return receipts and the payout
+  account answer 403 with `fields.reauth = "required"` and `fields.reauthWith` (`"password"`, or the
+  linked providers such as `"google"`, `"apple,google"`, `"auth0:google-oauth2"`) when the brand
+  session hasn't re-confirmed in the last 5 minutes. Password accounts: `POST /api/auth/reauth?as=brand { "password" }` → 200 `{ ok: true, method }`, then retry.
+  Provider accounts: run the Custom Tab sign-in with `actor=brand`
+  (`GET /api/auth/oauth/{provider}/app-start?client=…&challenge=…&mode=signin&actor=brand`, then
+  `POST /api/auth/oauth/app-exchange`); the new `yard_b` counts as re-confirmed for 5 minutes. Then retry.
+- **Leaving Studio** keeps the shopper signed in: `POST /api/auth/sign-out?actor=brand` → 200 `{ ok: true }`.
+  Signing out of the app: call `DELETE /api/devices`, then `POST /api/auth/sign-out?actor=brand` and `?actor=shopper`.
+- Realtime for Studio: `GET /api/realtime/studio` (SSE, brand session) carries the website's Studio
+  events (`unread.counts`, `message.created`, `order.updated`, `payout.updated`, `notification.created`).
+
+### 2. Shop or sell: the role screen and the short application
+
+After a sign-up (`isNew: true` from app-exchange, or a new password account), show "Shop" / "Sell".
+Shop goes home. Sell opens the short application, unless `shopper.brands` is non-empty (then open
+Studio) or `GET /api/studio/apply` already has one waiting.
+
+**Categories** (public, cached 5 min; never hard-code them):
+`GET /api/catalog/categories` → `{ "categories": [ { "slug", "name", "description", "imagePath": string | null, "subcategories": string[], "productCount", "brandCount" } ] }`.
+Render one chip per category in this order; send its `slug`.
+
+| Method | Path | Session | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/apply` | shopper | – | 200 `{ "application": StudioApplicationDto \| null }` (the latest, short or website) |
+| POST | `/api/studio/apply` | shopper | `StudioApplyBody` | 201 `StudioApplyResult` (submitted now); 200 (one was already waiting: unchanged) |
+
+`StudioApplyBody` (strict: unknown fields are 400):
+
+```json
+{ "brandName": "2–40 chars (the shop's name)",
+  "instagram": "@handle, handle or an instagram.com link (optional)",
+  "website": "yourshop.com or https://… (optional)",
+  "category": "<slug from /api/catalog/categories>",
+  "city": "2–80 chars",
+  "country": "NG" | "GH" | "KE" | "ZA" | "GB" | "FR" | "DE" | "US" | "MX" | "JP" | "KR",
+  "about": "optional, ≤ 160 chars: what you sell, in one line" }
+```
+
+At least one of `instagram` or `website` is required. The currency follows the country (NGN, GHS,
+KES, ZAR, GBP, EUR, USD, MXN, JPY, KRW). The shop address (`handle`) is made from the name (the
+first free one: `kachi-studio`, `kachi-studio-studio`, `kachi-studio-official`, …); it can be changed
+in Studio later.
+
+```json
+// StudioApplyResult
+{ "application": StudioApplicationDto,
+  "websiteScan": { "status": "started", "importId": "imp_…" } | { "status": "skipped", "reason": "…" } | null }
+
+// StudioApplicationDto
+{ "id": "onb_…", "status": "draft" | "submitted" | "approved" | "rejected",
+  "source": "app" | "studio",                  // studio = the website's full application
+  "brand": { "id": "b_…", "handle": "…", "name": "…" } | null,
+  "submittedAt": "ISO" | null, "reviewedAt": "ISO" | null,
+  "reviewNote": "what to change" | null }      // only after a rejection
+```
+
+- What it does: creates the shop in `pending_review` with the applicant as **owner** and submits the
+  application; it appears at once in Admin › Brands like a website application (with the Instagram,
+  website and "Short application from the app"). From then on `shopper.brands` lists it as
+  `pending_review` and `POST /api/studio/session/switch` opens its Studio (nothing goes live until
+  Yard approves).
+- With a `website`, Yard starts a background scan of the site with its importer so the reviewer
+  finds the products ready (Admin › the brand › Import from website). Nothing is created, suggested
+  or published by the scan itself. `websiteScan` says whether it started; a skipped scan never fails
+  the application.
+- After a rejection (`status: "rejected"`, show `reviewNote`), POST again to resubmit on the same shop.
+- Errors: 400 `validation` with `fields.brandName | instagram | website | category | city | country`
+  ("Add your Instagram or your website, so Yard can see what you sell.", "Enter an Instagram handle like @yourshop.",
+  "Choose one of Yard's categories.", "Choose a country Yard sells in."); 409 `conflict` "You have an
+  application in progress on the website. Finish it there, or clear it, then apply here."; 422 `rule`
+  ("Your shop is already approved. Open Studio to manage it.", "Your shop is on hold by Yard…",
+  "Demo accounts can't apply to sell on Yard."); 401; 429 (10/min, 20/day).
+- **Approval:** the applicant gets the email "Your shop is ready" (button "Open Studio") and a push
+  (`kind "studio.approved"`, below), and `shopper.brands[].status` becomes `approved`.
+
+### 3. Studio API for the app's v1 screens
+
+All with the brand session `yard_b`, for the **active brand** of that session only (another brand's
+id is 404). "Role" lists who may call it (others get 403 `forbidden`).
+
+#### Home
+
+`GET /api/studio/dashboard?days=7|30` (default 7; any member) → `StudioDashboardDto`:
+
+```json
+{ "brand": { "id", "handle", "name", "currency": "NGN", "timeZone": "Africa/Lagos" },
+  "sales": { "today": SalesWindow, "week": SalesWindow, "month": SalesWindow },
+  "series": { "days": 7, "points": [ { "date": "2026-11-15", "orders": 1, "grossMinor": 300000, "netMinor": 300000 } ] },
+  "toShip": { "total": 3, "paid": 2, "processing": 1 },
+  "lowStock": { "variants": 2, "products": 1, "threshold": 3 },
+  "unreadMessages": 4 | null,
+  "websitePieces": 5,
+  "topProducts": [ { "productId", "title", "currency", "units", "revenueMinor", "image": { "src", "alt" } | null } ],
+  "storeViews": { "today": 12, "week": 80, "month": 310 } }
+// SalesWindow = { "orders": int, "grossMinor": int, "refundedMinor": int, "netMinor": int }
+```
+
+- Paid (captured) orders only, in the brand's currency and **its own calendar** (`timeZone`): today
+  is the brand's today; `week` = the last 7 days including today; `month` = the last 30 days
+  including today. `series.points` has exactly `days` points, oldest first, today last, zeros
+  included. `topProducts` (≤ 5) by units kept in the last `days` days.
+- `toShip`: orders Paid or Processing (link to the Orders list, `fulfilment=unfulfilled|processing`).
+  `lowStock`: active variants with available stock ≤ `threshold` (link to Products `lowStock=1`).
+  `unreadMessages` is null when the role can't read the inbox. `websitePieces`: "New from your
+  website" waiting. `storeViews`: storefront views Yard Charts counted (bots and fraud excluded).
+- The website's own overview (`GET /api/studio/overview?days=7|30|90`, `StudioOverviewDto` in
+  `src/lib/api/contracts/orders.ts`) still works and adds `recentOrders` (the last six orders).
+
+#### Orders
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/orders?fulfilment=&payment=&returns=&q=&before=&limit=` | any | – | 200 `{ items: OrderSummaryDto[], nextCursor: string \| null }` newest first |
+| GET | `/api/studio/orders/{id}` | any | – | 200 `{ order: OrderDetailDto }` |
+| POST | `/api/studio/orders/{id}/processing` | `orders.fulfil` | – | 201 `{ alreadyProcessing: false, order }`; 200 when already processing |
+| POST | `/api/studio/orders/{id}/shipment` | `orders.fulfil` | `{ status, carrier?, trackingNumber?, occurredAt?, note? }` | 201 `{ event, estimate, delivery }` |
+| POST | `/api/studio/orders/{id}/cancel` | `orders.fulfil` | `{ reason (3–200), restock = true, idempotencyKey }` | 200 `{ …, order }` |
+| POST | `/api/studio/orders/{id}/refunds` | `orders.fulfil` + role owner/admin | `{ amountMinor, reason (3–200), idempotencyKey }` | 201 `{ refundId, status, duplicate: false, order }`; 200 with `duplicate: true` on a retried key |
+
+- Status tabs (query values): **To ship** `fulfilment=unfulfilled` (includes Paid) and
+  `fulfilment=processing`; **Shipped** `fulfilment=shipped`; **Delivered** `fulfilment=delivered`;
+  **Cancelled** `fulfilment=cancelled`; **Returns** `returns=open`. Also `payment=pending|paid|failed|partially_refunded|refunded`
+  and `q` (order reference contains). Page with `before=<nextCursor>`; `limit` 1–100 (30).
+- `OrderSummaryDto`: `{ id, reference, groupReference, checkoutId, brand: { id, name, handle }, customerName,
+  shipToPreview: { city, country }, placedAt, currency, subtotalMinor, shippingMinor, totalMinor, refundedMinor,
+  itemCount, previewItems: [{ productId, variantId, name, qty, unitMinor }], states: { merchant, payment, fulfilment, return, dispute }, service }`.
+  `states.merchant` is the one status to show: `pending_payment | paid | processing | shipped | delivered | cancelled | refund_requested | refunded`.
+- `OrderDetailDto` = the summary plus `{ lines: [{ id, variantId, productId, title, qty, unitMinor, returnedQty, restockedQty,
+  variantLabel, image: { src, alt, width, height } }], shipTo (full address object), paidAt, cancelledAt, cancelReason,
+  deliveredAt, completedAt, refundableMinor, returns[], refunds[], disputes[], timeline[], actions: { canCancel, canRequestReturn, returnWindowEndsAt }, delivery }`
+  (exact types: `src/lib/api/contracts/orders.ts`). `variantLabel` is the variant's option values
+  ("M / Black"), or empty for a product without options.
+- **Mark shipped with tracking:** `POST …/shipment { "status": "shipped", "carrier": "GIG Logistics", "trackingNumber": "GIG123" }`
+  (a tracking number needs a carrier: 400 `fields.carrier`). Other statuses: `label_created`, `in_transit`,
+  `out_for_delivery`, `delivered`, `exception`, `returned`. 422 `rule` when the order can't take it
+  (unpaid, cancelled, already delivered). Notifies the shopper. 300 an hour per brand.
+- **Cancel:** only before dispatch (`actions.canCancel`). A paid order is refunded in full and needs a
+  recent re-confirmation (403 `fields.reauth`, see §1). `idempotencyKey`: 8–64 chars, a new UUID per tap.
+- **Refund** (goodwill or partial, ≤ `refundableMinor`): owner/admin only, always needs the
+  re-confirmation. 422 when more than what's left.
+
+#### Products
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/catalog/products?status=all\|draft\|scheduled\|published\|archived&q=&lowStock=1&limit=&offset=` | any | – | 200 `{ products: StudioProductDto[], total, nextOffset: int \| null }` |
+| GET | `/api/studio/catalog/products/{id}` | any | – | 200 `{ product: StudioProductDto }` |
+| POST | `/api/studio/catalog/variants/{variantId}/stock` | `orders.fulfil` | `{ mode: "adjust", qty: +1 \| -1 \| n, reason?: "adjustment"\|"restock"\|"correction", note? }` or `{ mode: "set", qty }` | 200 `{ variantId, onHand, held, available }` |
+| POST | `/api/studio/catalog/products/{id}/status` | `content.publish` | `{ action: "publish" \| "unpublish" \| "schedule" \| "archive" \| "restore", expectedVersion, publishAt? }` | 200 `{ product }` |
+| POST | `/api/uploads?purpose=social_post&as=brand` | `content.publish` | multipart, one field `file` | 201 `{ media: { id: "med_…", src, width, height, … } }` |
+| POST | `/api/studio/catalog/products` | `content.publish` | `ProductCreateBody` | 201 `{ product: StudioProductDto }` (a draft) |
+
+- `StudioProductDto`: `{ id, slug, brandId, title, description, details[], category, subcategory, tags[], badges[], priceMinor,
+  compareAtMinor, currency, images: [{ id, src, alt, width, height, mediaId }], options: [{ name, values: [{ value, hex? }] }],
+  variants: [{ id, sku, options: { [optionName]: value }, label, priceMinor, available, inStock, status, onHand, held, priceOverrideMinor }],
+  available, processingDays: [min, max] | null, dropId, collectionIds[], publishedAt, createdAt, status, publishAt,
+  moderationStatus, moderationReason, version, updatedAt }`. Show stock per variant with `label` (its option
+  values) and `available` (= `onHand - held`). Image `src` is cookie-scoped (`?as=brand`).
+- **Stock +/-:** `mode: "adjust"` adds `qty` (negative to remove); never below what live checkouts
+  hold (422). `mode: "set"` makes on-hand exactly `qty` (a count).
+- **Publish/unpublish:** send the product's current `version` as `expectedVersion`; 409 `conflict`
+  when it changed elsewhere (reload, then retry). Publishing needs ≥ 1 photo and ≥ 1 variant and a
+  brand that isn't `pending_review` or restricted (422 `rule` with the reason).
+- **Quick add** is the website's Quick add, same server path, three steps:
+  1. upload each photo (≤ 12) with `POST /api/uploads?purpose=social_post&as=brand` (multipart, one
+     `file` field, `Content-Length` required, JPEG/PNG/WebP ≤ 10 MB; 10 per 10 min) → `media.id`;
+  2. `POST /api/studio/catalog/products` with
+     ```json
+     { "title": "2–120 chars", "description": "", "categorySlug": "<slug from /api/catalog/categories>",
+       "priceMinor": 4500000,
+       "options": [ { "name": "Size", "values": [ { "value": "M" }, { "value": "L" } ] } ],
+       "variants": [ { "sku": "KACHI-CANDLE-M", "options": { "Size": "M" }, "initialStock": 3 },
+                     { "sku": "KACHI-CANDLE-L", "options": { "Size": "L" }, "initialStock": 2 } ],
+       "images": [ { "mediaId": "med_…", "alt": "" } ],
+       "badges": ["new"], "processingDays": [1, 3] }
+     ```
+     Options are generic (0–3 options, any names: "Size", "Colour", "Scent", "Volume"…; colour values may
+     add `hex`). A product **without options** sends `"options": []` and one variant
+     `{ "sku": "…", "options": {}, "initialStock": n }`. SKUs ≤ 64 chars, unique per brand (the website
+     builds them as `HANDLE-TITLE-OPTION`, uppercase). Optional: `compareAtMinor`, `subcategory`, `tags`,
+     `details`, `collectionIds`. → 201 `{ product }` with `status: "draft"`;
+  3. to put it live at once: `POST /api/studio/catalog/products/{id}/status { "action": "publish", "expectedVersion": product.version }`.
+
+#### Balance and payouts (roles owner, admin, finance)
+
+| Method | Path | Success |
+|---|---|---|
+| GET | `/api/studio/payouts` | 200 `{ currency, balances: [{ currency, pendingMinor, availableMinor, reserveMinor, inPayoutMinor }], account: PayoutAccountDto \| null, payouts: PayoutDto[] (recent), rules: { tier, reserveBps, reserveDays, commissionBps, minPayoutMinor, onHold, holdReason, cooldownUntil } }` |
+| GET | `/api/studio/payouts/{id}` | 200 `{ payout: PayoutDto }` |
+| GET | `/api/studio/payouts/account` | 200 `{ account: PayoutAccountDto \| null }` |
+
+- Balance = `availableMinor` (can be paid out), pending = `pendingMinor` (still in the hold window),
+  plus `reserveMinor` and `inPayoutMinor`. `PayoutDto`: `{ id, brandId, currency, amountMinor, status:
+  "requested"|"awaiting_second_approval"|"approved"|"sending"|"processing"|"paid"|"failed"|"rejected"|"cancelled",
+  requestedAt, approvedAt, sentAt, paidAt, failedAt, closedAt, batchId, providerRef, stubRecipient, lastError, rejectReason, approvals[] }`.
+- Payout account status: `account` null = "Add a payout account" (on the website for v1);
+  otherwise `{ country, currency, bankCode, bankName, accountName, accountLast4, recipientProvider, verified, changedAt, cooldownUntil }`.
+  `rules.onHold` / `cooldownUntil` explain why payouts are paused.
+- Requesting a payout (`POST /api/studio/payouts { amountMinor, idempotencyKey }`) and changing the
+  account (`PUT /api/studio/payouts/account`, owner + re-confirmation) exist; not needed for v1.
+
+#### Inbox
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/inbox/conversations?filter=open\|unread\|resolved\|spam\|blocked&q=&cursor=` | `inbox.read` | – | 200 `{ items: ConversationSummary[], nextCursor, counts: { open, unread, resolved, spam, blocked } }` |
+| GET | `/api/studio/inbox/conversations/{id}/messages?before=&after=&limit=` | `inbox.read` | – | 200 `ThreadDto` |
+| POST | `/api/studio/inbox/messages` | `inbox.reply` | `{ conversationId, clientId, kind: "text" \| "image" \| "product", body?, attachmentIds?, productId?, quickReplyId? }` | 201 `SendResult`; 200 on a retried `clientId` |
+| POST | `/api/studio/inbox/conversations/{id}/read` | `inbox.read` | `{ upToSeq }` | 204 |
+| GET | `/api/studio/inbox/unread` | `inbox.read` | – | 200 `{ conversations: int }` |
+
+Same `ConversationSummary`, `ThreadDto`, `MessageDto` and `SendResult` as the shopper inbox (see Yard
+Support above), seen from the brand: the shopper is `conversation.customer: { id, name, photoSrc }`
+(photo `?as=brand`), the brand's own messages have `side: "brand"`. Brands only reply to
+conversations a shopper started. Photos: upload with
+`POST /api/uploads?purpose=inbox_attachment&as=brand&conversationId=<id>` first. Yard Support for the
+brand: `/api/studio/support/…` (shapes above).
+
+#### New from your website
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/catalog/website-pieces` | any | – | 200 `{ items: SitePieceDto[], count, mayAdd, site: string \| null, currency }` |
+| POST | `/api/studio/catalog/website-pieces/{id}` | `content.publish` | `{ action: "add" \| "skip" }` | 200 same + `productId?`, `published?` |
+
+`SitePieceDto`: `{ id, title, sourceUrl, images: string[] (the site's own URLs), priceMinor, currency, yardPriceMinor,
+sizes: string[] (the option values the site lists; may be empty), availability, description, warnings[], status, taken, firstSeenAt, error }`.
+"add" copies the photos and creates the product (published when the brand may publish); "skip"
+passes for good. 409 when Yard got there first. Show `count` as the badge; hide the buttons unless `mayAdd`.
+
+#### Settings: notifications
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/settings/notifications` | any | – | 200 `{ push: { orders, messages, lowStock, payouts } }` |
+| PUT | `/api/studio/settings/notifications` | any (their own) | `{ push: { orders?, messages?, lowStock?, payouts? } }` | 200 the saved `{ push }` |
+| GET / PUT | `/api/studio/settings/emails` | any / owner+admin | `{ nudges: boolean }` | 200 `{ nudges, canEdit }` (Yard's reminder emails to the brand) |
+| POST | `/api/studio/push/test` | any | – | 200 `{ devices: int, delivered: boolean }` |
+
+Push choices are per person and per brand (everything on until switched off). `push/test` sends
+"Studio notifications are on" to the caller's own Studio devices (`devices: 0` means this phone
+hasn't registered with `studio: true`; `delivered: false` with devices means the server has no push
+sender configured).
+
+### 4. Push for brands
+
+**Register the device as Studio-capable**: `POST /api/devices { "platform", "token", "appVersion", "studio": true }`
+(the shopper session is enough; devices belong to the person, not the session). Only devices
+registered with `studio: true` get Studio pushes, so an older shopper-only app never receives a
+Studio link. Omitting `studio` later keeps the stored value.
+
+Who gets what (active members of the brand, never Yard staff), unless they switched the topic off:
+
+| Event | `kind` | Roles | Title / body | `data.url` | `data.link` |
+|---|---|---|---|---|---|
+| New paid order | `studio.order` | owner, admin, fulfilment | "New order 🎉 ₦45,000" / "₦45,000, Candle (Large) and 1 more" | `/studio/orders/{orderId}` | `yard://studio/orders/{orderId}` |
+| New message (shopper, or Yard Support) | `studio.message` | every role | "New message from Ada" / "Open your inbox to reply." ("Yard Support replied" / "Open Yard Support in Studio to read it.") | `/studio/inbox?thread={conversationId}` (`/studio/support`) | `yard://studio/inbox/{conversationId}` (`yard://studio/support`) |
+| Low stock after a sale | `studio.low_stock` | owner, admin, designer, fulfilment | "Low stock: Candle (Large)" / "2 left. Add stock to keep selling it." ("Sold out: …" at 0) | `/studio/products/{productId}` | `yard://studio/products/{productId}` |
+| Payout sent | `studio.payout` | owner, admin, finance | "Payout sent: ₦120,000" / "It's on its way to your payout account." | `/studio/payouts` | `yard://studio/payouts` |
+| Application approved (to the applicant) | `studio.approved` | the applicant | "Your shop is ready" / "{Shop} is approved. Open Studio." | `/studio` | `yard://studio` |
+| Test | `studio.test` | the caller | "Studio notifications are on" | `/studio` | `yard://studio` |
+
+The order body is the order total, the first item with its option values in brackets (none for a
+product without options), "×n" for several units, and "and N more" for more items.
+
+FCM message (Android; same `data` for iOS once its sender is on):
+
+```json
+{ "token": "…", "notification": { "title": "New order 🎉 ₦45,000", "body": "₦45,000, Candle (Large)" },
+  "data": { "scope": "studio", "brandId": "b_…", "link": "yard://studio/orders/mo_…",
+            "url": "/studio/orders/mo_…", "kind": "studio.order", "id": "studio.order:mo_…" },
+  "android": { "priority": "high", "notification": { "channel_id": "yard_updates", "color": "#F5FF00", "tag": "studio.order:mo_…" } } }
+```
+
+On tap: `data.scope == "studio"` → if the brand session isn't open on `data.brandId`, call
+`POST /api/studio/session/switch { brandId }` first, then open `data.link` in Studio mode. A shopper
+push has no `scope` (handle as before). `id` names the event, so a repeat replaces the earlier
+notification (`tag`). Every Studio push is also written to the server log as one line
+(`[yard] push: studio <kind> brand=<id> key=<…> users=<n> devices=<n> title="…"`).
+
+**Deep links** the app handles in Studio mode: `yard://studio` (home), `yard://studio/orders`,
+`yard://studio/orders/{orderId}`, `yard://studio/inbox`, `yard://studio/inbox/{conversationId}`,
+`yard://studio/support`, `yard://studio/products`, `yard://studio/products/{productId}`,
+`yard://studio/payouts`. Shopper pushes keep using `data.url` paths as before.
+
+### 5. Data and migration
+
+Migration `0026_studio_app`: `push_devices.studio boolean not null default false`, and the table
+`studio_push_preferences (user_id, brand_id, orders, messages, low_stock, payouts, updated_at)`,
+primary key (user_id, brand_id). Applied at boot like every migration.

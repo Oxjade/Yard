@@ -70,3 +70,8 @@ test("dead tokens are recognised from FCM's error", () => {
   assert.equal(fcmTokenGone(500, { error: { status: "INTERNAL" } }), false)
   assert.equal(fcmTokenGone(429, { error: { status: "RESOURCE_EXHAUSTED", details: [{ errorCode: "QUOTA_EXCEEDED" }] } }), false)
 })
+
+test("Studio pushes carry scope, brand and app link, never overriding url, kind or id", () => {
+  const m = buildFcmMessage("tok", { id: "studio.order:mo_1", kind: "studio.order", title: "New order 🎉 ₦45,000", body: "₦45,000, Candle (Large)", url: "/studio/orders/mo_1", data: { scope: "studio", brandId: "b_1", link: "yard://studio/orders/mo_1", url: "/evil" } })
+  assert.deepEqual(m.message.data, { scope: "studio", brandId: "b_1", link: "yard://studio/orders/mo_1", url: "/studio/orders/mo_1", kind: "studio.order", id: "studio.order:mo_1" })
+})

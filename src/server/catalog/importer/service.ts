@@ -342,9 +342,12 @@ export async function startImport(admin: AdminActor, id: string, body: ImportRun
     }
     const prevProfile = (locked.profile ?? null) as { applied?: boolean } | null
     const profile = wantsProfile ? { ...profileBody.parse(body.profile), applied: false, error: null } : (prevProfile ?? null)
+    // A scan started by the applicant (the app's short application, studio-app/index.ts) has no
+    // admin behind it: the runner acts for the admin who starts the import instead.
+    const owner = (await jobActor(locked.createdBy)) ? {} : { createdBy: admin.userId, createdByName: admin.name }
     const [updated] = await tx
       .update(catalogImports)
-      .set({ status: "importing", profile, note: body.note?.trim() || null, leaseUntil: null, attempts: 0, updatedAt: now, finishedAt: null })
+      .set({ status: "importing", profile, note: body.note?.trim() || null, leaseUntil: null, attempts: 0, updatedAt: now, finishedAt: null, ...owner })
       .where(eq(catalogImports.id, locked.id))
       .returning()
     await writeAudit({

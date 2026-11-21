@@ -10,7 +10,9 @@ import { brandOnboardings, catalogCategories, catalogImages, catalogOptions, cat
 import { enqueueEmail } from "../email"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
+import { log } from "../log"
 import { notify } from "../notify"
+import { sendStudioPush } from "../push/studio"
 import { createStarterShipping } from "../shipping/profile"
 import { onboardingStepSchemas, type OnboardingStep } from "./contracts"
 import { catalogChanged } from "./hooks"
@@ -393,6 +395,11 @@ export async function reviewOnboarding(actor: AdminActor, input: { onboardingId:
       }
       const approvedBrandId = row.brandId
       afterCommit(() => notify({ kind: "brand", id: approvedBrandId }, { key: `brand.approved:${row.id}`, template: "brand.approved", vars: { brand: brandName }, href: "/studio/support" }).then(() => undefined))
+      // And a push to the applicant's Studio-capable phones: "Your shop is ready. Open Studio."
+      const applicantId = row.userId
+      afterCommit(async () => {
+        await sendStudioPush(approvedBrandId, [applicantId], { kind: "studio.approved", key: row.id, title: "Your shop is ready", body: `${brandName} is approved. Open Studio.`, url: "/studio", linkId: null }).catch((e) => log.warn("[yard] push: approval push failed", e))
+      })
     }
     await writeAudit({
       actor: { kind: "admin", id: actor.userId, name: actor.name, role: actor.role },

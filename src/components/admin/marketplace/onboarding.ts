@@ -20,6 +20,7 @@ export function fromOnboardingApplication(o: OnboardingApplicationDto): BrandApp
   const business = o.data.business
   const product = o.data.product
   const payments = o.data.payments
+  const short = o.data.short
   const payout = payments?.accountLast4 ? `Payout account ending ${payments.accountLast4}.` : "Payout details missing."
   return {
     id: o.id,
@@ -31,7 +32,9 @@ export function fromOnboardingApplication(o: OnboardingApplicationDto): BrandApp
     status: o.status === "approved" ? "verified" : "pending_review",
     kyc: "not_started",
     risk: "medium",
-    notes: `${o.status === "approved" ? "Approved" : "Submitted"} from Brand Studio onboarding. ${product?.name ? `First product: ${product.name}. ` : ""}${payout}`,
+    notes: short
+      ? `${o.status === "approved" ? "Approved" : "Submitted"} as a short application from the Yard app.${short.instagram ? ` Instagram @${short.instagram}.` : ""}${short.website ? ` Website ${short.website} (scanned: see Import from website).` : ""}${business?.city ? ` Based in ${business.city}.` : ""} Products and payout details come later in Studio.`
+      : `${o.status === "approved" ? "Approved" : "Submitted"} from Brand Studio onboarding. ${product?.name ? `First product: ${product.name}. ` : ""}${payout}`,
     products: product ? 1 : 0,
     brandId: o.brandId ?? undefined,
     onboardingId: o.id,

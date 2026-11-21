@@ -11,6 +11,24 @@ export const shopperProfile = z.object({
   demo: z.boolean(),
   /** The profile photo (/api/media/<id>?as=shopper), or null: show initials. */
   photoSrc: z.string().nullable().optional(),
+  /**
+   * GET /api/session only: the brands this account is an active member of (contracts/studio-app.ts
+   * BrandMembershipDto), [] when none. The apps' Studio mode and the account page read it.
+   */
+  brands: z
+    .array(
+      z.object({
+        id: z.string(),
+        handle: z.string(),
+        name: z.string(),
+        logoSrc: z.string().nullable(),
+        initials: z.string(),
+        role: z.enum(["owner", "admin", "designer", "fulfilment", "finance", "viewer"]),
+        status: z.enum(["pending_review", "approved", "claimed", "restricted", "suspended"]),
+        canOpenStudio: z.boolean(),
+      }),
+    )
+    .optional(),
 })
 export const brandProfile = z.object({
   userId: z.string(),

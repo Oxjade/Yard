@@ -12,6 +12,9 @@ import { brandPayoutAccounts, ledgerBrandSettings, payoutApprovals, payoutBatche
 import { conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import type { CurrencyCode } from "@/config/markets"
+import { formatMoney } from "@/lib/money"
+import { queueStudioPush } from "../push/studio"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { assertAdminFinance, assertBankAccountEditor, assertBrandPayoutRequest, assertRecentReauth } from "./access"
@@ -457,6 +460,7 @@ async function settlePaid(tx: Tx, p: PayoutRow): Promise<string> {
   await tx.update(payouts).set({ status: "paid", paidAt: now, closedAt: now, updatedAt: now }).where(eq(payouts.id, p.id))
   await emailPayout(tx, p, "paid")
   emitPayout(p.brandId, p.id, "paid")
+  queueStudioPush(p.brandId, "payouts", { kind: "studio.payout", key: p.id, title: `Payout sent: ${formatMoney(p.amountMinor, p.currency as CurrencyCode)}`, body: "It's on its way to your payout account.", url: "/studio/payouts", linkId: p.id })
   return "paid"
 }
 

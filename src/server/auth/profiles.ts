@@ -2,6 +2,8 @@ import "server-only"
 import type { AdminProfile, BrandProfile, SessionDto, ShopperProfile } from "@/lib/api/contracts/session"
 import { getEnv } from "../env"
 import { photoSrc } from "../media/dto"
+import { db } from "../db"
+import { membershipsOf } from "../studio-app/core"
 import { getAdmin, getBrandActor, getShopper, type AdminActor, type BrandActor, type ShopperActor } from "./dal"
 
 /** Narrow profiles for GET /api/session and the demo sign-in response (§2.1). Never tokens. */
@@ -24,7 +26,7 @@ export async function sessionSnapshot(): Promise<SessionDto> {
   const [shopper, brand, admin] = await Promise.all([getShopper(), getBrandActor(), getAdmin()])
   const env = getEnv()
   return {
-    shopper: shopper ? shopperProfileOf(shopper) : null,
+    shopper: shopper ? { ...shopperProfileOf(shopper), brands: await membershipsOf(await db(), shopper.userId) } : null,
     brand: brand ? brandProfileOf(brand) : null,
     admin: admin ? adminProfileOf(admin) : null,
     demoAuth: { ...env.demoAuth },

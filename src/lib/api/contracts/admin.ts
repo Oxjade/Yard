@@ -538,6 +538,8 @@ export type OnboardingApplicationDto = {
     business?: { country?: string; city?: string; currency?: CurrencyCode; sellerType?: string; legalName?: string }
     product?: { name?: string; priceMinor?: number; sizes?: { label: string; stock: number }[]; images?: ({ mediaId: string; alt?: string } | { path: string; alt?: string })[] }
     payments?: { method?: string; bankName?: string; accountLast4?: string; processingMin?: number; processingMax?: number }
+    /** The app's short application (POST /api/studio/apply): no storefront, product or payments steps. */
+    short?: { source?: string; instagram?: string | null; website?: string | null }
   }
   revision: number
   brandId: string | null

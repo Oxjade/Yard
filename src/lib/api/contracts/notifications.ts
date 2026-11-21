@@ -53,6 +53,8 @@ export const pushDeviceBody = z
     platform: z.enum(["android", "ios"]),
     token: z.string().min(1).max(4096).regex(/^[^\s\u0000-\u001f\u007f]+$/, "Send the push token as the platform gave it."),
     appVersion: z.string().trim().min(1).max(64).regex(/^[^\u0000-\u001f\u007f<>]+$/).optional(),
+    /** The app can open Studio: this device also gets Studio pushes (docs/APP.md › Studio in the app). Omitted: unchanged (false for a new device). */
+    studio: z.boolean().optional(),
   })
   .strict()
 export type PushDeviceBody = z.infer<typeof pushDeviceBody>

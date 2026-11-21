@@ -1,8 +1,11 @@
 import "server-only"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
 import { SHIPPING_SERVICES } from "@/lib/api/contracts/enums"
-import { afterCommit, withTx, type Tx } from "../db"
+import { afterCommit, db, withTx, type Tx } from "../db"
+import { catalogProducts, catalogVariants } from "../db/schema/catalog"
+import { queueStudioPush } from "../push/studio"
+import { LOW_STOCK_THRESHOLD } from "../studio-app/core"
 import { deliveryEstimates, orderGroups, orderRefs } from "../db/schema"
 import type { OrderRefItem } from "../db/schema/orders"
 import { orderLines, orderStates, type OrderShipTo } from "../db/schema/orders-v3"
@@ -173,6 +176,8 @@ export async function markCheckoutPaid(tx: Tx, input: { checkoutId: string; paym
     await announce(order, "paid")
   }
 
+  if (newlyPaid.length) await queueNewOrderPushes(tx, newlyPaid)
+
   if (newlyPaid.length) {
     const who = await customerEmail(tx, newlyPaid[0].customerId)
     if (who?.email) {
@@ -196,6 +201,55 @@ export async function markCheckoutPaid(tx: Tx, input: { checkoutId: string; paym
     }
   }
   return { orderIds: states.map((s) => s.orderRefId) }
+}
+
+/**
+ * Studio pushes for newly paid orders (push/studio.ts): "New order 🎉 {amount}" with the first
+ * item and its options ("Product (M / Black)", no options for a single-variant product), and
+ * "Low stock" for each variant the sale left at the low-stock line or below. Sent after commit.
+ */
+async function queueNewOrderPushes(tx: Tx, paid: (typeof orderRefs.$inferSelect)[]) {
+  const lines = await tx
+    .select({ orderRefId: orderLines.orderRefId, productId: orderLines.productId, variantId: orderLines.variantId, title: orderLines.title, qty: orderLines.qty, position: orderLines.position })
+    .from(orderLines)
+    .where(inArray(orderLines.orderRefId, paid.map((o) => o.id)))
+  const variantIds = [...new Set(lines.map((l) => l.variantId))]
+  const variants = variantIds.length ? await tx.select({ id: catalogVariants.id, options: catalogVariants.options }).from(catalogVariants).where(inArray(catalogVariants.id, variantIds)) : []
+  const optionsOf = (id: string) => Object.values(variants.find((v) => v.id === id)?.options ?? {}).filter(Boolean).join(" / ")
+  const label = (l: { title: string; variantId: string }) => (optionsOf(l.variantId) ? `${l.title} (${optionsOf(l.variantId)})` : l.title)
+  for (const o of paid) {
+    const mine = lines.filter((l) => l.orderRefId === o.id).sort((a, b) => a.position - b.position)
+    const first = mine[0]
+    const more = mine.length - 1
+    const body = first ? `${money(o.totalMinor, o.currency)}, ${label(first)}${first.qty > 1 ? ` ×${first.qty}` : ""}${more > 0 ? ` and ${more} more` : ""}` : money(o.totalMinor, o.currency)
+    queueStudioPush(o.brandId, "orders", { kind: "studio.order", key: o.id, title: `New order 🎉 ${money(o.totalMinor, o.currency)}`, body, url: `/studio/orders/${o.id}`, linkId: o.id })
+  }
+  // Low stock: read after commit, when the sale's stock movement is in.
+  const byBrand = new Map<string, string[]>()
+  for (const o of paid) byBrand.set(o.brandId, [...(byBrand.get(o.brandId) ?? []), ...lines.filter((l) => l.orderRefId === o.id).map((l) => l.variantId)])
+  afterCommit(async () => {
+    const d = await db()
+    for (const [brandId, ids] of byBrand) {
+      const low = await d
+        .select({ id: catalogVariants.id, productId: catalogVariants.productId, options: catalogVariants.options, left: sql<number>`(${catalogVariants.onHand} - ${catalogVariants.held})::int`, title: catalogProducts.title })
+        .from(catalogVariants)
+        .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
+        .where(and(eq(catalogVariants.brandId, brandId), inArray(catalogVariants.id, ids), eq(catalogVariants.status, "active"), sql`${catalogVariants.onHand} - ${catalogVariants.held} <= ${LOW_STOCK_THRESHOLD}`))
+      for (const v of low) {
+        const opts = Object.values(v.options ?? {}).filter(Boolean).join(" / ")
+        const name = opts ? `${v.title} (${opts})` : v.title
+        queueStudioPush(brandId, "lowStock", {
+          kind: "studio.low_stock",
+          // One per variant and stock level, so selling the last one tells again.
+          key: `${v.id}:${v.left}`,
+          title: v.left <= 0 ? `Sold out: ${name}` : `Low stock: ${name}`,
+          body: v.left <= 0 ? "Add stock to keep selling it." : `${v.left} left. Add stock to keep selling it.`,
+          url: `/studio/products/${v.productId}`,
+          linkId: v.productId,
+        })
+      }
+    }
+  })
 }
 
 /**

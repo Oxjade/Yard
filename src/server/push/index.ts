@@ -8,14 +8,15 @@ import { getPreferencesMany, type InAppCategory } from "../email/preferences"
 import { newId } from "../ids"
 import { log } from "../log"
 import { yard } from "../state"
+import { queueStudioMessagePush } from "./studio"
 import { buildAssertion, buildFcmMessage, fcmSendUrl, fcmTokenGone, parseServiceAccount, pushPath, tokenCacheMs, tokenRequestBody, type PushNotice, type ServiceAccount } from "./fcm-core"
 
 /**
  * Push notifications to the Yard apps. Every in-app notification (notify() and notifyEngagement())
  * for a shopper also goes, after its transaction commits, to that shopper's own devices. Brand
- * notifications are not pushed: the only app is the shopper app, which registers devices from the
- * shopper session and has no Studio routes, so a shopper who is also a brand member would get
- * Studio pushes it can't open. Admin notifications aren't pushed either. Fire-and-forget: a slow or failing
+ * notifications go only to Studio-capable devices (registered with `studio: true`) of the brand's
+ * members, through push/studio.ts (new orders, messages, low stock, payouts), so an older
+ * shopper-only app never gets a Studio link it can't open. Admin notifications aren't pushed. Fire-and-forget: a slow or failing
  * push never slows or fails the request that created the notification. Optional categories
  * (drops, price drops, back in stock, brand news) follow the in-app preference.
  *
@@ -26,19 +27,23 @@ import { buildAssertion, buildFcmMessage, fcmSendUrl, fcmTokenGone, parseService
  */
 export type PushPlatform = (typeof PUSH_PLATFORMS)[number]
 
-type Device = { id: string; token: string; platform: PushPlatform }
+export type Device = { id: string; token: string; platform: PushPlatform }
 type Sender = (devices: Device[], n: PushNotice) => Promise<void>
 
 /* ---------- Devices ---------- */
 
 /** Registers (or re-points to this user) a device token and bumps last_seen_at; a missing appVersion keeps the stored one. */
-export async function registerDevice(userId: string, input: { platform: PushPlatform; token: string; appVersion?: string | null }) {
+export async function registerDevice(userId: string, input: { platform: PushPlatform; token: string; appVersion?: string | null; studio?: boolean }) {
   const d = await db()
   const now = new Date()
   await d
     .insert(pushDevices)
-    .values({ id: newId("pd"), userId, platform: input.platform, token: input.token, appVersion: input.appVersion ?? null, createdAt: now, lastSeenAt: now })
-    .onConflictDoUpdate({ target: pushDevices.token, set: { userId, platform: input.platform, appVersion: input.appVersion ?? sql`${pushDevices.appVersion}`, lastSeenAt: now } })
+    .values({ id: newId("pd"), userId, platform: input.platform, token: input.token, appVersion: input.appVersion ?? null, studio: input.studio ?? false, createdAt: now, lastSeenAt: now })
+    .onConflictDoUpdate({
+      target: pushDevices.token,
+      // A missing `studio` keeps what the device said before (an app re-registering after an update says it again).
+      set: { userId, platform: input.platform, appVersion: input.appVersion ?? sql`${pushDevices.appVersion}`, ...(input.studio !== undefined ? { studio: input.studio } : {}), lastSeenAt: now },
+    })
 }
 
 /** Removes a token, only when it belongs to `userId`. */
@@ -154,6 +159,21 @@ const sendFcm: Sender = async (devices, n) => {
 /** One sender per platform; a platform without one keeps its devices but gets no pushes yet. */
 const SENDERS: Partial<Record<PushPlatform, Sender>> = { android: sendFcm }
 
+/** Whether a sender is configured for the platform (FCM needs its service account). */
+export function pushConfigured(platform: PushPlatform) {
+  if (platform === "android") return !!fcmConfig().sa
+  return !!SENDERS[platform]
+}
+
+/** Sends one notice to these devices, platform by platform (Studio pushes, src/server/push/studio.ts). */
+export async function sendToDevices(rows: Device[], notice: PushNotice) {
+  for (const platform of PUSH_PLATFORMS) {
+    const send = SENDERS[platform]
+    const devices = rows.filter((r) => r.platform === platform)
+    if (send && devices.length) await send(devices, notice)
+  }
+}
+
 /* ---------- Fan-out ---------- */
 
 async function deliver(shopperId: string, n: NotificationDto, pref: InAppCategory | null) {
@@ -182,6 +202,11 @@ async function deliver(shopperId: string, n: NotificationDto, pref: InAppCategor
  * actor registered each device).
  */
 export function queuePush(recipient: { kind: "shopper" | "brand" | "admin"; id: string }, n: NotificationDto, pref: InAppCategory | null = null) {
+  // A brand's new-message notices go to its members' Studio-capable devices (push/studio.ts).
+  if (recipient.kind === "brand" && n.category === "new_message") {
+    queueStudioMessagePush(recipient.id, n)
+    return
+  }
   if (recipient.kind !== "shopper") return
   const shopperId = recipient.id
   afterCommit(() => {
