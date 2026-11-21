@@ -38,6 +38,9 @@ struct YardPalette: Sendable {
     let purple = Color(light: UIColor(yardHex: 0x6D28D9), dark: UIColor(yardHex: 0x6D28D9))
     /// Violet: #A78BFA dark / #6D28D9 light (readable purple text on either background).
     let violet = Color(light: UIColor(yardHex: 0x6D28D9), dark: UIColor(yardHex: 0xA78BFA))
+    /// Studio violet #9452FF in both modes: the seller side ("Sell on Yard", Studio accents).
+    /// Put `onPhoto` (white) text on it.
+    let studio = Color(light: UIColor(yardHex: 0x9452FF), dark: UIColor(yardHex: 0x9452FF))
     /// Errors and destructive actions. Dark #FF4D4D / light #D92D20.
     let danger = Color(light: UIColor(yardHex: 0xD92D20), dark: UIColor(yardHex: 0xFF4D4D))
     /// Success. Dark #22C55E / light #16A34A.

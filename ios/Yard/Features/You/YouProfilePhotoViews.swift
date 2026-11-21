@@ -342,6 +342,12 @@ struct ProfilePhotoCropView: View {
     let image: UIImage
     let onDone: (ProfilePhotoCropResult?) -> Void
 
+    /// Internal so other features can reuse the crop step (Studio Quick add).
+    init(image: UIImage, onDone: @escaping (ProfilePhotoCropResult?) -> Void) {
+        self.image = image
+        self.onDone = onDone
+    }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var zoom: CGFloat = 1
     @State private var offset: CGSize = .zero

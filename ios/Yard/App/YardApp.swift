@@ -11,6 +11,7 @@ struct YardApp: App {
     @State private var saved = SavedStore()
     @State private var router = Router()
     @State private var toast = ToastCenter()
+    @State private var studio = StudioStore()
 
     /// Notification-center delegate and APNs token (Features/Notifications/NotificationsPush.swift).
     @UIApplicationDelegateAdaptor(YardPushAppDelegate.self) private var pushDelegate
@@ -36,6 +37,7 @@ struct YardApp: App {
                 .environment(saved)
                 .environment(router)
                 .environment(toast)
+                .environment(studio)
                 .preferredColorScheme(preferredScheme)
                 .tint(Color.yard.ink)
                 .task {
@@ -43,6 +45,11 @@ struct YardApp: App {
                     YouRegion.restore(into: cart)
                 }
                 .onOpenURL { url in
+                    // Studio links (yard://studio/…) open Studio mode when this account has a brand.
+                    if let link = StudioLink(url: url) {
+                        if !studio.open(link) { toast.show("Studio isn't open for this account.") }
+                        return
+                    }
                     // An email-change confirmation link (normally opened on the website).
                     if YouEmailChangeLink.canHandle(url) {
                         Task { @MainActor in
@@ -65,6 +72,7 @@ struct YardApp: App {
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     guard let url = activity.webpageURL else { return }
+                    if let link = StudioLink(url: url), studio.open(link) { return }
                     if YouEmailChangeLink.canHandle(url) {
                         Task { @MainActor in
                             let message = await YouEmailChangeLink.handle(url, session: session)

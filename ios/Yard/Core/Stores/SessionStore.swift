@@ -65,7 +65,7 @@ final class SessionStore {
     /// (or the initials) straight away, then re-read the session, which carries `photoSrc`.
     func applyPhoto(src: String?) {
         if let s = shopper {
-            shopper = Shopper(id: s.id, name: s.name, email: s.email, status: s.status, demo: s.demo, photoSrc: src)
+            shopper = Shopper(id: s.id, name: s.name, email: s.email, status: s.status, demo: s.demo, photoSrc: src, brands: s.brands)
         }
         pendingPhoto = nil
     }
@@ -80,6 +80,14 @@ final class SessionStore {
 
     /// Signs the shopper out on the server and locally. Never throws: the user always ends signed out.
     func signOut() async {
+        // docs/APP.md: DELETE /api/devices first (needs the session), then the brand session
+        // (Studio), then the shopper session.
+        await YardPushCenter.shared.unregisterDevice()
+        do {
+            try await api.send(.post, "/api/auth/sign-out", query: [URLQueryItem(name: "actor", value: "brand")])
+        } catch {
+            // No brand session open, or offline: the shopper sign-out below still runs.
+        }
         do {
             try await api.send(.post, "/api/auth/sign-out", query: [URLQueryItem(name: "actor", value: "shopper")])
         } catch {

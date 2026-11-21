@@ -11,10 +11,73 @@ struct RootView: View {
     @Environment(SavedStore.self) private var saved
     @Environment(ToastCenter.self) private var toast
 
+    @Environment(StudioStore.self) private var studio
+
     @State private var visitedTabs: Set<AppTab> = [.home]
 
     var body: some View {
         @Bindable var router = router
+        ZStack {
+            if studio.isInStudio {
+                StudioRootView()
+                    .transition(.opacity)
+            } else {
+                shopperShell
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.crossfade, value: studio.isInStudio)
+        .background(Color.yard.bg.ignoresSafeArea())
+        .sheet(item: $router.sheet) { route in
+            NavigationStack {
+                RouteView(route: route)
+                    .yardRouteDestinations()
+            }
+            // Sign in / create account holds typed input: it closes with its X only.
+            .interactiveDismissDisabled(route == .signIn)
+            .yardToastHost(toast)
+        }
+        // "What brings you to Yard?" for an account with no recorded choice (after sign-up).
+        .fullScreenCover(isPresented: roleChoiceBinding) {
+            RoleChoiceView()
+                .yardToastHost(toast)
+        }
+        .yardToastHost(toast)
+        .task {
+            await session.refresh()
+        }
+        // Studio mode follows the session (brands, remembered mode) on every refresh.
+        .onChange(of: session.shopper, initial: true) { _, shopper in
+            studio.sync(shopper: shopper)
+        }
+        .onChange(of: studio.needsSignIn) { _, needs in
+            guard needs else { return }
+            studio.needsSignIn = false
+            studio.enterShopping()
+            router.present(.signIn)
+        }
+        // Reload the shopper's data whenever who is signed in changes (launch, sign in, sign out).
+        .task(id: session.shopper?.id ?? "signed-out") {
+            await cart.load()
+            if session.isSignedIn {
+                await follows.load()
+                await saved.load()
+            } else {
+                follows.reset()
+                saved.reset()
+            }
+        }
+    }
+
+    private var roleChoiceBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { session.hasLoaded && session.isSignedIn && studio.needsRoleChoice && router.sheet == nil },
+            set: { _ in }
+        )
+    }
+
+    /// The shopper app: one stack per tab and the floating tab pill.
+    private var shopperShell: some View {
         ZStack(alignment: .bottom) {
             ForEach(AppTab.allCases) { tab in
                 if visitedTabs.contains(tab) {
@@ -35,30 +98,6 @@ struct RootView: View {
         .background(Color.yard.bg.ignoresSafeArea())
         .onChange(of: router.selectedTab) { _, tab in
             visitedTabs.insert(tab)
-        }
-        .sheet(item: $router.sheet) { route in
-            NavigationStack {
-                RouteView(route: route)
-                    .yardRouteDestinations()
-            }
-            // Sign in / create account holds typed input: it closes with its X only.
-            .interactiveDismissDisabled(route == .signIn)
-            .yardToastHost(toast)
-        }
-        .yardToastHost(toast)
-        .task {
-            await session.refresh()
-        }
-        // Reload the shopper's data whenever who is signed in changes (launch, sign in, sign out).
-        .task(id: session.shopper?.id ?? "signed-out") {
-            await cart.load()
-            if session.isSignedIn {
-                await follows.load()
-                await saved.load()
-            } else {
-                follows.reset()
-                saved.reset()
-            }
         }
     }
 

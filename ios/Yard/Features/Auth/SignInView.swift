@@ -5,8 +5,8 @@ import SafariServices
 ///
 /// - "Continue with Google" (and any other provider the server lists at GET /api/auth/providers)
 ///   → POST /api/auth/oauth/{provider}/start → in-app web sheet → /auth/complete (AuthWebSheet).
-///   After a social sign-in the shopper picks "I’m here to shop" / "I want to sell on Yard"
-///   (the website's /auth/complete choice; selling opens /studio/onboarding in Safari).
+///   An account with no recorded "shop or sell" choice then sees the root's full-screen
+///   "What brings you to Yard?" (RoleChoiceView); brand members go straight to Studio.
 /// - Email + password: POST /api/auth/sign-in (handles `verify_email`).
 /// - Create account: POST /api/auth/sign-up → "check your email".
 /// - "Email me a sign-in link": POST /api/auth/magic-link. "Forgot password?": POST /api/auth/password/forgot.
@@ -20,6 +20,7 @@ struct SignInView: View {
     @Environment(ToastCenter.self) private var toast
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(StudioStore.self) private var studio
 
     @AppStorage(AuthOnboarding.onboardedKey) private var onboarded: Bool = false
 
@@ -29,10 +30,6 @@ struct SignInView: View {
     @State private var justSignedIn: Bool = false
     @State private var signingOut: Bool = false
     @State private var signedInTick: Int = 0
-    /// After a social sign-in: "What brings you to Yard?" (shop / sell).
-    @State private var showIntentChoice: Bool = false
-    /// The seller application (/studio/onboarding) in Safari, from the shop / sell choice.
-    @State private var showSellOnboarding: Bool = false
     @FocusState private var focus: SignInModel.Field?
 
     fileprivate init(model: SignInModel) {
@@ -43,9 +40,7 @@ struct SignInView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 header
-                if showIntentChoice {
-                    intentChoice
-                } else if session.isSignedIn && !justSignedIn {
+                if session.isSignedIn && !justSignedIn {
                     signedInPanel
                 } else if justSignedIn {
                     statusLine("Signed in. Taking you there now.")
@@ -81,10 +76,6 @@ struct SignInView: View {
             // Welcome closed itself (pushed case): leave sign-in too.
             if !isShowing && justSignedIn { close() }
         }
-        .fullScreenCover(isPresented: $showSellOnboarding) {
-            SignInSafariView(url: Config.webURL(signInSellOnboardingPath))
-                .ignoresSafeArea()
-        }
         .sheet(item: $model.webFlow) { flow in
             AuthWebSheet(flow: flow) { outcome in
                 handleWebOutcome(outcome)
@@ -117,14 +108,12 @@ struct SignInView: View {
     }
 
     private var titleText: String {
-        if showIntentChoice { return "You're signed in" }
         if session.isSignedIn && !justSignedIn { return "You're signed in" }
         if model.signUpSentTo != nil { return "Check your email" }
         return model.mode == .signUp ? "Create your account" : "Sign in or join"
     }
 
     private var bodyText: String {
-        if showIntentChoice { return "Your account is connected." }
         if let shopper = session.shopper, !justSignedIn {
             let demo = shopper.demo ? " This is the shared demo shopper account." : ""
             return "Signed in as \(shopper.name), \(shopper.email).\(demo)"
@@ -290,53 +279,6 @@ struct SignInView: View {
         }
     }
 
-    /// The website's choice after a social sign-in (auth-oauth-completion.tsx): "What brings you to
-    /// Yard?" — shop (Welcome or close) or sell (the seller application in Safari).
-    private var intentChoice: some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
-            Text("What brings you to Yard?")
-                .font(.yardCallout)
-                .foregroundStyle(Color.yard.ink)
-            intentCard(
-                title: "I’m here to shop",
-                body: "Discover independent brands, follow them and catch their drops."
-            ) {
-                if onboarded {
-                    close()
-                } else {
-                    showWelcome = true
-                }
-            }
-            intentCard(
-                title: "I want to sell on Yard",
-                body: "Apply with your brand, set up your storefront and start selling. You can still shop with this account."
-            ) {
-                showSellOnboarding = true
-            }
-        }
-    }
-
-    private func intentCard(title: String, body: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.yardHeadline)
-                    .foregroundStyle(Color.yard.ink)
-                Text(body)
-                    .font(.yardCallout)
-                    .foregroundStyle(Color.yard.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.l)
-            .yardCard()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressableButtonStyle())
-        .accessibilityHint(Text(body))
-    }
-
     private func statusLine(_ text: String) -> some View {
         HStack(spacing: Spacing.s) {
             ProgressView().tint(Color.yard.ink)
@@ -381,9 +323,10 @@ struct SignInView: View {
         }
         justSignedIn = true
         signedInTick += 1
-        if social && !shopper.demo {
-            showIntentChoice = true
-        } else if onboarded {
+        // New accounts get the root's role screen; brand members open Studio (remembered mode);
+        // returning shoppers who finished Welcome just close.
+        studio.sync(shopper: shopper)
+        if studio.needsRoleChoice || studio.canOpenStudio || onboarded {
             close()
         } else {
             showWelcome = true
@@ -397,23 +340,6 @@ struct SignInView: View {
             dismiss()
         }
     }
-}
-
-/// The website's seller application (opened in Safari from the shop / sell choice).
-private let signInSellOnboardingPath: String = "/studio/onboarding"
-
-/// SFSafariViewController in SwiftUI (the seller application after a social sign-in).
-private struct SignInSafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let controller = SFSafariViewController(url: url)
-        controller.dismissButtonStyle = .close
-        controller.preferredControlTintColor = UIColor(Color.yard.ink)
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 #Preview("SignInView — dark") {

@@ -35,6 +35,8 @@ struct YouView: View {
                         profileHeader(shopper)
                         quickLinks
                     }
+                    // Studio: switch to a brand, the application's status, or Sell on Yard.
+                    StudioYouSection()
                 } else if !session.hasLoaded {
                     loadingHeader
                 } else {
@@ -217,10 +219,12 @@ struct YouView: View {
                 SettingsRow("Settings", systemImage: "gearshape")
             }
             .buttonStyle(.plain)
-            Button { webPage = .sell } label: {
-                SettingsRow("Sell on Yard", systemImage: "storefront")
+            if !session.isSignedIn {
+                Button { webPage = .sell } label: {
+                    SettingsRow("Sell on Yard", systemImage: "storefront")
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
