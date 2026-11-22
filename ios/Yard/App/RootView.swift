@@ -176,49 +176,159 @@ extension View {
     }
 }
 
-/// The shopper bar: Home · Shop · [Around] · Cart · Me. The active side tab is a purple
-/// (`studio` violet #9452FF) pill with the filled icon and its label (icon only below 380pt);
-/// inactive tabs are plain icons; Cart carries the acid count. The two halves are equal, so the
-/// raised Around pin sits exactly in the middle. Shrinks a little while scrolling down
-/// (`TabPillScrollSensor`). Mirrors Android's `TabPill`.
-@MainActor
-struct TabPill: View {
-    @Environment(Router.self) private var router
-    @Environment(CartStore.self) private var cart
+/// One tab of a `YardTabBar`.
+struct YardTabBarItem: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let selectedSystemImage: String
+    /// What VoiceOver reads (e.g. "Cart, 3 items"); the title when nil.
+    var accessibilityLabel: String? = nil
+    /// Drawn on the tab's top-right corner (the Cart count).
+    var badge: AnyView? = nil
+    /// Bounces the icon when it changes (Cart: something was added).
+    var bounce: Bool = false
+}
+
+/// THE bottom tab bar, used by both the shopper app and Studio: the same capsule
+/// (`yardTabBarSurface`), height, margins, blur, icon size and active-tab behaviour (the active tab
+/// is a pill with the filled icon and its label; below 380pt the label hides). Only two things
+/// vary: the tabs (with an optional raised `centre` button that splits them into two equal halves,
+/// as the shopper bar's Around pin does) and the active pill's colours (purple for shoppers, acid
+/// for Studio). Mirrors Android's `YardTabBar`.
+struct YardTabBar: View {
+    let items: [YardTabBarItem]
+    let selected: String
+    let activeFill: Color
+    let activeInk: Color
+    var collapsed: Bool = false
+    var onSelect: (YardTabBarItem) -> Void
+    var centre: AnyView? = nil
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var namespace
-    @State private var bagBounce = false
+
+    init(items: [YardTabBarItem], selected: String, activeFill: Color, activeInk: Color, collapsed: Bool = false,
+         onSelect: @escaping (YardTabBarItem) -> Void, centre: AnyView? = nil) {
+        self.items = items
+        self.selected = selected
+        self.activeFill = activeFill
+        self.activeInk = activeInk
+        self.collapsed = collapsed
+        self.onSelect = onSelect
+        self.centre = centre
+    }
 
     var body: some View {
-        let collapsed = router.isTabPillCollapsed
         GeometryReader { geo in
             let narrow = geo.size.width < 380
             ZStack(alignment: .bottom) {
-                HStack(spacing: 0) {
-                    HStack(spacing: 2) {
-                        tabButton(.home, narrow: narrow)
-                        tabButton(.search, narrow: narrow)
+                Group {
+                    if centre != nil {
+                        let half = (items.count + 1) / 2
+                        HStack(spacing: 0) {
+                            HStack(spacing: 2) { ForEach(items.prefix(half)) { tab($0, narrow: narrow) } }
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            Color.clear.frame(width: YardTabBarMetrics.pinSize + 12)
+                            HStack(spacing: 2) { ForEach(items.suffix(from: half)) { tab($0, narrow: narrow) } }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } else {
+                        HStack(spacing: 0) {
+                            ForEach(items) { item in
+                                tab(item, narrow: narrow).frame(maxWidth: .infinity)
+                            }
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    Color.clear.frame(width: YardTabBarMetrics.pinSize + 12)
-                    HStack(spacing: 2) {
-                        tabButton(.bag, narrow: narrow)
-                        tabButton(.you, narrow: narrow)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.horizontal, 6)
                 .yardTabBarSurface()
-                aroundPin
-                    .padding(.bottom, (YardTabBarMetrics.height - YardTabBarMetrics.pinSize) / 2 + YardTabBarMetrics.pinRise)
+                if let centre {
+                    centre
+                        .padding(.bottom, (YardTabBarMetrics.height - YardTabBarMetrics.pinSize) / 2 + YardTabBarMetrics.pinRise)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
         }
         .frame(height: YardTabBarMetrics.height + YardTabBarMetrics.pinRise + 12)
         .scaleEffect(collapsed && !reduceMotion ? 0.9 : 1, anchor: .bottom)
         .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: collapsed)
-        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: router.selectedTab)
-        .sensoryFeedback(.selection, trigger: router.selectedTab)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
+        .sensoryFeedback(.selection, trigger: selected)
+    }
+
+    private func tab(_ item: YardTabBarItem, narrow: Bool) -> some View {
+        let isSelected = item.id == selected
+        let showsLabel = isSelected && !narrow
+        return Button {
+            onSelect(item)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isSelected ? item.selectedSystemImage : item.systemImage)
+                    .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                    .symbolEffect(.bounce.down, value: reduceMotion ? false : item.bounce)
+                if showsLabel {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .foregroundStyle(isSelected ? activeInk : YardTabBarMetrics.inkMuted)
+            .padding(.horizontal, showsLabel ? 12 : 0)
+            .frame(minWidth: YardTabBarMetrics.itemHeight, minHeight: YardTabBarMetrics.itemHeight)
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(activeFill)
+                        .matchedGeometryEffect(id: "tab-selection", in: namespace)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let badge = item.badge {
+                    badge.offset(x: 2, y: 1)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(item.accessibilityLabel ?? item.title))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// The shopper bar: Home · Shop · [Around] · Cart · Me on the shared `YardTabBar` with the purple
+/// (`studio` violet #9452FF) pill, the raised Around pin and the acid Cart count. Mirrors Android's
+/// `TabPill`.
+@MainActor
+struct TabPill: View {
+    @Environment(Router.self) private var router
+    @Environment(CartStore.self) private var cart
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bagBounce = false
+
+    var body: some View {
+        let count = cart.count
+        let items: [YardTabBarItem] = [AppTab.home, .search, .bag, .you].map { tab in
+            YardTabBarItem(
+                id: tab.rawValue,
+                title: tab.title,
+                systemImage: tab.systemImage,
+                selectedSystemImage: tab.selectedSystemImage,
+                accessibilityLabel: tab == .bag && count > 0 ? "Cart, \(count) item\(count == 1 ? "" : "s")" : nil,
+                badge: tab == .bag && count > 0 ? AnyView(countBadge(count)) : nil,
+                bounce: tab == .bag ? bagBounce : false
+            )
+        }
+        YardTabBar(
+            items: items,
+            selected: router.selectedTab.rawValue,
+            activeFill: Color.yard.studio,
+            activeInk: Color.yard.onPhoto,
+            collapsed: router.isTabPillCollapsed,
+            onSelect: { item in if let tab = AppTab(rawValue: item.id) { router.select(tab) } },
+            centre: AnyView(aroundPin)
+        )
         // Adding to the cart lands visibly: the bag icon dips and the count rolls.
         .onChange(of: cart.count) { old, new in
             if new > old { bagBounce.toggle() }
@@ -226,52 +336,16 @@ struct TabPill: View {
         .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: cart.count)
     }
 
-    private func tabButton(_ tab: AppTab, narrow: Bool) -> some View {
-        let isSelected = router.selectedTab == tab
-        let showsLabel = isSelected && !narrow
-        return Button {
-            router.select(tab)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
-                    .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                    .symbolEffect(.bounce.down, value: reduceMotion ? false : (tab == .bag ? bagBounce : false))
-                if showsLabel {
-                    Text(tab.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-            }
-            .foregroundStyle(isSelected ? YardTabBarMetrics.ink : YardTabBarMetrics.inkMuted)
-            .padding(.horizontal, showsLabel ? 12 : 0)
-            .frame(minWidth: YardTabBarMetrics.itemHeight, minHeight: YardTabBarMetrics.itemHeight)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(Color.yard.studio)
-                        .matchedGeometryEffect(id: "tab-selection", in: namespace)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if tab == .bag && cart.count > 0 {
-                    Text(cart.count > 99 ? "99+" : "\(cart.count)")
-                        .font(.yardMicro)
-                        .monospacedDigit()
-                        .foregroundStyle(Color.yard.onAcid)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 18, minHeight: 18)
-                        .background(Color.yard.acid, in: Capsule())
-                        .offset(x: 2, y: 1)
-                        .contentTransition(.numericText())
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(accessibilityLabel(for: tab)))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    private func countBadge(_ count: Int) -> some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .font(.yardMicro)
+            .monospacedDigit()
+            .foregroundStyle(Color.yard.onAcid)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 18, minHeight: 18)
+            .background(Color.yard.acid, in: Capsule())
+            .contentTransition(.numericText())
+            .transition(.scale.combined(with: .opacity))
     }
 
     /// Around: the round pin raised out of the bar's middle (purple while Around is open).
@@ -294,13 +368,6 @@ struct TabPill: View {
         .buttonStyle(PressableButtonStyle(scale: 0.92))
         .accessibilityLabel(Text("Around, brands near you"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func accessibilityLabel(for tab: AppTab) -> String {
-        if tab == .bag && cart.count > 0 {
-            return "Cart, \(cart.count) item\(cart.count == 1 ? "" : "s")"
-        }
-        return tab.title
     }
 }
 
