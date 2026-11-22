@@ -12,6 +12,8 @@ import { useAdmin } from "@/lib/stores/admin"
  * browser's store, so on load they mirror the server's statuses into it (status only, no browser
  * audit entry), and a decision taken anywhere else (another admin, curl) shows here too.
  */
+const NO_CLOSED: Record<string, string> = {}
+
 export function useMirrorServerStatuses(kind: "user" | "brand", ids: string[]) {
   const admin = useServerSession((s) => s.admin)
   const key = ids.join(",")
@@ -31,5 +33,6 @@ export function useMirrorServerStatuses(kind: "user" | "brand", ids: string[]) {
       })
   }, [statuses, kind])
   // For brands: what Reinstate would restore for each restricted or suspended one (the server reads it).
-  return { synced: !!statuses, error: q.error, statuses, reinstateTo: q.data?.reinstateTo ?? {} }
+  // For brands: the closed ones (Delete brand on a brand with orders), which no decision changes any more.
+  return { synced: !!statuses, error: q.error, statuses, reinstateTo: q.data?.reinstateTo ?? {}, closed: q.data?.closed ?? NO_CLOSED }
 }

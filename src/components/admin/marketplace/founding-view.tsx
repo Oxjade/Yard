@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowSquareOutIcon, EyeIcon, GlobeIcon, LinkSimpleIcon, PlusIcon, SealIcon, TrashSimpleIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, EyeIcon, GlobeIcon, LinkSimpleIcon, PlusIcon, SealIcon, TrashIcon, TrashSimpleIcon } from "@phosphor-icons/react"
 import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { AdminImg, useAdminSession } from "@/components/admin/trust/shared"
@@ -19,6 +19,7 @@ import { formatNumber } from "@/lib/money"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { Initials } from "./bits"
 import { FoundingDetail, foundingStatusMeta } from "./founding-detail"
+import { useCanDeleteBrands, useDeleteBrand } from "./delete-brand-dialog"
 import { countryName, formatDate, formatDateTime } from "./format"
 import { useSearchParam, writeParams } from "./url-state"
 
@@ -38,6 +39,8 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
   // A patch holds only until the list is read again (`base` is the list it was made against), so a
   // later refresh (a claim, a payout account) always wins over a row changed here earlier.
   const [patched, setPatched] = useState<Record<string, { row: FoundingBrandRow; base: FoundingListDto | undefined }>>({})
+  // Brands deleted or closed here: never shown again, even from a patch or a later page already loaded.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set())
   const nextCursor = more.cursor === undefined ? (q.data?.nextCursor ?? null) : more.cursor
 
   const rows = useMemo(() => {
@@ -51,8 +54,8 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
     }
     // A brand created here that the first page doesn't show yet goes on top.
     for (const p of Object.values(patched)) if (!seen.has(p.row.id)) out.unshift(p.row)
-    return out
-  }, [q.data, more.items, patched])
+    return out.filter((r) => !removed.has(r.id))
+  }, [q.data, more.items, patched, removed])
 
   const loadMore = useAsyncAction(
     async () => {
@@ -139,12 +142,19 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
     { key: "badge", header: "Badge", hideBelow: "md", cell: (b) => (b.foundingBadge ? <StatusBadge tone="neutral">On</StatusBadge> : <StatusBadge tone="muted">Off</StatusBadge>) },
   ]
 
+  // Delete brand (owner admins), from the row menu as well as the tray.
+  const canDelete = useCanDeleteBrands().can
+  const deletion = useDeleteBrand((r) => {
+    setRemoved((s) => new Set(s).add(r.brandId))
+    writeParams({ brand: null })
+  })
   const rowActions: RowAction<FoundingBrandRow>[] = [
     { label: "Open", icon: EyeIcon, onSelect: open },
     { label: "Open in Studio as Yard setup", icon: ArrowSquareOutIcon, separatorBefore: true, hidden: (b) => b.claimStatus === "claimed", disabled: (b) => b.reviewStatus === "suspended" || b.reviewStatus === "restricted", disabledReason: (b) => (b.reviewStatus === "suspended" || b.reviewStatus === "restricted" ? `Yard has ${b.reviewStatus} this brand.` : undefined), onSelect: (b) => void setup(b) },
     { label: "Send or re-send claim link", icon: LinkSimpleIcon, hidden: (b) => b.claimStatus === "claimed", onSelect: open },
     { label: "Revoke claim link", icon: TrashSimpleIcon, destructive: true, hidden: (b) => !b.claimLink || b.claimLink.status !== "pending" || b.claimStatus === "claimed", onSelect: (b) => void revoke(b) },
     { label: "Turn the Founding badge on or off", icon: SealIcon, separatorBefore: true, onSelect: (b) => void toggleBadge(b) },
+    { label: "Delete brand", icon: TrashIcon, destructive: true, separatorBefore: true, hidden: () => !canDelete, onSelect: (b) => deletion.ask({ brandId: b.id, name: b.name, handle: b.handle }) },
   ]
 
   const loading = q.isLoading && !q.data
@@ -211,12 +221,14 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
           if (!o) writeParams({ brand: null })
         }}
         onSaved={saved}
+        onDeleted={(id) => setRemoved((s) => new Set(s).add(id))}
         onCreated={(b) => {
           saved(b)
           void q.revalidate()
           writeParams({ brand: b.id })
         }}
       />
+      {deletion.dialog}
     </div>
   )
 }

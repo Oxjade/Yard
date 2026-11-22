@@ -113,8 +113,16 @@ export async function indexNowCandidates(change: IndexNowChange, base = publicOr
 /** Queues the public pages a change touched (and pages that just stopped being public). No-op while IndexNow is off. */
 export async function queueIndexNow(change: IndexNowChange): Promise<{ queued: { url: string; live: boolean }[] }> {
   if (!indexNowOn()) return { queued: [] }
-  const candidates = await indexNowCandidates(change)
-  if (!candidates.length) return { queued: [] }
+  return queueIndexNowCandidates(await indexNowCandidates(change))
+}
+
+/**
+ * Queues candidates worked out earlier. For pages whose rows are about to go (Admin › Brands ›
+ * Delete brand): the caller reads indexNowCandidates before the delete, marks them "none" and
+ * queues them after commit, when nothing is left to read them from.
+ */
+export async function queueIndexNowCandidates(candidates: Candidate[]): Promise<{ queued: { url: string; live: boolean }[] }> {
+  if (!indexNowOn() || !candidates.length) return { queued: [] }
   const d = await db()
   const known = new Map<string, boolean>()
   for (const urls of chunks([...new Set(candidates.map((c) => c.url))])) {

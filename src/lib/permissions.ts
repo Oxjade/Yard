@@ -30,6 +30,8 @@ export const ADMIN_PERMISSIONS = [
   "abuse.view",
   "users.restrict",
   "brands.restrict",
+  /** Admin › Brands › Delete brand (erase, or close when it has orders or money on record). Owner only: no other role lists it. */
+  "brands.delete",
   "holidays.edit",
   "audit.view",
   "sponsored.view",
@@ -132,6 +134,7 @@ export const adminPermissionLabels: Record<AdminPermission, string> = {
   "abuse.view": "view abuse signals",
   "users.restrict": "restrict accounts",
   "brands.restrict": "restrict brands",
+  "brands.delete": "delete or close brands",
   "holidays.edit": "edit holidays",
   "audit.view": "view the audit log",
   "sponsored.view": "view sponsored placements",

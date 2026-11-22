@@ -125,6 +125,8 @@ export const brandAllowed: Record<BrandReviewStatus, BrandActionKey[]> = {
  * row offers what that status allows (Reinstate first) and Reject, not Approve.
  */
 export function allowedBrandActions(a: BrandApplication): BrandActionKey[] {
+  // A closed brand (Delete brand on a brand with orders) is final.
+  if (a.closedAt) return []
   if (!a.onboardingId || a.reviewed) return brandAllowed[a.status]
   if (a.status === "pending_review") return ["approve", "reject"]
   return [...brandAllowed[a.status].filter((k) => k === "reinstate" || k === "suspend"), "reject"]

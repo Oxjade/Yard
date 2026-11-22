@@ -1,7 +1,7 @@
 "use client"
 
 import { useId, useMemo } from "react"
-import { ClockIcon, HourglassIcon, IdentificationCardIcon, ShieldWarningIcon, EyeIcon } from "@phosphor-icons/react"
+import { ClockIcon, HourglassIcon, IdentificationCardIcon, ShieldWarningIcon, EyeIcon, TrashIcon } from "@phosphor-icons/react"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
@@ -18,6 +18,7 @@ import { Initials } from "./bits"
 import { BrandDetail } from "./brand-detail"
 import { allowedBrandActions, brandActions, brandAllowed, brandDecision, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { useDecision } from "./decision"
+import { useCanDeleteBrands, useDeleteBrand } from "./delete-brand-dialog"
 import { categoryName, countryName, daysSince, formatDate, relDays } from "./format"
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { FoundingPanel } from "./founding-view"
@@ -106,6 +107,10 @@ export function BrandsView() {
   // What `ask` returns goes back to the bulk bar, so a cancelled decision keeps the selection
   // and the rows leave it only once the decision is made.
   // Every decision, from the table, the bulk bar or the sheet, ends with the same calm toast.
+  // Delete brand (owner admins): after it runs, back to the list (the sheet closes; the lists refresh).
+  const canDelete = useCanDeleteBrands().can
+  const deletion = useDeleteBrand(() => writeParams({ review: null }))
+  const askDelete = (a: BrandApplication) => (a.brandId ? deletion.ask({ brandId: a.brandId, name: a.brandName, handle: a.handle }) : undefined)
   const decide = (key: BrandActionKey, list: BrandApplication[]) => {
     const d = brandDecision(key, list, { reinstateTo })
     return d ? ask(d) : false
@@ -153,6 +158,7 @@ export function BrandsView() {
       disabledReason: (a: BrandApplication) => blockFor(a),
       onSelect: (a: BrandApplication) => decide(key, [a]),
     })),
+    { label: "Delete brand", icon: TrashIcon, destructive: true, separatorBefore: true, hidden: (a: BrandApplication) => !canDelete || !a.brandId || !!a.closedAt, onSelect: askDelete },
   ]
   const bulkActions: BulkAction<BrandApplication>[] = allowedHere.map((key) => ({
     label: brandActions[key].verb,
@@ -243,11 +249,13 @@ export function BrandsView() {
         app={reviewing ?? null}
         open={!!reviewing}
         onDecide={(key, a) => decide(key, [a])}
+        onDelete={canDelete ? deletion.ask : undefined}
         onOpenChange={(o) => {
           if (!o) writeParams({ review: null })
         }}
       />
       {dialog}
+      {deletion.dialog}
     </Reveal>
   )
 }

@@ -231,6 +231,51 @@ decision emails (application sent back, listing paused or back) and the admin's 
 (Admin › Brands › a brand › Email the brand) all go through the email outbox. Every email, its
 trigger, schedule and copy: [docs/BRAND-EMAILS.md](docs/BRAND-EMAILS.md).
 
+## Deleting a brand
+
+Admin › Brands › a brand › Danger zone › **Delete brand**. The brands list and the Founding list
+offer it in each row's menu too. Only owner admins can use it (permission `brands.delete`), and it
+needs a re-auth in the last 5 minutes, like adding an admin. The confirmation is a modal. It shows
+which of the two outcomes will happen and why, with the counts. The admin types the brand's handle
+and a reason. Code: `src/server/catalog/brand-removal.ts` (checks, audit, after-commit effects) and
+`brand-removal-db.ts` (the SQL). Routes: `GET /api/admin/brands/{id}/removal` (preview) and
+`DELETE /api/admin/brands/{id}` `{ mode, confirmHandle, reason }`.
+
+- **Erased** when nothing financial or legal points at the brand: no orders, refunds, returns,
+  disputes, delivery complaints, payouts, transfers, ledger entries or payout account. Test brands,
+  drafts, pending or rejected applications and unclaimed founding brands are usually erased. One
+  transaction removes the brand and everything that belongs only to it: products, variants, stock,
+  collections, storefront, application, invites and claim links, memberships, imports, website
+  watch and pieces, Yard's suggestions, posts, places, drops, shipping, conversations, newsletters
+  to its followers, follows, wishlist and cart lines, its notifications and anyone's that link to
+  its pages, search rows, chart rows and its media rows. Uploaded files are unlinked after commit.
+  User accounts stay; members only lose the membership, and their brand sessions end. Moderation
+  reports stay as Yard's own records, with the brand link cleared. The handle becomes free.
+- **Closed** when it has any of those records, so the money trail survives. `brands.closed_at` is
+  set (migration 0030) and `review_status` becomes `suspended`, so every public read, search,
+  chart and sign-in already refuses the brand. The state is final: no decision reinstates it. Its
+  products are archived (kept, because order lines point at them). Drops are cancelled and
+  collections go back to draft. Members are removed and signed out. Pending invites and claim
+  links are revoked, social accounts are disconnected, website watch is paused and pending
+  suggestions are withdrawn. Follows, wishlist saves and cart lines are cleared. Orders, refunds,
+  payouts, the ledger, the payout account and the brand's conversations stay, so shoppers and
+  Yard can still read the orders. The handle stays reserved, because order emails and receipts
+  link to `/brands/<handle>`.
+
+Both outcomes write one audit row (`brand.deleted` or `brand.closed`) with the admin, the
+brand's id, handle and name, the reason and the counts. After commit they clear the catalogue
+memos (the home grid, storefronts, product pages), the sitemap, feeds and llms.txt memos, Charts
+and Around. They also re-index search and queue the removed URLs for IndexNow (when
+`INDEXNOW_KEY` is set), so the brand drops out of search, the sitemap, `/feeds/*`, the home grid
+and Charts. Its pages answer 404. If the brand takes an order between the preview and the
+confirmation, the request is refused with a 409, so a brand is never closed without the admin
+seeing that first. Live check: `node scripts/checks/v3-brand-removal.mjs`. Set
+`YARD_KIT_CLOSE_BRAND=<id>` to also run the close path. That run is final for that brand.
+
+In the demo, sample brands also come from static data. A closed sample brand's own pages answer
+404, but the static sample directory and home cards still list it. That isn't the case in
+production, which lists only the server's brands.
+
 ## Listing help in Studio
 
 Brands should go from nothing to a live product in about 3 minutes, and never mistake a draft

@@ -1,5 +1,5 @@
 import "server-only"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { endBrandSessions, endSessionsForUser } from "../auth/session"
 import { catalogChanged } from "../catalog/hooks"
 import { db } from "../db"
@@ -74,6 +74,8 @@ export async function setBrandStatus(ctx: DecisionCtx, body: { id: string; statu
   const d = await db()
   const b = await d.query.brands.findFirst({ where: (x, { eq }) => eq(x.id, body.id) })
   if (!b) throw notFound()
+  // A closed brand (Delete brand on a brand with orders) is final: no status brings it back.
+  assertState(!b.closedAt, `${b.name} was closed and can't change status any more — refreshed.`)
   // Reinstate restores what the brand had before its restriction or suspension, decided here on the
   // server (never "verified" by default).
   if (body.status === "reinstate") assertState(OUT_OF_STANDING.includes(b.reviewStatus), `${b.name} isn't restricted or suspended — refreshed.`)
@@ -126,10 +128,18 @@ export async function statusesFor(kind: "user" | "brand", ids: string[]) {
   return Object.fromEntries((await d.select({ id: brands.id, status: brands.reviewStatus }).from(brands).where(inArray(brands.id, ids))).map((r) => [r.id, r.status]))
 }
 
-/** For restricted or suspended brands: the status Reinstate would restore (the Brands page says it first). */
+/** The brands among `ids` that were closed (Delete brand on a brand with orders), with when: terminal, so the Brands page offers nothing on them. */
+export async function closedBrands(ids: string[]): Promise<Record<string, string>> {
+  const d = await db()
+  if (!ids.length) return {}
+  const rows = await d.select({ id: brands.id, closedAt: brands.closedAt }).from(brands).where(and(inArray(brands.id, ids), isNotNull(brands.closedAt)))
+  return Object.fromEntries(rows.map((r) => [r.id, r.closedAt!.toISOString()]))
+}
+
+/** For restricted or suspended brands: the status Reinstate would restore (the Brands page says it first). Closed brands have none. */
 export async function reinstateTargets(ids: string[]) {
   const d = await db()
   if (!ids.length) return {}
-  const out = (await d.select({ id: brands.id, status: brands.reviewStatus }).from(brands).where(inArray(brands.id, ids))).filter((r) => OUT_OF_STANDING.includes(r.status))
+  const out = (await d.select({ id: brands.id, status: brands.reviewStatus, closedAt: brands.closedAt }).from(brands).where(inArray(brands.id, ids))).filter((r) => OUT_OF_STANDING.includes(r.status) && !r.closedAt)
   return Object.fromEntries(await Promise.all(out.map(async (r) => [r.id, await statusBeforeSuspension(r.id)] as const)))
 }

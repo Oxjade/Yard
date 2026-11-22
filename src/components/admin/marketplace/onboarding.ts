@@ -65,10 +65,15 @@ export function useBrandApplications() {
     return [...live, ...localApplications.filter((a) => !a.brandId || !liveBrands.has(a.brandId))]
   }, [onboarding.data, localApplications])
   const ids = useMemo(() => merged.flatMap((a) => (a.brandId ? [a.brandId] : [])), [merged])
-  const { statuses, reinstateTo } = useMirrorServerStatuses("brand", ids)
+  const { statuses, reinstateTo, closed } = useMirrorServerStatuses("brand", ids)
   const applications = useMemo(
-    () => merged.map((a) => (a.onboardingId && a.brandId && statuses?.[a.brandId] && statuses[a.brandId] !== a.status ? { ...a, status: statuses[a.brandId] as BrandReviewStatus } : a)),
-    [merged, statuses],
+    () =>
+      merged
+        // A brand Yard deleted has no server status any more: its row (a sample one, in the demo) goes too.
+        .filter((a) => !statuses || !a.brandId || a.brandId in statuses)
+        .map((a) => (a.onboardingId && a.brandId && statuses?.[a.brandId] && statuses[a.brandId] !== a.status ? { ...a, status: statuses[a.brandId] as BrandReviewStatus } : a))
+        .map((a) => (a.brandId && closed[a.brandId] ? { ...a, closedAt: closed[a.brandId] } : a)),
+    [merged, statuses, closed],
   )
   return { applications, onboarding, canReviewApplications, reinstateTo, sample }
 }

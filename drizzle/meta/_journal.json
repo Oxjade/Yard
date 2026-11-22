@@ -211,6 +211,13 @@
       "when": 1795378351546,
       "tag": "0029_bumpa_platform",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795378993152,
+      "tag": "0030_brand_close",
+      "breakpoints": true
     }
   ]
 }

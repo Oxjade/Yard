@@ -25,6 +25,7 @@ import { categoryName, countryName, daysSince, formatDate, plural, relDays } fro
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { useLast } from "./use-last"
 import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
+import { DeleteBrandSection, type DeleteTarget } from "./delete-brand-dialog"
 
 const NOTE_ACTION = "Added internal note"
 
@@ -45,7 +46,20 @@ function isAbout(e: AuditEntry, a: BrandApplication) {
  * The review sheet for one application. The page passes the record it resolved (a live Studio
  * application or a sample one), so the sheet shows whatever the Brands table lists.
  */
-export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { app: BrandApplication | null; open: boolean; onOpenChange: (o: boolean) => void; onDecide: (key: BrandActionKey, a: BrandApplication) => void }) {
+export function BrandDetail({
+  app: current,
+  open,
+  onOpenChange,
+  onDecide,
+  onDelete,
+}: {
+  app: BrandApplication | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onDecide: (key: BrandActionKey, a: BrandApplication) => void
+  /** Admin › Brands › Delete brand (owner admins; the section hides itself for everyone else). */
+  onDelete?: (t: DeleteTarget) => void
+}) {
   // Keep the last record while the sheet animates out.
   // Relative days count from the same today as every other Control Center page.
   const now = useNow(60_000)
@@ -83,6 +97,7 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
           <StatusBadge tone={kycMeta[app.kyc].tone}>KYC {kycMeta[app.kyc].label.toLowerCase()}</StatusBadge>
           <StatusBadge tone={riskMeta[app.risk].tone}>{riskMeta[app.risk].label} risk</StatusBadge>
           {app.brandId === STUDIO_BRAND_ID ? <StatusBadge tone="muted">Studio brand</StatusBadge> : null}
+          {app.closedAt ? <StatusBadge tone="danger">Closed</StatusBadge> : null}
         </>
       }
       actions={
@@ -178,6 +193,8 @@ export function BrandDetail({ app: current, open, onOpenChange, onDecide }: { ap
           ) : null}
         </ul>
       </DetailSection>
+
+      {app.brandId && onDelete ? <DeleteBrandSection target={{ brandId: app.brandId, name: app.brandName, handle: app.handle }} closedAt={app.closedAt} onAsk={onDelete} /> : null}
     </DetailSheet>
   )
 }

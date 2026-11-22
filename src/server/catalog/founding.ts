@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from "drizzle-orm"
 import { countryTimeZone } from "@/lib/data/zones"
 import { GO_LIVE_ON_CLAIM_DEFAULT } from "@/lib/publish-for-brand"
 import { CLAIM_LINK_DAYS, type FoundingBrandRow, type FoundingCreateBody, type FoundingPatchBody, type FoundingStatus } from "@/lib/api/contracts/founding"
@@ -86,6 +86,7 @@ function assertUnclaimed(b: typeof brands.$inferSelect, what: string) {
 }
 
 function assertNotOnHold(b: typeof brands.$inferSelect) {
+  if (b.closedAt) throw rule(`Yard has closed ${b.name}. A closed brand can't be changed.`)
   if (b.reviewStatus === "suspended" || b.reviewStatus === "restricted") throw rule(`Yard has ${b.reviewStatus} ${b.name}. Reinstate it from Brands first.`)
 }
 
@@ -166,7 +167,7 @@ export async function listFoundingBrands(input: { cursor?: string; limit?: numbe
   const list = await d
     .select()
     .from(brands)
-    .where(and(eq(brands.founding, true), input.cursor ? lt(brands.id, input.cursor) : undefined))
+    .where(and(eq(brands.founding, true), isNull(brands.closedAt), input.cursor ? lt(brands.id, input.cursor) : undefined))
     .orderBy(desc(brands.id))
     .limit(limit + 1)
   const page = list.slice(0, limit)

@@ -1,6 +1,9 @@
 import "server-only"
+import { eq } from "drizzle-orm"
 import { getBrand, getDrop } from "@/lib/data"
 import { loadDrop } from "../drops/service"
+import { db } from "../db"
+import { brands } from "../db/schema"
 import { getEnv } from "../env"
 import { HttpError } from "../http/errors"
 import { opensSoonBrand, opensSoonProduct, publicCollection, publicProduct, publicStorefront } from "./public"
@@ -51,9 +54,17 @@ export const productPageExists = (slug: string) => (sampleOff() && isSampleProdu
  * demo-seeded database holds its row, while a real brand that happens to use the same word is not.
  */
 export async function brandPageExists(handle: string) {
-  if (getEnv().seedDemo && getBrand(handle)) return true
+  // A sample brand Yard closed (Delete brand on a brand with orders) is gone in the demo too.
+  if (getEnv().seedDemo && getBrand(handle)) return !(await closedBrandHandle(handle))
   if (sampleOff() && isSampleBrand(handle)) return false
   return found(() => publicStorefront(handle))
+}
+
+/** Whether the brand with this handle was closed (catalog/brand-removal.ts). */
+async function closedBrandHandle(handle: string) {
+  const d = await db()
+  const [row] = await d.select({ closedAt: brands.closedAt }).from(brands).where(eq(brands.handle, handle)).limit(1)
+  return !!row?.closedAt
 }
 
 export const collectionPageExists = (handle: string, collection: string) => found(() => publicCollection(handle, collection))

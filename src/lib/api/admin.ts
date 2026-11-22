@@ -1,4 +1,5 @@
 import { api } from "./client"
+import type { BrandRemovalBody, BrandRemovalPreviewDto, BrandRemovalResultDto } from "./contracts/brand-removal"
 import type {
   AbuseListDto,
   AdminCatalogProductsDto,
@@ -67,7 +68,12 @@ export const listAdminUsers = () => api<{ items: AdminUserDto[]; total: number }
 export const listAbuse = (user?: string) => api<AbuseListDto>("/api/admin/abuse", { query: { user } })
 export const listRestrictions = (subject?: string) => api<{ items: RestrictionDto[] }>("/api/admin/restrictions", { query: { subject } })
 export const listAudit = (q: { subjectType?: string; subjectId?: string; actorKind?: string; cursor?: string; limit?: number } = {}) => api<AuditListResult>("/api/admin/audit", { query: q })
-export const getStatuses = (kind: "user" | "brand", ids: string[]) => api<{ statuses: Record<string, string>; reinstateTo?: Record<string, "pending_review" | "verified"> }>("/api/admin/statuses", { query: { kind, ids: ids.join(",") } })
+export const getStatuses = (kind: "user" | "brand", ids: string[]) =>
+  api<{ statuses: Record<string, string>; reinstateTo?: Record<string, "pending_review" | "verified">; closed?: Record<string, string> }>("/api/admin/statuses", { query: { kind, ids: ids.join(",") } })
+/** Admin › Brands › Delete brand (owner admins): what deleting would do (erase or close, why, the counts). */
+export const getBrandRemoval = (brandId: string) => api<BrandRemovalPreviewDto>(`/api/admin/brands/${encodeURIComponent(brandId)}/removal`)
+/** Erases or closes the brand, as the preview said (403 reauth first when the last re-auth is over 5 minutes old). */
+export const removeBrand = (brandId: string, body: BrandRemovalBody) => api<BrandRemovalResultDto>(`/api/admin/brands/${encodeURIComponent(brandId)}`, { method: "DELETE", body })
 export const listOnboardingApplications = () => api<OnboardingApplicationsDto>("/api/admin/catalog/onboardings", { query: { limit: 200 } })
 export const reviewOnboardingApplication = (id: string, body: { decision: "approve" | "reject"; note?: string }) =>
   api<{ onboardingId: string; status: "approved" | "rejected"; brandId: string }>(`/api/admin/catalog/onboardings/${encodeURIComponent(id)}/review`, { body })

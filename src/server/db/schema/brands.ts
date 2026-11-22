@@ -57,6 +57,14 @@ export const brands = pgTable(
     lastNudgedAt: tz("last_nudged_at"),
     /** Set when the "publish your storefront" reminder went out (once per brand). */
     storefrontNudgedAt: tz("storefront_nudged_at"),
+    /**
+     * Admin › Brands › Delete brand on a brand with orders or money on record (catalog/brand-removal.ts):
+     * the brand is closed instead of erased. Terminal: review_status stays 'suspended' (so every
+     * public read and sign-in already refuses it), its products are archived, and nothing reinstates it.
+     * The row, its handle and everything its orders reference stay.
+     */
+    closedAt: tz("closed_at"),
+    closedBy: text("closed_by").references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex("brands_handle_ux").on(t.handle),

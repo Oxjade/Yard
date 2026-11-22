@@ -38,6 +38,7 @@ import { CopyValue, Initials } from "./bits"
 import { BrandEmailSection } from "./brand-email-section"
 import { PublishForBrandSection } from "./publish-for-brand-section"
 import { DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail-sheet"
+import { DeleteBrandSection, useDeleteBrand } from "./delete-brand-dialog"
 import { categoryName, countryName, formatDate, formatDateTime } from "./format"
 import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
 
@@ -169,6 +170,7 @@ export function FoundingDetail({
   onOpenChange,
   onSaved,
   onCreated,
+  onDeleted,
 }: {
   /** "new" for the create form, else a brand id. */
   target: string | null
@@ -178,6 +180,8 @@ export function FoundingDetail({
   onOpenChange: (open: boolean) => void
   onSaved: (brand: FoundingBrandRow) => void
   onCreated: (brand: FoundingBrandRow) => void
+  /** After Delete brand erased or closed it. */
+  onDeleted?: (brandId: string) => void
 }) {
   // Keep the last target while the sheet animates out.
   const [last, setLast] = useState(target)
@@ -185,7 +189,7 @@ export function FoundingDetail({
   const shown = target ?? last
   if (!shown) return null
   if (shown === "new") return <CreateSheet key="new" open={open} onOpenChange={onOpenChange} onCreated={onCreated} />
-  return <BrandSheet key={shown} id={shown} row={row} open={open} onOpenChange={onOpenChange} onSaved={onSaved} />
+  return <BrandSheet key={shown} id={shown} row={row} open={open} onOpenChange={onOpenChange} onSaved={onSaved} onDeleted={onDeleted} />
 }
 
 /* ---------- Create ---------- */
@@ -485,13 +489,18 @@ function CreateSheet({ open, onOpenChange, onCreated }: { open: boolean; onOpenC
 
 /* ---------- One brand ---------- */
 
-function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: string; row?: FoundingBrandRow; open: boolean; onOpenChange: (o: boolean) => void; onSaved: (b: FoundingBrandRow) => void }) {
+function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved, onDeleted }: { id: string; row?: FoundingBrandRow; open: boolean; onOpenChange: (o: boolean) => void; onSaved: (b: FoundingBrandRow) => void; onDeleted?: (brandId: string) => void }) {
   const q = useApi(foundingKeys.one(brandId), () => getFoundingBrand(brandId), { revalidateOnFocus: true })
   const b = q.data?.brand ?? row ?? null
   const saved = (next: FoundingBrandRow) => {
     q.mutate({ brand: next })
     onSaved(next)
   }
+  // Delete brand (owner admins): the tray closes and the founding list refreshes.
+  const deletion = useDeleteBrand((r) => {
+    onDeleted?.(r.brandId)
+    onOpenChange(false)
+  })
 
   if (!b) {
     return (
@@ -577,6 +586,8 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved }: { id: str
           </li>
         </ul>
       </DetailSection>
+      <DeleteBrandSection target={{ brandId: b.id, name: b.name, handle: b.handle }} onAsk={deletion.ask} />
+      {deletion.dialog}
     </DetailSheet>
   )
 }

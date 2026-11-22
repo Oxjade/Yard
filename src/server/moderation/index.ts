@@ -135,6 +135,6 @@ export { chartsOverview, listFlags, flagDetail, sponsoredList } from "./charts"
 export { listDelivery, listHolidays } from "./delivery"
 export { listAbuse, abuseRowFor, listRestrictions } from "./abuse"
 export { listAudit } from "./audit-log"
-export { statusesFor, reinstateTargets } from "./status"
+export { statusesFor, reinstateTargets, closedBrands } from "./status"
 
 export const jobs = {}

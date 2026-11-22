@@ -56,6 +56,8 @@ export type BrandApplication = {
   reviewed?: boolean
   /** What a submitted Studio application says (brand, business, first product, payout), for the review sheet. */
   application?: OnboardingApplicationDto["data"]
+  /** When Yard closed the brand (Delete brand on a brand with orders): final, so no decision is offered. */
+  closedAt?: string
 }
 
 export const brandApplications: BrandApplication[] = [
