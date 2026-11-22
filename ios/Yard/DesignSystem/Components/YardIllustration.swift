@@ -250,7 +250,8 @@ enum YardIllustrationArt {
         }
         // Side face (depth).
         c.fill(rounded([pt(24, -26), pt(34, -32), pt(37, 19), pt(28, 26)], radius: 4), with: .color(ink))
-        c.fill(rounded([pt(24, -26), pt(34, -32), pt(37, 19), pt(28, 26)], radius: 4), with: .color(white.opacity(0.07)))
+        c.fill(rounded([pt(24, -26), pt(34, -32), pt(37, 19), pt(28, 26)], radius: 4),
+               with: .linearGradient(Gradient(colors: [white.opacity(0.16), white.opacity(0.04)]), startPoint: pt(24, -30), endPoint: pt(37, 24)))
         // Lining seen through the opening.
         c.fill(rounded([pt(-28, -26), pt(-18, -32), pt(34, -32), pt(24, -26)], radius: 2), with: .color(violet))
         // Front sheen.
@@ -445,7 +446,7 @@ enum YardIllustrationArt {
                 layer.fill(Path(ellipseIn: CGRect(x: -36, y: -36, width: 72, height: 72)), with: .color(violet))
             }
             stamp.stroke(Path(ellipseIn: CGRect(x: -31, y: -31, width: 62, height: 62)), with: .color(white.opacity(0.9)), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2.5]))
-            stamp.draw(Text(small).font(.system(size: 7, weight: .heavy)).foregroundColor(white), at: pt(0, -12))
+            stamp.draw(Text(small).font(.system(size: small.count > 10 ? 5.6 : 7, weight: .heavy)).foregroundColor(white), at: pt(0, -13))
             stamp.draw(Text(big).font(.system(size: 19, weight: .black).width(.compressed)).foregroundColor(acid), at: pt(0, 4))
             stamp.fill(sparkle(center: pt(-17, 18), size: 3.5), with: .color(white))
             stamp.fill(sparkle(center: pt(0, 20), size: 3.5), with: .color(white))

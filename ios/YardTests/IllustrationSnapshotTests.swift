@@ -39,7 +39,7 @@ final class IllustrationSnapshotTests: XCTestCase {
                                fill: Color.yard.studio, ink: Color.yard.onPhoto, art: .sell, illustrationTime: t) {}
             }
             .padding(16)
-            .frame(width: 390, height: 600)
+            .frame(width: 390, height: 700)
             .background(Color.yard.bg)
             .environment(\.colorScheme, .dark)
             try write(view, name: "role-cards-\(t == YardIllustrationArt.restTime ? "rest" : label(t))", to: dir)

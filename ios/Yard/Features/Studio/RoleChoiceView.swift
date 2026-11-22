@@ -105,36 +105,37 @@ struct RoleChoiceCard: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                // The art takes the room above the words (it scales to fit) and never covers them.
                 YardIllustration(art, fixedTime: illustrationTime)
-                    .frame(width: 190, height: 158)
-                    .padding(.top, Spacing.xs)
-                    .padding(.trailing, Spacing.xs)
-                VStack(alignment: .leading, spacing: Spacing.s) {
-                    Spacer(minLength: 0)
-                    Text(title)
-                        .yardDisplay(44)
-                        .foregroundStyle(ink)
-                    Text(message)
-                        .font(.yardCallout)
-                        .foregroundStyle(ink.opacity(0.8))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                    HStack(spacing: Spacing.s) {
-                        Text(cta).font(.yardBodyEmphasis)
-                        Image(systemName: "arrow.right").font(.system(size: 15, weight: .bold))
-                    }
-                    .foregroundStyle(Color.yard.onPhoto)
-                    .padding(.horizontal, Spacing.l)
-                    .frame(height: 48)
-                    .background(Color.yard.scrim, in: Capsule())
-                    .padding(.top, Spacing.xs)
+                    .frame(maxWidth: 230, minHeight: 84, maxHeight: 170)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .layoutPriority(-1)
+                Text(title)
+                    .yardDisplay(44)
+                    .foregroundStyle(ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(message)
+                    .font(.yardCallout)
+                    .foregroundStyle(ink.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: Spacing.s) {
+                    Text(cta).font(.yardBodyEmphasis)
+                    Image(systemName: "arrow.right").font(.system(size: 15, weight: .bold))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(Spacing.l)
+                .foregroundStyle(Color.yard.onPhoto)
+                .padding(.horizontal, Spacing.l)
+                .frame(height: 48)
+                .background(Color.yard.scrim, in: Capsule())
+                .padding(.top, Spacing.xs)
             }
+            .padding(.horizontal, Spacing.l)
+            .padding(.top, Spacing.s)
+            .padding(.bottom, Spacing.l)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(minHeight: 220)
+            .frame(minHeight: 250)
             .background(fill, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         }
