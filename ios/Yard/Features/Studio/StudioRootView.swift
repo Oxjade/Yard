@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Studio mode: Home · Orders · Add (centre) · Products · Me, one NavigationStack per tab, under a
-/// floating glass pill. Add opens Quick add full screen.
+/// Studio mode: Home · Orders · Products · Me, one NavigationStack per tab, under a floating bar.
+/// Quick add opens full screen from Home's "Add product" tile and the Products header.
 @MainActor
 struct StudioRootView: View {
     @Environment(StudioStore.self) private var studio
@@ -92,74 +92,82 @@ extension View {
     }
 }
 
-/// The Studio floating pill: four tabs and a raised acid Add in the centre.
+/// The Studio tab bar (wallet look): a near-black floating bar with four plain icons; the selected
+/// tab sits in a violet pill that slides between them. Add is not in the bar: Home's "Add product"
+/// tile and the Products header open Quick add, as before.
 @MainActor
 struct StudioTabPill: View {
     @Environment(StudioStore.self) private var studio
+
+    var body: some View {
+        StudioTabBar(
+            selected: studio.selectedTab,
+            badge: { tab in tab == .orders ? studio.toShipCount : (tab == .me ? studio.unreadCount : 0) },
+            onSelect: { studio.select($0) }
+        )
+    }
+}
+
+/// The bar itself, without the store (the Home snapshot draws it too).
+struct StudioTabBar: View {
+    let selected: StudioTab
+    var badge: (StudioTab) -> Int = { _ in 0 }
+    var onSelect: (StudioTab) -> Void = { _ in }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var namespace
 
+    static let tabs: [StudioTab] = [.home, .orders, .products, .me]
+
+    init(selected: StudioTab, badge: @escaping (StudioTab) -> Int = { _ in 0 }, onSelect: @escaping (StudioTab) -> Void = { _ in }) {
+        self.selected = selected
+        self.badge = badge
+        self.onSelect = onSelect
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(StudioTab.allCases) { tab in
-                if tab == .add {
-                    addButton
-                } else {
-                    tabButton(tab)
-                }
+        HStack(spacing: 0) {
+            ForEach(Self.tabs) { tab in
+                tabButton(tab)
             }
         }
-        .padding(5)
-        .yardGlass(Capsule(), elevation: .floating)
-        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: studio.selectedTab)
-        .sensoryFeedback(.selection, trigger: studio.selectedTab)
+        .padding(.horizontal, 10)
+        .frame(height: 64)
+        .frame(maxWidth: 480)
+        .background(Color.yard.studioBar, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.yard.line, lineWidth: 1))
+        .padding(.horizontal, Spacing.gutter)
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
+        .sensoryFeedback(.selection, trigger: selected)
     }
 
     private func tabButton(_ tab: StudioTab) -> some View {
-        let isSelected = studio.selectedTab == tab
-        let badge = tab == .orders ? studio.toShipCount : (tab == .me ? studio.unreadCount : 0)
+        let isSelected = selected == tab
+        let count = badge(tab)
         return Button {
-            studio.select(tab)
+            onSelect(tab)
         } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
-                    .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.yard.bg : Color.yard.ink)
-                    .frame(width: 54, height: 48)
-                    .background {
-                        if isSelected {
-                            Capsule()
-                                .fill(Color.yard.ink)
-                                .matchedGeometryEffect(id: "studio-tab", in: namespace)
-                        }
+            Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
+                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.yard.onStudioAccent : Color.yard.studioBarIcon)
+                .frame(width: 64, height: 44)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(Color.yard.studioAccent)
+                            .matchedGeometryEffect(id: "studio-tab", in: namespace)
                     }
-                if badge > 0 {
-                    StudioBadge(count: badge)
-                        .offset(x: -4, y: 3)
-                        .transition(.scale.combined(with: .opacity))
                 }
-            }
-            .contentShape(Capsule())
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 && !isSelected {
+                        Circle().fill(Color.yard.studioAccent).frame(width: 7, height: 7).offset(x: -16, y: 9)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(badge > 0 ? "\(tab.title), \(badge)" : tab.title))
+        .accessibilityLabel(Text(count > 0 ? "\(tab.title), \(count)" : tab.title))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var addButton: some View {
-        Button {
-            Haptics.impact(.medium)
-            studio.select(.add)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Color.yard.onAcid)
-                .frame(width: 56, height: 56)
-                .background(Color.yard.acid, in: Circle())
-                .shadow(color: Color.yard.acid.opacity(0.35), radius: 10, y: 3)
-                .padding(.vertical, -4)
-        }
-        .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
-        .accessibilityLabel(Text("Add a product"))
     }
 }

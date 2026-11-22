@@ -56,6 +56,34 @@ struct YardPalette: Sendable {
     let glassTint = Color(light: UIColor(white: 1, alpha: 0.35), dark: UIColor(white: 1, alpha: 0.04))
     /// Scrim for gradients over photos (black, fixed). Use with `.opacity(…)`.
     let scrim = Color(light: UIColor(yardHex: 0x000000), dark: UIColor(yardHex: 0x000000))
+
+    // MARK: Studio Home ("wallet" look). Same values as Android's `Color.yard.studio*`.
+
+    /// The soft violet hero, #8B68FF in both modes. White on it is 3.8:1, so text on it is large or
+    /// semibold; small copy sits on `studioAccentDeep`. Put `onStudioAccent` on it.
+    let studioAccent = Color(light: UIColor(yardHex: 0x8B68FF), dark: UIColor(yardHex: 0x8B68FF))
+    /// The inset card inside the violet hero: #7350EE (white on it is 5.1:1).
+    let studioAccentDeep = Color(light: UIColor(yardHex: 0x7350EE), dark: UIColor(yardHex: 0x7350EE))
+    /// Text/icons on the Studio violet: white in both modes.
+    let onStudioAccent = Color(light: UIColor(yardHex: 0xFFFFFF), dark: UIColor(yardHex: 0xFFFFFF))
+    /// Studio Home's canvas. Dark pure black #000000 / light #F5F5F7.
+    let studioCanvas = Color(light: UIColor(yardHex: 0xF5F5F7), dark: UIColor(yardHex: 0x000000))
+    /// Studio Home's tiles and rows. Dark #1A1A1A / light #E9E9EE.
+    let studioTile = Color(light: UIColor(yardHex: 0xE9E9EE), dark: UIColor(yardHex: 0x1A1A1A))
+    /// A disc or chip on a `studioTile`. Dark #2A2A2A / light #DADAE1.
+    let studioTile2 = Color(light: UIColor(yardHex: 0xDADAE1), dark: UIColor(yardHex: 0x2A2A2A))
+    /// The one contrast tile. Dark #FFFFFF / light #0B0B0B. Put `onStudioContrast` on it.
+    let studioContrast = Color(light: UIColor(yardHex: 0x0B0B0B), dark: UIColor(yardHex: 0xFFFFFF))
+    /// Text on `studioContrast`. Dark #0B0B0B / light #FFFFFF.
+    let onStudioContrast = Color(light: UIColor(yardHex: 0xFFFFFF), dark: UIColor(yardHex: 0x0B0B0B))
+    /// Violet-tinted icon disc on a tile. Dark #2C2545 / light #E2DBFF.
+    let studioAccentTint = Color(light: UIColor(yardHex: 0xE2DBFF), dark: UIColor(yardHex: 0x2C2545))
+    /// A violet icon on `studioAccentTint`. Dark #B3A1FF / light #5B3BE0.
+    let studioAccentInk = Color(light: UIColor(yardHex: 0x5B3BE0), dark: UIColor(yardHex: 0xB3A1FF))
+    /// The Studio tab bar: near-black in both modes (#161616 / #0B0B0B).
+    let studioBar = Color(light: UIColor(yardHex: 0x0B0B0B), dark: UIColor(yardHex: 0x161616))
+    /// Unselected tab icons on `studioBar`: #8E8E93.
+    let studioBarIcon = Color(light: UIColor(yardHex: 0x8E8E93), dark: UIColor(yardHex: 0x8E8E93))
 }
 
 extension Color {

@@ -201,7 +201,14 @@ enum StudioBatchCopy {
         return "Yard has \(n) \(n == 1 ? "suggestion" : "suggestions") for you. Accept \(n == 1 ? "it" : "all") in one tap"
     }
 
-    static func acceptAll(_ n: Int) -> String { "Accept all (\(n))" }
+    /// The first half of `preparedLine`: "Yard prepared 5 products for you" (Home's card and to-do).
+    static func preparedTitle(_ n: Int, allNew: Bool) -> String {
+        allNew
+            ? "Yard prepared \(n) \(n == 1 ? "product" : "products") for you"
+            : "Yard has \(n) \(n == 1 ? "suggestion" : "suggestions") for you"
+    }
+
+        static func acceptAll(_ n: Int) -> String { "Accept all (\(n))" }
     static func addAll(_ n: Int) -> String { "Add all (\(n))" }
 
     /// The toast after a batch: "Accepted 4. 1 needs a look below."
