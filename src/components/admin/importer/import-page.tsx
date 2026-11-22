@@ -149,7 +149,7 @@ function ScanStep({ brand, recent }: { brand: ImportBrandContextDto; recent: Imp
           </Label>
           <Input id={`${id}-url`} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://brand.com" inputMode="url" autoComplete="off" spellCheck={false} maxLength={2000} aria-invalid={!!errors.url} aria-describedby={`${id}-url-hint${errors.url ? ` ${id}-url-error` : ""}`} className={fieldClass} />
           <p id={`${id}-url-hint`} className="text-[11.5px] text-ink-3">
-            The shop&apos;s home page. Tracking bits like ?utm_source are removed. Shopify, WooCommerce and Labeld shops are read directly; other sites through their product pages.
+            The shop&apos;s home page. Tracking bits like ?utm_source are removed. Shopify, WooCommerce, Labeld and Bumpa shops are read directly; other sites through their product pages.
           </p>
           {errors.url ? (
             <p id={`${id}-url-error`} role="alert" className="text-xs text-danger">
