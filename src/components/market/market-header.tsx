@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { HeartIcon, ShoppingBagOpenIcon, UserIcon } from "@phosphor-icons/react"
+import { HeartIcon, MagnifyingGlassIcon, ShoppingBagOpenIcon, UserIcon } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { marketNav, site } from "@/config/site"
 import { spring, transition } from "@/lib/motion"
@@ -20,6 +20,7 @@ import { bagCount } from "./bag-count"
 import { useChromeAutohide, useChromeAutohideDriver } from "./chrome-autohide"
 import { BagPop, useLgUp } from "./bag-pop"
 import { SearchCapsule } from "./search-capsule"
+import { useSearchOverlay } from "./search-overlay"
 
 /**
  * The Yard logo, linking home. The link carries the name, so the logo inside is decorative.
@@ -83,6 +84,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
   const count = useCart((s) => bagCount(s.lines))
   const pulse = useCart((s) => s.pulse)
   const openBag = useCart((s) => s.open)
+  const openSearch = useSearchOverlay((s) => s.setOpen)
   const user = useSession((s) => s.user)
   const requireAuth = useSession((s) => s.requireAuth)
   // The profile photo comes from the server session, for the same account as the local user.
@@ -146,7 +148,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
         </div>
 
         <div className="pointer-events-auto ml-auto flex items-center gap-3">
-          {/* The seller side ("Sell on Yard" beside the buying links), from xl; phones reach it from the footer. */}
+          {/* The seller side ("Sell on Yard" beside the buying links), from xl; phones reach it from Search (Browse) and the footer. */}
           <Link href="/sell" aria-current={isActive(pathname, "/sell") ? "page" : undefined} className={cn("hidden rounded-full px-2 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150 xl:flex", !solid && "text-float", isActive(pathname, "/sell") ? "text-ink" : "text-ink/70 hover:text-ink")}>
             Sell on {site.name}
           </Link>
@@ -156,9 +158,21 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
           <SearchCapsule className="hidden xl:flex" />
           {/* Its pill hugs the buttons (4px each side) and ends as far from the right edge as the
               wordmark's pill starts from the left, so the buttons sit 4px (8px from md) past the
-              gutter, which lines their glyphs up with it. Signed out on a phone it holds nothing. */}
-          <div className={cn("relative isolate -ml-1 -mr-2 flex h-10 items-center gap-0.5 px-1 sm:gap-1 md:-mr-3", !signedIn && "max-lg:hidden")}>
+              gutter, which lines their glyphs up with it. On phones it always holds Search. */}
+          <div className="relative isolate -ml-1 -mr-2 flex h-10 items-center gap-0.5 px-1 sm:gap-1 md:-mr-3">
             <Backdrop shown={backdrops} />
+            {/* Phones (below lg): the way into the search overlay and its Browse row (Charts, Drops,
+                Sell on Yard). Same label as the capsule, so the overlay returns focus here. Drawn
+                40px like its neighbours; the ::after widens the tap target to 44px. */}
+            <button
+              type="button"
+              onClick={() => openSearch(true)}
+              aria-label="Search brands and products"
+              aria-haspopup="dialog"
+              className={cn(floatIcon, "after:absolute after:-inset-0.5 after:rounded-full after:content-[''] lg:hidden")}
+            >
+              <MagnifyingGlassIcon className="size-[21px]" />
+            </button>
             <InboxHeaderButton />
             {signedIn ? <NotificationBell audience="customer" className={floatIcon} /> : null}
             <Link href="/wishlist" aria-label="Wishlist" className={cn(floatIcon, "hidden lg:inline-flex")}>

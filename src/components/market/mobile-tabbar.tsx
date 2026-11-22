@@ -41,7 +41,8 @@ export function tabFor(pathname: string): Tab | null {
  * - Home, Shop and Me are links and carry `aria-current="page"` on their own page (Shop's pill also
  *   shows on the browse pages under it). Cart is a button (it opens the cart drawer): its active
  *   pill is visual only and it never carries `aria-current`.
- * - Search is one tap away on Shop: /shop opens with its search field at the top.
+ * - Search is one tap away: the phone header's Search button opens the overlay, and /shop opens
+ *   with its search field at the top.
  * - The pin is a 56px ink disc raised above the bar with an obsidian ring and a faint grey band
  *   (the owner's grey ring, inverted for a black bar); on /around it turns purple.
  * - The two halves are equal grid columns, so the pin sits exactly in the middle at any width.

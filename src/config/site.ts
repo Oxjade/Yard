@@ -43,8 +43,8 @@ export const marketNav: NavItem[] = [
 ]
 
 /**
- * The search overlay's Browse row (§7.3), in this order: what search (⌘K or the header capsule)
- * opens on, so Charts and Drops are two clicks from anywhere.
+ * The search overlay's Browse row (§7.3), in this order: what search (⌘K, the header capsule, or the phone
+ * header's Search button) opens on, so Charts and Drops are two taps from anywhere.
  */
 export const browseLinks: NavItem[] = [
   { href: "/shop", label: "Shop" },

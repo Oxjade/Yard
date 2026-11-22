@@ -52,11 +52,11 @@ function matchCharts(term: string) {
   return CHART_SLUGS.filter((slug) => fold(chartLabels[slug]).split(" ").some((w) => w.startsWith(q)) || fold(chartLabels[slug]).startsWith(q)).map((slug) => ({ slug, label: chartLabels[slug] }))
 }
 
-/** Where focus goes when whatever opened the overlay has gone: the visible search control (the header capsule). */
+/** Where focus goes when whatever opened the overlay has gone: the visible search control (the header capsule, or the phone header's Search button, which shares its label). */
 const searchOpener = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label="Search brands and products"]')).find(canTakeFocus)
 
 /**
- * Search (⌘K or the header capsule; on phones, Shop's own search field is the way in). Empty, it opens on Browse:
+ * Search (⌘K, the header capsule, or the phone header's Search button). Empty, it opens on Browse:
  * Charts, Around, Drops, Brands, Shop and Categories as 40px chips (§7.3), then a few searches to
  * try. Typing searches brands, products and categories, plus Cities (the Around gazetteer, which
  * never leaves the device) and Charts (board names). Closing returns focus to what opened it.
