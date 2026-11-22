@@ -3,7 +3,6 @@
 
 package space.yardstore.app.features.around
 
-import space.yardstore.app.app.LocalTabPillClearance
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -392,8 +391,7 @@ internal fun AroundScreen(model: AroundViewModel) {
                     },
                 )
                 if (!sidePanel) {
-                    // As the Around tab the sheet stops above the bottom bar (0 when pushed).
-                    AroundSheet(sheet, Modifier.fillMaxSize().padding(bottom = LocalTabPillClearance.current)) { panelContent() }
+                    AroundSheet(sheet, Modifier.fillMaxSize()) { panelContent() }
                 }
             }
         }

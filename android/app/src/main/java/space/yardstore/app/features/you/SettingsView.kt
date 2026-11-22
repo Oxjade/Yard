@@ -291,7 +291,7 @@ fun SettingsView() {
                         }
 
                         if (session.isSignedIn) {
-                            YouSettingsGroup(null, footer = "Sign out of Yard on this phone. Your cart stays here for next time.") {
+                            YouSettingsGroup(null, footer = "Sign out of Yard on this phone. Your bag stays here for next time.") {
                                 SettingsRow(
                                     "Sign out", Icons.AutoMirrored.Outlined.Logout,
                                     Modifier.youRowClick(enabled = !isSigningOut) { signOut() },

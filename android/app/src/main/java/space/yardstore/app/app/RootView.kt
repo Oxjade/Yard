@@ -1,20 +1,5 @@
 package space.yardstore.app.app
 
-import space.yardstore.app.designsystem.components.YardTabBar
-import space.yardstore.app.designsystem.components.YardTabBarItem
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.animateContentSize
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Place
-import space.yardstore.app.designsystem.GlassStyle
-import space.yardstore.app.designsystem.components.pressableClick
-import space.yardstore.app.designsystem.components.yardTabBarSurface
-import space.yardstore.app.designsystem.components.YardTabBarDefaults
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.BackHandler
@@ -138,8 +123,7 @@ import space.yardstore.app.features.bag.BagView
 import space.yardstore.app.features.home.HomeView
 import space.yardstore.app.features.liveactivity.LiveTrackingManager
 import space.yardstore.app.features.notifications.YardPushNotifications
-import space.yardstore.app.features.shop.ShopTabView
-import space.yardstore.app.features.around.AroundView
+import space.yardstore.app.features.search.SearchView
 import space.yardstore.app.features.sell.RoleSelectionView
 import space.yardstore.app.features.sell.SellApplicationView
 import space.yardstore.app.features.studio.LocalStudioStore
@@ -366,8 +350,7 @@ private fun TabStack(tab: AppTab, router: Router, tops: TabTopRoutes, selected: 
                     CompositionLocalProvider(LocalBackAction provides null, LocalTabPillClearance provides clearance.value) {
                         when (tab) {
                             AppTab.Home -> HomeView()
-                            AppTab.Search -> ShopTabView()
-                            AppTab.Around -> AroundView()
+                            AppTab.Search -> SearchView(query = "")
                             AppTab.Bag -> BagView()
                             AppTab.You -> YouView()
                         }
@@ -449,8 +432,7 @@ private fun RouteSheetHost(router: Router) {
 @Composable
 private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
     val reduce = rememberReducedMotion()
-    // Shown while there is something in the cart (a plain `if`: an AnimatedVisibility nested in
-    // the bar's own AnimatedVisibility never entered under the screenshot clock).
+    // The last non-zero count, so the badge keeps its number while it scales out.
     var shown by remember { mutableIntStateOf(count) }
     if (count > 0) shown = count
     // A small pop each time the count goes up (add to bag), settling back with the app spring.
@@ -463,20 +445,25 @@ private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
         }
         last = count
     }
-    if (count > 0) {
+    AnimatedVisibility(
+        visible = count > 0,
+        modifier = modifier,
+        enter = if (reduce) fadeIn(snap()) else scaleIn(Motion.emphasized()) + fadeIn(),
+        exit = if (reduce) fadeOut(snap()) else scaleOut() + fadeOut(),
+    ) {
         Box(
-            modifier
+            Modifier
                 .graphicsLayer {
                     scaleX = pop.value
                     scaleY = pop.value
                 }
                 .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
-                .background(Color.yard.acid, YardShapes.pill)
+                .background(Color.yard.ink, YardShapes.pill)
                 .padding(horizontal = 5.dp),
             contentAlignment = Alignment.Center,
         ) {
             // The number rolls (up when it grows, down when it shrinks).
-            RollingNumber(shown, style = YardFonts.micro.monospacedDigits(), color = Color.yard.onAcid, label = "bag-count") { n ->
+            RollingNumber(shown, style = YardFonts.micro.monospacedDigits(), color = Color.yard.bg, label = "bag-count") { n ->
                 if (n > 99) "99+" else "$n"
             }
         }
@@ -484,81 +471,72 @@ private fun BagBadge(count: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * The shopper bar: Home · Shop · [Around] · Cart · Me, as on the website's phone tab bar
- * (`mobile-tabbar.tsx`). A smoked-glass capsule ([yardTabBarSurface], the same family as the
- * Studio bar); the two halves are equal, so the raised Around pin sits exactly in the middle.
- * The active side tab is a purple (`violetFill`) pill with the filled icon and its label (icon
- * only below 380dp); inactive tabs are plain icons. Cart carries the acid count badge. Shrinks a
- * little while the user scrolls down (`Modifier.tabPillScrollSensor()`). Mirrors `TabPill` in
- * `RootView.swift`.
+ * Home · Search · Bag (count badge) · You, in a translucent capsule hovering over content.
+ * Collapses to a smaller pill while the user scrolls down (`Modifier.tabPillScrollSensor()`).
+ * Mirrors `TabPill` in `RootView.swift`. Liquid glass: on API 31+ it blurs the screen behind it
+ * ([backdrop]); older Android gets a denser translucent fill with the same sheen and rim.
  */
 @Composable
 fun TabPill(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     val router = LocalRouter.current
     val cart = LocalCartStore.current
-    val count = cart.count
-    val items = listOf(AppTab.Home, AppTab.Search, AppTab.Bag, AppTab.You).map { tab ->
-        YardTabBarItem(
-            key = tab,
-            title = tab.title,
-            icon = tab.icon,
-            selectedIcon = tab.selectedIcon,
-            accessibilityLabel = if (tab == AppTab.Bag && count > 0) "Cart, $count item${if (count == 1) "" else "s"}" else null,
-            badge = if (tab == AppTab.Bag) ({ BagBadge(count) }) else null,
-        )
-    }
-    // The one shared bar (Studio uses it too): purple marks shopper mode.
-    YardTabBar(
-        items = items,
-        selected = router.selectedTab,
-        activeFill = Color.yard.violetFill,
-        activeInk = Color.yard.onVioletFill,
-        onSelect = { router.select(it.key as AppTab) },
-        modifier = modifier,
-        backdrop = backdrop,
-        collapsed = router.isTabPillCollapsed,
-        centre = { AroundPin() },
-    )
-}
-
-/** Around: the round pin raised out of the bar's middle (purple while Around is open). */
-@Composable
-private fun AroundPin(modifier: Modifier = Modifier) {
-    val router = LocalRouter.current
     val haptics = LocalHapticFeedback.current
-    val isSelected = router.selectedTab == AppTab.Around
-    val fill by animateColorAsState(if (isSelected) Color.yard.violetFill else Color.yard.onPhotoInk, Motion.snappy(), label = "pin-fill")
-    val halo = Color.yard.onPhoto.copy(alpha = 0.10f)
-    val ring = YardTabBarDefaults.glass
-    val rim = Color.yard.onPhoto.copy(alpha = 0.16f)
+    val collapsed = router.isTabPillCollapsed
+    val scale by animateFloatAsState(if (collapsed) 0.86f else 1f, Motion.spring(), label = "pill-scale")
+    val buttonWidth: Dp = if (collapsed) 48.dp else 58.dp
+    val gap: Dp = if (collapsed) 2.dp else 6.dp
+    val index = AppTab.entries.indexOf(router.selectedTab)
+    val reduce = rememberReducedMotion()
+    val indicatorX by animateDpAsState((buttonWidth + gap) * index, Motion.or(reduce) { Motion.spring() }, label = "pill-indicator")
+
     Box(
         modifier
-            .size(YardTabBarDefaults.pinSize)
-            .drawBehind {
-                // The website's faint grey band and the obsidian ring around the disc.
-                drawCircle(halo, radius = size.minDimension / 2 + 13.dp.toPx())
-                drawCircle(ring, radius = size.minDimension / 2 + 4.dp.toPx())
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
             }
-            .background(fill, CircleShape)
-            .border(1.dp, rim, CircleShape)
-            .semantics {
-                contentDescription = "Around, brands near you"
-                selected = isSelected
-            }
-            .pressableClick(pressedScale = 0.92f, role = Role.Tab, onClickLabel = "Around") {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                router.select(AppTab.Around)
-            },
-        contentAlignment = Alignment.Center,
+            .yardGlass(YardShapes.pill, backdrop = backdrop)
+            .padding(5.dp),
     ) {
-        Icon(Icons.Filled.Place, contentDescription = null, tint = Color.yard.onPhoto, modifier = Modifier.size(26.dp))
+        Box(
+            Modifier
+                .offset(x = indicatorX)
+                .size(width = buttonWidth, height = 48.dp)
+                .background(Color.yard.acid, YardShapes.pill),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            for (tab in AppTab.entries) {
+                val isSelected = router.selectedTab == tab
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.ink, Motion.snappy(), label = "tab-tint")
+                val label = if (tab == AppTab.Bag && cart.count > 0) "Bag, ${cart.count} item${if (cart.count == 1) "" else "s"}" else tab.title
+                Box(
+                    Modifier
+                        .size(width = buttonWidth, height = 48.dp)
+                        .semantics {
+                            contentDescription = label
+                            this.selected = isSelected
+                        }
+                        .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+                            if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            router.select(tab)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                    if (tab == AppTab.Bag) {
+                        BagBadge(cart.count, Modifier.align(Alignment.TopEnd).offset(x = (-6).dp, y = 4.dp))
+                    }
+                }
+            }
+        }
     }
 }
 
 /**
- * The wide-window version of [TabPill]: the same smoked-glass family, stacked vertically at the
- * start edge (centered vertically), with Around in the middle and the purple selection. Shown on
- * Medium/Expanded windows instead of the bottom bar; it does not shrink on scroll.
+ * The wide-window version of [TabPill]: the same translucent capsule, icons, acid selection and
+ * Bag badge, stacked vertically and floating at the start edge (centered vertically). Shown on
+ * Medium/Expanded windows instead of the bottom pill; it does not collapse on scroll.
  */
 @Composable
 fun TabRail(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
@@ -574,7 +552,7 @@ fun TabRail(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     Box(
         modifier
             .width(TabRailDefaults.railWidth)
-            .yardGlass(YardShapes.pill, style = GlassStyle.Bar, backdrop = backdrop)
+            .yardGlass(YardShapes.pill, backdrop = backdrop)
             .padding(5.dp)
             .selectableGroup(),
     ) {
@@ -582,13 +560,13 @@ fun TabRail(modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
             Modifier
                 .offset(y = indicatorY)
                 .size(buttonSize)
-                .background(Color.yard.violetFill, YardShapes.pill),
+                .background(Color.yard.acid, YardShapes.pill),
         )
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             for (tab in AppTab.entries) {
                 val isSelected = router.selectedTab == tab
-                val tint by animateColorAsState(if (isSelected) YardTabBarDefaults.ink else YardTabBarDefaults.inkMuted, Motion.snappy(), label = "rail-tint")
-                val label = if (tab == AppTab.Bag && cart.count > 0) "Cart, ${cart.count} item${if (cart.count == 1) "" else "s"}" else tab.title
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.ink, Motion.snappy(), label = "rail-tint")
+                val label = if (tab == AppTab.Bag && cart.count > 0) "Bag, ${cart.count} item${if (cart.count == 1) "" else "s"}" else tab.title
                 Box(
                     Modifier
                         .size(buttonSize)

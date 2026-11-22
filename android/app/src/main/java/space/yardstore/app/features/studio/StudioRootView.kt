@@ -1,9 +1,5 @@
 package space.yardstore.app.features.studio
 
-import space.yardstore.app.designsystem.components.YardTabBar
-import space.yardstore.app.designsystem.components.YardTabBarItem
-import space.yardstore.app.designsystem.components.YardTabBarDefaults
-import space.yardstore.app.designsystem.components.yardTabBarSurface
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -327,20 +323,55 @@ private fun StudioRouteView(route: StudioRoute) {
  * tile and the Products header open Quick add (`nav.select(StudioTab.Add)`), as before.
  */
 @Composable
-private fun StudioPill(nav: StudioNav, backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
-    val items = StudioTab.entries.filter { it != StudioTab.Add }.map { YardTabBarItem(it, it.title, it.icon, it.selectedIcon) }
-    // The shopper app's own bar (YardTabBar): same capsule, icons and active pill with its label;
-    // Studio only changes the tabs (no centre button) and the pill colour (acid).
-    YardTabBar(
-        items = items,
-        selected = nav.tab,
-        activeFill = Color.yard.acid,
-        activeInk = Color.yard.onAcid,
-        // The bar plays the tab haptic itself.
-        onSelect = { item -> nav.select(item.key as StudioTab) },
-        modifier = modifier,
-        backdrop = backdrop,
-    )
+private fun StudioPill(nav: StudioNav, @Suppress("UNUSED_PARAMETER") backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
+    val haptics = rememberYardHaptics()
+    val reduce = rememberReducedMotion()
+    val tabs = StudioTab.entries.filter { it != StudioTab.Add }
+    val barHeight = 64.dp
+    val pillHeight = 44.dp
+    BoxWithConstraints(
+        modifier
+            .padding(horizontal = Spacing.gutter)
+            .widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .height(barHeight)
+            .background(Color.yard.studioBar, RoundedCornerShape(24.dp))
+            .border(1.dp, Color.yard.line, RoundedCornerShape(24.dp))
+            .padding(horizontal = 10.dp),
+    ) {
+        val slot = maxWidth / tabs.size
+        val pillWidth = minOf(slot - 8.dp, 68.dp)
+        val index = tabs.indexOf(nav.tab).coerceAtLeast(0)
+        val indicatorX by animateDpAsState(slot * index + (slot - pillWidth) / 2, Motion.or(reduce) { Motion.spring() }, label = "studio-indicator")
+        Box(
+            Modifier
+                .offset(x = indicatorX, y = (barHeight - pillHeight) / 2)
+                .size(width = pillWidth, height = pillHeight)
+                .background(Color.yard.acid, YardShapes.pill),
+        )
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            for (t in tabs) {
+                val isSelected = nav.tab == t
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.studioBarIcon, Motion.snappy(), label = "studio-tint")
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .semantics {
+                            contentDescription = t.title
+                            selected = isSelected
+                        }
+                        .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+                            if (!isSelected) haptics.tick()
+                            nav.select(t)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (isSelected) t.selectedIcon else t.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+    }
 }
 
 /** Pick which brand Studio runs (several memberships). */

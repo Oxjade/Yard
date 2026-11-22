@@ -251,7 +251,7 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
                 justAdded = true
                 model.quantity = 1
                 showsSizeSheet = false
-                toast.show(if (qty > 1) "$qty added to your cart" else "Added to your cart", Toast.Style.Success, Icons.Filled.ShoppingBag)
+                toast.show(if (qty > 1) "$qty added to your bag" else "Added to your bag", Toast.Style.Success, Icons.Filled.ShoppingBag)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -674,7 +674,7 @@ private fun ProductOptionsBlock(product: Product, model: ProductDetailModel, sho
                 Text(helper.orEmpty(), style = YardFonts.caption, color = Color.yard.ink2, modifier = Modifier.weight(1f, fill = false))
                 if (model.inBag(cart) > 0) {
                     Text(
-                        "View cart",
+                        "View bag",
                         style = YardFonts.captionEmphasis,
                         color = Color.yard.violet,
                         modifier = Modifier.minimumInteractiveComponentSize().pressableClick { router.push(Route.Bag) },
@@ -696,12 +696,12 @@ private fun productHelperText(product: Product, model: ProductDetailModel, actio
         ProductBuyAction.Limit -> {
             val s = model.variantStock
             if (s != null && s <= ProductDetailModel.MAX_PER_LINE) {
-                "All $s available are already in your cart."
+                "All $s available are already in your bag."
             } else {
-                "Your cart already holds the most you can buy at once (${ProductDetailModel.MAX_PER_LINE})."
+                "Your bag already holds the most you can buy at once (${ProductDetailModel.MAX_PER_LINE})."
             }
         }
-        ProductBuyAction.Ready -> if (inBag > 0) "$inBag already in your cart." else null
+        ProductBuyAction.Ready -> if (inBag > 0) "$inBag already in your bag." else null
         ProductBuyAction.SoldOut ->
             if (model.variant == null) "Sold out for now. Save it to keep it in your wishlist, or see more from $brandName below." else null
         ProductBuyAction.ChooseSize -> null
@@ -1016,9 +1016,9 @@ private fun ProductBottomBar(
                         // "Added" with a check for a moment after a successful add, then back.
                         YardCrossfade(justAdded, label = "add-to-bag") { added ->
                             if (added) {
-                                YardButton("Added to cart", icon = Icons.Filled.Check, style = YardButtonStyle.Secondary, onClick = onAdd)
+                                YardButton("Added to bag", icon = Icons.Filled.Check, style = YardButtonStyle.Secondary, onClick = onAdd)
                             } else {
-                                YardButton("Add to cart", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
+                                YardButton("Add to bag", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
                             }
                         }
                     ProductBuyAction.Opening -> ProductNotifyButton(model, onNotify = onNotify, onPrompt = onShowSizes)
@@ -1029,7 +1029,7 @@ private fun ProductBottomBar(
                             YardButton("Sold out", style = YardButtonStyle.Secondary, enabled = false) {}
                         }
                     ProductBuyAction.Limit ->
-                        YardButton("View cart", icon = Icons.Outlined.ShoppingBag, style = YardButtonStyle.Secondary) { router.push(Route.Bag) }
+                        YardButton("View bag", icon = Icons.Outlined.ShoppingBag, style = YardButtonStyle.Secondary) { router.push(Route.Bag) }
                 }
             }
         }
@@ -1087,7 +1087,7 @@ private fun ProductBagButton(count: Int, onClick: () -> Unit) {
     Box(Modifier.scale(bounce.value)) {
         GlassIconButton(
             Icons.Outlined.ShoppingBag,
-            contentDescription = if (count > 0) "Cart, $count items" else "Cart",
+            contentDescription = if (count > 0) "Bag, $count items" else "Bag",
             modifier = Modifier.minimumInteractiveComponentSize(),
             size = 38.dp,
             onClick = onClick,

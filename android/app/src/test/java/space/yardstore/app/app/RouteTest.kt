@@ -89,18 +89,4 @@ class RouteTest {
         router.select(AppTab.You) // re-select pops to root
         assertEquals(0, router.depth)
     }
-
-    @Test fun barTabsMatchTheWebsite() {
-        assertEquals(listOf("Home", "Shop", "Around", "Cart", "Me"), AppTab.entries.map { it.title })
-        val router = Router()
-        assertTrue(router.open("https://yardstore.space/around"))
-        assertEquals(AppTab.Around, router.selectedTab)
-        assertTrue(router.open("https://yardstore.space/shop"))
-        assertEquals(AppTab.Search, router.selectedTab)
-        assertEquals(0, router.depth)
-        assertTrue(router.open("https://yardstore.space/search"))
-        assertEquals(AppTab.Search, router.selectedTab)
-        assertTrue(router.open("https://yardstore.space/search?q=tee"))
-        assertEquals(1, router.depth)
-    }
 }

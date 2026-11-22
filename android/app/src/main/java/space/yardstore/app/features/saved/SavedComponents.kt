@@ -191,7 +191,7 @@ fun SavedVariantSheet(
                     PriceText(minor = selected.priceMinor, currency = product.currency, style = YardFonts.bodyEmphasis, color = Color.yard.ink)
                 }
                 YardButton(
-                    if (selected == null) "Pick an option" else "Move to cart",
+                    if (selected == null) "Pick an option" else "Move to bag",
                     modifier = Modifier.alpha(if (selected == null) 0.6f else 1f),
                     icon = Icons.Outlined.ShoppingBag,
                     style = YardButtonStyle.Primary,
@@ -317,7 +317,7 @@ internal fun Modifier.savedFullBleed(inset: Dp): Modifier = layout { measurable,
 @Composable
 private fun SavedComponentsDark() = YardPreview(darkTheme = true) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.xl), modifier = Modifier.padding(vertical = Spacing.l)) {
-        SavedScreenHeader("Wishlist", "3 saved pieces from 2 brands. Add one to your cart and it moves out of your wishlist.")
+        SavedScreenHeader("Wishlist", "3 saved pieces from 2 brands. Add one to your bag and it moves out of your wishlist.")
         FollowingAvatarSkeleton()
         Row(Modifier.padding(horizontal = Spacing.gutter)) {
             FollowingDropCard(

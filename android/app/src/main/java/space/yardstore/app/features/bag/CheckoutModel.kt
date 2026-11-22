@@ -198,7 +198,7 @@ class CheckoutModel(
         get() {
             val cart = cart ?: return if (quotes.error != null) "Couldn't calculate shipping. Retry to continue." else "Shipping is still being calculated."
             if (cart.lines.any { it.isUnavailable }) {
-                return "Some pieces in your cart aren't available any more. Remove them to continue."
+                return "Some pieces in your bag aren't available any more. Remove them to continue."
             }
             for (g in cart.groups) {
                 val q = quotes.quote(g.brandId) ?: return "Shipping isn't ready for every brand yet."

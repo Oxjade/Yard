@@ -63,7 +63,7 @@ fun AddressesView() {
                 title = "No saved addresses",
                 message = "You enter where each order goes at checkout. Yard doesn't keep an address book yet.",
                 icon = Icons.Outlined.Place,
-                actionTitle = if (cart.isEmpty) null else "Go to your cart",
+                actionTitle = if (cart.isEmpty) null else "Go to your bag",
                 action = if (cart.isEmpty) null else ({ router.select(AppTab.Bag) }),
                 modifier = Modifier.heightIn(min = 260.dp),
             )

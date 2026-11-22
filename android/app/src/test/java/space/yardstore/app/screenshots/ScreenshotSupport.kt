@@ -98,9 +98,7 @@ object FakeYardBackend {
     /** The bag preview cart, with the per-brand `groups` the real API always sends (the fixture omits them). */
     val cart: Cart
         get() {
-            val raw = Reflect.objectProperty("space.yardstore.app.features.bag.BagPreviewData", "cart") as Cart
-            // The server sends itemCount (the tab bar's Cart badge); the preview cart leaves it 0.
-            val c = if (raw.itemCount == 0) raw.copy(itemCount = raw.lines.sumOf { it.qty }) else raw
+            val c = Reflect.objectProperty("space.yardstore.app.features.bag.BagPreviewData", "cart") as Cart
             if (c.groups.isNotEmpty()) return c
             return c.copy(groups = c.lines.groupBy { it.brandId }.map { (brandId, lines) ->
                 CartGroup(brandId = brandId.orEmpty(), variantIds = lines.map { it.variantId }, subtotalMinor = lines.sumOf { it.lineMinor })

@@ -34,9 +34,9 @@ enum class ProductBuyAction(val label: String) {
     /** A size (or another option) still has to be chosen. */
     ChooseSize("Select a size"),
     /** Everything that can be bought is already in the bag. */
-    Limit("View cart"),
+    Limit("View bag"),
     /** Add to bag. */
-    Ready("Add to cart"),
+    Ready("Add to bag"),
 }
 
 /**

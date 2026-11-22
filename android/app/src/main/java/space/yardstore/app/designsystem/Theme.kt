@@ -86,6 +86,10 @@ data class YardColors(
     val studioAccentTint: Color get() = violetFill.copy(alpha = 0.16f)
     /** A violet icon on [studioAccentTint]: [violet] (#A78BFA / #6D28D9). */
     val studioAccentInk: Color get() = violet
+    /** The Studio tab bar: [surface] in dark, [ink] (near-black) in light. */
+    val studioBar: Color get() = if (isDark) surface else ink
+    /** Unselected tab icons on [studioBar]. */
+    val studioBarIcon: Color get() = if (isDark) ink2 else ink3
 
     companion object {
         val Light = YardColors(

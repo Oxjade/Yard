@@ -1,7 +1,5 @@
 package space.yardstore.app.features.search
 
-import space.yardstore.app.designsystem.components.YardTopBar
-import space.yardstore.app.designsystem.components.LocalBackAction
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -177,16 +175,7 @@ fun SearchHomeView(
         return if (!slug.isNullOrEmpty()) Route.Product(slug = slug) else Route.Search(query = term)
     }
 
-    // Opened from the Shop tab's field (pushed): a back bar, and the keyboard comes up once.
-    val pushed = LocalBackAction.current != null
     LaunchedEffect(Unit) { model.loadCategories() }
-    LaunchedEffect(pushed) {
-        if (pushed) {
-            delay(350)
-            runCatching { focusRequester.requestFocus() }
-            keyboard?.show()
-        }
-    }
     LaunchedEffect(term, cart.currency) { model.update(term, cart.currency) }
     // Focus the field when the Search tab root shows (on appear and on switching to the tab).
     LaunchedEffect(router.selectedTab, router.depth) {
@@ -212,23 +201,20 @@ fun SearchHomeView(
     BoxWithConstraints(Modifier.fillMaxSize().yardScreenBackground()) {
         val inset = searchSideInset(maxWidth, contentMaxWidth)
         Column(Modifier.fillMaxSize()) {
-            if (pushed) YardTopBar("Search")
             // Header
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .then(if (pushed) Modifier else Modifier.statusBarsPadding())
+                    .statusBarsPadding()
                     .padding(horizontal = inset)
                     .padding(top = Spacing.s, bottom = Spacing.s),
                 verticalArrangement = Arrangement.spacedBy(Spacing.m),
             ) {
-                if (!pushed) {
-                    YardDisplayText(
-                        "Search",
-                        size = 44.sp,
-                        modifier = Modifier.padding(horizontal = Spacing.gutter).semantics { heading() },
-                    )
-                }
+                YardDisplayText(
+                    "Search",
+                    size = 44.sp,
+                    modifier = Modifier.padding(horizontal = Spacing.gutter).semantics { heading() },
+                )
                 SearchField(
                     text = text,
                     onTextChange = { text = it },

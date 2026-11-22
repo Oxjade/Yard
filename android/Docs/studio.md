@@ -91,11 +91,10 @@ Switch to Studio), or "needs changes" + `reviewNote` with Apply again.
 
 ### Shell (`StudioRootView`, `StudioNav`)
 
-The shopper app's own bottom bar (`YardTabBar` in designsystem/components/YardTabBar.kt): the
-same smoked-glass capsule, height, margins, icons and active pill with its label. Studio changes
-only the tabs (Home, Orders, Products, Me; no centre button) and the pill colour (acid with
-`onAcid` ink; shoppers get purple). No Add in the bar: Quick add opens from Home's "Add product"
-tile and the Products header (+), both `nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
+A near-black floating bar (`studioBar`, 24dp corners) with four plain icons: Home, Orders, Products,
+Me; the selected one sits in an acid pill that springs between tabs; tick haptic.
+No centre Add: Quick add opens from Home's "Add product" tile and the Products header (+), both
+`nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
 (instant under reduced motion), system back pops, then goes Home, then backgrounds the app. Tablets:
 a centered readable column.
 

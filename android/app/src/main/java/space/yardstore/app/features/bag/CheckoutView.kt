@@ -205,16 +205,16 @@ fun CheckoutView(model: CheckoutModel) {
             } else {
                 EmptyState.SignedOut(
                     title = "Sign in to check out",
-                    message = "One account keeps the orders from every brand in this cart, and their tracking, in one place. Your cart stays as it is.",
+                    message = "One account keeps the orders from every brand in this bag, and their tracking, in one place. Your bag stays as it is.",
                     modifier = Modifier.fillMaxSize(),
                 ) { router.present(Route.SignIn) }
             }
             cart != null -> if (cart.lines.isEmpty() && model.phase != CheckoutModel.Phase.Done) {
                 EmptyState(
-                    title = "Your cart is empty",
+                    title = "Your bag is empty",
                     message = "Add pieces from any brand and they check out together, one order per brand.",
                     icon = Icons.Outlined.ShoppingBag,
-                    actionTitle = "Back to cart",
+                    actionTitle = "Back to bag",
                     modifier = Modifier.fillMaxSize(),
                 ) { router.pop() }
             } else {
@@ -530,7 +530,7 @@ private fun CheckoutSummaryLine(line: CartLine, currency: String) {
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                line.title ?: "A piece from your cart",
+                line.title ?: "A piece from your bag",
                 style = YardFonts.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                 color = Color.yard.ink,
                 maxLines = 1,
