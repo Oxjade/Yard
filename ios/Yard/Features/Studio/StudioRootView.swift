@@ -108,13 +108,14 @@ struct StudioTabPill: View {
     }
 }
 
-/// The Studio bar: the shopper app's own `YardTabBar` (same capsule, icons and active pill with
-/// its label). Studio only changes the tabs (Home · Orders · Products · Me, no centre button) and
-/// the pill colour (acid). Without the store, so the snapshots draw it too.
+/// The bar itself, without the store (the Home snapshot draws it too).
 struct StudioTabBar: View {
     let selected: StudioTab
     var badge: (StudioTab) -> Int = { _ in 0 }
     var onSelect: (StudioTab) -> Void = { _ in }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var namespace
 
     static let tabs: [StudioTab] = [.home, .orders, .products, .me]
 
@@ -125,24 +126,45 @@ struct StudioTabBar: View {
     }
 
     var body: some View {
-        let items: [YardTabBarItem] = Self.tabs.map { tab in
-            let count = badge(tab)
-            return YardTabBarItem(
-                id: tab.rawValue,
-                title: tab.title,
-                systemImage: tab.systemImage,
-                selectedSystemImage: tab.selectedSystemImage,
-                accessibilityLabel: count > 0 ? "\(tab.title), \(count)" : nil,
-                // Something waiting there: a small acid dot (the pill itself is acid when selected).
-                badge: count > 0 && tab != selected ? AnyView(Circle().fill(Color.yard.acid).frame(width: 8, height: 8).offset(x: -10, y: 8)) : nil
-            )
+        HStack(spacing: 0) {
+            ForEach(Self.tabs) { tab in
+                tabButton(tab)
+            }
         }
-        YardTabBar(
-            items: items,
-            selected: selected.rawValue,
-            activeFill: Color.yard.acid,
-            activeInk: Color.yard.onAcid,
-            onSelect: { item in if let tab = StudioTab(rawValue: item.id) { onSelect(tab) } }
-        )
+        .padding(.horizontal, 6)
+        // The shopper bar's capsule (same shape, height, margins and smoked glass); acid marks Studio.
+        .yardTabBarSurface()
+        .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
+        .sensoryFeedback(.selection, trigger: selected)
+    }
+
+    private func tabButton(_ tab: StudioTab) -> some View {
+        let isSelected = selected == tab
+        let count = badge(tab)
+        return Button {
+            onSelect(tab)
+        } label: {
+            Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
+                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.yard.onAcid : YardTabBarMetrics.inkMuted)
+                .frame(width: 64, height: YardTabBarMetrics.itemHeight)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(Color.yard.acid)
+                            .matchedGeometryEffect(id: "studio-tab", in: namespace)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 && !isSelected {
+                        Circle().fill(Color.yard.acid).frame(width: 7, height: 7).offset(x: -16, y: 9)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(count > 0 ? "\(tab.title), \(count)" : tab.title))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
