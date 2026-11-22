@@ -13,6 +13,7 @@ import { Segmented } from "@/components/dashboard/insight/segmented"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { SetupCard } from "@/components/studio/setup/setup-card"
 import { WebsitePiecesCard } from "@/components/studio/catalog/website-pieces"
+import { SuggestionsCard } from "@/components/proposals/studio-proposals"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { api, ApiError } from "@/lib/api/client"
 import type { StudioOverviewDto } from "@/lib/api/contracts/orders"
@@ -101,6 +102,7 @@ export function LiveOverview({ member }: { member: BrandProfile }) {
 
       {/* Server-backed setup guidance; nothing when dismissed or all done. */}
       <SetupCard className="mt-6" />
+      <SuggestionsCard className="mt-6" />
       <WebsitePiecesCard className="mt-6" />
 
       {failed ? (

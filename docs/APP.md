@@ -652,6 +652,44 @@ sizes: string[] (the option values the site lists; may be empty), availability, 
 "add" copies the photos and creates the product (published when the brand may publish); "skip"
 passes for good. 409 when Yard got there first. Show `count` as the badge; hide the buttons unless `mayAdd`.
 
+**Add all / Add selected** (one tap after a big website scan):
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| POST | `/api/studio/catalog/website-pieces/add-all` | `content.publish` | `{ ids?: string[] (1–100, the selected pieces; omit = every waiting piece), idempotencyKey: string }` | 200 `{ items, count, mayAdd, site, currency, accepted: string[], skipped: [{ id, reason }], replayed?: true }` |
+
+- Each piece goes through exactly the single "add" path, one at a time: claimed first (first wins
+  against Yard), photos copied, product created as the brand. A piece that fails goes back to
+  waiting; show its `reason` on the card (it's also in that piece's `error` on the next GET).
+- `idempotencyKey`: 8–80 of `A–Z a–z 0–9 _ -`, a fresh one per tap (a UUID without dashes works).
+  Retrying with the same key (a dropped connection) answers with the first result, `replayed: true`,
+  and adds nothing twice. Rate limit: 6 batches a minute; one batch per brand runs at a time.
+- The response is the refreshed list, so render `items` / `count` from it directly.
+
+#### Suggestions from Yard (Accept all)
+
+| Method | Path | Role | Body | Success |
+|---|---|---|---|---|
+| GET | `/api/studio/proposals?status=pending\|all` | any | – | 200 `{ items: ProposalSummaryDto[], total, counts: { pending, accepted, declined, withdrawn, superseded }, nextOffset: null }` |
+| POST | `/api/studio/proposals/accept-all` | `content.publish` | `{ ids?: string[] (1–200, the selected ones; omit = every pending suggestion), idempotencyKey: string }` | 200 `{ accepted: string[], skipped: [{ id, reason }], replayed?: true }` |
+| POST | `/api/studio/proposals/decline-all` | `content.publish` | `{ ids?: string[], reason?: string (≤ 300), idempotencyKey: string }` | 200 `{ accepted: string[] (the declined ones), skipped: [{ id, reason }], replayed?: true }` |
+| POST | `/api/studio/proposals/{id}/accept` | `content.publish` | `{}` | 200 `{ proposal, productId, published }` (one at a time, unchanged) |
+
+- `ProposalSummaryDto`: `{ id, kind: "new" | "edit", status, title, cover, fields[], createdAt, … }`.
+- Accept all accepts each suggestion through the single accept, each in its own transaction, so
+  versions, stock-as-delta and the audit trail are exactly as one-by-one. Skipped (and still
+  pending, with `reason` to show next to the row): an edit whose product changed since Yard
+  suggested it ("The product changed since Yard suggested this. Open it to review the changes
+  first."), one that fails validation (e.g. a duplicate SKU), or an id that is no longer pending.
+- `idempotencyKey` as above: same key = the first result with `replayed: true`, nothing run twice.
+  Rate limit: 6 batches a minute (accept-all and decline-all together); one batch per brand at a time.
+- Yard is notified once per batch (one notification per Yard admin whose suggestions were answered).
+- Decline all needs a confirmation step in the app (the website shows an inline confirm with an
+  optional reason). Nothing in the catalogue changes.
+- Deep link: the Overview card, the notification and the email for a batch of suggestions open
+  `/studio/products/suggestions?focus=accept-all` ("Yard prepared N products for you. Accept all in
+  one tap"); the app can route that to its Suggestions screen with Accept all focused.
+
 #### Settings: notifications
 
 | Method | Path | Role | Body | Success |

@@ -1,5 +1,5 @@
 import "server-only"
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { currencies } from "@/config/markets"
 import {
   IMPORT_MAX_IMAGES,
@@ -15,10 +15,12 @@ import {
   type WatchSetBody,
 } from "@/lib/api/contracts/imports"
 import { choiceOf, draftOf, draftProblems, splitSizes, withCurrency } from "@/lib/importer"
+import { mergeBatch, onceForKey, planSuggestionBatch, runBatch, type BatchResult } from "@/lib/batch-accept"
 import { canBrand } from "@/lib/permissions"
 import { writeAudit } from "../../audit"
 import type { AdminActor, BrandActor } from "../../auth/dal"
 import { db, withTx, type Executor } from "../../db"
+import { auditLog } from "../../db/schema"
 import { productProposals } from "../../db/schema/catalog"
 import { catalogImports, catalogSitePieces, catalogWatches } from "../../db/schema/imports"
 import { shippingProfiles } from "../../db/schema/shipping"
@@ -522,6 +524,70 @@ export async function studioPieceAction(actor: BrandActor, id: string, action: "
   } catch (e) {
     await releasePiece(await db(), { id: piece.id, side: "brand", now: new Date(), error: messageOf(e, "This piece couldn't be added.") })
     throw e
+  }
+}
+
+/**
+ * Add all (or the selected ones): each waiting piece through the same path as one "Add to Yard"
+ * (claim first, so Yard and the brand never both add it; the first wins; photos copied; created
+ * as the brand), one at a time. A piece that fails goes back to waiting with its reason. Idempotent
+ * by action key (the batch's audit row keeps the result). One batch per brand at a time.
+ */
+export async function studioAddPiecesBatch(actor: BrandActor, body: { ids?: string[]; idempotencyKey: string }, ipHash: string | null): Promise<StudioSitePiecesDto & BatchResult & { replayed?: boolean }> {
+  if (!mayAdd(actor)) throw forbidden()
+  const action = "catalog.website_pieces_batch_added"
+  const key = `pieces:${actor.brandId}`
+  const slots = (yard.slots ??= {})
+  const inflight = (slots.piecesBatch ??= new Map<string, Promise<unknown>>()) as Map<string, Promise<unknown>>
+  const before = inflight.get(key)
+  const mine = (async () => {
+    if (before) await before.catch(() => {})
+    return onceForKey<BatchResult>(
+      body.idempotencyKey,
+      {
+        load: async (k) => {
+          const [prior] = await (await db())
+            .select({ meta: auditLog.meta })
+            .from(auditLog)
+            .where(and(eq(auditLog.brandId, actor.brandId), eq(auditLog.action, action), sql`${auditLog.meta}->>'requestKey' = ${k}`))
+            .limit(1)
+          const r = (prior?.meta as { result?: BatchResult } | undefined)?.result
+          return r && Array.isArray(r.accepted) && Array.isArray(r.skipped) ? { accepted: r.accepted, skipped: r.skipped } : null
+        },
+        save: async () => {},
+      },
+      async () => {
+        const d = await db()
+        const b = await loadBrand(d, actor.brandId)
+        const waiting = (await waitingPieces(d, b.id)).filter((r) => r.status === "waiting")
+        const plan = planSuggestionBatch(body.ids, waiting.map((r) => ({ id: r.id, kind: "new", productId: null, baseVersion: null })), new Map())
+        const skippedPlan = plan.skipped.map((x) => ({ id: x.id, reason: "Already added, passed on or being added. Reload to see where it stands." }))
+        const run = await runBatch(
+          plan.take,
+          async (id) => {
+            const claimed = await claimPiece(await db(), { id, brandId: b.id, now: new Date(), side: "brand", userId: actor.userId, userName: actor.name })
+            if (!claimed) throw await takenMessage(id, "brand")
+            try {
+              await approveAsBrand(actor, b, claimed, ipHash)
+            } catch (e) {
+              await releasePiece(await db(), { id, side: "brand", now: new Date(), error: messageOf(e, "This piece couldn't be added.") })
+              throw e
+            }
+          },
+          (e) => messageOf(e, "This piece couldn't be added.").slice(0, 200),
+        )
+        const result = mergeBatch(skippedPlan, run)
+        await writeAudit({ actor: brandAudit(actor), action, target: b.name, subjectType: "brand", subjectId: b.id, brandId: b.id, ipHash, meta: { requestKey: body.idempotencyKey, asked: body.ids?.length ?? null, result } })
+        return result
+      },
+    )
+  })()
+  inflight.set(key, mine)
+  try {
+    const result = await mine
+    return { ...(await studioPieces(actor)), ...result }
+  } finally {
+    if (inflight.get(key) === mine) inflight.delete(key)
   }
 }
 

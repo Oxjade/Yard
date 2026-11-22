@@ -43,7 +43,7 @@ export const templates = {
     category: "product_suggestion",
     build: (v) =>
       Number(v.count) > 1
-        ? { title: `Yard suggested ${Number(v.count)} new products`, body: "Review them in Studio. Nothing goes live until you accept." }
+        ? { title: `Yard prepared ${Number(v.count)} products for you`, body: "Accept all in one tap. Nothing goes live until you accept." }
         : { title: v.product ? `Yard suggested a new product: ${s(v.product, "a product")}` : "Yard suggested a new product", body: "Review it in Studio. Nothing goes live until you accept." },
   },
   // A website watch found new pieces on the brand's own site (catalog/importer/watch.ts), once per check.
@@ -57,6 +57,8 @@ export const templates = {
   "proposal.edit_for_brand": { category: "product_suggestion", build: (v) => ({ title: `Yard suggested changes to ${s(v.product, "a product")}`, body: "Review them in Studio. Nothing changes until you accept." }) },
   // `outcome`: "accepted" | "declined".
   "proposal.decided_for_admin": { category: "product_suggestion", build: (v) => ({ title: `${s(v.brand, "The brand")} ${v.outcome === "accepted" ? "accepted" : "declined"} your suggestion`, body: `${s(v.product, "A product")}. Open Suggestions for the details.` }) },
+  // A batch (Accept all / Decline all): one notification per admin. `count`: how many of theirs; `outcome` as above.
+  "proposal.batch_decided_for_admin": { category: "product_suggestion", build: (v) => ({ title: `${s(v.brand, "The brand")} ${v.outcome === "accepted" ? "accepted" : "declined"} ${Number(v.count) === 1 ? "1 of your suggestions" : `${s(v.count, "several")} of your suggestions`}`, body: "In one go, from Studio. Open Suggestions for the details." }) },
   // Reports (F2, M)
   // `subject` is the report's subject type; `brand` the owning brand's name. Never the reported text.
   "report.admin_new": { category: "message_report", build: (v) => ({ title: `New report: ${s(v.reason, "reported content")}`, body: v.subject === "conversation" ? `A conversation with ${s(v.brand, "a brand")}.` : `A message in a conversation with ${s(v.brand, "a brand")}.` }) },

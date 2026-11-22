@@ -299,6 +299,13 @@ export const studioProposalsQuery = z.object({ status: z.enum(["pending", "all"]
 export const studioProposalAcceptBody = z.strictObject({ product: proposalProductBody.optional() })
 export const studioProposalDeclineBody = z.strictObject({ reason: safeText({ max: 300, tooLong: "Keep the reason to 300 characters." }).optional() })
 
+/** An action key: the same key answers with the first run's result (a double tap never runs twice). */
+export const actionKey = () => z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, { error: "Send an action key of 8–80 letters, digits, - or _." })
+/** POST /api/studio/proposals/accept-all: `ids` = the selected ones; no ids = every pending suggestion. */
+export const studioProposalsAcceptAllBody = z.strictObject({ ids: z.array(safeId()).min(1).max(200).optional(), idempotencyKey: actionKey() })
+/** POST /api/studio/proposals/decline-all: as accept-all, plus one optional reason for all. */
+export const studioProposalsDeclineAllBody = studioProposalsAcceptAllBody.extend({ reason: safeText({ max: 300, tooLong: "Keep the reason to 300 characters." }).optional() })
+
 /** GET /api/admin/proposals/context?brandId=… | ?productId=…: what the admin form needs. */
 export const adminProposalContextQuery = z.object({ brandId: safeId().optional(), productId: safeId().optional() })
 

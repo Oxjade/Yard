@@ -1,16 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowRightIcon, CheckIcon, GlobeIcon, XIcon } from "@phosphor-icons/react"
+import { ArrowRightIcon, CheckIcon, ChecksIcon, GlobeIcon, XIcon } from "@phosphor-icons/react"
 import { surfaceClass } from "@/components/dashboard/insight/insight-panel"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { actionKey } from "@/lib/api/founding"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import type { SitePieceDto, StudioSitePiecesDto } from "@/lib/api/contracts/imports"
 import { errorMessage } from "@/lib/api/errors"
-import { actOnStudioWebsitePiece, listStudioWebsitePieces, STUDIO_WEBSITE_PIECES_KEY } from "@/lib/api/imports"
+import { actOnStudioWebsitePiece, addStudioWebsitePieces, listStudioWebsitePieces, STUDIO_WEBSITE_PIECES_KEY } from "@/lib/api/imports"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
 import { formatMoney } from "@/lib/money"
 import { useServerSession } from "@/lib/session/use-server-session"
@@ -43,6 +45,8 @@ export function WebsitePiecesSection() {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const batchKey = useRef(actionKey())
   const data = q.data
   const items = data?.items ?? []
   const shown = items.length > 0
@@ -75,7 +79,39 @@ export function WebsitePiecesSection() {
     }
   }
 
-  const waiting = items.filter((i) => i.status === "waiting").length
+  const waitingIds = items.filter((i) => i.status === "waiting").map((i) => i.id)
+  const waiting = waitingIds.length
+  const chosen = waitingIds.filter((id) => selected.has(id))
+  const allOn = waiting > 0 && chosen.length === waiting
+
+  // Add all / Add selected: each piece exactly as one "Add to Yard" (first wins against Yard).
+  async function addMany(which: "all" | "selected") {
+    setBusy(`batch:${which}`)
+    try {
+      const r = await addStudioWebsitePieces({ ids: which === "selected" ? chosen : undefined, idempotencyKey: batchKey.current })
+      batchKey.current = actionKey()
+      const { accepted, skipped, replayed: _replayed, ...dto } = r
+      void _replayed
+      q.mutate(dto as StudioSitePiecesDto)
+      setSelected(new Set())
+      setErrors((x) => {
+        const next = { ...x }
+        for (const id of accepted) delete next[id]
+        for (const sk of skipped) next[sk.id] = sk.reason
+        return next
+      })
+      revalidatePrefix("studio.catalog")
+      const left = skipped.length ? ` ${skipped.length} couldn't be added: the reason is on ${skipped.length === 1 ? "it" : "each"}.` : ""
+      if (accepted.length) toast.success(`${accepted.length} ${accepted.length === 1 ? "piece" : "pieces"} added to Yard`, { description: `Photos and all, in your Products.${left}` })
+      else toast.error("Nothing was added", { description: left.trim() || "Reload and try again." })
+    } catch (e) {
+      toast.error("That didn't go through", { description: errorMessage(e) })
+      void q.revalidate()
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <section id={FROM_WEBSITE_ID} aria-labelledby={`${FROM_WEBSITE_ID}-h`} className={cn(surfaceClass, "grid scroll-mt-20 gap-3 p-4")}>
       <div className="flex items-start gap-3">
@@ -89,6 +125,22 @@ export function WebsitePiecesSection() {
           <p className="text-xs text-ink-2">{data.site ? `New on ${data.site}. ` : ""}Add one and it goes straight into your shop, photos and all. Not this one, and we won&apos;t ask again.</p>
         </div>
       </div>
+      {data.mayAdd && waiting > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="primary" className="h-11 flex-1 sm:flex-none" loading={busy === "batch:all"} disabled={!!busy} onClick={() => void addMany("all")}>
+            <ChecksIcon aria-hidden /> Add all ({waiting})
+          </Button>
+          {chosen.length && !allOn ? (
+            <Button type="button" variant="secondary" className="h-11 flex-1 sm:flex-none" loading={busy === "batch:selected"} disabled={!!busy} onClick={() => void addMany("selected")}>
+              <CheckIcon aria-hidden /> Add selected ({chosen.length})
+            </Button>
+          ) : null}
+          <label className="inline-flex h-11 items-center gap-2 px-1 text-xs text-ink-2 sm:ml-auto">
+            <Checkbox checked={allOn ? true : chosen.length ? "indeterminate" : false} onCheckedChange={() => setSelected(allOn ? new Set() : new Set(waitingIds))} aria-label="Select all waiting pieces" />
+            {chosen.length ? `${chosen.length} of ${waiting} selected` : "Select all"}
+          </label>
+        </div>
+      ) : null}
       <ul className="grid gap-3 md:grid-cols-2">
         {items.map((p) => (
           <li key={p.id} className="grid gap-3 rounded-xl border border-white/[0.07] bg-white/[0.015] p-3">
@@ -100,8 +152,25 @@ export function WebsitePiecesSection() {
                 ))}
                 {!p.images.length ? <span className="h-24 w-20 rounded-lg border border-dashed border-white/10" aria-hidden /> : null}
               </div>
-              <div className="grid min-w-0 content-start gap-1">
-                <p className="text-sm leading-snug text-ink">{p.title}</p>
+              <div className="grid min-w-0 flex-1 content-start gap-1">
+                <div className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 text-sm leading-snug text-ink">{p.title}</p>
+                  {data.mayAdd && p.status === "waiting" ? (
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={selected.has(p.id)}
+                      onCheckedChange={() =>
+                        setSelected((x) => {
+                          const n = new Set(x)
+                          if (n.has(p.id)) n.delete(p.id)
+                          else n.add(p.id)
+                          return n
+                        })
+                      }
+                      aria-label={`Select ${p.title}`}
+                    />
+                  ) : null}
+                </div>
                 <p className="text-sm text-ink tabular">{priceOf(p, data.currency)}</p>
                 {p.sizes.length ? <p className="text-xs text-ink-2">Sizes {p.sizes.join(", ")}</p> : null}
                 {p.availability === "out_of_stock" ? <p className="text-xs text-ink-3">Sold out on your site</p> : null}

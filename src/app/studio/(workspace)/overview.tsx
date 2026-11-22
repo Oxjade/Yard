@@ -40,6 +40,7 @@ import { NotificationRow } from "@/components/feedback/notification-bell"
 import { bestSellers as rankBestSellers, lowConversion, periodSummary, productTraffic, salesByProduct, useBrandSeries } from "@/components/studio/business/brand-series"
 import { orderCustomerName } from "@/components/studio/business/model"
 import { SetupCard } from "@/components/studio/setup/setup-card"
+import { SuggestionsCard } from "@/components/proposals/studio-proposals"
 import { LiveOverview } from "@/components/studio/business/live-overview"
 import { SessionGate } from "@/components/session/session-gate"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
@@ -235,6 +236,8 @@ function SampleOverview() {
 
       {/* Server-backed guidance for the v2 features; nothing when signed out, dismissed or all done (§7.4). */}
       <SetupCard className="mt-6" />
+      {/* Yard's suggestions are real server data even on a demo account. */}
+      <SuggestionsCard className="mt-6" />
 
       {/* Key metrics */}
       <section aria-labelledby="studio-key-metrics" className="mt-6 grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">

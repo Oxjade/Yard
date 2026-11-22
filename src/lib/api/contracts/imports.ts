@@ -255,3 +255,5 @@ export const adminPieceActionBody = z.strictObject({ action: z.enum(["approve", 
 export const adminPiecesBulkBody = z.strictObject({ brandId: safeId(), action: z.literal("approve_all") })
 /** POST /api/studio/website-pieces/{id} */
 export const studioPieceActionBody = z.strictObject({ action: z.enum(["add", "skip"]) })
+/** POST /api/studio/catalog/website-pieces/add-all: `ids` = the selected pieces; no ids = every waiting one. */
+export const studioPiecesAddAllBody = z.strictObject({ ids: z.array(safeId()).min(1).max(100).optional(), idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, { error: "Send an action key of 8–80 letters, digits, - or _." }) })

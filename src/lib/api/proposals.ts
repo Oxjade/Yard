@@ -26,5 +26,11 @@ export const getStudioProposal = (id: string) => api<ProposalResult>(one(STUDIO,
 export const acceptStudioProposal = (id: string, product?: ProposalProductInput) => api<ProposalResult & { productId: string; published: boolean }>(`${one(STUDIO, id)}/accept`, { body: product ? { product } : {} })
 export const declineStudioProposal = (id: string, reason?: string) => api<ProposalResult>(`${one(STUDIO, id)}/decline`, { body: reason ? { reason } : {} })
 
+export type ProposalBatchResult = { accepted: string[]; skipped: { id: string; reason: string }[]; replayed?: boolean }
+/** Accept all (no ids) or the selected suggestions in one tap; the same `idempotencyKey` answers with the first result. */
+export const acceptAllStudioProposals = (body: { ids?: string[]; idempotencyKey: string }) => api<ProposalBatchResult>(`${STUDIO}/accept-all`, { body })
+/** Decline all (no ids) or the selected suggestions; `accepted` lists the declined ones. */
+export const declineAllStudioProposals = (body: { ids?: string[]; reason?: string; idempotencyKey: string }) => api<ProposalBatchResult>(`${STUDIO}/decline-all`, { body })
+
 export const STUDIO_PROPOSALS_KEY = "studio.proposals"
 export const ADMIN_PROPOSALS_KEY = "admin.proposals"

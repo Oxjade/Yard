@@ -12,15 +12,17 @@ import type {
   ProposalSummaryDto,
 } from "@/lib/api/contracts/proposals"
 import { PROPOSAL_STATUSES } from "@/lib/api/contracts/proposals"
+import { ACCEPT_ALL_HREF, mergeBatch, onceForKey, planSuggestionBatch, runBatch, type BatchResult } from "@/lib/batch-accept"
 import { applyChanges, changedSince, diffProposal, normalize, PROPOSAL_FIELDS, proposalFieldLabels, stockAfter, updateBodyOf, viewOf, type ProductView, type ProposalChanges, type ProposalField } from "@/lib/proposals"
 import type { AdminActor, BrandActor } from "../auth/dal"
 import { writeAudit } from "../audit"
 import { db, withTx, type Executor } from "../db"
-import { brands, mediaAssets, notifications, users } from "../db/schema"
+import { auditLog, brands, mediaAssets, notifications, users } from "../db/schema"
 import { catalogCollections, catalogImages, catalogProducts, productProposals } from "../db/schema/catalog"
 import { shippingProfiles } from "../db/schema/shipping"
-import { badRequest, conflict, notFound, rule } from "../http/errors"
+import { badRequest, conflict, HttpError, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
+import { log } from "../log"
 import { mediaSrc } from "../media"
 import { announceRemovedNotifications, notify } from "../notify"
 import { emailBrandMembersWith } from "../orders/brand-email"
@@ -300,7 +302,8 @@ async function tellBrand(tx: Executor, p: Row, productTitle: string | null) {
 export async function tellBrandOfImport(importId: string, brandId: string, proposalIds: string[]) {
   if (!proposalIds.length) return
   const first = proposalIds[0]
-  const href = proposalIds.length === 1 ? studioProposalHref(first) : "/studio/products/suggestions"
+  // Several (a mass import): straight to the list with Accept all in focus, one tap from done.
+  const href = proposalIds.length === 1 ? studioProposalHref(first) : ACCEPT_ALL_HREF
   await withTx(async (tx) => {
     const [p] = await tx.select().from(productProposals).where(eq(productProposals.id, first)).limit(1)
     const title = p ? ((p.payload as ProposalChanges).title ?? null) : null
@@ -555,7 +558,10 @@ async function tellAdmin(row: Row, actor: BrandActor, title: string, outcome: "a
   await notify({ kind: "admin", id: row.createdByAdminId }, { key: `proposal.decided:${row.id}`, template: "proposal.decided_for_admin", vars: { brand: actor.brand.name, product: title, outcome }, href: adminProposalHref(row.id) })
 }
 
-export async function acceptProposal(actor: BrandActor, id: string, override: ProposalProductBody | undefined, ipHash: string | null) {
+/**
+ * `quiet`: a batch (Accept all) tells Yard once for the whole batch instead of once per suggestion.
+ */
+export async function acceptProposal(actor: BrandActor, id: string, override: ProposalProductBody | undefined, ipHash: string | null, opts: { quiet?: boolean } = {}) {
   return withTx(async (tx) => {
     const row = await claim(tx, actor, id, "accepted")
     let productId: string
@@ -598,22 +604,142 @@ export async function acceptProposal(actor: BrandActor, id: string, override: Pr
       published = state.row.status === "published"
     }
     await writeAudit({ actor: brandAudit(actor), action: "catalog.proposal_accepted", target: title, subjectType: "product_proposal", subjectId: row.id, brandId: actor.brandId, ipHash, meta: { kind: row.kind, productId, edited: !!override, published, fields: fieldsOf(row) } })
-    await tellAdmin(row, actor, title, "accepted")
+    if (!opts.quiet) await tellAdmin(row, actor, title, "accepted")
     await announce({ ...row, status: "accepted" })
-    return { proposal: await detailOf(tx, (await listedById(tx, row.id))!, "brand"), productId, published }
+    return { proposal: await detailOf(tx, (await listedById(tx, row.id))!, "brand"), productId, published, adminId: row.createdByAdminId }
   })
 }
 
-export async function declineProposal(actor: BrandActor, id: string, reason: string | undefined, ipHash: string | null) {
+export async function declineProposal(actor: BrandActor, id: string, reason: string | undefined, ipHash: string | null, opts: { quiet?: boolean } = {}) {
   return withTx(async (tx) => {
     const r = await loadOwnProposal(tx, actor, id)
     const row = await claim(tx, actor, id, "declined", { declineReason: reason?.trim() || null })
     const title = summaryOf(r, false, {}).title
     await writeAudit({ actor: brandAudit(actor), action: "catalog.proposal_declined", target: title, subjectType: "product_proposal", subjectId: row.id, brandId: actor.brandId, ipHash, reason: reason?.trim() || null, meta: { kind: row.kind, productId: row.productId } })
-    await tellAdmin(row, actor, title, "declined")
+    if (!opts.quiet) await tellAdmin(row, actor, title, "declined")
     await announce({ ...row, status: "declined" })
-    return { proposal: await detailOf(tx, (await listedById(tx, row.id))!, "brand") }
+    return { proposal: await detailOf(tx, (await listedById(tx, row.id))!, "brand"), adminId: row.createdByAdminId }
   })
+}
+
+/* ---------- Accept all / Decline all (one tap after a mass import) ---------- */
+
+const batchLocks = new Map<string, Promise<unknown>>()
+
+/** One batch per brand at a time: a second tap waits for the first, then replays its result by action key. */
+async function oneBatchPerBrand<T>(brandId: string, run: () => Promise<T>): Promise<T> {
+  const before = batchLocks.get(brandId)
+  const mine = (async () => {
+    if (before) await before.catch(() => {})
+    return run()
+  })()
+  batchLocks.set(brandId, mine)
+  try {
+    return await mine
+  } finally {
+    if (batchLocks.get(brandId) === mine) batchLocks.delete(brandId)
+  }
+}
+
+/** Why one suggestion in a batch stayed pending: the field's own message when validation names one ("That SKU is already used…"). */
+const batchReason = (e: unknown) => {
+  const field = e instanceof HttpError && e.fields ? Object.values(e.fields).find(Boolean) : undefined
+  return (field ?? (e instanceof Error ? e.message : String(e))).slice(0, 200)
+}
+
+/** The action key's earlier result, kept on the batch's audit row (meta.requestKey / meta.result). */
+function batchKeyStore(brandId: string, action: string) {
+  return {
+    load: async (key: string): Promise<BatchResult | null> => {
+      const d = await db()
+      const [prior] = await d
+        .select({ meta: auditLog.meta })
+        .from(auditLog)
+        .where(and(eq(auditLog.brandId, brandId), eq(auditLog.action, action), sql`${auditLog.meta}->>'requestKey' = ${key}`))
+        .limit(1)
+      const r = (prior?.meta as { result?: BatchResult } | undefined)?.result
+      return r && Array.isArray(r.accepted) && Array.isArray(r.skipped) ? { accepted: r.accepted, skipped: r.skipped } : null
+    },
+    save: async () => {},
+  }
+}
+
+/** Yard hears once per batch: one notification per admin who made any of the answered suggestions. */
+async function tellAdminsOfBatch(actor: BrandActor, key: string, adminIds: (string | null)[], outcome: "accepted" | "declined") {
+  const counts = new Map<string, number>()
+  for (const a of adminIds) if (a) counts.set(a, (counts.get(a) ?? 0) + 1)
+  for (const [adminId, count] of counts) {
+    await notify({ kind: "admin", id: adminId }, { key: `proposal.batch:${actor.brandId}:${key}:${adminId}`, template: "proposal.batch_decided_for_admin", vars: { brand: actor.brand.name, count, outcome }, href: "/admin/products/suggestions" }).catch((e) => log.error("[yard] telling Yard about a batch of suggestions failed", e))
+  }
+}
+
+async function pendingForBatch(brandId: string) {
+  const d = await db()
+  const pending = await d
+    .select({ id: productProposals.id, kind: productProposals.kind, productId: productProposals.productId, baseVersion: productProposals.baseVersion })
+    .from(productProposals)
+    .where(and(eq(productProposals.brandId, brandId), eq(productProposals.status, "pending")))
+    .orderBy(asc(productProposals.createdAt), asc(productProposals.id))
+  const productIds = [...new Set(pending.map((p) => p.productId).filter((x): x is string => !!x))]
+  const versions = new Map<string, number>()
+  if (productIds.length) {
+    for (const r of await d.select({ id: catalogProducts.id, version: catalogProducts.version }).from(catalogProducts).where(and(inArray(catalogProducts.id, productIds), eq(catalogProducts.brandId, brandId)))) versions.set(r.id, r.version)
+  }
+  return { pending, versions }
+}
+
+/**
+ * Accept all (or the selected ones): each suggestion through acceptProposal in its own
+ * transaction, so versioning, stock-as-delta and the audit row stay exactly as a single accept.
+ * An edit whose product changed since Yard suggested it, or one that fails validation, stays
+ * pending with the reason. Idempotent by action key; Yard is told once for the batch.
+ */
+export async function acceptProposalsBatch(actor: BrandActor, body: { ids?: string[]; idempotencyKey: string }, ipHash: string | null): Promise<BatchResult & { replayed?: boolean }> {
+  const action = "catalog.proposals_batch_accepted"
+  return oneBatchPerBrand(actor.brandId, () =>
+    onceForKey(body.idempotencyKey, { ...batchKeyStore(actor.brandId, action) }, async () => {
+      const { pending, versions } = await pendingForBatch(actor.brandId)
+      const plan = planSuggestionBatch(body.ids, pending, versions)
+      const admins: (string | null)[] = []
+      const run = await runBatch(
+        plan.take,
+        async (id) => {
+          const r = await acceptProposal(actor, id, undefined, ipHash, { quiet: true })
+          admins.push(r.adminId)
+        },
+        batchReason,
+      )
+      const result = mergeBatch(plan.skipped, run)
+      await writeAudit({ actor: brandAudit(actor), action, target: actor.brand.name, subjectType: "brand", subjectId: actor.brandId, brandId: actor.brandId, ipHash, meta: { requestKey: body.idempotencyKey, asked: body.ids?.length ?? null, result } })
+      if (result.accepted.length) await tellAdminsOfBatch(actor, body.idempotencyKey, admins, "accepted")
+      return result
+    }),
+  )
+}
+
+/** Decline all (or the selected ones), with one optional reason for all. Same rules as Accept all. */
+export async function declineProposalsBatch(actor: BrandActor, body: { ids?: string[]; reason?: string; idempotencyKey: string }, ipHash: string | null): Promise<BatchResult & { replayed?: boolean }> {
+  const action = "catalog.proposals_batch_declined"
+  return oneBatchPerBrand(actor.brandId, () =>
+    onceForKey(body.idempotencyKey, batchKeyStore(actor.brandId, action), async () => {
+      const { pending } = await pendingForBatch(actor.brandId)
+      // Declining never applies anything, so a changed product doesn't block it.
+      const plan = planSuggestionBatch(body.ids, pending.map((p) => ({ ...p, kind: "new" })), new Map())
+      const admins: (string | null)[] = []
+      const run = await runBatch(
+        plan.take,
+        async (id) => {
+          const r = await declineProposal(actor, id, body.reason, ipHash, { quiet: true })
+          admins.push(r.adminId)
+        },
+        batchReason,
+      )
+      const result = mergeBatch(plan.skipped, run)
+      await writeAudit({ actor: brandAudit(actor), action, target: actor.brand.name, subjectType: "brand", subjectId: actor.brandId, brandId: actor.brandId, ipHash, meta: { requestKey: body.idempotencyKey, asked: body.ids?.length ?? null, result } })
+      if (result.accepted.length) await tellAdminsOfBatch(actor, body.idempotencyKey, admins, "declined")
+      return result
+    }),
+  )
 }
 
 /** Pending suggestions for the brand's Products page badge. */

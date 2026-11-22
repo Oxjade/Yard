@@ -50,10 +50,19 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
 - Preview: Add them to Yard in one tap.
 - Heading: Fresh from your site ✨
 - Hey {brand}, {n} new pieces from your website are waiting. Add them to Yard in one tap.
-  We copied the photos, name, price and sizes from your site. Tap Add to Yard and it goes live in your
-  shop, or Not this one and we won't ask again.
-- Button: Add them to Yard → `/studio/products#from-website`
+  Several: We copied the photos, names, prices and options from your site. Tap Add all and they all go
+  live in your shop at once, or pick them one by one. (One: …name, price and options… Tap Add to Yard
+  and it goes live in your shop, or Not this one and we won't ask again.)
+- Button: Add all {n} to Yard (one: Add it to Yard) → `/studio/products#from-website`, where Add all ({n}) waits
 - Notification: "{n} new pieces from your website are waiting" / "Add them to Yard in one tap."
+
+**Suggestions from Yard, a batch** (the website importer's, sent by `tellBrandOfImport`)
+- Subject / heading: `Yard prepared {n} products for you`
+- The Yard team put together {n} products for {brand} from your website. Accept all in one tap, or
+  review them one by one in Studio. Nothing goes live until you accept.
+- Button: Accept all {n} → `/studio/products/suggestions?focus=accept-all` (Accept all in focus)
+- Notification: "Yard prepared {n} products for you" / "Accept all in one tap. Nothing goes live until you accept."
+- Studio Overview card while any are waiting: "Yard prepared {n} products for you. Accept all in one tap".
 
 **Publish your storefront**
 - Subject: `{brand}, your storefront is ready for its moment`

@@ -186,9 +186,11 @@ export function websitePiecesCopy(x: { brand: string; count: number }): BrandEma
     greeting: x.brand ? `Hey ${x.brand},` : undefined,
     paragraphs: [
       `${n} new ${n === 1 ? "piece" : "pieces"} from your website ${n === 1 ? "is" : "are"} waiting. Add ${n === 1 ? "it" : "them"} to Yard in one tap.`,
-      "We copied the photos, name, price and options from your site. Tap Add to Yard and it goes live in your shop, or Not this one and we won't ask again.",
+      n === 1
+        ? "We copied the photos, name, price and options from your site. Tap Add to Yard and it goes live in your shop, or Not this one and we won't ask again."
+        : "We copied the photos, names, prices and options from your site. Tap Add all and they all go live in your shop at once, or pick them one by one.",
     ],
-    action: { label: n === 1 ? "Add it to Yard" : "Add them to Yard", url: "/studio/products#from-website" },
+    action: { label: n === 1 ? "Add it to Yard" : `Add all ${n} to Yard`, url: "/studio/products#from-website" },
     why: `You're getting this because Yard watches ${x.brand || "your brand"}'s website for new pieces.`,
     footerLink: optOut,
   }

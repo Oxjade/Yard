@@ -25,4 +25,7 @@ export const brandWatchKey = (brandId: string) => `admin.brand_watch:${brandId}`
 
 export const listStudioWebsitePieces = () => api<StudioSitePiecesDto>("/api/studio/catalog/website-pieces")
 export const actOnStudioWebsitePiece = (id: string, action: "add" | "skip") => api<StudioSitePiecesDto & { productId?: string; published?: boolean }>(`/api/studio/catalog/website-pieces/${encodeURIComponent(id)}`, { body: { action } })
+/** Add all (no ids) or the selected pieces in one tap; the same `idempotencyKey` answers with the first result. */
+export const addStudioWebsitePieces = (body: { ids?: string[]; idempotencyKey: string }) =>
+  api<StudioSitePiecesDto & { accepted: string[]; skipped: { id: string; reason: string }[]; replayed?: boolean }>("/api/studio/catalog/website-pieces/add-all", { body })
 export const STUDIO_WEBSITE_PIECES_KEY = "studio.website_pieces"

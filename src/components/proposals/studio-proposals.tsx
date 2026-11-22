@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowRightIcon, CaretLeftIcon, CheckIcon, PencilSimpleIcon, SparkleIcon, WarningIcon, XIcon } from "@phosphor-icons/react"
+import { ArrowRightIcon, CaretLeftIcon, CheckIcon, ChecksIcon, PencilSimpleIcon, SparkleIcon, WarningIcon, XIcon } from "@phosphor-icons/react"
 import { surfaceClass } from "@/components/dashboard/insight/insight-panel"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -16,11 +16,14 @@ import { liveBrand, ProductEditor, type ProposalSubmitBody, type ServerEditor } 
 import { ProductEditorSkeleton } from "@/components/studio/catalog/skeletons"
 import { formatDate } from "@/components/studio/catalog/utils"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import type { ProposalDetailDto, ProposalSummaryDto } from "@/lib/api/contracts/proposals"
 import type { StudioShippingDto } from "@/lib/api/contracts/shipping"
 import { errorMessage } from "@/lib/api/errors"
-import { acceptStudioProposal, declineStudioProposal, getStudioProposal, listStudioProposals, STUDIO_PROPOSALS_KEY } from "@/lib/api/proposals"
+import { acceptAllStudioProposals, acceptStudioProposal, declineAllStudioProposals, declineStudioProposal, getStudioProposal, listStudioProposals, STUDIO_PROPOSALS_KEY, type ProposalBatchResult } from "@/lib/api/proposals"
+import { actionKey } from "@/lib/api/founding"
+import { ACCEPT_ALL_HREF, preparedLine } from "@/lib/batch-accept"
 import { getStudioShipping, STUDIO_SHIPPING_KEY } from "@/lib/api/shipping"
 import { apiUpload } from "@/lib/api/upload"
 import { revalidatePrefix, useApi } from "@/lib/api/use-api"
@@ -72,6 +75,32 @@ export function SuggestionsBanner() {
   )
 }
 
+/**
+ * Studio Overview: "Yard prepared N products for you. Accept all in one tap", straight to the list
+ * with Accept all in focus. Only while something is waiting.
+ */
+export function SuggestionsCard({ className }: { className?: string }) {
+  const q = useStudioProposals("pending")
+  const items = q.data?.items.filter((p) => p.status === "pending") ?? []
+  const n = items.length
+  if (!n) return null
+  const line = items.every((p) => p.kind === "new") ? preparedLine(n) : `Yard has ${n} ${n === 1 ? "suggestion" : "suggestions"} for you. Accept ${n === 1 ? "it" : "all"} in one tap`
+  return (
+    <Link href={ACCEPT_ALL_HREF} className={cn(surfaceClass, "group flex items-center gap-3 p-4 transition-colors hover:border-white/15", className)}>
+      <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-purple/20 text-violet">
+        <SparkleIcon className="size-5" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm text-ink">{line}</span>
+        <span className="block text-xs text-ink-2">{n === 1 ? "Nothing goes live until you accept." : "Each one is checked on its own. Nothing goes live until you accept."}</span>
+      </span>
+      <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-acid px-3.5 text-xs font-medium text-obsidian">
+        <ChecksIcon className="size-4" aria-hidden /> {n === 1 ? "Accept" : "Accept all"}
+      </span>
+    </Link>
+  )
+}
+
 function BackLink({ href = "/studio/products", label = "Products" }: { href?: string; label?: string }) {
   return (
     <Link href={href} className="inline-flex w-fit items-center gap-1 text-xs text-ink-2 hover:text-ink">
@@ -99,6 +128,8 @@ function StudioProposalsList() {
   const items = q.data?.items ?? []
   const waiting = items.filter((p) => p.status === "pending")
   const past = items.filter((p) => p.status !== "pending")
+  // Why a suggestion stayed pending after the last batch (it's still in the list, with the reason).
+  const [reasons, setReasons] = useState<Record<string, string>>({})
   if (q.isLoading && !q.data) return <ListSkeleton rows={4} />
   if (q.error && !q.data) return <EmptyState title="Suggestions couldn't load" body={errorMessage(q.error)} action={<Button size="sm" variant="secondary" onClick={() => void q.revalidate()}>Try again</Button>} />
   if (!items.length) return <EmptyState icon={SparkleIcon} title="No suggestions yet" body="When the Yard team suggests a product or a change, it shows here and you get a notification." />
@@ -106,7 +137,23 @@ function StudioProposalsList() {
     <div className="grid gap-6">
       <section className="grid gap-2" aria-labelledby="sg-waiting">
         <h2 id="sg-waiting" className="text-sm text-ink">Waiting for you</h2>
-        {waiting.length ? <ProposalRows items={waiting} /> : <p className="text-sm text-ink-2">Nothing waiting.</p>}
+        {waiting.length ? (
+          <WaitingSuggestions
+            items={waiting}
+            reasons={reasons}
+            onDone={(r, kind) => {
+              setReasons((x) => {
+                const next = { ...x }
+                for (const id of r.accepted) delete next[id]
+                for (const s of r.skipped) next[s.id] = kind === "accept" ? s.reason : `Not declined: ${s.reason}`
+                return next
+              })
+              void q.revalidate()
+            }}
+          />
+        ) : (
+          <p className="text-sm text-ink-2">Nothing waiting.</p>
+        )}
       </section>
       {past.length ? (
         <section className="grid gap-2" aria-labelledby="sg-past">
@@ -118,20 +165,154 @@ function StudioProposalsList() {
   )
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * The waiting list with one-tap answers: Accept all (N) up front (in focus when arriving from the
+ * Overview card or an email, ?focus=accept-all), checkboxes with Accept selected, and Decline all
+ * behind an inline confirm. Each suggestion is still accepted on its own on the server, so one that
+ * can't be (a product that changed since, a missing photo) stays here with the reason.
+ */
+function WaitingSuggestions({ items, reasons, onDone }: { items: ProposalSummaryDto[]; reasons: Record<string, string>; onDone: (r: ProposalBatchResult, kind: "accept" | "decline") => void }) {
+  const { can, reason: cantReason } = useCanDecide()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState<null | "all" | "selected" | "decline">(null)
+  const [confirmDecline, setConfirmDecline] = useState(false)
+  const [why, setWhy] = useState("")
+  const key = useRef(actionKey())
+  const allRef = useRef<HTMLButtonElement>(null)
+  // Arriving from the Overview card or an email (?focus=accept-all): Accept all is in focus, one tap away.
+  useEffect(() => {
+    if (can && new URLSearchParams(window.location.search).get("focus") === "accept-all") {
+      allRef.current?.focus()
+      allRef.current?.scrollIntoView({ block: "center" })
+    }
+  }, [can])
+
+  // Only ids still waiting count (a row answered elsewhere drops out of the selection).
+  const ids = items.map((p) => p.id)
+  const chosen = ids.filter((id) => selected.has(id))
+  const allOn = chosen.length === ids.length
+  const toggleAll = () => setSelected(allOn ? new Set() : new Set(ids))
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+
+  async function run(kind: "all" | "selected" | "decline") {
+    setBusy(kind)
+    try {
+      const body = { ids: kind === "selected" || (kind === "decline" && chosen.length) ? chosen : undefined, idempotencyKey: key.current }
+      const r = kind === "decline" ? await declineAllStudioProposals({ ...body, reason: why.trim() || undefined }) : await acceptAllStudioProposals(body)
+      key.current = actionKey()
+      setSelected(new Set())
+      setConfirmDecline(false)
+      setWhy("")
+      revalidatePrefix(STUDIO_PROPOSALS_KEY)
+      if (kind !== "decline") revalidatePrefix("studio.catalog")
+      onDone(r, kind === "decline" ? "decline" : "accept")
+      const left = r.skipped.length ? ` ${plural(r.skipped.length, "suggestion")} still ${r.skipped.length === 1 ? "needs" : "need"} you: the reason is next to ${r.skipped.length === 1 ? "it" : "each"}.` : ""
+      if (kind === "decline") toast(r.accepted.length ? `${plural(r.accepted.length, "suggestion")} declined` : "Nothing was declined", { description: `Nothing in your catalogue changed.${left}` })
+      else if (r.accepted.length) toast.success(`${plural(r.accepted.length, "suggestion")} accepted`, { description: `New products are in your catalogue, live when your brand can publish.${left}` })
+      else toast.error("Nothing could be accepted", { description: left.trim() || "Reload and try again." })
+    } catch (e) {
+      // The same action key goes again on a retry, so a request that did land isn't run twice.
+      toast.error("That didn't go through", { description: errorMessage(e) })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="grid gap-3">
+      {can ? (
+        <div className={cn(surfaceClass, "grid gap-3 p-4")}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button ref={allRef} id="accept-all" type="button" variant="primary" className="h-11 flex-1 sm:flex-none" loading={busy === "all"} disabled={!!busy} onClick={() => void run("all")}>
+              <ChecksIcon aria-hidden /> Accept all ({items.length})
+            </Button>
+            {chosen.length && !allOn ? (
+              <Button type="button" variant="secondary" className="h-11 flex-1 sm:flex-none" loading={busy === "selected"} disabled={!!busy} onClick={() => void run("selected")}>
+                <CheckIcon aria-hidden /> Accept selected ({chosen.length})
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" className="h-11 sm:ml-auto" disabled={!!busy} aria-expanded={confirmDecline} onClick={() => setConfirmDecline((v) => !v)}>
+              <XIcon aria-hidden /> {chosen.length && !allOn ? `Decline selected (${chosen.length})` : "Decline all"}
+            </Button>
+          </div>
+          <p className="text-xs text-ink-3">Each one is added exactly as if you accepted it by itself. Anything that can&apos;t be stays here with the reason.</p>
+          {confirmDecline ? (
+            <div role="group" aria-label="Confirm declining" className="grid gap-2 rounded-lg border border-danger/30 bg-danger/[0.05] p-3">
+              <p className="text-sm text-ink">
+                Decline {chosen.length && !allOn ? plural(chosen.length, "selected suggestion") : `all ${plural(items.length, "suggestion")}`}? Nothing in your catalogue changes, and Yard sees your answer.
+              </p>
+              <label htmlFor="sg-decline-all-why" className="text-xs text-ink-2">
+                Tell Yard why (optional)
+              </label>
+              <Textarea id="sg-decline-all-why" value={why} onChange={(e) => setWhy(e.target.value)} maxLength={300} rows={2} placeholder="e.g. We don't stock these any more." />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="destructive" size="sm" loading={busy === "decline"} disabled={!!busy} onClick={() => void run("decline")}>
+                  Decline {chosen.length && !allOn ? chosen.length : items.length}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => setConfirmDecline(false)}>
+                  Keep them
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-ink-3">{cantReason}</p>
+      )}
+      <ul className={cn(surfaceClass, "grid grid-cols-[minmax(0,1fr)] divide-y divide-white/[0.06] p-0")}>
+        {can ? (
+          <li className="flex min-w-0 items-center gap-3 px-4 py-2.5">
+            <Checkbox id="sg-select-all" checked={allOn ? true : chosen.length ? "indeterminate" : false} onCheckedChange={toggleAll} aria-label="Select all waiting suggestions" />
+            <label htmlFor="sg-select-all" className="text-xs text-ink-2">
+              {chosen.length ? `${chosen.length} of ${items.length} selected` : "Select all"}
+            </label>
+          </li>
+        ) : null}
+        {items.map((p) => (
+          <li key={p.id} className="flex min-w-0 items-center gap-3 pl-4">
+            {can ? <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggle(p.id)} aria-label={`Select ${p.kind === "new" ? p.title : `changes to ${p.title}`}`} /> : null}
+            <ProposalLink p={p} reason={reasons[p.id]} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ProposalLink({ p, reason }: { p: ProposalSummaryDto; reason?: string }) {
+  return (
+    <Link href={hrefOf(p.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
+      <ProposalThumb src={p.cover} size={36} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-ink">{p.kind === "new" ? p.title : `Changes to ${p.title}`}</span>
+        <span className="block truncate text-xs text-ink-3">{p.kind === "new" ? "New product" : `${p.fields.length} ${p.fields.length === 1 ? "change" : "changes"}`}</span>
+        {reason ? (
+          <span role="status" className="mt-1 flex items-start gap-1 text-xs text-danger">
+            <WarningIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <span className="min-w-0">{reason}</span>
+          </span>
+        ) : null}
+      </span>
+      <span className="hidden shrink-0 text-[11px] text-ink-3 sm:block">{relativeTime(p.createdAt)}</span>
+      <ProposalStatusBadge status={p.status} />
+    </Link>
+  )
+}
+
 function ProposalRows({ items }: { items: ProposalSummaryDto[] }) {
   return (
-    <ul className={cn(surfaceClass, "grid divide-y divide-white/[0.06] p-0")}>
+    <ul className={cn(surfaceClass, "grid grid-cols-[minmax(0,1fr)] divide-y divide-white/[0.06] p-0")}>
       {items.map((p) => (
-        <li key={p.id}>
-          <Link href={hrefOf(p.id)} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
-            <ProposalThumb src={p.cover} size={36} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-ink">{p.kind === "new" ? p.title : `Changes to ${p.title}`}</span>
-              <span className="block truncate text-xs text-ink-3">{p.kind === "new" ? "New product" : `${p.fields.length} ${p.fields.length === 1 ? "change" : "changes"}`}</span>
-            </span>
-            <span className="hidden shrink-0 text-[11px] text-ink-3 sm:block">{relativeTime(p.createdAt)}</span>
-            <ProposalStatusBadge status={p.status} />
-          </Link>
+        <li key={p.id} className="flex min-w-0">
+          <ProposalLink p={p} />
         </li>
       ))}
     </ul>

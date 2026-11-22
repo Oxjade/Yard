@@ -326,7 +326,7 @@ export const templates = {
       const edit = x.kind === "edit"
       // `count` (the website importer's batch): one email for all the products it suggested.
       const many = !edit && Number(x.count) > 1 ? Number(x.count) : 0
-      const title = edit ? `Yard suggested changes to ${v(x, "product", "a product")}` : many ? `Yard suggested ${many} new products` : has(x, "product") ? `Yard suggested a new product: ${v(x, "product")}` : "Yard suggested a new product"
+      const title = edit ? `Yard suggested changes to ${v(x, "product", "a product")}` : many ? `Yard prepared ${many} products for you` : has(x, "product") ? `Yard suggested a new product: ${v(x, "product")}` : "Yard suggested a new product"
       return {
         subject: title,
         preheader: edit ? "Nothing changes until you accept." : "Nothing goes live until you accept.",
@@ -336,10 +336,10 @@ export const templates = {
         paragraphs: [
           edit ? `The Yard team suggested changes to ${v(x, "product", "one of your products")}.` : many ? `The Yard team put together ${many} products for ${v(x, "brand")} from your website.` : `The Yard team put together a product for ${v(x, "brand")}.`,
           ...(has(x, "note") ? [`Note from Yard: “${v(x, "note")}”`] : []),
-          edit ? "Review each change in Studio, then accept, edit or decline. Nothing changes until you accept." : many ? "Review them in Studio, then accept, edit or decline each one. Nothing goes live until you accept." : "Review it in Studio, then accept, edit or decline. Nothing goes live until you accept.",
+          edit ? "Review each change in Studio, then accept, edit or decline. Nothing changes until you accept." : many ? "Accept all in one tap, or review them one by one in Studio. Nothing goes live until you accept." : "Review it in Studio, then accept, edit or decline. Nothing goes live until you accept.",
         ],
         facts: facts({ label: "Brand", value: v(x, "brand") }, has(x, "product") && { label: "Product", value: v(x, "product") }),
-        action: { label: "Review in Studio", url: v(x, "url") },
+        action: { label: many ? `Accept all ${many}` : "Review in Studio", url: v(x, "url") },
         why: `You're getting this because you manage products for ${v(x, "brand")} on Yard.`,
       }
     },

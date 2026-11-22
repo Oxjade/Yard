@@ -11,5 +11,8 @@ import { route } from "@/server/http/route"
  */
 export const POST = route(
   { auth: "brand", permission: "content.publish", body: studioProposalAcceptBody, maxBody: 256 * 1024, rate: { key: "studio.proposals.decide", limit: 30, windowSec: 60 } },
-  async ({ actor, params, body, ipHash }) => acceptProposal(actor, idParam(params, "id"), body.product, ipHash),
+  async ({ actor, params, body, ipHash }) => {
+    const { proposal, productId, published } = await acceptProposal(actor, idParam(params, "id"), body.product, ipHash)
+    return { proposal, productId, published }
+  },
 )
