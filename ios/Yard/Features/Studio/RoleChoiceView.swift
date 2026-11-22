@@ -38,13 +38,13 @@ struct RoleChoiceView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
-            RoleCard(
+            RoleChoiceCard(
                 title: "Shop on Yard",
                 message: "Find independent brands, follow them and catch their drops.",
                 cta: "Start shopping",
                 fill: Color.yard.acid,
                 ink: Color.yard.onAcid,
-                art: AnyView(ShopArtwork())
+                art: .shop
             ) {
                 Haptics.impact(.medium)
                 onboarded = true
@@ -53,13 +53,13 @@ struct RoleChoiceView: View {
             .offset(y: appeared || reduceMotion ? 0 : 60)
             .opacity(appeared ? 1 : 0)
 
-            RoleCard(
+            RoleChoiceCard(
                 title: "Sell on Yard",
                 message: "Open your shop in about a minute. Yard reviews every brand.",
                 cta: "Apply to sell",
                 fill: Color.yard.studio,
                 ink: Color.yard.onPhoto,
-                art: AnyView(SellArtwork())
+                art: .sell
             ) {
                 Haptics.impact(.medium)
                 path.append(.application)
@@ -91,24 +91,25 @@ enum SellerFlowRoute: Hashable {
     case application
 }
 
-/// One big bold choice card with its drawn artwork and a black pill.
-private struct RoleCard: View {
+/// One big bold choice card with its animated illustration and a black pill.
+struct RoleChoiceCard: View {
     let title: String
     let message: String
     let cta: String
     let fill: Color
     let ink: Color
-    let art: AnyView
+    let art: YardIllustration.Kind
+    /// A fixed illustration moment (snapshots); nil animates.
+    var illustrationTime: Double? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
-                art
-                    .frame(width: 150, height: 130)
-                    .padding(.top, Spacing.m)
-                    .padding(.trailing, Spacing.m)
-                    .accessibilityHidden(true)
+                YardIllustration(art, fixedTime: illustrationTime)
+                    .frame(width: 190, height: 158)
+                    .padding(.top, Spacing.xs)
+                    .padding(.trailing, Spacing.xs)
                 VStack(alignment: .leading, spacing: Spacing.s) {
                     Spacer(minLength: 0)
                     Text(title)
@@ -137,95 +138,10 @@ private struct RoleCard: View {
             .background(fill, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(YardTiltPressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(title). \(message)"))
         .accessibilityAddTraits(.isButton)
-    }
-}
-
-/// Shop: three tilted product tiles and a heart, drawn in shapes (black on acid).
-private struct ShopArtwork: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var lifted = false
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.yard.scrim.opacity(0.12))
-                .frame(width: 70, height: 90)
-                .rotationEffect(.degrees(-14))
-                .offset(x: -36, y: 10)
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.yard.scrim)
-                .frame(width: 72, height: 94)
-                .overlay {
-                    Image(systemName: "bag.fill")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(Color.yard.acid)
-                }
-                .rotationEffect(.degrees(lifted ? 6 : 2))
-                .offset(x: 10, y: lifted ? -6 : 0)
-            Circle()
-                .fill(Color.yard.onPhoto)
-                .frame(width: 40, height: 40)
-                .overlay {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color.yard.studio)
-                }
-                .offset(x: 52, y: 40)
-        }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { lifted = true }
-        }
-    }
-}
-
-/// Sell: a shop sign with a rising sales line, drawn in shapes (white on violet).
-private struct SellArtwork: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var drawn: CGFloat = 0
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.yard.scrim)
-                .frame(width: 120, height: 86)
-                .rotationEffect(.degrees(-6))
-            SalesLine()
-                .trim(from: 0, to: drawn)
-                .stroke(Color.yard.acid, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                .frame(width: 92, height: 50)
-                .rotationEffect(.degrees(-6))
-            Image(systemName: "sparkle")
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(Color.yard.onPhoto)
-                .offset(x: 56, y: -46)
-        }
-        .onAppear {
-            if reduceMotion {
-                drawn = 1
-            } else {
-                withAnimation(.easeOut(duration: 1.1).delay(0.3)) { drawn = 1 }
-            }
-        }
-    }
-}
-
-private struct SalesLine: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let pts: [CGPoint] = [
-            CGPoint(x: 0, y: 0.85), CGPoint(x: 0.22, y: 0.6), CGPoint(x: 0.42, y: 0.7),
-            CGPoint(x: 0.64, y: 0.35), CGPoint(x: 0.8, y: 0.45), CGPoint(x: 1, y: 0.05),
-        ]
-        for (i, pt) in pts.enumerated() {
-            let point = CGPoint(x: rect.minX + pt.x * rect.width, y: rect.minY + pt.y * rect.height)
-            if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
-        }
-        return p
     }
 }
 

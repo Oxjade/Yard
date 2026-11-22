@@ -824,13 +824,8 @@ struct StudioQuickAddView: View {
         ZStack {
             VStack(spacing: Spacing.xl) {
                 Spacer()
-                Image(systemName: model.published ? "sparkles" : "tray.and.arrow.down.fill")
-                    .font(.system(size: 40, weight: .black))
-                    .foregroundStyle(Color.yard.onAcid)
-                    .frame(width: 108, height: 108)
-                    .background(Color.yard.acid, in: Circle())
-                    .shadow(color: Color.yard.acid.opacity(0.45), radius: 28)
-                    .accessibilityHidden(true)
+                YardIllustration(model.published ? .stamp(small: "NOW", big: "LIVE") : .stamp(small: "SAVED AS", big: "DRAFT"))
+                    .frame(height: 220)
                 VStack(spacing: Spacing.s) {
                     Text(model.published ? "It's live." : "Saved as a draft.")
                         .yardDisplay(52)

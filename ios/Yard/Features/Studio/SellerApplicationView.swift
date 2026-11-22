@@ -526,14 +526,8 @@ struct SellerApplicationView: View {
         return ZStack {
             VStack(spacing: Spacing.xl) {
                 Spacer()
-                Image(systemName: "checkmark")
-                    .font(.system(size: 44, weight: .black))
-                    .foregroundStyle(Color.yard.onAcid)
-                    .frame(width: 112, height: 112)
-                    .background(Color.yard.acid, in: Circle())
-                    .shadow(color: Color.yard.acid.opacity(0.45), radius: 30)
-                    .symbolEffect(.bounce, value: reduceMotion ? 0 : 1)
-                    .accessibilityHidden(true)
+                YardIllustration(.stamp(small: "YOU'RE ON THE", big: "LIST"))
+                    .frame(height: 230)
                 VStack(spacing: Spacing.m) {
                     Text("You're on the list.")
                         .yardDisplay(52)
@@ -560,18 +554,21 @@ struct SellerApplicationView: View {
             ConfettiView()
                 .ignoresSafeArea()
         }
-        .onAppear { Haptics.success() }
+        .onAppear {
+            Haptics.success()
+            // The stamp lands at ~0.6 s: a heavy tap with it.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 620_000_000)
+                Haptics.impact(.heavy)
+            }
+        }
     }
 
     private func waitingView(_ application: StudioApplication) -> some View {
         VStack(spacing: Spacing.l) {
             Spacer()
-            Image(systemName: "hourglass")
-                .font(.system(size: 40, weight: .bold))
-                .foregroundStyle(Color.yard.onPhoto)
-                .frame(width: 100, height: 100)
-                .background(Color.yard.studio, in: Circle())
-                .accessibilityHidden(true)
+            YardIllustration(.stamp(small: "ALREADY ON THE", big: "LIST"))
+                .frame(height: 210)
             Text("You're already on the list")
                 .yardDisplay(44)
                 .foregroundStyle(Color.yard.ink)

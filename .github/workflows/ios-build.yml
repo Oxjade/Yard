@@ -46,7 +46,9 @@ jobs:
           cd ios
           UDID=$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           echo "simulator: $UDID"
-          xcodebuild -project Yard.xcodeproj -scheme Yard -destination "id=$UDID" -configuration Debug \
+          # Illustration snapshot tests write PNG frames here (TEST_RUNNER_ vars reach the tests).
+          mkdir -p "$GITHUB_WORKSPACE/snapshots"
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/snapshots" xcodebuild -project Yard.xcodeproj -scheme Yard -destination "id=$UDID" -configuration Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | tee ../test.log
 
       - name: Summarise
@@ -69,6 +71,14 @@ jobs:
           } > summary.txt
           cat summary.txt
 
+      - name: Upload snapshot frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-snapshots-${{ github.sha }}
+          path: snapshots/
+          if-no-files-found: ignore
+
       - name: Save the result to the ios-ci branch
         if: always()
         run: |
@@ -76,10 +86,12 @@ jobs:
           git config user.email "ios-build-check@users.noreply.github.com"
           git fetch origin ios-ci || true
           mkdir -p /tmp/out && cp summary.txt /tmp/out/
+          rm -rf /tmp/shots && mkdir -p /tmp/shots && cp snapshots/*.png /tmp/shots/ 2>/dev/null || true
           if git rev-parse --verify origin/ios-ci >/dev/null 2>&1; then git checkout -B ios-ci origin/ios-ci; else git checkout --orphan ios-ci && git rm -rf . >/dev/null; fi
           mkdir -p logs
           cp /tmp/out/summary.txt "logs/${GITHUB_SHA}.txt"
           cp /tmp/out/summary.txt logs/latest.txt
+          if ls /tmp/shots/*.png >/dev/null 2>&1; then mkdir -p "shots/${GITHUB_SHA}" && cp /tmp/shots/*.png "shots/${GITHUB_SHA}/" && git add shots; fi
           git add logs && git commit -m "iOS build ${GITHUB_SHA::7}: ${{ steps.build.outcome }}" && git push origin ios-ci
 
       - name: Fail the check when the build or the tests failed
