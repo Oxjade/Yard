@@ -435,6 +435,14 @@ final class StudioDeepLinkTests: XCTestCase {
         XCTAssertEqual(StudioLink(path: "/studio/inbox?thread=cv_9"), .conversation("cv_9"))
         XCTAssertEqual(link("https://yardstore.space/studio/payouts"), .payouts)
         XCTAssertNil(StudioLink(path: "/you/orders/mo_1"))
+        XCTAssertEqual(StudioLink(path: "/studio/products/suggestions?focus=accept-all"), .suggestions(focusAcceptAll: true))
+        XCTAssertEqual(StudioLink(path: "/studio/products/suggestions"), .suggestions(focusAcceptAll: false))
+        XCTAssertEqual(link("yard://studio/products/suggestions?focus=accept-all"), .suggestions(focusAcceptAll: true))
+    }
+
+    func testSuggestionsLinkOpensProductsWithAcceptAllFocused() {
+        XCTAssertEqual(StudioLink.suggestions(focusAcceptAll: true).tab, .products)
+        XCTAssertEqual(StudioLink.suggestions(focusAcceptAll: true).routes, [.suggestions(focusAcceptAll: true)])
     }
 
     func testRoutesToTabsAndScreens() {
@@ -532,5 +540,121 @@ final class StudioQuickAddTests: XCTestCase {
         XCTAssertEqual(plain.variants.count, 1)
         XCTAssertEqual(plain.variants[0].options, [:])
         XCTAssertEqual(plain.variants[0].initialStock, 5)
+    }
+}
+
+// MARK: - Batches (Accept all, Decline all, Add all)
+
+final class StudioBatchTests: XCTestCase {
+    private func json(_ body: StudioBatchBody) throws -> [String: Any] {
+        try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+    }
+
+    func testBodiesLeaveOutIdsAndReasonWhenNotGiven() throws {
+        let all = try json(StudioBatchBody(ids: nil, idempotencyKey: "k_12345678"))
+        XCTAssertEqual(Set(all.keys), ["idempotencyKey"], "no ids = every waiting item; the server's body is strict")
+        XCTAssertEqual(all["idempotencyKey"] as? String, "k_12345678")
+
+        let picked = try json(StudioBatchBody(ids: ["pp_1", "pp_2"], idempotencyKey: "k_12345678"))
+        XCTAssertEqual(picked["ids"] as? [String], ["pp_1", "pp_2"])
+        XCTAssertNil(picked["reason"])
+
+        let decline = try json(StudioBatchBody(ids: ["pp_1"], reason: "Not our style", idempotencyKey: "k_12345678"))
+        XCTAssertEqual(decline["reason"] as? String, "Not our style")
+
+        let empty = try json(StudioBatchBody(ids: [], reason: "", idempotencyKey: "k_12345678"))
+        XCTAssertEqual(Set(empty.keys), ["idempotencyKey"], "an empty list or reason is never sent")
+    }
+
+    func testFreshKeysFitTheServerRule() {
+        let key = StudioBatchKeys.fresh()
+        XCTAssertTrue((8...80).contains(key.count))
+        XCTAssertNil(key.range(of: "[^A-Za-z0-9_-]", options: .regularExpression))
+        XCTAssertNotEqual(key, StudioBatchKeys.fresh())
+    }
+
+    func testRetryAfterAnUnseenAnswerReusesTheKey() {
+        var keys = StudioBatchKeys()
+        var n = 0
+        let make: () -> String = { n += 1; return "key\(n)xxxxxxxx" }
+        let sig = StudioBatchKeys.signature(action: "accept", ids: nil)
+
+        let first = keys.key(for: sig, make: make)
+        keys.settle(APIError(status: 0, code: "network", message: "offline"))
+        XCTAssertEqual(keys.key(for: sig, make: make), first, "dropped connection: same key, the server replays")
+        keys.settle(APIError(status: 502, code: "http_502", message: "bad gateway"))
+        XCTAssertEqual(keys.key(for: sig, make: make), first, "5xx: the batch may have run, same key")
+
+        keys.settle(nil)
+        let second = keys.key(for: sig, make: make)
+        XCTAssertNotEqual(second, first, "after a clear answer the next tap is a new batch")
+
+        keys.settle(APIError(status: 429, code: "rate_limited", message: "slow down"))
+        XCTAssertNotEqual(keys.key(for: sig, make: make), second, "a 4xx never ran: a new key")
+    }
+
+    func testAnotherSelectionGetsAnotherKey() {
+        var keys = StudioBatchKeys()
+        let a = keys.key(for: StudioBatchKeys.signature(action: "accept", ids: ["b", "a"]))
+        keys.settle(APIError(status: 0, code: "network", message: "offline"))
+        XCTAssertEqual(keys.key(for: StudioBatchKeys.signature(action: "accept", ids: ["a", "b"])), a, "order of the selection doesn't matter")
+        XCTAssertNotEqual(keys.key(for: StudioBatchKeys.signature(action: "accept", ids: ["a"])), a)
+        XCTAssertNotEqual(StudioBatchKeys.signature(action: "accept", ids: nil), StudioBatchKeys.signature(action: "decline", ids: nil))
+    }
+
+    func testDecodesAcceptedSkippedAndReplayed() throws {
+        let r = try JSONDecoder().decode(StudioBatchResult.self, from: Data("""
+        { "accepted": ["pp_1", "pp_2"],
+          "skipped": [ { "id": "pp_3", "reason": "The product changed since Yard suggested this. Open it to review the changes first." },
+                       { "id": "pp_4", "reason": "SKU KS-01 is already used." },
+                       { "reason": "no id" } ],
+          "replayed": true }
+        """.utf8))
+        XCTAssertEqual(r.accepted, ["pp_1", "pp_2"])
+        XCTAssertEqual(r.skipped.map(\.id), ["pp_3", "pp_4"], "a row without an id is dropped, not the whole answer")
+        XCTAssertEqual(r.reasons["pp_4"], "SKU KS-01 is already used.")
+        XCTAssertTrue(r.replayed)
+
+        let plain = try JSONDecoder().decode(StudioBatchResult.self, from: Data(#"{ "accepted": [], "skipped": [] }"#.utf8))
+        XCTAssertFalse(plain.replayed)
+        XCTAssertTrue(plain.skipped.isEmpty)
+    }
+
+    func testWebsiteAddAllDecodesTheRefreshedListAndTheBatch() throws {
+        let r = try JSONDecoder().decode(StudioWebsiteBatchResult.self, from: Data("""
+        { "items": [ { "id": "sp_2", "title": "Oud candle", "images": [], "currency": "NGN", "sizes": [], "status": "new", "taken": false, "error": "The photos couldn't be copied." } ],
+          "count": 1, "mayAdd": true, "site": "kachi.com", "currency": "NGN",
+          "accepted": ["sp_1"], "skipped": [ { "id": "sp_2", "reason": "The photos couldn't be copied." } ] }
+        """.utf8))
+        XCTAssertEqual(r.pieces.count, 1)
+        XCTAssertEqual(r.pieces.items.first?.error, "The photos couldn't be copied.")
+        XCTAssertEqual(r.batch.accepted, ["sp_1"])
+        XCTAssertEqual(r.batch.skipped, [StudioBatchSkip(id: "sp_2", reason: "The photos couldn't be copied.")])
+        XCTAssertFalse(r.batch.replayed)
+    }
+
+    func testDecodesPendingSuggestions() throws {
+        let list = try JSONDecoder().decode(StudioProposalList.self, from: Data("""
+        { "items": [ { "id": "pp_1", "kind": "new", "status": "pending", "title": "Oud candle", "cover": "/api/media/med_1?as=brand", "fields": ["title"], "createdAt": "2026-11-20T10:00:00.000Z" },
+                     { "id": "pp_2", "kind": "edit", "status": "pending", "title": "Linen throw", "cover": null, "fields": [], "createdAt": "2026-11-20T10:00:00.000Z" } ],
+          "total": 2, "counts": { "pending": 2, "accepted": 0, "declined": 0, "withdrawn": 0, "superseded": 0 }, "nextOffset": null }
+        """.utf8))
+        XCTAssertEqual(list.pending.map(\.id), ["pp_1", "pp_2"])
+        XCTAssertEqual(list.pendingCount, 2)
+        XCTAssertTrue(list.items[0].isNew)
+        XCTAssertNotNil(list.items[0].coverURL)
+        XCTAssertNil(list.items[1].coverURL)
+    }
+
+    func testCopy() {
+        XCTAssertEqual(StudioBatchCopy.preparedLine(12, allNew: true), "Yard prepared 12 products for you. Accept all in one tap")
+        XCTAssertEqual(StudioBatchCopy.preparedLine(1, allNew: true), "Yard prepared 1 product for you. Accept it in one tap")
+        XCTAssertEqual(StudioBatchCopy.preparedLine(3, allNew: false), "Yard has 3 suggestions for you. Accept all in one tap")
+        XCTAssertEqual(StudioBatchCopy.acceptAll(5), "Accept all (5)")
+        XCTAssertEqual(StudioBatchCopy.addAll(8), "Add all (8)")
+        let mixed = StudioBatchResult(accepted: ["a", "b"], skipped: [StudioBatchSkip(id: "c", reason: "x")])
+        XCTAssertEqual(StudioBatchCopy.result("Accepted", mixed), "Accepted 2. 1 needs a look below.")
+        XCTAssertEqual(StudioBatchCopy.result("Added", StudioBatchResult(accepted: [], skipped: [StudioBatchSkip(id: "c", reason: "x"), StudioBatchSkip(id: "d", reason: "y")])), "Nothing added. 2 need a look below.")
+        XCTAssertEqual(StudioBatchCopy.result("Declined", StudioBatchResult(accepted: ["a"], skipped: [])), "Declined 1.")
     }
 }

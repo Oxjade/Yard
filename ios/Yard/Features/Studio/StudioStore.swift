@@ -124,6 +124,8 @@ enum StudioRoute: Hashable, Sendable {
     case inbox
     case thread(StudioThreadSource)
     case websitePieces
+    /// Suggestions from Yard; `focusAcceptAll` when arriving from the to-do, a push or an email.
+    case suggestions(focusAcceptAll: Bool)
     case notificationSettings
 }
 
@@ -138,6 +140,8 @@ enum StudioLink: Equatable, Sendable {
     case support
     case products
     case product(String)
+    /// `/studio/products/suggestions?focus=accept-all`.
+    case suggestions(focusAcceptAll: Bool)
     case payouts
 
     init?(url: URL) {
@@ -163,7 +167,13 @@ enum StudioLink: Equatable, Sendable {
         case "support":
             self = .support
         case "products":
-            if let id = third, !id.isEmpty { self = .product(id) } else { self = .products }
+            if third == "suggestions" {
+                self = .suggestions(focusAcceptAll: query.first(where: { $0.name == "focus" })?.value == "accept-all")
+            } else if let id = third, !id.isEmpty {
+                self = .product(id)
+            } else {
+                self = .products
+            }
         case "payouts":
             self = .payouts
         default:
@@ -181,7 +191,7 @@ enum StudioLink: Equatable, Sendable {
         switch self {
         case .home: return .home
         case .orders, .order: return .orders
-        case .products, .product: return .products
+        case .products, .product, .suggestions: return .products
         case .inbox, .conversation, .support, .payouts: return .me
         }
     }
@@ -192,6 +202,7 @@ enum StudioLink: Equatable, Sendable {
         case .home, .orders, .products: return []
         case .order(let id): return [.order(id: id)]
         case .product(let id): return [.product(id: id)]
+        case .suggestions(let focus): return [.suggestions(focusAcceptAll: focus)]
         case .inbox: return [.inbox]
         case .conversation(let id): return [.inbox, .thread(.conversation(id))]
         case .support: return [.thread(.support)]
@@ -238,6 +249,8 @@ final class StudioStore {
     var toShipCount: Int = 0
     var unreadCount: Int = 0
     var websitePieces: Int = 0
+    /// Suggestions from Yard waiting for an answer.
+    var suggestionsPending: Int = 0
 
     /// Set when a Studio call finds the shopper session gone; the root presents sign-in.
     var needsSignIn: Bool = false
@@ -466,6 +479,7 @@ final class StudioStore {
         toShipCount = 0
         unreadCount = 0
         websitePieces = 0
+        suggestionsPending = 0
         brandCurrency = nil
     }
 

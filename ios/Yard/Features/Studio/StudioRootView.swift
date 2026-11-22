@@ -85,6 +85,7 @@ extension View {
             case .inbox: StudioInboxView()
             case .thread(let source): StudioThreadView(source: source)
             case .websitePieces: StudioWebsitePiecesView()
+            case .suggestions(let focus): StudioSuggestionsView(focusAcceptAll: focus)
             case .notificationSettings: StudioNotificationSettingsView()
             }
         }

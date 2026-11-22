@@ -27,6 +27,7 @@ final class StudioProductsModel {
     private(set) var error: String?
     private(set) var loadedKey: String?
     private(set) var pieces: Int = 0
+    private(set) var suggestions: [StudioProposal] = []
 
     func load(studio: StudioStore, filter: StudioProductFilter, q: String, lowStock: Bool, force: Bool) async {
         let key = "\(filter.rawValue)|\(q)|\(lowStock)"
@@ -48,6 +49,10 @@ final class StudioProductsModel {
         if let site = try? await studio.call({ try await StudioAPI.websitePieces() }) {
             pieces = site.count
             studio.websitePieces = site.count
+        }
+        if let list = try? await studio.call({ try await StudioAPI.suggestions(status: "pending") }) {
+            suggestions = list.pending
+            studio.suggestionsPending = list.pending.count
         }
     }
 
@@ -95,6 +100,9 @@ struct StudioProductsView: View {
                 }
                 filters
                 searchField
+                if !model.suggestions.isEmpty {
+                    suggestionsBanner
+                }
                 if model.pieces > 0 {
                     piecesBanner
                 }
@@ -155,6 +163,37 @@ struct StudioProductsView: View {
         .padding(.horizontal, Spacing.m)
         .frame(height: 44)
         .background(Color.yard.surface2, in: Capsule())
+    }
+
+    private var suggestionsBanner: some View {
+        let n = model.suggestions.count
+        let allNew = model.suggestions.allSatisfy { $0.isNew }
+        return Button {
+            Haptics.selection()
+            studio.push(.suggestions(focusAcceptAll: false))
+        } label: {
+            HStack(spacing: Spacing.m) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.yard.onAcid)
+                    .frame(width: 40, height: 40)
+                    .background(Color.yard.acid, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Suggestions from Yard")
+                        .font(.yardHeadline)
+                        .foregroundStyle(Color.yard.ink)
+                    Text(StudioBatchCopy.preparedLine(n, allNew: allNew))
+                        .font(.yardCaption)
+                        .foregroundStyle(Color.yard.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(Color.yard.ink3)
+            }
+            .padding(Spacing.m)
+            .yardCard()
+        }
+        .buttonStyle(PressableButtonStyle())
     }
 
     private var piecesBanner: some View {
@@ -553,6 +592,43 @@ final class StudioWebsitePiecesModel {
     private(set) var data: StudioSitePieces?
     private(set) var error: String?
     private(set) var working: Set<String> = []
+    private(set) var addingAll: Bool = false
+    /// Why a piece was skipped by the last Add all (else the piece's own `error`).
+    private(set) var reasons: [String: String] = [:]
+    var selected: Set<String> = []
+    private var keys = StudioBatchKeys()
+
+    func reason(for piece: StudioSitePiece) -> String? {
+        reasons[piece.id] ?? piece.error
+    }
+
+    /// Add `ids` (the selected pieces) or every waiting piece (nil). A retry after a dropped
+    /// answer reuses the key, so nothing is added twice.
+    func addAll(ids: [String]?, studio: StudioStore) async -> Result<StudioBatchResult, APIError> {
+        guard !addingAll else { return .failure(APIError(status: 0, code: "busy", message: "One moment, the last batch is still running.")) }
+        let chosen: [String]? = ids.map { Array($0.prefix(100)) }
+        let key = keys.key(for: StudioBatchKeys.signature(action: "add", ids: chosen))
+        let body = StudioBatchBody(ids: chosen, idempotencyKey: key)
+        addingAll = true
+        defer { addingAll = false }
+        do {
+            let result = try await studio.call { try await StudioAPI.addAllWebsitePieces(body) }
+            keys.settle(nil)
+            data = result.pieces
+            studio.websitePieces = result.pieces.count
+            var next = reasons
+            for id in result.batch.accepted { next[id] = nil }
+            for skip in result.batch.skipped { next[skip.id] = skip.reason }
+            reasons = next
+            let open = Set(result.pieces.items.filter { !$0.taken }.map(\.id))
+            selected = selected.intersection(open)
+            studio.bumpData()
+            return .success(result.batch)
+        } catch {
+            keys.settle(error)
+            return .failure((error as? APIError) ?? APIError(status: 0, code: "network", message: APIError.message(for: error)))
+        }
+    }
 
     func load(studio: StudioStore) async {
         do {
@@ -582,12 +658,15 @@ final class StudioWebsitePiecesModel {
     }
 }
 
-/// Studio › New from your website: Add / Skip each piece the importer found.
+/// Studio › New from your website: Add all (N), select mode with Add selected, and Add / Skip
+/// each piece the importer found. A piece the batch couldn't add shows its reason.
 @MainActor
 struct StudioWebsitePiecesView: View {
     @Environment(StudioStore.self) private var studio
     @Environment(ToastCenter.self) private var toast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = StudioWebsitePiecesModel()
+    @State private var selecting: Bool = false
 
     var body: some View {
         ScrollView {
@@ -602,6 +681,9 @@ struct StudioWebsitePiecesView: View {
                     if open.isEmpty {
                         EmptyState(title: "You're up to date", message: "New products from your website show here.", systemImage: "globe")
                     } else {
+                        if data.mayAdd {
+                            batchActions(open)
+                        }
                         ForEach(open) { piece in
                             pieceRow(piece, mayAdd: data.mayAdd)
                         }
@@ -618,13 +700,88 @@ struct StudioWebsitePiecesView: View {
         .yardScreenBackground()
         .navigationTitle("New from your website")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let data = model.data, data.mayAdd, data.items.contains(where: { !$0.taken }) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(selecting ? "Done" : "Select") {
+                        Haptics.selection()
+                        withAnimation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion)) {
+                            selecting.toggle()
+                            if !selecting { model.selected = [] }
+                        }
+                    }
+                }
+            }
+        }
         .refreshable { await model.load(studio: studio) }
         .task { await model.load(studio: studio) }
     }
 
+    @ViewBuilder
+    private func batchActions(_ open: [StudioSitePiece]) -> some View {
+        let picked = open.filter { model.selected.contains($0.id) }.map(\.id)
+        VStack(alignment: .leading, spacing: Spacing.s) {
+            if selecting {
+                YardButton("Add selected (\(picked.count))", systemImage: "plus", style: .primary, size: .medium, isLoading: model.addingAll) {
+                    Haptics.impact(.medium)
+                    addAll(picked)
+                }
+                .disabled(picked.isEmpty || model.addingAll)
+                .opacity(picked.isEmpty ? 0.6 : 1)
+                Button(picked.count == open.count ? "Clear selection" : "Select all \(open.count)") {
+                    Haptics.selection()
+                    model.selected = picked.count == open.count ? [] : Set(open.map(\.id))
+                }
+                .font(.yardCallout.weight(.semibold))
+                .foregroundStyle(Color.yard.violet)
+            } else {
+                YardButton(StudioBatchCopy.addAll(open.count), systemImage: "plus.square.on.square", style: .primary, isLoading: model.addingAll) {
+                    Haptics.impact(.medium)
+                    addAll(nil)
+                }
+                .disabled(model.addingAll)
+                Text("Each piece is added on its own, with its photos. Skip the ones you don't want first.")
+                    .font(.yardCaption)
+                    .foregroundStyle(Color.yard.ink2)
+            }
+        }
+    }
+
+    private func addAll(_ ids: [String]?) {
+        Task { @MainActor in
+            switch await model.addAll(ids: ids, studio: studio) {
+            case .success(let result):
+                if !result.accepted.isEmpty {
+                    Haptics.success()
+                    toast.show(StudioBatchCopy.result("Added", result), style: .success, systemImage: "checkmark")
+                } else {
+                    Haptics.warning()
+                    toast.show(StudioBatchCopy.result("Added", result), style: .info)
+                }
+                if model.data?.items.contains(where: { !$0.taken }) != true { selecting = false }
+            case .failure(let error):
+                Haptics.error()
+                toast.show(error.message, style: .error)
+            }
+        }
+    }
+
     private func pieceRow(_ piece: StudioSitePiece, mayAdd: Bool) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        let isSelected = model.selected.contains(piece.id)
+        return VStack(alignment: .leading, spacing: Spacing.m) {
             HStack(spacing: Spacing.m) {
+                if selecting {
+                    Button {
+                        Haptics.selection()
+                        if isSelected { model.selected.remove(piece.id) } else { model.selected.insert(piece.id) }
+                    } label: {
+                        StudioSelectMark(isSelected: isSelected)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(isSelected ? "Deselect \(piece.title)" : "Select \(piece.title)"))
+                }
                 RemoteImage(url: piece.imageURL, contentMode: .fill, maxPixelSize: 240) {
                     BrandArtwork(name: piece.title, style: .initials)
                 }
@@ -649,7 +806,13 @@ struct StudioWebsitePiecesView: View {
                 }
                 Spacer()
             }
-            if mayAdd {
+            if let reason = model.reason(for: piece), !reason.isEmpty {
+                Label(reason, systemImage: "exclamationmark.circle.fill")
+                    .font(.yardCaption)
+                    .foregroundStyle(Color.yard.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if mayAdd && !selecting {
                 HStack(spacing: Spacing.s) {
                     YardButton("Skip", style: .secondary, size: .small, isLoading: false) {
                         Haptics.selection()

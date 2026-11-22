@@ -26,6 +26,8 @@ final class StudioHomeModel {
     private(set) var dashboard: StudioDashboard?
     private(set) var loading: Bool = false
     private(set) var error: String?
+    /// Suggestions from Yard waiting (the "Accept all in one tap" to-do).
+    private(set) var suggestions: [StudioProposal] = []
     private var loadedDays: Int = 0
 
     func load(studio: StudioStore, days: Int, force: Bool = false) async {
@@ -45,6 +47,10 @@ final class StudioHomeModel {
             if (error as? APIError)?.isCancelled != true {
                 self.error = APIError.message(for: error)
             }
+        }
+        if let list = try? await studio.call({ try await StudioAPI.suggestions(status: "pending") }) {
+            suggestions = list.pending
+            studio.suggestionsPending = list.pending.count
         }
     }
 }
@@ -295,6 +301,12 @@ struct StudioHomeView: View {
 
     private func todoItems(_ d: StudioDashboard) -> [TodoItem] {
         var items: [TodoItem] = []
+        if !model.suggestions.isEmpty {
+            let allNew = model.suggestions.allSatisfy { $0.isNew }
+            items.append(TodoItem(id: "suggestions", icon: "sparkles", title: StudioBatchCopy.preparedLine(model.suggestions.count, allNew: allNew)) {
+                studio.show(.suggestions(focusAcceptAll: true), in: .products)
+            })
+        }
         if d.toShip.total > 0 {
             items.append(TodoItem(id: "ship", icon: "shippingbox.fill", title: "\(d.toShip.total) order\(d.toShip.total == 1 ? "" : "s") to ship") {
                 studio.select(.orders)

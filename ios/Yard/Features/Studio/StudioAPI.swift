@@ -146,6 +146,28 @@ enum StudioAPI {
         try await api.post("/api/studio/catalog/website-pieces/\(escaped(id))", body: StudioSitePieceAction(action: action), as: StudioSitePieces.self)
     }
 
+    /// POST /api/studio/catalog/website-pieces/add-all { ids?, idempotencyKey }: the refreshed list plus the batch result.
+    static func addAllWebsitePieces(_ body: StudioBatchBody) async throws -> StudioWebsiteBatchResult {
+        try await api.post("/api/studio/catalog/website-pieces/add-all", body: body, as: StudioWebsiteBatchResult.self)
+    }
+
+    // MARK: Suggestions from Yard
+
+    /// GET /api/studio/proposals?status=pending|all.
+    static func suggestions(status: String = "pending") async throws -> StudioProposalList {
+        try await api.get("/api/studio/proposals", query: [URLQueryItem(name: "status", value: status)], as: StudioProposalList.self)
+    }
+
+    /// POST /api/studio/proposals/accept-all { ids?, idempotencyKey }.
+    static func acceptAllSuggestions(_ body: StudioBatchBody) async throws -> StudioBatchResult {
+        try await api.post("/api/studio/proposals/accept-all", body: body, as: StudioBatchResult.self)
+    }
+
+    /// POST /api/studio/proposals/decline-all { ids?, reason?, idempotencyKey }.
+    static func declineAllSuggestions(_ body: StudioBatchBody) async throws -> StudioBatchResult {
+        try await api.post("/api/studio/proposals/decline-all", body: body, as: StudioBatchResult.self)
+    }
+
     // MARK: Payouts
 
     static func payouts() async throws -> StudioPayouts {
