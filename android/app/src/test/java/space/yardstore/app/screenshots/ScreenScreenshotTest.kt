@@ -25,6 +25,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import space.yardstore.app.app.AppContainer
+import space.yardstore.app.app.AppTab
 import space.yardstore.app.app.RootView
 import space.yardstore.app.core.stores.CartStore
 import space.yardstore.app.core.stores.LocalCartStore
@@ -166,7 +167,9 @@ object ScreenshotHarness {
         try {
             compose.setContent { YardScreens.Render(screen, dark) }
             // Let API calls (MockWebServer threads → main looper), effects and animations settle.
-            repeat(16) {
+            // The shell screens load the session and then the cart twice (signed out, signed in): give
+            // the cold first run time to land the Cart badge.
+            repeat(if (screen.startsWith("nav-")) 40 else 16) {
                 compose.mainClock.advanceTimeBy(250)
                 compose.waitForIdle()
                 Thread.sleep(40)
@@ -191,7 +194,10 @@ object YardScreens {
         "settings-photo-failed-first", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
         "place-detail", "root", "terms", "sign-in-sheet",
-    ) + studio + suggestions }
+    ) + nav + studio + suggestions }
+
+    /** The whole shopper shell on each bar tab (Home · Shop · Around · Cart · Me), for the bar itself. */
+    val nav = listOf("nav-home", "nav-shop", "nav-around", "nav-cart", "nav-me")
 
     /** Suggestions from Yard (Accept all) and New from your website (Add all). */
     val suggestions = listOf(
@@ -224,9 +230,18 @@ object YardScreens {
 
     @Composable
     fun Render(screen: String, dark: Boolean) {
-        if (screen == "root") {
+        if (screen == "root" || screen.startsWith("nav-")) {
             val context = LocalContext.current
-            val container = remember { AppContainer(context.applicationContext) }
+            val container = remember {
+                AppContainer(context.applicationContext).also { c ->
+                    when (screen) {
+                        "nav-shop" -> c.router.select(AppTab.Search)
+                        "nav-around" -> c.router.select(AppTab.Around)
+                        "nav-cart" -> c.router.select(AppTab.Bag)
+                        "nav-me" -> c.router.select(AppTab.You)
+                    }
+                }
+            }
             YardTheme(darkTheme = dark) { RootView(container) }
             return
         }

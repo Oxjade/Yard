@@ -263,7 +263,7 @@ class SavedViewModel(private val api: APIClient = APIClient.shared) : ViewModel(
                     // The piece is in the bag; it just stayed saved.
                 }
                 onMoved()
-                toast.show("Moved to your bag", Toast.Style.Success, Icons.Filled.ShoppingBag)
+                toast.show("Moved to your cart", Toast.Style.Success, Icons.Filled.ShoppingBag)
             } finally {
                 busyIds = busyIds - productId
             }
@@ -467,7 +467,7 @@ internal fun savedSubtitle(count: Int, brands: Int): String {
     if (count <= 0) return "Pieces you save from any brand wait here until you're ready."
     val pieces = if (count == 1) "piece" else "pieces"
     val brandWord = if (brands == 1) "brand" else "brands"
-    return "$count saved $pieces from $brands $brandWord. Add one to your bag and it moves out of your wishlist."
+    return "$count saved $pieces from $brands $brandWord. Add one to your cart and it moves out of your wishlist."
 }
 
 @Composable
@@ -562,7 +562,7 @@ private fun SavedTile(
                     ) {}
                 else ->
                     YardButton(
-                        "Move to bag",
+                        "Move to cart",
                         icon = Icons.Outlined.ShoppingBag,
                         style = YardButtonStyle.Secondary,
                         size = YardButtonSize.Small,

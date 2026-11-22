@@ -16,6 +16,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import space.yardstore.app.designsystem.components.YardTabBarDefaults
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -86,12 +87,18 @@ enum class GlassStyle {
     Clear,
     /** Toasts and notices: the densest, text-heavy. */
     Thick,
+    /**
+     * The bottom tab bars (shopper and Studio): smoked black glass in BOTH appearances, like the
+     * website's `glass-bar` (rgba(8,8,8,0.74)): the page shows through blurred, never bright.
+     */
+    Bar,
 }
 
 /** The fill colour of a glass surface (also the whole look when there is no blur). */
 @Composable
 fun glassTint(style: GlassStyle = GlassStyle.Regular, blurred: Boolean): Color {
     val c = Color.yard
+    if (style == GlassStyle.Bar) return YardTabBarDefaults.glass.copy(alpha = if (blurred) 0.74f else 0.92f)
     val base = c.surface
     // Light glass needs more white than dark glass needs black to stay clean over dark photos.
     val lift = if (c.isDark) 0f else 0.12f
@@ -99,6 +106,7 @@ fun glassTint(style: GlassStyle = GlassStyle.Regular, blurred: Boolean): Color {
         GlassStyle.Regular -> if (blurred) 0.6f + lift else 0.88f
         GlassStyle.Clear -> if (blurred) 0.42f + lift else 0.72f
         GlassStyle.Thick -> if (blurred) 0.78f + lift else 0.95f
+        GlassStyle.Bar -> 1f
     }
     return base.copy(alpha = alpha)
 }
@@ -119,7 +127,7 @@ fun Modifier.yardGlass(
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val blurred = blurLayer != null
     val tint = glassTint(style, blurred)
-    val dark = c.isDark
+    val dark = c.isDark || style == GlassStyle.Bar
     // Top-lit sheen and a rim that catches the light along the top edge.
     val sheenTop = if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.55f)
     val rimTop = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f)

@@ -206,7 +206,7 @@ fun BagView(quotes: BagQuoteLoader) {
     suspend fun remove(line: CartLine): Boolean = try {
         cart.remove(line.variantId)
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        toast.show("Removed from your bag", Toast.Style.Info, Icons.Outlined.Delete)
+        toast.show("Removed from your cart", Toast.Style.Info, Icons.Outlined.Delete)
         true
     } catch (e: CancellationException) {
         throw e
@@ -258,7 +258,7 @@ private fun BagEmpty(onDiscover: () -> Unit) {
         BagHeader(itemCount = 0, brandCount = 0, modifier = Modifier.adaptiveContentWidth().padding(horizontal = Spacing.gutter))
         Spacer(Modifier.weight(1f))
         EmptyState(
-            title = "Your bag is empty",
+            title = "Your cart is empty",
             message = "Add pieces from any brand and they check out together, one order per brand.",
             icon = Icons.Outlined.ShoppingBag,
             actionTitle = "Discover brands",
@@ -545,7 +545,7 @@ internal fun bagPlural(n: Int, one: String): String = "$n ${if (n == 1) one else
 @Composable
 private fun BagHeader(itemCount: Int, brandCount: Int, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(top = Spacing.s), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        YardDisplayText("Bag", size = 44.sp, color = Color.yard.ink)
+        YardDisplayText("Cart", size = 44.sp, color = Color.yard.ink)
         if (itemCount > 0) {
             Text(
                 "${bagPlural(itemCount, "item")} from ${bagPlural(brandCount, "brand")}",
@@ -765,7 +765,7 @@ fun BagLineRow(
         )
         Column(Modifier.weight(1f).heightIn(min = 96.dp), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             Text(
-                line.title ?: "A piece from your bag",
+                line.title ?: "A piece from your cart",
                 style = YardFonts.bodyEmphasis,
                 color = Color.yard.ink,
                 maxLines = 2,
@@ -906,7 +906,7 @@ fun BagSkeleton() {
             .fillMaxSize()
             .adaptiveContentWidth()
             .padding(horizontal = Spacing.gutter)
-            .semantics { contentDescription = "Loading your bag" },
+            .semantics { contentDescription = "Loading your cart" },
         verticalArrangement = Arrangement.spacedBy(Spacing.l),
     ) {
         Skeleton(Modifier.padding(top = Spacing.s).size(width = 120.dp, height = 40.dp), cornerRadius = 8.dp)

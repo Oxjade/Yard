@@ -50,6 +50,14 @@ orientation lock; `MainActivity.applyOrientationPolicy` keeps smallest-width < 6
 in multi-window) and re-checks on fold/unfold. `configChanges` covers orientation / size / layout /
 keyboard, so rotation recomposes in place (back stacks, sheet, ViewModels, `remember` all kept);
 dark-mode changes still recreate (state restored by `rememberSaveable` / `rememberNavController`).
+Bottom bar: Home · Shop · Around (raised centre pin) · Cart · Me, as on the website's phone tab
+bar (`AppTab` keeps the old constant names: Search = Shop, Bag = Cart, You = Me). Both the shopper
+bar (`TabPill`, purple active pill) and the Studio bar (acid pill, no centre) are the one shared
+`YardTabBar` (designsystem/components/YardTabBar.kt): smoked glass (`GlassStyle.Bar`), 60dp
+capsule, 12dp side margins, max 400dp; the active tab shows icon + label (icon only < 380dp).
+Shop tab = `ShopTabView()` (the shop grid with a search field that pushes `Route.Search("")`);
+Around tab = `AroundView()`; `/shop`, `/search` and `/around` links select those tabs.
+
 Shell on wide windows: `TabRail` (vertical twin of `TabPill`, visible on every tab screen unless
 `isTabPillSuppressed`; `router.isTabRailVisible`), the tab stacks are offset by
 `TabRailDefaults.reservedWidth` + the start inset, `LocalTabPillClearance` = nav-bar inset only,

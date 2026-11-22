@@ -3,12 +3,16 @@ package space.yardstore.app.app
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,12 +29,21 @@ import java.net.URLDecoder
 
 // region Tabs
 
-/** The four tabs of the floating tab pill. Mirrors `AppTab` in `Router.swift`. */
+/**
+ * The five tabs of the bottom bar, left to right: Home · Shop · Around (the raised centre pin) ·
+ * Cart · Me, as on the website's phone tab bar. Mirrors `AppTab` in `Router.swift`. The constant
+ * names are the old ones (Search = Shop, Bag = Cart, You = Me) so saved state and links keep working.
+ */
 enum class AppTab(val title: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
-    Search("Search", Icons.Outlined.Search, Icons.Filled.Search),
-    Bag("Bag", Icons.Outlined.ShoppingBag, Icons.Filled.ShoppingBag),
-    You("You", Icons.Outlined.Person, Icons.Filled.Person),
+    /** Shop: the browse grid with search at the top. */
+    Search("Shop", Icons.Outlined.Storefront, Icons.Filled.Storefront),
+    /** Around: brands and places near you (the raised centre button). */
+    Around("Around", Icons.Outlined.Place, Icons.Filled.Place),
+    /** Cart (keeps the count badge). */
+    Bag("Cart", Icons.Outlined.ShoppingBag, Icons.Filled.ShoppingBag),
+    /** Me: the profile hub. */
+    You("Me", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 // endregion
@@ -326,6 +339,8 @@ class Router {
             route == Route.You -> { select(AppTab.You); popToRoot(AppTab.You) }
             route == Route.SignIn -> present(Route.SignIn)
             route is Route.Search && route.query.isEmpty() -> select(AppTab.Search)
+            route == Route.Shop -> { select(AppTab.Search); popToRoot(AppTab.Search) }
+            route == Route.Around -> { select(AppTab.Around); popToRoot(AppTab.Around) }
             else -> push(route)
         }
         return true

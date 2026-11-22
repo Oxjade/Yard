@@ -1,5 +1,12 @@
 package space.yardstore.app.features.shop
 
+import space.yardstore.app.app.LocalTabPillClearance
+import space.yardstore.app.app.tabPillScrollSensor
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.border
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -92,9 +99,20 @@ fun ShopView(category: String?) {
     ShopScreen(model)
 }
 
-/** The screen for a given model (previews pass a fixed one). */
+/**
+ * The Shop tab (bottom bar): every product with category chips and filters, and a search field at
+ * the top that opens Search (`Route.Search("")`, the same live search as before). Same listing,
+ * paging and model as [ShopView]; no top bar (tab roots have none).
+ */
 @Composable
-internal fun ShopScreen(model: ShopListingModel) {
+fun ShopTabView() {
+    val model: ShopListingModel = viewModel(key = "shop-tab") { ShopListingModel(null) }
+    ShopScreen(model, asTab = true)
+}
+
+/** The screen for a given model (previews pass a fixed one). [asTab]: the Shop tab root. */
+@Composable
+internal fun ShopScreen(model: ShopListingModel, asTab: Boolean = false) {
     val router = LocalRouter.current
     LaunchedEffect(model) { model.start() }
 
@@ -102,10 +120,10 @@ internal fun ShopScreen(model: ShopListingModel) {
     // The filter bar is grid item 1 (after the header): once it reaches the top it pins.
     val pinned by remember { derivedStateOf { gridState.firstVisibleItemIndex >= 1 } }
     val dim by animateFloatAsState(if (model.isRefreshing) 0.45f else 1f, Motion.fade(), label = "shop-dim")
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Spacing.xxl
+    val bottom = if (asTab) LocalTabPillClearance.current + Spacing.xl else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Spacing.xxl
 
-    Column(Modifier.fillMaxSize().yardScreenBackground()) {
-        YardTopBar(model.categoryName ?: "Shop")
+    Column(Modifier.fillMaxSize().yardScreenBackground().then(if (asTab) Modifier.statusBarsPadding() else Modifier)) {
+        if (!asTab) YardTopBar(model.categoryName ?: "Shop")
         ShopRefreshBox(
             isRefreshing = model.isPullRefreshing,
             onRefresh = { model.refresh() },
@@ -113,12 +131,15 @@ internal fun ShopScreen(model: ShopListingModel) {
         ) {
             MasonryGrid(
                 products = if (model.isLoaded) model.products else emptyList(),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().then(if (asTab) Modifier.tabPillScrollSensor() else Modifier),
                 state = gridState,
                 contentPadding = PaddingValues(start = Spacing.gridGap, end = Spacing.gridGap, bottom = bottom),
                 header = {
                     fullLine("shop-header") {
-                        ShopHeader(model, Modifier.padding(bottom = Spacing.l))
+                        Column {
+                            ShopHeader(model, Modifier.padding(bottom = if (asTab) Spacing.m else Spacing.l))
+                            if (asTab) ShopSearchField(Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.l)) { router.push(Route.Search(query = "")) }
+                        }
                     }
                     fullLine("shop-filters") { ShopFilterBar(model) }
                     shopResultsState(model)
@@ -169,6 +190,27 @@ private fun LazyStaggeredGridScope.shopResultsState(model: ShopListingModel) {
 }
 
 // MARK: Header
+
+/** The Shop tab's search field: looks like Search's field and opens it (keyboard up). */
+@Composable
+private fun ShopSearchField(modifier: Modifier = Modifier, onOpen: () -> Unit) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .clip(YardShapes.pill)
+            .background(Color.yard.surface2, YardShapes.pill)
+            .border(1.dp, Color.yard.line, YardShapes.pill)
+            .semantics { contentDescription = "Search brands, products, categories" }
+            .pressableClick(pressedScale = 0.98f, onClickLabel = "Search", onClick = onOpen)
+            .padding(horizontal = Spacing.l),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.yard.ink2, modifier = Modifier.size(20.dp))
+        Text("Brands, products, categories", style = YardFonts.body, color = Color.yard.ink3, maxLines = 1)
+    }
+}
 
 @Composable
 private fun ShopHeader(model: ShopListingModel, modifier: Modifier = Modifier) {

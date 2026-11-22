@@ -469,12 +469,12 @@ private fun OrderConfirmationActions(checkoutId: String, checkout: OrderCheckout
                 if (link != null) {
                     YardButton("Pay now") { WebPages.open(context, link, darkTheme = dark) }
                 } else {
-                    YardButton("Return to bag") { returnToBag() }
+                    YardButton("Return to cart") { returnToBag() }
                 }
                 YardButton("Check again", style = YardButtonStyle.Secondary) { model.start(checkoutId) }
             }
             OrderConfirmationOutcome.Failed -> {
-                YardButton("Return to bag") { returnToBag() }
+                YardButton("Return to cart") { returnToBag() }
                 YardButton("See your orders", style = YardButtonStyle.Secondary) { router.push(Route.Orders) }
             }
         }

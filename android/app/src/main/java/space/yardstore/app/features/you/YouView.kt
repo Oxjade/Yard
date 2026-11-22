@@ -196,7 +196,7 @@ fun YouView() {
 @Composable
 private fun YouTopBar(onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        YardDisplayText("You", size = 40.sp, color = Color.yard.ink)
+        YardDisplayText("Me", size = 40.sp, color = Color.yard.ink)
         Spacer(Modifier.weight(1f))
         GlassIconButton(Icons.Outlined.Settings, "Settings", size = 40.dp, onClick = onSettings)
     }

@@ -205,7 +205,7 @@ class SavedViewModelTest {
         assertEquals(1, backend.requestsTo("/api/wishlist/prd_a").size)
         assertFalse(saved.isSaved("prd_a"))
         assertTrue(model.visibleProducts(saved).isEmpty())
-        assertEquals("Moved to your bag", toast.current?.message)
+        assertEquals("Moved to your cart", toast.current?.message)
         assertEquals(Toast.Style.Success, toast.current?.style)
     }
 
@@ -248,8 +248,8 @@ class SavedViewModelTest {
 
     @Test fun subtitleCopy() {
         assertEquals("Pieces you save from any brand wait here until you're ready.", savedSubtitle(0, 0))
-        assertEquals("1 saved piece from 1 brand. Add one to your bag and it moves out of your wishlist.", savedSubtitle(1, 1))
-        assertEquals("4 saved pieces from 2 brands. Add one to your bag and it moves out of your wishlist.", savedSubtitle(4, 2))
+        assertEquals("1 saved piece from 1 brand. Add one to your cart and it moves out of your wishlist.", savedSubtitle(1, 1))
+        assertEquals("4 saved pieces from 2 brands. Add one to your cart and it moves out of your wishlist.", savedSubtitle(4, 2))
     }
 
     @Test fun sortTitlesMatchIOS() {

@@ -110,7 +110,7 @@ fun ProductOptionPicker(
         }
         AnimatedVisibility(visible = showsInvalid && chosen == null, enter = fadeIn(Motion.snappy()), exit = fadeOut(Motion.snappy())) {
             Text(
-                if (model.isOpening) "Choose a size to hear when it goes on sale." else "Choose a size to add this to your bag.",
+                if (model.isOpening) "Choose a size to hear when it goes on sale." else "Choose a size to add this to your cart.",
                 style = YardFonts.caption,
                 color = Color.yard.danger,
                 modifier = Modifier.padding(horizontal = Spacing.gutter),
@@ -228,11 +228,11 @@ fun ProductSizeSheet(
                     else -> YardButton("Sold out", style = YardButtonStyle.Secondary, enabled = false) {}
                 }
                 ProductBuyAction.ChooseSize ->
-                    YardButton("Add to bag", icon = Icons.Outlined.ShoppingBag) { showsInvalid = true }
+                    YardButton("Add to cart", icon = Icons.Outlined.ShoppingBag) { showsInvalid = true }
                 ProductBuyAction.Limit ->
-                    YardButton("Add to bag", style = YardButtonStyle.Secondary, enabled = false) {}
+                    YardButton("Add to cart", style = YardButtonStyle.Secondary, enabled = false) {}
                 ProductBuyAction.Ready ->
-                    YardButton("Add to bag", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
+                    YardButton("Add to cart", icon = Icons.Outlined.ShoppingBag, isLoading = isAdding, onClick = onAdd)
             }
         }
     }
