@@ -3,7 +3,7 @@
 import { useCallback, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { HandbagIcon, HouseSimpleIcon, MapPinIcon, StorefrontIcon, UserCircleIcon, type Icon } from "@phosphor-icons/react"
+import { HandbagIcon, HouseSimpleIcon, MagnifyingGlassIcon, MapPinIcon, UserCircleIcon, type Icon } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useUnread } from "@/lib/realtime/unread"
@@ -15,33 +15,32 @@ import { bagCount } from "./bag-count"
 import { BagPop, useLgUp } from "./bag-pop"
 import { useChromeAutohide } from "./chrome-autohide"
 import { cartLabel } from "./market-header"
+import { useSearchOverlay } from "./search-overlay"
 
-type Tab = "home" | "shop" | "around" | "cart" | "me"
+type Tab = "home" | "explore" | "around" | "cart" | "me"
 
 const starts = (pathname: string, bases: string[]) => bases.some((b) => pathname === b || pathname.startsWith(`${b}/`))
 
-/** Which tab a route belongs to (§7.2 Matches). Shop covers every browse page (the catalogue, products, categories, brands, charts, drops, stories, collections). */
+/** Which tab a route belongs to (§7.2 Matches). Explore covers every browse page, so its label stays true there. */
 export function tabFor(pathname: string): Tab | null {
   if (pathname === "/" || starts(pathname, ["/welcome"])) return "home"
   if (starts(pathname, ["/around"])) return "around"
   if (starts(pathname, ["/bag", "/checkout"])) return "cart"
   if (starts(pathname, ["/you", "/following", "/wishlist", "/inbox", "/notifications", "/sign-in"])) return "me"
-  if (starts(pathname, ["/shop", "/categories", "/brands", "/charts", "/drops", "/stories", "/collections", "/products"])) return "shop"
+  if (starts(pathname, ["/shop", "/categories", "/brands", "/charts", "/drops", "/stories", "/collections", "/products"])) return "explore"
   return null
 }
 
 /**
  * The phone home bar (§7.2, after the owner's pin 5gWDq1nnC.jpg): a black Liquid Glass capsule
- * (glass-bar, kept dark: the page shows through blurred, never bright) with Home and Shop on the left, the raised Around pin in the centre, and Cart and Me on the right.
- * The same five tabs as the iOS and Android apps.
+ * (glass-bar, kept dark: the page shows through blurred, never bright) with Home and Explore on the left, the raised Around pin in the centre, and Cart and Me on the right.
  *
  * - The active side tab is a purple pill with the filled icon and its label (below 380px the
  *   label goes to screen readers only and the pill closes to a filled disc). Inactive tabs are
  *   44px icons with screen-reader labels.
- * - Home, Shop and Me are links and carry `aria-current="page"` on their own page (Shop's pill also
- *   shows on the browse pages under it). Cart is a button (it opens the cart drawer): its active
- *   pill is visual only and it never carries `aria-current`.
- * - Search is one tap away on Shop: /shop opens with its search field at the top.
+ * - Home and Me are links and carry `aria-current="page"` on their own page. Explore and Cart are
+ *   buttons (they open the search overlay and the cart drawer): their active pill is visual only,
+ *   and Explore says `aria-expanded` while the overlay is open. They never carry `aria-current`.
  * - The pin is a 56px ink disc raised above the bar with an obsidian ring and a faint grey band
  *   (the owner's grey ring, inverted for a black bar); on /around it turns purple.
  * - The two halves are equal grid columns, so the pin sits exactly in the middle at any width.
@@ -51,6 +50,8 @@ export function MobileTabBar() {
   const pathname = usePathname()
   const hydrated = useHydrated()
   const lgUp = useLgUp()
+  const overlayOpen = useSearchOverlay((s) => s.open)
+  const setOverlay = useSearchOverlay((s) => s.setOpen)
   const cartOpen = useCart((s) => s.isOpen)
   const openCart = useCart((s) => s.open)
   const count = useCart((s) => bagCount(s.lines))
@@ -63,8 +64,8 @@ export function MobileTabBar() {
   const capsule = useRef<HTMLDivElement>(null)
   const cartRef = useRef<HTMLButtonElement>(null)
 
-  // One active tab: the open cart drawer wins over the page underneath.
-  const active: Tab | null = cartOpen ? "cart" : tabFor(pathname)
+  // One active tab: an open overlay or drawer wins over the page underneath.
+  const active: Tab | null = overlayOpen ? "explore" : cartOpen ? "cart" : tabFor(pathname)
   const items = hydrated ? count : 0
   const meUnread = hydrated && signedIn && unread ? unread : 0
 
@@ -77,13 +78,15 @@ export function MobileTabBar() {
   }, [])
 
   return (
+    // Above the search overlay's scrim (z-50) while it's open, so Explore shows its pressed state and a second tap closes it.
     // Hidden, it drops by its own height plus the pin's rise and shadow, so nothing peeks over the edge.
     <nav
       aria-label="Primary"
       data-tabbar=""
       onFocusCapture={show}
       className={cn(
-        "pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(0.875rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out-quint motion-reduce:transition-none lg:hidden print:hidden",
+        "pointer-events-none fixed inset-x-0 bottom-0 flex justify-center pb-[max(0.875rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out-quint motion-reduce:transition-none lg:hidden print:hidden",
+        overlayOpen ? "z-[60]" : "z-40",
         hidden && "translate-y-[calc(100%+2rem)]",
       )}
     >
@@ -96,7 +99,15 @@ export function MobileTabBar() {
             <TabLink href="/" label="Home" icon={HouseSimpleIcon} active={active === "home"} current={pathname === "/"} />
           </li>
           <li>
-            <TabLink href="/shop" label="Shop" icon={StorefrontIcon} active={active === "shop"} current={pathname === "/shop"} />
+            <TabButton
+              label="Explore"
+              icon={MagnifyingGlassIcon}
+              active={active === "explore"}
+              onClick={() => setOverlay(!useSearchOverlay.getState().open)}
+              aria-haspopup="dialog"
+              aria-expanded={overlayOpen}
+              data-search-toggle=""
+            />
           </li>
         </ul>
 
@@ -170,7 +181,7 @@ function Pill() {
 
 /**
  * Icon plus label when active (the label is screen-reader-only below 380px); icon alone otherwise.
- * The icon is keyed on `active`, so a tab that becomes active (a tap, or the drawer
+ * The icon is keyed on `active`, so a tab that becomes active (a tap, or the drawer or overlay
  * opening) lands with a small settle as its icon fills: the press's release, felt in the icon.
  * Never on first paint, and transform only (stripped under reduced motion).
  */
@@ -213,6 +224,9 @@ function TabButton({
   active: boolean
   onClick: () => void
   badge?: React.ReactNode
+  "aria-haspopup"?: "dialog"
+  "aria-expanded"?: boolean
+  "data-search-toggle"?: string
   "data-cart-target"?: string
 }) {
   return (

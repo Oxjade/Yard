@@ -71,8 +71,8 @@ export function TabbarChrome({ children }: { children: React.ReactNode }) {
  * The phone map header on /around (§6.4, §7.2): no bar, so the map keeps the screen. The wordmark
  * sits in a glass pill on the left; on the right, the area search (a 40px glass circle that
  * expands into a field over this row: A's AreaSearch) and, signed in, Inbox and notifications as
- * glass circles. There is no product search here and no second search pill under it: Shop in
- * the home bar (its search field at the top) is the way to search the catalogue.
+ * glass circles. There is no product search here and no second search pill under it: Explore in
+ * the home bar is the way to search the catalogue.
  */
 export function MapHeader({ className }: { className?: string }) {
   const hydrated = useHydrated()
