@@ -1,0 +1,69 @@
+commit: 4d3d25469872a9ced688557799015bc12e44b1bf
+result: failure
+errors: 1
+build: failure tests: skipped
+tests: 
+----- errors (deduplicated) -----
+ios/Yard/App/RootView.swift:310:25: error: the compiler is unable to type-check this expression in reasonable time; try breaking up the expression into distinct sub-expressions
+----- last 60 lines -----
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/YardIllustration.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/YardLogo.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/LiveActivity/Shared/YardOrderActivityAttributes.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/YardSheet.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouAccountSheets.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouAccountView.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouProfilePhoto.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouProfilePhotoViews.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouQuickLinks.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouSupport.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/Yard/Features/You/YouView.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    
+
+SwiftCompile normal arm64 Compiling\ BrandProfileView.swift,\ BrandsDirectoryView.swift,\ BrandsSupport.swift,\ Card.swift,\ Cart.swift,\ CartStore.swift,\ CategoriesView.swift,\ ChartsComponents.swift,\ ChartsFiltersSheet.swift,\ ChartsModels.swift,\ ChartsView.swift,\ ChartsViewModel.swift,\ CheckoutModel.swift,\ CheckoutView.swift,\ Chip.swift,\ CollectionView.swift,\ Confetti.swift,\ Config.swift,\ ConversationView.swift,\ Decoding.swift,\ Drop.swift,\ DropCards.swift,\ DropDetailView.swift,\ DropDetailViewModel.swift,\ DropsSupport.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandProfileView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandsDirectoryView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandsSupport.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Card.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Cart.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Stores/CartStore.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Shop/CategoriesView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsComponents.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsFiltersSheet.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsModels.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsViewModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Bag/CheckoutModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Bag/CheckoutView.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Chip.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Shop/CollectionView.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Confetti.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Config.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Inbox/ConversationView.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Decoding.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Drop.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropCards.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropDetailView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropDetailViewModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropsSupport.swift (in target 'Yard' from project 'Yard')
+Command SwiftCompile failed with a nonzero exit code
+
+** BUILD FAILED **
+
+
+The following build commands failed:
+	SwiftCompile normal x86_64 /Users/runner/work/Yard/Yard/ios/Yard/App/RootView.swift (in target 'Yard' from project 'Yard')
+	SwiftCompile normal x86_64 Compiling\ ProductDetailModels.swift,\ ProductDetailView.swift,\ ProductGallery.swift,\ ProductOptionPickers.swift,\ ProductTile.swift,\ QuantityStepper.swift,\ RemoteImage.swift,\ RoleChoiceView.swift,\ RootView.swift,\ Router.swift,\ SVGPathParser.swift,\ Saved.swift,\ SavedComponents.swift,\ SavedStore.swift,\ SavedView.swift,\ SearchComponents.swift,\ SearchLiveModel.swift,\ SearchModels.swift,\ SearchResultsModel.swift,\ SearchResultsView.swift,\ SearchView.swift,\ SectionHeader.swift,\ SegmentedPill.swift,\ SellerApplicationForm.swift,\ SellerApplicationView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Product/ProductDetailModels.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Product/ProductDetailView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Product/ProductGallery.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Product/ProductOptionPickers.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/ProductTile.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/QuantityStepper.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/RemoteImage.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Studio/RoleChoiceView.swift /Users/runner/work/Yard/Yard/ios/Yard/App/RootView.swift /Users/runner/work/Yard/Yard/ios/Yard/App/Router.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/SVGPathParser.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Saved.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Saved/SavedComponents.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Stores/SavedStore.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Saved/SavedView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchComponents.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchLiveModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchModels.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchResultsModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchResultsView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Search/SearchView.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/SectionHeader.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/SegmentedPill.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Studio/SellerApplicationForm.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Studio/SellerApplicationView.swift (in target 'Yard' from project 'Yard')
+	SwiftCompile normal arm64 Compiling\ BrandProfileView.swift,\ BrandsDirectoryView.swift,\ BrandsSupport.swift,\ Card.swift,\ Cart.swift,\ CartStore.swift,\ CategoriesView.swift,\ ChartsComponents.swift,\ ChartsFiltersSheet.swift,\ ChartsModels.swift,\ ChartsView.swift,\ ChartsViewModel.swift,\ CheckoutModel.swift,\ CheckoutView.swift,\ Chip.swift,\ CollectionView.swift,\ Confetti.swift,\ Config.swift,\ ConversationView.swift,\ Decoding.swift,\ Drop.swift,\ DropCards.swift,\ DropDetailView.swift,\ DropDetailViewModel.swift,\ DropsSupport.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandProfileView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandsDirectoryView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Brands/BrandsSupport.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Card.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Cart.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Stores/CartStore.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Shop/CategoriesView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsComponents.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsFiltersSheet.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsModels.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Charts/ChartsViewModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Bag/CheckoutModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Bag/CheckoutView.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Chip.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Shop/CollectionView.swift /Users/runner/work/Yard/Yard/ios/Yard/DesignSystem/Components/Confetti.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Config.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Inbox/ConversationView.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Decoding.swift /Users/runner/work/Yard/Yard/ios/Yard/Core/Models/Drop.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropCards.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropDetailView.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropDetailViewModel.swift /Users/runner/work/Yard/Yard/ios/Yard/Features/Drops/DropsSupport.swift (in target 'Yard' from project 'Yard')
+(3 failures)
+----- last 40 test lines -----
