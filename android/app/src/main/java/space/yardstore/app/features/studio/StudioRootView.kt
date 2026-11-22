@@ -318,45 +318,36 @@ private fun StudioRouteView(route: StudioRoute) {
 }
 
 /**
- * The Studio tab bar (wallet inspo): a near-black floating bar with four plain icons; the selected
- * tab sits in an acid pill that slides between them. Add is not in the bar: Home's "Add product"
- * tile and the Products header open Quick add (`nav.select(StudioTab.Add)`), as before.
+ * The Studio tab bar: the shopper app's own floating pill (`TabPill` in app/RootView.kt) — the
+ * same glass capsule, 5dp inset, 58×48dp buttons with 6dp gaps, 22dp icons, no labels and the
+ * acid selection that slides between tabs. Only the tabs differ: Home, Orders, Products, Me. Add
+ * is not in the bar: Home's "Add product" tile and the Products header (+) open Quick add
+ * (`nav.select(StudioTab.Add)`), as before.
  */
 @Composable
-private fun StudioPill(nav: StudioNav, @Suppress("UNUSED_PARAMETER") backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
+private fun StudioPill(nav: StudioNav, backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
     val haptics = rememberYardHaptics()
     val reduce = rememberReducedMotion()
     val tabs = StudioTab.entries.filter { it != StudioTab.Add }
-    val barHeight = 64.dp
-    val pillHeight = 44.dp
-    BoxWithConstraints(
-        modifier
-            .padding(horizontal = Spacing.gutter)
-            .widthIn(max = 480.dp)
-            .fillMaxWidth()
-            .height(barHeight)
-            .background(Color.yard.studioBar, RoundedCornerShape(24.dp))
-            .border(1.dp, Color.yard.line, RoundedCornerShape(24.dp))
-            .padding(horizontal = 10.dp),
-    ) {
-        val slot = maxWidth / tabs.size
-        val pillWidth = minOf(slot - 8.dp, 68.dp)
-        val index = tabs.indexOf(nav.tab).coerceAtLeast(0)
-        val indicatorX by animateDpAsState(slot * index + (slot - pillWidth) / 2, Motion.or(reduce) { Motion.spring() }, label = "studio-indicator")
+    // The shopper pill's measurements (TabPill, not collapsed).
+    val buttonWidth = 58.dp
+    val gap = 6.dp
+    val index = tabs.indexOf(nav.tab).coerceAtLeast(0)
+    val indicatorX by animateDpAsState((buttonWidth + gap) * index, Motion.or(reduce) { Motion.spring() }, label = "studio-indicator")
+    Box(modifier.yardGlass(YardShapes.pill, backdrop = backdrop).padding(5.dp)) {
         Box(
             Modifier
-                .offset(x = indicatorX, y = (barHeight - pillHeight) / 2)
-                .size(width = pillWidth, height = pillHeight)
+                .offset(x = indicatorX)
+                .size(width = buttonWidth, height = 48.dp)
                 .background(Color.yard.acid, YardShapes.pill),
         )
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             for (t in tabs) {
                 val isSelected = nav.tab == t
-                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.studioBarIcon, Motion.snappy(), label = "studio-tint")
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.ink, Motion.snappy(), label = "studio-tint")
                 Box(
                     Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                        .size(width = buttonWidth, height = 48.dp)
                         .semantics {
                             contentDescription = t.title
                             selected = isSelected

@@ -91,10 +91,10 @@ Switch to Studio), or "needs changes" + `reviewNote` with Apply again.
 
 ### Shell (`StudioRootView`, `StudioNav`)
 
-A near-black floating bar (`studioBar`, 24dp corners) with four plain icons: Home, Orders, Products,
-Me; the selected one sits in an acid pill that springs between tabs; tick haptic.
-No centre Add: Quick add opens from Home's "Add product" tile and the Products header (+), both
-`nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
+The shopper app's own floating pill (`TabPill`): the same glass capsule, 5dp inset, 58×48dp
+buttons, 22dp icons, no labels and the acid selection; only the tabs differ (Home, Orders,
+Products, Me). No centre Add: Quick add opens from Home's "Add product" tile and the Products
+header (+), both `nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
 (instant under reduced motion), system back pops, then goes Home, then backgrounds the app. Tablets:
 a centered readable column.
 
