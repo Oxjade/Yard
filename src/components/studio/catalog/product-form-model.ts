@@ -159,7 +159,7 @@ export function validate(f: ProductForm, ctx: ValidateContext): Errors {
   else if (name.length > 80) e.name = "Keep the name to 80 characters or fewer."
 
   const desc = f.description.trim()
-  if (desc.length < 20) e.description = "Describe it in at least 20 characters: what it is, what it's made of, how it fits."
+  if (desc.length < 20) e.description = "Describe it in at least 20 characters: what it is, what it's made of, what makes it special."
   else if (desc.length > 2000) e.description = "Keep the description to 2,000 characters or fewer."
 
   if (!f.category) e.category = "Choose a category."

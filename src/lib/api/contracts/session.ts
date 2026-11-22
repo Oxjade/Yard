@@ -59,6 +59,8 @@ export const sessionDto = z.object({
   demoAuth: demoAuthState,
   /** The demo switch (getEnv().seedDemo, read at request time): sample-data screens exist only when it is on. */
   sampleData: z.boolean(),
+  /** Yard's own social profiles (YARD_SOCIAL_*, read at request time), in display order; empty when none is set. */
+  socials: z.array(z.object({ key: z.enum(["instagram", "tiktok", "x", "youtube", "threads", "facebook", "snapchat", "whatsapp", "linkedin"]), label: z.string(), href: z.string() })),
 })
 export type ShopperProfile = z.infer<typeof shopperProfile>
 export type BrandProfile = z.infer<typeof brandProfile>

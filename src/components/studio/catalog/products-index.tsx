@@ -543,7 +543,7 @@ function FirstProductEmpty() {
         <Package className="size-6 text-ink-2" aria-hidden />
       </span>
       <h2 id="first-product-title" className="text-xl font-medium tracking-tight text-balance text-ink">Add your first product</h2>
-      <p className="mt-2 max-w-sm text-sm text-pretty text-ink-2">Five tiny steps: photos, a name, a price, sizes, publish. Most brands are live in about 3 minutes.</p>
+      <p className="mt-2 max-w-sm text-sm text-pretty text-ink-2">Five tiny steps: photos, a name, a price, options, publish. Most brands are live in about 3 minutes.</p>
       <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-ink-3">
         <Timer aria-hidden className="size-3.5" /> About 3 minutes
       </p>

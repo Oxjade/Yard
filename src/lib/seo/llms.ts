@@ -22,6 +22,8 @@ export type LlmsInput = {
   totals: { brands: number; products: number }
   /** llms-full.txt only. */
   brands?: LlmsBrand[]
+  /** Yard's own social profiles (YARD_SOCIAL_*), in display order. */
+  socials?: { label: string; href: string }[]
   generatedAt: string
 }
 
@@ -42,9 +44,9 @@ export function llmsTxt(input: LlmsInput, full = false): string {
   const lines: string[] = [
     `# ${name}`,
     "",
-    `> ${name} is an online marketplace for independent brands: small studios and makers selling their own products directly. ${input.tagline}`,
+    `> ${name} is an online marketplace for independent brands and limited drops: small studios and makers selling their own products directly, from fashion and streetwear to art, beauty, home goods and more. ${input.tagline}`,
     "",
-    `${name} (${base.replace(/^https?:\/\//, "")}) is where people discover, follow and buy from independent brands. Every listing is sold by the brand that makes it, never by resellers. Shoppers browse by brand, category, city and limited drops, follow the brands they like, and check out once for pieces from several brands.`,
+    `${name} (${base.replace(/^https?:\/\//, "")}) is where people discover, follow and buy from independent brands of every kind. Every listing is sold by the brand that makes it, never by resellers. Shoppers browse by brand, category, city and limited drops, follow the brands they like, and check out once for pieces from several brands. ${name} launched in Nigeria; each brand chooses where it delivers, from its own country to international delivery zones.`,
     "",
     `Right now ${name} lists ${input.totals.products} products from ${input.totals.brands} brands${categoryNames.length ? `, across ${categoryNames.join(", ")}` : ""}. The catalogue grows as brands join; categories are not limited to any one kind of product.`,
     "",
@@ -90,6 +92,12 @@ export function llmsTxt(input: LlmsInput, full = false): string {
     `Product, brand and collection pages also carry schema.org JSON-LD (Product, Offer, Organization, ItemList, BreadcrumbList).`,
     "",
   ]
+
+  if (input.socials?.length) {
+    lines.push(`## ${name} elsewhere`, "")
+    for (const s of input.socials) lines.push(link(base, `${name} on ${s.label}`, s.href))
+    lines.push("")
+  }
 
   if (full) {
     lines.push(`## Categories`, "")

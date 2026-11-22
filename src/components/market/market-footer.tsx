@@ -4,6 +4,7 @@ import { site } from "@/config/site"
 import { LocaleSelect } from "./locale-select"
 import { YardLogo } from "@/components/brand/yard-logo"
 import { SampleOnly } from "@/components/sample/sample-only"
+import { YardSocialLinks } from "./yard-social-links"
 
 const columns = [
   { title: "Shop", links: [["Discover", "/"], ["Brands", "/brands"], ["Charts", "/charts"], ["Around", "/around"], ["All products", "/shop"], ["Categories", "/categories"], ["Drops", "/drops"], ["Stories", "/stories", "sample"]] },
@@ -23,6 +24,8 @@ export function MarketFooter() {
             <p className="mt-4 text-sm leading-relaxed text-ink-2">
               Brands join free and keep their storefront free. Commission is {commissionTerms} on completed sales — nothing before.
             </p>
+            {/* Yard's own profiles (YARD_SOCIAL_*), from /api/session: hidden when none is set. */}
+            <YardSocialLinks className="mt-6" title={`Follow ${site.name}`} />
           </div>
           {columns.map((col) => (
             <div key={col.title}>

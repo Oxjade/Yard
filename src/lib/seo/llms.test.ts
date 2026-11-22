@@ -43,9 +43,21 @@ describe("llms.txt", () => {
     }
   })
 
-  it("is category-neutral: categories come from the data, not the copy", () => {
+  it("is category-neutral: categories come from the data, and the intro names fashion as one kind among many", () => {
     assert.match(txt, /across Jewelry, Home & lifestyle\./)
-    assert.ok(!/fashion|streetwear|clothing/i.test(txt))
+    assert.match(txt.split("\n")[2], /from fashion and streetwear to art, beauty, home goods and more/)
+    assert.ok(!/clothing/i.test(txt))
+  })
+
+  it("isn't tied to one city: Lagos never appears, and the launch country is stated as a fact", () => {
+    assert.ok(!/Lagos/.test(txt))
+    assert.match(txt, /launched in Nigeria; each brand chooses where it delivers/)
+  })
+
+  it("lists Yard's own profiles only when there are some", () => {
+    assert.ok(!txt.includes("## Yard elsewhere"))
+    const withSocials = llmsTxt({ ...input, socials: [{ label: "Instagram", href: "https://www.instagram.com/yard" }] })
+    assert.ok(withSocials.includes("## Yard elsewhere\n\n- [Yard on Instagram](https://www.instagram.com/yard)\n"))
   })
 
   it("lists no brands (that is the full version)", () => {

@@ -5,6 +5,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { z } from "zod"
 import { googleVerificationFile, indexNowKey, siteVerificationWarnings, verificationTokens } from "../lib/seo/site-verification"
+import { yardSocials, yardSocialWarnings, type YardSocial } from "../lib/socials"
 import { seedDemoFrom } from "./demo-switch"
 import { log } from "./log"
 import { yard } from "./state"
@@ -63,6 +64,8 @@ export type Env = {
    * - INDEXNOW_ENDPOINT: where submissions go (default https://api.indexnow.org/indexnow; a mock for tests).
    */
   seo: { googleVerification: string[]; bingVerification: string[]; googleFile: string | null; indexNowKey: string | null; indexNowEndpoint: string }
+  /** Yard's own social profiles (YARD_SOCIAL_*), validated, in display order; unset or invalid ones are left out. */
+  socials: YardSocial[]
 }
 
 const raw = z.object({
@@ -102,6 +105,16 @@ const raw = z.object({
   GOOGLE_SITE_VERIFICATION_FILE: z.string().optional(),
   INDEXNOW_KEY: z.string().optional(),
   INDEXNOW_ENDPOINT: z.string().optional(),
+  // Yard's own social profiles (src/lib/socials.ts): full https URLs, each optional.
+  YARD_SOCIAL_INSTAGRAM: z.string().optional(),
+  YARD_SOCIAL_TIKTOK: z.string().optional(),
+  YARD_SOCIAL_X: z.string().optional(),
+  YARD_SOCIAL_YOUTUBE: z.string().optional(),
+  YARD_SOCIAL_THREADS: z.string().optional(),
+  YARD_SOCIAL_FACEBOOK: z.string().optional(),
+  YARD_SOCIAL_SNAPCHAT: z.string().optional(),
+  YARD_SOCIAL_WHATSAPP: z.string().optional(),
+  YARD_SOCIAL_LINKEDIN: z.string().optional(),
 })
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined)
@@ -274,6 +287,8 @@ function parse(): Env {
 
   // Search engines: optional, so a typo is a warning (the site keeps running), never a boot failure.
   for (const w of siteVerificationWarnings(e)) log.once(`env:seo:${w}`, "warn", `[yard] ${w}.`)
+  // Yard's own social profiles (YARD_SOCIAL_*): a malformed URL hides that icon, with a warning.
+  for (const w of yardSocialWarnings(e)) log.once(`env:social:${w}`, "warn", `[yard] ${w}.`)
   let indexNowEndpoint = "https://api.indexnow.org/indexnow"
   const endpointRaw = blank(e.INDEXNOW_ENDPOINT)
   if (endpointRaw) {
@@ -335,6 +350,7 @@ function parse(): Env {
       indexNowKey: indexNowKey(e),
       indexNowEndpoint,
     },
+    socials: yardSocials(e),
   }
 }
 

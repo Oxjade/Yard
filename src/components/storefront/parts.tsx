@@ -280,13 +280,25 @@ type SocialLink = { key: string; label: string; href: string; icon: Icon; text: 
 /** A website as people write it: no scheme, no "www.", no trailing slash. */
 const bareHost = (url: string) => url.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "")
 
+/** A profile link from a handle as brands type it ("@studio" or "studio") or an address they pasted in full. */
+function profileHref(value: string | undefined, url: (handle: string) => string) {
+  const v = value?.trim()
+  if (!v) return null
+  if (/^https?:\/\//i.test(v)) return v
+  const handle = v.replace(/^@+/, "")
+  return handle ? url(encodeURIComponent(handle)) : null
+}
+
 export function socialLinksOf(brand: Brand): SocialLink[] {
   const s = brand.social
   const site = s.website?.trim()
+  const ig = profileHref(s.instagram, (h) => `https://instagram.com/${h}`)
+  const tt = profileHref(s.tiktok, (h) => `https://www.tiktok.com/@${h}`)
+  const x = profileHref(s.x, (h) => `https://x.com/${h}`)
   return [
-    s.instagram ? { key: "instagram", label: "Instagram", text: "Instagram", href: `https://instagram.com/${s.instagram}`, icon: Instagram } : null,
-    s.tiktok ? { key: "tiktok", label: "TikTok", text: "TikTok", href: `https://www.tiktok.com/@${s.tiktok}`, icon: Tiktok } : null,
-    s.x ? { key: "x", label: "X", text: "X", href: `https://x.com/${s.x}`, icon: XLogo } : null,
+    ig ? { key: "instagram", label: "Instagram", text: "Instagram", href: ig, icon: Instagram } : null,
+    tt ? { key: "tiktok", label: "TikTok", text: "TikTok", href: tt, icon: Tiktok } : null,
+    x ? { key: "x", label: "X", text: "X", href: x, icon: XLogo } : null,
     site ? { key: "website", label: "Website", text: bareHost(site), href: /^https?:\/\//i.test(site) ? site : `https://${site}`, icon: Globe } : null,
   ].filter((l): l is SocialLink => !!l)
 }

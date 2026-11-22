@@ -140,7 +140,7 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
       label: "Sizing",
       icon: RulerIcon,
       onClick: () => {
-        const text = `Hi! What size would you recommend for ${product ? `the ${product.name}` : "this piece"}? I usually wear .`
+        const text = `Hi! What size would you recommend for ${product ? `the ${product.name}` : "this piece"}? I usually go for .`
         composer.current?.insert(text, { caret: text.length - 1, topic: "sizing" })
       },
     },

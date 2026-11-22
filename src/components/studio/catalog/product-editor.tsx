@@ -800,7 +800,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
         <BackLink href={proposal?.backHref} label={proposal?.backLabel} />
         <PageHeader
           title={proposal ? proposal.title : isNew ? "New product" : product.name}
-          description={proposal ? proposal.description : isNew ? "Add photos, a price and the sizes you stock, then publish. Drafts are invisible to shoppers." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
+          description={proposal ? proposal.description : isNew ? "Add photos, a price and the options you stock, then publish. Drafts are invisible to shoppers." : `Added ${formatDate(product.createdAt)}. ${plural(product.variants.length, "variant")}, ${plural(product.images.length, "photo")}.`}
           actions={
             <>
               <Button id="pf-back" type="button" variant="secondary" size="sm" className="h-10 md:h-8" onClick={() => guard.leave(proposal?.backHref ?? "/studio/products")}>{isNew || dirty || proposal ? "Cancel" : "Back"}</Button>
@@ -891,7 +891,7 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
         className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start"
       >
         <div className="grid min-w-0 gap-6">
-          <Panel title="Details" description="Say what it is, what it's made of and how it fits.">
+          <Panel title="Details" description="Say what it is, what it's made of and what makes it special.">
             <div className="grid gap-4">
               <Field id="pf-name" label="Name" error={errors.name} aside={<span className="text-xs text-ink-3 tabular">{form.name.length}/80</span>}>
                 <Input {...control("pf-name", errors.name)} value={form.name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Heavyweight hoodie" className={inputClass} />
@@ -1193,7 +1193,7 @@ function TagsField({ tags, onChange, suggestions }: { tags: string[]; onChange: 
       label="Tags"
       aside={<span className="text-xs text-ink-3 tabular">{tags.length}/{MAX_TAGS}</span>}
       error={message ?? undefined}
-      hint="Materials, fit or the drop it belongs to. Shoppers search by these."
+      hint="Materials, style or the drop it belongs to. Shoppers search by these."
     >
       <ChipInput
         id="pf-tags"

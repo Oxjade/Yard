@@ -31,5 +31,6 @@ export async function sessionSnapshot(): Promise<SessionDto> {
     admin: admin ? adminProfileOf(admin) : null,
     demoAuth: { ...env.demoAuth },
     sampleData: env.seedDemo,
+    socials: env.socials,
   }
 }

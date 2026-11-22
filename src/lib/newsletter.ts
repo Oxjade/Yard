@@ -90,7 +90,7 @@ export const newsletterRecipientStatusLabels: Record<NewsletterRecipientStatus, 
 export const newsletterHints = {
   name: "e.g. November drops roundup",
   subject: "The heat just landed 🔥",
-  preheader: "Fresh drops from Lagos, Accra and London. Tap in before they're gone.",
+  preheader: "Fresh drops from independent brands everywhere. Tap in before they're gone.",
   heading: "Fresh in the Yard",
   body: "Hey, it's been a minute! Here's what's moving on Yard this week.\n\n- **New drops** from brands you'll love\n- Restocks on the pieces everyone asked about\n\nTap in, save what you like and [shop the latest](/shop).",
   buttonLabel: "Shop the drops",

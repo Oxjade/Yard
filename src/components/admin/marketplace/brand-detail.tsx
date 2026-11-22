@@ -225,7 +225,7 @@ function ApplicationSection({ data }: { data: NonNullable<BrandApplication["appl
     { label: "Seller", value: [business?.sellerType === "company" ? "Company" : business?.sellerType ? "Individual" : null, business?.legalName].filter(Boolean).join(", ") },
     { label: "Based in", value: [business?.city, business?.country ? countryName(business.country) : null].filter(Boolean).join(", ") },
     { label: "First product", value: product?.name ? `${product.name}${product.priceMinor != null && business?.currency ? `, ${formatMoney(product.priceMinor, business.currency)}` : ""}` : null },
-    { label: "Sizes and stock", value: sizes },
+    { label: "Options and stock", value: sizes },
     { label: "Payout", value: [payments?.bankName, payments?.accountLast4 ? `account ending ${payments.accountLast4}` : null].filter(Boolean).join(", ") || null },
     { label: "Processing time", value: payments?.processingMin != null && payments.processingMax != null ? `${payments.processingMin} to ${plural(payments.processingMax, "day")}` : null },
   ]

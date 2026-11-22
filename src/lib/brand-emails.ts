@@ -141,7 +141,7 @@ export function draftNudgeCopy(x: { brand: string; product: string; productId?: 
     greeting: x.brand ? `Hey ${x.brand},` : undefined,
     paragraphs: [
       more ? `${x.product} and ${more === 1 ? "another piece are" : `${more} other pieces are`} saved in Studio, but they're still drafts, so nobody on Yard can see them yet.` : `${x.product} is saved in Studio, but it's still a draft, so nobody on Yard can see it yet.`,
-      "If it's ready, give it one last look (photos, sizes, price) and hit Publish. That's the whole move.",
+      "If it's ready, give it one last look (photos, options, price) and hit Publish. That's the whole move.",
       ...(x.storefrontUnpublished ? ["One more thing: your storefront isn't published yet either. Publish it from Storefront in Studio so the whole Yard can find you."] : []),
       "Still cooking? No stress, it'll wait for you.",
     ],
@@ -186,7 +186,7 @@ export function websitePiecesCopy(x: { brand: string; count: number }): BrandEma
     greeting: x.brand ? `Hey ${x.brand},` : undefined,
     paragraphs: [
       `${n} new ${n === 1 ? "piece" : "pieces"} from your website ${n === 1 ? "is" : "are"} waiting. Add ${n === 1 ? "it" : "them"} to Yard in one tap.`,
-      "We copied the photos, name, price and sizes from your site. Tap Add to Yard and it goes live in your shop, or Not this one and we won't ask again.",
+      "We copied the photos, name, price and options from your site. Tap Add to Yard and it goes live in your shop, or Not this one and we won't ask again.",
     ],
     action: { label: n === 1 ? "Add it to Yard" : "Add them to Yard", url: "/studio/products#from-website" },
     why: `You're getting this because Yard watches ${x.brand || "your brand"}'s website for new pieces.`,
@@ -352,7 +352,7 @@ export const brandEmailPresets: Record<BrandEmailPreset, PresetDef> = {
     heading: "So close 👀",
     subject: (b) => `${b}, your drafts are so close`,
     body: () =>
-      "Your products are saved in Studio but still sitting in drafts, which means shoppers can't see them yet.\n\nGive them one last look (photos, sizes, price) and hit Publish. That's it, you're live.\n\nNeed a hand with anything? We're right here.",
+      "Your products are saved in Studio but still sitting in drafts, which means shoppers can't see them yet.\n\nGive them one last look (photos, options, price) and hit Publish. That's it, you're live.\n\nNeed a hand with anything? We're right here.",
     action: { label: "Open my products", url: "/studio/products" },
   },
   publish_storefront: {

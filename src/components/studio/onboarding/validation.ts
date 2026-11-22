@@ -80,7 +80,7 @@ export function validateProduct(p: OnboardingData["product"], currency: Currency
   return {
     images: p.images.length ? undefined : "Add at least one photo.",
     name: p.name.trim().length < 2 ? "Name your product." : p.name.trim().length > 80 ? "Keep the name to 80 characters or fewer." : undefined,
-    description: p.description.trim().length < 20 ? "Describe it in at least 20 characters: material, fit, how it's made." : undefined,
+    description: p.description.trim().length < 20 ? "Describe it in at least 20 characters: what it's made of and how it's made." : undefined,
     price: priceError,
     sizes: !p.sizeSystem ? "Choose how this product is sized." : p.sizes.length === 0 ? "Add at least one size." : undefined,
     stock: badStock ? "Stock must be a whole number." : p.sizes.length && total === 0 ? "Add stock to at least one size." : undefined,

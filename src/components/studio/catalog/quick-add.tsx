@@ -61,7 +61,7 @@ const STEPS = [
   { key: "photos", label: "Photos" },
   { key: "name", label: "Name" },
   { key: "price", label: "Price" },
-  { key: "sizes", label: "Sizes & stock" },
+  { key: "sizes", label: "Options & stock" },
   { key: "review", label: "Review" },
 ] as const
 type StepKey = (typeof STEPS)[number]["key"]
@@ -78,12 +78,26 @@ const stepOf = (key: string): number => {
   return i < 0 ? STEPS.length - 1 : i
 }
 
-/** Sizes to tap, by category; anything else can be typed in. */
+/** Sizes to tap, by category (clothing, shoes, rings, bottles, prints); anything else can be typed in, and One size is always there. */
 function sizeChoices(category: CategorySlug | "", subcategory: string) {
   if (category === "sneakers" || subcategory === "Footwear") return ["38", "39", "40", "41", "42", "43", "44", "45", "46"]
   if (category === "jewelry" && subcategory === "Rings") return ["5", "6", "7", "8", "9", "10", "11"]
   if (category === "fashion" || category === "streetwear") return ["XS", "S", "M", "L", "XL", "XXL"]
-  return ["S", "M", "L"]
+  if (category === "beauty") return ["15 ml", "30 ml", "50 ml", "100 ml"]
+  if (category === "art-design") return ["A5", "A4", "A3", "A2"]
+  if (category === "accessories") return ["S", "M", "L"]
+  return []
+}
+
+/** The description's example, in the product's own world: a tee reads differently from a candle. */
+function describeExample(category: CategorySlug | "") {
+  if (category === "fashion" || category === "streetwear") return "e.g. Heavyweight cotton, boxy fit, screen-printed back. Runs true to size."
+  if (category === "beauty") return "e.g. Cold-pressed baobab and marula. Light, fast to sink in, made in small batches."
+  if (category === "art-design") return "e.g. Risograph print in two inks on 170gsm paper. Signed, edition of 50."
+  if (category === "home-lifestyle") return "e.g. Hand-poured soy wax, fig and cedar. About 40 hours of burn."
+  if (category === "technology") return "e.g. Walnut case, hot-swappable switches, USB-C. Built to be repaired."
+  if (category === "jewelry") return "e.g. Hand-cast sterling silver, 50 cm chain. Made to order in the studio."
+  return "e.g. What it's made of, how it's made, what makes it yours."
 }
 
 /* ---------- Saved progress (this device) ---------- */
@@ -466,7 +480,7 @@ const headings: Record<StepKey, { title: string; body: string }> = {
   photos: { title: "Snap or upload photos", body: "At least one. The first is the cover shoppers see." },
   name: { title: "What's it called?", body: "Keep it short and real. Shoppers search by it." },
   price: { title: "How much?", body: "What shoppers pay, before shipping." },
-  sizes: { title: "What sizes, and how many?", body: "Tap the sizes you have, then how many of each. No sizes? Pick One size." },
+  sizes: { title: "Options and stock", body: "Comes in sizes or colours? Tap the ones you have, then how many of each. Just one version? Keep One size." },
   review: { title: "Looks good?", body: "This is how shoppers will see it on Yard." },
 }
 
@@ -596,12 +610,12 @@ function NameStep({ form, shown, patch }: { form: ProductForm; shown: (k: string
           onChange={(e) => patch({ description: e.target.value })}
           rows={3}
           maxLength={2000}
-          placeholder="e.g. Heavyweight cotton, boxy fit, screen-printed back. Runs true to size."
+          placeholder={describeExample(form.category)}
           aria-invalid={shown("description") ? true : undefined}
           aria-describedby={shown("description") ? "qa-description-error" : "qa-description-hint"}
           className="min-h-24 rounded-xl text-base md:text-[15px]"
         />
-        <FieldMessage id="qa-description" error={shown("description")} hint={left ? `Fabric, fit, the vibe. ${plural(left, "more character")} to go.` : "Nice. That's plenty."} />
+        <FieldMessage id="qa-description" error={shown("description")} hint={left ? `Materials, details, the vibe. ${plural(left, "more character")} to go.` : "Nice. That's plenty."} />
       </div>
     </>
   )
@@ -714,7 +728,7 @@ function SizesStep({ form, shown, setForm }: { form: ProductForm; shown: (k: str
               }
             }}
             maxLength={12}
-            placeholder="Another size, e.g. 28W"
+            placeholder="Another size, e.g. 28W, 250 ml"
             className="h-11 rounded-xl"
           />
           <Button type="button" variant="secondary" className="h-11 rounded-xl" onClick={addCustom} disabled={!custom.trim()}>
@@ -726,7 +740,7 @@ function SizesStep({ form, shown, setForm }: { form: ProductForm; shown: (k: str
 
       <fieldset className="grid gap-2">
         <legend className="mb-1 text-[15px] font-medium text-ink">How many do you have?</legend>
-        <p className="-mt-1 mb-1 text-xs text-ink-3">Each size is a variant: shoppers pick one, and its count goes down when it sells.</p>
+        <p className="-mt-1 mb-1 text-xs text-ink-3">Each option is a variant: shoppers pick one, and its count goes down when it sells.</p>
         <ul className="grid gap-2">
           {form.variants.map((v) => {
             const label = Object.values(v.options).join(" / ") || "One size"
@@ -834,7 +848,7 @@ function ReviewStep({ form, brand, hidden, onEdit }: { form: ProductForm; brand:
     { label: "Name", value: form.name.trim() || "Not yet", step: 1 },
     { label: "Category", value: cat ? `${cat}${form.subcategory ? `, ${form.subcategory}` : ""}` : "Not yet", step: 1 },
     { label: "Price", value: price ? formatMoney(price, brand.currency) : "Not yet", step: 2 },
-    { label: "Sizes & stock", value: stock, step: 3 },
+    { label: "Options & stock", value: stock, step: 3 },
   ]
   return (
     <>

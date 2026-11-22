@@ -179,7 +179,7 @@ export function InventoryView() {
 
   const empty =
     filter === "all"
-      ? { title: "No stock to track yet", body: "Add a product with its sizes and colours, and each variant shows up here.", action: <Button asChild size="sm" variant="secondary"><Link href="/studio/products/quick">Add product</Link></Button> }
+      ? { title: "No stock to track yet", body: "Add a product with its options, like sizes or colours, and each variant shows up here.", action: <Button asChild size="sm" variant="secondary"><Link href="/studio/products/quick">Add product</Link></Button> }
       : {
           title: filter === "out" ? "Nothing is out of stock" : "Nothing is running low",
           body: filter === "out" ? "Every variant has at least one unit available." : `No variant is down to its last ${LOW_VARIANT_STOCK} units.`,

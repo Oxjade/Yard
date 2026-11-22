@@ -283,6 +283,24 @@ and `YARD_SEED_DEMO=1` go together: either one without the other stops the serve
 variables prefixed `NEXT_PUBLIC_` reach client code, and none of the secrets use that prefix.
 The old backend-phase placeholders at the end of the file aren't read by the embedded server.
 
+Yard's own social profiles show as icons in the footer, Your World (/you) and Support, and feed
+the home page's JSON-LD `sameAs` and `/llms.txt`. Each is optional: a full `https://` URL on that
+network's domain, or the icon is hidden (a malformed value is a boot warning, never fatal). They
+are read at request time (through `/api/session` for the icons), so a restart picks them up
+without a rebuild; `node scripts/check-env.mjs` lists the ones in use.
+
+| Variable | Network |
+|---|---|
+| `YARD_SOCIAL_INSTAGRAM` | Instagram (instagram.com) |
+| `YARD_SOCIAL_TIKTOK` | TikTok (tiktok.com) |
+| `YARD_SOCIAL_X` | X (x.com or twitter.com) |
+| `YARD_SOCIAL_YOUTUBE` | YouTube (youtube.com or youtu.be) |
+| `YARD_SOCIAL_THREADS` | Threads (threads.net or threads.com), optional |
+| `YARD_SOCIAL_FACEBOOK` | Facebook (facebook.com), optional |
+| `YARD_SOCIAL_SNAPCHAT` | Snapchat (snapchat.com), optional |
+| `YARD_SOCIAL_WHATSAPP` | WhatsApp channel (whatsapp.com or wa.me), optional |
+| `YARD_SOCIAL_LINKEDIN` | LinkedIn (linkedin.com), optional |
+
 ## Sample data and photography
 
 Brands, people and products are fictional. Photos are from Unsplash, used as placeholders

@@ -568,7 +568,7 @@ function DropForm({ existing, now, onReset }: { existing?: Drop; now: number; on
                 <Field id="drop-quantity" label="Limited quantity" error={errors.quantity} hint={sold ? `${formatNumber(sold)} already sold.` : selectedStock && quantity > selectedStock ? `More than the ${pluralize(selectedStock, "unit")} in stock. Restock before release.` : "Total units across all sizes."}>
                   <NumberStepper id="drop-quantity" label="quantity" value={values.quantity} onChange={(v) => set("quantity", v)} min={1} max={10_000} step={10} invalid={!!errors.quantity} describedBy={errors.quantity ? "drop-quantity-error" : "drop-quantity-hint"} suffix="units" disabled={locked} />
                 </Field>
-                <Field id="drop-limit" label="Limit per customer" error={errors.limit} hint="Applies per account, across sizes.">
+                <Field id="drop-limit" label="Limit per customer" error={errors.limit} hint="Applies per account, across options.">
                   <NumberStepper id="drop-limit" label="limit per customer" value={values.limit} onChange={(v) => set("limit", v)} min={1} max={10} invalid={!!errors.limit} describedBy={errors.limit ? "drop-limit-error" : "drop-limit-hint"} suffix="each" disabled={locked} />
                 </Field>
               </div>

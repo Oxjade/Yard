@@ -557,7 +557,7 @@ function AboutStep({ brand, intro, onIntro }: { brand: Brand; intro: string; onI
           maxLength={INTRO_MAX}
           rows={4}
           onChange={(e) => onIntro(e.target.value)}
-          placeholder="e.g. Heavyweight basics, cut and printed in Lagos. Made for the ones who stay out late."
+          placeholder="e.g. Small runs, made by hand in our own studio. For the ones who stay out late."
           aria-describedby="shop-intro-hint"
           className="min-h-28 rounded-xl text-base md:text-[15px]"
         />

@@ -23,7 +23,7 @@ const points = [
 const steps = [
   { title: "Apply", body: "Tell us about your brand and what you make. It takes a few minutes." },
   { title: "Set up your storefront", body: "Add your logo, banner, story, shipping and payout details in Brand Studio." },
-  { title: "List your pieces", body: "Add products with photos, sizes and stock, or plan your first drop." },
+  { title: "List your pieces", body: "Add products with photos, options and stock, or plan your first drop." },
   { title: "Sell and get paid", body: "Fulfil orders from Brand Studio and receive your payouts." },
 ]
 
@@ -38,7 +38,7 @@ export default function SellPage() {
           <p className="text-sm text-ink-2">For brands</p>
           <h1 className="mt-3 font-display text-display-lg text-balance text-ink">Sell on {site.name}</h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-pretty text-ink-2">
-            {site.name} is where independent brands open their storefront, run drops and reach shoppers who follow them. Apply once, set up in Brand Studio, and start selling.
+            {site.name} is where independent brands open their storefront, run drops and reach shoppers who follow them. Fashion, beauty, art, home, tech or something new: if you make it, there&apos;s room for it here. Apply once, set up in Brand Studio, and start selling.
           </p>
           <div className="mt-8 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button asChild variant="primary" size="lg">

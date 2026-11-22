@@ -16,6 +16,12 @@
 //   INDEXNOW_KEY                   8-128 hex characters (openssl rand -hex 16). Turns IndexNow on and serves
 //                                  /<key>.txt. Read at runtime (restart).
 //   INDEXNOW_ENDPOINT              Testing only: where submissions go (default https://api.indexnow.org/indexnow).
+//
+// Yard's own social profiles (optional). Full https URLs on that network's domain; a malformed one is
+// warned about and its icon hidden. Read at request time (restart, no rebuild): footer, Your World,
+// Support, the home page's JSON-LD sameAs and llms.txt.
+//   YARD_SOCIAL_INSTAGRAM  YARD_SOCIAL_TIKTOK  YARD_SOCIAL_X  YARD_SOCIAL_YOUTUBE  YARD_SOCIAL_THREADS
+//   YARD_SOCIAL_FACEBOOK   YARD_SOCIAL_SNAPCHAT  YARD_SOCIAL_WHATSAPP  YARD_SOCIAL_LINKEDIN
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseEnv } from "node:util"
@@ -36,7 +42,7 @@ try {
   const seo = env.seo
   const verify = [seo.googleVerification.length ? `google meta ×${seo.googleVerification.length}` : null, seo.bingVerification.length ? `bing meta ×${seo.bingVerification.length}` : null, seo.googleFile ? `google file ${seo.googleFile}` : null].filter(Boolean)
   console.log(
-    `configuration OK: ${env.nodeEnv}, env ${env.envName}, ${db}, payments ${env.payments}, ${env.publicUrl}, data ${env.dataDir}, proxy hops ${env.trustedProxyHops}, demo ${env.seedDemo ? "ON" : "off"}, site verification ${verify.length ? verify.join(" + ") : "none"}, indexnow ${seo.indexNowKey ? "on" : "off"}`,
+    `configuration OK: ${env.nodeEnv}, env ${env.envName}, ${db}, payments ${env.payments}, ${env.publicUrl}, data ${env.dataDir}, proxy hops ${env.trustedProxyHops}, demo ${env.seedDemo ? "ON" : "off"}, site verification ${verify.length ? verify.join(" + ") : "none"}, indexnow ${seo.indexNowKey ? "on" : "off"}, socials ${env.socials.length ? env.socials.map((s) => s.key).join(" ") : "none"}`,
   )
   process.exit(0)
 } catch (e) {

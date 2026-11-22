@@ -201,6 +201,9 @@ describe("brand, collection and site JSON-LD", () => {
     assert.equal(action["@type"], "SearchAction")
     assert.equal((action.target as JsonLdNode).urlTemplate, "https://yardstore.space/shop?q={search_term_string}")
     assert.equal(action["query-input"], "required name=search_term_string")
+    assert.equal(org.sameAs, undefined)
+    const [withSocial] = yardJsonLd(base, { name: "Yard", description: "Independent brands.", logoPath: "/icon/512", sameAs: ["https://www.instagram.com/yard"], searchPath: "/shop" })
+    assert.deepEqual(withSocial.sameAs, ["https://www.instagram.com/yard"])
   })
 })
 

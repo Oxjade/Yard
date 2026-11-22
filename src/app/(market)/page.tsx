@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { connection } from "next/server"
 import type { Metadata } from "next"
 import { site } from "@/config/site"
 import Image from "next/image"
@@ -56,19 +57,23 @@ const storyKind: Record<string, string> = {
 }
 
 export const metadata: Metadata = {
-  title: { absolute: `${site.name} — Shop independent fashion brands and limited drops` },
+  title: { absolute: site.seoTitle },
   description: site.seoDescription,
   alternates: { canonical: "/" },
-  openGraph: { url: "/", title: `${site.name} — Shop independent fashion brands and limited drops`, description: site.seoDescription },
-  twitter: { title: `${site.name} — Shop independent fashion brands and limited drops`, description: site.seoDescription },
+  openGraph: { url: "/", title: site.seoTitle, description: site.seoDescription },
+  twitter: { title: site.seoTitle, description: site.seoDescription },
 }
 
 /**
- * Structured data for search engines and AI assistants: Yard as an Organization and the WebSite
- * with its site search (/shop?q=). The address is read when the page renders (YARD_PUBLIC_URL).
+ * Structured data for search engines and AI assistants: Yard as an Organization (with Yard's own
+ * social profiles as sameAs, YARD_SOCIAL_*) and the WebSite with its site search (/shop?q=). Read
+ * at request time (inside the page's Suspense boundary), so a restart picks up a changed address
+ * (YARD_PUBLIC_URL) or profile without a rebuild.
  */
-function HomeJsonLd() {
-  return <JsonLd nodes={yardJsonLd(publicOrigin(), { name: site.name, description: site.description, logoPath: "/icon/512", searchPath: "/shop" })} />
+async function HomeJsonLd() {
+  await connection()
+  const sameAs = getEnv().socials.map((s) => s.href)
+  return <JsonLd nodes={yardJsonLd(publicOrigin(), { name: site.name, description: site.seoDescription, logoPath: "/icon/512", sameAs, searchPath: "/shop" })} />
 }
 
 export default function DiscoverPage() {
@@ -95,7 +100,9 @@ export default function DiscoverPage() {
 
   return (
     <>
-      <HomeJsonLd />
+      <Suspense fallback={null}>
+        <HomeJsonLd />
+      </Suspense>
       {demo ? (
         <DiscoverHero
           brand={heroBrand}

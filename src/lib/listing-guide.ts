@@ -41,7 +41,7 @@ export const SHOP_SETUP_HREF = "/studio/storefront/quick"
 const copy: Record<ListingStepKey, { title: string; body: string }> = {
   photos: { title: "Add photos", body: "Snap or upload at least one. Daylight is your best friend." },
   basics: { title: "Name & price", body: "What it's called and what it costs." },
-  stock: { title: "Sizes & stock", body: "Tap the sizes you have and how many of each." },
+  stock: { title: "Options & stock", body: "Tap the sizes or colours you have and how many of each." },
   publish: { title: "Publish", body: "Drafts are invisible. Publishing puts it on Yard." },
   look: { title: "Logo & banner", body: "Your face on Yard: a square logo and one wide photo." },
   shop: { title: "Publish your shop", body: "Your logo, banner and line go live together." },

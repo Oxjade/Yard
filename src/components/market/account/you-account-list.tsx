@@ -24,11 +24,13 @@ import { api } from "@/lib/api/client"
 import type { BrandMembershipDto } from "@/lib/api/contracts/studio-app"
 import { errorMessage } from "@/lib/api/errors"
 import { afterIdentityChange } from "@/lib/session/identity"
-import { useServerSession } from "@/lib/session/use-server-session"
+import { useServerSession, useYardSocials } from "@/lib/session/use-server-session"
 import { useSession } from "@/lib/stores/session"
 import { cn } from "@/lib/utils"
 import { firstName } from "./format"
 import { useYouCounts } from "./you-nav"
+import { YardSocialLinks } from "../yard-social-links"
+import { site } from "@/config/site"
 
 /**
  * The top of Your World (/you): who you are, then every place in your account as one grouped
@@ -124,6 +126,7 @@ export function YouAccountList({ onTheWay }: { onTheWay: number | null }) {
   const signOut = useSession((s) => s.signOut)
   const shopper = useServerSession((s) => (s.shopper && s.shopper.id === user.id ? s.shopper : null))
   const { counts, ordersLoading } = useYouCounts()
+  const socials = useYardSocials()
   const [opening, setOpening] = useState<string | null>(null)
   const [leaving, setLeaving] = useState(false)
   const brands = shopper?.brands ?? []
@@ -267,6 +270,16 @@ export function YouAccountList({ onTheWay }: { onTheWay: number | null }) {
           />
         </li>
       </Group>
+
+      {socials.length ? (
+        <section aria-labelledby="you-follow-yard">
+          <h2 id="you-follow-yard" className="px-1 text-base font-semibold text-ink">Follow {site.name}</h2>
+          <div className="mt-3 rounded-[22px] border border-line-soft bg-card p-4">
+            <p className="text-sm text-ink-2">New brands, drops and what&apos;s moving on {site.name}, first.</p>
+            <YardSocialLinks className="mt-3" socials={socials} />
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

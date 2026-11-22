@@ -144,7 +144,7 @@ function WelcomeHero() {
     <section aria-labelledby="hero-title" className={`${heroClass} curtain-host bg-obsidian`}>
       <div className={innerClass}>
         <div className="curtain-hold max-w-[60rem]">
-          <p style={delay(100)} className="hero-lift mb-4 text-sm text-ink/80">Independent fashion and streetwear, from Lagos to the world</p>
+          <p style={delay(100)} className="hero-lift mb-4 text-sm text-ink/80">Fashion, art, beauty, home and more, from everywhere</p>
           <h1 id="hero-title" className="curtain-title font-display text-display-2xl text-ink">
             {["Independent brands,", "limited drops"].map((line, i) => (
               <span key={line} className="block overflow-hidden pb-[0.04em]">
@@ -153,7 +153,7 @@ function WelcomeHero() {
             ))}
           </h1>
           <p style={delay(600)} className="hero-lift mt-6 max-w-md text-pretty text-base leading-relaxed text-ink/85 md:text-lg">
-            Shop clothing, streetwear and accessories in small runs from independent studios you won&apos;t find anywhere else. Follow a brand and we&apos;ll tell you when its next drop opens.
+            Small runs from independent brands you won&apos;t find anywhere else, from streetwear and jewelry to prints, skin care and ceramics. Follow a brand and we&apos;ll tell you when its next drop opens.
           </p>
           <div style={delay(720)} className="hero-lift mt-8 flex flex-wrap items-center gap-3">
             <Button asChild variant="primary" size="lg"><Link href="/shop">Shop the pieces</Link></Button>

@@ -22,10 +22,12 @@ export type ServerSessionState = {
   demoAuth: DemoAuthState | null
   /** Sample-data screens are on (the demo switch). Null until /api/session answers: treat it as off. */
   sampleData: boolean | null
+  /** Yard's own social profiles (YARD_SOCIAL_*). Empty until /api/session answers. */
+  socials: SessionDto["socials"]
   fetchedAt: number
 }
 
-const store = create<ServerSessionState>(() => ({ status: "loading", shopper: null, brand: null, admin: null, demoAuth: null, sampleData: null, fetchedAt: 0 }))
+const store = create<ServerSessionState>(() => ({ status: "loading", shopper: null, brand: null, admin: null, demoAuth: null, sampleData: null, socials: [], fetchedAt: 0 }))
 
 let generation = 0
 let started = false
@@ -39,7 +41,7 @@ export function refreshServerSession(): Promise<void> {
     .then((s) => {
       if (mine !== generation) return
       setSampleDataFromSession(s.sampleData)
-      store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, sampleData: s.sampleData, fetchedAt: Date.now() })
+      store.setState({ status: "ready", shopper: s.shopper, brand: s.brand, admin: s.admin, demoAuth: s.demoAuth, sampleData: s.sampleData, socials: s.socials ?? [], fetchedAt: Date.now() })
     })
     .catch(() => {
       if (mine === generation) store.setState((st) => ({ status: st.status === "ready" ? "ready" : "error", fetchedAt: Date.now() }))
@@ -96,6 +98,11 @@ export function identityKeyFor(surface: SessionSurface, s: ServerSessionState): 
 /** True only once /api/session says sample-data screens are on; prod links stay hidden until then (never a flash of sample links). */
 export function useSampleData() {
   return useServerSession((s) => s.sampleData === true)
+}
+
+/** Yard's own social profiles (YARD_SOCIAL_*), read at request time by /api/session; empty until it answers. */
+export function useYardSocials() {
+  return useServerSession((s) => s.socials)
 }
 
 export function useIdentityKey(surface: SessionSurface) {

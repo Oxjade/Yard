@@ -11,9 +11,14 @@ export const site = {
   tagline: "Independent brands, found first.",
   description:
     "A global destination for discovering, following and shopping independent brands.",
-  /** The home page's search snippet: what people search for, in plain words. */
+  /**
+   * The default page title and the home page's (at most 60 characters). Every kind of independent
+   * brand sells on Yard: fashion is featured, never the whole story.
+   */
+  seoTitle: "Yard: independent brands and limited drops",
+  /** The default search snippet, the home page's and Yard's JSON-LD description (at most 155 characters). */
   seoDescription:
-    "Shop independent fashion and streetwear brands from Lagos to the world. Discover limited drops, follow the brands you love and check out once across every brand on Yard.",
+    "Shop independent brands from everywhere: fashion, streetwear, art, beauty, home and more. Limited drops, follow the brands you love, one checkout for all.",
   /** Commission on each completed sale (3.5%). */
   commissionRate: 0.035,
   /** Launch offer: no commission on sales placed before this moment (UTC), for every brand. */

@@ -15,6 +15,7 @@ import { listPublicBrands, publicCategories } from "../catalog/public"
 import { refusedSampleBrand } from "../catalog/sample-guard"
 import { brandForSaleSql, brandListedSql, productPublicWhere } from "../catalog/sellable"
 import { db } from "../db"
+import { getEnv } from "../env"
 import { brands } from "../db/schema"
 import { catalogCollections, catalogProducts, storefrontVersions } from "../db/schema/catalog"
 import { publicDropPages, upcomingReleases } from "../drops/service"
@@ -217,6 +218,7 @@ export async function llmsInput(): Promise<LlmsInput> {
       categories: cats,
       totals: { brands: list.length, products: counts.reduce((n, c) => n + c.n, 0) },
       brands: list,
+      socials: getEnv().socials.map((s) => ({ label: s.label, href: s.href })),
       generatedAt: new Date().toISOString(),
     }
   })

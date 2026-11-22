@@ -160,7 +160,7 @@ export function ProductStep({ onNext }: StepProps) {
         <SampleLibrary open={libraryOpen} onOpenChange={setLibraryOpen} photos={sampleProductPhotos(category)} slots={left} name={product.name} onAdd={(list) => set({ images: [...product.images, ...list].slice(0, MAX_PHOTOS) })} />
       </Panel>
 
-      <Panel title="Details" description="Say what it is, what it's made of and how it fits.">
+      <Panel title="Details" description="Say what it is, what it's made of and what makes it special.">
         <div className="grid gap-4">
           <Field id="ob-product-name" label="Product name" error={e.name}>
             <Input {...control("ob-product-name", e.name)} value={product.name} onChange={(ev) => set({ name: ev.target.value })} maxLength={80} placeholder="e.g. Heavyweight hoodie" className={inputClass} />
@@ -172,7 +172,7 @@ export function ProductStep({ onNext }: StepProps) {
               onChange={(ev) => set({ description: ev.target.value })}
               rows={4}
               maxLength={1200}
-              placeholder="e.g. Fabric, fit and care"
+              placeholder="e.g. Materials, size and care"
               className="min-h-24"
             />
           </Field>
@@ -191,7 +191,7 @@ export function ProductStep({ onNext }: StepProps) {
         </div>
       </Panel>
 
-      <Panel title="Sizes and stock" description="One row per size you sell. Leave a size at 0 if it's sold out.">
+      <Panel title="Options and stock" description="One row per version you sell, like a size or colour. Leave one at 0 if it's sold out.">
         <div className="grid gap-4">
           <Segmented id="ob-size-system" label="Size range" value={product.sizeSystem} onChange={setSystem} options={sizeSystems.map((s) => ({ value: s.id, label: s.label }))} error={e.sizes} className="grid grid-cols-2 sm:flex sm:w-fit" />
 

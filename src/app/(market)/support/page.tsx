@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { MessageSupportButton } from "@/components/inbox/entry"
 import { LegalLink, LegalList, LegalPage, LegalSection, SupportEmail } from "@/components/market/legal-page"
+import { YardSocialLinks } from "@/components/market/yard-social-links"
 
 export const metadata: Metadata = {
   title: "Support",
@@ -20,6 +21,8 @@ export default function SupportPage() {
             <MessageSupportButton variant="primary" />
           </div>
           <p>We aim to reply within 2 business days (Monday to Friday, excluding Nigerian public holidays). Brands can message Yard Support from Studio.</p>
+          {/* Yard's own profiles (YARD_SOCIAL_*): nothing renders when none is set. */}
+          <YardSocialLinks title="Follow Yard" />
         </>
       }
     >
