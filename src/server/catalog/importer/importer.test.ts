@@ -4,7 +4,9 @@ import path from "node:path"
 import { describe, it } from "node:test"
 import { adminProposalCreateBody } from "../contracts"
 import { importChoiceBody, ONE_SIZE, type ImportProductDto } from "../../../lib/api/contracts/imports"
+import { guessMarket } from "../../../lib/from-website"
 import { choiceOf, draftOf, draftProblems, stockLabels, withCurrency } from "../../../lib/importer"
+import { bumpaProduct } from "./adapters/bumpa"
 import { labeldProduct, labeldShopUrl } from "./adapters/labeld"
 import { FetchRefused, safeGet, vetHost, type HttpTransport, type Resolver } from "./fetch"
 import { guessCategory, markDuplicates, normalizeProduct, priceToMinor, proposalBodyOf, splitStock, titleKey } from "./normalize"
@@ -252,6 +254,137 @@ describe("Shopify adapter", () => {
     assert.ok(tote.warnings.includes(`No sizes found, defaulting to ${ONE_SIZE}.`))
     assert.equal(tote.images[0], "https://cdn.shopify.com/s/files/1/0001/products/tote.jpg")
     assert.equal(tote.categorySlug, "accessories")
+  })
+})
+
+describe("Bumpa adapter (real responses of themangabookshop981.bumpa.shop, trimmed)", () => {
+  const B = "https://themangabookshop981.bumpa.shop"
+  const JSON_T = "application/json"
+  const listing = JSON.parse(read("bumpa/products.json")) as { products: { data: Record<string, unknown>[] } & Record<string, unknown> }
+  /** The listing split into pages of `per`, in the API's own Laravel shape. */
+  const pages = (origin: string, per: number, limit = 200) => {
+    const data = listing.products.data
+    const last = Math.ceil(data.length / per)
+    return Object.fromEntries(
+      Array.from({ length: last }, (_, i) => [`${origin}/storefront/products?limit=${limit}&page=${i + 1}`, [JSON_T, JSON.stringify({ products: { ...listing.products, current_page: i + 1, last_page: last, per_page: per, total: data.length, data: data.slice(i * per, (i + 1) * per) } })] as [string, string]]),
+    )
+  }
+
+  it("reads the brand from storeData and every product, without probing other platforms", async () => {
+    const { fetch, asked } = site({ [`${B}/`]: [HTML, read("bumpa/home.html")], ...pages(B, 200) })
+    const r = await scanSite(`${B}/?utm_source=ig`, { fetch, normalize: NORM, existing: NONE })
+    assert.equal(r.platform, "bumpa")
+    // Home and one listing request: no products.json, no Store API, no product pages.
+    assert.deepEqual(asked, [`${B}/`, `${B}/storefront/products?limit=200&page=1`])
+    assert.equal(r.brand.name, "The Manga Bookshop")
+    assert.equal(r.brand.logo, "https://dodptt9f4zk9h.cloudfront.net/stores/269199/themangabookshop981.jpeg")
+    assert.equal(r.brand.location, "Gwarinpa, Nigeria")
+    // The meta description only repeats the name: no bio.
+    assert.equal(r.brand.description, null)
+    // The phone, street and zip are never imported (the fixture carries placeholders for them).
+    const all = JSON.stringify(r)
+    for (const secret of ["+2340000000000", "2340000000000", "Redacted Street", "000000"]) assert.ok(!all.includes(secret), secret)
+    assert.equal(guessMarket({ siteUrl: r.startUrl, platform: r.platform, location: r.brand.location, productCurrencies: r.products.map((p) => p.currency) }).country, "NG")
+    assert.equal(r.products.length, 5)
+  })
+
+  it("maps prices to minor units, stock from quantity, images from the CDN", async () => {
+    const { fetch } = site({ [`${B}/`]: [HTML, read("bumpa/home.html")], ...pages(B, 200) })
+    const r = await scanSite(B, { fetch, normalize: NORM, existing: NONE })
+    const [batman, mha, , persona, bleach] = r.products
+    assert.equal(batman.title, "Absolute Batman")
+    assert.equal(batman.sourceUrl, `${B}/products/absolute-batman/5583683`)
+    assert.equal(batman.sourceId, "5583683")
+    assert.equal(batman.priceMinor, 3_480_000)
+    assert.equal(batman.compareAtMinor, null)
+    assert.equal(batman.currency, "NGN")
+    assert.equal(batman.availability, "out_of_stock")
+    assert.equal(batman.variants[0].stock, 0)
+    assert.deepEqual(batman.images, ["https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg"])
+    assert.ok(batman.warnings.includes(`No sizes found, defaulting to ${ONE_SIZE}.`))
+    assert.equal(mha.priceMinor, 2_262_300)
+    assert.equal(mha.availability, "in_stock")
+    assert.equal(mha.variants[0].stock, 1)
+    assert.equal(persona.variants[0].stock, 2)
+    assert.ok(!persona.warnings.some((w) => /Stock count not shown/.test(w)))
+    assert.match(bleach.description, /608 pages/)
+  })
+
+  it("pages through the listing until last_page", async () => {
+    const { fetch, asked } = site({ [`${B}/`]: [HTML, read("bumpa/home.html")], ...pages(B, 2) })
+    const r = await scanSite(B, { fetch, normalize: NORM, existing: NONE })
+    assert.equal(r.products.length, 5)
+    assert.deepEqual(asked.slice(1), [1, 2, 3].map((n) => `${B}/storefront/products?limit=200&page=${n}`))
+    // The product cap holds across pages (and asks for no more than it needs).
+    const capped = await scanSite(B, { fetch: site({ [`${B}/`]: [HTML, read("bumpa/home.html")], ...pages(B, 2, 3) }).fetch, normalize: NORM, existing: NONE, maxProducts: 3 })
+    assert.equal(capped.products.length, 3)
+    assert.ok(capped.warnings.some((w) => /Stopped at 3 products/.test(w)))
+  })
+
+  it("takes a sale price, with the regular price as compare-at, and an untracked product as in stock", () => {
+    const p = listing.products.data[1]
+    const sale = normalizeProduct(bumpaProduct({ ...p, id: 1, price: "20000.00", sales: "15000.00" } as never, B, "NGN"), NORM)!
+    assert.equal(sale.priceMinor, 1_500_000)
+    assert.equal(sale.compareAtMinor, 2_000_000)
+    const compare = normalizeProduct(bumpaProduct({ ...p, id: 2, price: "20000.00", sales: null, compare_at_price: "25000.00" } as never, B, "NGN"), NORM)!
+    assert.equal(compare.priceMinor, 2_000_000)
+    assert.equal(compare.compareAtMinor, 2_500_000)
+    const untracked = normalizeProduct(bumpaProduct({ ...p, id: 3, manage_stock: false, quantity: 0, in_stock: true } as never, B, "NGN"), NORM)!
+    assert.equal(untracked.availability, "in_stock")
+    assert.equal(untracked.variants[0].stock, null)
+    assert.ok(untracked.warnings.some((w) => /Stock count not shown/.test(w)))
+  })
+
+  it("reads a product's variations from its detail record: size, colour, stock and price", async () => {
+    const tee = JSON.parse(read("bumpa/product-variant-constructed.json")).product
+    const { variations: _v, tags: _t, ...listed } = tee
+    void _v
+    void _t
+    const body = JSON.stringify({ products: { ...listing.products, data: [listed, listing.products.data[0]], total: 2 } })
+    const { fetch, asked } = site({ [`${B}/`]: [HTML, read("bumpa/home.html")], [`${B}/storefront/products?limit=200&page=1`]: [JSON_T, body], [`${B}/storefront/products/5590001?with_variations=1`]: [JSON_T, read("bumpa/product-variant-constructed.json")] })
+    const r = await scanSite(B, { fetch, normalize: { ...NORM, brandCategory: "streetwear" }, existing: NONE })
+    // Only the product with variations is read again.
+    assert.deepEqual(asked.slice(2), [`${B}/storefront/products/5590001?with_variations=1`])
+    const p = r.products[0]
+    assert.deepEqual(
+      p.options.map((o) => [o.name, o.values.map((v) => v.value)]),
+      [
+        ["Size", ["M", "L"]],
+        ["Colour", ["Black", "White"]],
+      ],
+    )
+    assert.equal(p.priceMinor, 1_200_000)
+    assert.equal(p.compareAtMinor, 1_500_000)
+    assert.equal(p.variants.length, 4)
+    assert.equal(p.variants.find((v) => v.options.Size === "M" && v.options.Colour === "Black")?.stock, 2)
+    assert.equal(p.variants.find((v) => v.options.Size === "M" && v.options.Colour === "White")?.available, false)
+    assert.equal(p.variants.find((v) => v.options.Size === "L" && v.options.Colour === "White")?.priceMinor, 1_300_000)
+    assert.ok(p.tags.includes("Merch"))
+    assert.equal(p.subcategory, "T-shirts")
+    assert.equal(p.availability, "in_stock")
+  })
+
+  it("keeps One size with a warning when the variations can't be read", async () => {
+    const tee = JSON.parse(read("bumpa/product-variant-constructed.json")).product
+    const body = JSON.stringify({ products: { ...listing.products, data: [{ ...tee, options: [], variations: undefined }], total: 1 } })
+    const { fetch } = site({ [`${B}/`]: [HTML, read("bumpa/home.html")], [`${B}/storefront/products?limit=200&page=1`]: [JSON_T, body] })
+    const [p] = (await scanSite(B, { fetch, normalize: NORM, existing: NONE })).products
+    assert.equal(p.options.length, 0)
+    assert.ok(p.warnings.includes(`No sizes found, defaulting to ${ONE_SIZE}.`))
+    assert.ok(p.warnings.some((w) => /4 variations .* couldn't be read/.test(w)))
+  })
+
+  it("detects a Bumpa shop on its own domain by its home page", async () => {
+    const O = "https://shop.mangabooks.com.ng"
+    const { fetch, asked } = site({ [`${O}/`]: [HTML, read("bumpa/home.html")], ...pages(O, 200) })
+    const r = await scanSite(O, { fetch, normalize: NORM, existing: NONE })
+    assert.equal(r.platform, "bumpa")
+    assert.equal(asked.length, 2)
+    assert.equal(r.products[0].sourceUrl, `${O}/products/absolute-batman/5583683`)
+    // A site without the markers isn't asked for /storefront.
+    const other = site({ [`${O}/`]: [HTML, "<html><head><title>Shop</title></head><body>Hi</body></html>"] })
+    await scanSite(O, { fetch: other.fetch, normalize: NORM, existing: NONE })
+    assert.ok(!other.asked.some((u) => u.includes("/storefront/")))
   })
 })
 

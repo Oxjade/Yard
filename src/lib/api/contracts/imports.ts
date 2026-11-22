@@ -6,7 +6,7 @@ import { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES, SITE_PIECE_STA
 /**
  * Import from website (Admin › Brands › a brand › Products › Import from website, docs/IMPORTER.md).
  * An admin pastes the brand's own shop address; Yard scans it in the background (Shopify,
- * WooCommerce, Labeld, then any site with schema.org Product data), the admin edits and ticks
+ * WooCommerce, Labeld, Bumpa, then any site with schema.org Product data), the admin edits and ticks
  * products in a preview, and Yard copies the photos into its own media and sends the ticked
  * products to the brand as Suggestions from Yard (src/server/catalog/proposals.ts). Plain zod, no
  * server-only: the admin page validates with the same rules as /api/admin/brand-imports.
@@ -14,7 +14,7 @@ import { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES, SITE_PIECE_STA
 
 export { IMPORT_ITEM_STATUSES, IMPORT_PLATFORMS, IMPORT_STATUSES, SITE_PIECE_STATUSES, WATCH_STATUSES }
 export type ImportPlatform = (typeof IMPORT_PLATFORMS)[number]
-export const IMPORT_PLATFORM_LABELS: Record<ImportPlatform, string> = { shopify: "Shopify", woocommerce: "WooCommerce", labeld: "Labeld", generic: "Product pages (schema.org)" }
+export const IMPORT_PLATFORM_LABELS: Record<ImportPlatform, string> = { shopify: "Shopify", woocommerce: "WooCommerce", labeld: "Labeld", bumpa: "Bumpa", generic: "Product pages (schema.org)" }
 
 export type ImportStatus = (typeof IMPORT_STATUSES)[number]
 export type ImportItemStatus = (typeof IMPORT_ITEM_STATUSES)[number]

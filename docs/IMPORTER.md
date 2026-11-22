@@ -59,13 +59,14 @@ them (Labeld's production days), otherwise the brand's handling time.
 ## Platforms
 
 Adapters are tried in order; the first that finds products wins. A home page that clearly belongs
-to another platform skips a probe (a Labeld site isn't asked for `/products.json`).
+to another platform skips a probe (a Labeld or Bumpa site isn't asked for `/products.json`).
 
 | Platform | How it's read | What comes out |
 |---|---|---|
 | **Shopify** | `/products.json?limit=250&page=N` | options and variants, prices, compare-at, `available` per variant, images, type and tags. Currency from the home page (`Shopify.currency`, `og:price:currency`) or `/cart.js`. Stock counts aren't public. |
 | **WooCommerce** | Store API `/wp-json/wc/store/v1/products?per_page=100&page=N` | prices in minor units with the currency, sale prices, attributes with variations as options, `is_in_stock`, images, categories and tags. Stock counts aren't public. |
 | **Labeld** (`<handle>.labeld.app`; `shop.labeld.app/<handle>` is mapped to it) | home page, `/sitemap.xml`, each `/drops/<id>` page, and the drops each page lists as related | Organization JSON-LD for the brand; Product JSON-LD plus the Next.js flight payload record per drop: `sizeOptions`, `colors` (with hex), `stockRemaining` with `stockMode` global (split evenly across variants, with a warning) or variant (`variantStock`), `variantPriceAdjustmentsMinor`, `galleryImages`, production days. The shop's listing loads in the browser, so the sitemap and related products are how every drop is found; no "load more" call is needed. |
+| **Bumpa** (`<shop>.bumpa.shop`, or the shop's own domain when its home page has Bumpa's Next.js `storeData` and a getbumpa.com/Bumpa reference) | the home page's `__NEXT_DATA__` `storeData`, then the shop's own JSON API: `/storefront/products?limit=200&page=N` until `last_page` (one request for up to 200 products), and `/storefront/products/<id>?with_variations=1` only for a product with `variation_count > 0` or options | the brand from `storeData`: name, logo (the CDN original, not the 200 px copy), hero banner when the theme has one, socials (never WhatsApp), and the place as city and country only (the phone, street and zip are never read). Prices are major-unit strings in the store currency; a `sales` price above 0 is the price with the regular price as compare-at, else `compare_at_price` is. Stock is `quantity` when `manage_stock` is on (untracked: in stock, count not shown), else `in_stock`. Images from `images[].path` on the CDN (`image_path`'s host), then `image_url`. Variations map to their options (Size, Colour, …) with their own price and quantity; when they can't be read the product stays One size with a warning. Category guesses from `tag` and the product's collections. |
 | **Any other site** | `robots.txt` sitemaps or `/sitemap.xml` (an index is followed, product sitemaps first) plus the home page's links, product-looking paths first | schema.org Product / ProductGroup JSON-LD (variants' size and colour), then Product microdata, then OpenGraph product tags. ItemList JSON-LD adds the products it lists. |
 
 The brand comes from the site's own Organization/Store JSON-LD (a platform's node is skipped),
@@ -139,7 +140,9 @@ at a time, 350 ms apart, `YardImporter/1.0` user agent, `YARD_IMPORTER_PROXY`), 
 adapter the watch was set up with, and reads only what it needs: the listing (home page, sitemap or
 `products.json` / Store API pages), product pages it has never seen, and the pages of pieces already
 in Yard (for changes). Pieces passed over or waiting are not read again. At most 120 requests per
-check; for 813israw.labeld.app (4 products, 2 in Yard) a check is 4 requests. **Admin › Check now**
+check; for 813israw.labeld.app (4 products, 2 in Yard) a check is 4 requests. A Bumpa shop's listing carries price and stock, so a check of
+one with up to 200 products is 2 requests (home page and one listing page; themangabookshop981.bumpa.shop,
+193 products, is 2), plus one per new or in-Yard piece with variations. **Admin › Check now**
 runs one at once (6 an hour per brand).
 
 **Cost.** No paid service is called. Each check is a handful of outbound HTTP requests to the brand's
@@ -247,7 +250,7 @@ rules `src/lib/from-website.ts`):
      domain, `813israw.labeld.app` → `813israw`, else from the name; the first free one of it and
      `-studio`, `-official`, `-yard`, `-2`…, then checked live as typed), category (the products'
      most common), city, country and currency (best guesses with the reason shown: a Labeld shop is
-     NG/NGN; the city only when the site names one, from its JSON-LD address or a line like
+     NG/NGN, a Bumpa shop's place is its storeData city and country; the city only when the site names one, from its JSON-LD address or a line like
      "Lagos State, Nigeria"; else the products' currency and the domain's country code), logo and
      banner chosen from the site's images (its own logo and banner first, then product photos, or
      none), bio, Instagram and TikTok. Changing the currency converts every product price at Yard's
@@ -306,5 +309,8 @@ Code: `src/server/catalog/importer/` (`url.ts`, `fetch.ts`, `html.ts`, `normaliz
 `website-watch.tsx`; Studio: `src/components/studio/catalog/website-pieces.tsx`),
 shared rules `src/lib/importer.ts`, contracts `src/lib/api/contracts/imports.ts`. Tests:
 `src/server/catalog/importer/importer.test.ts` and `watch.test.ts` with saved pages in `fixtures/` (the Labeld pages
-are real pages of 813israw.labeld.app with personal details redacted; the Shopify, WooCommerce and
+are real pages of 813israw.labeld.app with personal details redacted; the Bumpa home page, listing
+and product record are real responses of themangabookshop981.bumpa.shop, trimmed to 5 products, with
+the phone, street and zip replaced by placeholders, and `product-variant-constructed.json` is a
+variant product built in the same shape, since that shop has none; the Shopify, WooCommerce and
 generic fixtures are hand-written in those APIs' shapes).

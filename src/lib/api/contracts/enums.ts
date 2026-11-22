@@ -127,7 +127,7 @@ export const NEWSLETTER_AUDIENCES = ["shoppers", "brands", "followers", "country
 export const NEWSLETTER_RECIPIENT_STATUSES = ["pending", "queued", "sent", "failed", "suppressed", "stub", "cancelled"] as const
 
 /** Import from website (docs/IMPORTER.md): which adapter read the site, the import's state, and each product's outcome. */
-export const IMPORT_PLATFORMS = ["shopify", "woocommerce", "labeld", "generic"] as const
+export const IMPORT_PLATFORMS = ["shopify", "woocommerce", "labeld", "bumpa", "generic"] as const
 export const IMPORT_STATUSES = ["scanning", "scanned", "importing", "done", "failed"] as const
 export const IMPORT_ITEM_STATUSES = ["queued", "created", "skipped", "failed"] as const
 /**

@@ -1,4 +1,5 @@
 import type { RawProduct } from "../normalize"
+import { isBumpaHost, looksBumpa } from "./bumpa"
 import { brandFromHtml } from "./common"
 import type { Adapter, ScanContext } from "./types"
 
@@ -66,7 +67,7 @@ export function wooProduct(p: WooProduct): RawProduct {
 
 export const woocommerce: Adapter = {
   id: "woocommerce",
-  detect: (ctx) => (ctx.home && /wp-content\/plugins\/woocommerce|woocommerce/i.test(ctx.home.html) ? "yes" : ctx.home && /cdn\.shopify\.com|ik\.imagekit\.io\/labeld/i.test(ctx.home.html) ? "no" : "maybe"),
+  detect: (ctx) => (ctx.home && /wp-content\/plugins\/woocommerce|woocommerce/i.test(ctx.home.html) ? "yes" : isBumpaHost(ctx.start.hostname) || (ctx.home && (/cdn\.shopify\.com|ik\.imagekit\.io\/labeld/i.test(ctx.home.html) || looksBumpa(ctx.home.html))) ? "no" : "maybe"),
   async scan(ctx: ScanContext) {
     const origin = ctx.start.origin
     const api = (page: number) => `${origin}/wp-json/wc/store/v1/products?per_page=100&page=${page}`

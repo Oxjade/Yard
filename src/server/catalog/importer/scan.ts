@@ -1,4 +1,5 @@
 import { IMPORT_MAX_PRODUCTS, type ImportBrandDto, type ImportPlatform, type ImportProductDto, type ImportProgressDto } from "@/lib/api/contracts/imports"
+import { bumpa } from "./adapters/bumpa"
 import { generic } from "./adapters/generic"
 import { labeld, labeldShopUrl } from "./adapters/labeld"
 import { shopify } from "./adapters/shopify"
@@ -10,12 +11,12 @@ import { cleanUrl } from "./url"
 
 /**
  * One scan of a brand's website (docs/IMPORTER.md): clean the address, read the home page, try the
- * adapters in order (Shopify, WooCommerce, Labeld, then any site with schema.org Product data) and
+ * adapters in order (Shopify, WooCommerce, Labeld, Bumpa, then any site with schema.org Product data) and
  * normalise what the first one that finds products returns. Pure apart from the injected `get`, so
  * the tests run it against saved pages.
  */
 
-export const ADAPTERS: Adapter[] = [shopify, woocommerce, labeld, generic]
+export const ADAPTERS: Adapter[] = [shopify, woocommerce, labeld, bumpa, generic]
 
 export type Get = (url: string, opts: FetchOptions) => Promise<FetchResult>
 

@@ -1,5 +1,6 @@
 import type { RawProduct } from "../normalize"
 import { meta } from "../html"
+import { isBumpaHost, looksBumpa } from "./bumpa"
 import { brandFromHtml } from "./common"
 import type { Adapter, ScanContext } from "./types"
 
@@ -62,7 +63,7 @@ export function shopifyProduct(p: ShopifyProduct, origin: string, currency: stri
 
 export const shopify: Adapter = {
   id: "shopify",
-  detect: (ctx) => (ctx.home && looksShopify(ctx.home.html) ? "yes" : ctx.home && /ik\.imagekit\.io\/labeld|wp-content|woocommerce/i.test(ctx.home.html) ? "no" : "maybe"),
+  detect: (ctx) => (ctx.home && looksShopify(ctx.home.html) ? "yes" : isBumpaHost(ctx.start.hostname) || (ctx.home && (/ik\.imagekit\.io\/labeld|wp-content|woocommerce/i.test(ctx.home.html) || looksBumpa(ctx.home.html))) ? "no" : "maybe"),
   async scan(ctx: ScanContext) {
     const origin = ctx.start.origin
     const first = await ctx.fetch.json<{ products?: ShopifyProduct[] }>(`${origin}/products.json?limit=250&page=1`).catch(() => null)

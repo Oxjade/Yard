@@ -1,0 +1,110 @@
+{
+ "product": {
+  "id": 5583683,
+  "slug": "absolute-batman",
+  "title": "Absolute Batman",
+  "name": "Absolute Batman",
+  "barcode": null,
+  "options": [],
+  "description": null,
+  "seo_enabled": false,
+  "seo_title": null,
+  "seo_description": null,
+  "unit": "pcs",
+  "inventory_unit": {
+   "code": "pcs",
+   "name": "Pieces",
+   "symbol": "pcs",
+   "allows_fractional": false,
+   "quantity_step": "1.000000",
+   "display_decimal_places": 0
+  },
+  "collection_count": 1,
+  "tag": {
+   "id": 495786,
+   "store_id": 269199,
+   "tag": "Dc Marvel comics",
+   "created_at": "2026-07-04T14:52:35.000000Z",
+   "updated_at": "2026-07-04T14:52:35.000000Z",
+   "description": "",
+   "image_path": "",
+   "status": 1,
+   "position": 11,
+   "url": "https://themangabookshop981.bumpa.shop/browse/Dc+Marvel+comics",
+   "image_url": "",
+   "pivot": {
+    "product_id": 5583683,
+    "collection_id": 495786
+   },
+   "lean_store": {
+    "id": 269199,
+    "currencies": null,
+    "url": "themangabookshop981.bumpa.shop"
+   }
+  },
+  "variation_count": 0,
+  "variations_count": 0,
+  "variationCount": 0,
+  "quantity": 0,
+  "manage_stock": true,
+  "in_stock": false,
+  "minimum_order_quantity": 1,
+  "maximum_order_quantity": null,
+  "price": "34800.00",
+  "price_formatted": "₦34,800.00",
+  "cost": null,
+  "compare_at_price": null,
+  "sales": null,
+  "sales_formatted": "₦0.00",
+  "type": "simple",
+  "status": 1,
+  "addons": [],
+  "url": "https://themangabookshop981.bumpa.shop/products/absolute-batman/5583683",
+  "image": "1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+  "image_url": "https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+  "image_path": "https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/",
+  "images": [
+   {
+    "name": "1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+    "path": "/stores/269199/products/1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+    "thumbnail_path": "/stores/269199/products/tn-1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg"
+   }
+  ],
+  "optimized_image_url": "https://getbumpa.com/cdn-cgi/image/format=auto,width=800/https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+  "thumbnail_url": "https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/tn-1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+  "optimized_thumbnail_url": "https://getbumpa.com/cdn-cgi/image/format=auto,width=200/https://dodptt9f4zk9h.cloudfront.net/stores/269199/products/tn-1d17eeeca6529db3b9e0a050b841b4e447887226.jpeg",
+  "reserved_quantity": 0,
+  "has_discount": false,
+  "is_b2b_exclusive": false,
+  "details": null,
+  "sku": null,
+  "weight_kg": null,
+  "tags": [
+   {
+    "id": 495786,
+    "store_id": 269199,
+    "tag": "Dc Marvel comics",
+    "created_at": "2026-07-04T14:52:35.000000Z",
+    "updated_at": "2026-07-04T14:52:35.000000Z",
+    "description": "",
+    "image_path": "",
+    "status": 1,
+    "position": 11,
+    "url": "https://themangabookshop981.bumpa.shop/browse/Dc+Marvel+comics",
+    "image_url": "",
+    "pivot": {
+     "product_id": 5583683,
+     "collection_id": 495786
+    },
+    "lean_store": {
+     "id": 269199,
+     "currencies": null,
+     "url": "themangabookshop981.bumpa.shop"
+    }
+   }
+  ],
+  "files": [],
+  "extras": [],
+  "countdowns": []
+ }
+}

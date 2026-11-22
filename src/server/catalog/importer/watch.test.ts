@@ -123,6 +123,67 @@ describe("seen pieces never come back", () => {
   })
 })
 
+describe("watching a Bumpa shop (saved responses of themangabookshop981.bumpa.shop)", () => {
+  const B = "https://themangabookshop981.bumpa.shop"
+  const LIST = `${B}/storefront/products?limit=200&page=1`
+  const listing = JSON.parse(read("bumpa/products.json"))
+  const tee = JSON.parse(read("bumpa/product-variant-constructed.json")).product
+  const teeUrl = `${B}/storefront/products/5590001?with_variations=1`
+  /** The shop with the constructed variant tee added at the top of the listing (the newest first, as Bumpa lists). */
+  function bumpaSite(withTee: boolean) {
+    const asked: string[] = []
+    const data = withTee ? [{ ...tee, variations: undefined, tags: undefined }, ...listing.products.data] : listing.products.data
+    const pages: Record<string, [string, string]> = {
+      [`${B}/`]: [HTML, read("bumpa/home.html")],
+      [LIST]: ["application/json", JSON.stringify({ products: { ...listing.products, data, total: data.length } })],
+      [teeUrl]: ["application/json", read("bumpa/product-variant-constructed.json")],
+    }
+    const get: Get = async (url) => {
+      asked.push(url)
+      const hit = pages[url]
+      if (!hit) throw new FetchRefused("status", "404", 404)
+      return { url, status: 200, contentType: hit[0], body: Buffer.from(hit[1]) }
+    }
+    return { fetch: siteFetcher(get, { delayMs: 0 }), asked }
+  }
+  const page = (slug: string, id: number) => `${B}/products/${slug}/${id}`
+  const shopPieces = (): KnownPiece[] => listing.products.data.map((p: { slug: string; id: number }) => ({ id: `sp_${p.id}`, urlKey: urlKey(page(p.slug, p.id)), sourceId: String(p.id), status: "ignored", baseline: null, change: null }))
+  const seenAll = () => new SeenIndex(shopPieces())
+
+  it("a check is the home page and one listing request; a new piece is found, with its variations", async () => {
+    const seen = seenAll()
+    const { fetch, asked } = bumpaSite(true)
+    let skipped = 0
+    const out = await scanSite(B, { fetch, normalize: NORM, existing: NONE, platform: "bumpa", skipPage: (u) => (seen.skips(u) ? (skipped++, true) : false) })
+    assert.equal(skipped, 5)
+    assert.deepEqual(asked, [`${B}/`, LIST, teeUrl])
+    const c = classifyScan(out.products, seen, { baseline: false, now: NOW })
+    assert.deepEqual(
+      c.fresh.map((f) => f.product.title),
+      ["One Piece Logo Tee"],
+    )
+    assert.equal(c.fresh[0].product.variants.length, 4)
+  })
+
+  it("nothing new: two requests, and a known piece with variations isn't read again", async () => {
+    const seen = new SeenIndex([...shopPieces(), { id: "sp_tee", urlKey: urlKey(page("one-piece-logo-tee", 5590001)), sourceId: "5590001", status: "skipped", baseline: null, change: null }])
+    const { fetch, asked } = bumpaSite(true)
+    const out = await scanSite(B, { fetch, normalize: NORM, existing: NONE, platform: "bumpa", skipPage: (u) => seen.skips(u) })
+    assert.equal(out.products.length, 0)
+    assert.equal(out.platform, "bumpa")
+    assert.deepEqual(asked, [`${B}/`, LIST])
+  })
+
+  it("a piece in Yard is re-read from the listing and its price change flagged", async () => {
+    const batman = listing.products.data[0]
+    const seen = new SeenIndex([{ id: "sp_b", urlKey: urlKey(page(batman.slug, batman.id)), sourceId: String(batman.id), status: "imported", baseline: { priceMinor: 3_000_000, currency: "NGN", available: false }, change: null }])
+    const { fetch } = bumpaSite(false)
+    const out = await scanSite(B, { fetch, normalize: NORM, existing: NONE, platform: "bumpa", skipPage: (u) => seen.skips(u) })
+    const c = classifyScan(out.products, seen, { baseline: false, now: NOW })
+    assert.deepEqual(c.changes.find((x) => x.id === "sp_b")?.change?.price, { from: 3_000_000, to: 3_480_000, currency: "NGN" })
+  })
+})
+
 describe("changes on their site (flagged, never applied)", () => {
   const base = { priceMinor: 1700000, currency: "NGN", available: true }
   it("flags a new price in the same currency", () => {
