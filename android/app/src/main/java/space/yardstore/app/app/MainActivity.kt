@@ -129,7 +129,9 @@ class MainActivity : ComponentActivity() {
                     AuthAppHandoff.complete(incoming.url, container.session, onlyIfPending = restored)
                 }
             }
-            is AppLinkRouting.Incoming.NotificationTap -> YardPushCenter.handleTap(incoming.href)
+            // A brand's notification (e.g. "Yard prepared N products for you") links into Studio.
+            is AppLinkRouting.Incoming.NotificationTap ->
+                StudioLink.parse(incoming.href)?.let { container.studio.openLink(it) } ?: YardPushCenter.handleTap(incoming.href)
             is AppLinkRouting.Incoming.EmailLink -> container.appScope.launch {
                 AuthEmailLinks.handle(incoming.url, container.session)?.let { container.toast.show(it) }
             }

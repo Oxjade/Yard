@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Language
@@ -92,8 +93,11 @@ import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Studio Home's data: the dashboard for 7 days, and for 30 once Month is picked. */
-class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard? = null) : ViewModel() {
+class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard? = null, previewSuggestions: List<StudioProposal> = emptyList()) : ViewModel() {
     var week by mutableStateOf(preview)
+        private set
+    /** Suggestions from Yard still waiting (the to-do "Yard prepared N products for you"). */
+    var suggestions by mutableStateOf(previewSuggestions)
         private set
     var month by mutableStateOf<StudioDashboard?>(null)
         private set
@@ -122,6 +126,13 @@ class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard?
             error = APIError.messageFor(if (e is APIError) e else APIError.network(e))
         } finally {
             isLoading = false
+        }
+        // Not on the dashboard: a failure only hides the to-do row.
+        try {
+            suggestions = store.proposals("pending").items.filter { it.isPending }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 
@@ -244,7 +255,7 @@ internal fun StudioHomeScreen(model: StudioHomeModel) {
                             onPayouts = { nav.push(StudioRoute.Payouts, StudioTab.Me) },
                             onShare = { shareShop(context, handle, brandName) },
                         )
-                        TodoList(data, onShip = { nav.ordersTab = StudioOrdersTab.New; nav.select(StudioTab.Orders) }, onLowStock = { nav.productsFilter = StudioProductFilter.LowStock; nav.select(StudioTab.Products) }, onMessages = { nav.push(StudioRoute.Inbox, StudioTab.Me) }, onWebsite = { nav.push(StudioRoute.WebsitePieces, StudioTab.Products) })
+                        TodoList(data, model.suggestions, onSuggestions = { nav.push(StudioRoute.Suggestions(focusAcceptAll = true), StudioTab.Products) }, onShip = { nav.ordersTab = StudioOrdersTab.New; nav.select(StudioTab.Orders) }, onLowStock = { nav.productsFilter = StudioProductFilter.LowStock; nav.select(StudioTab.Products) }, onMessages = { nav.push(StudioRoute.Inbox, StudioTab.Me) }, onWebsite = { nav.push(StudioRoute.WebsitePieces, StudioTab.Products) })
                         TopProducts(data) { id -> nav.push(StudioRoute.Product(id), StudioTab.Products) }
                         StoreViews(data)
                     }
@@ -432,9 +443,13 @@ private fun QuickAction(title: String, icon: ImageVector, primary: Boolean = fal
 }
 
 @Composable
-private fun TodoList(d: StudioDashboard, onShip: () -> Unit, onLowStock: () -> Unit, onMessages: () -> Unit, onWebsite: () -> Unit) {
-    data class Todo(val title: String, val detail: String, val count: Int, val icon: ImageVector, val action: () -> Unit)
+private fun TodoList(d: StudioDashboard, suggestions: List<StudioProposal>, onSuggestions: () -> Unit, onShip: () -> Unit, onLowStock: () -> Unit, onMessages: () -> Unit, onWebsite: () -> Unit) {
+    data class Todo(val title: String, val detail: String, val count: Int, val icon: ImageVector, val action: () -> Unit, val lines: Int = 1)
     val items = buildList {
+        if (suggestions.isNotEmpty()) {
+            val (title, detail) = StudioBatch.preparedLine(suggestions)
+            add(Todo(title, "$detail. Nothing goes live until you accept.", suggestions.size, Icons.Outlined.AutoAwesome, onSuggestions, lines = 2))
+        }
         if (d.toShip.total > 0) add(Todo("Orders to ship", "${d.toShip.paid} new · ${d.toShip.processing} preparing", d.toShip.total, Icons.Outlined.LocalShipping, onShip))
         if (d.lowStock.variants > 0) add(Todo("Low stock", "${d.lowStock.products} ${if (d.lowStock.products == 1) "product" else "products"} at ${d.lowStock.threshold} or fewer", d.lowStock.variants, Icons.Outlined.WarningAmber, onLowStock))
         d.unreadMessages?.takeIf { it > 0 }?.let { add(Todo("Unread messages", "Customers waiting for a reply", it, Icons.Outlined.ChatBubbleOutline, onMessages)) }
@@ -453,7 +468,7 @@ private fun TodoList(d: StudioDashboard, onShip: () -> Unit, onLowStock: () -> U
             }
         } else {
             Column(Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(vertical = Spacing.xs)) {
-                items.forEach { t -> StudioRow(t.title, t.detail, t.icon, count = t.count, onClick = t.action) }
+                items.forEach { t -> StudioRow(t.title, t.detail, t.icon, count = t.count, titleLines = t.lines, onClick = t.action) }
             }
         }
     }
@@ -468,6 +483,7 @@ fun StudioRow(
     modifier: Modifier = Modifier,
     count: Int? = null,
     tint: Color = Color.yard.ink,
+    titleLines: Int = 1,
     trailing: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)?,
 ) {
@@ -484,7 +500,7 @@ fun StudioRow(
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = YardFonts.headline, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = YardFonts.headline, color = tint, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
             if (!detail.isNullOrBlank()) Text(detail, style = YardFonts.caption, color = Color.yard.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (count != null && count > 0) {

@@ -100,6 +100,10 @@ import space.yardstore.app.features.studio.StudioQuickAddModel
 import space.yardstore.app.features.studio.StudioQuickAddScreen
 import space.yardstore.app.features.studio.StudioRootView
 import space.yardstore.app.features.studio.StudioTab
+import space.yardstore.app.features.studio.StudioSuggestionsModel
+import space.yardstore.app.features.studio.StudioSuggestionsScreen
+import space.yardstore.app.features.studio.StudioWebsitePiecesModel
+import space.yardstore.app.features.studio.StudioWebsitePiecesScreen
 
 /**
  * Screen screenshots without an emulator (Robolectric native graphics + Roborazzi) and the
@@ -180,7 +184,13 @@ object YardScreens {
         "settings-photo-failed-first", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
         "place-detail", "root", "terms", "sign-in-sheet",
-    ) + studio }
+    ) + studio + suggestions }
+
+    /** Suggestions from Yard (Accept all) and New from your website (Add all). */
+    val suggestions = listOf(
+        "suggestions-accept-all", "suggestions-accept-all-selecting", "suggestions-accept-all-decline",
+        "suggestions-accept-all-home", "suggestions-accept-all-products", "suggestions-accept-all-pieces",
+    )
 
     /** Shop or sell, the short application, the You status and Studio mode (docs/APP.md › Studio in the app). */
     val studio = listOf(
@@ -195,7 +205,7 @@ object YardScreens {
     /** `shopper.brands` the fake backend serves for [screen]. */
     fun brandsFor(screen: String) = when {
         screen == "you-pending" -> listOf(StudioFixtures.pendingBrand)
-        screen.startsWith("studio-") || screen == "you-studio" -> listOf(StudioFixtures.liveBrand)
+        screen.startsWith("studio-") || screen.startsWith("suggestions-") || screen == "you-studio" -> listOf(StudioFixtures.liveBrand)
         else -> emptyList()
     }
     val tablet = listOf("root", "home", "product", "brand", "shop", "drops", "inbox", "orders", "order-detail", "checkout", "sign-in", "charts", "terms", "sign-in-sheet")
@@ -346,6 +356,39 @@ object YardScreens {
                 }
                 CompositionLocalProvider(LocalStudioNav provides remember { StudioNav() }) {
                     StudioQuickAddScreen(model, onClose = {})
+                }
+            }
+            "suggestions-accept-all" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Suggestions(focusAcceptAll = true)) } }) }
+            "suggestions-accept-all-home" -> StudioHarness(enter = true) { StudioRootView() }
+            "suggestions-accept-all-products" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Products) } }) }
+            "suggestions-accept-all-selecting", "suggestions-accept-all-decline" -> StudioHarness(enter = true) {
+                val model = remember {
+                    if (screen == "suggestions-accept-all-decline") {
+                        StudioSuggestionsModel.preview(StudioFixtures.proposals, confirmDecline = true)
+                    } else {
+                        // After an Accept selected: one suggestion was skipped and shows why.
+                        StudioSuggestionsModel.preview(
+                            StudioFixtures.proposals,
+                            selecting = true,
+                            selected = setOf("pr_2", "pr_4"),
+                            reasons = mapOf("pr_1" to "A product with the SKU KACHI-AMBER-SPRAY already exists."),
+                        )
+                    }
+                }
+                CompositionLocalProvider(LocalStudioNav provides remember { StudioNav() }) {
+                    StudioSuggestionsScreen(model, focusAcceptAll = false, canPublish = true)
+                }
+            }
+            "suggestions-accept-all-pieces" -> StudioHarness(enter = true) {
+                val model = remember {
+                    StudioWebsitePiecesModel.preview(
+                        StudioFixtures.pieces,
+                        selected = setOf("sp_1", "sp_3"),
+                        reasons = mapOf("sp_2" to "The photos on your website couldn't be copied. Try again."),
+                    )
+                }
+                CompositionLocalProvider(LocalStudioNav provides remember { StudioNav() }) {
+                    StudioWebsitePiecesScreen(model)
                 }
             }
             else -> error("Unknown screen $screen")

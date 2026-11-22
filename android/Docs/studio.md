@@ -140,6 +140,24 @@ offset. "New from your website (N)" banner → list with Add / Skip (`mayAdd`, 4
 stock per variant with − / + (tick haptic, shown at once, undone on a 422), **Slide to publish** for
 drafts, Unpublish for live products (`expectedVersion`; a 409 reloads).
 
+### Accept all: Suggestions from Yard and New from your website (`StudioSuggestionsView`)
+
+Server commit ec10c4a. **Suggestions from Yard** (`GET /api/studio/proposals?status=all`, pushed on
+the Products tab): "Yard prepared N products for you" card (acid outline when opened with
+`focus=accept-all`) with **Slide to accept all (N)** (`POST /api/studio/proposals/accept-all`, no `ids`),
+Select / Done mode with round ticks and "Select all", **Accept selected (k)**, and **Decline all /
+Decline selected** behind an inline confirm with an optional reason (`/decline-all`, ≤ 300 chars,
+blank omitted). Suggestions the server skipped stay in "Waiting for you" with their `reason` in red
+(declines prefixed "Not declined: "); "Answered" lists the rest. Without `content.publish` the batch
+actions are hidden. **New from your website** gets **Add all (N)**, a tick on each waiting piece,
+**Add selected (k)** (`POST /api/studio/catalog/website-pieces/add-all`); the response is the refreshed
+list, and a skipped piece shows its reason (or its `error` on the next load).
+Both use `StudioActionKey`: one `idempotencyKey` (32 hex chars) per tap, **kept after a failure** so a
+retry after a dropped connection gets the first result (`replayed`), renewed after an answer. Success
+haptic and a toast on a batch that did something, reject haptic otherwise. Home's To do and the
+Products tab show the waiting count ("Yard prepared N products for you · Accept all in one tap") and
+open the list with Accept all in focus; the dashboard has no count, so both call `?status=pending`.
+
 ### Me (`StudioMeView`) — grouped rows
 
 Balance card (available, pending, on its way, hold reason) → Payouts (history, payout account status;
@@ -160,6 +178,10 @@ Switch to shopping, Sign out.
 - `yard://studio` (home), `yard://studio/orders[/{id}]`, `yard://studio/inbox[/{conversationId}]`,
   `yard://studio/support`, `yard://studio/products[/{id}]`, `yard://studio/payouts`; the web paths
   (`/studio/orders/{id}`, `/studio/inbox?thread={id}`, …) map the same way.
+- `/studio/products/suggestions?focus=accept-all` (the batch notification, email and Overview card)
+  → `StudioLink.Suggestions(focusAcceptAll = true)`; `/studio/products/suggestions/{id}` opens the list
+  (no single-suggestion screen in the app). A shopper-scoped notification whose href is a `/studio/…`
+  path (tapped push or a row in Notifications) opens Studio the same way.
 
 ## Haptics and motion
 

@@ -30,6 +30,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Language
@@ -98,7 +105,12 @@ enum class StudioProductFilter(val title: String, val status: String, val lowSto
     LowStock("Low stock", "all", lowStock = true),
 }
 
-class StudioProductsModel(private val store: StudioStore?, preview: List<StudioProduct>? = null, previewPieces: Int = 0) : ViewModel() {
+class StudioProductsModel(
+    private val store: StudioStore?,
+    preview: List<StudioProduct>? = null,
+    previewPieces: Int = 0,
+    previewSuggestions: List<StudioProposal> = emptyList(),
+) : ViewModel() {
     var filter by mutableStateOf(StudioProductFilter.All)
         private set
     var query by mutableStateOf("")
@@ -111,6 +123,9 @@ class StudioProductsModel(private val store: StudioStore?, preview: List<StudioP
         private set
     /** "New from your website (N)". */
     var websitePieces by mutableStateOf(previewPieces)
+        private set
+    /** Suggestions from Yard still waiting ("Yard prepared N products for you"). */
+    var suggestions by mutableStateOf(previewSuggestions)
         private set
 
     fun pick(f: StudioProductFilter) {
@@ -134,6 +149,12 @@ class StudioProductsModel(private val store: StudioStore?, preview: List<StudioP
         }
         try {
             websitePieces = store.websitePieces().count
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+        try {
+            suggestions = store.proposals("pending").items.filter { it.isPending }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -247,6 +268,9 @@ internal fun StudioProductsScreen(model: StudioProductsModel) {
                 contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = StudioPillClearance + Spacing.xl),
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
             ) {
+                if (model.suggestions.isNotEmpty()) {
+                    item(key = "suggestions") { StudioSuggestionsCard(model.suggestions) { haptics.click(); nav.push(StudioRoute.Suggestions(focusAcceptAll = true)) } }
+                }
                 if (model.websitePieces > 0) {
                     item(key = "website") {
                         Row(
@@ -260,7 +284,7 @@ internal fun StudioProductsScreen(model: StudioProductsModel) {
                         ) {
                             Icon(Icons.Outlined.Language, contentDescription = null, tint = Color.yard.onVioletFill)
                             Text("New from your website (${model.websitePieces})", style = YardFonts.headline, color = Color.yard.onVioletFill, modifier = Modifier.weight(1f))
-                            Text("Review", style = YardFonts.captionEmphasis, color = Color.yard.onAcid, modifier = Modifier.background(Color.yard.acid, YardShapes.pill).padding(horizontal = 12.dp, vertical = 6.dp))
+                            Text("Add all", style = YardFonts.captionEmphasis, color = Color.yard.onAcid, modifier = Modifier.background(Color.yard.acid, YardShapes.pill).padding(horizontal = 12.dp, vertical = 6.dp))
                         }
                     }
                 }
@@ -508,6 +532,36 @@ internal fun StepButton(icon: androidx.compose.ui.graphics.vector.ImageVector, l
 
 // endregion
 
+/** Products tab: "Yard prepared N products for you" → Suggestions with Accept all in focus. */
+@Composable
+internal fun StudioSuggestionsCard(waiting: List<StudioProposal>, onOpen: () -> Unit) {
+    val (title, detail) = StudioBatch.preparedLine(waiting)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Color.yard.surface, YardShapes.card)
+            .border(1.dp, Color.yard.line, YardShapes.card)
+            .pressableClick(onClickLabel = "Suggestions from Yard", onClick = onOpen)
+            .padding(Spacing.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+    ) {
+        Box(Modifier.size(40.dp).background(Color.yard.violetFill, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = Color.yard.onVioletFill, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = YardFonts.headline, color = Color.yard.ink)
+            Text(detail, style = YardFonts.caption, color = Color.yard.ink2)
+        }
+        Text(
+            if (waiting.size == 1) "Accept" else "Accept all",
+            style = YardFonts.captionEmphasis,
+            color = Color.yard.onAcid,
+            modifier = Modifier.background(Color.yard.acid, YardShapes.pill).padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
 // region New from your website
 
 class StudioWebsitePiecesModel(private val store: StudioStore?, preview: StudioSitePieces? = null) : ViewModel() {
@@ -515,8 +569,66 @@ class StudioWebsitePiecesModel(private val store: StudioStore?, preview: StudioS
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    /** A piece id, or [BATCH_ALL] / [BATCH_SELECTED] while Add all / Add selected runs. */
     var busy by mutableStateOf<String?>(null)
         private set
+    var selected by mutableStateOf(emptySet<String>())
+        private set
+    /** Why a piece wasn't added by the last batch (also in its `error` on the next load). */
+    var reasons by mutableStateOf(emptyMap<String, String>())
+        internal set
+    val key = StudioActionKey()
+
+    val waitingIds: List<String> get() = pieces?.items.orEmpty().filter { it.status == "waiting" }.map { it.id }
+    val chosen: List<String> get() = StudioBatch.chosen(selected, waitingIds)
+    val allChosen: Boolean get() = StudioBatch.allChosen(selected, waitingIds)
+
+    fun toggle(id: String) {
+        selected = if (id in selected) selected - id else selected + id
+    }
+
+    fun toggleAll() {
+        selected = if (allChosen) emptySet() else waitingIds.toSet()
+    }
+
+    /** The reason shown on a piece's card: the last batch's, else the server's `error`. */
+    fun reason(piece: StudioSitePiece): String? = reasons[piece.id] ?: piece.error?.ifBlank { null }
+
+    /**
+     * Add all ([all]) or Add selected: each piece through the single "add" path on the server. The
+     * key is kept on a failure (a retry can't add twice) and renewed after an answer.
+     */
+    suspend fun addMany(all: Boolean): StudioBatchOutcome {
+        val store = store ?: return StudioBatchOutcome("Studio isn't open.", success = false)
+        val ids = StudioBatch.ids(all, selected, waitingIds)
+        if (!all && ids == null) return StudioBatchOutcome("Choose pieces first.", success = false)
+        busy = if (all) BATCH_ALL else BATCH_SELECTED
+        return try {
+            val r = store.addWebsitePieces(ids, key.current)
+            key.renew()
+            pieces = r.pieces
+            selected = emptySet()
+            reasons = StudioBatch.reasons(reasons, r.result)
+            StudioBatch.addOutcome(r.result)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            StudioBatchOutcome("That didn't go through. ${APIError.messageFor(if (e is APIError) e else APIError.network(e))}", success = false)
+        } finally {
+            busy = null
+        }
+    }
+
+    companion object {
+        const val BATCH_ALL = "batch:all"
+        const val BATCH_SELECTED = "batch:selected"
+
+        fun preview(pieces: StudioSitePieces, selected: Set<String> = emptySet(), reasons: Map<String, String> = emptyMap()) =
+            StudioWebsitePiecesModel(null, pieces).also {
+                it.selected = selected
+                it.reasons = reasons
+            }
+    }
 
     suspend fun load() {
         val store = store ?: return
@@ -552,13 +664,26 @@ class StudioWebsitePiecesModel(private val store: StudioStore?, preview: StudioS
 @Composable
 fun StudioWebsitePiecesView() {
     val studio = LocalStudioStore.current
+    val model: StudioWebsitePiecesModel = viewModel(key = "studio-pieces-${studio.generation}") { StudioWebsitePiecesModel(studio) }
+    LaunchedEffect(model) { model.load() }
+    StudioWebsitePiecesScreen(model)
+}
+
+@Composable
+internal fun StudioWebsitePiecesScreen(model: StudioWebsitePiecesModel) {
     val nav = LocalStudioNav.current
     val toast = LocalToastCenter.current
     val haptics = rememberYardHaptics()
     val scope = rememberCoroutineScope()
-    val model: StudioWebsitePiecesModel = viewModel(key = "studio-pieces-${studio.generation}") { StudioWebsitePiecesModel(studio) }
-    LaunchedEffect(model) { model.load() }
     val back = remember(nav) { BackAction(isClose = false) { nav.pop() } }
+    fun addMany(all: Boolean) {
+        haptics.click()
+        scope.launch {
+            val out = model.addMany(all)
+            if (out.success) haptics.success() else haptics.reject()
+            toast.show(out.message, if (out.success) Toast.Style.Success else Toast.Style.Error)
+        }
+    }
     Column(Modifier.fillMaxSize().background(Color.yard.bg)) {
         YardTopBar("New from your website", back = back)
         val data = model.pieces
@@ -571,9 +696,65 @@ fun StudioWebsitePiecesView() {
                 contentPadding = PaddingValues(Spacing.gutter),
                 verticalArrangement = Arrangement.spacedBy(Spacing.m),
             ) {
+                val waiting = model.waitingIds
+                if (data.mayAdd && waiting.isNotEmpty()) {
+                    item(key = "batch") {
+                        Column(
+                            Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(Spacing.l),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.m),
+                        ) {
+                            YardButton(
+                                "Add all (${waiting.size})",
+                                icon = Icons.Filled.DoneAll,
+                                isLoading = model.busy == StudioWebsitePiecesModel.BATCH_ALL,
+                                enabled = model.busy == null,
+                            ) { addMany(all = true) }
+                            if (model.chosen.isNotEmpty() && !model.allChosen) {
+                                YardButton(
+                                    "Add selected (${model.chosen.size})",
+                                    icon = Icons.Filled.Check,
+                                    style = YardButtonStyle.Secondary,
+                                    isLoading = model.busy == StudioWebsitePiecesModel.BATCH_SELECTED,
+                                    enabled = model.busy == null,
+                                ) { addMany(all = false) }
+                            }
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .semantics { role = Role.Checkbox; selected = model.allChosen }
+                                    .pressableClick(onClickLabel = "Select all waiting pieces") { haptics.tick(); model.toggleAll() },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                            ) {
+                                StudioTick(model.allChosen)
+                                Text(
+                                    if (model.chosen.isEmpty()) "Select all" else "${model.chosen.size} of ${waiting.size} selected",
+                                    style = YardFonts.captionEmphasis,
+                                    color = Color.yard.ink2,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Text("Each piece is added with its photos, exactly as if you added it by itself.", style = YardFonts.caption, color = Color.yard.ink3)
+                        }
+                    }
+                }
                 items(data.items, key = { it.id }) { piece ->
+                    val canPick = data.mayAdd && piece.status == "waiting"
+                    val isPicked = piece.id in model.selected
                     Column(Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(Spacing.m), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.then(
+                                if (canPick) {
+                                    Modifier
+                                        .semantics { role = Role.Checkbox; selected = isPicked }
+                                        .pressableClick(onClickLabel = "Select ${piece.title}") { haptics.tick(); model.toggle(piece.id) }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             RemoteImage(piece.images.firstOrNull(), Modifier.size(72.dp).clip(YardShapes.small), maxPixelSize = 300, contentDescription = piece.title)
                             Column(Modifier.weight(1f)) {
                                 Text(piece.title, style = YardFonts.headline, color = Color.yard.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -581,9 +762,16 @@ fun StudioWebsitePiecesView() {
                                 if (price != null) Text(studioMoney(price, piece.currency), style = YardFonts.callout.monospacedDigits(), color = Color.yard.ink2)
                                 if (piece.sizes.isNotEmpty()) Text(piece.sizes.joinToString(" · "), style = YardFonts.caption, color = Color.yard.ink3, maxLines = 1)
                             }
+                            if (canPick) StudioTick(isPicked)
                         }
                         piece.warnings.firstOrNull()?.let { Text(it, style = YardFonts.caption, color = Color.yard.ink3) }
-                        if (data.mayAdd) {
+                        model.reason(piece)?.let { why ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = Color.yard.danger, modifier = Modifier.size(14.dp).padding(top = 1.dp))
+                                Text(why, style = YardFonts.caption, color = Color.yard.danger)
+                            }
+                        }
+                        if (canPick) {
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                                 YardButton("Skip", style = YardButtonStyle.Secondary, size = YardButtonSize.Medium, modifier = Modifier.weight(1f), enabled = model.busy == null) {
                                     haptics.click()

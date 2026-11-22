@@ -6,7 +6,8 @@ import java.net.URLDecoder
 /**
  * A Studio destination from a deep link or a push (docs/APP.md › Push for brands):
  * `yard://studio` (home), `yard://studio/orders[/{id}]`, `yard://studio/inbox[/{conversationId}]`,
- * `yard://studio/support`, `yard://studio/products[/{id}]`, `yard://studio/payouts`. The push's
+ * `yard://studio/support`, `yard://studio/products[/{id}]`, `yard://studio/products/suggestions`,
+ * `yard://studio/payouts`. The push's
  * web path (`/studio/orders/{id}`, `/studio/inbox?thread={id}`, …) maps the same way.
  */
 sealed interface StudioLink {
@@ -18,6 +19,8 @@ sealed interface StudioLink {
     data object Support : StudioLink
     data object Products : StudioLink
     data class Product(val id: String) : StudioLink
+    /** Suggestions from Yard; [focusAcceptAll] from `?focus=accept-all` ("Yard prepared N products for you"). */
+    data class Suggestions(val focusAcceptAll: Boolean = false) : StudioLink
     data object Payouts : StudioLink
 
     companion object {
@@ -50,7 +53,12 @@ sealed interface StudioLink {
                 "orders" -> third?.let(::Order) ?: Orders
                 "inbox" -> (third ?: query["thread"]?.takeIf { it.isNotBlank() })?.let(::Conversation) ?: Inbox
                 "support" -> Support
-                "products" -> third?.let(::Product) ?: Products
+                "products" -> when (third) {
+                    // `/studio/products/suggestions[/{id}]`: the list (the app has no single-suggestion screen).
+                    "suggestions" -> Suggestions(focusAcceptAll = query["focus"] == "accept-all")
+                    null -> Products
+                    else -> Product(third)
+                }
                 "payouts" -> Payouts
                 else -> Home
             }

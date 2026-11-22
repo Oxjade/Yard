@@ -44,6 +44,8 @@ import space.yardstore.app.features.studio.StudioSalesWindow
 import space.yardstore.app.features.studio.StudioSeries
 import space.yardstore.app.features.studio.StudioSeriesPoint
 import space.yardstore.app.features.studio.StudioSitePieces
+import space.yardstore.app.features.studio.StudioSitePiece
+import space.yardstore.app.features.studio.StudioProposal
 import space.yardstore.app.features.studio.StudioStore
 import space.yardstore.app.features.studio.StudioStoreViews
 import space.yardstore.app.features.studio.StudioThread
@@ -178,7 +180,25 @@ object StudioFixtures {
         ),
     )
 
-    val pieces = StudioSitePieces(count = 3, mayAdd = true, site = "kachistudio.com", currency = "NGN")
+    val pieces = StudioSitePieces(
+        count = 3, mayAdd = true, site = "kachistudio.com", currency = "NGN",
+        items = listOf(
+            StudioSitePiece("sp_1", title = "Fig leaf candle", images = listOf("/media/fake-site-1.jpg"), priceMinor = 1_800_000, currency = "NGN", status = "waiting"),
+            StudioSitePiece("sp_2", title = "Ceramic incense holder", images = listOf("/media/fake-site-2.jpg"), priceMinor = 900_000, currency = "NGN", status = "waiting"),
+            StudioSitePiece("sp_3", title = "Linen napkins, set of 4", images = listOf("/media/fake-site-3.jpg"), priceMinor = 1_400_000, currency = "NGN", status = "waiting", sizes = listOf("Sand", "Clay")),
+        ),
+    )
+
+    /** Suggestions from Yard: five new products waiting, two answered. */
+    val proposals = listOf(
+        StudioProposal("pr_1", kind = "new", title = "Amber room spray", cover = "/api/media/fake-pr-1?as=brand", createdAt = "2026-11-21T09:00:00Z"),
+        StudioProposal("pr_2", kind = "new", title = "Stoneware bowl", cover = "/api/media/fake-pr-2?as=brand", createdAt = "2026-11-21T09:00:00Z"),
+        StudioProposal("pr_3", kind = "new", title = "Beeswax taper pair", cover = "/api/media/fake-pr-3?as=brand", createdAt = "2026-11-21T09:00:00Z"),
+        StudioProposal("pr_4", kind = "new", title = "Woven coaster set", cover = "/api/media/fake-pr-4?as=brand", createdAt = "2026-11-21T09:00:00Z"),
+        StudioProposal("pr_5", kind = "new", title = "Travel candle tin", cover = "/api/media/fake-pr-5?as=brand", createdAt = "2026-11-21T09:00:00Z"),
+        StudioProposal("pr_6", kind = "new", status = "accepted", productId = "p_2", title = "Stoneware mug", cover = "/api/media/fake-mug?as=brand"),
+        StudioProposal("pr_7", kind = "edit", status = "declined", productId = "p_3", title = "Linen tote", fields = listOf("price", "images")),
+    )
     val notifications = StudioNotificationSettings()
 }
 

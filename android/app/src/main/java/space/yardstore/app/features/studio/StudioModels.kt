@@ -467,6 +467,73 @@ data class StudioSitePieces(
 @Serializable
 data class StudioSitePieceAction(val action: String)
 
+/** POST /api/studio/catalog/website-pieces/add-all: the refreshed list plus what happened to each piece. */
+@Serializable
+data class StudioSitePiecesBatch(
+    val items: List<StudioSitePiece> = emptyList(),
+    val count: Int = 0,
+    val mayAdd: Boolean = false,
+    val site: String? = null,
+    val currency: String = "USD",
+    val accepted: List<String> = emptyList(),
+    val skipped: List<StudioBatchSkip> = emptyList(),
+    val replayed: Boolean = false,
+) {
+    val pieces: StudioSitePieces get() = StudioSitePieces(items = items, count = count, mayAdd = mayAdd, site = site, currency = currency)
+    val result: StudioBatchResult get() = StudioBatchResult(accepted, skipped, replayed)
+}
+
+// endregion
+
+// region Suggestions from Yard (docs/APP.md › Suggestions from Yard (Accept all))
+
+/** ProposalSummaryDto: a product (kind "new") or changes to one ("edit") the Yard team suggested. */
+@Serializable
+data class StudioProposal(
+    val id: String,
+    val kind: String = "new",
+    val status: String = "pending",
+    val productId: String? = null,
+    val title: String = "",
+    val cover: String? = null,
+    val note: String? = null,
+    val fields: List<String> = emptyList(),
+    val createdAt: String? = null,
+    val declineReason: String? = null,
+) {
+    val isNew: Boolean get() = kind != "edit"
+    val isPending: Boolean get() = status == "pending"
+    /** "Linen tote" / "Changes to Linen tote". */
+    val heading: String get() = if (isNew) title else "Changes to $title"
+    /** "New product" / "3 changes". */
+    val detail: String get() = if (isNew) "New product" else "${fields.size} ${if (fields.size == 1) "change" else "changes"}"
+}
+
+@Serializable
+data class StudioProposalsPage(
+    val items: List<StudioProposal> = emptyList(),
+    val total: Int = 0,
+)
+
+/** Accept all / Add all body: `ids` omitted = every waiting one. */
+@Serializable
+data class StudioBatchBody(val ids: List<String>? = null, val idempotencyKey: String)
+
+/** Decline all body (`reason` optional, ≤ 300). */
+@Serializable
+data class StudioDeclineBatchBody(val ids: List<String>? = null, val reason: String? = null, val idempotencyKey: String)
+
+@Serializable
+data class StudioBatchSkip(val id: String, val reason: String = "")
+
+/** `{ accepted, skipped: [{ id, reason }], replayed? }` (for decline-all, `accepted` = the declined ones). */
+@Serializable
+data class StudioBatchResult(
+    val accepted: List<String> = emptyList(),
+    val skipped: List<StudioBatchSkip> = emptyList(),
+    val replayed: Boolean = false,
+)
+
 // endregion
 
 // region Payouts

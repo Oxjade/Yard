@@ -95,6 +95,7 @@ sealed interface StudioRoute {
     data class Order(val id: String) : StudioRoute
     data class Product(val id: String) : StudioRoute
     data object WebsitePieces : StudioRoute
+    data class Suggestions(val focusAcceptAll: Boolean = false) : StudioRoute
     data object Payouts : StudioRoute
     data object Inbox : StudioRoute
     data class Thread(val id: String) : StudioRoute
@@ -163,6 +164,7 @@ class StudioNav {
             StudioLink.Support -> open(StudioTab.Me, StudioRoute.Support)
             StudioLink.Products -> open(StudioTab.Products)
             is StudioLink.Product -> open(StudioTab.Products, StudioRoute.Product(link.id))
+            is StudioLink.Suggestions -> open(StudioTab.Products, StudioRoute.Suggestions(link.focusAcceptAll))
             StudioLink.Payouts -> open(StudioTab.Me, StudioRoute.Payouts)
         }
     }
@@ -301,6 +303,7 @@ private fun StudioRouteView(route: StudioRoute) {
         is StudioRoute.Order -> StudioOrderDetailView(route.id)
         is StudioRoute.Product -> StudioProductDetailView(route.id)
         StudioRoute.WebsitePieces -> StudioWebsitePiecesView()
+        is StudioRoute.Suggestions -> StudioSuggestionsView(route.focusAcceptAll)
         StudioRoute.Payouts -> StudioPayoutsView()
         StudioRoute.Inbox -> StudioInboxView()
         is StudioRoute.Thread -> StudioThreadView(conversationId = route.id)

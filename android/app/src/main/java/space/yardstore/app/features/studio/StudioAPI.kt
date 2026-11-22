@@ -115,6 +115,31 @@ suspend fun StudioStore.websitePieces(): StudioSitePieces =
 suspend fun StudioStore.websitePiece(id: String, add: Boolean): StudioSitePieces =
     call { it.post(p("/api/studio/catalog/website-pieces/${enc(id)}"), StudioSitePieceAction(if (add) "add" else "skip")) }
 
+/** Add all ([ids] null) or Add selected. Retry with the same [key] after a dropped connection. */
+suspend fun StudioStore.addWebsitePieces(ids: List<String>?, key: String): StudioSitePiecesBatch =
+    call { it.post(p("/api/studio/catalog/website-pieces/add-all"), StudioBatchBody(ids = ids?.takeIf { l -> l.isNotEmpty() }, idempotencyKey = key)) }
+
+// endregion
+
+// region Suggestions from Yard
+
+/** GET /api/studio/proposals?status=pending|all */
+suspend fun StudioStore.proposals(status: String = "all"): StudioProposalsPage =
+    call { it.get(p("/api/studio/proposals"), listOf("status" to status)) }
+
+/** Accept all ([ids] null) or Accept selected; each suggestion is accepted on its own on the server. */
+suspend fun StudioStore.acceptProposals(ids: List<String>?, key: String): StudioBatchResult =
+    call { it.post(p("/api/studio/proposals/accept-all"), StudioBatchBody(ids = ids?.takeIf { l -> l.isNotEmpty() }, idempotencyKey = key)) }
+
+/** Decline all ([ids] null) or Decline selected, with an optional reason for Yard. */
+suspend fun StudioStore.declineProposals(ids: List<String>?, reason: String?, key: String): StudioBatchResult =
+    call {
+        it.post(
+            p("/api/studio/proposals/decline-all"),
+            StudioDeclineBatchBody(ids = ids?.takeIf { l -> l.isNotEmpty() }, reason = reason?.trim()?.take(300)?.ifEmpty { null }, idempotencyKey = key),
+        )
+    }
+
 // endregion
 
 // region Payouts

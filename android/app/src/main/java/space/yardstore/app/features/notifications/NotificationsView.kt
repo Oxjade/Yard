@@ -171,6 +171,7 @@ private fun NotificationsList(model: NotificationsViewModel) {
     val context = LocalContext.current
     val darkTheme = Color.yard.isDark
     val scope = rememberCoroutineScope()
+    val studio = space.yardstore.app.features.studio.LocalStudioStore.current
     var isRefreshing by remember { mutableStateOf(false) }
     val refreshState = rememberPullToRefreshState()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -180,7 +181,11 @@ private fun NotificationsList(model: NotificationsViewModel) {
         if (!item.read) model.setRead(true, item)
         val route = item.route
         val href = item.href
-        if (route != null) {
+        // A Studio link (Suggestions from Yard, an order…) opens Studio.
+        val studioLink = space.yardstore.app.features.studio.StudioLink.parse(href)
+        if (studioLink != null) {
+            studio.openLink(studioLink)
+        } else if (route != null) {
             if (route == Route.Notifications) return
             router.push(route)
         } else if (href != null && href.startsWith("/") && !href.startsWith("//")) {

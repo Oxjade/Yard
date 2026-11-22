@@ -40,6 +40,7 @@ import space.yardstore.app.features.studio.StudioOrdersPage
 import space.yardstore.app.features.studio.StudioPrefs
 import space.yardstore.app.features.studio.StudioProductResponse
 import space.yardstore.app.features.studio.StudioProductsPage
+import space.yardstore.app.features.studio.StudioProposalsPage
 import space.yardstore.app.features.studio.StudioSwitchResult
 import space.yardstore.app.features.studio.StudioUnread
 import space.yardstore.app.core.models.WishlistItem
@@ -176,6 +177,10 @@ object FakeYardBackend {
         }
         path.startsWith("/api/studio/catalog/products/") -> json(StudioProductResponse(StudioFixtures.products.first()))
         path == "/api/studio/catalog/website-pieces" -> json(StudioFixtures.pieces)
+        path == "/api/studio/proposals" -> {
+            val list = StudioFixtures.proposals.filter { url.queryParameter("status") != "pending" || it.isPending }
+            json(StudioProposalsPage(list, list.size))
+        }
         path == "/api/studio/payouts" -> json(StudioFixtures.payouts)
         path == "/api/studio/inbox/unread" -> json(StudioUnread(2))
         path == "/api/studio/inbox/conversations" -> json(StudioFixtures.conversations)
