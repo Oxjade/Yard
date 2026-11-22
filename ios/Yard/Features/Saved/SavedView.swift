@@ -231,7 +231,7 @@ struct SavedView: View {
         guard count > 0 else { return "Pieces you save from any brand wait here until you're ready." }
         let pieces = count == 1 ? "piece" : "pieces"
         let brandWord = brands == 1 ? "brand" : "brands"
-        return "\(count) saved \(pieces) from \(brands) \(brandWord). Add one to your bag and it moves out of your wishlist."
+        return "\(count) saved \(pieces) from \(brands) \(brandWord). Add one to your cart and it moves out of your wishlist."
     }
 
     private func toolbarRow(count: Int, soldOut: Int) -> some View {
@@ -285,7 +285,7 @@ struct SavedView: View {
                 .opacity(0.6)
                 .frame(height: SavedView.moveButtonHeight)
         } else {
-            YardButton("Move to bag", systemImage: "bag", style: .secondary, size: .small, isLoading: model.busyIds.contains(product.id)) {
+            YardButton("Move to cart", systemImage: "bag", style: .secondary, size: .small, isLoading: model.busyIds.contains(product.id)) {
                 startMove(product)
             }
             .frame(height: SavedView.moveButtonHeight)
@@ -365,7 +365,7 @@ struct SavedView: View {
                 // The piece is in the bag; it just stayed saved.
             }
             movedCount += 1
-            toast.show("Moved to your bag", style: .success, systemImage: "bag.fill")
+            toast.show("Moved to your cart", style: .success, systemImage: "bag.fill")
         }
     }
 

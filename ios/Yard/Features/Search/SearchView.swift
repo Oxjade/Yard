@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The Search tab (`SearchView(query: "")`) and the `.search(query:)` route.
+/// Search: the `.search(query:)` route. The Shop tab's search field pushes it with an empty query.
 ///
-/// With an empty query it is the tab root: a large search field (focused on appear), recent
+/// With an empty query: a large search field (focused on appear), recent
 /// searches kept on the device, Browse chips (Shop, Charts, Around, Drops, Brands, Categories —
 /// the website's search overlay), and "Try" chips from live categories. Typing searches the
 /// marketplace (/api/search, debounced, 2+ characters) and lists Brands, Categories and Products,
@@ -83,7 +83,9 @@ struct SearchHomeView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .background(Color.yard.bg.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        // Pushed from the Shop tab's field (or a link): a navigation bar with back.
+        .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.inline)
         .task {
             await model.loadCategories()
         }
@@ -104,20 +106,9 @@ struct SearchHomeView: View {
             recents = SearchRecents.load()
             focusSoon()
         }
-        .onChange(of: router.selectedTab) { _, tab in
-            if tab == .search && router.depth == 0 {
-                recents = SearchRecents.load()
-                focusSoon()
-            } else {
-                isFieldFocused = false
-            }
-        }
-        .onChange(of: router.reselectCount) { _, _ in
-            // Re-tapping the Search tab doesn't change `selectedTab`; it pops to root.
-            if router.selectedTab == .search && router.depth == 0 {
-                recents = SearchRecents.load()
-                focusSoon()
-            }
+        .onChange(of: router.selectedTab) { _, _ in
+            // Another tab took over: put the keyboard away.
+            isFieldFocused = false
         }
     }
 
@@ -125,11 +116,6 @@ struct SearchHomeView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Text("Search")
-                .yardDisplay(44)
-                .foregroundStyle(Color.yard.ink)
-                .padding(.horizontal, Spacing.gutter)
-                .accessibilityAddTraits(.isHeader)
             searchField
                 .padding(.horizontal, Spacing.gutter)
         }
@@ -411,9 +397,8 @@ struct SearchHomeView: View {
     private func focusSoon() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
-            if router.selectedTab == .search && router.depth == 0 {
-                isFieldFocused = true
-            }
+            // Search is a pushed screen now (Shop's field): the keyboard comes up when it appears.
+            isFieldFocused = true
         }
     }
 }

@@ -83,7 +83,7 @@ struct SettingsView: View {
                 }
                 about
                 if session.isSignedIn {
-                    YouSettingsGroup(nil, footer: "Sign out of Yard on this iPhone. Your bag stays here for next time.") {
+                    YouSettingsGroup(nil, footer: "Sign out of Yard on this iPhone. Your cart stays here for next time.") {
                         Button {
                             signOut()
                         } label: {

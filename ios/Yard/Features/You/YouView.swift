@@ -90,7 +90,7 @@ struct YouView: View {
 
     private var topBar: some View {
         HStack {
-            Text("You").yardDisplay(40).foregroundStyle(Color.yard.ink)
+            Text("Me").yardDisplay(40).foregroundStyle(Color.yard.ink)
             Spacer()
             GlassIconButton(systemImage: "gearshape", accessibilityLabel: "Settings", size: 40) {
                 router.push(.settings)

@@ -131,12 +131,9 @@ struct StudioTabBar: View {
                 tabButton(tab)
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 64)
-        .frame(maxWidth: 480)
-        .background(Color.yard.studioBar, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.yard.line, lineWidth: 1))
-        .padding(.horizontal, Spacing.gutter)
+        .padding(.horizontal, 6)
+        // The shopper bar's capsule (same shape, height, margins and smoked glass); acid marks Studio.
+        .yardTabBarSurface()
         .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
         .sensoryFeedback(.selection, trigger: selected)
     }
@@ -149,8 +146,8 @@ struct StudioTabBar: View {
         } label: {
             Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
                 .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.yard.onAcid : Color.yard.studioBarIcon)
-                .frame(width: 64, height: 44)
+                .foregroundStyle(isSelected ? Color.yard.onAcid : YardTabBarMetrics.inkMuted)
+                .frame(width: 64, height: YardTabBarMetrics.itemHeight)
                 .background {
                     if isSelected {
                         Capsule()
@@ -160,7 +157,7 @@ struct StudioTabBar: View {
                 }
                 .overlay(alignment: .topTrailing) {
                     if count > 0 && !isSelected {
-                        Circle().fill(Color.yard.studioAccent).frame(width: 7, height: 7).offset(x: -16, y: 9)
+                        Circle().fill(Color.yard.acid).frame(width: 7, height: 7).offset(x: -16, y: 9)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

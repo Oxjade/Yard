@@ -135,7 +135,7 @@ extension View {
 
 #Preview("Toast — dark") {
     VStack(spacing: 12) {
-        ToastView(toast: Toast("Added to your bag", style: .success))
+        ToastView(toast: Toast("Added to your cart", style: .success))
         ToastView(toast: Toast("Only 1 left.", style: .error))
         ToastView(toast: Toast("Reminder set", style: .info, systemImage: "bell.fill"))
     }
@@ -147,7 +147,7 @@ extension View {
 
 #Preview("Toast — light") {
     VStack(spacing: 12) {
-        ToastView(toast: Toast("Added to your bag", style: .success))
+        ToastView(toast: Toast("Added to your cart", style: .success))
         ToastView(toast: Toast("Only 1 left.", style: .error))
     }
     .padding()

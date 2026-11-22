@@ -26,7 +26,7 @@ struct AddressesView: View {
                     title: "No saved addresses",
                     message: "You enter where each order goes at checkout. Yard doesn't keep an address book yet.",
                     systemImage: "mappin.and.ellipse",
-                    actionTitle: cart.isEmpty ? nil : "Go to your bag",
+                    actionTitle: cart.isEmpty ? nil : "Go to your cart",
                     action: bagAction
                 )
                 .frame(minHeight: 260)
