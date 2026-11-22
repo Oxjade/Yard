@@ -219,81 +219,113 @@ struct YardTabBar: View {
         self.centre = centre
     }
 
+    private static let centreLift: CGFloat = (YardTabBarMetrics.height - YardTabBarMetrics.pinSize) / 2 + YardTabBarMetrics.pinRise
+    private static let barFrameHeight: CGFloat = YardTabBarMetrics.height + YardTabBarMetrics.pinRise + 12
+
     var body: some View {
         GeometryReader { geo in
-            let narrow = geo.size.width < 380
-            ZStack(alignment: .bottom) {
-                Group {
-                    if centre != nil {
-                        let half = (items.count + 1) / 2
-                        HStack(spacing: 0) {
-                            HStack(spacing: 2) { ForEach(items.prefix(half)) { tab($0, narrow: narrow) } }
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                            Color.clear.frame(width: YardTabBarMetrics.pinSize + 12)
-                            HStack(spacing: 2) { ForEach(items.suffix(from: half)) { tab($0, narrow: narrow) } }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    } else {
-                        HStack(spacing: 0) {
-                            ForEach(items) { item in
-                                tab(item, narrow: narrow).frame(maxWidth: .infinity)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 6)
-                .yardTabBarSurface()
-                if let centre {
-                    centre
-                        .padding(.bottom, (YardTabBarMetrics.height - YardTabBarMetrics.pinSize) / 2 + YardTabBarMetrics.pinRise)
-                }
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+            bar(narrow: geo.size.width < 380)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
         }
-        .frame(height: YardTabBarMetrics.height + YardTabBarMetrics.pinRise + 12)
+        .frame(height: Self.barFrameHeight)
         .scaleEffect(collapsed && !reduceMotion ? 0.9 : 1, anchor: .bottom)
         .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: collapsed)
         .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
         .sensoryFeedback(.selection, trigger: selected)
     }
 
+    private func bar(narrow: Bool) -> some View {
+        ZStack(alignment: .bottom) {
+            tabs(narrow: narrow)
+                .padding(.horizontal, 6)
+                .yardTabBarSurface()
+            if let centre {
+                centre.padding(.bottom, Self.centreLift)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tabs(narrow: Bool) -> some View {
+        if centre != nil {
+            split(narrow: narrow)
+        } else {
+            even(narrow: narrow)
+        }
+    }
+
+    /// Two equal halves around the raised centre button.
+    private func split(narrow: Bool) -> some View {
+        let half = (items.count + 1) / 2
+        let left = Array(items.prefix(half))
+        let right = Array(items.dropFirst(half))
+        return HStack(spacing: 0) {
+            HStack(spacing: 2) {
+                ForEach(left) { item in tab(item, narrow: narrow) }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            Color.clear.frame(width: YardTabBarMetrics.pinSize + 12)
+            HStack(spacing: 2) {
+                ForEach(right) { item in tab(item, narrow: narrow) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// No centre button: the tabs share the width evenly.
+    private func even(narrow: Bool) -> some View {
+        HStack(spacing: 0) {
+            ForEach(items) { item in
+                tab(item, narrow: narrow).frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     private func tab(_ item: YardTabBarItem, narrow: Bool) -> some View {
         let isSelected = item.id == selected
-        let showsLabel = isSelected && !narrow
+        let label: String = item.accessibilityLabel ?? item.title
         return Button {
             onSelect(item)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: isSelected ? item.selectedSystemImage : item.systemImage)
-                    .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                    .symbolEffect(.bounce.down, value: reduceMotion ? false : item.bounce)
-                if showsLabel {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-            }
-            .foregroundStyle(isSelected ? activeInk : YardTabBarMetrics.inkMuted)
-            .padding(.horizontal, showsLabel ? 12 : 0)
-            .frame(minWidth: YardTabBarMetrics.itemHeight, minHeight: YardTabBarMetrics.itemHeight)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(activeFill)
-                        .matchedGeometryEffect(id: "tab-selection", in: namespace)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if let badge = item.badge {
-                    badge.offset(x: 2, y: 1)
-                }
-            }
-            .contentShape(Capsule())
+            tabFace(item, isSelected: isSelected, showsLabel: isSelected && !narrow)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(item.accessibilityLabel ?? item.title))
+        .accessibilityLabel(Text(label))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func tabFace(_ item: YardTabBarItem, isSelected: Bool, showsLabel: Bool) -> some View {
+        let ink: Color = isSelected ? activeInk : YardTabBarMetrics.inkMuted
+        let symbol: String = isSelected ? item.selectedSystemImage : item.systemImage
+        let weight: Font.Weight = isSelected ? .semibold : .regular
+        let bounce: Bool = reduceMotion ? false : item.bounce
+        return HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: weight))
+                .symbolEffect(.bounce.down, value: bounce)
+            if showsLabel {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .foregroundStyle(ink)
+        .padding(.horizontal, showsLabel ? 12 : 0)
+        .frame(minWidth: YardTabBarMetrics.itemHeight, minHeight: YardTabBarMetrics.itemHeight)
+        .background {
+            if isSelected {
+                Capsule()
+                    .fill(activeFill)
+                    .matchedGeometryEffect(id: "tab-selection", in: namespace)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if let badge = item.badge {
+                badge.offset(x: 2, y: 1)
+            }
+        }
+        .contentShape(Capsule())
     }
 }
 
@@ -308,20 +340,8 @@ struct TabPill: View {
     @State private var bagBounce = false
 
     var body: some View {
-        let count = cart.count
-        let items: [YardTabBarItem] = [AppTab.home, .search, .bag, .you].map { tab in
-            YardTabBarItem(
-                id: tab.rawValue,
-                title: tab.title,
-                systemImage: tab.systemImage,
-                selectedSystemImage: tab.selectedSystemImage,
-                accessibilityLabel: tab == .bag && count > 0 ? "Cart, \(count) item\(count == 1 ? "" : "s")" : nil,
-                badge: tab == .bag && count > 0 ? AnyView(countBadge(count)) : nil,
-                bounce: tab == .bag ? bagBounce : false
-            )
-        }
         YardTabBar(
-            items: items,
+            items: barItems(),
             selected: router.selectedTab.rawValue,
             activeFill: Color.yard.studio,
             activeInk: Color.yard.onPhoto,
@@ -334,6 +354,32 @@ struct TabPill: View {
             if new > old { bagBounce.toggle() }
         }
         .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: cart.count)
+    }
+
+    private func barItems() -> [YardTabBarItem] {
+        let tabs: [AppTab] = [.home, .search, .bag, .you]
+        return tabs.map(item(for:))
+    }
+
+    private func item(for tab: AppTab) -> YardTabBarItem {
+        let count = cart.count
+        let isCart = tab == .bag
+        var label: String? = nil
+        var badge: AnyView? = nil
+        if isCart && count > 0 {
+            let noun = count == 1 ? "item" : "items"
+            label = "Cart, \(count) \(noun)"
+            badge = AnyView(countBadge(count))
+        }
+        return YardTabBarItem(
+            id: tab.rawValue,
+            title: tab.title,
+            systemImage: tab.systemImage,
+            selectedSystemImage: tab.selectedSystemImage,
+            accessibilityLabel: label,
+            badge: badge,
+            bounce: isCart ? bagBounce : false
+        )
     }
 
     private func countBadge(_ count: Int) -> some View {

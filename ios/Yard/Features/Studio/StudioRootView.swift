@@ -125,24 +125,33 @@ struct StudioTabBar: View {
     }
 
     var body: some View {
-        let items: [YardTabBarItem] = Self.tabs.map { tab in
-            let count = badge(tab)
-            return YardTabBarItem(
-                id: tab.rawValue,
-                title: tab.title,
-                systemImage: tab.systemImage,
-                selectedSystemImage: tab.selectedSystemImage,
-                accessibilityLabel: count > 0 ? "\(tab.title), \(count)" : nil,
-                // Something waiting there: a small acid dot (the pill itself is acid when selected).
-                badge: count > 0 && tab != selected ? AnyView(Circle().fill(Color.yard.acid).frame(width: 8, height: 8).offset(x: -10, y: 8)) : nil
-            )
-        }
         YardTabBar(
-            items: items,
+            items: Self.tabs.map(item(for:)),
             selected: selected.rawValue,
             activeFill: Color.yard.acid,
             activeInk: Color.yard.onAcid,
             onSelect: { item in if let tab = StudioTab(rawValue: item.id) { onSelect(tab) } }
+        )
+    }
+
+    private func item(for tab: StudioTab) -> YardTabBarItem {
+        let count = badge(tab)
+        var label: String? = nil
+        var dot: AnyView? = nil
+        if count > 0 {
+            label = "\(tab.title), \(count)"
+            // Something waiting there: a small acid dot (the pill itself is acid when selected).
+            if tab != selected {
+                dot = AnyView(Circle().fill(Color.yard.acid).frame(width: 8, height: 8).offset(x: -10, y: 8))
+            }
+        }
+        return YardTabBarItem(
+            id: tab.rawValue,
+            title: tab.title,
+            systemImage: tab.systemImage,
+            selectedSystemImage: tab.selectedSystemImage,
+            accessibilityLabel: label,
+            badge: dot
         )
     }
 }
