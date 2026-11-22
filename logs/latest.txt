@@ -1,22 +1,22 @@
-commit: e3700464ea815db9e18966dba8eacea004767d80
+commit: f6adf3b9cf76f615e1503684fc789525b828f8ae
 result: success
 errors: 0
 build: success tests: success
-tests: 	 Executed 90 tests, with 0 failures (0 unexpected) in 4.741 (8.713) seconds
+tests: 	 Executed 90 tests, with 0 failures (0 unexpected) in 13.299 (21.696) seconds
 ----- errors (deduplicated) -----
 ----- last 60 lines -----
-
-SwiftDriverJobDiscovery normal x86_64 Compiling ProductDetailModels.swift, ProductDetailView.swift, ProductGallery.swift, ProductOptionPickers.swift, ProductTile.swift, QuantityStepper.swift, RemoteImage.swift, RoleChoiceView.swift, RootView.swift, Router.swift, SVGPathParser.swift, Saved.swift, SavedComponents.swift, SavedStore.swift, SavedView.swift, SearchComponents.swift, SearchLiveModel.swift, SearchModels.swift, SearchResultsModel.swift, SearchResultsView.swift, SearchView.swift, SectionHeader.swift, SegmentedPill.swift, SellerApplicationForm.swift, SellerApplicationView.swift (in target 'Yard' from project 'Yard')
-
-SwiftDriverJobDiscovery normal x86_64 Compiling BrandProfileView.swift, BrandsDirectoryView.swift, BrandsSupport.swift, Card.swift, Cart.swift, CartStore.swift, CategoriesView.swift, ChartsComponents.swift, ChartsFiltersSheet.swift, ChartsModels.swift, ChartsView.swift, ChartsViewModel.swift, CheckoutModel.swift, CheckoutView.swift, Chip.swift, CollectionView.swift, Confetti.swift, Config.swift, ConversationView.swift, Decoding.swift, Drop.swift, DropCards.swift, DropDetailView.swift, DropDetailViewModel.swift, DropsSupport.swift (in target 'Yard' from project 'Yard')
-
-SwiftDriver\ Compilation Yard normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'Yard' from project 'Yard')
-    cd /Users/runner/work/Yard/Yard/ios
-    builtin-Swift-Compilation -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Yard -Onone -enforce-exclusivity\=checked @/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -target x86_64-apple-ios17.0-simulator -g -Xfrontend -serialize-debugging-options -enable-testing -swift-version 5 -I /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -F /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -c -j3 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /var/folders/9d/l02zfgrs7c16twd3wbpdmhkc0000gn/C/com.apple.DeveloperTools/16.4-16F6/Xcode/SDKStatCaches.noindex/iphonesimulator18.5-22F76-96ae0914227b19deccb34b33ba7b5dea.sdkstatcache -output-file-map /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.swiftmodule -validate-clang-modules-once -clang-build-session-file /var/folders/9d/l02zfgrs7c16twd3wbpdmhkc0000gn/C/org.llvm.clang/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-generated-files.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-own-target-headers.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-project-headers.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/include -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources-normal/x86_64 -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources/x86_64 -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard-Swift.h -working-directory /Users/runner/work/Yard/Yard/ios -experimental-emit-module-separately -disable-cmo
-
-Ld /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Binary/Yard normal x86_64 (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -O0 -L/Users/runner/work/Yard/Yard/ios/build/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -F/Users/runner/work/Yard/Yard/ios/build/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -filelist /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.swiftmodule -o /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Binary/Yard
+
+SwiftDriverJobDiscovery normal arm64 Compiling BrandProfileView.swift, BrandsDirectoryView.swift, BrandsSupport.swift, Card.swift, Cart.swift, CartStore.swift, CategoriesView.swift, ChartsComponents.swift, ChartsFiltersSheet.swift, ChartsModels.swift, ChartsView.swift, ChartsViewModel.swift, CheckoutModel.swift, CheckoutView.swift, Chip.swift, CollectionView.swift, Confetti.swift, Config.swift, ConversationView.swift, Decoding.swift, Drop.swift, DropCards.swift, DropDetailView.swift, DropDetailViewModel.swift, DropsSupport.swift (in target 'Yard' from project 'Yard')
+
+SwiftDriver\ Compilation Yard normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    builtin-Swift-Compilation -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Yard -Onone -enforce-exclusivity\=checked @/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -target arm64-apple-ios17.0-simulator -g -Xfrontend -serialize-debugging-options -enable-testing -swift-version 5 -I /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -F /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -c -j3 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /var/folders/9d/l02zfgrs7c16twd3wbpdmhkc0000gn/C/com.apple.DeveloperTools/16.4-16F6/Xcode/SDKStatCaches.noindex/iphonesimulator18.5-22F76-96ae0914227b19deccb34b33ba7b5dea.sdkstatcache -output-file-map /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.swiftmodule -validate-clang-modules-once -clang-build-session-file /var/folders/9d/l02zfgrs7c16twd3wbpdmhkc0000gn/C/org.llvm.clang/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-generated-files.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-own-target-headers.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard-project-headers.hmap -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/include -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard-Swift.h -working-directory /Users/runner/work/Yard/Yard/ios -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Binary/Yard normal arm64 (in target 'Yard' from project 'Yard')
+    cd /Users/runner/work/Yard/Yard/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -O0 -L/Users/runner/work/Yard/Yard/ios/build/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -F/Users/runner/work/Yard/Yard/ios/build/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator -filelist /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.swiftmodule -o /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Binary/Yard
 
 CreateUniversalBinary /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Yard normal arm64\ x86_64 (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
@@ -33,8 +33,8 @@ ProcessInfoPlistFile /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulato
 ExtractAppIntentsMetadata (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Yard --sdk-root /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk --xcode-version 16F6 --platform-family iOS --deployment-target 17.0 --bundle-identifier space.yardstore.app --output /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app --target-triple arm64-apple-ios17.0-simulator --target-triple x86_64-apple-ios17.0-simulator --binary-file /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Yard --dependency-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard_dependency_info.dat --dependency-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard_dependency_info.dat --stringsdata-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --stringsdata-file /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.SwiftFileList --source-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.SwiftFileList --metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/arm64/Yard.SwiftConstValuesFileList --swift-const-vals-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Objects-normal/x86_64/Yard.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
-2026-11-22 00:50:24.086 appintentsmetadataprocessor[9159:29556] Starting appintentsmetadataprocessor export
-2026-11-22 00:50:24.093 appintentsmetadataprocessor[9159:29556] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+2026-11-22 07:55:31.130 appintentsmetadataprocessor[4384:16151] Starting appintentsmetadataprocessor export
+2026-11-22 07:55:31.141 appintentsmetadataprocessor[4384:16151] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 
 CopySwiftLibs /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
@@ -48,8 +48,8 @@ ValidateEmbeddedBinary /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimula
 AppIntentsSSUTraining (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Info.plist --temp-dir-path /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/ssu --bundle-id space.yardstore.app --product-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app --extracted-metadata-path /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app/Metadata.appintents --metadata-file-list /Users/runner/work/Yard/Yard/ios/build/Yard.build/Debug-iphonesimulator/Yard.build/Yard.DependencyMetadataFileList --archive-ssu-assets
-2026-11-22 00:50:24.124 appintentsnltrainingprocessor[9161:29559] Parsing options for appintentsnltrainingprocessor
-2026-11-22 00:50:24.128 appintentsnltrainingprocessor[9161:29559] No AppShortcuts found - Skipping.
+2026-11-22 07:55:31.176 appintentsnltrainingprocessor[4394:16171] Parsing options for appintentsnltrainingprocessor
+2026-11-22 07:55:31.177 appintentsnltrainingprocessor[4394:16171] No AppShortcuts found - Skipping.
 
 RegisterExecutionPolicyException /Users/runner/work/Yard/Yard/ios/build/Debug-iphonesimulator/Yard.app (in target 'Yard' from project 'Yard')
     cd /Users/runner/work/Yard/Yard/ios
@@ -70,38 +70,38 @@ Test Case '-[YardTests.StudioSessionGateTests testReSwitchesOnceOn401ThenRetries
 Test Case '-[YardTests.StudioSessionGateTests testRetriesOnlyOnce]' started.
 Test Case '-[YardTests.StudioSessionGateTests testRetriesOnlyOnce]' passed (0.001 seconds).
 Test Case '-[YardTests.StudioSessionGateTests testStoreAsksForSignInWhenTheShopperSessionIsGone]' started.
-Test Case '-[YardTests.StudioSessionGateTests testStoreAsksForSignInWhenTheShopperSessionIsGone]' passed (0.002 seconds).
+Test Case '-[YardTests.StudioSessionGateTests testStoreAsksForSignInWhenTheShopperSessionIsGone]' passed (0.004 seconds).
 Test Case '-[YardTests.StudioSessionGateTests testSwitch401MeansSignedOut]' started.
 Test Case '-[YardTests.StudioSessionGateTests testSwitch401MeansSignedOut]' passed (0.001 seconds).
 Test Case '-[YardTests.StudioSessionGateTests testSwitchesOnceBeforeStudioCalls]' started.
 Test Case '-[YardTests.StudioSessionGateTests testSwitchesOnceBeforeStudioCalls]' passed (0.001 seconds).
-Test Suite 'StudioSessionGateTests' passed at 2026-11-22 00:57:57.800.
-	 Executed 8 tests, with 0 failures (0 unexpected) in 0.023 (0.027) seconds
-Test Suite 'YouProfilePhotoModelTests' started at 2026-11-22 00:57:57.800.
+Test Suite 'StudioSessionGateTests' passed at 2026-11-22 07:59:16.373.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.029 (2.402) seconds
+Test Suite 'YouProfilePhotoModelTests' started at 2026-11-22 07:59:16.374.
 Test Case '-[YardTests.YouProfilePhotoModelTests testCancelledUploadIsSilent]' started.
-Test Case '-[YardTests.YouProfilePhotoModelTests testCancelledUploadIsSilent]' passed (0.005 seconds).
+Test Case '-[YardTests.YouProfilePhotoModelTests testCancelledUploadIsSilent]' passed (0.003 seconds).
 Test Case '-[YardTests.YouProfilePhotoModelTests testPreCropProblems]' started.
-Test Case '-[YardTests.YouProfilePhotoModelTests testPreCropProblems]' passed (0.002 seconds).
+Test Case '-[YardTests.YouProfilePhotoModelTests testPreCropProblems]' passed (0.001 seconds).
 Test Case '-[YardTests.YouProfilePhotoModelTests testRemove]' started.
-Test Case '-[YardTests.YouProfilePhotoModelTests testRemove]' passed (0.008 seconds).
+Test Case '-[YardTests.YouProfilePhotoModelTests testRemove]' passed (0.006 seconds).
 Test Case '-[YardTests.YouProfilePhotoModelTests testRetryableFailureKeepsTheSquareThenRetrySucceeds]' started.
 Test Case '-[YardTests.YouProfilePhotoModelTests testRetryableFailureKeepsTheSquareThenRetrySucceeds]' passed (0.001 seconds).
 Test Case '-[YardTests.YouProfilePhotoModelTests testRuleFailureIsNotRetryableAndCanBeDiscarded]' started.
 Test Case '-[YardTests.YouProfilePhotoModelTests testRuleFailureIsNotRetryableAndCanBeDiscarded]' passed (0.001 seconds).
 Test Case '-[YardTests.YouProfilePhotoModelTests testSuccessfulUploadClearsThePreview]' started.
-Test Case '-[YardTests.YouProfilePhotoModelTests testSuccessfulUploadClearsThePreview]' passed (0.109 seconds).
-Test Suite 'YouProfilePhotoModelTests' passed at 2026-11-22 00:57:57.928.
-	 Executed 6 tests, with 0 failures (0 unexpected) in 0.126 (0.128) seconds
-Test Suite 'YardTests.xctest' passed at 2026-11-22 00:57:57.928.
-	 Executed 90 tests, with 0 failures (0 unexpected) in 4.741 (8.712) seconds
-Test Suite 'All tests' passed at 2026-11-22 00:57:57.928.
-	 Executed 90 tests, with 0 failures (0 unexpected) in 4.741 (8.713) seconds
-2026-11-22 00:58:11.068 xcodebuild[9429:30255] [MT] IDETestOperationsObserverDebug: 342.942 elapsed -- Testing started completed.
-2026-11-22 00:58:11.075 xcodebuild[9429:30255] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
-2026-11-22 00:58:11.075 xcodebuild[9429:30255] [MT] IDETestOperationsObserverDebug: 342.943 sec, +342.942 sec -- end
+Test Case '-[YardTests.YouProfilePhotoModelTests testSuccessfulUploadClearsThePreview]' passed (0.065 seconds).
+Test Suite 'YouProfilePhotoModelTests' passed at 2026-11-22 07:59:16.534.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.076 (0.160) seconds
+Test Suite 'YardTests.xctest' passed at 2026-11-22 07:59:16.534.
+	 Executed 90 tests, with 0 failures (0 unexpected) in 13.299 (21.695) seconds
+Test Suite 'All tests' passed at 2026-11-22 07:59:16.535.
+	 Executed 90 tests, with 0 failures (0 unexpected) in 13.299 (21.696) seconds
+2026-11-22 07:59:30.077 xcodebuild[4861:17374] [MT] IDETestOperationsObserverDebug: 141.405 elapsed -- Testing started completed.
+2026-11-22 07:59:30.077 xcodebuild[4861:17374] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-22 07:59:30.077 xcodebuild[4861:17374] [MT] IDETestOperationsObserverDebug: 141.405 sec, +141.405 sec -- end
 
 Test session results, code coverage, and logs:
-	/Users/runner/Library/Developer/Xcode/DerivedData/Yard-dtrccjrprnjpnsduggnwyzimoppt/Logs/Test/Test-Yard-2026.11.22_00-50-33-+0000.xcresult
+	/Users/runner/Library/Developer/Xcode/DerivedData/Yard-dtrccjrprnjpnsduggnwyzimoppt/Logs/Test/Test-Yard-2026.11.22_07-55-38-+0000.xcresult
 
 ** TEST SUCCEEDED **
 
