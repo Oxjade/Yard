@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { seedDemoFrom } from "./server/demo-switch"
 import { guardConfigFrom, guardRequest, TokenBuckets, type GuardConfig } from "./server/http/api-guard"
 import { logRequest } from "./server/http/request-log"
+import { countEvent } from "./server/monitoring/minutes"
 
 /**
  * The global per-IP safety net for /api/* (src/server/http/api-guard.ts): YARD_RATE_API_PER_MIN
@@ -45,12 +46,13 @@ function guardApi(request: NextRequest): NextResponse {
   if (verdict.status === 429) headers["Retry-After"] = String(verdict.retryAfter)
   const code = verdict.status === 429 ? "rate_limited" : "too_large"
   logRequest({ id, method: request.method, path, status: verdict.status, ms: Date.now() - started, by: "proxy" })
+  countEvent(verdict.status === 429 ? "proxy.rate_limited" : "proxy.too_large")
   return NextResponse.json({ error: { code, message: verdict.message } }, { status: verdict.status, headers })
 }
 
 /**
  * Sample-data screens in production. These pages have only made-up data so far (Studio analytics,
- * customers, promotions and advertising; Control Center advertising and health; the marketplace's
+ * customers, promotions and advertising; Control Center advertising; the marketplace's
  * stories and curated collections). With the demo switch off (getEnv().seedDemo, read per request
  * here, never baked in at build), each address redirects to its "coming soon" page; demo and
  * development pass straight through, so those screens stay exactly as they are. A redirect rather
@@ -66,7 +68,6 @@ const GATED: [prefix: string, target: string][] = [
   ["/studio/campaigns", "/studio/coming-soon/promotions"],
   ["/studio/advertising", "/studio/coming-soon/advertising"],
   ["/admin/advertising", "/admin/coming-soon/advertising"],
-  ["/admin/health", "/admin/coming-soon/health"],
   ["/stories", "/coming-soon/stories"],
   ["/collections", "/coming-soon/collections"],
 ]
@@ -155,7 +156,6 @@ export const config = {
     "/studio/campaigns/:path*",
     "/studio/advertising/:path*",
     "/admin/advertising/:path*",
-    "/admin/health/:path*",
     "/stories/:path*",
     "/collections/:path*",
     "/drops/:slug",

@@ -56,6 +56,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { SessionGate } from "@/components/session/session-gate"
 import { BusinessFigures } from "@/components/admin/overview/business-figures"
 import { LiveMonitoringSlot } from "@/components/admin/overview/monitoring-slot"
+import { OverviewActivityHeatmap } from "@/components/admin/platform/health/activity"
 import { TrafficByCountry } from "@/components/admin/overview/traffic-by-country"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { useBrowserAudit } from "@/components/admin/platform/security/audit-log"
@@ -762,6 +763,9 @@ export function ControlCenter() {
         <Reveal ssrVisible className="@container grid gap-3">
           <CommandStrip />
           <BusinessFigures />
+          <RevealItem className="min-w-0">
+            <OverviewActivityHeatmap />
+          </RevealItem>
           <div className="grid gap-3 @5xl:grid-cols-12">
             <DecisionQueue className="@5xl:col-span-8" />
             <AuditTrail className="@5xl:col-span-4" />

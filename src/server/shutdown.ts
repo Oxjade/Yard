@@ -96,6 +96,9 @@ export function installShutdown() {
     (finishing ??= (async () => {
       const idle = await waitIdle(s, deadline - Date.now())
       if (!idle) log.warn(`[yard] shutdown: grace period over with ${s.inFlight} API ${s.inFlight === 1 ? "request" : "requests"} and ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"} still running`)
+      // The minute's activity counters (Admin › Health) go out before the database closes.
+      const flushMetrics = (yard as { flushMetrics?: () => Promise<unknown> }).flushMetrics
+      if (flushMetrics) await Promise.race([flushMetrics().catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
       const close = (yard as { closeDb?: () => Promise<void> }).closeDb
       if (close) {
         await Promise.race([close().catch((e: unknown) => log.error("[yard] shutdown: closing the database", e)), new Promise((r) => setTimeout(r, 5000))])

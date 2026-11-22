@@ -8,20 +8,23 @@ import { useHydrated } from "@/hooks/use-hydrated"
 import { chartEasing } from "@/lib/motion"
 import { PanelSkeleton } from "./panel"
 
-type Row = { date: string } & Record<string, number | string>
+type Row = { date: string } & Record<string, number | string | null>
 
-function GlassTooltip({ active, payload, label, format, labels }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string; format: (n: number) => string; labels: Record<string, string> }) {
+const dayLabel = (v: string) => new Date(v).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })
+const dayTick = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+
+function GlassTooltip({ active, payload, label, format, labels, labelFormat }: { active?: boolean; payload?: { dataKey: string; value: number | null; color: string }[]; label?: string; format: (n: number) => string; labels: Record<string, string>; labelFormat: (v: string) => string }) {
   if (!active || !payload?.length) return null
   return (
     <div className="glass-strong min-w-40 rounded-xl px-3 py-2.5 text-[12px]">
-      <p className="font-label text-[11px] text-ink-2">{label ? new Date(label).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null}</p>
+      <p className="font-label text-[11px] text-ink-2">{label ? labelFormat(label) : null}</p>
       {payload.map((p) => (
         <p key={p.dataKey} className="mt-1.5 flex items-center justify-between gap-4 text-ink">
           <span className="flex items-center gap-2 text-ink-2">
             <span className="h-0.5 w-3 rounded-full" style={{ background: p.color }} />
             {labels[p.dataKey] ?? p.dataKey}
           </span>
-          <span className="tabular">{format(p.value)}</span>
+          <span className="tabular">{p.value == null ? "–" : format(p.value)}</span>
         </p>
       ))}
     </div>
@@ -33,9 +36,26 @@ function GlassTooltip({ active, payload, label, format, labels }: { active?: boo
  * purple fill (no soft falloff), the secondary as a dashed grey line. Fixed height; a
  * same-size skeleton stands in until the chart can measure itself and has been seen, so
  * nothing shifts and the series draw in from the left in 600ms as the chart first appears,
- * not off screen on mount (Recharts skips it under reduced motion).
+ * not off screen on mount (Recharts skips it under reduced motion). `tickFormat` and `labelFormat`
+ * name the x axis and the tooltip's heading (days by default; times for hourly or minute series).
  */
-export function AdminAreaChart({ data, primary, secondary, format, height = 280 }: { data: Row[]; primary: { key: string; label: string }; secondary?: { key: string; label: string }; format: (n: number) => string; height?: number }) {
+export function AdminAreaChart({
+  data,
+  primary,
+  secondary,
+  format,
+  height = 280,
+  tickFormat = dayTick,
+  labelFormat = dayLabel,
+}: {
+  data: Row[]
+  primary: { key: string; label: string }
+  secondary?: { key: string; label: string }
+  format: (n: number) => string
+  height?: number
+  tickFormat?: (v: string) => string
+  labelFormat?: (v: string) => string
+}) {
   const id = useId()
   const hydrated = useHydrated()
   const frame = useRef<HTMLDivElement>(null)
@@ -57,9 +77,9 @@ export function AdminAreaChart({ data, primary, secondary, format, height = 280 
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="date" tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} tick={tick} axisLine={false} tickLine={false} minTickGap={32} />
+            <XAxis dataKey="date" tickFormatter={tickFormat} tick={tick} axisLine={false} tickLine={false} minTickGap={32} />
             <YAxis tickFormatter={(v) => format(v)} tick={tick} axisLine={false} tickLine={false} width={64} />
-            <Tooltip cursor={{ stroke: "rgba(255,255,255,0.16)", strokeDasharray: "3 3" }} content={<GlassTooltip format={format} labels={labels} />} />
+            <Tooltip cursor={{ stroke: "rgba(255,255,255,0.16)", strokeDasharray: "3 3" }} content={<GlassTooltip format={format} labels={labels} labelFormat={labelFormat} />} />
             <Area type="monotone" dataKey={primary.key} stroke="#9452ff" strokeWidth={2} fill={`url(#a-${id})`} activeDot={{ r: 4.5, fill: "#f5f5f5", stroke: "#6d19d9", strokeWidth: 2 }} animationDuration={600} animationEasing={chartEasing} />
             {secondary ? <Line type="monotone" dataKey={secondary.key} stroke="#858585" strokeWidth={1.5} strokeDasharray="4 4" dot={false} activeDot={{ r: 3.5, fill: "#858585", strokeWidth: 0 }} animationDuration={600} animationEasing={chartEasing} /> : null}
           </ComposedChart>

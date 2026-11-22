@@ -6,6 +6,7 @@ import { adminMembers } from "../db/schema"
 import { adminMfa, mfaRecoveryCodes } from "../db/schema/identity"
 import { HttpError, badRequest, forbidden, notFound } from "../http/errors"
 import { newId } from "../ids"
+import { countEvent } from "../monitoring/minutes"
 import { open, seal, sha256hex } from "../security/crypto"
 import { AUTH_EMAIL_TEMPLATES, openSession, sendAuthEmail, userById, type RequestMeta } from "./identity"
 import { limitPerUser } from "./limits"
@@ -131,6 +132,7 @@ export async function confirmEnrolment(challenge: string, code: string, meta: Re
   }
   const step = verifyTotp(secret, code)
   if (step === null) {
+    countEvent("auth.mfa_fail.admin")
     const left = await failChallenge(row.id)
     throw badRequest({ code: left ? "That code didn't match. Check your app's clock and try again." : "Too many wrong codes. Sign in again." })
   }
@@ -171,6 +173,7 @@ export async function verifyChallenge(challenge: string, input: { code?: string 
   })
   if (!result) {
     // Outside the transaction above, so the failed attempt is committed.
+    countEvent("auth.mfa_fail.admin")
     const left = await failChallenge(row.id)
     throw badRequest(input.recoveryCode ? { recoveryCode: left ? "That recovery code isn't valid or was already used." : "Too many wrong codes. Sign in again." } : { code: left ? "That code didn't match. Try the newest code in your app." : "Too many wrong codes. Sign in again." })
   }

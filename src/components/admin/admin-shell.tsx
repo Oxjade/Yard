@@ -353,8 +353,8 @@ function AdminSessionSkeleton() {
 /** The internal Admin Control Center: a control room — dense, operational, data-first. */
 function AdminWorkspace({ children }: { children: React.ReactNode }) {
   const ready = useAdminReady()
-  // Advertising and Health have only sample data so far: demo and development only (production
-  // serves them as "coming soon", src/proxy.ts). Hidden until the session says which, so production
+  // Advertising has only sample data so far: demo and development only (production serves it as
+  // "coming soon", src/proxy.ts); Health shows real metrics in production. Hidden until the session says which, so production
   // never flashes them. Production badges also count only the server's records, never this
   // browser's sample queues (sample applications, flagged listings, refunds, payouts, campaigns).
   const sampleData = useServerSession((s) => s.sampleData === true)
@@ -429,7 +429,8 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
     {
       label: "Platform",
       items: [
-        ...when(sampleData, { href: "/admin/health", label: "Health", icon: PulseIcon }),
+        // Health reads real metrics in production (GET /api/admin/metrics, audit.view); the demo keeps its sample screen.
+        ...when(sampleData || sees("audit.view"), { href: "/admin/health", label: "Health", icon: PulseIcon }),
         { href: "/admin/security", label: "Security", icon: ShieldCheckIcon },
       ],
     },
@@ -473,7 +474,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
         menu: [
           { label: "Notifications", href: "/admin/notifications", icon: BellIcon },
           { label: "Security and audit log", href: "/admin/security", icon: ShieldCheckIcon },
-          ...(sampleData ? [{ label: "System health", href: "/admin/health", icon: HeartbeatIcon }] : []),
+          ...(sampleData || sees("audit.view") ? [{ label: "System health", href: "/admin/health", icon: HeartbeatIcon }] : []),
           ...(demoOn ? [{ label: "Switch demo admin…", href: SWITCH_ACCOUNT_HREF, icon: UserSwitchIcon, separated: true }] : []),
           // Signing out never depends on the demo flag: whoever holds a session can always end it.
           ...(admin ? [{ label: admin.demo ? "Sign out of demo account" : "Sign out", href: SIGN_OUT_HREF, icon: SignOutIcon, separated: !demoOn }] : []),

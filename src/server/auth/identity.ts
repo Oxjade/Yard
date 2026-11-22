@@ -11,6 +11,7 @@ import { enqueueEmail } from "../email"
 import { HttpError, badRequest, rateLimited, suspended } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { countEvent } from "../monitoring/minutes"
 import { authLinks } from "./auth-env"
 import { clearSignInEmailLimit, limitEmailSend, limitSignIn, limitTokenConsume, LOCKOUT } from "./limits"
 import { hashPassword, needsRehash, passwordProblem, verifyPassword } from "./passwords"
@@ -304,7 +305,7 @@ export type SignInResult =
 
 const wrongPassword = () => new HttpError(401, "unauthenticated", "That email and password don't match.")
 
-async function recordFailure(userId: string, current: { failedCount: number; firstFailedAt: Date | null } | null) {
+async function recordFailure(userId: string, current: { failedCount: number; firstFailedAt: Date | null } | null, actor: ActorKind) {
   const now = new Date()
   const windowStart = new Date(now.getTime() - LOCKOUT.windowMin * 60_000)
   const fresh = !current?.firstFailedAt || current.firstFailedAt < windowStart
@@ -312,6 +313,7 @@ async function recordFailure(userId: string, current: { failedCount: number; fir
   const lockedUntil = failedCount >= LOCKOUT.failures ? new Date(now.getTime() + LOCKOUT.lockMin * 60_000) : null
   // Committed on its own (no ambient transaction here), so the 401 that follows can't roll it back.
   await upsertCredentials(userId, { failedCount: lockedUntil ? 0 : failedCount, firstFailedAt: lockedUntil ? null : fresh ? now : current!.firstFailedAt, ...(lockedUntil ? { lockedUntil } : {}) })
+  if (lockedUntil) countEvent(`auth.locked.${actor}`)
   if (lockedUntil) log.warn(`[yard] auth: account ${userId} locked for ${LOCKOUT.lockMin} min after ${LOCKOUT.failures} failed sign-ins`)
 }
 
@@ -330,7 +332,9 @@ export async function signInWithPassword(input: { email: string; password: strin
   }
   const ok = await verifyPassword(input.password, cred?.passwordHash ?? null)
   if (!user || !ok) {
-    if (user) await recordFailure(user.id, cred)
+    // Admin › Health › Auth failures: counted in memory, written with the minute's metrics.
+    countEvent(`auth.signin_fail.${input.actor}`)
+    if (user) await recordFailure(user.id, cred, input.actor)
     throw wrongPassword()
   }
   // Correct password from here on.
@@ -408,7 +412,7 @@ export async function changePassword(input: { userId: string; sessionId: string;
   if (cred?.passwordHash) {
     if (!input.current) throw badRequest({ currentPassword: "Enter your current password." })
     if (!(await verifyPassword(input.current, cred.passwordHash))) {
-      await recordFailure(user.id, cred)
+      await recordFailure(user.id, cred, user.kind === "admin" ? "admin" : user.kind === "brand_staff" ? "brand" : "shopper")
       throw badRequest({ currentPassword: "That isn't your current password." })
     }
   }

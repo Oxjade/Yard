@@ -13,7 +13,6 @@ import { Bone } from "@/components/feedback/skeletons"
 import { AdminAreaChart } from "@/components/admin/ui/area-chart"
 import { Reveal, RevealItem } from "@/components/admin/ui/motion"
 import { Panel } from "@/components/admin/ui/panel"
-import { LiveMonitoring } from "@/components/admin/overview/live-monitoring"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { ReasonDialog } from "@/components/admin/ui/reason-dialog"
 import { useAsyncAction } from "@/hooks/use-async-action"
@@ -25,6 +24,7 @@ import { cn } from "@/lib/utils"
 import { formatDate, formatDay, int, relDay } from "../format"
 import { AdminPageHead, StatRow } from "@/components/admin/marketplace/page-head"
 import { focusNextEnabled, useAdminReady, useDialogReturn } from "../ready"
+import { LiveHealth } from "./live-health"
 import { authFailures, jobHints, queues, storage } from "./sample"
 
 /** Latency targets (p95, ms) per service; the bar under each service is measured against them. The Overview uses the same targets. */
@@ -99,12 +99,15 @@ export function HealthView() {
   const openJobs = failedJobs.length - retried.size
   const openHooks = webhookFailures.filter((w) => !w.replayable || !replayed.has(w.id)).length
 
+  // Production (the demo switch off): real metrics only. The demo keeps the sample screen below.
+  if (!sample) return <LiveHealth />
+
   return (
     <Reveal ssrVisible className="@container grid gap-3">
       <AdminPageHead
         title="Health"
         description="Service status, the API's latency and errors, and the background work that needs an engineer."
-        note={`Retries and replays are recorded here and in the audit log; they run once the job runner and the payments service are connected. ${sample ? "Latency, queue, storage and sign-in figures are sample data." : "Live monitoring counts API requests since the server last started."}`}
+        note="Retries and replays are recorded here and in the audit log; they run once the job runner and the payments service are connected. Latency, queue, storage and sign-in figures are sample data."
       />
 
       <StatRow label="Health figures">
@@ -123,20 +126,18 @@ export function HealthView() {
       </StatRow>
 
       <Services />
-      {sample ? <Trend /> : <LiveMonitoring />}
+      <Trend />
 
       <div className="grid gap-3 @5xl:grid-cols-2">
         <FailedJobs retried={retried} ready={ready} />
         <WebhookFailures replayed={replayed} ready={ready} />
       </div>
 
-      {sample ? (
-        <div className="grid gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
-          <QueueDepth />
-          <Storage />
-          <AuthFailures className="@3xl:col-span-2 @5xl:col-span-1" />
-        </div>
-      ) : null}
+      <div className="grid gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
+        <QueueDepth />
+        <Storage />
+        <AuthFailures className="@3xl:col-span-2 @5xl:col-span-1" />
+      </div>
     </Reveal>
   )
 }

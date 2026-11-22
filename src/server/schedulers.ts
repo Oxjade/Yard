@@ -153,6 +153,16 @@ export function startSchedulers() {
       log.error("[yard] indexnow flush failed", e)
     }
   })
+  // Admin › Health activity (src/server/monitoring): the minute's request and event counters go to
+  // metrics_minutes in one upsert every YARD_METRICS_FLUSH_MS (60 s); the nightly rollup keeps the
+  // table small (minutes 48 h, hours 30 days, days 400 days); the running build is recorded once.
+  void import("./monitoring/service").then(({ flushEveryMs, flushMetrics, recordBoot, rollupMetrics }) => {
+    const flushMs = flushEveryMs()
+    ;(yard as { flushMetrics?: () => Promise<unknown> }).flushMetrics = flushMetrics
+    every(flushMs, flushMs, flushMetrics)
+    every(untilUtcMidnight() + 40 * MIN, untilUtcMidnight, rollupMetrics)
+    setTimeout(() => void runJob(recordBoot), 5_000).unref()
+  })
 }
 
 /** For the selftest and db-check: run one job now. */
