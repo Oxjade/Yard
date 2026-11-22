@@ -704,7 +704,7 @@ struct StudioQuickAddView: View {
         let id = option.wrappedValue.id
         return VStack(alignment: .leading, spacing: Spacing.m) {
             HStack {
-                TextField("Option name, like Size", text: option.name)
+                TextField("Option name, like Size or Scent", text: option.name)
                     .font(.yardBodyEmphasis)
                     .textInputAutocapitalization(.words)
                 if model.options.count > 1 {

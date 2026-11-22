@@ -780,7 +780,7 @@ struct ProductDetailView: View {
         Task { @MainActor in
             do {
                 let now = try await model.toggleWatch(variantId: variantId)
-                toast.show(now ? "We'll let you know when it's available" : "Stopped watching this size",
+                toast.show(now ? "We'll let you know when it's available" : "Stopped watching this one",
                            style: now ? .success : .info,
                            systemImage: now ? "bell.fill" : "bell.slash")
             } catch {
