@@ -3,40 +3,52 @@ package space.yardstore.app.features.studio
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardDoubleArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.AddCircleOutline
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocalShipping
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,23 +59,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -72,43 +86,35 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.Formatters
+import space.yardstore.app.core.models.ShopperBrand
 import space.yardstore.app.core.networking.APIError
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
-import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardShapes
+import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.RemoteImage
+import space.yardstore.app.designsystem.components.pressableClick
+import space.yardstore.app.designsystem.components.shimmering
 import space.yardstore.app.designsystem.monospacedDigits
 import space.yardstore.app.designsystem.rememberReducedMotion
 import space.yardstore.app.designsystem.rememberYardHaptics
-import space.yardstore.app.designsystem.components.EmptyState
-import space.yardstore.app.designsystem.components.RemoteImage
-import space.yardstore.app.designsystem.components.Skeleton
-import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.yard
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Studio Home's data: the dashboard for 7 days, and for 30 once Month is picked. */
+/** Studio Home's data: the 7-day dashboard (its `sales` already carries today / week / month). */
 class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard? = null, previewSuggestions: List<StudioProposal> = emptyList()) : ViewModel() {
     var week by mutableStateOf(preview)
         private set
     /** Suggestions from Yard still waiting (the to-do "Yard prepared N products for you"). */
     var suggestions by mutableStateOf(previewSuggestions)
         private set
-    var month by mutableStateOf<StudioDashboard?>(null)
-        private set
-    var range by mutableStateOf(StudioRange.Week)
+    /** The hero's window. Month first, so "+₦… past week" reads like a wallet's balance and delta. */
+    var range by mutableStateOf(StudioRange.Month)
     var isLoading by mutableStateOf(preview == null)
         private set
     var error by mutableStateOf<String?>(null)
         private set
-
-    /** The dashboard for the picked range's chart (month needs `days=30`). */
-    val current: StudioDashboard? get() = if (range == StudioRange.Month) month ?: week else week
 
     suspend fun load(force: Boolean = false) {
         val store = store ?: return
@@ -119,7 +125,6 @@ class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard?
             week = d
             store.brandCurrency = d.brand.currency
             error = null
-            if (range == StudioRange.Month || month != null) month = store.dashboard(30)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -138,18 +143,6 @@ class StudioHomeModel(private val store: StudioStore?, preview: StudioDashboard?
 
     fun pick(r: StudioRange) {
         range = r
-        val store = store ?: return
-        if (r == StudioRange.Month && month == null) {
-            viewModelScope.launch {
-                try {
-                    month = store.dashboard(30)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // The 7-day chart stays; the toggle's numbers come from `sales.month` anyway.
-                }
-            }
-        }
     }
 }
 
@@ -164,14 +157,31 @@ internal fun shareShop(context: Context, handle: String, name: String) {
     runCatching { context.startActivity(Intent.createChooser(send, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
+/** Screenshots only: a model to show instead of loading (e.g. `StudioHomeModel(null)` = the skeleton). */
+val LocalStudioHomePreview = staticCompositionLocalOf<StudioHomeModel?> { null }
+
 @Composable
 fun StudioHomeView() {
+    LocalStudioHomePreview.current?.let { StudioHomeScreen(it); return }
     val studio = LocalStudioStore.current
     val model: StudioHomeModel = viewModel(key = "studio-home-${studio.generation}") { StudioHomeModel(studio) }
     LaunchedEffect(model) { model.load() }
     StudioHomeScreen(model)
 }
 
+/** Studio Home's radii: the hero's bottom corners, cards, tiles. */
+private object HomeRadius {
+    val hero = 32.dp
+    val card = 24.dp
+    val tile = 20.dp
+    val small = 16.dp
+}
+
+/**
+ * Studio Home, a wallet: the violet hero (greeting, sales for the picked window, the "+… past week"
+ * pill and one inset action card), four action tiles, the contrast Orders tile beside Weekly
+ * activity, then the to-do rows and the shop's numbers, on pure black (off-white in light).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StudioHomeScreen(model: StudioHomeModel) {
@@ -184,6 +194,12 @@ internal fun StudioHomeScreen(model: StudioHomeModel) {
     val d = model.week
     val brandName = d?.brand?.name?.ifBlank { null } ?: brand?.name ?: "your shop"
     val handle = d?.brand?.handle?.ifBlank { null } ?: brand?.handle.orEmpty()
+    // The inset card the seller closed (this visit only): closing it moves the to-do into the rows.
+    var dismissed by rememberSaveable { mutableStateOf("") }
+
+    val onSuggestions = { nav.push(StudioRoute.Suggestions(focusAcceptAll = true), StudioTab.Products) }
+    val onShare = { shareShop(context, handle, brandName) }
+    val card = homeCard(brand, d, model.suggestions, brandName).takeIf { it?.id != dismissed }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -195,69 +211,75 @@ internal fun StudioHomeScreen(model: StudioHomeModel) {
                 refreshing = false
             }
         },
-        modifier = Modifier.fillMaxSize().background(Color.yard.bg),
+        modifier = Modifier.fillMaxSize().background(Color.yard.studioCanvas),
     ) {
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
-                .padding(horizontal = Spacing.gutter)
-                .padding(top = Spacing.m, bottom = StudioPillClearance + Spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                .padding(bottom = StudioPillClearance + Spacing.l),
         ) {
-            // Header: "Hello {brand}", today's date, the brand mark (picker with several brands).
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Hello", style = YardFonts.callout, color = Color.yard.ink2)
-                    YardDisplayText(brandName, size = if (brandName.length > 16) 30.sp else 38.sp, maxLines = 2)
-                    val today = LocalDate.now()
-                    Text(
-                        "${today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())}, ${today.format(DateTimeFormatter.ofPattern("d MMMM"))}",
-                        style = YardFonts.caption,
-                        color = Color.yard.ink3,
-                    )
-                }
-                if (brand != null) {
-                    StudioBrandMark(
-                        brand.name,
-                        brand.mark,
-                        brand.logoSrc,
-                        size = 48.dp,
-                        modifier = Modifier.pressableClick(onClickLabel = if (studio.studioBrands.size > 1) "Switch brand" else "Me") {
-                            haptics.tick()
-                            if (studio.studioBrands.size > 1) studio.showsBrandPicker = true else nav.select(StudioTab.Me)
-                        },
-                    )
-                }
-            }
-
-            StudioStatusBanner(brand)
-
-            AnimatedContent(
-                targetState = when {
-                    d != null -> "data"
-                    model.error != null -> "error"
-                    else -> "loading"
+            HomeHero(
+                model = model,
+                brand = brand,
+                brandName = brandName,
+                card = card,
+                onAvatar = {
+                    haptics.tick()
+                    if (studio.studioBrands.size > 1) studio.showsBrandPicker = true else nav.select(StudioTab.Me)
                 },
-                transitionSpec = { fadeIn(Motion.crossfade()) togetherWith fadeOut(Motion.crossfade()) },
-                label = "studio-home",
-            ) { state ->
-                when (state) {
-                    "loading" -> StudioHomeSkeleton()
-                    "error" -> EmptyState.Error(model.error.orEmpty()) { model.load(force = true) }
-                    else -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.xl)) {
-                        val data = model.week ?: return@Column
-                        SalesCard(model, data)
-                        QuickActions(
-                            onAdd = { nav.select(StudioTab.Add) },
-                            onOrders = { nav.select(StudioTab.Orders) },
-                            onPayouts = { nav.push(StudioRoute.Payouts, StudioTab.Me) },
-                            onShare = { shareShop(context, handle, brandName) },
-                        )
-                        TodoList(data, model.suggestions, onSuggestions = { nav.push(StudioRoute.Suggestions(focusAcceptAll = true), StudioTab.Products) }, onShip = { nav.ordersTab = StudioOrdersTab.New; nav.select(StudioTab.Orders) }, onLowStock = { nav.productsFilter = StudioProductFilter.LowStock; nav.select(StudioTab.Products) }, onMessages = { nav.push(StudioRoute.Inbox, StudioTab.Me) }, onWebsite = { nav.push(StudioRoute.WebsitePieces, StudioTab.Products) })
-                        TopProducts(data) { id -> nav.push(StudioRoute.Product(id), StudioTab.Products) }
-                        StoreViews(data)
+                onInbox = { nav.push(StudioRoute.Inbox, StudioTab.Me) },
+                onCard = { c ->
+                    when (c.action) {
+                        HomeCardAction.Suggestions -> onSuggestions()
+                        HomeCardAction.Add -> nav.select(StudioTab.Add)
+                        HomeCardAction.Share -> onShare()
+                        HomeCardAction.Support -> nav.push(StudioRoute.Support, StudioTab.Me)
+                    }
+                },
+                onDismissCard = { c -> haptics.tick(); dismissed = c.id },
+            )
+            Column(
+                Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.l),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s),
+            ) {
+                QuickActions(
+                    onAdd = { nav.select(StudioTab.Add) },
+                    onOrders = { nav.select(StudioTab.Orders) },
+                    onPayouts = { nav.push(StudioRoute.Payouts, StudioTab.Me) },
+                    onShare = onShare,
+                )
+                AnimatedContent(
+                    targetState = when {
+                        d != null -> "data"
+                        model.error != null -> "error"
+                        else -> "loading"
+                    },
+                    transitionSpec = { fadeIn(Motion.crossfade()) togetherWith fadeOut(Motion.crossfade()) },
+                    label = "studio-home",
+                ) { state ->
+                    when (state) {
+                        "loading" -> HomeSkeleton()
+                        "error" -> Box(Modifier.padding(top = Spacing.xl)) { EmptyState.Error(model.error.orEmpty()) { model.load(force = true) } }
+                        else -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                            val data = model.week ?: return@Column
+                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                                OrdersTile(data, model.range, Modifier.weight(1f).fillMaxHeight()) {
+                                    nav.select(StudioTab.Orders)
+                                }
+                                WeeklyActivityTile(data, Modifier.weight(1f).fillMaxHeight())
+                            }
+                            TodoRows(
+                                d = data,
+                                suggestions = if (card?.action == HomeCardAction.Suggestions) emptyList() else model.suggestions,
+                                onSuggestions = onSuggestions,
+                                onShip = { nav.ordersTab = StudioOrdersTab.New; nav.select(StudioTab.Orders) },
+                                onLowStock = { nav.productsFilter = StudioProductFilter.LowStock; nav.select(StudioTab.Products) },
+                                onMessages = { nav.push(StudioRoute.Inbox, StudioTab.Me) },
+                                onWebsite = { nav.push(StudioRoute.WebsitePieces, StudioTab.Products) },
+                            )
+                            YourShop(data) { id -> nav.push(StudioRoute.Product(id), StudioTab.Products) }
+                        }
                     }
                 }
             }
@@ -265,216 +287,501 @@ internal fun StudioHomeScreen(model: StudioHomeModel) {
     }
 }
 
-/** In review / paused / restricted: what the brand can and can't do right now. */
-@Composable
-internal fun StudioStatusBanner(brand: space.yardstore.app.core.models.ShopperBrand?) {
-    val b = brand ?: return
-    val text = when {
-        b.isPendingReview -> "${b.name} is in review. Set up your shop now; nothing goes live until Yard approves it."
-        b.isRestricted -> "Yard paused publishing and replies for ${b.name}. Check your email for what to change."
-        else -> return
+// region Hero
+
+private enum class HomeCardAction { Suggestions, Add, Share, Support }
+
+/** The hero's inset card: one thing worth doing now ("Get set up" in the wallet inspo). */
+private data class HomeCard(val id: String, val lead: String, val text: String, val cta: String, val action: HomeCardAction)
+
+private fun homeCard(brand: ShopperBrand?, d: StudioDashboard?, suggestions: List<StudioProposal>, brandName: String): HomeCard? = when {
+    brand?.isRestricted == true -> HomeCard(
+        "restricted", "Publishing is paused", "Yard paused publishing and replies for $brandName. Ask Yard Support what to change.",
+        "Message Yard Support", HomeCardAction.Support,
+    )
+    suggestions.isNotEmpty() -> {
+        val (title, _) = StudioBatch.preparedLine(suggestions)
+        HomeCard("suggestions", title, "Nothing goes live until you accept.", if (suggestions.size == 1) "Accept it" else "Accept all", HomeCardAction.Suggestions)
     }
-    Row(
-        Modifier.fillMaxWidth().background(Color.yard.violetFill, YardShapes.card).padding(Spacing.l),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(if (b.isPendingReview) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber, contentDescription = null, tint = Color.yard.onVioletFill)
-        Text(text, style = YardFonts.callout, color = Color.yard.onVioletFill)
+    brand?.isPendingReview == true -> HomeCard(
+        "review", "Your shop is in review", "Add products now. They go live once Yard approves $brandName.",
+        "Add a product", HomeCardAction.Add,
+    )
+    d != null && d.sales.month.orders == 0 -> HomeCard(
+        "first-order", "Get your first order", "Share your shop link so people can find you on Yard.",
+        "Share shop", HomeCardAction.Share,
+    )
+    else -> null
+}
+
+/** The pill beside the amount: what the latest days added ("+₦300,000 past week"). */
+internal fun heroDelta(d: StudioDashboard, range: StudioRange): String {
+    val currency = d.brand.currency
+    fun signed(minor: Long) = (if (minor < 0) "−" else "+") + studioMoney(kotlin.math.abs(minor), currency)
+    return when (range) {
+        StudioRange.Month -> if (d.sales.week.orders == 0) "No orders past week" else "${signed(d.sales.week.netMinor)} past week"
+        StudioRange.Week -> if (d.sales.today.orders == 0) "No orders today" else "${signed(d.sales.today.netMinor)} today"
+        StudioRange.Today -> d.sales.today.orders.let { if (it == 0) "No orders yet" else "$it ${if (it == 1) "order" else "orders"}" }
     }
 }
 
-/** The big balance-style card: net sales for today / week / month and the animated line chart. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SalesCard(model: StudioHomeModel, data: StudioDashboard) {
+private fun HomeHero(
+    model: StudioHomeModel,
+    brand: ShopperBrand?,
+    brandName: String,
+    card: HomeCard?,
+    onAvatar: () -> Unit,
+    onInbox: () -> Unit,
+    onCard: (HomeCard) -> Unit,
+    onDismissCard: (HomeCard) -> Unit,
+) {
+    val d = model.week
+    val on = Color.yard.onStudioAccent
     val haptics = rememberYardHaptics()
-    val window = data.window(model.range)
-    val currency = data.brand.currency
-    val chart = model.current ?: data
-    val white = Color.yard.onPhoto
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(YardShapes.card)
-            .background(Color.yard.onAcid)
-            .background(Brush.radialGradient(listOf(Color.yard.violetFill.copy(alpha = 0.55f), Color.Transparent), center = Offset(900f, -60f), radius = 760f))
-            .border(1.dp, Color.yard.line, YardShapes.card)
-            .padding(Spacing.l),
-        verticalArrangement = Arrangement.spacedBy(Spacing.m),
+            .clip(RoundedCornerShape(bottomStart = HomeRadius.hero, bottomEnd = HomeRadius.hero))
+            .background(Color.yard.studioAccent)
+            .statusBarsPadding()
+            // The gutter, so the hero's words and inset card line up with the tiles below.
+            .padding(horizontal = Spacing.gutter)
+            .padding(top = Spacing.m, bottom = Spacing.l),
     ) {
+        // Avatar, "Hello 👋 / Shop name", inbox.
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sales", style = YardFonts.callout, color = white.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
-            // Today · Week · Month
-            Row(Modifier.background(white.copy(alpha = 0.1f), YardShapes.pill).padding(3.dp)) {
-                StudioRange.entries.forEach { r ->
-                    val on = r == model.range
-                    Text(
-                        r.title,
-                        style = YardFonts.captionEmphasis,
-                        color = if (on) Color.yard.onAcid else white.copy(alpha = 0.8f),
-                        modifier = Modifier
-                            .clip(YardShapes.pill)
-                            .background(if (on) Color.yard.acid else Color.Transparent, YardShapes.pill)
-                            .pressableClick(onClickLabel = r.title) {
-                                if (!on) haptics.tick()
-                                model.pick(r)
-                            }
-                            .semantics { contentDescription = "${r.title}${if (on) ", selected" else ""}" }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+            HomeAvatar(brand, brandName, Modifier.pressableClick(pressedScale = 0.94f, onClickLabel = if ((brand != null) && LocalStudioStore.current.studioBrands.size > 1) "Switch brand" else "Me", onClick = onAvatar))
+            Column(Modifier.weight(1f).padding(start = Spacing.m)) {
+                Text("Hello 👋", style = YardFonts.caption.copy(fontSize = 13.sp), color = on.copy(alpha = 0.8f), maxLines = 1)
+                Text(brandName, style = YardFonts.headline.copy(fontSize = 17.sp), color = on, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            val unread = d?.unreadMessages ?: 0
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .background(on.copy(alpha = 0.18f), CircleShape)
+                    .semantics { contentDescription = if (unread > 0) "Inbox, $unread unread" else "Inbox" }
+                    .pressableClick(pressedScale = 0.92f, onClickLabel = "Inbox") { haptics.click(); onInbox() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = on, modifier = Modifier.size(20.dp))
+                if (unread > 0) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 11.dp).size(8.dp).background(on, CircleShape))
                 }
             }
         }
-        AnimatedContent(
-            targetState = studioMoney(window.netMinor, currency),
-            transitionSpec = { fadeIn(Motion.crossfade()) togetherWith fadeOut(Motion.crossfade()) },
-            label = "sales-total",
-        ) { total ->
-            Text(total, style = YardFonts.number(40.sp), color = white, maxLines = 1)
+
+        Spacer(Modifier.height(Spacing.xl))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Your sales", style = YardFonts.caption.copy(fontSize = 13.sp), color = on.copy(alpha = 0.8f), modifier = Modifier.weight(1f))
+            RangePicker(model)
         }
-        Text(
-            buildString {
-                append("${window.orders} ${if (window.orders == 1) "order" else "orders"}")
-                if (window.refundedMinor > 0) append(" · ${studioMoney(window.refundedMinor, currency)} refunded")
-            },
-            style = YardFonts.caption.monospacedDigits(),
-            color = white.copy(alpha = 0.7f),
-        )
-        StudioLineChart(
-            values = chart.series.points.map { it.netMinor.toFloat() },
-            modifier = Modifier.fillMaxWidth().height(110.dp),
-            description = "Net sales over the last ${chart.series.days} days",
-        )
-        val first = chart.series.points.firstOrNull()?.date?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        if (first != null) {
-            Row {
-                Text(first.format(DateTimeFormatter.ofPattern("d MMM")), style = YardFonts.micro, color = white.copy(alpha = 0.5f), modifier = Modifier.weight(1f))
-                Text("Today", style = YardFonts.micro, color = white.copy(alpha = 0.5f))
+        Spacer(Modifier.height(Spacing.xs))
+        if (d == null) {
+            // Loading: the amount and pill as soft blocks (the hero itself never flashes).
+            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.width(170.dp).height(38.dp).background(on.copy(alpha = 0.18f), RoundedCornerShape(10.dp)).shimmering())
+                Box(Modifier.width(96.dp).height(26.dp).background(on.copy(alpha = 0.14f), YardShapes.pill))
             }
+        } else {
+            val window = d.window(model.range)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedContent(
+                    targetState = studioMoney(window.netMinor, d.brand.currency),
+                    transitionSpec = { fadeIn(Motion.crossfade()) togetherWith fadeOut(Motion.crossfade()) },
+                    label = "hero-amount",
+                ) { amount ->
+                    Text(
+                        amount,
+                        style = YardFonts.number(40.sp).copy(letterSpacing = (-0.5).sp, lineHeight = 46.sp),
+                        color = on,
+                        maxLines = 1,
+                        modifier = Modifier.semantics { contentDescription = "Net sales, ${model.range.title.lowercase()}: $amount" },
+                    )
+                }
+                Text(
+                    heroDelta(d, model.range),
+                    style = YardFonts.captionEmphasis.monospacedDigits(),
+                    color = on,
+                    maxLines = 1,
+                    modifier = Modifier.background(on.copy(alpha = 0.2f), YardShapes.pill).padding(horizontal = 10.dp, vertical = 5.dp),
+                )
+            }
+        }
+
+        AnimatedVisibility(card != null, exit = fadeOut() + shrinkVertically()) {
+            val c = card ?: return@AnimatedVisibility
+            HeroInsetCard(c, onOpen = { onCard(c) }, onClose = { onDismissCard(c) })
         }
     }
 }
 
-/** An animated line chart (draws in from the left; instant under reduced motion). */
+/** Initials on a translucent disc, or the shop's logo. */
 @Composable
-fun StudioLineChart(values: List<Float>, modifier: Modifier = Modifier, description: String) {
-    val reduce = rememberReducedMotion()
-    val acid = Color.yard.acid
-    val progress = remember { Animatable(if (reduce) 1f else 0f) }
-    LaunchedEffect(values) {
-        if (reduce) {
-            progress.snapTo(1f)
-        } else {
-            progress.snapTo(0f)
-            progress.animateTo(1f, tween(900, easing = Motion.EmphasizedDecelerate))
-        }
-    }
-    Canvas(modifier.semantics { contentDescription = description }) {
-        if (values.isEmpty()) return@Canvas
-        val max = values.maxOrNull()?.takeIf { it > 0f } ?: 1f
-        val stepX = if (values.size > 1) size.width / (values.size - 1) else size.width
-        val pad = 8.dp.toPx()
-        fun y(v: Float) = size.height - pad - (v / max) * (size.height - pad * 2)
-        val line = Path()
-        values.forEachIndexed { i, v ->
-            val x = i * stepX
-            if (i == 0) {
-                line.moveTo(x, y(v))
-            } else {
-                // Smooth curve between points.
-                val px = (i - 1) * stepX
-                val pv = y(values[i - 1])
-                val mid = (px + x) / 2f
-                line.cubicTo(mid, pv, mid, y(v), x, y(v))
-            }
-        }
-        val fill = Path().apply {
-            addPath(line)
-            lineTo((values.size - 1) * stepX, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        val shown = size.width * progress.value
-        clipRect(right = shown) {
-            drawPath(fill, Brush.verticalGradient(listOf(acid.copy(alpha = 0.28f), acid.copy(alpha = 0f))))
-        }
-        val measure = PathMeasure()
-        measure.setPath(line, false)
-        val partial = Path()
-        measure.getSegment(0f, measure.length * progress.value, partial, true)
-        drawPath(partial, acid, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
-        if (progress.value >= 0.999f) {
-            val last = Offset((values.size - 1) * stepX, y(values.last()))
-            drawCircle(acid.copy(alpha = 0.25f), radius = 9.dp.toPx(), center = last)
-            drawCircle(acid, radius = 4.dp.toPx(), center = last)
+private fun HomeAvatar(brand: ShopperBrand?, brandName: String, modifier: Modifier = Modifier) {
+    val on = Color.yard.onStudioAccent
+    Box(
+        modifier.size(44.dp).clip(CircleShape).background(on.copy(alpha = 0.22f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            (brand?.mark ?: brandName.take(1).uppercase()).take(2),
+            style = YardFonts.captionEmphasis.copy(fontSize = 15.sp),
+            color = on,
+        )
+        if (!brand?.logoSrc.isNullOrBlank()) {
+            RemoteImage(Config.url(brand?.logoSrc), Modifier.fillMaxSize(), maxPixelSize = 200, placeholder = {})
         }
     }
 }
+
+/** Today · Week · Month, translucent on the violet; the picked one is a white pill. */
+@Composable
+private fun RangePicker(model: StudioHomeModel) {
+    val haptics = rememberYardHaptics()
+    val on = Color.yard.onStudioAccent
+    Row(Modifier.background(on.copy(alpha = 0.16f), YardShapes.pill).padding(3.dp)) {
+        StudioRange.entries.forEach { r ->
+            val picked = r == model.range
+            val ink by animateColorAsState(if (picked) Color.yard.studioAccentDeep else on.copy(alpha = 0.85f), Motion.snappy(), label = "range-ink")
+            Text(
+                r.title,
+                style = YardFonts.captionEmphasis,
+                color = ink,
+                modifier = Modifier
+                    .clip(YardShapes.pill)
+                    .background(if (picked) on else Color.Transparent, YardShapes.pill)
+                    .pressableClick(pressedScale = 0.95f, onClickLabel = r.title) {
+                        if (!picked) haptics.tick()
+                        model.pick(r)
+                    }
+                    .semantics { contentDescription = "${r.title}${if (picked) ", selected" else ""}" }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            )
+        }
+    }
+}
+
+/** The darker inset card: the words, a close X, and the white pill CTA (● ›  Label  »). */
+@Composable
+private fun HeroInsetCard(c: HomeCard, onOpen: () -> Unit, onClose: () -> Unit) {
+    val on = Color.yard.onStudioAccent
+    val haptics = rememberYardHaptics()
+    Column(
+        Modifier
+            .padding(top = 20.dp)
+            .fillMaxWidth()
+            .background(Color.yard.studioAccentDeep, RoundedCornerShape(HomeRadius.tile))
+            .padding(Spacing.l),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(end = Spacing.m), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(c.lead, style = YardFonts.headline.copy(fontSize = 15.sp, lineHeight = 20.sp), color = on)
+                Text(c.text, style = YardFonts.callout.copy(fontSize = 13.sp, lineHeight = 18.sp), color = on.copy(alpha = 0.85f))
+            }
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .background(on.copy(alpha = 0.9f), CircleShape)
+                    .pressableClick(pressedScale = 0.9f, onClickLabel = "Close") { onClose() }
+                    .semantics { contentDescription = "Close" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = null, tint = Color.yard.studioAccentDeep, modifier = Modifier.size(15.dp))
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .clip(YardShapes.pill)
+                .background(on, YardShapes.pill)
+                .pressableClick(onClickLabel = c.cta) { haptics.click(); onOpen() }
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(40.dp).background(Color.yard.onPhotoInk, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = on, modifier = Modifier.size(22.dp))
+            }
+            Text(
+                c.cta,
+                style = YardFonts.bodyEmphasis.copy(fontSize = 15.sp),
+                color = Color.yard.onPhotoInk,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = Spacing.s),
+            )
+            Icon(
+                Icons.Filled.KeyboardDoubleArrowRight,
+                contentDescription = null,
+                tint = Color.yard.onPhotoInk.copy(alpha = 0.35f),
+                modifier = Modifier.padding(end = 10.dp).size(22.dp),
+            )
+        }
+    }
+}
+
+// endregion
+
+// region Tiles
 
 @Composable
 private fun QuickActions(onAdd: () -> Unit, onOrders: () -> Unit, onPayouts: () -> Unit, onShare: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        QuickAction("Add product", Icons.Outlined.AddCircleOutline, primary = true, onClick = onAdd)
-        QuickAction("Orders", Icons.AutoMirrored.Outlined.ReceiptLong, onClick = onOrders)
-        QuickAction("Payouts", Icons.Outlined.AccountBalanceWallet, onClick = onPayouts)
-        QuickAction("Share shop", Icons.Outlined.IosShare, onClick = onShare)
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        val m = Modifier.weight(1f).fillMaxHeight()
+        QuickAction("Add product", Icons.Filled.Add, m, accent = true, onClick = onAdd)
+        QuickAction("Orders", Icons.AutoMirrored.Outlined.ReceiptLong, m, onClick = onOrders)
+        QuickAction("Payouts", Icons.Outlined.AccountBalanceWallet, m, onClick = onPayouts)
+        QuickAction("Share shop", Icons.Outlined.IosShare, m, onClick = onShare)
     }
 }
 
+/** A square-ish dark tile: icon disc over the label (the inspo's Deposit / Withdraw). */
 @Composable
-private fun QuickAction(title: String, icon: ImageVector, primary: Boolean = false, onClick: () -> Unit) {
+private fun QuickAction(title: String, icon: ImageVector, modifier: Modifier, accent: Boolean = false, onClick: () -> Unit) {
     val haptics = rememberYardHaptics()
     Column(
-        Modifier.width(76.dp).pressableClick(pressedScale = 0.92f, onClickLabel = title) { haptics.click(); onClick() },
+        modifier
+            .heightIn(min = 88.dp)
+            .clip(RoundedCornerShape(HomeRadius.small))
+            .background(Color.yard.studioTile)
+            .pressableClick(pressedScale = 0.95f, onClickLabel = title) { haptics.click(); onClick() }
+            .padding(horizontal = Spacing.xs, vertical = Spacing.m),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.s),
+        verticalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.CenterVertically),
     ) {
         Box(
-            Modifier
-                .size(60.dp)
-                .background(if (primary) Color.yard.acid else Color.yard.surface, CircleShape)
-                .border(1.dp, Color.yard.line, CircleShape),
+            Modifier.size(38.dp).background(if (accent) Color.yard.studioAccent else Color.yard.studioTile2, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = if (primary) Color.yard.onAcid else Color.yard.ink, modifier = Modifier.size(24.dp))
+            Icon(icon, contentDescription = null, tint = if (accent) Color.yard.onStudioAccent else Color.yard.ink, modifier = Modifier.size(20.dp))
         }
-        Text(title, style = YardFonts.caption, color = Color.yard.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Two lines at large font scales ("Add / product") rather than an ellipsis.
+        Text(title, style = YardFonts.captionEmphasis.copy(fontWeight = FontWeight.Medium), color = Color.yard.ink, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+    }
+}
+
+private fun rangeCaption(r: StudioRange) = when (r) {
+    StudioRange.Today -> "Today"
+    StudioRange.Week -> "Past 7 days"
+    StudioRange.Month -> "Past 30 days"
+}
+
+/** The white contrast tile (black in light): orders in the picked window. */
+@Composable
+private fun OrdersTile(d: StudioDashboard, range: StudioRange, modifier: Modifier, onClick: () -> Unit) {
+    val haptics = rememberYardHaptics()
+    val ink = Color.yard.onStudioContrast
+    val w = d.window(range)
+    Column(
+        modifier
+            .heightIn(min = 156.dp)
+            .clip(RoundedCornerShape(HomeRadius.tile))
+            .background(Color.yard.studioContrast)
+            .pressableClick(onClickLabel = "Orders") { haptics.click(); onClick() }
+            .padding(Spacing.l),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            Icon(Icons.AutoMirrored.Outlined.ReceiptLong, contentDescription = null, tint = ink, modifier = Modifier.size(20.dp))
+            Text("Orders", style = YardFonts.headline.copy(fontSize = 15.sp), color = ink, maxLines = 1)
+        }
+        Spacer(Modifier.weight(1f).heightIn(min = Spacing.l))
+        Text(Formatters.count(w.orders), style = YardFonts.number(32.sp).copy(letterSpacing = (-0.5).sp), color = ink, maxLines = 1)
+        Text(rangeCaption(range), style = YardFonts.caption, color = ink.copy(alpha = 0.6f), maxLines = 1)
+        if (w.refundedMinor > 0) {
+            Text(
+                "${studioMoney(w.refundedMinor, d.brand.currency)} refunded",
+                style = YardFonts.caption.monospacedDigits(),
+                color = ink.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** "Weekly activity": seven thin rounded bars, today in violet. */
+@Composable
+private fun WeeklyActivityTile(d: StudioDashboard, modifier: Modifier) {
+    val points = d.series.points.takeLast(7)
+    val values = points.map { it.netMinor.coerceAtLeast(0L).toFloat() }
+    Column(
+        modifier
+            .heightIn(min = 156.dp)
+            .background(Color.yard.studioTile, RoundedCornerShape(HomeRadius.tile))
+            .padding(Spacing.l),
+    ) {
+        Text("Weekly activity", style = YardFonts.headline.copy(fontSize = 15.sp), color = Color.yard.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
+        Text(
+            d.sales.week.orders.let { if (it == 0) "No sales yet this week" else "$it ${if (it == 1) "order" else "orders"} this week" },
+            style = YardFonts.caption.monospacedDigits(),
+            color = Color.yard.ink2,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.weight(1f).heightIn(min = Spacing.m))
+        WeekBars(
+            values,
+            Modifier.fillMaxWidth().height(64.dp),
+            description = "Net sales each day of the last 7 days, today last",
+        )
     }
 }
 
 @Composable
-private fun TodoList(d: StudioDashboard, suggestions: List<StudioProposal>, onSuggestions: () -> Unit, onShip: () -> Unit, onLowStock: () -> Unit, onMessages: () -> Unit, onWebsite: () -> Unit) {
-    data class Todo(val title: String, val detail: String, val count: Int, val icon: ImageVector, val action: () -> Unit, val lines: Int = 1)
+private fun WeekBars(values: List<Float>, modifier: Modifier, description: String) {
+    val reduce = rememberReducedMotion()
+    val accent = Color.yard.studioAccent
+    val bar = Color.yard.ink
+    val track = Color.yard.ink.copy(alpha = 0.07f)
+    val grow = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(values) {
+        if (reduce) grow.snapTo(1f) else { grow.snapTo(0f); grow.animateTo(1f, tween(700, easing = Motion.EmphasizedDecelerate)) }
+    }
+    Canvas(modifier.semantics { contentDescription = description }) {
+        if (values.isEmpty()) return@Canvas
+        val n = 7
+        val w = 8.dp.toPx()
+        val gap = (size.width - w * n) / (n - 1)
+        val max = values.maxOrNull()?.takeIf { it > 0f } ?: 1f
+        val minH = w
+        val pad = n - values.size
+        val corner = CornerRadius(w / 2, w / 2)
+        for (i in 0 until n) {
+            val v = values.getOrNull(i - pad)
+            val isToday = i == n - 1
+            val x = i * (w + gap)
+            // A faint full-height track for every day, so a quiet week still reads as a chart.
+            drawRoundRect(color = if (isToday) accent.copy(alpha = 0.22f) else track, topLeft = Offset(x, 0f), size = Size(w, size.height), cornerRadius = corner)
+            if (v == null || v <= 0f) continue
+            val h = minH + (size.height - minH) * (v / max) * grow.value
+            drawRoundRect(color = if (isToday) accent else bar, topLeft = Offset(x, size.height - h), size = Size(w, h), cornerRadius = corner)
+        }
+    }
+}
+
+// endregion
+
+// region Rows
+
+@Composable
+private fun TodoRows(d: StudioDashboard, suggestions: List<StudioProposal>, onSuggestions: () -> Unit, onShip: () -> Unit, onLowStock: () -> Unit, onMessages: () -> Unit, onWebsite: () -> Unit) {
+    data class Todo(val title: String, val detail: String, val count: Int, val icon: ImageVector, val action: () -> Unit)
     val items = buildList {
         if (suggestions.isNotEmpty()) {
             val (title, detail) = StudioBatch.preparedLine(suggestions)
-            add(Todo(title, "$detail. Nothing goes live until you accept.", suggestions.size, Icons.Outlined.AutoAwesome, onSuggestions, lines = 2))
+            add(Todo(title, detail, suggestions.size, Icons.Outlined.AutoAwesome, onSuggestions))
         }
         if (d.toShip.total > 0) add(Todo("Orders to ship", "${d.toShip.paid} new · ${d.toShip.processing} preparing", d.toShip.total, Icons.Outlined.LocalShipping, onShip))
         if (d.lowStock.variants > 0) add(Todo("Low stock", "${d.lowStock.products} ${if (d.lowStock.products == 1) "product" else "products"} at ${d.lowStock.threshold} or fewer", d.lowStock.variants, Icons.Outlined.WarningAmber, onLowStock))
         d.unreadMessages?.takeIf { it > 0 }?.let { add(Todo("Unread messages", "Customers waiting for a reply", it, Icons.Outlined.ChatBubbleOutline, onMessages)) }
         if (d.websitePieces > 0) add(Todo("New from your website", "Ready to add to Yard", d.websitePieces, Icons.Outlined.Language, onWebsite))
     }
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        StudioSectionTitle("To do")
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         if (items.isEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(Spacing.l),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.m),
-            ) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.yard.success)
-                Text("All caught up. Nothing waiting on you.", style = YardFonts.callout, color = Color.yard.ink2)
-            }
+            HomeRow("All caught up", "Nothing is waiting on you right now", Icons.Outlined.CheckCircle, onClick = null)
         } else {
-            Column(Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(vertical = Spacing.xs)) {
-                items.forEach { t -> StudioRow(t.title, t.detail, t.icon, count = t.count, titleLines = t.lines, onClick = t.action) }
+            items.forEach { t -> HomeRow(t.title, t.detail, t.icon, value = Formatters.count(t.count), onClick = t.action) }
+        }
+    }
+}
+
+/** A full-width tile row: violet-tinted icon disc, title + detail, a value, a chevron. */
+@Composable
+private fun HomeRow(
+    title: String,
+    detail: String?,
+    icon: ImageVector? = null,
+    value: String? = null,
+    valueCaption: String? = null,
+    leading: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)?,
+) {
+    val haptics = rememberYardHaptics()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clip(RoundedCornerShape(HomeRadius.tile))
+            .background(Color.yard.studioTile)
+            .then(if (onClick != null) Modifier.pressableClick(onClickLabel = title) { haptics.click(); onClick() } else Modifier)
+            .padding(horizontal = Spacing.l, vertical = Spacing.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+    ) {
+        if (leading != null) {
+            leading()
+        } else if (icon != null) {
+            Box(Modifier.size(40.dp).background(Color.yard.studioAccentTint, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = Color.yard.studioAccentInk, modifier = Modifier.size(20.dp))
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = YardFonts.headline.copy(fontSize = 15.sp, lineHeight = 20.sp), color = Color.yard.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (!detail.isNullOrBlank()) Text(detail, style = YardFonts.caption, color = Color.yard.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        if (value != null) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text(value, style = YardFonts.number(17.sp), color = Color.yard.ink, maxLines = 1)
+                if (valueCaption != null) Text(valueCaption, style = YardFonts.caption, color = Color.yard.ink2, maxLines = 1)
+            }
+        }
+        if (onClick != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.yard.ink3, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** "Your shop": store views and the best sellers, as the same rows. */
+@Composable
+private fun YourShop(d: StudioDashboard, onOpen: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        Text(
+            "Your shop",
+            style = YardFonts.headline,
+            color = Color.yard.ink,
+            modifier = Modifier.padding(top = Spacing.m, bottom = Spacing.xs, start = Spacing.xs).semantics { heading() },
+        )
+        HomeRow(
+            "Shop views",
+            "${Formatters.count(d.storeViews.today)} today · ${Formatters.count(d.storeViews.month)} in 30 days",
+            Icons.Outlined.Visibility,
+            value = Formatters.count(d.storeViews.week),
+            valueCaption = "7 days",
+            onClick = null,
+        )
+        if (d.topProducts.isEmpty()) {
+            HomeRow("Best sellers", "Your top products of the last ${d.series.days} days show here after your first sales", Icons.Outlined.Inventory2, onClick = null)
+        } else {
+            d.topProducts.forEach { p ->
+                HomeRow(
+                    p.title,
+                    "${p.units} sold",
+                    value = studioMoney(p.revenueMinor, p.currency),
+                    leading = {
+                        RemoteImage(
+                            Config.url(p.image?.src),
+                            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color.yard.studioTile2),
+                            maxPixelSize = 160,
+                            contentDescription = p.image?.alt,
+                        )
+                    },
+                    onClick = { onOpen(p.productId) },
+                )
             }
         }
     }
 }
 
-/** A list row: icon disc, title + detail, optional count badge, chevron. */
+// endregion
+
+/** A list row: icon disc, title + detail, optional count badge, chevron (Studio Me and lists). */
 @Composable
 fun StudioRow(
     title: String,
@@ -516,64 +823,38 @@ fun StudioRow(
     }
 }
 
+/** Loading: the tiles and rows as soft blocks in the same places. */
 @Composable
-private fun TopProducts(d: StudioDashboard, onOpen: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        StudioSectionTitle("Top products")
-        if (d.topProducts.isEmpty()) {
-            Text("Your best sellers of the last ${d.series.days} days show here once orders come in.", style = YardFonts.callout, color = Color.yard.ink3)
-            return@Column
-        }
-        Column(Modifier.fillMaxWidth().background(Color.yard.surface, YardShapes.card).padding(vertical = Spacing.xs)) {
-            d.topProducts.forEachIndexed { i, p ->
-                val haptics = rememberYardHaptics()
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .pressableClick(onClickLabel = p.title) { haptics.click(); onOpen(p.productId) }
-                        .padding(horizontal = Spacing.l, vertical = Spacing.s),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.m),
-                ) {
-                    Text("${i + 1}", style = YardFonts.display(20.sp), color = Color.yard.ink3, modifier = Modifier.width(18.dp))
-                    RemoteImage(Config.url(p.image?.src), Modifier.size(48.dp).clip(YardShapes.small), maxPixelSize = 200, contentDescription = p.image?.alt)
-                    Column(Modifier.weight(1f)) {
-                        Text(p.title, style = YardFonts.headline, color = Color.yard.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${p.units} sold", style = YardFonts.caption, color = Color.yard.ink3)
-                    }
-                    Text(studioMoney(p.revenueMinor, p.currency), style = YardFonts.bodyEmphasis.monospacedDigits(), color = Color.yard.ink)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StoreViews(d: StudioDashboard) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        StudioSectionTitle("Store views")
+private fun HomeSkeleton() {
+    @Composable
+    fun Line(width: Dp, height: Dp = 12.dp, shape: androidx.compose.ui.graphics.Shape = YardShapes.pill) =
+        Box(Modifier.width(width).height(height).background(Color.yard.studioTile2, shape))
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            listOf("Today" to d.storeViews.today, "7 days" to d.storeViews.week, "30 days" to d.storeViews.month).forEach { (label, n) ->
+            repeat(2) {
                 Column(
-                    Modifier.weight(1f).background(Color.yard.surface, YardShapes.card).padding(Spacing.l),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    Modifier.weight(1f).height(156.dp).clip(RoundedCornerShape(HomeRadius.tile)).background(Color.yard.studioTile).shimmering().padding(Spacing.l),
                 ) {
-                    Text(Formatters.count(n), style = YardFonts.number(24.sp), color = Color.yard.ink)
-                    Text(label, style = YardFonts.caption, color = Color.yard.ink3)
+                    Line(84.dp, 14.dp)
+                    Spacer(Modifier.weight(1f))
+                    Line(64.dp, 28.dp, RoundedCornerShape(8.dp))
+                    Spacer(Modifier.height(Spacing.s))
+                    Line(72.dp, 10.dp)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StudioHomeSkeleton() {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xl)) {
-        Skeleton(Modifier.fillMaxWidth().height(260.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            repeat(4) { Skeleton(Modifier.size(60.dp), shape = space.yardstore.app.designsystem.components.SkeletonShape.Circle) }
+        repeat(3) {
+            Row(
+                Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(HomeRadius.tile)).background(Color.yard.studioTile).shimmering().padding(horizontal = Spacing.l),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+            ) {
+                Box(Modifier.size(40.dp).background(Color.yard.studioTile2, CircleShape))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Line(140.dp, 13.dp)
+                    Line(96.dp, 10.dp)
+                }
+            }
         }
-        Skeleton(Modifier.fillMaxWidth().height(150.dp))
-        Spacer(Modifier.height(Spacing.s))
     }
 }

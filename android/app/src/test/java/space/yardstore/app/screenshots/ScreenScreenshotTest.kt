@@ -93,6 +93,8 @@ import space.yardstore.app.features.sell.SellApplicationModel
 import space.yardstore.app.features.sell.SellApplicationScreen
 import space.yardstore.app.features.sell.SellStep
 import space.yardstore.app.features.studio.LocalStudioNav
+import space.yardstore.app.features.studio.LocalStudioHomePreview
+import space.yardstore.app.features.studio.StudioHomeModel
 import space.yardstore.app.features.studio.QuickAddStep
 import space.yardstore.app.features.studio.StudioLink
 import space.yardstore.app.features.studio.StudioNav
@@ -155,6 +157,10 @@ object ScreenshotHarness {
     fun capture(compose: ComposeContentTestRule, screen: String, size: String, dark: Boolean) {
         val context: Context = RuntimeEnvironment.getApplication()
         FakeYardBackend.sessionBrands = YardScreens.brandsFor(screen)
+        FakeYardBackend.dashboardMode = when (screen) {
+            "studio-home-new" -> FakeYardBackend.StudioDashboardMode.NewShop
+            else -> FakeYardBackend.StudioDashboardMode.Normal
+        }
         val server = FakeYardBackend.start(context)
         FakeImages.install(context)
         try {
@@ -170,6 +176,7 @@ object ScreenshotHarness {
             if (screen in YardScreens.windowed) captureScreenRoboImage(file) else compose.onRoot().captureRoboImage(file)
         } finally {
             server.shutdown()
+            FakeYardBackend.dashboardMode = FakeYardBackend.StudioDashboardMode.Normal
         }
     }
 }
@@ -197,14 +204,14 @@ object YardScreens {
         "role-selection", "role-interests",
         "sell-name", "sell-presence", "sell-category", "sell-location", "sell-review", "sell-success",
         "you-pending", "you-studio",
-        "studio-home", "studio-orders", "studio-order-detail",
+        "studio-home", "studio-home-loading", "studio-home-new", "studio-orders", "studio-order-detail",
         "studio-add-photos", "studio-add-name", "studio-add-price", "studio-add-options", "studio-add-review", "studio-add-success",
         "studio-products", "studio-product-detail", "studio-me", "studio-payouts", "studio-inbox", "studio-thread",
     )
 
     /** `shopper.brands` the fake backend serves for [screen]. */
     fun brandsFor(screen: String) = when {
-        screen == "you-pending" -> listOf(StudioFixtures.pendingBrand)
+        screen == "you-pending" || screen == "studio-home-new" -> listOf(StudioFixtures.pendingBrand)
         screen.startsWith("studio-") || screen.startsWith("suggestions-") || screen == "you-studio" -> listOf(StudioFixtures.liveBrand)
         else -> emptyList()
     }
@@ -332,7 +339,11 @@ object YardScreens {
             "sell-review" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Review, StudioFixtures.categories) }, {}, {})
             "sell-success" -> SellApplicationScreen(remember { SellApplicationModel.previewDone(StudioFixtures.categories) }, {}, {})
             "you-pending", "you-studio" -> StudioHarness(enter = false) { YouView() }
-            "studio-home" -> StudioHarness(enter = true) { StudioRootView() }
+            "studio-home", "studio-home-new" -> StudioHarness(enter = true) { StudioRootView() }
+            // Home before its dashboard arrives: the hero stays, tiles and rows as skeletons.
+            "studio-home-loading" -> StudioHarness(enter = true) {
+                CompositionLocalProvider(LocalStudioHomePreview provides remember { StudioHomeModel(null) }) { StudioRootView() }
+            }
             "studio-orders" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Orders) } }) }
             "studio-order-detail" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Order("mo_3")) } }) }
             "studio-products" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Products) } }) }

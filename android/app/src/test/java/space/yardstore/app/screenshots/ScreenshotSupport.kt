@@ -119,6 +119,10 @@ object FakeYardBackend {
     /** The signed-in shopper's brand memberships (`shopper.brands`), per screen. */
     @Volatile var sessionBrands: List<ShopperBrand> = emptyList()
 
+    /** Studio Home's dashboard for this screen: normal, or a brand-new shop. */
+    enum class StudioDashboardMode { Normal, NewShop }
+    @Volatile var dashboardMode: StudioDashboardMode = StudioDashboardMode.Normal
+
     fun respond(request: RecordedRequest): MockResponse {
         val url = request.requestUrl ?: return notFound
         val path = url.encodedPath
@@ -164,7 +168,10 @@ object FakeYardBackend {
     /** Studio (docs/APP.md › Studio in the app), served from [StudioFixtures]. */
     private fun studio(path: String, url: okhttp3.HttpUrl): MockResponse = when {
         path == "/api/studio/session/switch" -> json(StudioSwitchResult(profile = StudioFixtures.profile))
-        path == "/api/studio/dashboard" -> json(StudioFixtures.dashboard(if (url.queryParameter("days") == "30") 30 else 7))
+        path == "/api/studio/dashboard" -> when (dashboardMode) {
+            StudioDashboardMode.Normal -> json(StudioFixtures.dashboard(if (url.queryParameter("days") == "30") 30 else 7))
+            StudioDashboardMode.NewShop -> json(StudioFixtures.newShopDashboard)
+        }
         path == "/api/studio/orders" -> {
             val f = url.queryParameter("fulfilment")
             json(StudioOrdersPage(StudioFixtures.orders.filter { f == null || it.states.fulfilment == f }))
@@ -178,7 +185,7 @@ object FakeYardBackend {
         path.startsWith("/api/studio/catalog/products/") -> json(StudioProductResponse(StudioFixtures.products.first()))
         path == "/api/studio/catalog/website-pieces" -> json(StudioFixtures.pieces)
         path == "/api/studio/proposals" -> {
-            val list = StudioFixtures.proposals.filter { url.queryParameter("status") != "pending" || it.isPending }
+            val list = if (dashboardMode == StudioDashboardMode.NewShop) emptyList() else StudioFixtures.proposals.filter { url.queryParameter("status") != "pending" || it.isPending }
             json(StudioProposalsPage(list, list.size))
         }
         path == "/api/studio/payouts" -> json(StudioFixtures.payouts)

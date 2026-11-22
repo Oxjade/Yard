@@ -105,6 +105,23 @@ object StudioFixtures {
         )
     }
 
+    /** A shop that just opened: in review, no orders, nothing waiting. */
+    val newShopDashboard: StudioDashboard
+        get() {
+            val today = LocalDate.of(2026, 11, 21)
+            return StudioDashboard(
+                brand = StudioDashboardBrand("b_new", "ember-goods", "Ember Goods", "NGN", "Africa/Lagos"),
+                sales = StudioSales(today = StudioSalesWindow(), week = StudioSalesWindow(), month = StudioSalesWindow()),
+                series = StudioSeries(days = 7, points = (0 until 7).map { i -> StudioSeriesPoint(date = today.minusDays((6 - i).toLong()).toString()) }),
+                toShip = StudioToShip(),
+                lowStock = StudioLowStock(threshold = 3),
+                unreadMessages = 0,
+                websitePieces = 0,
+                topProducts = emptyList(),
+                storeViews = StudioStoreViews(today = 0, week = 6, month = 6),
+            )
+        }
+
     private fun summary(id: String, ref: String, name: String, merchant: String, fulfilment: String, item: String, qty: Int, total: Long, at: String, city: String) =
         StudioOrderSummary(
             id = id, reference = ref, customerName = name,

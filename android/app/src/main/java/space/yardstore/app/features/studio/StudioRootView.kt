@@ -14,10 +14,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,7 +87,7 @@ import space.yardstore.app.designsystem.components.YardSheetHeader
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.adaptiveContentWidth
 
-/** Studio's five tabs. Add is the big centre button: it opens Quick add over everything. */
+/** Studio's tabs. Add is not a bar item: it opens Quick add over everything (Home's tile, Products' +). */
 enum class StudioTab(val title: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
     Orders("Orders", Icons.AutoMirrored.Outlined.ReceiptLong, Icons.AutoMirrored.Filled.ReceiptLong),
@@ -311,55 +317,46 @@ private fun StudioRouteView(route: StudioRoute) {
     }
 }
 
-/** The floating glass pill: four tabs and the big acid Add in the middle. */
+/**
+ * The Studio tab bar (wallet inspo): a near-black floating bar with four plain icons; the selected
+ * tab sits in a violet pill that slides between them. Add is not in the bar: Home's "Add product"
+ * tile and the Products header open Quick add (`nav.select(StudioTab.Add)`), as before.
+ */
 @Composable
-private fun StudioPill(nav: StudioNav, backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
+private fun StudioPill(nav: StudioNav, @Suppress("UNUSED_PARAMETER") backdrop: GlassBackdrop, modifier: Modifier = Modifier) {
     val haptics = rememberYardHaptics()
     val reduce = rememberReducedMotion()
-    val tabs = StudioTab.entries
-    val buttonWidth = 58.dp
-    val gap = 4.dp
-    val addSize = 62.dp
-    // The acid indicator sits under the selected tab (never under Add).
-    fun xFor(t: StudioTab): androidx.compose.ui.unit.Dp {
-        var x = 0.dp
-        for (other in tabs) {
-            if (other == t) return x
-            x += (if (other == StudioTab.Add) addSize else buttonWidth) + gap
-        }
-        return x
-    }
-    val indicatorX by animateDpAsState(xFor(nav.tab), Motion.or(reduce) { Motion.spring() }, label = "studio-indicator")
-    Box(modifier.yardGlass(YardShapes.pill, backdrop = backdrop).padding(5.dp)) {
+    val tabs = StudioTab.entries.filter { it != StudioTab.Add }
+    val barHeight = 64.dp
+    val pillHeight = 44.dp
+    BoxWithConstraints(
+        modifier
+            .padding(horizontal = Spacing.gutter)
+            .widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .height(barHeight)
+            .background(Color.yard.studioBar, RoundedCornerShape(24.dp))
+            .border(1.dp, Color.yard.line, RoundedCornerShape(24.dp))
+            .padding(horizontal = 10.dp),
+    ) {
+        val slot = maxWidth / tabs.size
+        val pillWidth = minOf(slot - 8.dp, 68.dp)
+        val index = tabs.indexOf(nav.tab).coerceAtLeast(0)
+        val indicatorX by animateDpAsState(slot * index + (slot - pillWidth) / 2, Motion.or(reduce) { Motion.spring() }, label = "studio-indicator")
         Box(
             Modifier
-                .offset(x = indicatorX, y = (addSize - 48.dp) / 2)
-                .size(width = buttonWidth, height = 48.dp)
-                .background(Color.yard.ink, YardShapes.pill),
+                .offset(x = indicatorX, y = (barHeight - pillHeight) / 2)
+                .size(width = pillWidth, height = pillHeight)
+                .background(Color.yard.studioAccent, YardShapes.pill),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             for (t in tabs) {
-                if (t == StudioTab.Add) {
-                    Box(
-                        Modifier
-                            .size(addSize)
-                            .background(Color.yard.acid, CircleShape)
-                            .semantics { contentDescription = "Add a product" }
-                            .pressableClick(pressedScale = 0.9f, onClickLabel = "Add a product") {
-                                haptics.click()
-                                nav.select(StudioTab.Add)
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = Color.yard.onAcid, modifier = Modifier.size(30.dp))
-                    }
-                    continue
-                }
                 val isSelected = nav.tab == t
-                val tint by animateColorAsState(if (isSelected) Color.yard.bg else Color.yard.ink, Motion.snappy(), label = "studio-tint")
-                Column(
+                val tint by animateColorAsState(if (isSelected) Color.yard.onStudioAccent else Color.yard.studioBarIcon, Motion.snappy(), label = "studio-tint")
+                Box(
                     Modifier
-                        .size(width = buttonWidth, height = addSize)
+                        .weight(1f)
+                        .fillMaxHeight()
                         .semantics {
                             contentDescription = t.title
                             selected = isSelected
@@ -368,11 +365,9 @@ private fun StudioPill(nav: StudioNav, backdrop: GlassBackdrop, modifier: Modifi
                             if (!isSelected) haptics.tick()
                             nav.select(t)
                         },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(if (isSelected) t.selectedIcon else t.icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
-                    Text(t.title, style = YardFonts.micro, color = tint, maxLines = 1)
+                    Icon(if (isSelected) t.selectedIcon else t.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                 }
             }
         }

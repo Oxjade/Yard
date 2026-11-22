@@ -91,21 +91,35 @@ Switch to Studio), or "needs changes" + `reviewNote` with Apply again.
 
 ### Shell (`StudioRootView`, `StudioNav`)
 
-Floating glass pill (`Modifier.yardGlass` with the backdrop blur) with Home, Orders, a big acid
-**Add** in the centre, Products, Me; ink indicator springs between tabs; tick haptic. One stack per
-tab (plain state, no NavHost), push/pop slides (instant under reduced motion), system back pops,
-then goes Home, then backgrounds the app. Tablets: a centered readable column.
+A near-black floating bar (`studioBar`, 24dp corners) with four plain icons: Home, Orders, Products,
+Me; the selected one sits in a violet pill (`studioAccent`) that springs between tabs; tick haptic.
+No centre Add: Quick add opens from Home's "Add product" tile and the Products header (+), both
+`nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
+(instant under reduced motion), system back pops, then goes Home, then backgrounds the app. Tablets:
+a centered readable column.
 
-### Home (`StudioHomeView`) — dashboard-balance style
+### Home (`StudioHomeView`) — wallet style
 
-"Hello {brand}" + today's date, brand mark. A black sales card with a violet glow: Today / Week /
-Month toggle (`GET /api/studio/dashboard?days=7`, and `days=30` once Month is picked), net sales,
-orders and refunds, and an animated line chart of `series.points[].netMinor` (draws in, smooth
-curve, acid stroke and fill, dot on today). Quick-action circles: Add product, Orders, Payouts,
-Share shop. To do: orders to ship (`toShip`, opens Orders › New), low stock (opens Products ›
-Low stock, `lowStock=1`), unread messages (`unreadMessages`, null hides it), new from your website.
-Top products, store views (today / 7 / 30 days). In-review / restricted banner. Skeleton, error with
-retry, pull to refresh.
+Tokens `Color.yard.studio*` (Theme.kt; same values in iOS `Theme.swift`): violet #8B68FF hero,
+#7350EE inset card, pure black / #F5F5F7 canvas, #1A1A1A / #E9E9EE tiles, one contrast tile
+(white in dark, black in light). One `GET /api/studio/dashboard?days=7` (its `sales` has today /
+week / month).
+
+- Violet hero, edge to edge from the status bar, 32dp bottom corners: avatar (logo or initials),
+  "Hello 👋 / {shop}", inbox button (dot when `unreadMessages > 0`); "Your sales" with Today / Week /
+  Month (Month first), the net amount, and a pill: Month "+₦… past week", Week "+₦… today", Today
+  "N orders" ("No orders …" at zero).
+- Inset card (one, closable for the visit): restricted → Message Yard Support; suggestions waiting →
+  "Yard prepared N products for you" + Accept all; in review → Add a product; no orders in 30 days →
+  Share shop. White pill CTA with a black › disc and ».
+- Four action tiles: Add product (violet disc), Orders, Payouts, Share shop.
+- Orders tile (contrast) for the picked window with refunds; Weekly activity: 7 bars on faint tracks,
+  today violet, grows in (instant under reduced motion).
+- To-do rows (violet-tinted icon disc, count, chevron): suggestions (when the card is closed or shows
+  something else), orders to ship, low stock, unread messages, new from your website; "All caught up"
+  when empty. "Your shop": shop views and top products.
+- Loading keeps the hero (amount as soft blocks) and shows tile/row skeletons in place. Error with
+  retry, pull to refresh. Screenshots: `studio-home`, `studio-home-loading`, `studio-home-new`.
 
 ### Orders (`StudioOrdersView`, `StudioOrderDetailView`) — tracking style
 
