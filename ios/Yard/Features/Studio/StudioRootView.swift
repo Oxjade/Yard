@@ -93,7 +93,7 @@ extension View {
 }
 
 /// The Studio tab bar (wallet look): a near-black floating bar with four plain icons; the selected
-/// tab sits in a violet pill that slides between them. Add is not in the bar: Home's "Add product"
+/// tab sits in an acid pill that slides between them. Add is not in the bar: Home's "Add product"
 /// tile and the Products header open Quick add, as before.
 @MainActor
 struct StudioTabPill: View {
@@ -149,12 +149,12 @@ struct StudioTabBar: View {
         } label: {
             Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
                 .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.yard.onStudioAccent : Color.yard.studioBarIcon)
+                .foregroundStyle(isSelected ? Color.yard.onAcid : Color.yard.studioBarIcon)
                 .frame(width: 64, height: 44)
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill(Color.yard.studioAccent)
+                            .fill(Color.yard.acid)
                             .matchedGeometryEffect(id: "studio-tab", in: namespace)
                     }
                 }

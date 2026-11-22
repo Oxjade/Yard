@@ -406,7 +406,7 @@ struct StudioOrderDetailView: View {
             inputField("Carrier (optional)", text: $carrier, icon: "truck.box")
             inputField("Tracking number (optional)", text: $tracking, icon: "number")
                 .textInputAutocapitalization(.characters)
-            SlideToConfirm("Slide to mark shipped", systemImage: "shippingbox.fill", isLoading: model.busy == .ship) {
+            YardButton("Mark shipped", systemImage: "shippingbox.fill", isLoading: model.busy == .ship) {
                 Task { @MainActor in
                     if await model.ship(studio: studio, carrier: carrier, tracking: tracking) {
                         toast.show("Marked as shipped. The customer is notified.", style: .success)

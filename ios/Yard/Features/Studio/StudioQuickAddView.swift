@@ -437,7 +437,8 @@ struct StudioQuickAddView: View {
                     }
                     .disabled(model.publishing)
                 } else {
-                    SlideToConfirm("Slide to save draft", systemImage: "tray.and.arrow.down.fill", isLoading: model.publishing) {
+                    // Slide only for going live; saving a draft is an ordinary button.
+                    YardButton("Save draft", systemImage: "tray.and.arrow.down.fill", isLoading: model.publishing) {
                         Task { @MainActor in
                             if !(await model.create(studio: studio, publish: false)) { Haptics.error() }
                         }

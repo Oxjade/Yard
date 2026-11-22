@@ -280,7 +280,7 @@ struct StudioHomeContent: View {
                         .background(on.opacity(0.18), in: Circle())
                         .overlay(alignment: .topTrailing) {
                             if (dashboard?.unreadMessages ?? 0) > 0 {
-                                Circle().fill(on).frame(width: 8, height: 8).offset(x: -11, y: 11)
+                                Circle().fill(Color.yard.acid).frame(width: 8, height: 8).offset(x: -11, y: 11)
                             }
                         }
                 }
@@ -359,11 +359,20 @@ struct StudioHomeContent: View {
     }
 
     private func deltaPill(_ d: StudioDashboard) -> some View {
-        Text(studioHeroDelta(d, range: range))
-            .font(.caption.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(Color.yard.onStudioAccent)
-            .lineLimit(1)
+        let delta = studioHeroDelta(d, range: range)
+        return HStack(spacing: 4) {
+            // A small acid arrow when the latest days added sales (one of the acid traces).
+            if delta.hasPrefix("+") {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.yard.acid)
+            }
+            Text(delta)
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color.yard.onStudioAccent)
+                .lineLimit(1)
+        }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Color.yard.onStudioAccent.opacity(0.2), in: Capsule())
@@ -432,20 +441,22 @@ struct StudioHomeContent: View {
                 .padding(.top, -2)
                 .accessibilityLabel(Text("Close"))
             }
-            if c.action == .share, let shareURL {
-                ShareLink(item: shareURL) { ctaLabel(c.cta) }
+            // Only the bulk Accept all keeps the slide look; the rest are plain white pills.
+            if c.action == .suggestions {
+                Button {
+                    Haptics.impact(.light)
+                    onAction(.suggestions)
+                } label: { ctaLabel(c.cta) }
+                .buttonStyle(PressableButtonStyle(scale: Motion.cardPressScale))
+            } else if c.action == .share, let shareURL {
+                ShareLink(item: shareURL) { plainLabel(c.cta) }
                     .buttonStyle(PressableButtonStyle(scale: Motion.cardPressScale))
                     .simultaneousGesture(TapGesture().onEnded { Haptics.impact(.light) })
             } else {
                 Button {
                     Haptics.impact(.light)
-                    switch c.action {
-                    case .suggestions: onAction(.suggestions)
-                    case .add: onAction(.add)
-                    case .support: onAction(.support)
-                    case .share: break
-                    }
-                } label: { ctaLabel(c.cta) }
+                    onAction(c.action == .add ? .add : .support)
+                } label: { plainLabel(c.cta) }
                 .buttonStyle(PressableButtonStyle(scale: Motion.cardPressScale))
             }
         }
@@ -453,12 +464,23 @@ struct StudioHomeContent: View {
         .background(Color.yard.studioAccentDeep, in: RoundedRectangle(cornerRadius: HomeRadius.tile, style: .continuous))
     }
 
-    /// The white pill CTA: a black disc with ›, the label, and ».
+    /// A plain white pill (the app's on-colour button).
+    private func plainLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(Color.yard.onPhotoInk)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(Color.yard.onPhoto, in: Capsule())
+            .contentShape(Capsule())
+    }
+
+    /// The Accept all CTA: a black disc with an acid ›, the label, and ».
     private func ctaLabel(_ title: String) -> some View {
         HStack(spacing: 0) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Color.yard.onPhoto)
+                .foregroundStyle(Color.yard.acid)
                 .frame(width: 40, height: 40)
                 .background(Color.yard.onPhotoInk, in: Circle())
             Text(title)
