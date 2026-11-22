@@ -16,8 +16,8 @@ A global, discovery-driven marketplace for independent brands. It has three expe
 >   Drops and Following, then Search, Inbox, notifications, Wishlist, Cart and your profile.
 >   Phones get a home bar, the same five tabs as the apps: Home, Shop (the catalogue with its
 >   search field at the top, active on every browse page), the raised Around pin, Cart and Me.
->   ⌘K, the header search capsule and, on phones, the header's Search button open search, which
->   starts on Charts, Around, Drops, Brands, Shop and Categories. The shopping bag is called the cart everywhere (the route is still `/bag`).
+>   ⌘K and the header search capsule open search, which starts on Charts, Around, Drops, Brands,
+>   Shop and Categories. The shopping bag is called the cart everywhere (the route is still `/bag`).
 > - **Studio** has Inbox, Social (Social connections and Content Studio), Locations and
 >   Shipping & fulfilment in its sidebar, with live badges, and an Overview card that ticks off
 >   the new features from server state. **Admin** has Delivery, Messages, Content and Charts
