@@ -178,6 +178,38 @@ export async function currentDropForProduct(productId: string): Promise<{ id: st
   return hit ?? null
 }
 
+/**
+ * When each of `productIds` is released in a scheduled public drop that hasn't started yet: the
+ * piece can't be bought before then (limits.ts accessFor). Structured data and the product feed
+ * state it as a pre-order with that date (src/server/seo/catalog.ts).
+ */
+export async function upcomingReleases(productIds: string[], now = new Date()): Promise<Map<string, Date>> {
+  const out = new Map<string, Date>()
+  if (!productIds.length) return out
+  const d = await db()
+  const rows = await d
+    .select({ productId: dropItems.productId, startsAt: drops.startsAt })
+    .from(dropItems)
+    .innerJoin(drops, eq(drops.id, dropItems.dropId))
+    .where(and(inArray(dropItems.productId, [...new Set(productIds)]), inArray(drops.status, ["scheduled", "live"]), gt(drops.startsAt, now), listedBrandSql, notSampleBrandSql(drops.brandId)))
+  for (const r of rows) {
+    const seen = out.get(r.productId)
+    if (!seen || r.startsAt < seen) out.set(r.productId, r.startsAt)
+  }
+  return out
+}
+
+/** Every public drop page (not draft or cancelled, listed brand, never a sample in production), for the sitemap. */
+export async function publicDropPages(limit = 5000): Promise<{ slug: string; name: string; updatedAt: Date; brandId: string }[]> {
+  const d = await db()
+  return d
+    .select({ slug: drops.slug, name: drops.name, updatedAt: drops.updatedAt, brandId: drops.brandId })
+    .from(drops)
+    .where(and(notInArray(drops.status, ["draft", "cancelled"]), listedBrandSql, notSampleBrandSql(drops.brandId)))
+    .orderBy(desc(drops.startsAt), asc(drops.id))
+    .limit(limit)
+}
+
 /** Live availability across the drop's variants (CATALOG), or null when CATALOG isn't loaded. */
 async function unitsAvailable(variantIds: string[]) {
   const live = await sellableVariants(variantIds).catch(() => [])

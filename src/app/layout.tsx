@@ -59,6 +59,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         {/* Sidebar: apply the saved collapsed preference before first paint (no layout shift). */}
         <SidebarPrePaint />
+        {/* Yard in plain language for AI assistants (llmstxt.org). Here rather than in metadata.alternates, which a page's own canonical replaces. */}
+        <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
       </head>
       <body>
         <Providers>{children}</Providers>

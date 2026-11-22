@@ -12,6 +12,9 @@ import { brands, categories, categoryBySlug, products } from "@/lib/data"
 import type { CategorySlug } from "@/lib/data/types"
 import { LiveCategoryBrands } from "@/components/market/brands/live-category-brands"
 import { getEnv } from "@/server/env"
+import { JsonLd } from "@/components/seo/json-ld"
+import { breadcrumbJsonLd, collectionPageJsonLd } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
 
 /**
  * The slug is checked before anything renders so an unknown category answers with a real 404.
@@ -36,7 +39,8 @@ export async function generateMetadata({ params }: PageProps<"/categories/[slug]
   const { slug } = await params
   const category = findCategory(slug)
   if (!category) return { title: "Category not found" }
-  return { title: category.name, description: category.description }
+  const path = `/categories/${category.slug}`
+  return { title: category.name, description: category.description, alternates: { canonical: path }, openGraph: { url: path, title: category.name, description: category.description, images: [{ url: category.image.src, alt: category.name }] } }
 }
 
 export default async function CategoryPage({ params }: PageProps<"/categories/[slug]">) {
@@ -54,8 +58,27 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
     .filter((b) => perBrand.has(b.id) || b.categories.includes(category.slug))
     .sort((a, b) => (perBrand.get(b.id) ?? 0) - (perBrand.get(a.id) ?? 0) || b.followers - a.followers)
 
+  // Structured data from what this static page knows: the category, its kinds (each a filtered
+  // listing) and where it sits. The products themselves stream in the browser, so they are in the
+  // sitemap and the product feed rather than here.
+  const base = publicOrigin()
+  const path = `/categories/${category.slug}`
+  const structured = [
+    collectionPageJsonLd(base, {
+      name: category.name,
+      description: category.description,
+      path,
+      entries: category.subcategories.map((sub) => ({ name: `${category.name}: ${sub}`, path: `${path}?sub=${encodeURIComponent(sub)}` })),
+    }),
+    breadcrumbJsonLd(base, [
+      { name: "Categories", path: "/categories" },
+      { name: category.name, path },
+    ]),
+  ]
+
   return (
     <>
+      <JsonLd nodes={structured} />
       {/* Short banner: the category photograph with the title over it */}
       <header className="relative isolate overflow-hidden">
         <Image src={category.image.src} alt="" fill preload sizes="100vw" className="-z-10 object-cover" />

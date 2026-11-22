@@ -16,6 +16,9 @@ import { opensSoonBrandLine, opensSoonTitle } from "@/lib/page-visibility"
 import { getEnv } from "@/server/env"
 import { listPublicDrops } from "@/server/drops/service"
 import { HttpError } from "@/server/http/errors"
+import { JsonLd } from "@/components/seo/json-ld"
+import { brandDescription, brandJsonLd, breadcrumbJsonLd, type SeoBrandInput } from "@/lib/seo/json-ld"
+import { plainText, publicOrigin } from "@/lib/seo/url"
 
 /**
  * layout.tsx checks the address first, so an unknown storefront answers with a real 404 and this
@@ -28,13 +31,45 @@ export const instant = false
 /** The sample brand behind a handle, only in demo and development; production reads the server alone. */
 const sampleBrandFor = (handle: string) => (getEnv().seedDemo ? getBrand(handle) : undefined)
 
+type LiveStorefront = Awaited<ReturnType<typeof publicStorefront>>
+
+/** The brand as structured data and the meta tags describe it: its own words, else facts (name, city, country). */
+function sampleSeoBrand(brand: Brand): SeoBrandInput {
+  return { name: brand.name, handle: brand.handle, description: [brand.tagline, brand.description].filter(Boolean).join(" "), logo: brand.logoSrc ?? null, image: brand.cover.src, city: brand.city, country: brand.country, social: brand.social }
+}
+
+function liveSeoBrand(data: LiveStorefront, brand?: Brand): SeoBrandInput {
+  const b = data.brand
+  const config = (data.storefront?.config ?? null) as { intro?: unknown; social?: Brand["social"] } | null
+  const intro = typeof config?.intro === "string" ? config.intro : ""
+  const social = config?.social ?? { ...(b.instagram ? { instagram: b.instagram } : {}), ...(b.tiktok ? { tiktok: b.tiktok } : {}) }
+  return { name: b.name, handle: b.handle, description: intro || b.story || "", logo: b.logoSrc, image: brand && !brand.cover.src.endsWith("/missing.svg") ? brand.cover.src : null, city: b.city || null, country: b.country || null, social }
+}
+
+function brandMetadata(seo: SeoBrandInput): Metadata {
+  const description = plainText(brandDescription(seo), 300)
+  const path = `/brands/${encodeURIComponent(seo.handle)}`
+  const image = seo.image && !seo.image.endsWith("/missing.svg") ? seo.image : seo.logo
+  const images = image ? [{ url: image, alt: seo.name }] : []
+  return {
+    title: seo.name,
+    description,
+    alternates: { canonical: path },
+    openGraph: { type: "website", url: path, title: seo.name, description, ...(images.length ? { images } : {}) },
+    twitter: { card: images.length ? "summary_large_image" : "summary", title: seo.name, description, ...(images.length ? { images: images.map((i) => i.url) } : {}) },
+  }
+}
+
 export async function generateMetadata({ params }: PageProps<"/brands/[handle]">): Promise<Metadata> {
   const { handle } = await params
   const brand = sampleBrandFor(handle)
-  if (brand) return { title: brand.name, description: `${brand.tagline} ${brand.description}` }
+  if (brand) return brandMetadata(sampleSeoBrand(brand))
   try {
     const result = await publicStorefront(handle)
-    return { title: result.brand.name, description: (result.storefront?.config?.intro as string | undefined) ?? undefined }
+    const config = (result.storefront?.config as StorefrontConfigDto | undefined) ?? null
+    const firstPhoto = (await listPublicProducts({ brand: result.brand.id, limit: 1, offset: 0, sort: "new" }).catch(() => null))?.products[0]?.images[0]?.src
+    const cover = config?.coverMediaId ? `/api/media/${encodeURIComponent(config.coverMediaId)}` : (config?.coverPath ?? firstPhoto ?? null)
+    return brandMetadata({ ...liveSeoBrand(result), image: cover })
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) {
       // A founding brand before launch: the layout shows "opens soon" (never indexed).
@@ -129,8 +164,18 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
     const demo = getEnv().seedDemo
     const similar = demo ? brandsLike(brand) : []
     const similarLive = demo ? [] : await liveBrandsLike(brandDto.id, brand.categories)
+    const base = publicOrigin()
     return (
       <>
+        <JsonLd
+          nodes={[
+            ...brandJsonLd(base, liveSeoBrand(data, brand), products.slice(0, 60).map((p) => ({ name: p.name, path: `/products/${encodeURIComponent(p.slug)}`, image: p.images[0]?.src }))),
+            breadcrumbJsonLd(base, [
+              { name: "Brands", path: "/brands" },
+              { name: brand.name, path: `/brands/${encodeURIComponent(brand.handle)}` },
+            ]),
+          ]}
+        />
         <ViewBeacon kind="storefront_view" brandId={brand.id} />
         <LiveStorefront brand={brand} config={storefrontConfigFromDto(configDto)} products={products} productPaging={productPaging} collections={collections} drops={drops} stories={[]} serverPublished />
         {similar.length ? (
@@ -169,8 +214,18 @@ export default async function BrandStorefrontPage({ params }: PageProps<"/brands
 
   const similar = brandsLike(brand)
 
+  const base = publicOrigin()
   return (
     <>
+      <JsonLd
+        nodes={[
+          ...brandJsonLd(base, sampleSeoBrand(brand), productsOf(brand.id).slice(0, 60).map((p) => ({ name: p.name, path: `/products/${encodeURIComponent(p.slug)}`, image: p.images[0]?.src }))),
+          breadcrumbJsonLd(base, [
+            { name: "Brands", path: "/brands" },
+            { name: brand.name, path: `/brands/${encodeURIComponent(brand.handle)}` },
+          ]),
+        ]}
+      />
       <ViewBeacon kind="storefront_view" brandId={brand.id} />
       <LiveStorefront
         brand={brand}

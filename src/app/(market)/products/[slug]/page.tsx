@@ -18,6 +18,10 @@ import { HttpError } from "@/server/http/errors"
 import { currentDropForProduct } from "@/server/drops/service"
 import { getEnv } from "@/server/env"
 import { LiveProductDrop } from "@/components/market/product/live-product-drop"
+import { JsonLd } from "@/components/seo/json-ld"
+import { breadcrumbJsonLd, categoryPath, decimalPrice, productDescription, productJsonLd } from "@/lib/seo/json-ld"
+import { plainText, publicOrigin } from "@/lib/seo/url"
+import { productSeoInput } from "@/server/seo/catalog"
 
 /**
  * The slug is checked before anything renders so an unknown product answers with a real 404.
@@ -47,7 +51,7 @@ async function findProduct(slug: string) {
   try {
     const result = await publicProduct(slug)
     const product = toCatalogProduct(result.product)
-    return { product, brandSummary: product.brandSummary!, preview: false }
+    return { product, brandSummary: product.brandSummary!, preview: false, raw: result.product }
   } catch (error) {
     if (!(error instanceof HttpError && error.status === 404)) throw error
   }
@@ -56,7 +60,14 @@ async function findProduct(slug: string) {
   const preview = await memberPreviewProduct(slug, soon.brand.id)
   if (!preview) return null
   const product = toCatalogProduct(preview.product)
-  return { product, brandSummary: product.brandSummary!, preview: true }
+  return { product, brandSummary: product.brandSummary!, preview: true, raw: null }
+}
+
+/** The facts structured data and the meta description are written from (public products only). */
+async function seoFor(result: NonNullable<Awaited<ReturnType<typeof findProduct>>>) {
+  if (!result.raw) return null
+  const b = result.raw.brand
+  return productSeoInput(result.raw, { handle: b.handle, name: b.name, city: b.city || null, country: b.country || null, forSale: b.forSale !== false })
 }
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
@@ -70,10 +81,19 @@ export async function generateMetadata({ params }: PageProps<"/products/[slug]">
   }
   const { product, brandSummary } = result
   if (result.preview) return { title: `Preview: ${product.name}`, robots: { index: false, follow: false } }
+  const seo = await seoFor(result)
+  const title = `${product.name} by ${brandSummary.name}`
+  // The brand's own words, cut to a snippet; empty, a line built from the facts ("{Product} by {Brand}, {city}. {price}. {category}.").
+  const description = seo ? plainText(productDescription(seo), 300) : plainText(product.description, 300)
+  const path = `/products/${encodeURIComponent(product.slug)}`
+  const images = product.images.slice(0, 4).map((image) => ({ url: image.src, alt: image.alt || product.name }))
   return {
-    title: `${product.name} by ${brandSummary.name}`,
-    description: product.description,
-    ...(product.images[0] ? { openGraph: { images: [{ url: product.images[0].src, alt: product.images[0].alt }] } } : {}),
+    title,
+    description,
+    alternates: { canonical: path },
+    openGraph: { type: "website", url: path, title, description, ...(images.length ? { images } : {}) },
+    twitter: { card: images.length ? "summary_large_image" : "summary", title, description, ...(images.length ? { images: images.map((image) => image.url) } : {}) },
+    ...(seo ? { other: { "product:price:amount": decimalPrice(product.price, product.currency), "product:price:currency": product.currency, "product:category": categoryPath(seo.category, seo.subcategory) } } : {}),
   }
 }
 
@@ -99,11 +119,25 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
     listPublicProducts({ brand: product.brandId, sort: "new", limit: 9, offset: 0 }),
     listPublicProducts({ category: product.category, sort: "new", limit: 24, offset: 0 }),
   ])
+  const seo = preview ? null : await seoFor(result)
   const moreFromBrand = brandResults.products.filter((p) => p.id !== product.id).slice(0, 8).map(toCatalogProduct)
   const similar = categoryResults.products.filter((p) => p.id !== product.id && p.brandId !== product.brandId).slice(0, 8).map(toCatalogProduct)
 
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+      {seo ? (
+        <JsonLd
+          nodes={[
+            productJsonLd(publicOrigin(), seo),
+            breadcrumbJsonLd(publicOrigin(), [
+              { name: "Shop", path: "/shop" },
+              { name: category.name, path: `/categories/${encodeURIComponent(category.slug)}` },
+              { name: brand.name, path: brandHref(brand.handle, brand.hasStorefront) },
+              { name: product.name, path: `/products/${encodeURIComponent(product.slug)}` },
+            ]),
+          ]}
+        />
+      ) : null}
       {preview ? <MemberPreviewBanner what={product.name} /> : <ViewBeacon kind="product_view" productId={product.id} />}
       <ProductBreadcrumb product={product} category={category} brand={brand} />
 

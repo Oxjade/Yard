@@ -1,4 +1,11 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
+import { connection } from "next/server"
+import { JsonLd } from "@/components/seo/json-ld"
+import { breadcrumbJsonLd, collectionPageJsonLd, type ListEntry } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
+import { listPublicDrops } from "@/server/drops/service"
+import { log } from "@/server/log"
 import { SectionHeader } from "@/components/market/section-header"
 import { LiveDropsBoard } from "@/components/market/live-drops-board"
 import { DropsBoard } from "@/components/market/editorial/drops-board"
@@ -10,6 +17,41 @@ import { getEnv } from "@/server/env"
 export const metadata: Metadata = {
   title: "Drops",
   description: "Limited releases from independent brands: what's live now, the upcoming calendar and past drops.",
+  alternates: { canonical: "/drops" },
+}
+
+/**
+ * Structured data: Drops as a CollectionPage of the public drops (live and upcoming first, then
+ * recent past ones). Read at request time behind Suspense, so the page's shell stays static.
+ */
+async function DropsJsonLd() {
+  await connection()
+  const demo = getEnv().seedDemo
+  let entries: ListEntry[] = demo ? drops.map((d) => ({ name: d.name, path: `/drops/${encodeURIComponent(d.slug)}`, image: d.image.src })) : []
+  try {
+    const [live, upcoming, ended] = await Promise.all([listPublicDrops({ phase: "live", limit: 20 }), listPublicDrops({ phase: "upcoming", limit: 20 }), listPublicDrops({ phase: "ended", limit: 20 })])
+    const seen = new Set(entries.map((e) => e.path))
+    for (const d of [...live.items, ...upcoming.items, ...ended.items]) {
+      const path = `/drops/${encodeURIComponent(d.slug)}`
+      if (!seen.has(path)) entries.push({ name: d.name, path })
+      seen.add(path)
+    }
+  } catch (e) {
+    log.error("[yard] /drops structured data: drop read failed", e)
+  }
+  entries = entries.slice(0, 60)
+  const base = publicOrigin()
+  return (
+    <JsonLd
+      nodes={[
+        collectionPageJsonLd(base, { name: "Drops", description: "Limited releases from independent brands: what's live now, the upcoming calendar and past drops.", path: "/drops", entries }),
+        breadcrumbJsonLd(base, [
+          { name: "Home", path: "/" },
+          { name: "Drops", path: "/drops" },
+        ]),
+      ]}
+    />
+  )
 }
 
 export default function DropsPage() {
@@ -18,6 +60,9 @@ export default function DropsPage() {
   const demo = getEnv().seedDemo
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
+      <Suspense fallback={null}>
+        <DropsJsonLd />
+      </Suspense>
       <header className="max-w-2xl">
         <h1 className="font-display text-display-lg text-ink">Drops</h1>
         <p className="mt-4 max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-ink-2">

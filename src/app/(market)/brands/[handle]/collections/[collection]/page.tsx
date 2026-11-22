@@ -6,6 +6,9 @@ import { storefrontBrandFromApi, storefrontConfigFromDto, type StorefrontConfigD
 import type { Brand, Collection, Product, StorefrontConfig } from "@/lib/data/types"
 import { listPublicProducts, publicCollection, publicStorefront } from "@/server/catalog/public"
 import { HttpError } from "@/server/http/errors"
+import { JsonLd } from "@/components/seo/json-ld"
+import { breadcrumbJsonLd, collectionPageJsonLd } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
 
 /** Collection visibility and existence are resolved from live catalogue data before the page renders. */
 export const instant = false
@@ -60,7 +63,8 @@ export async function generateMetadata({ params }: PageProps<"/brands/[handle]/c
   const { handle, collection } = await params
   try {
     const found = await loadCollectionPage(handle, collection)
-    return { title: `${found.collection.name}, ${found.brand.name}`, description: found.collection.description }
+    const path = `/brands/${encodeURIComponent(found.brand.handle)}/collections/${encodeURIComponent(found.collection.handle)}`
+    return { title: `${found.collection.name}, ${found.brand.name}`, description: found.collection.description || `${found.collection.name}, a collection by ${found.brand.name} on Yard.`, alternates: { canonical: path } }
   } catch {
     return { title: "Collection not found" }
   }
@@ -75,5 +79,26 @@ export default async function BrandCollectionPage({ params }: PageProps<"/brands
     if (error instanceof HttpError && error.status === 404) notFound()
     throw error
   }
-  return <CollectionView brand={found.brand} collection={found.collection} products={found.products} others={found.others} storefrontConfig={found.config} />
+  const base = publicOrigin()
+  const brandPath = `/brands/${encodeURIComponent(found.brand.handle)}`
+  const path = `${brandPath}/collections/${encodeURIComponent(found.collection.handle)}`
+  const structured = [
+    collectionPageJsonLd(base, {
+      name: `${found.collection.name}, ${found.brand.name}`,
+      description: found.collection.description,
+      path,
+      entries: found.products.map((p) => ({ name: p.name, path: `/products/${encodeURIComponent(p.slug)}`, image: p.images[0]?.src })),
+    }),
+    breadcrumbJsonLd(base, [
+      { name: "Brands", path: "/brands" },
+      { name: found.brand.name, path: brandPath },
+      { name: found.collection.name, path },
+    ]),
+  ]
+  return (
+    <>
+      <JsonLd nodes={structured} />
+      <CollectionView brand={found.brand} collection={found.collection} products={found.products} others={found.others} storefrontConfig={found.config} />
+    </>
+  )
 }

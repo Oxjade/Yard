@@ -33,6 +33,9 @@ import { img } from "@/lib/data/media"
 import { siteImages } from "@/lib/site-images"
 import type { Product } from "@/lib/data/types"
 import { getEnv } from "@/server/env"
+import { JsonLd } from "@/components/seo/json-ld"
+import { yardJsonLd } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
 
 const indexNotes: Record<string, string> = {
   b_paper_riot: "Five illustrators, one risograph and a basement gallery in Braamfontein.",
@@ -60,14 +63,12 @@ export const metadata: Metadata = {
   twitter: { title: `${site.name} — Shop independent fashion brands and limited drops`, description: site.seoDescription },
 }
 
-/** Structured data for search engines: who Yard is, and its site search (sitelinks search box). */
+/**
+ * Structured data for search engines and AI assistants: Yard as an Organization and the WebSite
+ * with its site search (/shop?q=). The address is read when the page renders (YARD_PUBLIC_URL).
+ */
 function HomeJsonLd() {
-  const base = (process.env.YARD_PUBLIC_URL?.trim() || "http://localhost:3000").replace(/\/$/, "")
-  const data = [
-    { "@context": "https://schema.org", "@type": "Organization", name: site.name, url: base, logo: `${base}/icon`, description: site.seoDescription, sameAs: [] as string[] },
-    { "@context": "https://schema.org", "@type": "WebSite", name: site.name, url: base, potentialAction: { "@type": "SearchAction", target: { "@type": "EntryPoint", urlTemplate: `${base}/shop?q={search_term_string}` }, "query-input": "required name=search_term_string" } },
-  ]
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\\u003c") }} />
+  return <JsonLd nodes={yardJsonLd(publicOrigin(), { name: site.name, description: site.description, logoPath: "/icon/512", searchPath: "/shop" })} />
 }
 
 export default function DiscoverPage() {

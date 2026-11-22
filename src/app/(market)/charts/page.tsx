@@ -9,10 +9,37 @@ import { getBoard, getScopes } from "@/server/charts"
 import { pageReadAllowed } from "@/server/charts/limit"
 import { getEnv } from "@/server/env"
 import { log } from "@/server/log"
+import { JsonLd } from "@/components/seo/json-ld"
+import { breadcrumbJsonLd, collectionPageJsonLd } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
+import type { ChartBoardDto } from "@/lib/api/contracts/charts"
 
 export const metadata: Metadata = {
   title: "Charts",
   description: "What's moving on Yard right now: Top brands, Trending, Emerging, Most followed, Most wishlisted, Top drops and City charts, daily, weekly and monthly.",
+  alternates: { canonical: "/charts" },
+}
+
+/** The board on screen as a ranked ItemList (brands link to their storefront, drops to their page). Sponsored slots are left out. */
+function ChartsJsonLd({ board }: { board: ChartBoardDto }) {
+  if (board.state !== "ok" || !board.entries.length) return null
+  const base = publicOrigin()
+  const entries = board.entries.slice(0, 50).map((e) =>
+    e.subject.type === "drop" && e.drop
+      ? { name: `${e.drop.name} (${e.brand.name})`, path: `/drops/${encodeURIComponent(e.drop.slug)}` }
+      : { name: e.brand.name, path: `/brands/${encodeURIComponent(e.brand.handle)}` },
+  )
+  return (
+    <JsonLd
+      nodes={[
+        collectionPageJsonLd(base, { name: "Charts", description: "What's moving on Yard right now: brands and drops ranked by activity.", path: "/charts", entries, order: "ascending" }),
+        breadcrumbJsonLd(base, [
+          { name: "Home", path: "/" },
+          { name: "Charts", path: "/charts" },
+        ]),
+      ]}
+    />
+  )
 }
 
 /**
@@ -73,5 +100,10 @@ async function BoardLoader({ searchParams }: { searchParams: SearchParams }) {
     // The client shows the loading state and its own error state with Retry.
     log.error("[yard] /charts first render failed", e)
   }
-  return <ChartsApp initial={initial} initialScopes={scopes} />
+  return (
+    <>
+      {initial ? <ChartsJsonLd board={initial} /> : null}
+      <ChartsApp initial={initial} initialScopes={scopes} />
+    </>
+  )
 }
