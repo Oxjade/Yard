@@ -292,7 +292,7 @@ else
     *) echo "GitHub didn't answer properly (HTTP $code). Nothing changed: the live site is still $LIVE. Try again, or: sudo yard-update --local"; exit 1 ;;
   esac
   deadline=$(( $(date +%s) + CI_TIMEOUT ))
-  RUN_URL=""; RUN_STATE=""; NO_ACTIONS_NOTED=0; TAR_ID=""
+  RUN_URL=""; RUN_STATE=""; NO_ACTIONS_NOTED=0; TAR_ID=""; DISPATCHED=0
   while :; do
     code=$(gh_api "$WORK/rel.json" "$GITHUB_API/repos/$REPO/releases/tags/$TAG")
     case "$code" in
@@ -321,6 +321,17 @@ else
         let r; try { r = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(0) }
         const run = (r.workflow_runs || []).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
         if (run) console.log(`${run.status === "completed" ? run.conclusion || "unknown" : run.status} ${run.html_url}`)' "$WORK/runs.json") || true
+      # No build of this commit on GitHub at all (it never started, e.g. pushed before Actions was
+      # set up): start one ourselves. Needs Actions: Read and write on the token; asked only once.
+      if [ -z "${RUN_STATE:-}" ] && [ "${DISPATCHED:-0}" = 0 ]; then
+        DISPATCHED=1
+        dcode=$(gh_api "$WORK/dispatch.json" "$GITHUB_API/repos/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches" \
+          -X POST -H 'Content-Type: application/json' --data "{\"ref\":\"$BRANCH\"}")
+        case "$dcode" in
+          204|200) echo "   No GitHub build of $SHA12 yet: started one on $BRANCH." ;;
+          *) echo "   No GitHub build of $SHA12 yet, and the token can't start one (HTTP $dcode). Give it Actions: Read and write, or press Run workflow at $ACTIONS_URL" ;;
+        esac
+      fi
       case "${RUN_STATE:-}" in
         failure|cancelled|timed_out|startup_failure|action_required|stale)
           echo "The GitHub build of $SHA12 ended: $RUN_STATE. Nothing changed: the live site is still $LIVE."
