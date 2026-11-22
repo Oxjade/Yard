@@ -53,24 +53,22 @@ final class StudioHomeSnapshotTests: XCTestCase {
     }
 
     private func screen(_ d: StudioDashboard?, name: String, initials: String, status: StudioHomeBrandStatus, suggestions: Int) -> some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                StudioHomeContent(
-                    brandName: name, initials: initials, logoURL: nil, status: status,
-                    dashboard: d, error: nil, suggestions: suggestions, suggestionsAllNew: true,
-                    showsPayouts: true, shareURL: URL(string: "https://yardstore.space/brands/kachi-studio"),
-                    range: .constant(.month), dismissedCard: .constant(""),
-                    onAction: { _ in }, onRetry: {}, animated: false
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
+        StudioHomeContent(
+            brandName: name, initials: initials, logoURL: nil, status: status,
+            dashboard: d, error: nil, suggestions: suggestions, suggestionsAllNew: true,
+            showsPayouts: true, shareURL: URL(string: "https://yardstore.space/brands/kachi-studio"),
+            range: .constant(.month), dismissedCard: .constant(""),
+            onAction: { _ in }, onRetry: {}, animated: false
+        )
+        .fixedSize(horizontal: false, vertical: true)
+        // One phone screen: the top of Home, the tab bar floating over the bottom.
+        .frame(width: 390, height: 844, alignment: .top)
+        .overlay(alignment: .bottom) {
             StudioTabBar(selected: .home, badge: { $0 == .orders ? 3 : 0 })
                 .padding(.bottom, 20)
         }
-        .frame(width: 390, height: 844, alignment: .top)
-        .clipped()
         .background(Color.yard.studioCanvas)
+        .clipped()
     }
 
     private func write<V: View>(_ view: V, name: String, scheme: ColorScheme, to dir: URL) throws {

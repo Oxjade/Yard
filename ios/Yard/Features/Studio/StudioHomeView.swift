@@ -321,9 +321,10 @@ struct StudioHomeContent: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.horizontal, 20)
+        // The gutter, so the hero's words and inset card line up with the tiles below.
+        .padding(.horizontal, Spacing.gutter)
         .padding(.top, Spacing.m)
-        .padding(.bottom, 20)
+        .padding(.bottom, Spacing.l)
         .background {
             UnevenRoundedRectangle(bottomLeadingRadius: HomeRadius.hero, bottomTrailingRadius: HomeRadius.hero, style: .continuous)
                 .fill(Color.yard.studioAccent)
@@ -388,8 +389,8 @@ struct StudioHomeContent: View {
                     Text(r.title)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(range == r ? Color.yard.studioAccentDeep : on.opacity(0.85))
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
                         .background(range == r ? on : Color.clear, in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -511,11 +512,12 @@ struct StudioHomeContent: View {
                 .foregroundStyle(accent ? Color.yard.onStudioAccent : Color.yard.ink)
                 .frame(width: 38, height: 38)
                 .background(accent ? Color.yard.studioAccent : Color.yard.studioTile2, in: Circle())
+            // Two lines at large text sizes ("Add / product") rather than an ellipsis.
             Text(title)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.yard.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .padding(.horizontal, Spacing.xs)
         .padding(.vertical, Spacing.m)
