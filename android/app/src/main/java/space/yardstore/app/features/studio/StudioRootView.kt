@@ -319,7 +319,7 @@ private fun StudioRouteView(route: StudioRoute) {
 
 /**
  * The Studio tab bar (wallet inspo): a near-black floating bar with four plain icons; the selected
- * tab sits in a violet pill that slides between them. Add is not in the bar: Home's "Add product"
+ * tab sits in an acid pill that slides between them. Add is not in the bar: Home's "Add product"
  * tile and the Products header open Quick add (`nav.select(StudioTab.Add)`), as before.
  */
 @Composable
@@ -347,12 +347,12 @@ private fun StudioPill(nav: StudioNav, @Suppress("UNUSED_PARAMETER") backdrop: G
             Modifier
                 .offset(x = indicatorX, y = (barHeight - pillHeight) / 2)
                 .size(width = pillWidth, height = pillHeight)
-                .background(Color.yard.studioAccent, YardShapes.pill),
+                .background(Color.yard.acid, YardShapes.pill),
         )
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             for (t in tabs) {
                 val isSelected = nav.tab == t
-                val tint by animateColorAsState(if (isSelected) Color.yard.onStudioAccent else Color.yard.studioBarIcon, Motion.snappy(), label = "studio-tint")
+                val tint by animateColorAsState(if (isSelected) Color.yard.onAcid else Color.yard.studioBarIcon, Motion.snappy(), label = "studio-tint")
                 Box(
                     Modifier
                         .weight(1f)

@@ -435,13 +435,16 @@ internal fun StudioQuickAddScreen(model: StudioQuickAddModel, onClose: () -> Uni
                 val inReview = brand?.isPendingReview == true || brand?.isRestricted == true
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     model.working?.let { Text(it, style = YardFonts.caption, color = Color.yard.ink2) }
-                    SlideToComplete(
-                        if (canPublish && !inReview) "Slide to publish" else "Slide to save draft",
-                        isLoading = model.working != null,
-                    ) {
+                    val save: () -> Unit = {
                         scope.launch {
                             if (model.publish(brand?.handle.orEmpty(), canPublish, inReview)) haptics.success() else haptics.reject()
                         }
+                    }
+                    // Slide only for going live; saving a draft is an ordinary button.
+                    if (canPublish && !inReview) {
+                        SlideToComplete("Slide to publish", isLoading = model.working != null, onComplete = save)
+                    } else {
+                        YardButton("Save draft", isLoading = model.working != null, onClick = save)
                     }
                 }
             } else {

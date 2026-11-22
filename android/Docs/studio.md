@@ -92,7 +92,7 @@ Switch to Studio), or "needs changes" + `reviewNote` with Apply again.
 ### Shell (`StudioRootView`, `StudioNav`)
 
 A near-black floating bar (`studioBar`, 24dp corners) with four plain icons: Home, Orders, Products,
-Me; the selected one sits in a violet pill (`studioAccent`) that springs between tabs; tick haptic.
+Me; the selected one sits in an acid pill that springs between tabs; tick haptic.
 No centre Add: Quick add opens from Home's "Add product" tile and the Products header (+), both
 `nav.select(StudioTab.Add)` as before. One stack per tab (plain state, no NavHost), push/pop slides
 (instant under reduced motion), system back pops, then goes Home, then backgrounds the app. Tablets:
@@ -100,10 +100,11 @@ a centered readable column.
 
 ### Home (`StudioHomeView`) — wallet style
 
-Tokens `Color.yard.studio*` (Theme.kt; same values in iOS `Theme.swift`): violet #8B68FF hero,
-#7350EE inset card, pure black / #F5F5F7 canvas, #1A1A1A / #E9E9EE tiles, one contrast tile
-(white in dark, black in light). One `GET /api/studio/dashboard?days=7` (its `sales` has today /
-week / month).
+Tokens `Color.yard.studio*` (Theme.kt; same mapping in iOS `Theme.swift`) are derived from the
+brand tokens: hero = `violetFill` #9452FF, inset card #803DEC (halfway to `purple`), canvas `bg`,
+tiles `surface`, discs `surface2`, contrast tile `ink`. Acid only as traces: the active tab pill,
+the unread dot, the Accept all arrow and the delta arrow. One `GET /api/studio/dashboard?days=7`
+(its `sales` has today / week / month).
 
 - Violet hero, edge to edge from the status bar, 32dp bottom corners: avatar (logo or initials),
   "Hello 👋 / {shop}", inbox button (dot when `unreadMessages > 0`); "Your sales" with Today / Week /
@@ -111,7 +112,8 @@ week / month).
   "N orders" ("No orders …" at zero).
 - Inset card (one, closable for the visit): restricted → Message Yard Support; suggestions waiting →
   "Yard prepared N products for you" + Accept all; in review → Add a product; no orders in 30 days →
-  Share shop. White pill CTA with a black › disc and ».
+  Share shop. Only Accept all keeps the slide look (black disc with an acid ›, »); the others are a
+  plain white pill.
 - Four action tiles: Add product (violet disc), Orders, Payouts, Share shop.
 - Orders tile (contrast) for the picked window with refunds; Weekly activity: 7 bars on faint tracks,
   today violet, grows in (instant under reduced motion).

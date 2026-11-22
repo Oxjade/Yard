@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,7 +68,6 @@ import space.yardstore.app.designsystem.components.EmptyState
 import space.yardstore.app.designsystem.components.LocalToastCenter
 import space.yardstore.app.designsystem.components.RemoteImage
 import space.yardstore.app.designsystem.components.Skeleton
-import space.yardstore.app.designsystem.components.SlideToComplete
 import space.yardstore.app.designsystem.components.Toast
 import space.yardstore.app.designsystem.components.YardButton
 import space.yardstore.app.designsystem.components.YardButtonStyle
@@ -407,7 +407,7 @@ private fun ShipComposer(model: StudioOrderDetailModel) {
     ComposerCard("Ship it") {
         StudioTextField(carrier, { carrier = it.take(80); problem = null }, "Carrier (e.g. your courier)", label = "Carrier", capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next)
         StudioTextField(tracking, { tracking = it.take(80); problem = null }, "Tracking number (optional)", label = "Tracking number", capitalization = KeyboardCapitalization.Characters, error = problem)
-        SlideToComplete("Slide to mark shipped", isLoading = model.busy == "ship") {
+        YardButton("Mark shipped", icon = Icons.Outlined.LocalShipping, isLoading = model.busy == "ship") {
             scope.launch {
                 val p = model.ship(carrier, tracking)
                 when {

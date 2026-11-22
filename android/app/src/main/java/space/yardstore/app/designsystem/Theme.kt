@@ -59,36 +59,38 @@ data class YardColors(
     val onPhotoInk: Color,
     /** Scrim for gradients over photos (black, fixed). Use with `.copy(alpha = …)`. */
     val scrim: Color,
-    /**
-     * Studio Home ("wallet" look): the soft violet hero, #8B68FF in both modes. White on it is 3.8:1,
-     * so text on it is large or semibold; small copy sits on [studioAccentDeep]. Put [onStudioAccent] on it.
-     */
-    val studioAccent: Color,
-    /** The inset card inside the violet hero: #7350EE (white on it is 5.1:1). */
-    val studioAccentDeep: Color,
-    /** Text/icons on the Studio violet: white in both modes. */
-    val onStudioAccent: Color,
-    /** Studio Home's canvas. Dark pure black #000000 / light #F5F5F7. */
-    val studioCanvas: Color,
-    /** Studio Home's tiles and rows. Dark #1A1A1A / light #E9E9EE. */
-    val studioTile: Color,
-    /** A disc or chip on a [studioTile]. Dark #2A2A2A / light #DADAE1. */
-    val studioTile2: Color,
-    /** The one contrast tile. Dark #FFFFFF / light #0B0B0B. Put [onStudioContrast] on it. */
-    val studioContrast: Color,
-    /** Text on [studioContrast]. Dark #0B0B0B / light #FFFFFF. */
-    val onStudioContrast: Color,
-    /** Violet-tinted icon disc on a tile. Dark #2C2545 / light #E2DBFF. */
-    val studioAccentTint: Color,
-    /** A violet icon on [studioAccentTint]. Dark #B3A1FF / light #5B3BE0. */
-    val studioAccentInk: Color,
-    /** The Studio tab bar: near-black in both modes (#161616 / #0B0B0B). */
-    val studioBar: Color,
-    /** Unselected tab icons on [studioBar]: #8E8E93. */
-    val studioBarIcon: Color,
     /** True for the dark set. */
     val isDark: Boolean,
 ) {
+    // Studio Home ("wallet" look). Derived from the brand tokens above, never new hues; same mapping
+    // on iOS (`YardPalette.studio*`). Acid appears only as small traces (active tab, unread dot,
+    // the Accept all arrow, the delta arrow).
+
+    /** The violet hero: the brand [violetFill] #9452FF (white on it 4.3:1; text there is large or semibold). */
+    val studioAccent: Color get() = violetFill
+    /** The hero's inset card: halfway from [violetFill] to brand [purple] (#803DEC; white on it 5.5:1). */
+    val studioAccentDeep: Color get() = Color(0xFF803DEC)
+    /** Text/icons on the violet: [onVioletFill] (white). */
+    val onStudioAccent: Color get() = onVioletFill
+    /** Studio Home's canvas: [bg] (#080808 / warm #F6F5F1). */
+    val studioCanvas: Color get() = bg
+    /** Tiles and rows: [surface] (#121212 / #FFFFFF). */
+    val studioTile: Color get() = surface
+    /** A disc or chip on a tile: [surface2] (#1A1A1A / #EFEDE7). */
+    val studioTile2: Color get() = surface2
+    /** The one contrast tile: [ink] (near-white in dark, near-black in light). Put [onStudioContrast] on it. */
+    val studioContrast: Color get() = ink
+    /** Text on [studioContrast]: [bg]. */
+    val onStudioContrast: Color get() = bg
+    /** Violet-tinted icon disc on a tile: [violetFill] at 16%. */
+    val studioAccentTint: Color get() = violetFill.copy(alpha = 0.16f)
+    /** A violet icon on [studioAccentTint]: [violet] (#A78BFA / #6D28D9). */
+    val studioAccentInk: Color get() = violet
+    /** The Studio tab bar: [surface] in dark, [ink] (near-black) in light. */
+    val studioBar: Color get() = if (isDark) surface else ink
+    /** Unselected tab icons on [studioBar]. */
+    val studioBarIcon: Color get() = if (isDark) ink2 else ink3
+
     companion object {
         val Light = YardColors(
             bg = Color(0xFFF6F5F1),
@@ -109,18 +111,6 @@ data class YardColors(
             onPhoto = Color(0xFFFFFFFF),
             onPhotoInk = Color(0xFF0B0B0B),
             scrim = Color(0xFF000000),
-            studioAccent = Color(0xFF8B68FF),
-            studioAccentDeep = Color(0xFF7350EE),
-            onStudioAccent = Color(0xFFFFFFFF),
-            studioCanvas = Color(0xFFF5F5F7),
-            studioTile = Color(0xFFE9E9EE),
-            studioTile2 = Color(0xFFDADAE1),
-            studioContrast = Color(0xFF0B0B0B),
-            onStudioContrast = Color(0xFFFFFFFF),
-            studioAccentTint = Color(0xFFE2DBFF),
-            studioAccentInk = Color(0xFF5B3BE0),
-            studioBar = Color(0xFF0B0B0B),
-            studioBarIcon = Color(0xFF8E8E93),
             isDark = false,
         )
 
@@ -143,18 +133,6 @@ data class YardColors(
             onPhoto = Color(0xFFFFFFFF),
             onPhotoInk = Color(0xFF0B0B0B),
             scrim = Color(0xFF000000),
-            studioAccent = Color(0xFF8B68FF),
-            studioAccentDeep = Color(0xFF7350EE),
-            onStudioAccent = Color(0xFFFFFFFF),
-            studioCanvas = Color(0xFF000000),
-            studioTile = Color(0xFF1A1A1A),
-            studioTile2 = Color(0xFF2A2A2A),
-            studioContrast = Color(0xFFFFFFFF),
-            onStudioContrast = Color(0xFF0B0B0B),
-            studioAccentTint = Color(0xFF2C2545),
-            studioAccentInk = Color(0xFFB3A1FF),
-            studioBar = Color(0xFF161616),
-            studioBarIcon = Color(0xFF8E8E93),
             isDark = true,
         )
     }

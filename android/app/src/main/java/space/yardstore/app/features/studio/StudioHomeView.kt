@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardDoubleArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -93,6 +94,8 @@ import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardFonts
 import space.yardstore.app.designsystem.YardShapes
 import space.yardstore.app.designsystem.components.EmptyState
+import space.yardstore.app.designsystem.components.YardButton
+import space.yardstore.app.designsystem.components.YardButtonStyle
 import space.yardstore.app.designsystem.components.RemoteImage
 import space.yardstore.app.designsystem.components.pressableClick
 import space.yardstore.app.designsystem.components.shimmering
@@ -368,7 +371,7 @@ private fun HomeHero(
             ) {
                 Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = on, modifier = Modifier.size(20.dp))
                 if (unread > 0) {
-                    Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 11.dp).size(8.dp).background(on, CircleShape))
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 11.dp).size(8.dp).background(Color.yard.acid, CircleShape))
                 }
             }
         }
@@ -405,13 +408,16 @@ private fun HomeHero(
                         modifier = Modifier.semantics { contentDescription = "Net sales, ${model.range.title.lowercase()}: $amount" },
                     )
                 }
-                Text(
-                    heroDelta(d, model.range),
-                    style = YardFonts.captionEmphasis.monospacedDigits(),
-                    color = on,
-                    maxLines = 1,
-                    modifier = Modifier.background(on.copy(alpha = 0.2f), YardShapes.pill).padding(horizontal = 10.dp, vertical = 5.dp),
-                )
+                val delta = heroDelta(d, model.range)
+                Row(
+                    Modifier.background(on.copy(alpha = 0.2f), YardShapes.pill).padding(start = if (delta.startsWith("+")) 7.dp else 10.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // A small acid arrow when the latest days added sales (one of the acid traces).
+                    if (delta.startsWith("+")) Icon(Icons.Filled.ArrowUpward, contentDescription = null, tint = Color.yard.acid, modifier = Modifier.size(13.dp))
+                    Text(delta, style = YardFonts.captionEmphasis.monospacedDigits(), color = on, maxLines = 1)
+                }
             }
         }
 
@@ -497,6 +503,12 @@ private fun HeroInsetCard(c: HomeCard, onOpen: () -> Unit, onClose: () -> Unit) 
             }
         }
         Spacer(Modifier.height(14.dp))
+        if (c.action != HomeCardAction.Suggestions) {
+            // Everything but the bulk Accept all is a plain white pill.
+            YardButton(c.cta, style = YardButtonStyle.OnPhoto) { haptics.click(); onOpen() }
+            return@Column
+        }
+        // The bulk Accept all keeps the slide look: black disc with an acid arrow, label, ».
         Row(
             Modifier
                 .fillMaxWidth()
@@ -508,7 +520,7 @@ private fun HeroInsetCard(c: HomeCard, onOpen: () -> Unit, onClose: () -> Unit) 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).background(Color.yard.onPhotoInk, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = on, modifier = Modifier.size(22.dp))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.yard.acid, modifier = Modifier.size(22.dp))
             }
             Text(
                 c.cta,
