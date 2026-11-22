@@ -278,8 +278,10 @@ else
     curl -sS -o "$out" -w '%{http_code}' --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 3 \
       -K <(printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN_DEPLOY") \
       -H "Accept: $accept" -H 'X-GitHub-Api-Version: 2022-11-28' -H 'User-Agent: yard-update' \
-      "$@" "$url" 2>/dev/null || true
+      "$@" "$url" 2>"$out.err" || true
   }
+  # Why curl got no answer at all (DNS, TLS, timeout...), for "HTTP 000" messages.
+  curl_why() { [ -s "$1.err" ] && sed -n '1,3p' "$1.err" | sed 's/^/   curl: /' || true; }
 
   say "Waiting for the GitHub build of $SHA12 ($REPO)"
   WORK=$(mktemp -d)
@@ -289,7 +291,7 @@ else
     200) ;;
     401) echo "GitHub refused the deploy token (401): GITHUB_TOKEN_DEPLOY in $ENV_FILE is wrong or expired (docs/DEPLOY.md)."; exit 1 ;;
     403|404) echo "The deploy token can't read $REPO (HTTP $code): give it Contents: Read on that repository (docs/DEPLOY.md)."; exit 1 ;;
-    *) echo "GitHub didn't answer properly (HTTP $code). Nothing changed: the live site is still $LIVE. Try again, or: sudo yard-update --local"; exit 1 ;;
+    *) echo "GitHub didn't answer properly (HTTP $code)."; curl_why "$WORK/repo.json"; echo "Nothing changed: the live site is still $LIVE. Try again, or: sudo yard-update --local"; exit 1 ;;
   esac
   deadline=$(( $(date +%s) + CI_TIMEOUT ))
   RUN_URL=""; RUN_STATE=""; NO_ACTIONS_NOTED=0; TAR_ID=""; DISPATCHED=0
@@ -366,7 +368,7 @@ else
     # GitHub answers with a redirect to a signed download URL on another host; curl doesn't send
     # the token there (it only goes to the host it was given for).
     code=$(ACCEPT=application/octet-stream gh_api "$2" "$GITHUB_API/repos/$REPO/releases/assets/$1" -L --max-time 900 --retry 5 --retry-all-errors)
-    [ "$code" = 200 ] || { echo "Download of $(basename "$2") failed (HTTP $code). Nothing changed: the live site is still $LIVE."; exit 1; }
+    [ "$code" = 200 ] || { echo "Download of $(basename "$2") failed (HTTP $code)."; curl_why "$2"; echo "Nothing changed: the live site is still $LIVE."; exit 1; }
   }
   download "$SUM_ID" "$DOWNLOADS/$ASSET.sha256"
   download "$TAR_ID" "$DOWNLOADS/$ASSET"
