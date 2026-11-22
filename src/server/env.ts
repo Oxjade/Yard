@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir } from "node:os"
 import path from "node:path"
 import { z } from "zod"
+import { googleVerificationFile, indexNowKey, siteVerificationWarnings, verificationTokens } from "../lib/seo/site-verification"
 import { seedDemoFrom } from "./demo-switch"
 import { log } from "./log"
 import { yard } from "./state"
@@ -53,6 +54,15 @@ export type Env = {
    * collects into Yard's own account; Yard's ledger pays brands). Production defaults to off.
    */
   payments: "off" | "stub" | "paystack" | "bachs"
+  /**
+   * Search engines (docs/SEO-AI.md). Optional; a malformed value is warned about and ignored, never
+   * fatal. The meta tokens are also read by the root layout, at build time (see the docs).
+   * - GOOGLE_SITE_VERIFICATION / BING_SITE_VERIFICATION: meta-tag tokens, comma separated.
+   * - GOOGLE_SITE_VERIFICATION_FILE: googleXXXX.html, served at /googleXXXX.html.
+   * - INDEXNOW_KEY: 8-128 hex characters; null = IndexNow off. Served at /<key>.txt.
+   * - INDEXNOW_ENDPOINT: where submissions go (default https://api.indexnow.org/indexnow; a mock for tests).
+   */
+  seo: { googleVerification: string[]; bingVerification: string[]; googleFile: string | null; indexNowKey: string | null; indexNowEndpoint: string }
 }
 
 const raw = z.object({
@@ -87,6 +97,11 @@ const raw = z.object({
   BACHS_WEBHOOK_SECRET: z.string().optional(),
   BACHS_API_BASE: z.string().optional(),
   BACHS_CHARGE_CURRENCIES: z.string().optional(),
+  GOOGLE_SITE_VERIFICATION: z.string().optional(),
+  BING_SITE_VERIFICATION: z.string().optional(),
+  GOOGLE_SITE_VERIFICATION_FILE: z.string().optional(),
+  INDEXNOW_KEY: z.string().optional(),
+  INDEXNOW_ENDPOINT: z.string().optional(),
 })
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined)
@@ -257,6 +272,20 @@ function parse(): Env {
   if (payments === "stub" && !dev && !seedDemo) problems.push("YARD_PAYMENTS=stub is for development or an isolated demo deployment (YARD_SEED_DEMO=1) only; use off until a provider is connected")
   if (!dev && !building && !paymentsRaw && paystackKey) log.once("env:paystack-off", "warn", "[yard] PAYSTACK_SECRET_KEY is set but YARD_PAYMENTS isn't: payments stay off. Set YARD_PAYMENTS=paystack to take payments.")
 
+  // Search engines: optional, so a typo is a warning (the site keeps running), never a boot failure.
+  for (const w of siteVerificationWarnings(e)) log.once(`env:seo:${w}`, "warn", `[yard] ${w}.`)
+  let indexNowEndpoint = "https://api.indexnow.org/indexnow"
+  const endpointRaw = blank(e.INDEXNOW_ENDPOINT)
+  if (endpointRaw) {
+    try {
+      const u = new URL(endpointRaw)
+      if (u.protocol === "https:" || (u.protocol === "http:" && (dev || on(e.YARD_ALLOW_HTTP)))) indexNowEndpoint = u.toString()
+      else log.once("env:indexnow-endpoint", "warn", "[yard] INDEXNOW_ENDPOINT must start with https://; using https://api.indexnow.org/indexnow.")
+    } catch {
+      log.once("env:indexnow-endpoint", "warn", "[yard] INDEXNOW_ENDPOINT is not a URL; using https://api.indexnow.org/indexnow.")
+    }
+  }
+
   if (problems.length) {
     const msg = dev || building ? `[yard] Invalid configuration: ${problems.join("; ")}.` : ["[yard] Invalid production configuration. Fix each line, then restart:", ...problems.map((p) => `  - ${p}`)].join("\n")
     if (!dev && !building) throw new Error(msg)
@@ -299,6 +328,13 @@ function parse(): Env {
     pgPoolMax,
     envName,
     payments,
+    seo: {
+      googleVerification: verificationTokens(e.GOOGLE_SITE_VERIFICATION),
+      bingVerification: verificationTokens(e.BING_SITE_VERIFICATION),
+      googleFile: googleVerificationFile(e),
+      indexNowKey: indexNowKey(e),
+      indexNowEndpoint,
+    },
   }
 }
 

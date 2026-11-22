@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 import { AUDIT_ACTOR_KINDS, RECIPIENT_KINDS } from "../../../lib/api/contracts/enums"
 import { oneOf, raw, tz } from "./columns"
 
@@ -79,4 +79,25 @@ export const trafficDaily = pgTable(
     visitors: integer("visitors").notNull().default(0),
   },
   (t) => [uniqueIndex("traffic_daily_day_country_ux").on(t.day, t.country), index("traffic_daily_day_ix").on(t.day)],
+)
+
+/**
+ * IndexNow queue and memory (src/server/seo/indexnow.ts). One row per public URL ever queued: the
+ * primary key dedupes repeat changes, `pending` rows go out on the next flush (every 5 minutes),
+ * and `live` remembers what the engines were last told, so a page that stops being public is sent
+ * exactly once more and a page that was never public is never sent. Bounded by the catalogue size.
+ */
+export const indexnowUrls = pgTable(
+  "indexnow_urls",
+  {
+    url: text("url").primaryKey(),
+    live: boolean("live").notNull(),
+    pending: boolean("pending").notNull().default(true),
+    queuedAt: tz("queued_at").notNull().defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: tz("next_attempt_at").notNull().defaultNow(),
+    sentAt: tz("sent_at"),
+    lastError: text("last_error"),
+  },
+  (t) => [index("indexnow_urls_due_ix").on(t.nextAttemptAt).where(raw("pending"))],
 )

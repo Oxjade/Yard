@@ -143,6 +143,16 @@ export function startSchedulers() {
   every(19 * MIN, HOUR, () => runFeatureJob("follows", "watchPrices"))
   every(2 * MIN, 10 * MIN, () => runFeatureJob("search", "ensureIndex"))
   every(untilUtcMidnight() + 20 * MIN, untilUtcMidnight, () => runFeatureJob("search", "reindex"))
+  // IndexNow (docs/SEO-AI.md): sends the public URLs that changed, deduplicated, at most 3 requests of
+  // 10,000 a run. Returns at once, with no query, while INDEXNOW_KEY is unset. The API is free.
+  every(5 * MIN, 5 * MIN, async () => {
+    try {
+      const { flushIndexNow } = await import("./seo/indexnow")
+      await flushIndexNow()
+    } catch (e) {
+      log.error("[yard] indexnow flush failed", e)
+    }
+  })
 }
 
 /** For the selftest and db-check: run one job now. */

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { SidebarPrePaint } from "@/components/dashboard/shell/sidebar-pre-paint"
 import { Providers } from "@/components/providers"
 import { site } from "@/config/site"
+import { siteVerification } from "@/lib/seo/site-verification"
 import "./globals.css"
 
 /**
@@ -42,6 +43,10 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 } },
   openGraph: { type: "website", siteName: site.name, locale: "en_NG", title: `${site.name} — ${site.tagline}`, description: site.description },
   twitter: { card: "summary_large_image", title: `${site.name} — ${site.tagline}`, description: site.description },
+  // google-site-verification and msvalidate.01 meta tags from GOOGLE_SITE_VERIFICATION and
+  // BING_SITE_VERIFICATION. Read when this module loads, so prerendered pages (the home page among
+  // them) keep the value the build saw: yard-update passes both to the build (docs/SEO-AI.md).
+  verification: siteVerification(),
 }
 
 export const viewport: Viewport = {

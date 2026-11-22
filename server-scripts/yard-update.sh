@@ -84,7 +84,8 @@ fi
 
 say "Building (the live site keeps serving)"
 DEPLOY_ID=$(as_yard "cd '$NEXT' && git rev-parse --short=12 HEAD")
-as_yard "cd '$NEXT' && YARD_DEPLOYMENT_ID='$DEPLOY_ID' YARD_PUBLIC_URL=\$(grep -m1 ^YARD_PUBLIC_URL= $ENV_FILE | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build" \
+# The search-engine verification meta tags are part of prerendered pages, so the build reads them too (docs/SEO-AI.md).
+as_yard "cd '$NEXT' && YARD_DEPLOYMENT_ID='$DEPLOY_ID' YARD_PUBLIC_URL=\$(grep -m1 ^YARD_PUBLIC_URL= $ENV_FILE | cut -d= -f2-) GOOGLE_SITE_VERIFICATION=\$(grep -m1 ^GOOGLE_SITE_VERIFICATION= $ENV_FILE | cut -d= -f2-) BING_SITE_VERIFICATION=\$(grep -m1 ^BING_SITE_VERIFICATION= $ENV_FILE | cut -d= -f2-) YARD_SKIP_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build" \
   || { echo "Build failed. Nothing changed: the live site is still $LIVE."; exit 1; }
 
 # Tabs opened before the deploy still ask for the previous build's script files: keep them.

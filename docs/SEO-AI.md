@@ -15,6 +15,10 @@ All of it is category-neutral. Categories, brands and products come from the dat
 | Product feed (JSON) | `/feeds/products.json` | same items, `src/app/feeds/products.json` |
 | Sitemap | `/sitemap.xml` (an index of `/sitemaps/<n>.xml` past 50,000 URLs) | `src/lib/seo/sitemap.ts`, `src/app/sitemap.xml`, `src/app/sitemaps/[part]` |
 | Server reads and caching | | `src/server/seo/catalog.ts` |
+| Site verification meta tags | `<meta name="google-site-verification">`, `<meta name="msvalidate.01">` on every page | `src/lib/seo/site-verification.ts`, `src/app/layout.tsx` |
+| Google HTML-file verification | `/googleXXXX.html` (only the configured name) | `src/app/site-files/google/[file]`, rewrite in `next.config.ts` |
+| IndexNow key file | `/<INDEXNOW_KEY>.txt` | `src/app/site-files/indexnow/[file]`, rewrite in `next.config.ts` |
+| IndexNow submissions | POST to `https://api.indexnow.org/indexnow` | `src/lib/seo/indexnow.ts`, `src/server/seo/indexnow.ts` |
 
 ### Structured data
 
@@ -87,6 +91,39 @@ Each page has one `<script type="application/ld+json">` with a single `@graph`, 
 - **Size:** up to 50,000 URLs, `/sitemap.xml` is the urlset itself. Past that it becomes a sitemap index of `/sitemaps/<n>.xml`.
 - **Why a route handler:** in this Next version, `generateSitemaps` serves `/sitemap/<id>.xml` with no index and fixes its ids at build time, when the database isn't read. So `/sitemap.xml` is a route handler, not `sitemap.ts`.
 
+### Site verification
+
+All optional, all set in the server's environment (`/etc/yard.env`). A malformed value is logged as a warning and ignored; it never stops the site. `node tools/check-env.mjs` (or `node scripts/check-env.mjs`) prints what is in use.
+
+| Variable | Renders | Takes effect |
+|---|---|---|
+| `GOOGLE_SITE_VERIFICATION` | `<meta name="google-site-verification" content="…">`. Comma separated for several tokens (one tag each). | **At build.** The tags are part of prerendered pages such as the home page, so the value the build saw is the one served. `sudo yard-update` passes it to the build. A restart alone does not change it. |
+| `BING_SITE_VERIFICATION` | `<meta name="msvalidate.01" content="…">`. Comma separated for several. | At build, like the Google tag. |
+| `GOOGLE_SITE_VERIFICATION_FILE` | `/googleXXXX.html` answering `google-site-verification: googleXXXX.html`. Any other name is a 404. | At runtime: a restart is enough. |
+
+Why the meta tags are build-time: the metadata API renders them in `<head>` only for a static value. A value read per request would make Next stream all of the page's metadata (title, description, canonical) after the page shell, for every page, which is a worse trade than a rebuild.
+
+### IndexNow
+
+IndexNow tells Bing, Yandex, Seznam and Naver which URLs changed, so they re-crawl them in minutes rather than days. Bing's index feeds ChatGPT search. Google does not use IndexNow.
+
+- **On/off:** off, with no database work at all, while `INDEXNOW_KEY` is unset. The key is 8 to 128 hex characters and is read at runtime (a restart is enough). The key file is served at `/<key>.txt`.
+- **What is queued** (after the write commits, `src/server/catalog/hooks.ts` and `src/server/drops/jobs.ts`):
+  - a product published, scheduled-and-due, unpublished, archived, edited (price, title, photos, anything on the page), hidden or restored by moderation;
+  - a product's stock reaching zero after a sale, or coming back from zero;
+  - a brand's storefront published (a founding brand launching queues the brand and all its pieces), its logo or details changed, or the brand restricted or suspended (its pieces too);
+  - a drop opening: the drop page and its pieces.
+- **Visibility** follows `src/lib/page-visibility.ts`. Public pages are sent. Drafts, opens-soon pages and pages that were never public are never sent. The one exception is a page that **just stopped** being public: it is sent once more so the engine re-crawls it, gets the 404 and drops it. `indexnow_urls.live` remembers what the engines were last told, so that happens exactly once.
+- **Batching:** the `indexnow_urls` table is the queue. Its primary key dedupes repeat changes to one URL. Every 5 minutes (`src/server/schedulers.ts`) pending URLs go out, at most 10,000 per request and 3 requests per run. 200 and 202 count as sent. 429, 5xx, 403 (key file not reachable yet) and network errors retry after 5, 10, 20… minutes (at most 6 hours), up to 8 attempts. 400 and 422 are dropped. Each run that did anything logs one line: `[yard] indexnow: N sent, N to retry, N dropped in N request(s) (HTTP 202)`.
+- **Never from a non-public address:** while `YARD_PUBLIC_URL` isn't a public `https://` address (localhost, a private IP), URLs stay queued and nothing is sent.
+- **Testing:** `INDEXNOW_ENDPOINT` points submissions at a mock instead of `https://api.indexnow.org/indexnow` (http:// only in development or with `YARD_ALLOW_HTTP=1`).
+- **Cost:** the API is free. Requests are bounded by time (at most 3 every 5 minutes, none when the queue is empty), not by traffic.
+
+### What is deliberately not used
+
+- **Sitemap ping:** Google retired `google.com/ping?sitemap=` in 2023 (and Bing retired its ping earlier). It is not added. Google reads the sitemap from Search Console and robots.txt, and Bing gets changes through IndexNow.
+- **Google Indexing API:** officially it only supports pages with `JobPosting` or `BroadcastEvent` (in a `VideoObject`) structured data. Using it for products is against its terms and can get the key revoked. For products the right path is Search Console, the sitemap and the Merchant Center feed.
+
 ### Cost: flat, follows time not traffic
 
 Each whole document is built once and kept in the server's memo (`src/server/cache.ts`), however often crawlers ask:
@@ -100,7 +137,7 @@ Each whole document is built once and kept in the server's memo (`src/server/cac
 - **HTTP caching:** responses carry `Cache-Control: public, max-age=…`, so Caddy or a CDN can serve repeats without reaching the app.
 - **Catalogue writes:** the keys are outside `catalog:`, so a busy shop's sales don't trigger rebuilds. A product that is hidden or goes out of stock can still appear in the feed for up to 30 minutes. That is well inside how often Google fetches a feed (daily at most).
 - **Product pages** add three small memoised reads to their JSON-LD: categories, the brand's shipping profile and the product's upcoming drop.
-- **No paid services:** nothing new runs on a schedule and nothing new is billed.
+- **No paid services:** nothing is billed. The only scheduled addition is the IndexNow flush (free API, at most 3 requests every 5 minutes, nothing while the queue is empty or the key is unset).
 
 ### Caveats
 
@@ -112,10 +149,14 @@ Each whole document is built once and kept in the server's memo (`src/server/cac
 
 ### 1. Google Search Console
 
-1. Go to https://search.google.com/search-console and add a **Domain** property for `yardstore.space`.
-2. Verify it with the DNS TXT record Google gives you, added at your DNS provider. Wait for it to resolve, then click Verify.
-3. Open Sitemaps and submit `https://yardstore.space/sitemap.xml`.
-4. Use URL Inspection on a product page and a brand page and request indexing. The Enhancements and Shopping sections fill in over the following days.
+1. Go to https://search.google.com/search-console and click **Add property**. Choose one:
+   - **Domain property** (recommended: covers http, https, www and every subdomain). Enter `yardstore.space`, copy the TXT record Google shows, add it at your DNS provider, wait for it to resolve, then click **Verify**. Nothing changes on the server.
+   - **URL-prefix property** (`https://yardstore.space/`). Choose one of these methods:
+     - **HTML tag:** copy only the `content` value from the tag Google shows. On the server add `GOOGLE_SITE_VERIFICATION=<that value>` to `/etc/yard.env`, then run `sudo yard-update` (it rebuilds; the tag is part of the prerendered pages, so a restart alone is not enough). Check with `curl -s https://yardstore.space/ | grep google-site-verification`, then click **Verify**.
+     - **HTML file:** note the file name Google gives you (`googleXXXX.html`; you don't need to upload it). Add `GOOGLE_SITE_VERIFICATION_FILE=googleXXXX.html` to `/etc/yard.env`, then `sudo systemctl restart yard` (or `sudo yard-update`). Check with `curl https://yardstore.space/googleXXXX.html`, then click **Verify**.
+   - Keep the variable set afterwards: Google re-checks verification from time to time.
+2. Open **Sitemaps** and submit `https://yardstore.space/sitemap.xml`.
+3. Open **URL Inspection**, paste the home page, a brand page and a product page in turn, and click **Request indexing** for each. The Enhancements and Shopping sections fill in over the following days.
 
 ### 2. Google Merchant Center: free listings
 
@@ -130,16 +171,22 @@ Each whole document is built once and kept in the server's memo (`src/server/cac
 
 ### 3. Bing Webmaster Tools (also feeds ChatGPT search)
 
-1. Go to https://www.bing.com/webmasters and sign in. Choose **Import from Google Search Console** (fastest), or add the site and verify it with a DNS record.
-2. Submit `https://yardstore.space/sitemap.xml` under Sitemaps.
-3. Optionally turn on **IndexNow** so Bing hears about new pages sooner.
+1. Go to https://www.bing.com/webmasters and sign in. Choose one:
+   - **Import from Google Search Console** (fastest, once step 1 is done). The site and its sitemap come across verified.
+   - **Add the site manually** and verify it with the **meta tag**: copy only the `content` value of the `msvalidate.01` tag, add `BING_SITE_VERIFICATION=<that value>` to `/etc/yard.env`, run `sudo yard-update`, check with `curl -s https://yardstore.space/ | grep msvalidate`, then click **Verify**. (A DNS CNAME is the other option.)
+2. Submit `https://yardstore.space/sitemap.xml` under **Sitemaps** (an import may already have done it).
+3. **Turn on IndexNow:**
+   1. Generate a key on any machine: `openssl rand -hex 16`.
+   2. Add `INDEXNOW_KEY=<the key>` to `/etc/yard.env` and restart (`sudo systemctl restart yard` or `sudo yard-update`).
+   3. Check `curl https://yardstore.space/<the key>.txt` prints the key.
+   4. Changes are sent within about 5 minutes; look for `[yard] indexnow:` lines in `journalctl -u yard`. Bing Webmaster's **IndexNow** page lists the URLs it received (one key works for every engine in the protocol).
 4. ChatGPT search draws on Bing's index as well as its own crawler (OAI-SearchBot), so being indexed by Bing helps Yard appear in ChatGPT answers.
 
 ### 4. Testing structured data
 
 - **Google Rich Results Test** (https://search.google.com/test/rich-results): paste a product URL and expect "Product snippets" and "Merchant listings" with no errors. Paste a brand page and expect "Breadcrumbs". Warnings for optional fields, like a missing GTIN, are fine.
 - **Schema Markup Validator** (https://validator.schema.org): paste any page URL (home, a brand, a category, a drop, charts) to check the full graph against schema.org.
-- **Locally:** `npm test` runs the JSON-LD, feed, sitemap and llms tests. On a running server, to see a page's JSON-LD:
+- **Locally:** `npm test` runs the JSON-LD, feed, sitemap, llms, site-verification and IndexNow tests. On a running server, to see a page's JSON-LD:
 
   ```sh
   curl -s https://yardstore.space/products/<slug> | sed -n 's/.*<script type="application\/ld+json">\([^<]*\)<\/script>.*/\1/p'

@@ -69,7 +69,14 @@ const nextConfig = (phase: string): NextConfig => {
           { source: "/legal/:page", has: app, destination: "/app-view/legal/:page" },
           { source: "/support", has: app, destination: "/app-view/support" },
         ],
-        afterFiles: [],
+        // Search-engine site files at the root (docs/SEO-AI.md): Google's HTML-file verification
+        // (/googleXXXX.html) and the IndexNow key file (/<hex key>.txt). The handlers answer only
+        // the exact names configured at runtime (GOOGLE_SITE_VERIFICATION_FILE, INDEXNOW_KEY), 404
+        // otherwise. afterFiles: real pages and public/ files win.
+        afterFiles: [
+          { source: "/:file(google[A-Za-z0-9_-]{1,100}\\.html)", destination: "/site-files/google/:file" },
+          { source: "/:file([0-9a-fA-F]{8,128}\\.txt)", destination: "/site-files/indexnow/:file" },
+        ],
         fallback: [],
       }
     },

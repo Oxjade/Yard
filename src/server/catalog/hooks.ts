@@ -5,11 +5,13 @@ import { catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { refreshBrandMediaVisibility } from "../media/visibility"
 import { invalidateMemo } from "../cache"
 import { log } from "../log"
+import { indexNowOn, productsAtZero, queueIndexNowSafely } from "../seo/indexnow"
 
 /**
  * After-commit side effects of catalog writes: drop the public read memo and, for product
  * changes, ask ENGAGEMENT's search to reindex (only if src/server/search exports reindexProduct).
- * Never inside the transaction (no I/O there, §1.3).
+ * Never inside the transaction (no I/O there, §1.3). With INDEXNOW_KEY set, it also queues the
+ * public pages that changed for IndexNow (src/server/seo/indexnow.ts).
  */
 type Change = {
   products?: string[]
@@ -66,6 +68,21 @@ export function catalogChanged(change: Change) {
         .from(catalogProducts)
         .where(and(inArray(catalogProducts.brandId, reindexBrands), ne(catalogProducts.status, "archived")))
       for (const r of rows) ids.add(r.id)
+    }
+    if (indexNowOn()) {
+      try {
+        // Stock only matters to the engines at the edges: back from zero, or down to zero after a sale.
+        const variantProducts = async (variantIds: string[]) => {
+          if (!variantIds.length) return []
+          const d = await db()
+          return (await d.selectDistinct({ productId: catalogVariants.productId }).from(catalogVariants).where(inArray(catalogVariants.id, variantIds))).map((r) => r.productId)
+        }
+        const restocked = await variantProducts(change.restocked ?? [])
+        const soldOut = change.reindexVariants ? await productsAtZero(await variantProducts(change.variants ?? [])) : []
+        await queueIndexNowSafely({ products: [...(change.products ?? []), ...restocked, ...soldOut], brands: change.brands, brandProducts: change.reindexBrands })
+      } catch (e) {
+        log.error("[yard] catalog: indexnow queueing failed", e)
+      }
     }
     if (!ids.size && !reindexBrands.length) return
     const search = await loadSearch()

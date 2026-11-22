@@ -7,6 +7,7 @@ import { enqueueEmail } from "../email"
 import { inAppPref, notifyEngagement, type EngagementTemplate } from "../email/inapp"
 import { getPreferencesMany } from "../email/preferences"
 import { log } from "../log"
+import { queueIndexNowSafely } from "../seo/indexnow"
 import { mediaSrc } from "../media"
 import { closeEntries, expireWindows, runDraw, type DrawOutcome } from "./draw"
 import { sweepExpiredClaims } from "./limits"
@@ -166,6 +167,8 @@ export async function tick(now = new Date()) {
     const [claimed] = await withTx((tx) => tx.update(drops).set({ status: "live", startedAt: now, updatedAt: now }).where(and(eq(drops.id, drop.id), eq(drops.status, "scheduled"))).returning({ id: drops.id }))
     if (!claimed) continue
     counts.started++
+    // IndexNow (off unless INDEXNOW_KEY): the drop's page and its pieces' pages just changed.
+    await queueIndexNowSafely({ drops: [drop.id] })
     if (drop.access === "draw") continue // winners were told by the draw
     const b = await brandOf(drop.brandId)
     const holders = await reminderHolders(drop.id)
