@@ -1,0 +1,96 @@
+# Builds Yard on GitHub's machines so the server never has to (docs/DEPLOY.md).
+#
+# Every push to v3 (or a manual run on any branch) produces a prerelease tagged build-<sha12>
+# holding yard-build-<sha12>.tar.gz (the build plus production node_modules) and its .sha256.
+# `sudo yard-update` on the server waits for the release of the exact commit it fetched,
+# downloads it, checks the checksum, then migrates and switches as before.
+#
+# The build sees the same settings the server's own build did. Set them once in the repository:
+# Settings > Secrets and variables > Actions > Variables:
+#   YARD_PUBLIC_URL            required, e.g. https://yardstore.space (same as /etc/yard.env)
+#   GOOGLE_SITE_VERIFICATION   optional meta-tag token(s), comma separated
+#   BING_SITE_VERIFICATION     optional meta-tag token(s), comma separated
+# They are public values (they end up in the HTML), so variables, not secrets. No secret is used.
+name: Build release
+
+on:
+  push:
+    branches: [v3]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create and prune the build-* prereleases
+
+# One build per commit; a newer push never cancels an older commit's build (the server may be
+# waiting for that exact one).
+concurrency:
+  group: build-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      YARD_PUBLIC_URL: ${{ vars.YARD_PUBLIC_URL }}
+      GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
+      BING_SITE_VERIFICATION: ${{ vars.BING_SITE_VERIFICATION }}
+      YARD_SKIP_TYPECHECK: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check the build variables
+        run: |
+          if [ -z "$YARD_PUBLIC_URL" ]; then
+            echo "::error::Repository variable YARD_PUBLIC_URL is not set (Settings > Secrets and variables > Actions > Variables). Without it every page would carry http://localhost:3000 links."
+            exit 1
+          fi
+          echo "YARD_DEPLOYMENT_ID=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+          echo "SHA12=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      # Node 22, as installed on the server (server-scripts/yard-quickstart.sh).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Keep production dependencies only
+        run: npm prune --omit=dev --no-audit --no-fund
+
+      - name: Package
+        run: server-scripts/yard-package.sh "$RUNNER_TEMP/out" "$GITHUB_SHA"
+
+      - name: Publish the prerelease build-${{ env.SHA12 }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-$SHA12"
+          # A re-run of the same commit replaces its release.
+          if gh release view "$TAG" >/dev/null 2>&1; then gh release delete "$TAG" --cleanup-tag --yes; fi
+          # gh uploads the files to a draft and publishes it only when they are all there, so the
+          # server never sees a release with a half-uploaded archive.
+          gh release create "$TAG" \
+            "$RUNNER_TEMP/out/yard-build-$SHA12.tar.gz" \
+            "$RUNNER_TEMP/out/yard-build-$SHA12.tar.gz.sha256" \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Build $SHA12" \
+            --notes "Server build of $GITHUB_SHA (${GITHUB_REF_NAME}), run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Installed by yard-update."
+
+      - name: Keep only the 10 newest builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name | startswith("build-")) | [.created_at, .tag_name] | @tsv' \
+            | sort -r | tail -n +11 | cut -f2 \
+            | while read -r tag; do
+                echo "Deleting $tag"
+                gh release delete "$tag" --cleanup-tag --yes || echo "::warning::could not delete $tag"
+              done

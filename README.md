@@ -212,6 +212,7 @@ loopback, development only trusts requests addressed to `localhost`, `127.0.0.1`
 rebinding) can't pass the CSRF check.
 
 **Deployment notes.**
+- Deploying to the server (`sudo yard-update`, builds on GitHub Actions, one-time setup): [docs/DEPLOY.md](docs/DEPLOY.md).
 - This layer targets one long-running Node process: not serverless, not horizontally scaled.
 - Run Yard behind exactly one reverse proxy that sets `X-Forwarded-For`, and set
   `YARD_TRUSTED_PROXY_HOPS=1`. Without it, Yard can't see client IPs, and IP-based abuse

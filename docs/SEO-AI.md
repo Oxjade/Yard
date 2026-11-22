@@ -97,7 +97,7 @@ All optional, all set in the server's environment (`/etc/yard.env`). A malformed
 
 | Variable | Renders | Takes effect |
 |---|---|---|
-| `GOOGLE_SITE_VERIFICATION` | `<meta name="google-site-verification" content="…">`. Comma separated for several tokens (one tag each). | **At build.** The tags are part of prerendered pages such as the home page, so the value the build saw is the one served. `sudo yard-update` passes it to the build. A restart alone does not change it. |
+| `GOOGLE_SITE_VERIFICATION` | `<meta name="google-site-verification" content="…">`. Comma separated for several tokens (one tag each). | **At build.** The tags are part of prerendered pages such as the home page, so the value the build saw is the one served. `sudo yard-update` passes it to the build; with GitHub builds (docs/DEPLOY.md) it comes from the repository variable of the same name, so set it there too. A restart alone does not change it. |
 | `BING_SITE_VERIFICATION` | `<meta name="msvalidate.01" content="…">`. Comma separated for several. | At build, like the Google tag. |
 | `GOOGLE_SITE_VERIFICATION_FILE` | `/googleXXXX.html` answering `google-site-verification: googleXXXX.html`. Any other name is a 404. | At runtime: a restart is enough. |
 
@@ -152,7 +152,7 @@ Each whole document is built once and kept in the server's memo (`src/server/cac
 1. Go to https://search.google.com/search-console and click **Add property**. Choose one:
    - **Domain property** (recommended: covers http, https, www and every subdomain). Enter `yardstore.space`, copy the TXT record Google shows, add it at your DNS provider, wait for it to resolve, then click **Verify**. Nothing changes on the server.
    - **URL-prefix property** (`https://yardstore.space/`). Choose one of these methods:
-     - **HTML tag:** copy only the `content` value from the tag Google shows. On the server add `GOOGLE_SITE_VERIFICATION=<that value>` to `/etc/yard.env`, then run `sudo yard-update` (it rebuilds; the tag is part of the prerendered pages, so a restart alone is not enough). Check with `curl -s https://yardstore.space/ | grep google-site-verification`, then click **Verify**.
+     - **HTML tag:** copy only the `content` value from the tag Google shows. On the server add `GOOGLE_SITE_VERIFICATION=<that value>` to `/etc/yard.env`, then run `sudo yard-update` (it rebuilds; the tag is part of the prerendered pages, so a restart alone is not enough). With GitHub builds (docs/DEPLOY.md) also set the repository variable `GOOGLE_SITE_VERIFICATION` and re-run the Build release workflow before `sudo yard-update`. Check with `curl -s https://yardstore.space/ | grep google-site-verification`, then click **Verify**.
      - **HTML file:** note the file name Google gives you (`googleXXXX.html`; you don't need to upload it). Add `GOOGLE_SITE_VERIFICATION_FILE=googleXXXX.html` to `/etc/yard.env`, then `sudo systemctl restart yard` (or `sudo yard-update`). Check with `curl https://yardstore.space/googleXXXX.html`, then click **Verify**.
    - Keep the variable set afterwards: Google re-checks verification from time to time.
 2. Open **Sitemaps** and submit `https://yardstore.space/sitemap.xml`.
@@ -173,7 +173,7 @@ Each whole document is built once and kept in the server's memo (`src/server/cac
 
 1. Go to https://www.bing.com/webmasters and sign in. Choose one:
    - **Import from Google Search Console** (fastest, once step 1 is done). The site and its sitemap come across verified.
-   - **Add the site manually** and verify it with the **meta tag**: copy only the `content` value of the `msvalidate.01` tag, add `BING_SITE_VERIFICATION=<that value>` to `/etc/yard.env`, run `sudo yard-update`, check with `curl -s https://yardstore.space/ | grep msvalidate`, then click **Verify**. (A DNS CNAME is the other option.)
+   - **Add the site manually** and verify it with the **meta tag**: copy only the `content` value of the `msvalidate.01` tag, add `BING_SITE_VERIFICATION=<that value>` to `/etc/yard.env` (with GitHub builds also as the repository variable, then re-run the Build release workflow; docs/DEPLOY.md), run `sudo yard-update`, check with `curl -s https://yardstore.space/ | grep msvalidate`, then click **Verify**. (A DNS CNAME is the other option.)
 2. Submit `https://yardstore.space/sitemap.xml` under **Sitemaps** (an import may already have done it).
 3. **Turn on IndexNow:**
    1. Generate a key on any machine: `openssl rand -hex 16`.
