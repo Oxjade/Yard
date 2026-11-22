@@ -37,7 +37,7 @@ export function SponsoredStrip({ items }: { items: SponsoredDto[] }) {
           return (
             <article key={drop ? `d:${drop.id}` : `b:${s.brand.id}`} className={cn("group/sp relative isolate flex flex-col overflow-hidden rounded-lg border border-line-soft bg-card", single && "sm:col-span-2 sm:flex-row")}>
               <div className={cn("relative h-24 shrink-0 overflow-hidden bg-surface md:h-28", single && "sm:h-auto sm:min-h-28 sm:w-1/2")}>
-                {image ? <Image src={image.src} alt="" fill sizes="(min-width: 640px) 45vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/sp:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/sp:scale-100" /> : null}
+                {image ? <Image src={image.src} alt={image.alt || (drop ? drop.name : `${s.brand.name} banner`)} aria-hidden fill sizes="(min-width: 640px) 45vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/sp:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/sp:scale-100" /> : null}
                 <SponsoredTag className="absolute top-3 left-3" />
               </div>
               <div className={cn("flex min-w-0 items-center justify-between gap-3 border-t border-line-soft p-3", single && "sm:flex-1 sm:border-t-0 sm:border-l sm:px-5")}>

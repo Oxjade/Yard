@@ -121,7 +121,8 @@ export function AroundTeaser({ className, image }: { className?: string; image?:
     >
       <Image
         src={image?.src ?? "/media/lifestyle/cover-boutique-clothing-rails-01.jpg"}
-        alt=""
+        alt={image?.alt || "Clothing rails in an independent boutique"}
+        aria-hidden
         fill
         sizes="(min-width: 1024px) 34vw, 100vw"
         style={image?.position ? { objectPosition: image.position } : undefined}

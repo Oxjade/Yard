@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -29,7 +30,7 @@ export async function generateMetadata({ params }: PageProps<"/stories/[slug]">)
   const { slug } = await params
   const story = getStory(slug)
   if (!story) return { title: "Story not found" }
-  return { title: story.title, description: story.dek }
+  return { title: story.title, description: metaDescription(story.dek, `${story.title}, a story on Yard.`), alternates: { canonical: `/stories/${encodeURIComponent(story.slug)}` } }
 }
 
 export default async function StoryPage({ params }: PageProps<"/stories/[slug]">) {

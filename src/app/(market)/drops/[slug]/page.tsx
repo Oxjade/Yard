@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import { connection } from "next/server"
 import { SampleDropPage } from "@/components/market/editorial/sample-drop-page"
 import { LiveDropDetail } from "@/components/market/live-drop-detail"
@@ -20,11 +21,11 @@ export async function generateMetadata({ params }: PageProps<"/drops/[slug]">): 
   const { slug } = await params
   const sample = sampleDrop(slug)
   const canonical = { canonical: `/drops/${encodeURIComponent(slug)}` }
-  if (sample) return { title: `${sample.name}, ${brandById.get(sample.brandId)?.name ?? "drop"}`, description: sample.description, alternates: canonical }
+  if (sample) return { title: `${sample.name}, ${brandById.get(sample.brandId)?.name ?? "drop"}`, description: metaDescription(sample.description, `${sample.name}, a limited drop on Yard.`), alternates: canonical }
   const drop = await loadDrop(slug)
   if (!drop) return { title: "Drop not found" }
   const brand = await dropBrandName(drop.brandId)
-  return { title: `${drop.name}, ${brand ?? "drop"}`, description: drop.description, alternates: canonical }
+  return { title: `${drop.name}, ${brand ?? "drop"}`, description: metaDescription(drop.description, `${drop.name}${brand ? ` by ${brand}` : ""}, a limited drop on Yard.`), alternates: canonical }
 }
 
 /** The drop as a CollectionPage of its public pieces, under Drops in the breadcrumb. */

@@ -6,6 +6,7 @@ import { DataDeletionStatus } from "./status"
 export const metadata: Metadata = {
   title: "Data deletion",
   description: "How to delete your Yard account and personal data, what is deleted and when, and how to check an Instagram data deletion request.",
+  alternates: { canonical: "/legal/data-deletion" },
 }
 
 /**

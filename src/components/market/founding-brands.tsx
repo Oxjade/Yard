@@ -46,11 +46,11 @@ function FoundingBrandCard({ brand: b }: { brand: FoundingHomeBrand }) {
     <article className="group/brand relative flex h-full flex-col overflow-hidden rounded-lg border border-line-soft bg-card">
       <Link href={href} className="relative block aspect-[4/3] overflow-hidden bg-surface" aria-hidden tabIndex={-1}>
         {b.coverSrc ? (
-          <Image src={b.coverSrc} alt="" fill unoptimized sizes="(min-width: 1024px) 25vw, (min-width: 640px) 45vw, 78vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]" />
+          <Image src={b.coverSrc} alt={`${b.name} banner`} fill unoptimized sizes="(min-width: 1024px) 25vw, (min-width: 640px) 45vw, 78vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]" />
         ) : null}
         <span className="scrim-b absolute inset-0" />
         <span className="absolute bottom-3 left-3 inline-flex size-16 items-center justify-center overflow-hidden rounded-lg border border-white/12 bg-obsidian font-display text-xl text-ink">
-          {b.logoSrc ? <Image src={b.logoSrc} alt="" fill unoptimized sizes="64px" className="object-cover" /> : mark}
+          {b.logoSrc ? <Image src={b.logoSrc} alt={`${b.name} logo`} fill unoptimized sizes="64px" className="object-cover" /> : mark}
         </span>
         {b.forSale ? null : <OpeningSoonTag className="absolute top-3 left-3" />}
       </Link>

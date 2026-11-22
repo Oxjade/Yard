@@ -583,7 +583,7 @@ export function AroundApp() {
         <ListView
           header={
             <div className="grid gap-4">
-              <h1 className="font-display text-display-sm text-ink">{listCity ? `Around ${listCity.name}` : "Around"}</h1>
+              <h2 className="font-display text-display-sm text-ink">{listCity ? `Around ${listCity.name}` : "Around"}</h2>
               {/* The same search, Locate and Filters as the list, so distance and area search work without WebGL. */}
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1 lg:max-w-md">
@@ -679,7 +679,7 @@ export function AroundApp() {
             header={
               <div className="grid gap-4">
                 <div className="flex items-end justify-between gap-4">
-                  <h1 className="font-display text-display-sm text-ink">{listCity ? `Around ${listCity.name}` : "Around"}</h1>
+                  <h2 className="font-display text-display-sm text-ink">{listCity ? `Around ${listCity.name}` : "Around"}</h2>
                   <div className="hidden lg:block">{mapToggle}</div>
                 </div>
                 <div className="flex items-center gap-2">

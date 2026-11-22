@@ -24,7 +24,7 @@ export function DropArchive({ drops, now = null, anchor = null }: { drops: Drop[
         return (
           <li key={drop.id} className="group/past relative flex items-center gap-4 rounded-lg border border-line-soft bg-card p-3 pr-4 transition-colors hover:border-line">
             <div className="relative aspect-square w-16 shrink-0 overflow-hidden rounded-md bg-surface sm:w-20">
-              <Image src={drop.image.src} alt="" fill sizes="80px" className="object-cover grayscale-[0.75] transition-[filter] duration-500 group-hover/past:grayscale-0" />
+              <Image src={drop.image.src} alt={drop.image.alt || drop.name} aria-hidden fill sizes="80px" className="object-cover grayscale-[0.75] transition-[filter] duration-500 group-hover/past:grayscale-0" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs text-ink-2">{brand.name}</p>

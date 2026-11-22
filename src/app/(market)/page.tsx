@@ -195,7 +195,7 @@ export default function DiscoverPage() {
                   href={`/collections/${c.slug}`}
                   className={`group relative isolate flex min-h-[240px] flex-col justify-end overflow-hidden rounded-xl bg-card p-5 ${i === 0 ? "md:row-span-2 md:min-h-[560px]" : ""} ${sponsor ? "md:col-span-3 md:min-h-[200px] md:justify-center md:p-8" : ""}`}
                 >
-                  <Image src={c.image.src} alt="" fill sizes={i === 0 ? "(min-width: 768px) 33vw, 100vw" : "(min-width: 768px) 33vw, 100vw"} className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]" />
+                  <Image src={c.image.src} alt={c.image.alt || c.name} aria-hidden fill sizes={i === 0 ? "(min-width: 768px) 33vw, 100vw" : "(min-width: 768px) 33vw, 100vw"} className="-z-10 object-cover transition-transform duration-[900ms] ease-out-quint group-hover:scale-[1.04]" />
                   <span className="scrim-b absolute inset-0 -z-10" />
                   {sponsor ? <SponsoredTag by={sponsor.name} className="absolute top-4 left-4" /> : null}
                   <h3 className={`font-display text-balance text-ink ${i === 0 ? "text-display-lg md:text-display-md" : "text-display-sm"}`}>{c.name}</h3>

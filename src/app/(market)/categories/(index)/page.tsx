@@ -11,6 +11,7 @@ import { getEnv } from "@/server/env"
 export const metadata: Metadata = {
   title: "Categories",
   description: "Fashion, streetwear, sneakers, jewelry, beauty, technology and more from independent brands.",
+  alternates: { canonical: "/categories" },
 }
 
 export default function CategoriesPage() {

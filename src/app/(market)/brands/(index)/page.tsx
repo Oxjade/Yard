@@ -13,6 +13,7 @@ import { getEnv } from "@/server/env"
 export const metadata: Metadata = {
   title: "Brands",
   description: "Independent brands on Yard. Search, filter by category, and follow the studios you like.",
+  alternates: { canonical: "/brands" },
 }
 
 const header = (blurb: React.ReactNode) => (

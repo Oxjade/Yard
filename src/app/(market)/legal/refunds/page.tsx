@@ -4,6 +4,7 @@ import { LegalLink, LegalList, LegalPage, LegalSection, SupportEmail } from "@/c
 export const metadata: Metadata = {
   title: "Returns and refunds",
   description: "How returns and refunds work on Yard: the 7-day returns window, what can't be returned, how to request a return, and when your refund arrives.",
+  alternates: { canonical: "/legal/refunds" },
 }
 
 /** /legal/refunds: the returns and refunds policy shoppers and brands follow on Yard. */

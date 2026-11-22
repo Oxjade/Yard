@@ -394,7 +394,7 @@ export function CollectionIndex({ ctx, collections, first }: { ctx: StorefrontCo
                 className="group flex items-center gap-3 rounded-lg border border-line-soft p-2 pr-4 transition-colors hover:border-(color:--sf-accent)"
               >
                 <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-card">
-                  <Image src={c.image.src} alt="" fill sizes="48px" className="object-cover" />
+                  <Image src={c.image.src} alt={c.image.alt || c.name} aria-hidden fill sizes="48px" className="object-cover" />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm text-ink transition-colors group-hover:text-(color:--sf-accent)">{c.name}</span>

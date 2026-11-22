@@ -1,9 +1,18 @@
 import type { MetadataRoute } from "next"
 import { connection } from "next/server"
+import { PRIVATE_PAGE_PREFIXES } from "@/lib/seo/meta"
 import { publicOrigin } from "@/lib/seo/url"
 
-/** Accounts, Studio, the Control Center, the API and checkout: never crawled, by anyone. */
-const PRIVATE = ["/admin", "/studio", "/api/", "/auth/", "/you", "/bag", "/checkout", "/inbox", "/notifications", "/wishlist", "/following", "/welcome", "/unsubscribe", "/dev", "/vendor"]
+/**
+ * Accounts, Studio, the Control Center, the API and checkout: never crawled, by anyone. The same
+ * pages answer `X-Robots-Tag: noindex` (next.config.ts), so they stay out of the index even when a
+ * crawler reaches one by a link. /sign-in is the exception: it is noindex but left crawlable, so a
+ * crawler that follows a "Sign in" link reads the noindex instead of reporting a blocked page.
+ * Never listed: /_next/ (the CSS, JavaScript and optimised images every page needs to render) and
+ * /vendor/ (the map worker and coastline data /around draws with). scripts/checks/seo-audit.mjs
+ * checks every sitemap URL against these rules.
+ */
+const PRIVATE = [...PRIVATE_PAGE_PREFIXES.filter((p) => p !== "/sign-in"), "/api/"]
 
 /**
  * The search and AI crawlers Yard wants to read it: search indexes (Googlebot, Bingbot, Applebot),

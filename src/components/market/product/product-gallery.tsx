@@ -75,7 +75,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
               aria-current={i === index}
               className="group/thumb relative aspect-[4/5] w-full overflow-hidden rounded-md bg-card transition-transform duration-100 active:scale-[0.97]"
             >
-              <Image src={img.src} alt="" width={72} height={90} unoptimized={privateMediaSrc(img.src)} className={cn("size-full object-cover transition-opacity duration-200", i === index ? "opacity-100" : "opacity-55 group-hover/thumb:opacity-90")} />
+              <Image src={img.src} alt={img.alt || `${name}, photo ${i + 1}`} aria-hidden width={72} height={90} unoptimized={privateMediaSrc(img.src)} className={cn("size-full object-cover transition-opacity duration-200", i === index ? "opacity-100" : "opacity-55 group-hover/thumb:opacity-90")} />
               {i === index ? <motion.span layoutId="pdp-thumb-ring" transition={spring.indicator} className="absolute inset-0 rounded-md border-2 border-violet" /> : null}
             </button>
           ))}
@@ -121,7 +121,7 @@ export function ProductGallery({ images, name, overlay }: { images: ImageAsset[]
         {neighbours.length ? (
           <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 opacity-0">
             {neighbours.map((i) => (
-              <Image key={images[i].src} src={images[i].src} alt="" fill sizes={SIZES} unoptimized={privateMediaSrc(images[i].src)} className="object-cover" />
+              <Image key={images[i].src} src={images[i].src} alt={images[i].alt || `${name}, photo ${i + 1}`} fill sizes={SIZES} unoptimized={privateMediaSrc(images[i].src)} className="object-cover" />
             ))}
           </div>
         ) : null}

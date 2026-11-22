@@ -19,11 +19,11 @@ export function LiveBrandCard({ brand: b, compact = false, className }: { brand:
     <article className={cn("group/brand relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-line-soft bg-card", className)}>
       <Link href={href} className={cn("relative block overflow-hidden bg-surface", compact ? "aspect-[16/9]" : "aspect-[4/3]")} aria-hidden tabIndex={-1}>
         {b.coverSrc ? (
-          <Image src={b.coverSrc} alt="" fill unoptimized sizes="(min-width: 1024px) 25vw, (min-width: 640px) 45vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]" />
+          <Image src={b.coverSrc} alt={`${b.name} banner`} fill unoptimized sizes="(min-width: 1024px) 25vw, (min-width: 640px) 45vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]" />
         ) : null}
         <span className="scrim-b absolute inset-0" />
         <span className={cn("absolute bottom-3 left-3 inline-flex items-center justify-center overflow-hidden rounded-lg border border-white/12 bg-obsidian font-display text-ink", compact ? "size-12 text-base" : "size-16 text-xl")}>
-          {b.logoSrc ? <Image src={b.logoSrc} alt="" fill unoptimized sizes="64px" className="object-cover" /> : brandMonogram(b.name)}
+          {b.logoSrc ? <Image src={b.logoSrc} alt={`${b.name} logo`} fill unoptimized sizes="64px" className="object-cover" /> : brandMonogram(b.name)}
         </span>
         {b.forSale ? null : <OpeningSoonTag className="absolute top-3 left-3" />}
       </Link>

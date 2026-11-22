@@ -259,7 +259,7 @@ function ZoomStage({ images, index, onIndexChange, title }: { images: ImageAsset
                 aria-current={i === index}
                 className={cn("relative h-14 w-11 overflow-hidden rounded-md border transition", i === index ? "border-violet" : "border-white/10 opacity-60 hover:opacity-100")}
               >
-                <Image src={img.src} alt="" fill sizes="44px" unoptimized={privateMediaSrc(img.src)} className="object-cover" />
+                <Image src={img.src} alt={img.alt || `${title}, photo ${i + 1}`} aria-hidden fill sizes="44px" unoptimized={privateMediaSrc(img.src)} className="object-cover" />
               </button>
             ))}
           </div>

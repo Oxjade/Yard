@@ -80,7 +80,8 @@ export function ProductCard({
           {product.images[1] && !isFeature && variant !== "compact" ? (
             <Image
               src={product.images[1].src}
-              alt=""
+              alt={product.images[1].alt || `${product.name}, photo 2`}
+              aria-hidden
               unoptimized={product.images[1].src.startsWith("/api/")}
               fill
               sizes={sizes}

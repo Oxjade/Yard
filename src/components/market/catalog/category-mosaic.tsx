@@ -37,7 +37,8 @@ function CategoryTile({ category, pieces, brands, index, size, phoneWide }: Cate
     >
       <Image
         src={category.image.src}
-        alt=""
+        alt={category.image.alt || category.name}
+        aria-hidden
         fill
         preload={index < 3}
         sizes={size === "lg" ? "(min-width: 768px) 58vw, 100vw" : "(min-width: 768px) 42vw, 50vw"}

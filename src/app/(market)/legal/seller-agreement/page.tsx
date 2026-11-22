@@ -3,7 +3,11 @@ import { LEGAL_COLUMN } from "@/components/market/legal-page"
 import Link from "next/link"
 import { SELLER_AGREEMENT_VERSION } from "@/lib/api/contracts/founding"
 
-export const metadata: Metadata = { title: "Seller agreement" }
+export const metadata: Metadata = {
+  title: "Seller agreement",
+  description: "The seller agreement a brand's owner accepts when opening a storefront on Yard, the marketplace for independent brands.",
+  alternates: { canonical: "/legal/seller-agreement" },
+}
 
 /**
  * /legal/seller-agreement: the agreement a founding brand's owner accepts when claiming their store

@@ -85,8 +85,15 @@ export async function loadChildren(d: Executor, productIds: string[]): Promise<L
   return { options: group(options, (o) => o.productId), variants: group(variants, (v) => v.productId), images: group(images, (i) => i.productId), collections }
 }
 
-function imageDto(i: typeof catalogImages.$inferSelect, as?: "brand"): ImageDto {
-  return { id: i.id, src: i.mediaId ? mediaSrc(i.mediaId, as) : (i.path ?? "/media/missing.svg"), alt: i.alt, width: i.width, height: i.height, mediaId: i.mediaId }
+/**
+ * A product photo. Its alt is the brand's own description of the photo; a photo saved without one
+ * (alt is optional when a brand uploads) is described by the product's title, plus its place
+ * after the first ("Linen shirt, photo 2"), so no product photo is shown to shoppers with an empty alt.
+ */
+function imageDto(i: typeof catalogImages.$inferSelect, as?: "brand", title?: string, n = 0): ImageDto {
+  // Studio (as "brand") edits the stored alt, so it sees it as saved.
+  const alt = as === "brand" ? i.alt : i.alt?.trim() || (title ? (n > 0 ? `${title}, photo ${n + 1}` : title) : "")
+  return { id: i.id, src: i.mediaId ? mediaSrc(i.mediaId, as) : (i.path ?? "/media/missing.svg"), alt, width: i.width, height: i.height, mediaId: i.mediaId }
 }
 
 function base(p: ProductRow, kids: Loaded, as?: "brand") {
@@ -104,7 +111,7 @@ function base(p: ProductRow, kids: Loaded, as?: "brand") {
     priceMinor: p.priceMinor,
     compareAtMinor: p.compareAtMinor,
     currency: p.currency,
-    images: (kids.images.get(p.id) ?? []).map((i) => imageDto(i, as)),
+    images: (kids.images.get(p.id) ?? []).map((i, n) => imageDto(i, as, p.title, n)),
     options: (kids.options.get(p.id) ?? []).map((o) => ({ name: o.name, values: o.values })),
     processingDays: p.processingMin != null && p.processingMax != null ? ([p.processingMin, p.processingMax] as [number, number]) : null,
     // Production never points a piece at a sample drop (a demo-seeded database's link).

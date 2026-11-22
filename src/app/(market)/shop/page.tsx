@@ -1,11 +1,28 @@
 import { Suspense } from "react"
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import { CatalogListingServer } from "@/components/market/catalog/catalog-listing-server"
 import { CatalogListingSkeleton } from "@/components/market/catalog/catalog-skeleton"
 
-export const metadata: Metadata = {
-  title: "Shop",
-  description: "Every piece from every independent brand on the marketplace, with search, filters and sorting.",
+const description = "Every piece from every independent brand on the marketplace, with search, filters and sorting."
+
+/**
+ * /shop is one indexable page whatever its filters (canonical /shop). A search (/shop?q=…) gets its
+ * own title and description, and is noindex but followed: search results are for people, while the
+ * pieces they link to are each indexed on their own page.
+ */
+export async function generateMetadata({ searchParams }: PageProps<"/shop">): Promise<Metadata> {
+  const raw = (await searchParams).q
+  const q = (Array.isArray(raw) ? raw[0] : raw)?.replace(/\s+/g, " ").trim().slice(0, 60)
+  if (q) {
+    return {
+      title: `Search: ${q}`,
+      description: metaDescription(`Pieces from independent brands on Yard matching "${q}". Filter by category, price and brand.`),
+      alternates: { canonical: "/shop" },
+      robots: { index: false, follow: true },
+    }
+  }
+  return { title: "Shop", description, alternates: { canonical: "/shop" } }
 }
 
 export default function ShopPage({ searchParams }: PageProps<"/shop">) {

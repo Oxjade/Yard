@@ -7,6 +7,7 @@ import { stories } from "@/lib/data"
 export const metadata: Metadata = {
   title: "Stories",
   description: "Origins, process and the people behind independent brands, told by the brands themselves.",
+  alternates: { canonical: "/stories" },
 }
 
 export default function StoriesPage() {

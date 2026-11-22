@@ -28,7 +28,7 @@ export function LiveDropCard({ drop, sponsored }: { drop: Drop; sponsored: boole
       <Link href={href} tabIndex={-1} aria-hidden className="relative block aspect-[16/10] overflow-hidden sm:aspect-auto sm:min-h-[320px]">
         <FadeImage
           src={drop.image.src}
-          alt=""
+          alt={drop.image.alt || drop.name}
           fill
           sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 100vw"
           className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/live:scale-[1.04]"

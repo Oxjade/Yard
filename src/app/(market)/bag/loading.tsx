@@ -4,7 +4,7 @@ import { BagSkeleton } from "@/components/market/checkout/skeletons"
 export default function BagLoading() {
   return (
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
-      <h1 className="font-display text-display-lg text-ink">Cart</h1>
+      <p className="font-display text-display-lg text-ink">Cart</p>
       <BagSkeleton />
     </div>
   )

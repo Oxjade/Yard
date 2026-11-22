@@ -8,7 +8,8 @@ import { sitePhotos } from "@/lib/site-images"
 
 export const metadata: Metadata = {
   title: `Sell on ${site.name}`,
-  description: `Open your brand's storefront on ${site.name}: one place for your pieces, drops, orders and payouts. Commission is ${commissionTerms} on completed sales.`,
+  description: `Open your brand's storefront on ${site.name}: pieces, drops, orders and payouts in one place. Commission: ${commissionTerms} on completed sales.`,
+  alternates: { canonical: "/sell" },
 }
 
 const points = [

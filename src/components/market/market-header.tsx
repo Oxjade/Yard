@@ -186,7 +186,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
             </div>
             {signedIn ? (
               <Link href="/you" className="press ml-1 hidden size-9 items-center justify-center overflow-hidden rounded-full bg-purple text-[11px] font-semibold text-ink ring-2 ring-black/40 hover:scale-[1.04] lg:inline-flex">
-                <PhotoOrInitials src={photo}>
+                <PhotoOrInitials src={photo} alt={user!.name}>
                   <span aria-hidden>{user!.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
                 </PhotoOrInitials>
                 <span className="sr-only">Your World</span>

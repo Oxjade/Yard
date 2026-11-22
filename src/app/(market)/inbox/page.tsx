@@ -6,7 +6,7 @@ import { img } from "@/lib/data/media"
 import { getEnv } from "@/server/env"
 import { invitePhoto, siteImages } from "@/lib/site-images"
 
-export const metadata: Metadata = { title: "Inbox" }
+export const metadata: Metadata = { title: "Inbox", robots: { index: false, follow: false } }
 
 /** The marketplace Inbox (§6.2): a static shell; conversations load on the client over the API. */
 export default function InboxPage() {

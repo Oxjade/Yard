@@ -344,7 +344,7 @@ export function PostLightbox({
                               <li key={p!.id}>
                                 <Link href={`/products/${p!.slug}`} className="flex items-center gap-3 rounded-md p-1.5 transition-colors hover:bg-elevated">
                                   <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-card">
-                                    <Image src={p!.images[0].src} alt="" fill sizes="48px" className="object-cover" />
+                                    <Image src={p!.images[0].src} alt={p!.images[0].alt || p!.name} aria-hidden fill sizes="48px" className="object-cover" />
                                   </span>
                                   <span className="min-w-0 flex-1 truncate text-sm text-ink">{p!.name}</span>
                                   <Price amount={p!.price} currency={p!.currency} compareAt={p!.compareAt} className="text-ink-2" />

@@ -15,7 +15,7 @@ export function BrandMark({ brand, size = "md", className }: { brand: Pick<Brand
     return (
       <span aria-hidden className={cn("inline-flex shrink-0 overflow-hidden border border-white/12 bg-obsidian", sizes[size], className)}>
         {/* eslint-disable-next-line @next/next/no-img-element -- /api/media serves the brand's own upload */}
-        <img src={brand.logoSrc} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+        <img src={brand.logoSrc} alt={`${brand.name} logo`} loading="lazy" decoding="async" className="size-full object-cover" />
       </span>
     )
   const style =

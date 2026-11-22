@@ -261,7 +261,7 @@ export function SearchOverlay() {
                               <li key={p.productId}>
                                 <Link href={p.slug ? `/products/${p.slug}` : `/shop?q=${encodeURIComponent(q.trim())}`} onClick={close} className="press flex items-center gap-3 rounded-lg p-2 [--press-scale:0.985] hover:bg-white/6">
                                   <span className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface">
-                                    {p.image ? <FadeImage src={p.image} alt="" fill sizes="48px" className="object-cover" /> : null}
+                                    {p.image ? <FadeImage src={p.image} alt={p.title} aria-hidden fill sizes="48px" className="object-cover" /> : null}
                                   </span>
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm text-ink">{p.title}</span>

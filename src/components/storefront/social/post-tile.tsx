@@ -75,7 +75,7 @@ export function PostTile({
         >
           <Image
             src={cover.src}
-            alt=""
+            alt={cover.alt || postLabel(post)}
             fill
             unoptimized
             sizes={sizes}

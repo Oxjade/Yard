@@ -216,7 +216,7 @@ export function storefrontBrandFromApi(
     : config?.coverPath ?? products[0]?.images[0]?.src ?? "/media/missing.svg"
   const cover: ImageAsset = {
     src: coverSrc,
-    alt: config?.coverAlt ?? profile.name,
+    alt: config?.coverAlt?.trim() || `${profile.name} banner`,
     width: 1600,
     height: 700,
     ...(config?.coverMediaId ? { mediaId: config.coverMediaId } : {}),
@@ -271,7 +271,7 @@ export function editorConfigFromDto(dto: StorefrontConfigDto, brand: Brand): Sto
     ...(coverSrc ? {
       cover: {
         src: coverSrc,
-        alt: coverAlt ?? brand.name,
+        alt: coverAlt?.trim() || `${brand.name} banner`,
         width: 1600,
         height: 700,
         ...(coverMediaId ? { mediaId: coverMediaId } : {}),

@@ -80,7 +80,7 @@ function Row({ entry: e, period, size }: { entry: ChartEntryDto; period: ChartPe
       <div className="flex min-w-0 items-center gap-3">
         {e.drop ? (
           <span className="relative size-9 shrink-0 overflow-hidden rounded-[5px] border border-white/12 bg-surface md:size-10">
-            <Image src={e.drop.image.src} alt="" fill sizes="40px" className="object-cover" />
+            <Image src={e.drop.image.src} alt={e.drop.image.alt || e.drop.name} aria-hidden fill sizes="40px" className="object-cover" />
           </span>
         ) : (
           <BrandMark brand={e.brand} className="size-9 rounded-[5px] text-[12px] md:size-10 md:text-[13px]" />

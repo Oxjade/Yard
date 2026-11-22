@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import { notFound } from "next/navigation"
 import { BrandCard } from "@/components/market/brand-card"
 import { SectionHeader } from "@/components/market/section-header"
@@ -18,7 +19,7 @@ import { listPublicDrops } from "@/server/drops/service"
 import { HttpError } from "@/server/http/errors"
 import { JsonLd } from "@/components/seo/json-ld"
 import { brandDescription, brandJsonLd, breadcrumbJsonLd, type SeoBrandInput } from "@/lib/seo/json-ld"
-import { plainText, publicOrigin } from "@/lib/seo/url"
+import { publicOrigin } from "@/lib/seo/url"
 
 /**
  * layout.tsx checks the address first, so an unknown storefront answers with a real 404 and this
@@ -47,7 +48,7 @@ function liveSeoBrand(data: LiveStorefront, brand?: Brand): SeoBrandInput {
 }
 
 function brandMetadata(seo: SeoBrandInput): Metadata {
-  const description = plainText(brandDescription(seo), 300)
+  const description = metaDescription(brandDescription(seo), `${seo.name}, an independent brand on Yard.`)
   const path = `/brands/${encodeURIComponent(seo.handle)}`
   const image = seo.image && !seo.image.endsWith("/missing.svg") ? seo.image : seo.logo
   const images = image ? [{ url: image, alt: seo.name }] : []

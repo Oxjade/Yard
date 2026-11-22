@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { metaDescription } from "@/lib/seo/meta"
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
@@ -40,7 +41,8 @@ export async function generateMetadata({ params }: PageProps<"/categories/[slug]
   const category = findCategory(slug)
   if (!category) return { title: "Category not found" }
   const path = `/categories/${category.slug}`
-  return { title: category.name, description: category.description, alternates: { canonical: path }, openGraph: { url: path, title: category.name, description: category.description, images: [{ url: category.image.src, alt: category.name }] } }
+  const description = metaDescription(category.description, `${category.name} from independent brands on Yard.`)
+  return { title: category.name, description, alternates: { canonical: path }, openGraph: { url: path, title: category.name, description, images: [{ url: category.image.src, alt: category.name }] } }
 }
 
 export default async function CategoryPage({ params }: PageProps<"/categories/[slug]">) {
@@ -81,7 +83,7 @@ export default async function CategoryPage({ params }: PageProps<"/categories/[s
       <JsonLd nodes={structured} />
       {/* Short banner: the category photograph with the title over it */}
       <header className="relative isolate overflow-hidden">
-        <Image src={category.image.src} alt="" fill preload sizes="100vw" className="-z-10 object-cover" />
+        <Image src={category.image.src} alt={category.image.alt || `${category.name} banner`} aria-hidden fill preload sizes="100vw" className="-z-10 object-cover" />
         <span className="scrim-l absolute inset-0 -z-10" aria-hidden />
         <span className="scrim-b absolute inset-0 -z-10" aria-hidden />
         <div className="mx-auto flex min-h-[360px] max-w-page flex-col justify-end px-4 pt-28 pb-8 md:min-h-[460px] md:px-8 md:pb-12">

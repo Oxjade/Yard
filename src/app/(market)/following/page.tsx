@@ -5,7 +5,7 @@ import { img } from "@/lib/data/media"
 import { getEnv } from "@/server/env"
 import { invitePhoto, siteImages } from "@/lib/site-images"
 
-export const metadata: Metadata = { title: "Following" }
+export const metadata: Metadata = { title: "Following", robots: { index: false, follow: false } }
 
 export default function FollowingPage() {
   return (

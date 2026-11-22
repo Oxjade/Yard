@@ -52,7 +52,7 @@ export function BrandDirectorySkeleton() {
   return (
     <div role="status" aria-label="Loading brands" className={page}>
       <header className="grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end lg:gap-12">
-        <h1 className="font-display text-display-lg text-ink">Brands</h1>
+        <p className="font-display text-display-lg text-ink">Brands</p>
         <Lines widths={["w-full", "w-full", "w-2/3"]} className="max-w-xl lg:pb-1" />
       </header>
       <div className="mt-10 grid gap-4 md:mt-12" aria-hidden>
@@ -124,7 +124,7 @@ export function DropsIndexSkeleton() {
   return (
     <div role="status" aria-label="Loading drops" className={page}>
       <header className="max-w-2xl">
-        <h1 className="font-display text-display-lg text-ink">Drops</h1>
+        <p className="font-display text-display-lg text-ink">Drops</p>
         <Lines widths={["w-full", "w-3/4"]} className="mt-4 max-w-xl" />
       </header>
       <div className="mt-10 grid overflow-hidden rounded-lg border border-line-soft bg-card md:mt-12 md:grid-cols-12" aria-hidden>
@@ -225,7 +225,7 @@ export function StoriesIndexSkeleton() {
   return (
     <div role="status" aria-label="Loading stories" className={page}>
       <header className="max-w-2xl">
-        <h1 className="font-display text-display-lg text-ink">Stories</h1>
+        <p className="font-display text-display-lg text-ink">Stories</p>
         <Lines widths={["w-full", "w-3/4"]} className="mt-4 max-w-xl" />
       </header>
       <div className="mt-8 flex gap-2 overflow-hidden md:mt-10" aria-hidden>

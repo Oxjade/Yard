@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import { notFound } from "next/navigation"
 import { CollectionView } from "@/components/storefront/collection-view"
 import { toCatalogProduct, type PublicCatalogProduct } from "@/lib/api/catalog-products"
@@ -64,7 +65,7 @@ export async function generateMetadata({ params }: PageProps<"/brands/[handle]/c
   try {
     const found = await loadCollectionPage(handle, collection)
     const path = `/brands/${encodeURIComponent(found.brand.handle)}/collections/${encodeURIComponent(found.collection.handle)}`
-    return { title: `${found.collection.name}, ${found.brand.name}`, description: found.collection.description || `${found.collection.name}, a collection by ${found.brand.name} on Yard.`, alternates: { canonical: path } }
+    return { title: `${found.collection.name}, ${found.brand.name}`, description: metaDescription(found.collection.description, `${found.collection.name}, a collection by ${found.brand.name} on Yard.`), alternates: { canonical: path } }
   } catch {
     return { title: "Collection not found" }
   }

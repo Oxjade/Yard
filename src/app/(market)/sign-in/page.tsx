@@ -6,7 +6,7 @@ import { img } from "@/lib/data/media"
 import { invitePhoto, siteImages } from "@/lib/site-images"
 import { getEnv } from "@/server/env"
 
-export const metadata: Metadata = { title: "Sign in" }
+export const metadata: Metadata = { title: "Sign in", robots: { index: false, follow: false } }
 
 export default function SignInPage() {
   return (

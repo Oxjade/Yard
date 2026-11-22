@@ -24,7 +24,7 @@ export function FeaturedDrop({ drop, sponsored }: { drop: Drop; sponsored: boole
         <Link href={href} className="group/feature relative block aspect-[4/3] h-full overflow-hidden bg-surface md:aspect-auto md:min-h-[600px]" aria-hidden tabIndex={-1}>
           <Image
             src={drop.image.src}
-            alt=""
+            alt={drop.image.alt || drop.name}
             fill
             preload
             sizes="(min-width: 768px) 58vw, 100vw"

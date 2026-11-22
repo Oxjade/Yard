@@ -4,6 +4,7 @@ import { LegalLink, LegalList, LegalPage, LegalSection, OPERATOR, SupportEmail }
 export const metadata: Metadata = {
   title: "Privacy policy",
   description: "What personal data Yard collects, why, who it is shared with, how long it is kept, and your rights under the Nigeria Data Protection Act 2023.",
+  alternates: { canonical: "/legal/privacy" },
 }
 
 /** /legal/privacy: Yard's privacy policy. OWNER: fill in the operator details in src/components/market/legal-page.tsx. */

@@ -91,7 +91,7 @@ export function DiscoverHero({
                 covered; there the same sponsored brand is in Featured brands, marked as such. */}
             <Link href={spotlight.href} className="glass glass-sheen group hidden items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--glass-bg-strong)] sm:flex">
               <span className="relative size-16 shrink-0 overflow-hidden rounded-lg">
-                <Image src={spotlight.image.src} alt="" fill sizes="64px" className="object-cover" />
+                <Image src={spotlight.image.src} alt={spotlight.image.alt || `${spotlight.brand.name} banner`} aria-hidden fill sizes="64px" className="object-cover" />
               </span>
               <span className="min-w-0 flex-1">
                 <SponsoredTag className="mb-1.5" />

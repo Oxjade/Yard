@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -34,7 +35,8 @@ export async function generateMetadata({ params }: PageProps<"/collections/[slug
   const { slug } = await params
   const collection = getCuratedCollection(slug)
   if (!collection) return { title: "Collection not found" }
-  return { title: collection.name, description: collection.description }
+  const path = `/collections/${encodeURIComponent(collection.slug)}`
+  return { title: collection.name, description: metaDescription(collection.description, `${collection.name}, an edit of pieces from independent brands on Yard.`), alternates: { canonical: path } }
 }
 
 export default async function CollectionPage({ params }: PageProps<"/collections/[slug]">) {
@@ -64,7 +66,7 @@ export default async function CollectionPage({ params }: PageProps<"/collections
     <>
       {/* Header: the collection photograph with the title over it */}
       <header className="relative isolate overflow-hidden">
-        <Image src={collection.image.src} alt="" fill preload sizes="100vw" className="-z-10 object-cover" />
+        <Image src={collection.image.src} alt={collection.image.alt || `${collection.name} banner`} aria-hidden fill preload sizes="100vw" className="-z-10 object-cover" />
         <span className="scrim-l absolute inset-0 -z-10" aria-hidden />
         <span className="scrim-b absolute inset-0 -z-10" aria-hidden />
         <div className="mx-auto flex min-h-[360px] max-w-page flex-col justify-end px-4 pt-28 pb-8 md:min-h-[460px] md:px-8 md:pb-12">

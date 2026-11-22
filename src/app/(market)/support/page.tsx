@@ -6,6 +6,7 @@ import { YardSocialLinks } from "@/components/market/yard-social-links"
 export const metadata: Metadata = {
   title: "Support",
   description: "Get help with orders, delivery, returns, drops, your account or selling on Yard. Message Yard Support or email us and a person on the Yard team replies.",
+  alternates: { canonical: "/support" },
 }
 
 /** /support: how to reach Yard, and quick answers to the questions shoppers and brands ask most. */

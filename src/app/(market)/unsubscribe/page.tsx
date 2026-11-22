@@ -1,7 +1,7 @@
 import { Suspense } from "react"
 import { UnsubscribeForm } from "./unsubscribe-form"
 
-export const metadata = { title: "Email preferences" }
+export const metadata = { title: "Email preferences", robots: { index: false, follow: false } }
 
 export default function UnsubscribePage() {
   return (

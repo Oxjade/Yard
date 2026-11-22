@@ -57,7 +57,8 @@ function PodiumCard({ entry: e, period, lead, shape }: { entry: ChartEntryDto; p
         {image ? (
           <Image
             src={image.src}
-            alt=""
+            alt={image.alt || (e.drop ? e.drop.name : `${e.brand.name} banner`)}
+            aria-hidden
             fill
             sizes={solo ? "(min-width: 768px) 60vw, 100vw" : lead || shape === "pair" ? "(min-width: 768px) 45vw, 100vw" : "(min-width: 768px) 28vw, 50vw"}
             priority={lead}

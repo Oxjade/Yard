@@ -78,7 +78,7 @@ export function CheckoutSkeleton({ withTitle = false }: { withTitle?: boolean })
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start xl:gap-16" role="status" aria-label="Loading checkout">
       <div className="min-w-0">
-        {withTitle ? <h1 className="font-display text-display-lg text-ink">Checkout</h1> : null}
+        {withTitle ? <p className="font-display text-display-lg text-ink">Checkout</p> : null}
         <div className="mt-8 grid grid-cols-5 gap-1.5 sm:gap-2 md:mt-10" aria-hidden>
           {Array.from({ length: 5 }, (_, i) => (
             <div key={i}>

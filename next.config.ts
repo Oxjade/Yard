@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
+import { PRIVATE_PAGE_PREFIXES } from "./src/lib/seo/meta";
 
 /**
  * A production build never carries the demo switches (hosting plan C.5): they are runtime-only
@@ -96,6 +97,12 @@ const nextConfig = (phase: string): NextConfig => {
             { key: "Permissions-Policy", value: "geolocation=(self), camera=(), microphone=()" },
           ],
         },
+        // Accounts, Studio, the Control Center, checkout, sign-in and the email-link pages are
+        // never indexed, whether or not a crawler honours robots.txt (src/lib/seo/meta.ts).
+        ...PRIVATE_PAGE_PREFIXES.flatMap((p) => [p, `${p}/:path*`]).map((source) => ({
+          source,
+          headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+        })),
       ];
     },
     turbopack: {

@@ -131,7 +131,7 @@ export function BagPop({ placement = "header", tailFrom }: { placement?: "header
           >
             <div className="flex gap-3">
               <span className="relative h-16 w-13 shrink-0 overflow-hidden rounded-md border-2 border-obsidian bg-[#e9e9e9]">
-                <Image src={hit.product.images[0].src} alt="" fill sizes="52px" className="object-cover" />
+                <Image src={hit.product.images[0].src} alt={hit.product.images[0].alt || hit.product.name} aria-hidden fill sizes="52px" className="object-cover" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="font-display text-[1.35rem] leading-none">{title}</p>

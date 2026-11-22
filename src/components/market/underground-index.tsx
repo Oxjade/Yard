@@ -52,7 +52,7 @@ export function UndergroundIndex({ entries }: { entries: { brand: Brand; note: s
           const on = brand.id === current?.brand.id
           return (
             <div key={brand.id} className={cn("absolute inset-0 transition-opacity duration-300 ease-out-quint", on ? "opacity-100" : "opacity-0")}>
-              <Image src={brand.cover.src} alt="" fill sizes="380px" className="object-cover" />
+              <Image src={brand.cover.src} alt={brand.cover.alt || `${brand.name} banner`} fill sizes="380px" className="object-cover" />
               <span className="scrim-b absolute inset-0" />
               <p className="absolute right-4 bottom-4 left-4 text-sm text-ink">{brand.tagline}</p>
             </div>

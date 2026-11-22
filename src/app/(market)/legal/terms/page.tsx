@@ -4,6 +4,7 @@ import { LegalLink, LegalList, LegalPage, LegalSection, OPERATOR, SupportEmail }
 export const metadata: Metadata = {
   title: "Terms of use",
   description: "The terms for using Yard, the Nigerian marketplace for independent brands: accounts, orders, payments, delivery, drops and draws, and your rights.",
+  alternates: { canonical: "/legal/terms" },
 }
 
 /** /legal/terms: the terms of use for shoppers and everyone using Yard. OWNER: fill in the operator details. */

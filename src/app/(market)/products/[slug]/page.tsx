@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { metaDescription } from "@/lib/seo/meta"
 import { notFound } from "next/navigation"
 import { ProductCard } from "@/components/market/product-card"
 import { ProductBreadcrumb } from "@/components/market/product/breadcrumb"
@@ -20,7 +21,7 @@ import { getEnv } from "@/server/env"
 import { LiveProductDrop } from "@/components/market/product/live-product-drop"
 import { JsonLd } from "@/components/seo/json-ld"
 import { breadcrumbJsonLd, categoryPath, decimalPrice, productDescription, productJsonLd } from "@/lib/seo/json-ld"
-import { plainText, publicOrigin } from "@/lib/seo/url"
+import { publicOrigin } from "@/lib/seo/url"
 import { productSeoInput } from "@/server/seo/catalog"
 
 /**
@@ -84,7 +85,7 @@ export async function generateMetadata({ params }: PageProps<"/products/[slug]">
   const seo = await seoFor(result)
   const title = `${product.name} by ${brandSummary.name}`
   // The brand's own words, cut to a snippet; empty, a line built from the facts ("{Product} by {Brand}, {city}. {price}. {category}.").
-  const description = seo ? plainText(productDescription(seo), 300) : plainText(product.description, 300)
+  const description = metaDescription(seo ? productDescription(seo) : product.description, `${title}. Shop independent brands on Yard.`)
   const path = `/products/${encodeURIComponent(product.slug)}`
   const images = product.images.slice(0, 4).map((image) => ({ url: image.src, alt: image.alt || product.name }))
   return {

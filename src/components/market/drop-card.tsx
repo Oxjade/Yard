@@ -38,7 +38,7 @@ export function DropCard({
       {/* The picture is a second way to the drop for the pointer; the title below is the link
           assistive tech and Tab use, so this one stays out of both. */}
       <Link href={href} tabIndex={-1} aria-hidden className={cn("relative block overflow-hidden", layout === "wide" ? "aspect-[4/3] md:aspect-auto md:w-1/2" : "aspect-[4/3]")}>
-        <FadeImage src={drop.image.src} alt="" fill loading={eager ? "eager" : undefined} sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
+        <FadeImage src={drop.image.src} alt={drop.image.alt || drop.name} fill loading={eager ? "eager" : undefined} sizes="(min-width: 1024px) 33vw, 90vw" className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/drop:scale-[1.04]" />
         <span className="absolute inset-0 bg-gradient-to-t from-obsidian/80 via-transparent to-transparent" />
       </Link>
       {/* Status and the sponsored disclosure sit over the picture but outside its link, so they

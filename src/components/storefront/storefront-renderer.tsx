@@ -171,6 +171,8 @@ export function StorefrontRenderer({ brand, config, products, productPaging, col
           : undefined
       }
     >
+      {/* The hero carries the brand's name as the page's h1; a storefront with its hero turned off still has one. */}
+      {!hasHero && !preview ? <h1 className="sr-only">{brand.name}</h1> : null}
       {announcement ? <AnnouncementBar ctx={ctx} text={announcement.text} href={announcement.href} /> : null}
 
       {topLeadIns}

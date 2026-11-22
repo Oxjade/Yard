@@ -69,7 +69,7 @@ export function BrandCard({
         <Link href={href} className="relative block aspect-[4/3] overflow-hidden" aria-hidden tabIndex={-1}>
           <FadeImage
             src={brand.cover.src}
-            alt=""
+            alt={brand.cover.alt || `${brand.name} banner`}
             fill
             sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
             className="object-cover transition-transform duration-[900ms] ease-out-quint group-hover/brand:scale-[1.04]"

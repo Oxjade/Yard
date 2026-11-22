@@ -218,7 +218,7 @@ export function YouAccountList({ onTheWay }: { onTheWay: number | null }) {
                   label={b.name}
                   lead={
                     b.logoSrc && !b.logoSrc.includes("as=brand") ? (
-                      <PhotoOrInitials src={b.logoSrc}>
+                      <PhotoOrInitials src={b.logoSrc} alt={`${b.name} logo`}>
                         <span className="text-xs font-semibold">{b.initials}</span>
                       </PhotoOrInitials>
                     ) : (
