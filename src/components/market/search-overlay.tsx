@@ -52,12 +52,11 @@ function matchCharts(term: string) {
   return CHART_SLUGS.filter((slug) => fold(chartLabels[slug]).split(" ").some((w) => w.startsWith(q)) || fold(chartLabels[slug]).startsWith(q)).map((slug) => ({ slug, label: chartLabels[slug] }))
 }
 
-/** Where focus goes when whatever opened the overlay has gone: the visible search control (header capsule or the home bar's Explore). */
-const searchOpener = () =>
-  Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label="Search brands and products"], nav[aria-label="Primary"] button[aria-haspopup="dialog"]')).find(canTakeFocus)
+/** Where focus goes when whatever opened the overlay has gone: the visible search control (the header capsule). */
+const searchOpener = () => Array.from(document.querySelectorAll<HTMLElement>('header button[aria-label="Search brands and products"]')).find(canTakeFocus)
 
 /**
- * Search (⌘K, the header capsule, or Explore in the phone home bar). Empty, it opens on Browse:
+ * Search (⌘K or the header capsule; on phones, Shop's own search field is the way in). Empty, it opens on Browse:
  * Charts, Around, Drops, Brands, Shop and Categories as 40px chips (§7.3), then a few searches to
  * try. Typing searches brands, products and categories, plus Cities (the Around gazetteer, which
  * never leaves the device) and Charts (board names). Closing returns focus to what opened it.
@@ -152,14 +151,8 @@ export function SearchOverlay() {
                 inputRef.current?.focus()
               }}
               onCloseAutoFocus={focus.onCloseAutoFocus}
-              // The phone home bar stays above the scrim while this is open (§7.2), with Explore in
-              // its pressed state: a tap on Explore closes the overlay through its own toggle, so
-              // that press doesn't also count as a tap outside (which would close, then reopen).
-              onPointerDownOutside={(e) => {
-                if (e.target instanceof Element && e.target.closest("[data-search-toggle]")) e.preventDefault()
-              }}
             >
-              {/* Below lg it ends clear of the home bar and its raised pin, which sit above the scrim. */}
+              {/* Below lg it ends clear of the home bar and its raised pin. */}
               <motion.div
                 className="glass-panel glass-sheen fixed inset-x-2 top-2 z-50 mx-auto flex max-h-[calc(100dvh-var(--tabbar-top)-2.25rem)] max-w-2xl flex-col overflow-hidden rounded-2xl outline-none sm:top-16 sm:max-h-[calc(100dvh-var(--tabbar-top)-5.75rem)] lg:max-h-[calc(100dvh-5rem)]"
                 initial={{ opacity: 0, y: -12, scale: 0.98 }}

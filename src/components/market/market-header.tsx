@@ -146,7 +146,7 @@ export function MarketHeader({ solid = false, className }: { solid?: boolean; cl
         </div>
 
         <div className="pointer-events-auto ml-auto flex items-center gap-3">
-          {/* The seller side ("Sell on Yard" beside the buying links), from xl; phones reach it from Explore (Browse) and the footer. */}
+          {/* The seller side ("Sell on Yard" beside the buying links), from xl; phones reach it from the footer. */}
           <Link href="/sell" aria-current={isActive(pathname, "/sell") ? "page" : undefined} className={cn("hidden rounded-full px-2 py-2 text-[13.5px] whitespace-nowrap transition-colors duration-150 xl:flex", !solid && "text-float", isActive(pathname, "/sell") ? "text-ink" : "text-ink/70 hover:text-ink")}>
             Sell on {site.name}
           </Link>

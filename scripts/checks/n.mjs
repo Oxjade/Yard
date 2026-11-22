@@ -15,7 +15,7 @@ export default async function n({ base }) {
   const nav = [...site.slice(site.indexOf("marketNav"), site.indexOf("browseLinks")).matchAll(/label: "([^"]+)"/g)].map((m) => m[1])
   add(nav.join(",") === "Discover,Brands,Shop,Categories,Charts,Around,Drops,Following", "header links: Discover, Brands, Shop, Categories, Charts, Around, Drops, Following", nav.join(", "))
   const browse = [...site.slice(site.indexOf("browseLinks")).matchAll(/label: "([^"]+)"/g)].map((m) => m[1])
-  add(browse.join(",") === "Shop,Charts,Around,Drops,Brands,Categories", "Explore opens on Browse: Shop first, then Charts", browse.join(", "))
+  add(browse.join(",") === "Shop,Charts,Around,Drops,Brands,Categories", "search opens on Browse: Shop first, then Charts", browse.join(", "))
 
   // §7.2: clearance tokens, used instead of magic offsets.
   const css = src("src/app/globals.css")
@@ -80,7 +80,8 @@ export default async function n({ base }) {
   const social = src("src/components/studio/social/social-studio.tsx")
   add(!/upload=1/.test(src("src/components/studio/studio-shell.tsx")) || /params\.get\("upload"\)/.test(social), "Studio palette's 'Upload content' (upload=1) only while Social reads ?upload=")
   add(!/&post=/.test(src("src/components/studio/studio-shell.tsx")) || /params\.get\("post"\)/.test(social), "Studio palette's post records (post=) only while Social reads ?post=")
-  add(/data-search-toggle/.test(src("src/components/market/mobile-tabbar.tsx")) && /z-\[60\]/.test(src("src/components/market/mobile-tabbar.tsx")), "home bar sits above the search overlay's scrim; Explore toggles it")
+  const tabbar = src("src/components/market/mobile-tabbar.tsx")
+  add(/<TabLink href="\/shop" label="Shop" icon=\{StorefrontIcon\}/.test(tabbar) && !/label="Explore"/.test(tabbar) && /return "shop"/.test(tabbar), "home bar: Home, Shop (a link to /shop, active on the browse pages), Around, Cart, Me")
   add(!/getBrandRank = \(brandId: string\) => api/.test(src("src/lib/api/charts.ts")) && existsSync(path.join(root, "src/app/api/charts/brands/route.ts")), "rank badges are batched into one GET /api/charts/brands per page")
   add(/onSentMessage/.test(src("src/server/media/serve.ts")), "media: inbox attachments reach the other side only on a sent message")
   add(!/acid/.test(src("src/components/dashboard/status-badge.tsx").split("const dots")[0].split("attention:")[1]?.split("\n")[0] ?? "acid"), "status badge: attention tone is not acid")

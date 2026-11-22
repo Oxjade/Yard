@@ -12,11 +12,12 @@ A global, discovery-driven marketplace for independent brands. It has three expe
 > and delivery estimates (see "The v2 embedded server" below). The pages that existed before
 > v2 still run on the browser data layer described next.
 >
-> - **Navigation:** the desktop header links Discover, Brands, Charts, Around, Drops and
->   Following, then Search, Inbox, notifications, Wishlist, Cart and your profile. Phones get a
->   home bar: Home, Explore (search, opening on Charts, Around, Drops, Brands, Shop and
->   Categories), the raised Around pin, Cart and Me. Shop and Categories live in Explore, the
->   footer and Discover. The shopping bag is called the cart everywhere (the route is still `/bag`).
+> - **Navigation:** the desktop header links Discover, Brands, Shop, Categories, Charts, Around,
+>   Drops and Following, then Search, Inbox, notifications, Wishlist, Cart and your profile.
+>   Phones get a home bar, the same five tabs as the apps: Home, Shop (the catalogue with its
+>   search field at the top, active on every browse page), the raised Around pin, Cart and Me.
+>   ⌘K and the header search capsule open search, which starts on Charts, Around, Drops, Brands,
+>   Shop and Categories. The shopping bag is called the cart everywhere (the route is still `/bag`).
 > - **Studio** has Inbox, Social (Social connections and Content Studio), Locations and
 >   Shipping & fulfilment in its sidebar, with live badges, and an Overview card that ticks off
 >   the new features from server state. **Admin** has Delivery, Messages, Content and Charts
