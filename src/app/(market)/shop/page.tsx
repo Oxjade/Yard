@@ -4,7 +4,8 @@ import { metaDescription } from "@/lib/seo/meta"
 import { CatalogListingServer } from "@/components/market/catalog/catalog-listing-server"
 import { CatalogListingSkeleton } from "@/components/market/catalog/catalog-skeleton"
 
-const description = "Every piece from every independent brand on the marketplace, with search, filters and sorting."
+const title = "Shop independent brands"
+const description = "Shop independent brands from around the world: fashion, streetwear, jewelry, art, beauty, home and more. Filter by category, size and price."
 
 /**
  * /shop is one indexable page whatever its filters (canonical /shop). A search (/shop?q=…) gets its
@@ -22,7 +23,7 @@ export async function generateMetadata({ searchParams }: PageProps<"/shop">): Pr
       robots: { index: false, follow: true },
     }
   }
-  return { title: "Shop", description, alternates: { canonical: "/shop" } }
+  return { title, description, alternates: { canonical: "/shop" }, openGraph: { url: "/shop", title, description }, twitter: { title, description } }
 }
 
 export default function ShopPage({ searchParams }: PageProps<"/shop">) {

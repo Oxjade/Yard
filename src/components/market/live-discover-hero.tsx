@@ -79,6 +79,9 @@ function DropHero({ drop }: { drop: PublicDropDto }) {
             <Button asChild variant="primary" size="lg">
               <Link href={`/drops/${drop.slug}`}>{shoppable ? "Shop the drop" : live ? "See the drop" : "Preview the drop"}</Link>
             </Button>
+            <Button asChild variant="glass" size="lg">
+              <Link href="/shop">Shop now</Link>
+            </Button>
             {drop.brand.name ? <FollowButton brandId={drop.brand.id} brandName={drop.brand.name} size="lg" variant="glass" /> : null}
           </div>
         </div>
@@ -125,11 +128,13 @@ function BrandHero({ brand: b }: { brand: FeaturedFoundingBrand }) {
           </h1>
           {b.excerpt ? <p style={delay(600)} className="hero-lift mt-6 line-clamp-2 max-w-md text-pretty text-base leading-relaxed text-ink/85 md:text-lg">{b.excerpt}</p> : null}
           <div style={delay(720)} className="hero-lift mt-8 flex flex-wrap items-center gap-3">
+            {/* Shop first: most visitors land here from a search and want to browse the whole
+                shop; the featured brand keeps its own way in beside it. */}
             <Button asChild variant="primary" size="lg">
-              <Link href={`/brands/${b.handle}`}>Shop the brand</Link>
+              <Link href="/shop">Shop now</Link>
             </Button>
             <Button asChild variant="glass" size="lg">
-              <Link href="/brands">See all brands</Link>
+              <Link href={`/brands/${b.handle}`}>Shop the brand</Link>
             </Button>
           </div>
         </div>
@@ -156,7 +161,7 @@ function WelcomeHero() {
             Small runs from independent brands you won&apos;t find anywhere else, from streetwear and jewelry to prints, skin care and ceramics. Follow a brand and we&apos;ll tell you when its next drop opens.
           </p>
           <div style={delay(720)} className="hero-lift mt-8 flex flex-wrap items-center gap-3">
-            <Button asChild variant="primary" size="lg"><Link href="/shop">Shop the pieces</Link></Button>
+            <Button asChild variant="primary" size="lg"><Link href="/shop">Shop now</Link></Button>
             <Button asChild variant="glass" size="lg"><Link href="/drops">See the drop calendar</Link></Button>
           </div>
           <p style={delay(820)} className="hero-lift mt-6 text-sm text-ink/75">

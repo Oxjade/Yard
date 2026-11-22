@@ -7,6 +7,7 @@ import Link from "next/link"
 import { BrandCard } from "@/components/market/brand-card"
 import { DiscoverHero } from "@/components/market/discover-hero"
 import { FoundingBrandsSection } from "@/components/market/founding-brands"
+import { HomeShopGrid, HomeShopGridSkeleton } from "@/components/market/home-shop-grid"
 import { AroundTeaser, ChartsThisWeek } from "@/components/market/discover-modules"
 import { UpcomingDropsBand } from "@/components/market/editorial/upcoming-drops-band"
 import { SampleUpcomingDropsBand } from "@/components/market/editorial/sample-upcoming-drops-band"
@@ -115,6 +116,14 @@ export default function DiscoverPage() {
       ) : (
         <Suspense fallback={<HeroFrame />}>
           <LiveDiscoverHero />
+        </Suspense>
+      )}
+
+      {/* Production: a shoppable grid of the newest public pieces straight under the hero, so a
+          visitor who lands here from a search can shop at once (one memoised read, streamed). */}
+      {demo ? null : (
+        <Suspense fallback={<HomeShopGridSkeleton />}>
+          <HomeShopGrid />
         </Suspense>
       )}
 
