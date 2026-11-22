@@ -122,7 +122,7 @@ private data class WelcomeStepCopy(val title: String, val body: String)
 
 private val welcomeSteps = listOf(
     WelcomeStepCopy("What do you shop for?", "Pick as many as you like. We use them to order Discover and suggest brands."),
-    WelcomeStepCopy("Which looks feel like you?", "Looks cut across categories. Pick any that fit, or skip."),
+    WelcomeStepCopy("Which vibes feel like you?", "Vibes cut across categories. Pick any that fit, or skip."),
     WelcomeStepCopy("Brands to start with", "Picked from your answers. Follow a few and their new pieces, drops and stories fill your Following feed."),
 )
 

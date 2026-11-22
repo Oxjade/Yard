@@ -173,7 +173,7 @@ object QuickAddRules {
 /** A cropped photo ready to upload. */
 class QuickAddPhoto(val jpeg: ByteArray, val preview: ImageBitmap)
 
-enum class QuickAddStep(val title: String) { Photos("Photos"), Name("Name"), Price("Price"), Options("Options & stock"), Review("Review") }
+enum class QuickAddStep(val title: String) { Photos("Photos"), Name("Name"), Price("Price"), Options("Options and stock"), Review("Review") }
 
 class StudioQuickAddModel(private val store: StudioStore?, previewCategories: List<StudioCategory>? = null) : ViewModel() {
     var step by mutableStateOf(QuickAddStep.Photos)
@@ -401,7 +401,7 @@ internal fun StudioQuickAddScreen(model: StudioQuickAddModel, onClose: () -> Uni
                         QuickAddStep.Photos -> "Add photos"
                         QuickAddStep.Name -> "What is it?"
                         QuickAddStep.Price -> "Set a price"
-                        QuickAddStep.Options -> "Options & stock"
+                        QuickAddStep.Options -> "Options and stock"
                         QuickAddStep.Review -> "Ready to go live?"
                     },
                     size = 40.sp,

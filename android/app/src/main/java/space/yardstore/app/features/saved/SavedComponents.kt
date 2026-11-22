@@ -137,7 +137,7 @@ fun SavedSignInInvite(
 }
 
 /**
- * Bottom sheet to pick a size/variant before moving a saved piece to the bag.
+ * Bottom sheet to pick an option (variant) before moving a saved piece to the bag.
  * The caller shows it while it has a product and clears that in [onDismiss].
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,7 +150,7 @@ fun SavedVariantSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var selectedId by rememberSaveable(product.id) {
-        // Pre-select when exactly one size is in stock.
+        // Pre-select when exactly one option is in stock.
         val inStock = product.variants.filter { it.inStock && it.available > 0 }
         mutableStateOf(if (inStock.size == 1) inStock[0].id else null)
     }
@@ -171,7 +171,7 @@ fun SavedVariantSheet(
                 .padding(bottom = Spacing.l),
             verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
-            YardSheetHeader("Choose a size", subtitle = product.title) { close() }
+            YardSheetHeader("Choose an option", subtitle = product.title) { close() }
             SavedFlowChips(
                 variants = product.variants,
                 selectedId = selectedId,
@@ -191,7 +191,7 @@ fun SavedVariantSheet(
                     PriceText(minor = selected.priceMinor, currency = product.currency, style = YardFonts.bodyEmphasis, color = Color.yard.ink)
                 }
                 YardButton(
-                    if (selected == null) "Pick a size" else "Move to bag",
+                    if (selected == null) "Pick an option" else "Move to bag",
                     modifier = Modifier.alpha(if (selected == null) 0.6f else 1f),
                     icon = Icons.Outlined.ShoppingBag,
                     style = YardButtonStyle.Primary,

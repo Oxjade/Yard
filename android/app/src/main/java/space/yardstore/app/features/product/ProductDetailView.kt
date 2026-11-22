@@ -212,7 +212,7 @@ private fun ProductDetailScreen(model: ProductDetailModel) {
                 val now = model.toggleWatch(variant.id)
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 toast.show(
-                    if (now) "We'll let you know when it's available" else "Stopped watching this size",
+                    if (now) "We'll let you know when it's available" else "Stopped watching this one",
                     if (now) Toast.Style.Success else Toast.Style.Info,
                     if (now) Icons.Filled.Notifications else Icons.Outlined.NotificationsOff,
                 )

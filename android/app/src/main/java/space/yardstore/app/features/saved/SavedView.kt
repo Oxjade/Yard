@@ -128,7 +128,7 @@ sealed interface SavedMoveAction {
     data class Direct(val variant: ProductVariant) : SavedMoveAction
     /** Nothing in stock: say so. */
     data object SoldOut : SavedMoveAction
-    /** Several variants: pick a size first. */
+    /** Several variants: pick an option first. */
     data object PickSize : SavedMoveAction
 }
 
