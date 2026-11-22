@@ -292,10 +292,16 @@ object YardPushCenter {
         upload(token)
     }
 
+    /**
+     * True while the signed-in account is a brand member: registrations send `studio: true` so this
+     * device also gets Studio pushes (set by the root from `shopper.brands`).
+     */
+    var studioCapable: Boolean = false
+
     /** POST /api/devices; failures (signed out → 401, offline) are ignored and retried next time. */
     internal suspend fun upload(token: String) {
         try {
-            PushDevicesAPI.register(token)
+            PushDevicesAPI.register(token, studio = if (studioCapable) true else null)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -383,7 +389,10 @@ fun YardPushNotifications() {
         }
     }
 
-    LaunchedEffect(session.shopper?.id ?: "signed-out") {
+    // Re-register when the account changes, and when it becomes a brand member (studio: true).
+    val isBrandMember = session.shopper?.brands?.isNotEmpty() == true
+    LaunchedEffect(session.shopper?.id ?: "signed-out", isBrandMember) {
+        center.studioCapable = isBrandMember
         if (session.isSignedIn) center.uploadTokenIfPossible(context)
     }
 

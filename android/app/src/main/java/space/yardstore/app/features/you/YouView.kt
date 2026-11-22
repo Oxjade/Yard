@@ -75,6 +75,8 @@ import space.yardstore.app.core.models.Shopper
 import space.yardstore.app.core.stores.LocalFollowStore
 import space.yardstore.app.core.stores.LocalSavedStore
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.features.sell.YouSellerCard
+import space.yardstore.app.features.studio.LocalStudioStore
 import space.yardstore.app.designsystem.Spacing
 import space.yardstore.app.designsystem.YardDisplayText
 import space.yardstore.app.designsystem.YardFonts
@@ -104,6 +106,7 @@ import java.time.LocalTime
 @Composable
 fun YouView() {
     val session = LocalSessionStore.current
+    val studio = LocalStudioStore.current
     val router = LocalRouter.current
     val context = LocalContext.current
     val dark = Color.yard.isDark
@@ -153,6 +156,8 @@ fun YouView() {
                 session.isSignedIn && shopper != null -> {
                     YouProfileHeader(shopper)
                     LaunchedEffect(shopper.id) { badges.refresh(true) }
+                    // "{Brand}: in review", or "Switch to Studio" for brand members.
+                    YouSellerCard()
                     YouQuickLinks(badges)
                 }
                 !session.hasLoaded -> YouLoadingHeader()
@@ -161,7 +166,12 @@ fun YouView() {
 
             YouSettingsGroup(null) {
                 SettingsRow("Settings", Icons.Outlined.Settings, Modifier.youRowClick { router.push(Route.Settings) })
-                SettingsRow("Sell on Yard", Icons.Outlined.Storefront, Modifier.youRowClick { YouWebPage.Sell.open(context, dark) })
+                when {
+                    // Brand members switch to Studio; everyone else applies in the app.
+                    studio.canOpenStudio -> SettingsRow("Switch to Studio", Icons.Outlined.Storefront, Modifier.youRowClick { studio.enter() })
+                    shopper?.brands.isNullOrEmpty() && signedIn -> SettingsRow("Sell on Yard", Icons.Outlined.Storefront, Modifier.youRowClick { studio.openApplication() })
+                    !signedIn -> SettingsRow("Sell on Yard", Icons.Outlined.Storefront, Modifier.youRowClick { YouWebPage.Sell.open(context, dark) })
+                }
             }
 
             // Help: the native Yard Support thread, and the website's help centre.

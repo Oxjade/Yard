@@ -42,6 +42,13 @@ data class YardColors(
     val purple: Color,
     /** Violet: #A78BFA dark / #6D28D9 light (readable purple text on either background). */
     val violet: Color,
+    /**
+     * Yard violet #9452FF in both modes (the website's `--color-violet`): bold fills (Studio, the
+     * "Sell on Yard" card, charts). Put [onVioletFill] text on it.
+     */
+    val violetFill: Color,
+    /** Text/icons on a [violetFill]: white in both modes. */
+    val onVioletFill: Color,
     /** Errors and destructive actions. Dark #FF4D4D / light #D92D20. */
     val danger: Color,
     /** Success. Dark #22C55E / light #16A34A. */
@@ -68,6 +75,8 @@ data class YardColors(
             onAcid = Color(0xFF0B0B0B),
             purple = Color(0xFF6D28D9),
             violet = Color(0xFF6D28D9),
+            violetFill = Color(0xFF9452FF),
+            onVioletFill = Color(0xFFFFFFFF),
             danger = Color(0xFFD92D20),
             success = Color(0xFF16A34A),
             onPhoto = Color(0xFFFFFFFF),
@@ -88,6 +97,8 @@ data class YardColors(
             onAcid = Color(0xFF0B0B0B),
             purple = Color(0xFF6D28D9),
             violet = Color(0xFFA78BFA),
+            violetFill = Color(0xFF9452FF),
+            onVioletFill = Color(0xFFFFFFFF),
             danger = Color(0xFFFF4D4D),
             success = Color(0xFF22C55E),
             onPhoto = Color(0xFFFFFFFF),

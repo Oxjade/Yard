@@ -124,6 +124,10 @@ import space.yardstore.app.features.home.HomeView
 import space.yardstore.app.features.liveactivity.LiveTrackingManager
 import space.yardstore.app.features.notifications.YardPushNotifications
 import space.yardstore.app.features.search.SearchView
+import space.yardstore.app.features.sell.RoleSelectionView
+import space.yardstore.app.features.sell.SellApplicationView
+import space.yardstore.app.features.studio.LocalStudioStore
+import space.yardstore.app.features.studio.StudioRootView
 import space.yardstore.app.features.you.YouView
 import kotlin.math.sign
 
@@ -158,8 +162,10 @@ fun RootView(container: AppContainer) {
     val follows = container.follows
     val saved = container.saved
     val toast = container.toast
+    val studio = container.studio
 
     CompositionLocalProvider(
+        LocalStudioStore provides studio,
         LocalRouter provides router,
         LocalSessionStore provides session,
         LocalCartStore provides cart,
@@ -186,7 +192,11 @@ fun RootView(container: AppContainer) {
             // What the floating tab pill / rail blur (API 31+). The pill and rail are siblings of
             // this source, never inside it.
             val backdrop = rememberGlassBackdrop()
+            val studioShowing = studio.isStudio
             YardToastHost(toast, Modifier.fillMaxSize().background(Color.yard.bg)) {
+              // Shopping and Studio: the shopping shell stays composed (its tabs keep their state)
+              // but is neither placed nor drawn while Studio shows.
+              Box(Modifier.fillMaxSize().hiddenWhen(studioShowing)) {
                 // The tab stacks keep the same position in the tree for every window size, so
                 // rotating or unfolding never recreates a back stack.
                 Box(Modifier.fillMaxSize().glassBackdropSource(backdrop).background(Color.yard.bg).padding(start = railReserve)) {
@@ -217,6 +227,24 @@ fun RootView(container: AppContainer) {
                         backdrop = backdrop,
                     )
                 }
+              }
+                if (studioShowing) StudioRootView()
+                // "What brings you to Yard?" (once per account on this device), then the short
+                // application when they sell.
+                AnimatedVisibility(
+                    visible = studio.needsRoleChoice && router.sheet == null && !studio.showsApplication,
+                    enter = fadeIn(Motion.crossfade()),
+                    exit = fadeOut(Motion.crossfade()),
+                ) {
+                    RoleSelectionView()
+                }
+                AnimatedVisibility(
+                    visible = studio.showsApplication && session.isSignedIn,
+                    enter = slideInVertically(Motion.emphasized()) { it / 3 } + fadeIn(Motion.crossfade()),
+                    exit = slideOutVertically(Motion.standard()) { it / 3 } + fadeOut(Motion.crossfade()),
+                ) {
+                    SellApplicationView()
+                }
             }
 
             RouteSheetHost(router)
@@ -225,12 +253,19 @@ fun RootView(container: AppContainer) {
         }
 
         // Android back on a non-Home tab root goes to Home first (then leaves the app).
-        BackHandler(enabled = router.sheet == null && router.depth == 0 && router.selectedTab != AppTab.Home) {
+        BackHandler(enabled = !studio.isStudio && router.sheet == null && router.depth == 0 && router.selectedTab != AppTab.Home) {
             router.select(AppTab.Home)
         }
     }
 
     LaunchedEffect(Unit) { session.refresh() }
+    // Studio: apply the remembered mode for this account, the brand list's changes, and any Studio
+    // link that arrived before the session was known (a cold start from a push).
+    val brandsKey = session.shopper?.let { s -> s.id + s.brands.joinToString { it.id + it.status + it.canOpenStudio } } ?: "signed-out"
+    LaunchedEffect(brandsKey, session.hasLoaded) {
+        studio.sessionChanged()
+        studio.resolvePendingLink()
+    }
     // Reload the shopper's data whenever who is signed in changes (launch, sign in, sign out).
     LaunchedEffect(session.shopper?.id ?: "signed-out") {
         cart.load()
@@ -256,6 +291,12 @@ fun RootView(container: AppContainer) {
         }
         resumedOnce = true
     }
+}
+
+/** Keeps a subtree composed but unplaced (not drawn, not touchable) while [hidden]. */
+private fun Modifier.hiddenWhen(hidden: Boolean): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) { if (!hidden) placeable.place(0, 0) }
 }
 
 /** A dispatcher that nobody listens to: hidden tabs register their back handlers here. */

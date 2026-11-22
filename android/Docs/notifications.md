@@ -43,3 +43,11 @@ Until 1 is done, no soft prompt appears (the in-app list works regardless).
 
 ## Premium pass, round 2
 - Unread dot (`UnreadDot`) and icon tint ease when marked read / unread; skeleton → list crossfade.
+
+## Studio pushes (Docs/studio.md)
+
+`YardPushMessage` also reads `scope`, `link` (kept only when it starts with `yard://studio`) and
+`brandId`. A Studio push's tap opens `MainActivity` with `StudioPushTap.EXTRA_LINK`/`EXTRA_BRAND`
+(background taps: FCM's `scope`/`link`/`brandId` extras); `StudioStore.openLink` switches brand,
+enters Studio and routes. `POST /api/devices` sends `studio: true` while the account is a brand
+member (`YardPushCenter.studioCapable`, set by `YardPushNotifications()`).

@@ -219,15 +219,19 @@ object AuthAppHandoff {
      * Starts a social sign-in: a new verifier (replacing any earlier one) and the app-start URL to
      * open in a Custom Tab.
      */
-    fun begin(button: AuthSocialButton, base: HttpUrl = Config.baseHttpUrl): String {
+    fun begin(button: AuthSocialButton, base: HttpUrl = Config.baseHttpUrl, actor: String = "shopper"): String {
         val verifier = AuthPkce.newVerifier()
         store.save(AuthHandoffPending(verifier = verifier, buttonKey = button.key, label = button.label, createdAt = clock()))
         outcome = null
-        return appStartUrl(button, AuthPkce.challenge(verifier), base)
+        return appStartUrl(button, AuthPkce.challenge(verifier), base, actor)
     }
 
-    /** GET /api/auth/oauth/{provider}/app-start?client=android&challenge=…&mode=signin&actor=shopper[&connection=…]. */
-    fun appStartUrl(button: AuthSocialButton, challenge: String, base: HttpUrl = Config.baseHttpUrl): String {
+    /**
+     * GET /api/auth/oauth/{provider}/app-start?client=android&challenge=…&mode=signin&actor=shopper[&connection=…].
+     * [actor] "brand" re-confirms an open Studio session for money actions (docs/APP.md › Sessions):
+     * the exchange then sets a fresh `yard_b`.
+     */
+    fun appStartUrl(button: AuthSocialButton, challenge: String, base: HttpUrl = Config.baseHttpUrl, actor: String = "shopper"): String {
         val b = base.newBuilder()
             .encodedPath("/")
             .query(null)
@@ -238,7 +242,7 @@ object AuthAppHandoff {
             .addQueryParameter("client", "android")
             .addQueryParameter("challenge", challenge)
             .addQueryParameter("mode", "signin")
-            .addQueryParameter("actor", "shopper")
+            .addQueryParameter("actor", actor)
         if (!button.connection.isNullOrEmpty()) b.addQueryParameter("connection", button.connection)
         return b.build().toString()
     }

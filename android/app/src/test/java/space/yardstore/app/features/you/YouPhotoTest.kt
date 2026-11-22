@@ -60,6 +60,10 @@ class YouPhotoTest {
 
     @After fun tearDown() {
         server.shutdown()
+        // An upload cancelled mid-request (reset/discard) finishes its Dispatchers.IO block after the
+        // test and resumes on Main: let it land while the test Main is still installed, or it fails
+        // the next test class in this JVM ("uncaught exceptions before the test started").
+        Thread.sleep(250)
         Dispatchers.resetMain()
     }
 

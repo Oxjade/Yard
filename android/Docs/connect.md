@@ -40,8 +40,8 @@ sign-in back with a single-use code that the app exchanges itself. Code: `featur
    - A `result` other than `signed_in`, or a link with no code, shows the website's sentence for it
      (`AuthOAuthResult`, same map as `auth-oauth-completion.tsx`).
 5. `SignInView` picks up `AuthAppHandoff.outcome` and continues exactly like before: confirms a
-   shopper is in the session, then "What brings you to Yard?" (shop → Welcome or close; sell →
-   `/studio/onboarding` in a Custom Tab), Welcome on first sign-in, or close. While the code is being
+   shopper is in the session, then closes so the root can ask "What brings you to Yard?" once
+   (`RoleSelectionView`, Docs/studio.md), or Welcome on first sign-in, or close. While the code is being
    exchanged the tapped button shows its spinner (`AuthAppHandoff.exchangingKey`).
 
 The WebView sign-in (`AuthWebSheet`, cookie copying) is gone.
@@ -55,8 +55,11 @@ Code: `features/notifications/NotificationsRemotePush.kt` (+ `YardPushCenter` in
   every Firebase call is skipped (`FirebaseApp.getApps(context).isEmpty()`).
 - **Register** (after every sign-in and on app start while signed in — `YardPushNotifications()`):
   ```
-  POST /api/devices   {"platform":"android","token":"<fcm token>","appVersion":"<versionName>"}
+  POST /api/devices   {"platform":"android","token":"<fcm token>","appVersion":"<versionName>"[,"studio":true]}
   ```
+  `studio: true` is sent while the account is a brand member (`shopper.brands` non-empty), so the
+  device also gets Studio pushes; the app re-registers when that changes. Omitted otherwise (the
+  server keeps the stored value).
   `YardMessagingService.onNewToken` stores the token and posts it too (a 401 while signed out is ignored).
 - **Unregister**, before sign-out, while the session still works (`SessionStore.addBeforeSignOutListener`,
   max 3 s, failures ignored, never blocks sign-out):
@@ -71,6 +74,11 @@ Code: `features/notifications/NotificationsRemotePush.kt` (+ `YardPushCenter` in
   background tap arrives as the launcher intent with FCM extras (`google.message_id`, `url`). Either
   way `AppLinkRouting` → `YardPushCenter.handleTap(href)` → the existing routing (orders / inbox in
   You, others in Home). Only same-origin paths (`/…`, not `//…`) are opened; otherwise the list.
+- **Studio pushes** (`data.scope == "studio"`, `data.link` `yard://studio/…`, `data.brandId`): the
+  notification's tap intent carries `StudioPushTap.EXTRA_LINK` / `EXTRA_BRAND`; a background tap
+  carries FCM's `scope`/`link`/`brandId`. `MainActivity` hands either to `StudioStore.openLink`,
+  which switches the brand session when the push names another brand, enters Studio and opens the
+  screen (Docs/studio.md › Push and deep links). Only `yard://studio…` links are kept from the payload.
 - Permission (Android 13+): unchanged — the existing soft prompt after the first follow or a drop
   reminder, and You › Notifications. No new prompt.
 

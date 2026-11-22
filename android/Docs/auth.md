@@ -12,12 +12,13 @@ social pill, `AuthOnboarding`), SignInModel / SignInView, WelcomeModel / Welcome
   server `fields` go under their fields. Already signed in → "You're signed in" with Continue / Sign out.
   On success: `session.didSignIn()`, confirm a shopper exists, then Welcome (first time on this
   device) or close (dismiss sheet / pop).
-- **Shop or sell (new, from the website's /auth/complete)** — after a successful *social* sign-in
-  (non-demo shopper) the screen shows "What brings you to Yard?": **I’m here to shop** → Welcome
-  (not onboarded) or close; **I want to sell on Yard** → `Config.webUrl("/studio/onboarding")`
-  (https://yardstore.space/studio/onboarding) in a Custom Tab; the panel stays so they can still
-  pick "shop" afterwards. Note: the Custom Tab uses the browser's cookies, so the seller application
-  asks them to sign in again on the web.
+- **Shop or sell** — now the root's full-screen `RoleSelectionView` ("What brings you to Yard?",
+  `features/sell/`, see `Docs/studio.md`), asked once per account on this device: after a new
+  sign-up (social `isNew`, a new password account) and for any existing account that never answered
+  here. Brand members and the demo shopper are never asked. `SignInView` closes after sign-in when
+  `LocalStudioStore.current.needsRoleChoice` and the root shows it. Shop → straight in (one optional
+  "Pick what you're into" step, reusing `WelcomeModel`'s categories and `AuthOnboarding.interests`,
+  only when this device never did Welcome); Sell → the in-app short application (no Custom Tab).
 - **WelcomeView()** — 3 skippable steps (categories, looks, brands to follow), progress bar,
   Back / Skip / Continue bar, "Skip setup". Signed out → "Make it yours" sign-in empty state.
   Android back steps back through the steps.

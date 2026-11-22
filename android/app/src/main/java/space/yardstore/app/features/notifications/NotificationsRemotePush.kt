@@ -27,6 +27,7 @@ import space.yardstore.app.app.MainActivity
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.networking.APIClient
 import space.yardstore.app.core.networking.HTTPMethod
+import space.yardstore.app.features.studio.StudioPushTap
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 
@@ -50,9 +51,18 @@ data class YardPushMessage(
     val body: String,
     /** Same-origin path to open on tap (`data.url`, checked); "/notifications" when missing or unsafe. */
     val href: String,
-    /** The notification kind (`data.kind`), informational. */
+    /** The notification kind (`data.kind`), informational (`studio.order`, `new_message`…). */
     val kind: String?,
+    /** `data.scope`: "studio" for a brand push (docs/APP.md › Push for brands), null for a shopper push. */
+    val scope: String? = null,
+    /** Studio pushes: the app link to open (`data.link`, `yard://studio/…`). */
+    val link: String? = null,
+    /** Studio pushes: the brand whose session the link needs (`data.brandId`). */
+    val brandId: String? = null,
 ) {
+    /** A brand push: its tap opens Studio (switching the brand session when needed). */
+    val isStudio: Boolean get() = scope == "studio"
+
     val channelId: String get() = YardNotificationChannels.UPDATES
     val tag: String? get() = id
 
@@ -70,6 +80,9 @@ data class YardPushMessage(
                 body = b,
                 href = safeHref(data["url"]) ?: FALLBACK_HREF,
                 kind = data["kind"]?.trim()?.takeIf { it.isNotEmpty() },
+                scope = data["scope"]?.trim()?.takeIf { it.isNotEmpty() },
+                link = data["link"]?.trim()?.takeIf { it.startsWith("yard://studio") },
+                brandId = data["brandId"]?.trim()?.takeIf { it.isNotEmpty() },
             )
         }
 
@@ -97,9 +110,12 @@ data class YardPushMessage(
 
 // region Device registration (POST / DELETE /api/devices)
 
-/** POST /api/devices body. */
+/**
+ * POST /api/devices body. `studio: true` when the account is a brand member, so this device also
+ * gets Studio pushes; null is omitted (the server keeps the stored value).
+ */
 @Serializable
-data class PushDeviceBody(val platform: String, val token: String, val appVersion: String? = null)
+data class PushDeviceBody(val platform: String, val token: String, val appVersion: String? = null, val studio: Boolean? = null)
 
 /** DELETE /api/devices body. */
 @Serializable
@@ -114,9 +130,9 @@ object PushDevicesAPI {
     private val api: APIClient get() = clientOverride ?: APIClient.shared
     private fun p(path: String): String = baseOverride?.let { it.trimEnd('/') + path } ?: path
 
-    /** POST /api/devices { platform: "android", token, appVersion } — upsert, re-pointed to the caller. */
-    suspend fun register(token: String, appVersion: String = BuildConfig.VERSION_NAME) {
-        api.send(HTTPMethod.POST, p("/api/devices"), body = PushDeviceBody(platform = "android", token = token, appVersion = appVersion))
+    /** POST /api/devices { platform: "android", token, appVersion, studio? } — upsert, re-pointed to the caller. */
+    suspend fun register(token: String, appVersion: String = BuildConfig.VERSION_NAME, studio: Boolean? = null) {
+        api.send(HTTPMethod.POST, p("/api/devices"), body = PushDeviceBody(platform = "android", token = token, appVersion = appVersion, studio = studio))
     }
 
     /** DELETE /api/devices { token } — before signing out, while the session still works. */
@@ -198,10 +214,19 @@ object YardPushNotifier {
      * existing notification-tap routing (`AppLinkRouting` → `YardPushCenter.handleTap`) navigates.
      */
     private fun tapIntent(context: Context, message: YardPushMessage): PendingIntent {
-        val intent = Intent(Intent.ACTION_VIEW, Config.webUrl(message.href).toUri())
-            .setClass(context, MainActivity::class.java)
-            .putExtra(YardPushCenter.EXTRA_HREF, message.href)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val intent = if (message.isStudio) {
+            // A brand push: MainActivity hands it to Studio (switch brand, then open the link).
+            Intent(Intent.ACTION_VIEW, (message.link ?: "yard://studio").toUri())
+                .setClass(context, MainActivity::class.java)
+                .putExtra(StudioPushTap.EXTRA_LINK, message.link ?: "yard://studio")
+                .putExtra(StudioPushTap.EXTRA_BRAND, message.brandId.orEmpty())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        } else {
+            Intent(Intent.ACTION_VIEW, Config.webUrl(message.href).toUri())
+                .setClass(context, MainActivity::class.java)
+                .putExtra(YardPushCenter.EXTRA_HREF, message.href)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
         return PendingIntent.getActivity(
             context,
             (message.tag ?: message.href).hashCode(),

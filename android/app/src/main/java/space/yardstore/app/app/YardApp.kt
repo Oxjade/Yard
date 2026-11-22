@@ -32,6 +32,9 @@ class YardApp : Application(), SingletonImageLoader.Factory {
         YardNotificationChannels.create(this)
         // Push: restores the FCM token and unregisters it before every sign-out.
         YardPushCenter.install(this, container.session)
+        // Signing out of the app: DELETE /api/devices (above), then the brand session, then the
+        // shopper's (docs/APP.md › Sessions).
+        container.session.addBeforeSignOutListener { container.studio.signOutBrand() }
         LiveTrackingManager.install(this)
     }
 

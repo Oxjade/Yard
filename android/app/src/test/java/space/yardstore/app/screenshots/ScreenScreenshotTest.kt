@@ -87,6 +87,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import java.time.Instant
+import space.yardstore.app.features.sell.InterestsStep
+import space.yardstore.app.features.sell.RoleSelectionScreen
+import space.yardstore.app.features.sell.SellApplicationModel
+import space.yardstore.app.features.sell.SellApplicationScreen
+import space.yardstore.app.features.sell.SellStep
+import space.yardstore.app.features.studio.LocalStudioNav
+import space.yardstore.app.features.studio.QuickAddStep
+import space.yardstore.app.features.studio.StudioLink
+import space.yardstore.app.features.studio.StudioNav
+import space.yardstore.app.features.studio.StudioQuickAddModel
+import space.yardstore.app.features.studio.StudioQuickAddScreen
+import space.yardstore.app.features.studio.StudioRootView
+import space.yardstore.app.features.studio.StudioTab
 
 /**
  * Screen screenshots without an emulator (Robolectric native graphics + Roborazzi) and the
@@ -137,6 +150,7 @@ class TabletScreenScreenshotTest(private val screen: String, private val dark: B
 object ScreenshotHarness {
     fun capture(compose: ComposeContentTestRule, screen: String, size: String, dark: Boolean) {
         val context: Context = RuntimeEnvironment.getApplication()
+        FakeYardBackend.sessionBrands = YardScreens.brandsFor(screen)
         val server = FakeYardBackend.start(context)
         FakeImages.install(context)
         try {
@@ -159,14 +173,31 @@ object ScreenshotHarness {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 /** The screens, by file-name key. Each renders its real screen composable with preview fixtures. */
 object YardScreens {
-    val phone = listOf(
+    val phone: List<String> by lazy { listOf(
         "home", "product", "brand", "brands", "shop", "categories", "drops", "drop-detail", "bag", "checkout",
         "order-confirmation", "order-detail", "orders", "inbox", "conversation", "you", "you-photo", "settings", "charts",
         "settings-details", "settings-details-nophoto", "settings-photo-uploading", "settings-photo-failed",
         "settings-photo-failed-first", "photo-crop",
         "search", "search-typing", "saved", "sign-in", "welcome", "notifications", "around", "around-list",
         "place-detail", "root", "terms", "sign-in-sheet",
+    ) + studio }
+
+    /** Shop or sell, the short application, the You status and Studio mode (docs/APP.md › Studio in the app). */
+    val studio = listOf(
+        "role-selection", "role-interests",
+        "sell-name", "sell-presence", "sell-category", "sell-location", "sell-review", "sell-success",
+        "you-pending", "you-studio",
+        "studio-home", "studio-orders", "studio-order-detail",
+        "studio-add-photos", "studio-add-name", "studio-add-price", "studio-add-options", "studio-add-review", "studio-add-success",
+        "studio-products", "studio-product-detail", "studio-me", "studio-payouts", "studio-inbox", "studio-thread",
     )
+
+    /** `shopper.brands` the fake backend serves for [screen]. */
+    fun brandsFor(screen: String) = when {
+        screen == "you-pending" -> listOf(StudioFixtures.pendingBrand)
+        screen.startsWith("studio-") || screen == "you-studio" -> listOf(StudioFixtures.liveBrand)
+        else -> emptyList()
+    }
     val tablet = listOf("root", "home", "product", "brand", "shop", "drops", "inbox", "orders", "order-detail", "checkout", "sign-in", "charts", "terms", "sign-in-sheet")
 
     /** Screens drawn in a dialog window (sheets). */
@@ -278,6 +309,45 @@ object YardScreens {
                 placeId = AroundFixtures.store.id, summary = AroundFixtures.store, distanceMeters = 1200.0, logoUrl = null,
                 onBack = {}, onExit = {}, previewDetail = AroundFixtures.detail,
             )
+            "role-selection" -> RoleSelectionScreen(firstName = "Ada", onShop = {}, onSell = {})
+            "role-interests" -> InterestsStep(
+                categories = StudioFixtures.categories.map { WelcomeCategory(it.slug, it.name) },
+                loading = false,
+                onDone = {},
+            )
+            "sell-name" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Name, StudioFixtures.categories) }, {}, {})
+            "sell-presence" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Presence, StudioFixtures.categories) }, {}, {})
+            "sell-category" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Category, StudioFixtures.categories) }, {}, {})
+            "sell-location" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Location, StudioFixtures.categories) }, {}, {})
+            "sell-review" -> SellApplicationScreen(remember { SellApplicationModel.preview(SellStep.Review, StudioFixtures.categories) }, {}, {})
+            "sell-success" -> SellApplicationScreen(remember { SellApplicationModel.previewDone(StudioFixtures.categories) }, {}, {})
+            "you-pending", "you-studio" -> StudioHarness(enter = false) { YouView() }
+            "studio-home" -> StudioHarness(enter = true) { StudioRootView() }
+            "studio-orders" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Orders) } }) }
+            "studio-order-detail" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Order("mo_3")) } }) }
+            "studio-products" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Products) } }) }
+            "studio-product-detail" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Product("p_1")) } }) }
+            "studio-me" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.select(StudioTab.Me) } }) }
+            "studio-payouts" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Payouts) } }) }
+            "studio-inbox" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Inbox) } }) }
+            "studio-thread" -> StudioHarness(enter = true) { StudioRootView(remember { StudioNav().also { it.show(StudioLink.Conversation("cv_1")) } }) }
+            "studio-add-photos", "studio-add-name", "studio-add-price", "studio-add-options", "studio-add-review", "studio-add-success" -> StudioHarness(enter = true) {
+                val photo = remember { FakeImages.photo("product-photo", 800, 800).asImageBitmap() }
+                val step = when (screen) {
+                    "studio-add-photos" -> QuickAddStep.Photos
+                    "studio-add-name" -> QuickAddStep.Name
+                    "studio-add-price" -> QuickAddStep.Price
+                    "studio-add-options" -> QuickAddStep.Options
+                    else -> QuickAddStep.Review
+                }
+                val model = remember {
+                    if (screen == "studio-add-success") StudioQuickAddModel.previewDone(StudioFixtures.categories, photo)
+                    else StudioQuickAddModel.preview(step, StudioFixtures.categories, photo)
+                }
+                CompositionLocalProvider(LocalStudioNav provides remember { StudioNav() }) {
+                    StudioQuickAddScreen(model, onClose = {})
+                }
+            }
             else -> error("Unknown screen $screen")
         }
     }

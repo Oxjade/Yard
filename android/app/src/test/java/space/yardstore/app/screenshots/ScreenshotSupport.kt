@@ -33,6 +33,15 @@ import space.yardstore.app.core.models.Product
 import space.yardstore.app.core.models.ProductImage
 import space.yardstore.app.core.models.ProductsPage
 import space.yardstore.app.core.models.Session
+import space.yardstore.app.core.models.ShopperBrand
+import space.yardstore.app.features.studio.StudioApplicationResponse
+import space.yardstore.app.features.studio.StudioOrderResponse
+import space.yardstore.app.features.studio.StudioOrdersPage
+import space.yardstore.app.features.studio.StudioPrefs
+import space.yardstore.app.features.studio.StudioProductResponse
+import space.yardstore.app.features.studio.StudioProductsPage
+import space.yardstore.app.features.studio.StudioSwitchResult
+import space.yardstore.app.features.studio.StudioUnread
 import space.yardstore.app.core.models.WishlistItem
 import space.yardstore.app.core.models.WishlistResponse
 import space.yardstore.app.core.models.YardJson
@@ -106,11 +115,15 @@ object FakeYardBackend {
         signInProviders = listOf("google"), photo = accountPhoto,
     )
 
+    /** The signed-in shopper's brand memberships (`shopper.brands`), per screen. */
+    @Volatile var sessionBrands: List<ShopperBrand> = emptyList()
+
     fun respond(request: RecordedRequest): MockResponse {
         val url = request.requestUrl ?: return notFound
         val path = url.encodedPath
+        if (path.startsWith("/api/studio/")) return studio(path, url)
         return when {
-            path == "/api/session" -> json(Session(shopper = PreviewFixtures.shopper))
+            path == "/api/session" -> json(Session(shopper = PreviewFixtures.shopper.copy(brands = sessionBrands)))
             path == "/api/cart" -> json(cart)
             path == "/api/follows" -> json(FollowsResponse())
             path == "/api/wishlist" -> json(WishlistResponse(products.take(6).map { WishlistItem(productId = it.id, brandId = it.brandId, title = it.title, slug = it.slug, brandName = "Acme Studio") }))
@@ -147,6 +160,31 @@ object FakeYardBackend {
         }
     }
 
+    /** Studio (docs/APP.md › Studio in the app), served from [StudioFixtures]. */
+    private fun studio(path: String, url: okhttp3.HttpUrl): MockResponse = when {
+        path == "/api/studio/session/switch" -> json(StudioSwitchResult(profile = StudioFixtures.profile))
+        path == "/api/studio/dashboard" -> json(StudioFixtures.dashboard(if (url.queryParameter("days") == "30") 30 else 7))
+        path == "/api/studio/orders" -> {
+            val f = url.queryParameter("fulfilment")
+            json(StudioOrdersPage(StudioFixtures.orders.filter { f == null || it.states.fulfilment == f }))
+        }
+        path.startsWith("/api/studio/orders/") -> json(StudioOrderResponse(StudioFixtures.orderDetail))
+        path == "/api/studio/catalog/products" -> {
+            val status = url.queryParameter("status")
+            val list = StudioFixtures.products.filter { status == null || status == "all" || it.status == status }
+            json(StudioProductsPage(list, list.size, null))
+        }
+        path.startsWith("/api/studio/catalog/products/") -> json(StudioProductResponse(StudioFixtures.products.first()))
+        path == "/api/studio/catalog/website-pieces" -> json(StudioFixtures.pieces)
+        path == "/api/studio/payouts" -> json(StudioFixtures.payouts)
+        path == "/api/studio/inbox/unread" -> json(StudioUnread(2))
+        path == "/api/studio/inbox/conversations" -> json(StudioFixtures.conversations)
+        path.startsWith("/api/studio/inbox/conversations/") && path.endsWith("/messages") -> json(StudioFixtures.thread)
+        path == "/api/studio/settings/notifications" -> json(StudioFixtures.notifications)
+        path == "/api/studio/apply" -> json(StudioApplicationResponse(null))
+        else -> notFound
+    }
+
     /** Starts a server and points `Config.baseUrl` (hence every `APIClient`) at it. */
     fun start(context: Context): MockWebServer {
         val server = MockWebServer()
@@ -157,6 +195,8 @@ object FakeYardBackend {
         Config.init(context)
         context.getSharedPreferences(Config.PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(Config.BASE_URL_OVERRIDE_KEY, server.url("/").toString().trimEnd('/'))
+            // The preview shopper already answered "What brings you to Yard?" (the root shows the app).
+            .putString(StudioPrefs.ROLE_PREFIX + PreviewFixtures.shopper.id, "shop")
             .commit()
         return server
     }

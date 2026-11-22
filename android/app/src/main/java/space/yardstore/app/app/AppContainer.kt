@@ -14,6 +14,7 @@ import space.yardstore.app.core.stores.FollowStore
 import space.yardstore.app.core.stores.SavedStore
 import space.yardstore.app.core.stores.SessionStore
 import space.yardstore.app.designsystem.components.ToastCenter
+import space.yardstore.app.features.studio.StudioStore
 import space.yardstore.app.features.you.YouRegion
 
 /**
@@ -26,6 +27,8 @@ class AppContainer(context: Context) {
     val api: APIClient = APIClient(APIClient.buildHttpClient(cookieJar)).also { APIClient.install(it) }
 
     val session = SessionStore(api)
+    /** Studio mode: the brand session, the active brand, the remembered mode (features/studio). */
+    val studio = StudioStore(api, session)
     /** Restores the stored ship-to country before the first cart load (iOS `YouRegion.restore`). */
     val cart = CartStore(api).also { YouRegion.restore(it) }
     val follows = FollowStore(api)

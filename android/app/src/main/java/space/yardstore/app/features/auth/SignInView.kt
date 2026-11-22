@@ -66,6 +66,7 @@ import space.yardstore.app.app.LocalRouter
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.WebPages
 import space.yardstore.app.core.stores.LocalSessionStore
+import space.yardstore.app.features.studio.LocalStudioStore
 import space.yardstore.app.designsystem.LocalYardWindow
 import space.yardstore.app.designsystem.Motion
 import space.yardstore.app.designsystem.Spacing
@@ -114,6 +115,7 @@ fun SignInView() {
 @Composable
 internal fun SignInScreen(model: SignInModel) {
     val session = LocalSessionStore.current
+    val studio = LocalStudioStore.current
     val router = LocalRouter.current
     val toast = LocalToastCenter.current
     val back = LocalBackAction.current
@@ -126,8 +128,6 @@ internal fun SignInScreen(model: SignInModel) {
     var showWelcome by rememberSaveable { mutableStateOf(false) }
     /** True from a successful sign-in until the sheet closes (hides the "already signed in" panel). */
     var justSignedIn by rememberSaveable { mutableStateOf(false) }
-    /** After a social sign-in that created a new account: "What brings you to Yard?" (shop / sell). */
-    var showIntentChoice by rememberSaveable { mutableStateOf(false) }
     var signingOut by remember { mutableStateOf(false) }
 
     val nameFocus = remember { FocusRequester() }
@@ -161,10 +161,10 @@ internal fun SignInScreen(model: SignInModel) {
         justSignedIn = true
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         when {
-            // The website asks a social sign-in that created a new account what brought them (so a
-            // brand isn't stuck in a shopper account with no way to start selling); a returning
-            // account is not asked again.
-            newSocialAccount && !shopper.demo -> showIntentChoice = true
+            // "What brings you to Yard?" is the root's full-screen choice (RoleSelectionView),
+            // asked once per account on this device: a new account (social `isNew` or a new
+            // password account) and any account that never answered here. Close and let it show.
+            newSocialAccount || studio.needsRoleChoice -> close()
             AuthOnboarding.onboarded -> close()
             else -> showWelcome = true
         }
@@ -224,14 +224,12 @@ internal fun SignInScreen(model: SignInModel) {
                     val sentTo = model.signUpSentTo
                     SignInHeader(
                         title = when {
-                            showIntentChoice -> "You're signed in"
                             signedInPanel -> "You're signed in"
                             sentTo != null -> "Check your email"
                             model.mode == SignInModel.Mode.SignUp -> "Create your account"
                             else -> "Sign in or join"
                         },
                         body = when {
-                            showIntentChoice -> "Your account is connected."
                             signedInPanel -> session.shopper?.let { s ->
                                 val demo = if (s.demo) " This is the shared demo shopper account." else ""
                                 "Signed in as ${s.name}, ${s.email}.$demo"
@@ -241,10 +239,6 @@ internal fun SignInScreen(model: SignInModel) {
                         isDark = isDark,
                     )
                     when {
-                        showIntentChoice -> SignInIntentChoice(
-                            onShop = { if (AuthOnboarding.onboarded) close() else showWelcome = true },
-                            onSell = { WebPages.open(context, Config.webUrl(SELL_ONBOARDING_PATH), darkTheme = isDark) },
-                        )
                         signedInPanel -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
                             YardButton("Continue") { close() }
                             YardButton("Sign out", style = YardButtonStyle.Secondary, isLoading = signingOut) {
@@ -469,42 +463,6 @@ private fun SignInStatusLine(text: String) {
     }
 }
 
-/**
- * The website's choice after a social sign-in (auth-oauth-completion.tsx): "What brings you to
- * Yard?" — shop (Welcome or close) or sell (the seller application in a Custom Tab).
- */
-@Composable
-private fun SignInIntentChoice(onShop: () -> Unit, onSell: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        Text("What brings you to Yard?", style = YardFonts.callout, color = Color.yard.ink)
-        SignInIntentCard(
-            title = "I’m here to shop",
-            body = "Discover independent brands, follow them and catch their drops.",
-            onClick = onShop,
-        )
-        SignInIntentCard(
-            title = "I want to sell on Yard",
-            body = "Apply with your brand, set up your storefront and start selling. You can still shop with this account.",
-            onClick = onSell,
-        )
-    }
-}
-
-@Composable
-private fun SignInIntentCard(title: String, body: String, onClick: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .yardCard()
-            .pressableClick(onClickLabel = title, onClick = onClick)
-            .padding(Spacing.l),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(title, style = YardFonts.headline, color = Color.yard.ink)
-        Text(body, style = YardFonts.callout, color = Color.yard.ink2)
-    }
-}
-
 // region Previews
 
 @Preview(name = "SignInView — dark")
@@ -529,12 +487,6 @@ private fun SignInSignedInPreview() = YardPreview(darkTheme = true, signedIn = t
 @Composable
 private fun SignInTabletPreview() = YardPreview(darkTheme = true, signedIn = false) {
     SignInScreen(remember { SignInModel(previewProviders = AuthProviders.preview(demoShopper = true)) })
-}
-
-@Preview(name = "Shop or sell — light")
-@Composable
-private fun SignInIntentPreview() = YardPreview(darkTheme = false) {
-    Column(Modifier.padding(Spacing.gutter)) { SignInIntentChoice(onShop = {}, onSell = {}) }
 }
 
 // endregion

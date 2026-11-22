@@ -23,6 +23,8 @@ import space.yardstore.app.features.auth.AuthEmailLinks
 import space.yardstore.app.features.auth.AuthHandoffCallback
 import space.yardstore.app.features.notifications.YardPushCenter
 import space.yardstore.app.features.notifications.YardPushMessage
+import space.yardstore.app.features.studio.StudioLink
+import space.yardstore.app.features.studio.StudioPushTap
 
 /**
  * The single activity: edge-to-edge, applies the appearance choice at the root (iOS
@@ -98,6 +100,14 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?, restored: Boolean = false) {
         val extras = intent?.extras
+        // A Studio push (ours, or one the system showed in the background): Studio routes it,
+        // switching the brand session first when the push names another brand.
+        if (!restored) {
+            StudioPushTap.from { key -> extras?.getString(key) }?.let { tap ->
+                container.studio.openLink(tap.link, tap.brandId)
+                return
+            }
+        }
         val incoming = AppLinkRouting.classify(
             action = intent?.action,
             url = intent?.dataString,
@@ -129,6 +139,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleLink(url: String) {
+        // yard://studio/… (and https://<site>/studio/…): Studio mode.
+        StudioLink.parse(url)?.let { link ->
+            container.studio.openLink(link)
+            return
+        }
         val route = Route.fromUrl(url)
         // The payment provider's redirect back to /checkout/confirmation: the bag's checkout flow
         // pushes that confirmation itself, so don't stack a second one (see Docs/bag.md).

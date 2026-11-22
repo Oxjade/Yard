@@ -26,6 +26,9 @@ import space.yardstore.app.core.stores.LocalSessionStore
 import space.yardstore.app.core.stores.SavedStore
 import space.yardstore.app.core.stores.SessionStore
 import space.yardstore.app.designsystem.components.LocalToastCenter
+import space.yardstore.app.core.networking.APIClient
+import space.yardstore.app.features.studio.LocalStudioStore
+import space.yardstore.app.features.studio.StudioStore
 import space.yardstore.app.designsystem.components.ToastCenter
 import space.yardstore.app.designsystem.components.YardToastHost
 
@@ -48,8 +51,10 @@ fun YardPreview(darkTheme: Boolean, signedIn: Boolean = true, content: @Composab
     val saved = remember { SavedStore.preview() }
     val router = remember { Router() }
     val toast = remember { ToastCenter() }
+    val studio = remember(session) { StudioStore(APIClient.shared, session) }
     YardTheme(darkTheme = darkTheme) {
         CompositionLocalProvider(
+            LocalStudioStore provides studio,
             LocalSessionStore provides session,
             LocalCartStore provides cart,
             LocalFollowStore provides follows,
