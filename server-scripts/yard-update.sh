@@ -203,6 +203,10 @@ fi
 # Build source: --local wins, then YARD_BUILD_SOURCE (environment, then env file), then ci when a
 # deploy token is configured, else local.
 GITHUB_TOKEN_DEPLOY=${GITHUB_TOKEN_DEPLOY:-$(env_value GITHUB_TOKEN_DEPLOY)}
+# Tokens are only letters, digits and _. Drop anything else a paste can bring along (terminal
+# bracketed-paste markers, carriage returns, spaces), which curl would reject as a bad header.
+GITHUB_TOKEN_DEPLOY=$(printf '%s' "$GITHUB_TOKEN_DEPLOY" | sed 's/\x1b\[20[01]~//g' | tr -cd 'A-Za-z0-9_')
+case "$GITHUB_TOKEN_DEPLOY" in ""|github_pat_*|ghp_*) ;; *) echo "Warning: GITHUB_TOKEN_DEPLOY in $ENV_FILE doesn't look like a GitHub token (expected github_pat_…)." ;; esac
 BUILD_SOURCE=${YARD_BUILD_SOURCE:-$(env_value YARD_BUILD_SOURCE)}
 if [ "$FORCE_LOCAL" = 1 ]; then BUILD_SOURCE=local; fi
 if [ -z "$BUILD_SOURCE" ]; then
