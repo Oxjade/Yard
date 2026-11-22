@@ -92,9 +92,11 @@ extension View {
     }
 }
 
-/// The Studio tab bar (wallet look): a near-black floating bar with four plain icons; the selected
-/// tab sits in an acid pill that slides between them. Add is not in the bar: Home's "Add product"
-/// tile and the Products header open Quick add, as before.
+/// The Studio tab bar: the shopper app's own floating pill (`TabPill` in App/RootView.swift) — the
+/// same glass capsule, 5pt inset, 58×48 buttons with 6pt gaps, 19pt icons, no labels, the acid
+/// selection that slides between tabs and the same count badge. Only the tabs differ: Home,
+/// Orders, Products, Me. Add is not in the bar: Home's "Add product" tile and the Products header
+/// open Quick add, as before.
 @MainActor
 struct StudioTabPill: View {
     @Environment(StudioStore.self) private var studio
@@ -126,17 +128,13 @@ struct StudioTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             ForEach(Self.tabs) { tab in
                 tabButton(tab)
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 64)
-        .frame(maxWidth: 480)
-        .background(Color.yard.studioBar, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.yard.line, lineWidth: 1))
-        .padding(.horizontal, Spacing.gutter)
+        .padding(5)
+        .yardGlass(Capsule(), elevation: .floating)
         .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: selected)
         .sensoryFeedback(.selection, trigger: selected)
     }
@@ -147,24 +145,33 @@ struct StudioTabBar: View {
         return Button {
             onSelect(tab)
         } label: {
-            Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
-                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.yard.onAcid : Color.yard.studioBarIcon)
-                .frame(width: 64, height: 44)
-                .background {
-                    if isSelected {
-                        Capsule()
-                            .fill(Color.yard.acid)
-                            .matchedGeometryEffect(id: "studio-tab", in: namespace)
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
+                    .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.yard.onAcid : Color.yard.ink)
+                    .frame(width: 58, height: 48)
+                    .background {
+                        if isSelected {
+                            Capsule()
+                                .fill(Color.yard.acid)
+                                .matchedGeometryEffect(id: "studio-tab", in: namespace)
+                        }
                     }
+                if count > 0 {
+                    // The shopper pill's Bag count badge.
+                    Text(count > 99 ? "99+" : "\(count)")
+                        .font(.yardMicro)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.yard.bg)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(Color.yard.ink, in: Capsule())
+                        .offset(x: -6, y: 4)
+                        .contentTransition(.numericText())
+                        .transition(.scale.combined(with: .opacity))
                 }
-                .overlay(alignment: .topTrailing) {
-                    if count > 0 && !isSelected {
-                        Circle().fill(Color.yard.studioAccent).frame(width: 7, height: 7).offset(x: -16, y: 9)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(count > 0 ? "\(tab.title), \(count)" : tab.title))
