@@ -207,7 +207,7 @@ extension YardTilePressStyle where S == Rectangle {
 private struct ButtonsPreview: View {
     var body: some View {
         VStack(spacing: 12) {
-            YardButton("Add to cart", systemImage: "bag") {}
+            YardButton("Add to bag", systemImage: "bag") {}
             YardButton("Paying…", isLoading: true) {}
             YardButton("Choose size", style: .secondary) {}
             YardButton("Follow", style: .onPhoto) {}

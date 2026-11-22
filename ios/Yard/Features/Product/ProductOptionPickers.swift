@@ -50,7 +50,7 @@ struct ProductOptionPicker: View {
                 }
             }
             if showsInvalid && chosen == nil {
-                Text(model.isOpening ? "Choose a size to hear when it goes on sale." : "Choose a size to add this to your cart.")
+                Text(model.isOpening ? "Choose a size to hear when it goes on sale." : "Choose a size to add this to your bag.")
                     .font(.yardCaption)
                     .foregroundStyle(Color.yard.danger)
                     .padding(.horizontal, Spacing.gutter)
@@ -189,14 +189,14 @@ struct ProductSizeSheet: View {
                     .disabled(true)
             }
         case .chooseSize:
-            YardButton("Add to cart", systemImage: "bag") {
+            YardButton("Add to bag", systemImage: "bag") {
                 withAnimation(Motion.snappy) { showsInvalid = true }
             }
         case .limit:
-            YardButton("Add to cart", style: .secondary) {}
+            YardButton("Add to bag", style: .secondary) {}
                 .disabled(true)
         case .ready:
-            YardButton("Add to cart", systemImage: "bag", isLoading: isAdding) {
+            YardButton("Add to bag", systemImage: "bag", isLoading: isAdding) {
                 onAdd()
             }
         }

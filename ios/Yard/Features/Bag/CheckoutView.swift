@@ -92,13 +92,13 @@ struct CheckoutView: View {
             } else {
                 EmptyState.signedOut(
                     title: "Sign in to check out",
-                    message: "One account keeps the orders from every brand in this cart, and their tracking, in one place. Your cart stays as it is."
+                    message: "One account keeps the orders from every brand in this bag, and their tracking, in one place. Your bag stays as it is."
                 ) { router.present(.signIn) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else if let cart = model.cart {
             if cart.lines.isEmpty && model.phase != .done {
-                EmptyState(title: "Your cart is empty", message: "Add pieces from any brand and they check out together, one order per brand.", systemImage: "bag", actionTitle: "Back to cart") {
+                EmptyState(title: "Your bag is empty", message: "Add pieces from any brand and they check out together, one order per brand.", systemImage: "bag", actionTitle: "Back to bag") {
                     router.pop()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -299,7 +299,7 @@ struct CheckoutView: View {
                             .frame(width: 48, height: 60)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(line.title ?? "A piece from your cart")
+                            Text(line.title ?? "A piece from your bag")
                                 .font(.yardCallout.weight(.semibold))
                                 .foregroundStyle(Color.yard.ink)
                                 .lineLimit(1)
@@ -446,7 +446,7 @@ struct CheckoutStages: View {
 
         var title: String {
             switch self {
-            case .bag: return "Cart"
+            case .bag: return "Bag"
             case .details: return "Details"
             case .pay: return "Pay"
             case .done: return "Done"

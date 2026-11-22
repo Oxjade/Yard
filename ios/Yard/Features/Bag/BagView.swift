@@ -69,7 +69,7 @@ struct BagView: View {
                 .padding(.horizontal, Spacing.gutter)
             Spacer(minLength: 0)
             EmptyState(
-                title: "Your cart is empty",
+                title: "Your bag is empty",
                 message: "Add pieces from any brand and they check out together, one order per brand.",
                 systemImage: "bag",
                 actionTitle: "Discover brands",
@@ -177,7 +177,7 @@ struct BagView: View {
 
     private func header(itemCount: Int, brandCount: Int) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Cart")
+            Text("Bag")
                 .yardDisplay(44)
                 .foregroundStyle(Color.yard.ink)
             if itemCount > 0 {
@@ -274,7 +274,7 @@ struct BagView: View {
             do {
                 try await cart.remove(variantId: line.variantId)
                 removedTaps += 1
-                toast.show("Removed from your cart", style: .info, systemImage: "trash")
+                toast.show("Removed from your bag", style: .info, systemImage: "trash")
             } catch {
                 toast.show(error)
             }
@@ -341,7 +341,7 @@ struct BagLineRow: View {
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Button(action: onOpen) {
-                    Text(line.title ?? "A piece from your cart")
+                    Text(line.title ?? "A piece from your bag")
                         .font(.yardBodyEmphasis)
                         .foregroundStyle(Color.yard.ink)
                         .lineLimit(2)
@@ -538,7 +538,7 @@ struct BagSkeleton: View {
             .padding(.horizontal, Spacing.gutter)
         }
         .scrollDisabled(true)
-        .accessibilityLabel(Text("Loading your cart"))
+        .accessibilityLabel(Text("Loading your bag"))
     }
 }
 

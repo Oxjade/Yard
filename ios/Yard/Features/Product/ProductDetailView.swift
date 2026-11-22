@@ -296,7 +296,7 @@ struct ProductDetailView: View {
                         .font(.yardCaption)
                         .foregroundStyle(Color.yard.ink2)
                     if model.inBag(cart) > 0 {
-                        Button("View cart") { router.push(.bag) }
+                        Button("View bag") { router.push(.bag) }
                             .font(.yardCaptionEmphasis)
                             .foregroundStyle(Color.yard.violet)
                     }
@@ -322,11 +322,11 @@ struct ProductDetailView: View {
             return "\(brandName) is opening soon on Yard. \(pick ? "Choose your size and tap Notify me" : "Tap Notify me") to hear when it opens, or follow \(brandName)."
         case .limit:
             if let s = model.variantStock, s <= ProductDetailModel.maxPerLine {
-                return "All \(s) available are already in your cart."
+                return "All \(s) available are already in your bag."
             }
-            return "Your cart already holds the most you can buy at once (\(ProductDetailModel.maxPerLine))."
+            return "Your bag already holds the most you can buy at once (\(ProductDetailModel.maxPerLine))."
         case .ready:
-            return inBag > 0 ? "\(inBag) already in your cart." : nil
+            return inBag > 0 ? "\(inBag) already in your bag." : nil
         case .soldOut:
             return model.variant == nil ? "Sold out for now. Save it to keep it in your wishlist, or see more from \(brandName) below." : nil
         case .chooseSize:
@@ -648,7 +648,7 @@ struct ProductDetailView: View {
     private func primaryButton(_ action: ProductBuyAction) -> some View {
         switch action {
         case .ready, .chooseSize:
-            YardButton(justAdded ? "Added" : "Add to cart", systemImage: justAdded ? "checkmark" : "bag", isLoading: isAdding) {
+            YardButton(justAdded ? "Added" : "Add to bag", systemImage: justAdded ? "checkmark" : "bag", isLoading: isAdding) {
                 addToBag()
             }
             .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: justAdded)
@@ -662,7 +662,7 @@ struct ProductDetailView: View {
                     .disabled(true)
             }
         case .limit:
-            YardButton("View cart", systemImage: "bag", style: .secondary) {
+            YardButton("View bag", systemImage: "bag", style: .secondary) {
                 router.push(.bag)
             }
         }
@@ -718,7 +718,7 @@ struct ProductDetailView: View {
                     }
                     .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: cart.count)
             }
-            .accessibilityLabel(Text(cart.count > 0 ? "Cart, \(cart.count) items" : "Cart"))
+            .accessibilityLabel(Text(cart.count > 0 ? "Bag, \(cart.count) items" : "Bag"))
         }
     }
 
@@ -760,7 +760,7 @@ struct ProductDetailView: View {
                     try? await Task.sleep(nanoseconds: 1_600_000_000)
                     if addedCount == tick { justAdded = false }
                 }
-                toast.show(qty > 1 ? "\(qty) added to your cart" : "Added to your cart", style: .success, systemImage: "bag.fill")
+                toast.show(qty > 1 ? "\(qty) added to your bag" : "Added to your bag", style: .success, systemImage: "bag.fill")
             } catch {
                 toast.show(error)
             }

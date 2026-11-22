@@ -392,13 +392,13 @@ struct OrderConfirmationView: View {
                         Task { @MainActor in await model.start(checkoutId: checkoutId) }
                     }
                 } else {
-                    YardButton("Return to cart") { returnToBag() }
+                    YardButton("Return to bag") { returnToBag() }
                     YardButton("Check again", style: .secondary) {
                         Task { @MainActor in await model.start(checkoutId: checkoutId) }
                     }
                 }
             case .failed:
-                YardButton("Return to cart") { returnToBag() }
+                YardButton("Return to bag") { returnToBag() }
                 YardButton("See your orders", style: .secondary) { router.push(.orders) }
             }
         }

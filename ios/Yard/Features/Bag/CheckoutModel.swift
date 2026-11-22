@@ -148,7 +148,7 @@ final class CheckoutModel {
             return "Shipping is still being calculated."
         }
         if cart.lines.contains(where: { $0.isUnavailable }) {
-            return "Some pieces in your cart aren't available any more. Remove them to continue."
+            return "Some pieces in your bag aren't available any more. Remove them to continue."
         }
         for g in cart.groups {
             guard let q = quotes.quote(for: g.brandId) else { return "Shipping isn't ready for every brand yet." }

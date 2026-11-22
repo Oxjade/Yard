@@ -74,7 +74,7 @@ struct EmptyState: View {
 
 #Preview("Empty — dark") {
     VStack {
-        EmptyState(title: "Your cart is empty", message: "Pieces you add from any brand land here.", systemImage: "bag", actionTitle: "Start shopping") {}
+        EmptyState(title: "Your bag is empty", message: "Pieces you add from any brand land here.", systemImage: "bag", actionTitle: "Start shopping") {}
         EmptyState.error(message: "You're offline. Check your connection and try again.") {}
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

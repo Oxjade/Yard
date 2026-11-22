@@ -91,7 +91,7 @@ struct SavedVariantSheet: View {
                 if let selected {
                     PriceText(minor: selected.priceMinor, currency: product.currency, compareAtMinor: nil, font: .yardBodyEmphasis, color: Color.yard.ink)
                 }
-                YardButton(selected == nil ? "Pick an option" : "Move to cart", systemImage: "bag", style: .primary) {
+                YardButton(selected == nil ? "Pick an option" : "Move to bag", systemImage: "bag", style: .primary) {
                     guard let selected else { return }
                     dismiss()
                     onConfirm(selected)

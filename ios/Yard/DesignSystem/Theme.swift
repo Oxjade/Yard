@@ -82,6 +82,10 @@ struct YardPalette: Sendable {
     var studioAccentTint: Color { studio.opacity(0.16) }
     /// A violet icon on `studioAccentTint`: `violet` (#A78BFA / #6D28D9).
     var studioAccentInk: Color { violet }
+    /// The Studio tab bar: `surface` in dark, `ink` (near-black) in light.
+    var studioBar: Color { Color(light: UIColor(yardHex: 0x0B0B0B), dark: UIColor(yardHex: 0x121212)) }
+    /// Unselected tab icons on `studioBar`: `ink2` in dark, `ink3` in light.
+    var studioBarIcon: Color { Color(light: UIColor(yardHex: 0x8A8A83), dark: UIColor(yardHex: 0xA3A39C)) }
 }
 
 extension Color {

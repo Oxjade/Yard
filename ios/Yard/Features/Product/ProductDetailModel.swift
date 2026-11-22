@@ -20,8 +20,8 @@ enum ProductBuyAction: Equatable, Sendable {
         case .opening: return "Notify me"
         case .soldOut: return "Sold out"
         case .chooseSize: return "Select a size"
-        case .limit: return "View cart"
-        case .ready: return "Add to cart"
+        case .limit: return "View bag"
+        case .ready: return "Add to bag"
         }
     }
 }

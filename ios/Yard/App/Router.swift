@@ -5,12 +5,8 @@ import Observation
 
 /// The four tabs of the floating tab pill.
 enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
-    // Left to right in the bar: Home · Shop · Around (the raised centre pin) · Cart · Me, as on the
-    // website's phone tab bar. The case names are the old ones (search = Shop, bag = Cart,
-    // you = Me) so links and saved state keep working. Mirrors Android's `AppTab`.
     case home
     case search
-    case around
     case bag
     case you
 
@@ -19,30 +15,27 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     var title: String {
         switch self {
         case .home: return "Home"
-        case .search: return "Shop"
-        case .around: return "Around"
-        case .bag: return "Cart"
-        case .you: return "Me"
+        case .search: return "Search"
+        case .bag: return "Bag"
+        case .you: return "You"
         }
     }
 
     var systemImage: String {
         switch self {
         case .home: return "house"
-        case .search: return "storefront"
-        case .around: return "mappin"
+        case .search: return "magnifyingglass"
         case .bag: return "bag"
-        case .you: return "person.crop.circle"
+        case .you: return "person"
         }
     }
 
     var selectedSystemImage: String {
         switch self {
         case .home: return "house.fill"
-        case .search: return "storefront.fill"
-        case .around: return "mappin"
+        case .search: return "magnifyingglass"
         case .bag: return "bag.fill"
-        case .you: return "person.crop.circle.fill"
+        case .you: return "person.fill"
         }
     }
 }
@@ -247,7 +240,6 @@ final class Router {
     var selectedTab: AppTab = .home
     var homePath = NavigationPath()
     var searchPath = NavigationPath()
-    var aroundPath = NavigationPath()
     var bagPath = NavigationPath()
     var youPath = NavigationPath()
     /// The route shown as a sheet, if any.
@@ -267,7 +259,6 @@ final class Router {
         switch selectedTab {
         case .home: homePath.append(route)
         case .search: searchPath.append(route)
-        case .around: aroundPath.append(route)
         case .bag: bagPath.append(route)
         case .you: youPath.append(route)
         }
@@ -278,7 +269,6 @@ final class Router {
         switch selectedTab {
         case .home: if !homePath.isEmpty { homePath.removeLast() }
         case .search: if !searchPath.isEmpty { searchPath.removeLast() }
-        case .around: if !aroundPath.isEmpty { aroundPath.removeLast() }
         case .bag: if !bagPath.isEmpty { bagPath.removeLast() }
         case .you: if !youPath.isEmpty { youPath.removeLast() }
         }
@@ -289,7 +279,6 @@ final class Router {
         switch tab ?? selectedTab {
         case .home: homePath = NavigationPath()
         case .search: searchPath = NavigationPath()
-        case .around: aroundPath = NavigationPath()
         case .bag: bagPath = NavigationPath()
         case .you: youPath = NavigationPath()
         }
@@ -327,7 +316,6 @@ final class Router {
         switch selectedTab {
         case .home: return homePath.count
         case .search: return searchPath.count
-        case .around: return aroundPath.count
         case .bag: return bagPath.count
         case .you: return youPath.count
         }
@@ -346,8 +334,6 @@ final class Router {
         case .you: select(.you); popToRoot(.you)
         case .signIn: present(.signIn)
         case .search(let query) where query.isEmpty: select(.search)
-        case .shop: select(.search); popToRoot(.search)
-        case .around: select(.around); popToRoot(.around)
         default: push(route)
         }
         return true

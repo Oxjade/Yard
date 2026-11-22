@@ -8,16 +8,12 @@ import SwiftUI
 @MainActor
 struct ShopView: View {
     let category: String?
-    /// The Shop tab root (bottom bar): no navigation bar, and a search field under the title that
-    /// opens Search (`.search(query: "")`).
-    var asTab: Bool = false
 
     @State private var model: ShopListingModel
     @Environment(Router.self) private var router
 
-    init(category: String?, asTab: Bool = false) {
+    init(category: String?) {
         self.category = category
-        self.asTab = asTab
         _model = State(initialValue: ShopListingModel(category: category))
     }
 
@@ -29,15 +25,9 @@ struct ShopView: View {
 
     var body: some View {
         ScrollView {
-            if asTab { TabPillScrollSensor() }
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 header
-                    .padding(.bottom, asTab ? Spacing.m : Spacing.l)
-                if asTab {
-                    searchButton
-                        .padding(.horizontal, Spacing.gutter)
-                        .padding(.bottom, Spacing.l)
-                }
+                    .padding(.bottom, Spacing.l)
                 Section {
                     results
                         .yardCrossfade(model.phase.crossfadeKey)
@@ -52,37 +42,11 @@ struct ShopView: View {
         .yardScreenBackground()
         .navigationTitle(model.categoryName ?? "Shop")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(asTab ? .hidden : .automatic, for: .navigationBar)
         .task { await model.start() }
         .refreshable { await model.refresh() }
     }
 
     // MARK: Header
-
-    /// The Shop tab's search field: looks like Search's field and opens it (keyboard up).
-    private var searchButton: some View {
-        Button {
-            router.push(.search(query: ""))
-        } label: {
-            HStack(spacing: Spacing.s) {
-                Image(systemName: "magnifyingglass")
-                    .font(.yardBodyEmphasis)
-                    .foregroundStyle(Color.yard.ink2)
-                Text("Brands, products, categories")
-                    .font(.yardBody)
-                    .foregroundStyle(Color.yard.ink3)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Spacing.l)
-            .frame(height: 54)
-            .background(Color.yard.surface2, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.yard.line, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(PressableButtonStyle(scale: Motion.cardPressScale))
-        .accessibilityLabel(Text("Search brands, products, categories"))
-    }
 
     @ViewBuilder
     private var header: some View {
