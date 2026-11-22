@@ -437,7 +437,6 @@ internal fun SellSuccess(name: String, scanStarted: Boolean, site: String, alrea
     LaunchedEffect(Unit) { if (!alreadyWaiting) haptics.success() }
     val brand = name.ifBlank { "your shop" }
     Box(Modifier.fillMaxSize().background(Color.yard.acid)) {
-        Confetti(Modifier.fillMaxSize())
         Column(
             Modifier
                 .fillMaxSize()
@@ -447,6 +446,8 @@ internal fun SellSuccess(name: String, scanStarted: Boolean, site: String, alrea
             verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
             Spacer(Modifier.weight(1f))
+            // The tag stamps down with a confetti burst (static under reduced motion).
+            StampCelebration("ON THE LIST", Modifier.fillMaxWidth().height(200.dp))
             YardDisplayText(
                 if (alreadyWaiting) "You're already on the list." else "You're on the list.",
                 size = 56.sp,
@@ -470,58 +471,3 @@ internal fun SellSuccess(name: String, scanStarted: Boolean, site: String, alrea
         }
     }
 }
-
-/** Light confetti: a few dozen pieces falling once, in Yard's colours. Static scatter under reduced motion. */
-@Composable
-internal fun Confetti(modifier: Modifier = Modifier) {
-    val reduce = rememberReducedMotion()
-    val colors = listOf(Color.yard.violetFill, Color.yard.onAcid, Color.yard.onPhoto, Color.yard.violet)
-    val pieces = remember {
-        val r = Random(7)
-        List(46) {
-            ConfettiPiece(
-                x = r.nextFloat(),
-                delay = r.nextFloat() * 0.35f,
-                speed = 0.7f + r.nextFloat() * 0.6f,
-                drift = (r.nextFloat() - 0.5f) * 0.25f,
-                spin = (r.nextFloat() - 0.5f) * 720f,
-                w = 6f + r.nextFloat() * 8f,
-                h = 10f + r.nextFloat() * 10f,
-                color = it % 4,
-                restY = 0.05f + r.nextFloat() * 0.35f,
-            )
-        }
-    }
-    val t = remember { Animatable(if (reduce) 1f else 0f) }
-    LaunchedEffect(reduce) { if (!reduce) t.animateTo(1f, tween(2600, easing = LinearEasing)) }
-    Canvas(modifier) {
-        val time = t.value
-        pieces.forEach { p ->
-            val local = ((time - p.delay) / (1f - p.delay)).coerceIn(0f, 1f)
-            val y = if (reduce) p.restY else -0.1f + local * p.speed * 1.2f
-            if (y > 1.1f || (!reduce && local <= 0f)) return@forEach
-            val x = p.x + p.drift * sin(local * 6f) + p.drift * cos(local * 3f) * 0.3f
-            val center = Offset(x * size.width, y * size.height)
-            rotate(p.spin * local, center) {
-                drawRect(
-                    colors[p.color],
-                    topLeft = Offset(center.x - p.w, center.y - p.h / 2f),
-                    size = Size(p.w * 2f, p.h),
-                    alpha = if (reduce) 0.5f else (1f - (local - 0.75f).coerceAtLeast(0f) * 4f).coerceIn(0f, 1f),
-                )
-            }
-        }
-    }
-}
-
-private data class ConfettiPiece(
-    val x: Float,
-    val delay: Float,
-    val speed: Float,
-    val drift: Float,
-    val spin: Float,
-    val w: Float,
-    val h: Float,
-    val color: Int,
-    val restY: Float,
-)

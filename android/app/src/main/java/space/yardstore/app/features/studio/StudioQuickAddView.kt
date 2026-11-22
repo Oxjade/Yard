@@ -642,13 +642,13 @@ private fun ReviewStep(model: StudioQuickAddModel) {
 private fun QuickAddDone(model: StudioQuickAddModel, product: StudioProduct, onShare: () -> Unit, onClose: () -> Unit) {
     val draft = model.draftReason
     Box(Modifier.fillMaxSize().background(if (draft == null) Color.yard.acid else Color.yard.bg)) {
-        if (draft == null) space.yardstore.app.features.sell.Confetti(Modifier.fillMaxSize())
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(Spacing.gutter),
             verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
             Spacer(Modifier.weight(1f))
             val fg = if (draft == null) Color.yard.onAcid else Color.yard.ink
+            if (draft == null) space.yardstore.app.features.sell.StampCelebration("LIVE", Modifier.fillMaxWidth().height(200.dp))
             YardDisplayText(if (draft == null) "It's live." else "Saved.", size = 60.sp, color = fg)
             Text(draft ?: "${product.title} is on Yard now. Share it while it's fresh.", style = YardFonts.title, color = fg)
             Spacer(Modifier.weight(1f))

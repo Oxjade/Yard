@@ -22,9 +22,14 @@ no options.
   the demo shopper, no brand memberships, and this account never answered on this device
   (`StudioPrefs.roleChoice`, SharedPreferences `yard.role.<userId>`). That covers new sign-ups
   (`SignInView` closes so the root can ask) and existing accounts that never chose.
-- Two bold cards: **Shop on Yard** (acid, a bag + tag + sparkles drawn in Compose shapes) and
-  **Sell on Yard** (black with a violet/white awning shopfront). Staggered spring entrance (instant
-  under reduced motion), click haptic. Back = shop.
+- Two bold cards with animated, native illustrations (`features/sell/SellIllustrations.kt`):
+  **Shop on Yard** (acid): three product cards fan out behind a shopping bag with depth, a price tag
+  swings on a string, sparkles twinkle, a slow bob. **Sell on Yard** (black, violet glow): a shopfront
+  whose awning ripples, an "OPEN" sign that flips, a parcel that pops out and hops, a sales sparkline
+  that draws up. Entrance is a staggered spring; idle loops are low amplitude; pressing a card tilts
+  it in 3D toward the finger with the art's layers shifting by depth (parallax) and a tick. Geometry
+  is cached (`drawWithCache`), motion is read in the draw phase only (no recomposition), loops stop
+  when not composed, and reduced motion shows the final pose. Back = shop.
 - Shop → straight in. If this device never did the Welcome picks (`AuthOnboarding.onboarded`), one
   optional, skippable "Pick what you're into" step (categories via `WelcomeModel`, saved to
   `AuthOnboarding.interests`, marks onboarded). Otherwise no step at all.
@@ -47,8 +52,9 @@ sentence under the input otherwise.
 5. Review (tap a row to edit) → **Slide to apply** → `POST /api/studio/apply` (blank optional
    fields omitted: the body is strict).
 
-Then "You're on the list. We'll review {Brand} and let you know." on acid with light confetti
-(falls once; a static scatter under reduced motion) and a success haptic; when `websiteScan.status`
+Then "You're on the list. We'll review {Brand} and let you know." on acid with an animated
+"ON THE LIST" tag stamp (slams down with a squash and shake, bursts confetti, then sways; static
+under reduced motion; Quick add's success uses the same stamp with "LIVE") and a success haptic; when `websiteScan.status`
 is `started` it adds "We'll pull in your products from {site}…". "Back to shopping" re-reads the
 session (the new shop appears in `shopper.brands` as `pending_review`).
 
@@ -169,7 +175,7 @@ Springs everywhere (`Motion.*`), all instant under reduced motion (`rememberRedu
 choice, switch-before-call / re-switch-and-retry-once on 401 / give up / brand change / switch 401,
 link waiting for the session, dashboard + order detail parsing, orders page merge, application step
 validation and body, You card state, deep links, push taps, nav routing, slide threshold and ticks,
-Quick add variants / SKUs / body / prices, re-confirm parsing. Screenshots: `ScreenScreenshotTest`
+Quick add variants / SKUs / body / prices, re-confirm parsing. Motion frames: `MotionFramesTest` (test clock, frames at 0–4600 ms → `build/outputs/roborazzi/motion/`). Screenshots: `ScreenScreenshotTest`
 `YardScreens.studio` (FakeYardBackend serves the Studio endpoints from `StudioFixtures`).
 
 ## Contract gaps / notes

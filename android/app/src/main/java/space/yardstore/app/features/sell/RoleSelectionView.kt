@@ -6,8 +6,20 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.State
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -151,7 +163,7 @@ internal fun RoleSelectionScreen(firstName: String, onShop: () -> Unit, onSell: 
             body = "Discover independent brands, follow them and catch every drop.",
             background = Color.yard.acid,
             foreground = Color.yard.onAcid,
-            graphic = { ShopGraphic(Modifier.size(128.dp)) },
+            graphic = { tilt -> ShopIllustration(Modifier.fillMaxSize(), tilt) },
             modifier = Modifier.graphicsLayer {
                 alpha = enter.value
                 translationY = (1f - enter.value) * 80f
@@ -165,7 +177,7 @@ internal fun RoleSelectionScreen(firstName: String, onShop: () -> Unit, onSell: 
             body = "Apply in under a minute. Run your shop from this app once you're in.",
             background = Color.yard.onAcid,
             foreground = Color.yard.onPhoto,
-            graphic = { SellGraphic(Modifier.size(128.dp)) },
+            graphic = { tilt -> SellIllustration(Modifier.fillMaxSize(), tilt) },
             modifier = Modifier.graphicsLayer {
                 val t = ((enter.value - 0.15f) / 0.85f).coerceIn(0f, 1f)
                 alpha = t
@@ -184,107 +196,69 @@ internal fun RoleSelectionScreen(firstName: String, onShop: () -> Unit, onSell: 
     }
 }
 
+/**
+ * A big choice card with its animated illustration. Press: a subtle 3D tilt toward the finger with
+ * the illustration's layers shifting by depth (parallax) and a tick; release springs back.
+ */
 @Composable
 private fun RoleCard(
     title: String,
     body: String,
     background: Color,
     foreground: Color,
-    graphic: @Composable () -> Unit,
+    graphic: @Composable (tilt: State<Offset>) -> Unit,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberYardHaptics()
+    val reduce = rememberReducedMotion()
+    val tilt = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val scope = rememberCoroutineScope()
     Box(
         modifier
             .fillMaxWidth()
-            .height(236.dp)
+            .height(300.dp)
+            .pointerInput(reduce) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    haptics.tick()
+                    val target = Offset(
+                        ((down.position.x / size.width) - 0.5f) * 2f,
+                        ((down.position.y / size.height) - 0.5f) * 2f,
+                    )
+                    scope.launch { if (reduce) tilt.snapTo(target) else tilt.animateTo(target, spring(dampingRatio = 0.7f, stiffness = 500f)) }
+                    waitForUpOrCancellation()
+                    scope.launch { if (reduce) tilt.snapTo(Offset.Zero) else tilt.animateTo(Offset.Zero, spring(dampingRatio = 0.45f, stiffness = 260f)) }
+                }
+            }
+            .graphicsLayer {
+                rotationY = tilt.value.x * 5f
+                rotationX = -tilt.value.y * 5f
+                cameraDistance = 14f * density
+                val s = 1f - (abs(tilt.value.x) + abs(tilt.value.y)) * 0.012f
+                scaleX = s
+                scaleY = s
+            }
+            .clip(YardShapes.card)
             .background(background, YardShapes.card)
-            .pressableClick(pressedScale = 0.97f, onClickLabel = title, onClick = onClick)
-            .padding(22.dp),
+            .border(1.dp, Color.yard.line, YardShapes.card)
+            .pressableClick(pressedScale = 1f, pressedAlpha = 1f, onClickLabel = title, onClick = onClick),
     ) {
-        Box(Modifier.align(Alignment.TopEnd)) { graphic() }
-        Column(Modifier.align(Alignment.BottomStart).widthIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = 2.dp).size(176.dp)) { graphic(tilt.asState()) }
+        Column(
+            Modifier.align(Alignment.BottomStart).padding(22.dp).widthIn(max = 250.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             YardDisplayText(title, size = 36.sp, color = foreground)
             Text(body, style = YardFonts.callout, color = foreground.copy(alpha = 0.78f))
         }
         Box(
-            Modifier.align(Alignment.BottomEnd).size(48.dp).background(foreground, CircleShape),
+            Modifier.align(Alignment.BottomEnd).padding(22.dp).size(48.dp).background(foreground, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = background, modifier = Modifier.size(22.dp))
         }
     }
-}
-
-/** A neutral shopping graphic in shapes: a tilted bag with a handle, a tag and two sparkles. */
-@Composable
-private fun ShopGraphic(modifier: Modifier = Modifier) {
-    val ink = Color.yard.onAcid
-    val violet = Color.yard.violetFill
-    val white = Color.yard.onPhoto
-    Canvas(modifier) {
-        val w = size.width
-        rotate(-10f) {
-            // Bag body.
-            drawRoundRect(ink, topLeft = Offset(w * 0.18f, w * 0.34f), size = Size(w * 0.6f, w * 0.56f), cornerRadius = CornerRadius(w * 0.08f))
-            // Handle.
-            drawArc(ink, startAngle = 180f, sweepAngle = 180f, useCenter = false, topLeft = Offset(w * 0.32f, w * 0.18f), size = Size(w * 0.32f, w * 0.34f), style = Stroke(width = w * 0.06f))
-            // A band across the bag.
-            drawRect(white, topLeft = Offset(w * 0.18f, w * 0.52f), size = Size(w * 0.6f, w * 0.07f))
-        }
-        // A price tag.
-        val tag = Path().apply {
-            moveTo(w * 0.64f, w * 0.62f)
-            lineTo(w * 0.9f, w * 0.62f)
-            lineTo(w * 0.98f, w * 0.72f)
-            lineTo(w * 0.9f, w * 0.82f)
-            lineTo(w * 0.64f, w * 0.82f)
-            close()
-        }
-        drawPath(tag, violet)
-        drawCircle(white, radius = w * 0.025f, center = Offset(w * 0.89f, w * 0.72f))
-        // Sparkles.
-        sparkle(Offset(w * 0.1f, w * 0.16f), w * 0.09f, ink)
-        sparkle(Offset(w * 0.9f, w * 0.18f), w * 0.06f, ink)
-    }
-}
-
-/** The seller graphic: a shopfront with a striped awning and a violet door. */
-@Composable
-private fun SellGraphic(modifier: Modifier = Modifier) {
-    val violet = Color.yard.violetFill
-    val acid = Color.yard.acid
-    val white = Color.yard.onPhoto
-    Canvas(modifier) {
-        val w = size.width
-        // Building.
-        drawRoundRect(white.copy(alpha = 0.12f), topLeft = Offset(w * 0.14f, w * 0.38f), size = Size(w * 0.72f, w * 0.52f), cornerRadius = CornerRadius(w * 0.04f))
-        // Awning: alternating stripes with scalloped edge.
-        val stripes = 5
-        val sw = w * 0.8f / stripes
-        for (i in 0 until stripes) {
-            val x = w * 0.1f + i * sw
-            drawRect(if (i % 2 == 0) violet else white, topLeft = Offset(x, w * 0.24f), size = Size(sw, w * 0.16f))
-            drawCircle(if (i % 2 == 0) violet else white, radius = sw / 2f, center = Offset(x + sw / 2f, w * 0.4f))
-        }
-        // Door and window.
-        drawRoundRect(violet, topLeft = Offset(w * 0.24f, w * 0.56f), size = Size(w * 0.18f, w * 0.34f), cornerRadius = CornerRadius(w * 0.03f))
-        drawRoundRect(acid, topLeft = Offset(w * 0.5f, w * 0.56f), size = Size(w * 0.26f, w * 0.18f), cornerRadius = CornerRadius(w * 0.03f))
-        sparkle(Offset(w * 0.9f, w * 0.12f), w * 0.08f, acid)
-        sparkle(Offset(w * 0.08f, w * 0.14f), w * 0.05f, violet)
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.sparkle(center: Offset, r: Float, color: Color) {
-    val p = Path().apply {
-        moveTo(center.x, center.y - r)
-        quadraticTo(center.x, center.y, center.x + r, center.y)
-        quadraticTo(center.x, center.y, center.x, center.y + r)
-        quadraticTo(center.x, center.y, center.x - r, center.y)
-        quadraticTo(center.x, center.y, center.x, center.y - r)
-        close()
-    }
-    drawPath(p, color)
 }
 
 /** One optional step for shoppers: categories they're into (saved like Welcome's picks), skippable. */
