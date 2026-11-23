@@ -23,6 +23,10 @@ import { categoryName, countryName, daysSince, formatDate, relDays } from "./for
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { FoundingPanel } from "./founding-view"
 import { useBrandApplications } from "./onboarding"
+import { ALL_BRANDS_TAB, isAllBrandsRecordId, resolveReview } from "./all-brands"
+import { AllBrandsPanel } from "./all-brands-panel"
+import { adminKeys, listAllAdminBrands } from "@/lib/api/admin"
+import { useApi } from "@/lib/api/use-api"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
 import { InPageLinks, useAdminReady, useSearchParam, writeParams, usePhone } from "./url-state"
 
@@ -35,7 +39,9 @@ const TABS: { value: BrandReviewStatus; label: string; empty: string; emptyBody:
 const isTab = (v: string | null): v is BrandReviewStatus => TABS.some((t) => t.value === v)
 /** The owner's founding brands (brands.founding), a tab of its own beside the status tabs. */
 const FOUNDING = "founding"
-type Tab = BrandReviewStatus | typeof FOUNDING
+/** Every brand in the brands table, whatever its application says (all-brands.ts). */
+const ALL = ALL_BRANDS_TAB
+type Tab = BrandReviewStatus | typeof FOUNDING | typeof ALL
 
 const n = (v: number) => formatNumber(Math.round(v))
 const days = (v: number) => `${n(v)} ${Math.round(v) === 1 ? "day" : "days"}`
@@ -54,13 +60,16 @@ export function BrandsView() {
   const reviewId = useSearchParam("review")
   const canFounding = useServerSession((s) => !!s.admin && canAdmin(s.admin.role, "brands.founding"))
   const founding = linkedTab === FOUNDING && canFounding
+  // All brands: a link to a brand opened from it (?review=brand:…) shows that tab too.
+  const allTab = linkedTab === ALL || (!linkedTab && isAllBrandsRecordId(reviewId))
+  const allBrands = useApi(canReviewApplications && (allTab || isAllBrandsRecordId(reviewId)) ? adminKeys.allBrands : null, listAllAdminBrands, { refreshInterval: 60_000 })
 
-  // The open record lives in the URL (?review=app_…), so the palette, the Overview and other
-  // screens can link straight to it and a reload reopens it.
-  const reviewing = reviewId ? applications.find((a) => a.id === reviewId) : undefined
+  // The open record lives in the URL (?review=app_…, or brand:… for a brand from All brands), so
+  // the palette, the Overview and other screens can link straight to it and a reload reopens it.
+  const reviewing = resolveReview(reviewId, applications, allBrands.data?.items)
   // A link to a record shows the tab it's in; otherwise the tab in the URL, else the queue.
-  const statusTab: BrandReviewStatus = isTab(linkedTab) ? linkedTab : reviewing && !linkedTab ? reviewing.status : "pending_review"
-  const tab: Tab = founding ? FOUNDING : statusTab
+  const statusTab: BrandReviewStatus = isTab(linkedTab) ? linkedTab : reviewing && !linkedTab && !reviewing.listing ? reviewing.status : "pending_review"
+  const tab: Tab = founding ? FOUNDING : allTab ? ALL : statusTab
   // When the control that asked has gone or turned disabled: back to the selection bar while rows
   // stay selected (a search hid some of them), else the status tab.
   const { ask, dialog } = useDecision(() => bulkBarControl(document.getElementById(`${qid}-panel`)) ?? document.getElementById(segmentedTabId(qid, tab)))
@@ -111,6 +120,7 @@ export function BrandsView() {
   const canDelete = useCanDeleteBrands().can
   const deletion = useDeleteBrand(() => writeParams({ review: null }))
   const askDelete = (a: BrandApplication) => (a.brandId ? deletion.ask({ brandId: a.brandId, name: a.brandName, handle: a.handle }) : undefined)
+  const decideOne = (key: BrandActionKey, a: BrandApplication) => decide(key, [a])
   const decide = (key: BrandActionKey, list: BrandApplication[]) => {
     const d = brandDecision(key, list, { reinstateTo })
     return d ? ask(d) : false
@@ -199,19 +209,29 @@ export function BrandsView() {
         </StatRow>
       </InPageLinks>
 
-      <Panel id="brand-review" title={founding ? "Founding brands" : "Brand review"} description={founding ? "Brands Yard creates and sets up itself. Each owner claims theirs with a single-use link, then adds a payout account to start selling." : "Open a brand for its verification checklist, notes and history. Every decision asks for a reason."} className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
+      <Panel
+        id="brand-review"
+        title={founding ? "Founding brands" : allTab ? "All brands" : "Brand review"}
+        description={
+          founding
+            ? "Brands Yard creates and sets up itself. Each owner claims theirs with a single-use link, then adds a payout account to start selling."
+            : allTab
+              ? "Every brand on Yard, whatever its application says: drafts, rejected and no application, closed and founding brands included."
+              : "Open a brand for its verification checklist, notes and history. Every decision asks for a reason."
+        } className="scroll-mt-24 rounded-[20px]" bodyClassName="px-0 pb-0 md:px-0 md:pb-0">
         <PanelRail value={tab}>
           <Segmented
             label="Brand status"
             size="sm"
             value={tab}
-            onChange={(t) => writeParams({ tab: t === "pending_review" ? null : t, brand: null })}
+            onChange={(t) => writeParams({ tab: t === "pending_review" ? null : t, brand: null, status: null })}
             loading={!ready}
             idBase={qid}
             panelId={`${qid}-panel`}
             // Only the queue carries a count: the Segmented gives any count above zero the attention edge, which is for work waiting.
             options={[
               ...TABS.map((t): { value: Tab; label: string; count?: number } => ({ value: t.value, label: t.label, count: t.value === "pending_review" ? counts[t.value] : undefined })),
+              ...(canReviewApplications ? [{ value: ALL as Tab, label: "All brands" }] : []),
               ...(canFounding ? [{ value: FOUNDING as Tab, label: "Founding" }] : []),
             ]}
           />
@@ -219,6 +239,19 @@ export function BrandsView() {
         <div id={`${qid}-panel`} role="tabpanel" aria-labelledby={segmentedTabId(qid, tab)} className="border-t border-[var(--admin-hairline)] p-3 sm:p-4 md:p-5">
           {founding ? (
             <FoundingPanel phone={phone} />
+          ) : allTab ? (
+            <AllBrandsPanel
+              brands={allBrands.data?.items}
+              loading={!adminReady || (canReviewApplications && allBrands.isLoading)}
+              error={allBrands.error}
+              onRetry={() => void allBrands.revalidate()}
+              queue={applications}
+              phone={phone}
+              canDelete={canDelete}
+              blockFor={blockFor}
+              onDecide={decideOne}
+              onDelete={(b) => deletion.ask({ brandId: b.id, name: b.name, handle: b.handle })}
+            />
           ) : (
           <>
           {onboarding.error ? (

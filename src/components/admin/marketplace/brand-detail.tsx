@@ -26,6 +26,7 @@ import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { useLast } from "./use-last"
 import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
 import { DeleteBrandSection, type DeleteTarget } from "./delete-brand-dialog"
+import { applicationLabel } from "./all-brands"
 
 const NOTE_ACTION = "Added internal note"
 
@@ -82,6 +83,9 @@ export function BrandDetail({
   const openCases = cases.filter((m) => m.status === "open" || m.status === "escalated").length
   const status = brandStatusMeta[app.status]
   const age = daysSince(app.submittedAt, now)
+  // A brand from All brands without a submitted application has no submission to show.
+  const submitted = !app.listing || (app.listing.dated && app.listing.application !== "none" && app.listing.application !== "draft")
+  const submittedExtra = submitted ? [{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }] : []
 
   return (
     <DetailSheet
@@ -94,15 +98,23 @@ export function BrandDetail({
       badges={
         <>
           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-          <StatusBadge tone={kycMeta[app.kyc].tone}>KYC {kycMeta[app.kyc].label.toLowerCase()}</StatusBadge>
-          <StatusBadge tone={riskMeta[app.risk].tone}>{riskMeta[app.risk].label} risk</StatusBadge>
+          {/* A brand opened from All brands has no KYC or risk on record here: its application state instead. */}
+          {app.listing ? (
+            <StatusBadge tone="muted">{applicationLabel[app.listing.application]}</StatusBadge>
+          ) : (
+            <>
+              <StatusBadge tone={kycMeta[app.kyc].tone}>KYC {kycMeta[app.kyc].label.toLowerCase()}</StatusBadge>
+              <StatusBadge tone={riskMeta[app.risk].tone}>{riskMeta[app.risk].label} risk</StatusBadge>
+            </>
+          )}
+          {app.listing?.founding ? <StatusBadge tone="info">Founding</StatusBadge> : null}
           {app.brandId === STUDIO_BRAND_ID ? <StatusBadge tone="muted">Studio brand</StatusBadge> : null}
           {app.closedAt ? <StatusBadge tone="danger">Closed</StatusBadge> : null}
         </>
       }
       actions={
         <TrustActionBar
-          note={`${app.status === "pending_review" ? `${age === 0 ? "Submitted today. " : `In the queue for ${plural(age, "day")}. `}` : ""}${onServer(app) ? "Enforced on Yard's server." : "Sample application in this browser only."} Every decision needs a reason and is recorded in the audit log.`}
+          note={`${app.status === "pending_review" && !app.listing ? `${age === 0 ? "Submitted today. " : `In the queue for ${plural(age, "day")}. `}` : ""}${onServer(app) ? "Enforced on Yard's server." : "Sample application in this browser only."} Every decision needs a reason and is recorded in the audit log.`}
           actions={allowedBrandActions(app).map((key) => ({ key, label: brandActions[key].label, icon: brandActions[key].icon, variant: brandActions[key].button, disabledReason: blockFor(app), onSelect: () => onDecide(key, app) }))}
         />
       }
@@ -111,7 +123,9 @@ export function BrandDetail({
         items={[
           { label: "Category", value: categoryName(app.category) },
           { label: "Products", value: <span className="tabular">{app.products}</span> },
-          { label: "Submitted", value: <time dateTime={app.submittedAt}>{formatDate(app.submittedAt)}</time> },
+          app.listing
+            ? { label: "On Yard since", value: app.listing.dated ? <time dateTime={app.submittedAt}>{formatDate(app.submittedAt)}</time> : <span className="text-ink-2">Not on record</span> }
+            : { label: "Submitted", value: <time dateTime={app.submittedAt}>{formatDate(app.submittedAt)}</time> },
           { label: "Open cases", value: openCases ? <span className="text-acid tabular">{openCases}</span> : <span className="text-ink-2">None</span> },
         ]}
       />
@@ -164,9 +178,9 @@ export function BrandDetail({
 
       <DetailSection title="Activity">
         {app.brandId ? (
-          <ServerActivity subjectIds={[app.brandId]} legacy={entries.filter((e) => e.action !== NOTE_ACTION)} extra={[{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }]} />
+          <ServerActivity subjectIds={[app.brandId]} legacy={entries.filter((e) => e.action !== NOTE_ACTION)} extra={submittedExtra} />
         ) : (
-          <ActivityList entries={entries.filter((e) => e.action !== NOTE_ACTION)} extra={[{ at: app.submittedAt, label: "Application submitted", detail: `${app.products} products, ${categoryName(app.category).toLowerCase()}` }]} />
+          <ActivityList entries={entries.filter((e) => e.action !== NOTE_ACTION)} extra={submittedExtra} />
         )}
       </DetailSection>
 

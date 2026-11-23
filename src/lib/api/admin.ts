@@ -1,4 +1,5 @@
 import { api } from "./client"
+import type { AdminBrandsDto, AdminBrandStatusFilter } from "./contracts/admin-brands"
 import type { BrandRemovalBody, BrandRemovalPreviewDto, BrandRemovalResultDto } from "./contracts/brand-removal"
 import type {
   AbuseListDto,
@@ -36,6 +37,7 @@ export const adminKeys = {
   counts: "admin:counts",
   users: "admin:users",
   onboardings: "admin:catalog:onboardings",
+  allBrands: "admin:brands:all",
   catalogProducts: (f: AdminCatalogProductsFilter = {}) => `admin:catalog:products:${f.moderation ?? "all"}:${f.category ?? "all"}:${f.q ?? ""}`,
   messages: (tab: MessageTab) => `admin:messages:${tab}`,
   content: (tab: ContentTab) => `admin:content:${tab}`,
@@ -74,6 +76,19 @@ export const getStatuses = (kind: "user" | "brand", ids: string[]) =>
 export const getBrandRemoval = (brandId: string) => api<BrandRemovalPreviewDto>(`/api/admin/brands/${encodeURIComponent(brandId)}/removal`)
 /** Erases or closes the brand, as the preview said (403 reauth first when the last re-auth is over 5 minutes old). */
 export const removeBrand = (brandId: string, body: BrandRemovalBody) => api<BrandRemovalResultDto>(`/api/admin/brands/${encodeURIComponent(brandId)}`, { method: "DELETE", body })
+/** Admin › Brands › All brands: one page of every brand (brands.restrict). */
+export const listAdminBrands = (q: { q?: string; status?: AdminBrandStatusFilter; page?: number; pageSize?: number } = {}) => api<AdminBrandsDto>("/api/admin/brands", { query: q })
+/** Every brand, page by page (200 a page, at most 50 pages), for the All brands tab's own search and filters. */
+export async function listAllAdminBrands(): Promise<AdminBrandsDto> {
+  const first = await listAdminBrands({ page: 1, pageSize: 200 })
+  const items = [...first.items]
+  for (let page = 2; items.length < first.total && page <= 50; page++) {
+    const next = await listAdminBrands({ page, pageSize: 200 })
+    if (!next.items.length) break
+    items.push(...next.items)
+  }
+  return { items, total: first.total, page: 1, pageSize: items.length }
+}
 export const listOnboardingApplications = () => api<OnboardingApplicationsDto>("/api/admin/catalog/onboardings", { query: { limit: 200 } })
 export const reviewOnboardingApplication = (id: string, body: { decision: "approve" | "reject"; note?: string }) =>
   api<{ onboardingId: string; status: "approved" | "rejected"; brandId: string }>(`/api/admin/catalog/onboardings/${encodeURIComponent(id)}/review`, { body })

@@ -58,6 +58,12 @@ export type BrandApplication = {
   application?: OnboardingApplicationDto["data"]
   /** When Yard closed the brand (Delete brand on a brand with orders): final, so no decision is offered. */
   closedAt?: string
+  /**
+   * A brand opened from Admin › Brands › All brands rather than from its application: what its
+   * latest application says ("none" when it never had one), whether `submittedAt` is a real date
+   * on record, and whether it's a founding brand.
+   */
+  listing?: { application: "none" | "draft" | "submitted" | "approved" | "rejected"; dated: boolean; founding: boolean }
 }
 
 export const brandApplications: BrandApplication[] = [
