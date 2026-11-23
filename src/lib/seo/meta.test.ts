@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
+import { YardLogo } from "../../components/brand/yard-logo"
 import { BrandMark } from "../../components/market/brand-mark"
 import { PhotoOrInitials } from "../../components/media/person-photo"
 import { META_DESCRIPTION_MAX, PRIVATE_PAGE_PREFIXES, isPrivatePage, metaDescription } from "./meta"
@@ -37,6 +38,15 @@ describe("private pages", () => {
 })
 
 type Photo = Parameters<typeof PhotoOrInitials>[0]
+
+describe("one <title> per page", () => {
+  it("the Yard logo (rendered in every page's footer) is named by aria-label, never by an SVG <title>", () => {
+    const named = renderToStaticMarkup(createElement(YardLogo))
+    assert.ok(!/<title/i.test(named), named.slice(0, 200))
+    assert.match(named, /<svg [^>]*role="img"[^>]*aria-label="Yard"/)
+    assert.ok(!/<title/i.test(renderToStaticMarkup(createElement(YardLogo, { decorative: true }))))
+  })
+})
 
 describe("image alt text", () => {
   it("names an uploaded brand logo", () => {

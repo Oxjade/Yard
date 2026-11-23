@@ -36,7 +36,7 @@ export default function ShopPage({ searchParams }: PageProps<"/shop">) {
       <div className="mt-10 md:mt-12">
         {/* The listing reads the URL (useSearchParams) and its first page is read at request time, so it streams in behind this skeleton. */}
         <Suspense fallback={<CatalogListingSkeleton chips={11} />}>
-          <CatalogListingServer searchParams={searchParams} />
+          <CatalogListingServer searchParams={searchParams} structured={{ name: title, description, path: "/shop" }} />
         </Suspense>
       </div>
     </div>

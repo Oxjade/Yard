@@ -20,7 +20,14 @@ export const yardPolicies = {
   cancellation: "free before dispatch",
   /** Damaged, faulty or wrong items: report within this many hours of delivery. */
   damagedReportHours: 48,
-  payments: "card or bank transfer, processed by Bachs",
+  /**
+   * How shoppers pay, by the provider this deployment has switched on (YARD_PAYMENTS). Only said
+   * while checkout is open: with payments off, llms.txt says checkout is opening soon instead.
+   */
+  paymentsBy: {
+    bachs: "card or bank transfer, processed by Bachs",
+    paystack: "card or bank transfer, processed by Paystack",
+  },
   pricesShownIn: "NGN",
   supportEmail: "support@yardstore.space",
   supportReplyBusinessDays: 2,

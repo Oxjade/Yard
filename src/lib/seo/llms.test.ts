@@ -12,10 +12,11 @@ const input: LlmsInput = {
     { slug: "home-lifestyle", name: "Home & lifestyle", description: "Ceramics, candles and lighting.", productCount: 1, brandCount: 1 },
     { slug: "technology", name: "Technology", description: "", productCount: 0, brandCount: 0 },
   ],
-  totals: { brands: 2, products: 13 },
+  totals: { brands: 2, products: 13, openingSoon: { brands: 0, products: 0 } },
+  checkout: "bachs",
   brands: [
-    { name: "Clay [Works]", handle: "clay-works", oneLine: "Stoneware from a night-shift studio.", city: "Accra", country: "GH", productCount: 1 },
-    { name: "Ferro Club", handle: "ferro-club", oneLine: null, city: "Mexico City", country: "MX", productCount: 12 },
+    { name: "Clay [Works]", handle: "clay-works", oneLine: "Stoneware from a night-shift studio.", city: "Accra", country: "GH", productCount: 1, forSale: true },
+    { name: "Ferro Club", handle: "ferro-club", oneLine: null, city: "Mexico City", country: "MX", productCount: 12, forSale: true },
   ],
   generatedAt: "2026-11-22T12:00:00.000Z",
 }
@@ -60,6 +61,36 @@ describe("llms.txt", () => {
     assert.ok(withSocials.includes("## Yard elsewhere\n\n- [Yard on Instagram](https://www.instagram.com/yard)\n"))
   })
 
+  it("states the public catalogue's counts, in the singular where it is one", () => {
+    assert.match(txt, /Right now Yard lists 13 products from 2 brands, across Jewelry, Home & lifestyle\./)
+    assert.match(llmsTxt({ ...input, totals: { brands: 1, products: 1 } }), /Right now Yard lists 1 product from 1 brand,/)
+    assert.match(llmsTxt({ ...input, totals: { brands: 0, products: 0 } }), /no products are listed yet/)
+  })
+
+  it("says which part of the catalogue is from brands opening soon (visible, not selling yet)", () => {
+    assert.ok(!/opening soon/i.test(txt))
+    const some = llmsTxt({ ...input, totals: { brands: 2, products: 13, openingSoon: { brands: 1, products: 12 } } })
+    assert.match(some, /12 of these products are from 1 brand opening soon on Yard: those pieces can be browsed and the brands followed, but they are not on sale yet\./)
+    const all = llmsTxt({ ...input, totals: { brands: 1, products: 13, openingSoon: { brands: 1, products: 13 } } })
+    assert.match(all, /All of them are from a brand opening soon on Yard/)
+  })
+
+  it("names the payment provider only while checkout is open", () => {
+    assert.match(txt, /Payment is by card or bank transfer, processed by Bachs\./)
+    assert.match(llmsTxt({ ...input, checkout: "paystack" }), /processed by Paystack\./)
+    const test = llmsTxt({ ...input, checkout: "test" })
+    assert.match(test, /test mode and takes no real payment/)
+    assert.ok(!/processed by/.test(test))
+  })
+
+  it("with payments off, says checkout is opening soon and never that payment is taken", () => {
+    const soon = llmsTxt({ ...input, checkout: "soon" })
+    assert.match(soon, /- Checkout: opening soon\. Yard isn't taking payments yet, so nothing can be bought on Yard today\./)
+    assert.match(soon, /follow brands to get notified/)
+    assert.match(soon, /\(once checkout opens\) check out once/)
+    assert.ok(!/Payment is by|processed by|Bachs|Paystack/.test(soon))
+  })
+
   it("lists no brands (that is the full version)", () => {
     assert.ok(!txt.includes("ferro-club"))
   })
@@ -71,6 +102,11 @@ describe("llms-full.txt", () => {
   it("lists every live brand with its one-line, city and link", () => {
     assert.ok(full.includes("- [Clay Works](https://yardstore.space/brands/clay-works): Stoneware from a night-shift studio. Based in Accra, Ghana. 1 product on Yard."))
     assert.ok(full.includes("- [Ferro Club](https://yardstore.space/brands/ferro-club): Based in Mexico City, Mexico. 12 products on Yard."))
+  })
+
+  it("marks a brand that is opening soon", () => {
+    const soon = llmsTxt({ ...input, brands: [{ ...input.brands![1], forSale: false }] }, true)
+    assert.ok(soon.includes("- [Ferro Club](https://yardstore.space/brands/ferro-club): Based in Mexico City, Mexico. 12 products on Yard. Opening soon: not selling yet."))
   })
 
   it("lists the categories with product counts", () => {

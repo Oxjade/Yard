@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
+import { HTML_LIMITED_BOTS } from "./src/lib/seo/bots";
 import { PRIVATE_PAGE_PREFIXES } from "./src/lib/seo/meta";
 
 /**
@@ -38,6 +39,10 @@ const nextConfig = (phase: string): NextConfig => {
     images: { minimumCacheTTL: 2_592_000 },
     partialPrefetching: true,
     poweredByHeader: false,
+    // Crawlers, AI tools and other non-browser clients get the metadata (one <title>, the
+    // description, canonical) in the <head> of the first response instead of streamed into the
+    // <body> after it: src/lib/seo/bots.ts. Browsers keep streaming metadata.
+    htmlLimitedBots: HTML_LIMITED_BOTS,
     // Small servers (1-2 GB) run out of memory on the type check during `next build`. The code is
     // type-checked before every merge, so YARD_SKIP_TYPECHECK=1 lets a server build skip it.
     typescript: { ignoreBuildErrors: process.env.YARD_SKIP_TYPECHECK === "1" },

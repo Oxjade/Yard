@@ -1,6 +1,9 @@
 import { connection } from "next/server"
+import { JsonLd } from "@/components/seo/json-ld"
 import { toCatalogProduct } from "@/lib/api/catalog-products"
 import type { CategorySlug } from "@/lib/data/types"
+import { collectionPageJsonLd } from "@/lib/seo/json-ld"
+import { publicOrigin } from "@/lib/seo/url"
 import { listPublicProducts } from "@/server/catalog/public"
 import { normalizeSearchQuery, searchQuery } from "@/server/follows/contracts"
 import { searchCatalog } from "@/server/search"
@@ -15,12 +18,40 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>
  * hydrating, so the default shopper's key matches and the grid isn't refetched), so the HTML carries
  * products for crawlers, no-JS visitors and first paint. The browser skips that request while the
  * key still matches, and loads further pages itself. If the read fails, the listing loads it all.
+ *
+ * `structured` (the /shop page) adds a CollectionPage whose ItemList is the products in that first
+ * page, as the HTML lists them (the home grid's pattern). Not for a search (?q=), which is noindex.
  */
-export async function CatalogListingServer({ category, searchParams }: { category?: CategorySlug; searchParams: SearchParams }) {
+export async function CatalogListingServer({
+  category,
+  searchParams,
+  structured,
+}: {
+  category?: CategorySlug
+  searchParams: SearchParams
+  structured?: { name: string; description: string; path: string }
+}) {
   // Outside the catch: during prerender this suspends the request-time part, which must not be swallowed.
   await connection()
-  const initial = await firstPage(category, await searchParams).catch(() => undefined)
-  return <CatalogListing category={category} initial={initial} />
+  const raw = await searchParams
+  const initial = await firstPage(category, raw).catch(() => undefined)
+  const products = initial?.products ?? []
+  const listed = structured && products.length && !raw.q
+  return (
+    <>
+      {listed ? (
+        <JsonLd
+          nodes={[
+            collectionPageJsonLd(publicOrigin(), {
+              ...structured,
+              entries: products.map((p) => ({ name: p.name, path: `/products/${encodeURIComponent(p.slug)}`, image: p.images[0]?.src })),
+            }),
+          ]}
+        />
+      ) : null}
+      <CatalogListing category={category} initial={initial} />
+    </>
+  )
 }
 
 async function firstPage(category: CategorySlug | undefined, raw: Awaited<SearchParams>): Promise<CatalogInitialPage | undefined> {

@@ -4,7 +4,7 @@ import { categories as sampleCategories } from "@/lib/data/catalog"
 import { site } from "@/config/site"
 import { feedEligible, feedItemsFor, type FeedItem } from "@/lib/seo/feed"
 import type { SeoProductInput, SeoShippingOption } from "@/lib/seo/json-ld"
-import type { LlmsBrand, LlmsInput } from "@/lib/seo/llms"
+import type { LlmsBrand, LlmsCheckout, LlmsInput } from "@/lib/seo/llms"
 import { shippingOptions } from "@/lib/seo/shipping"
 import type { SitemapEntry } from "@/lib/seo/sitemap"
 import { absoluteUrl, publicOrigin } from "@/lib/seo/url"
@@ -20,6 +20,7 @@ import { brands } from "../db/schema"
 import { catalogCollections, catalogProducts, storefrontVersions } from "../db/schema/catalog"
 import { publicDropPages, upcomingReleases } from "../drops/service"
 import { log } from "../log"
+import { paymentsConfig } from "../payments/config"
 import { loadBrandShipping } from "../shipping/profile"
 
 /**
@@ -190,38 +191,70 @@ export async function feedCatalogue(): Promise<FeedCatalogue> {
 
 /* ---------- llms.txt ---------- */
 
-/** The facts llms.txt and llms-full.txt are written from, built at most once per LLMS_TTL_MS. */
+/** What llms.txt may say about checkout: the provider this deployment has on, or "soon" while payments are off. */
+export function llmsCheckout(): LlmsCheckout {
+  const provider = paymentsConfig().provider
+  return provider === "off" ? "soon" : provider === "stub" ? "test" : provider
+}
+
+/**
+ * The public catalogue in numbers, by brand: every product the /shop listing and the sitemap
+ * show (productPublicWhere: published or due, not hidden, of a listed brand that has launched, never
+ * a sample in production), grouped by brand, with whether that brand sells yet. A brand without
+ * a public product (a new sign-up, a test account, one still setting up) has no row.
+ */
+export async function publicCatalogueCounts(): Promise<{ brandId: string; products: number; forSale: boolean }[]> {
+  const d = await db()
+  const rows = await d
+    .select({ brandId: brands.id, products: sql<number>`count(*)`.mapWith(Number), forSale: sql<boolean>`${brandForSaleSql()}` })
+    .from(catalogProducts)
+    .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
+    .where(productPublicWhere())
+    .groupBy(brands.id)
+  return rows.map((r) => ({ brandId: r.brandId, products: r.products, forSale: !!r.forSale }))
+}
+
+/**
+ * The facts llms.txt and llms-full.txt are written from, built at most once per LLMS_TTL_MS. The
+ * totals and the brand list come from one public query (publicCatalogueCounts), so "N products from
+ * M brands" counts exactly the brands listed, and only brands a shopper can find a product from.
+ */
 export async function llmsInput(): Promise<LlmsInput> {
   await requestScope()
   const base = publicOrigin()
-  return memo(`seo:llms:${base}`, LLMS_TTL_MS, async () => {
-    const d = await db()
+  // Outside the memo: the payments switch is read from the environment, never cached with the catalogue.
+  const checkout = llmsCheckout()
+  const facts = await memo(`seo:llms:${base}`, LLMS_TTL_MS, async () => {
     const cats = await seoCategories()
-    const counts = await d
-      .select({ brandId: catalogProducts.brandId, n: sql<number>`count(*)`.mapWith(Number) })
-      .from(catalogProducts)
-      .innerJoin(brands, eq(brands.id, catalogProducts.brandId))
-      .where(productPublicWhere())
-      .groupBy(catalogProducts.brandId)
-    const perBrand = new Map(counts.map((c) => [c.brandId, c.n]))
+    const counts = await publicCatalogueCounts()
+    const perBrand = new Map(counts.map((c) => [c.brandId, c]))
     const list: LlmsBrand[] = []
     for (let offset: number | null = 0, n = 0; offset !== null && n < 200; n++) {
       const page = await listPublicBrands({ sort: "name", limit: 60, offset })
-      for (const b of page.brands) list.push({ name: b.name, handle: b.handle, oneLine: b.story, city: b.city || null, country: b.country || null, productCount: perBrand.get(b.id) ?? 0 })
+      for (const b of page.brands) {
+        const c = perBrand.get(b.id)
+        if (c) list.push({ name: b.name, handle: b.handle, oneLine: b.story, city: b.city || null, country: b.country || null, productCount: c.products, forSale: c.forSale })
+      }
       offset = page.nextOffset
     }
+    const soon = counts.filter((c) => !c.forSale)
     return {
       base,
       name: site.name,
       tagline: site.tagline,
       description: site.description,
       categories: cats,
-      totals: { brands: list.length, products: counts.reduce((n, c) => n + c.n, 0) },
+      totals: {
+        brands: counts.length,
+        products: counts.reduce((n, c) => n + c.products, 0),
+        openingSoon: { brands: soon.length, products: soon.reduce((n, c) => n + c.products, 0) },
+      },
       brands: list,
       socials: getEnv().socials.map((s) => ({ label: s.label, href: s.href })),
       generatedAt: new Date().toISOString(),
     }
   })
+  return { ...facts, checkout }
 }
 
 /* ---------- Sitemap ---------- */

@@ -16,7 +16,14 @@
 // shell whose streamed parts JavaScript fills in). --render N also loads the first N pages in
 // headless Chrome (CHROME, else google-chrome or chromium on PATH; pictures not downloaded) and
 // counts <img> and <h1> in the DOM after JavaScript ran, which is what Bing's renderer sees.
-// Exit code 1 when an indexable page has a missing alt, no description, or not exactly one <h1>.
+// Every page must hold exactly one <title> (anywhere in the HTML, an SVG's included: crawlers and AI
+// tools take the first one they meet) and at most one meta description; with the bot User-Agent the
+// title must be in the <head>. /llms.txt's "N products from M brands" must match the public
+// catalogue (/api/search, what /shop lists, and the sitemap's product pages), and while /api/health
+// says payments are off it must not say how payment is taken.
+// Exit code 1 when an indexable page has a missing alt, no description, not exactly one <h1>, not
+// exactly one <title> (or, as a bot, its title outside the <head>), more than one description, or
+// when llms.txt disagrees with the catalogue or the payments switch.
 // Plain Node 22+, no dependencies; behind an HTTPS proxy run with NODE_USE_ENV_PROXY=1.
 import { execFileSync, spawnSync } from "node:child_process"
 import { writeFileSync, mkdirSync } from "node:fs"
@@ -33,7 +40,8 @@ const local = ["localhost", "127.0.0.1"].includes(base.hostname)
 const max = Number(opt("--max", "300"))
 const delay = Number(opt("--delay", local ? "0" : "1100"))
 const out = opt("--out", null)
-const UA = `YardSEOAudit/1.0${argv.includes("--plain") ? "" : " (compatible; Bingbot render check)"}`
+const plain = argv.includes("--plain")
+const UA = `YardSEOAudit/1.0${plain ? "" : " (compatible; Bingbot render check)"}`
 const renderMax = Number(opt("--render", "0"))
 
 const EXTRA = [
@@ -62,13 +70,13 @@ const PRIVATE = ["/you", "/bag", "/checkout", "/inbox", "/wishlist", "/following
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let last = 0
-async function get(p, { redirect = "follow" } = {}) {
+async function get(p, { redirect = "follow", ua = UA } = {}) {
   const wait = last + delay - Date.now()
   if (wait > 0) await sleep(wait)
   last = Date.now()
   const url = new URL(p, origin)
   try {
-    const res = await fetch(url, { headers: { "user-agent": UA, accept: "text/html,application/xml;q=0.9,*/*;q=0.8" }, redirect })
+    const res = await fetch(url, { headers: { "user-agent": ua, accept: "text/html,application/xml;q=0.9,*/*;q=0.8" }, redirect })
     const body = await res.text()
     return { status: res.status, url: res.url || url.href, headers: res.headers, body, redirected: res.redirected }
   } catch (e) {
@@ -160,6 +168,9 @@ function analyse(html) {
   const descAny = named(markup, "description")
   const robotsMeta = named(markup, "robots")
   const titleHead = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)
+  // Every <title> in the markup, an SVG's <title> included: a crawler reading the raw HTML can't tell them apart.
+  const titles = (markup.match(/<title\b[^>]*>[\s\S]*?<\/title>/gi) ?? []).map((t) => decode(t.replace(/<[^>]+>/g, "").trim()))
+  const descriptions = metas(markup).filter((t) => (attr(t, "name") ?? "").toLowerCase() === "description").length
   const titleAny = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(markup)
   const canonical = (markup.match(/<link\b[^>]*>/gi) ?? []).find((t) => /\srel\s*=\s*["']?canonical/i.test(t))
   const h1s = (markup.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/gi) ?? []).map((t) => decode(t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, 60))
@@ -175,6 +186,9 @@ function analyse(html) {
     h1: h1s.length,
     h1Text: h1s,
     title,
+    titles,
+    titleCount: titles.length,
+    descriptionCount: descriptions,
     titleInHead: !!titleHead,
     titleLength: title.length,
     canonical: canonical ? attr(canonical, "href") : null,
@@ -253,6 +267,71 @@ const fail = {
   noCanonical: indexable.filter((p) => !p.canonical),
   longTitle: indexable.filter((p) => p.titleLength > 60),
   longDescription: indexable.filter((p) => (p.description ?? "").length > 160),
+  titleCount: pages.filter((p) => p.status === 200 && p.titleCount !== 1),
+  // Streamed metadata lands in the <body> for a browser (--plain); a bot must get it in the <head>.
+  titleNotInHead: plain ? [] : indexable.filter((p) => p.titleCount && !p.titleInHead),
+  descriptionCount: pages.filter((p) => p.status === 200 && p.descriptionCount > 1),
+}
+
+// ── The same few pages as the crawlers AI tools and Google send (none of them is in Next's own
+// list of HTML-limited bots): one <title>, in the <head>, and one description.
+const BOTS = {
+  GPTBot: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+  ClaudeBot: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)",
+  PerplexityBot: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
+  Googlebot: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+}
+const botPaths = ["/", "/shop", sitemapPaths.find((p) => p.startsWith("/products/")), sitemapPaths.find((p) => /^\/brands\/[^/]+$/.test(p))].filter(Boolean)
+const botRows = []
+for (const p of botPaths) {
+  for (const [bot, ua] of Object.entries(BOTS)) {
+    const r = await get(p, { ua })
+    const a = analyse(/html/i.test(r.headers.get("content-type") ?? "") ? r.body : "")
+    botRows.push({ path: p, bot, status: r.status, titleCount: a.titleCount, titleInHead: a.titleInHead, descriptionCount: a.descriptionCount, ok: r.status === 200 && a.titleCount === 1 && a.titleInHead && a.descriptionCount <= 1 })
+  }
+}
+const botFails = botRows.filter((r) => !r.ok)
+
+// ── llms.txt against the public catalogue and the payments switch
+const llms = { problems: [], notes: [] }
+{
+  const [txt, full, search, health] = [await get("/llms.txt"), await get("/llms-full.txt"), await get("/api/search?limit=1"), await get("/api/health")]
+  const m = /lists (\d+) products? from (\d+) brands?/.exec(txt.body)
+  const claim = m ? { products: Number(m[1]), brands: Number(m[2]) } : /no products are listed yet/.test(txt.body) ? { products: 0, brands: 0 } : null
+  if (txt.status !== 200) llms.problems.push(`/llms.txt: HTTP ${txt.status}`)
+  else if (!claim) llms.problems.push(`/llms.txt states no "N products from M brands"`)
+  let catalogue = null
+  try {
+    const j = JSON.parse(search.body)
+    catalogue = { products: j.total, brands: j.brandCount }
+  } catch {
+    llms.notes.push(`/api/search: HTTP ${search.status}, not compared`)
+  }
+  if (claim && catalogue) {
+    llms.notes.push(`llms.txt: ${claim.products} products from ${claim.brands} brands; /api/search (what /shop lists): ${catalogue.products} products from ${catalogue.brands} brands`)
+    if (claim.products !== catalogue.products || claim.brands !== catalogue.brands) llms.problems.push(`llms.txt says ${claim.products} products from ${claim.brands} brands; the public catalogue (/api/search) has ${catalogue.products} from ${catalogue.brands}`)
+  }
+  const sitemapProducts = sitemapPaths.filter((p) => p.startsWith("/products/")).length
+  if (claim) {
+    llms.notes.push(`sitemap product pages: ${sitemapProducts}`)
+    if (claim.products !== sitemapProducts) llms.problems.push(`llms.txt says ${claim.products} products; the sitemap lists ${sitemapProducts} product pages`)
+  }
+  // llms-full.txt: its brand list is the same M brands, their counts add up to the same N.
+  const brandLines = full.body.split("\n## Brands\n")[1]?.split("\n## ")[0]?.match(/^- \[.*\]\(.*\/brands\/.*\): .*?(\d+) products? on /gm) ?? []
+  if (claim && full.status === 200) {
+    const sumProducts = brandLines.reduce((n, l) => n + Number(/(\d+) products? on /.exec(l)[1]), 0)
+    if (brandLines.length !== claim.brands || sumProducts !== claim.products) llms.problems.push(`llms-full.txt lists ${brandLines.length} brands with ${sumProducts} products; llms.txt says ${claim.products} from ${claim.brands}`)
+    if (brandLines.some((l) => / 0 products on /.test(l))) llms.problems.push("llms-full.txt lists a brand with no public products")
+  }
+  let payments = null
+  try {
+    payments = JSON.parse(health.body).payments ?? null
+  } catch {}
+  llms.notes.push(`payments (/api/health): ${payments ?? "unknown"}`)
+  if (payments === "off") {
+    if (/Payment is by|processed by/.test(txt.body)) llms.problems.push("payments are off, but llms.txt says how payment is taken")
+    if (!/Checkout: opening soon/.test(txt.body)) llms.problems.push("payments are off, but llms.txt doesn't say checkout is opening soon")
+  }
 }
 const dupDesc = Object.entries(Object.groupBy(indexable.filter((p) => p.description), (p) => p.description)).filter(([, v]) => v.length > 1)
 const esc = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")
@@ -273,6 +352,11 @@ L.push(`| Indexable pages without a meta description | **${fail.noDescription.le
 L.push(`| Pages whose description is only streamed into the body (not in the head) | ${fail.descNotInHead.length} |`)
 L.push(`| Pages with h1 count other than 1 | **${fail.h1.length}** (${["0", "2", "3+"].map((n) => `${n}: ${fail.h1.filter((p) => (n === "3+" ? p.h1 >= 3 : p.h1 === Number(n))).length}`).join(", ")}) |`)
 L.push(`| Indexable pages without a canonical | ${fail.noCanonical.length} |`)
+L.push(`| Pages (200) without exactly one \`<title>\` | **${fail.titleCount.length}**${fail.titleCount.length ? ` (${fail.titleCount.slice(0, 6).map((p) => `${p.path}: ${p.titleCount}`).join(", ")})` : ""} |`)
+L.push(`| Indexable pages whose title is not in the head${plain ? " (not checked with --plain: browsers get streamed metadata)" : ""} | **${fail.titleNotInHead.length}** |`)
+L.push(`| Pages (200) with more than one meta description | **${fail.descriptionCount.length}** |`)
+L.push(`| ${Object.keys(BOTS).join(", ")} on ${botPaths.join(", ")}: one <title>, in the head, at most one description | ${botFails.length ? `**${botFails.length} failed**: ${botFails.slice(0, 6).map((r) => `${r.bot} ${r.path} (HTTP ${r.status}, ${r.titleCount} titles, ${r.titleInHead ? "in head" : "not in head"})`).join("; ")}` : `ok (${botRows.length} requests)`} |`)
+L.push(`| llms.txt against the public catalogue and payments | ${llms.problems.length ? `**${llms.problems.length} problems**: ${llms.problems.map(esc).join("; ")}` : "ok"} (${llms.notes.map(esc).join("; ")}) |`)
 L.push(`| Titles over 60 characters | ${fail.longTitle.length} |`)
 L.push(`| Descriptions over 160 characters | ${fail.longDescription.length} |`)
 L.push(`| Descriptions shared by more than one page | ${dupDesc.length} groups (${dupDesc.reduce((n, [, v]) => n + v.length, 0)} pages) |`)
@@ -319,9 +403,14 @@ if (dupDesc.length) {
 }
 if (skipped.length) L.push("## Skipped (past --max)", "", skipped.map((p) => `- ${p}`).join("\n"), "")
 L.push("## Every page", "")
-L.push("| Path | Src | Status | img | no alt | alt=\"\" | desc | desc in head | h1 | title len | canonical | robots |", "|---|---|---|---|---|---|---|---|---|---|---|---|")
+if (fail.titleCount.length || fail.titleNotInHead.length) {
+  L.push("## Title problems", "")
+  for (const p of [...new Set([...fail.titleCount, ...fail.titleNotInHead])].slice(0, 60)) L.push(`- ${p.path}: ${p.titleCount} titles (${p.titles.map((t) => `"${esc(t.slice(0, 60))}"`).join(", ")}), ${p.titleInHead ? "first in the head" : "none in the head"}`)
+  L.push("")
+}
+L.push("| Path | Src | Status | img | no alt | alt=\"\" | desc | desc in head | h1 | titles | title in head | title len | canonical | robots |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 for (const p of pages) {
-  L.push(`| ${esc(p.path)} | ${p.kind} | ${p.status}${p.error ? ` ${p.error}` : ""} | ${p.imgs} | ${p.missingAlt} | ${p.emptyAlt} | ${p.description ? `${p.description.length}c` : "**none**"} | ${p.description ? (p.descriptionInHead ? "yes" : "body") : "-"} | ${p.h1} | ${p.titleLength} | ${p.canonical ? "yes" : "no"} | ${esc(p.robots ?? "")}${p.xRobots ? ` / X: ${esc(p.xRobots)}` : ""} |`)
+  L.push(`| ${esc(p.path)} | ${p.kind} | ${p.status}${p.error ? ` ${p.error}` : ""} | ${p.imgs} | ${p.missingAlt} | ${p.emptyAlt} | ${p.description ? `${p.description.length}c` : "**none**"} | ${p.description ? (p.descriptionInHead ? "yes" : "body") : "-"} | ${p.h1} | ${p.titleCount} | ${p.titleInHead ? "yes" : "no"} | ${p.titleLength} | ${p.canonical ? "yes" : "no"} | ${esc(p.robots ?? "")}${p.xRobots ? ` / X: ${esc(p.xRobots)}` : ""} |`)
 }
 L.push("", "## CSV", "", "```csv", "path,source,status,img,missing_alt,empty_alt,description_length,description_in_head,h1,title_length,canonical,robots")
 for (const p of pages) L.push([p.path, p.kind, p.status, p.imgs, p.missingAlt, p.emptyAlt, p.description?.length ?? 0, p.descriptionInHead ? 1 : 0, p.h1, p.titleLength, p.canonical ? 1 : 0, `"${(p.robots ?? "").replace(/"/g, "'")}"`].join(","))
@@ -334,5 +423,5 @@ if (out) {
   console.log(`wrote ${out}`)
 }
 console.log(L.slice(0, L.indexOf("## robots.txt as Bingbot reads it")).join("\n"))
-const bad = fail.missingAlt.length + fail.noDescription.length + fail.h1.length + blocked.length + rendered.filter((p) => p.rendered.missingAlt || p.rendered.h1 !== 1).length
+const bad = fail.missingAlt.length + fail.noDescription.length + fail.h1.length + fail.titleCount.length + fail.titleNotInHead.length + fail.descriptionCount.length + llms.problems.length + botFails.length + blocked.length + rendered.filter((p) => p.rendered.missingAlt || p.rendered.h1 !== 1).length
 process.exit(bad ? 1 : 0)

@@ -136,6 +136,17 @@ describe("product JSON-LD", () => {
     assert.equal(availabilityOf({ forSale: false, releaseAt: null }, 9, now), "OutOfStock")
   })
 
+  it("a founding brand that is opening soon: every Offer of its ProductGroup is OutOfStock, whatever is on hand, and never a pre-order", () => {
+    const ld = productJsonLd(base, product({ forSale: false, variants: product().variants.map((v) => ({ ...v, available: 9 })) }), now)
+    assert.equal(ld["@type"], "ProductGroup")
+    const offers = (ld.hasVariant as JsonLdNode[]).map((v) => v.offers as JsonLdNode)
+    assert.ok(offers.length > 1)
+    for (const o of offers) assert.equal(o.availability, "https://schema.org/OutOfStock")
+    const soonDrop = productJsonLd(base, product({ forSale: false, releaseAt: "2026-12-01T18:00:00.000Z", variants: [{ sku: "X", options: {}, priceMinor: 100, available: 5 }] }), now)
+    assert.equal((soonDrop.offers as JsonLdNode).availability, "https://schema.org/OutOfStock")
+    assert.ok(!JSON.stringify(soonDrop).includes("InStock"))
+  })
+
   it("no reviews, no rating: aggregateRating is never invented", () => {
     assert.ok(!("aggregateRating" in productJsonLd(base, product(), now)))
   })
