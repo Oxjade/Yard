@@ -8,6 +8,7 @@ import { confirmDropClaims, releaseDropClaims } from "../drops"
 import { checkouts, payments, providerEvents, refunds, transfers } from "../db/schema/payments"
 import { newId } from "../ids"
 import { handleTransferEvent, postPaymentCaptured } from "../ledger"
+import { notifyPayoutNeeded } from "../ledger/payout-needed"
 import { log } from "../log"
 import { getOrderForMoney, handleDisputeEvent, handleRefundOutcome, markCheckoutPaid, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
@@ -229,7 +230,7 @@ type Charge = ChargeState
 /**
  * Applies a final charge outcome to its payment. Success: payment → succeeded, ORDERS
  * markCheckoutPaid, CATALOG commitHold, LEDGER postPaymentCaptured per order, cart cleared,
- * confirmation email. Failure: payment → failed, ORDERS markCheckoutPaymentFailed, hold released.
+ * confirmation email, and the "add your payout account" email to a brand that has none. Failure: payment → failed, ORDERS markCheckoutPaymentFailed, hold released.
  * Idempotent, and a payment that succeeded is never turned back into a failure.
  */
 export async function applyCharge(tx: Tx, charge: Charge): Promise<{ status: "processed" | "ignored"; note?: string }> {
@@ -292,6 +293,8 @@ export async function applyCharge(tx: Tx, charge: Charge): Promise<{ status: "pr
     return { status: "processed", note: "late capture" }
   }
   await tx.update(checkouts).set({ status: "paid", paidAt, failureReason: null, orderIds: orderIds.length ? orderIds : co.orderIds, updatedAt: new Date() }).where(eq(checkouts.id, co.id))
+  // A brand without a payout account is told to add one (at most once a day); Yard holds its earnings meanwhile.
+  await notifyPayoutNeeded(tx, orderIds)
 
   // The order confirmation email is sent by ORDERS.markCheckoutPaid.
   const groups = (co.groups ?? []) as { lines: { variantId: string }[] }[]

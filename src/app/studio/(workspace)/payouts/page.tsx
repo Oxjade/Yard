@@ -16,6 +16,7 @@ import { surfaceClass } from "@/components/dashboard/insight/insight-panel"
 import { DisabledReason, InfoTip } from "@/components/feedback/info-tip"
 import { Bone } from "@/components/feedback/skeletons"
 import { ConfirmDialog } from "@/components/studio/catalog/fields"
+import { PayoutNeededBanner } from "@/components/studio/business/payout-needed-banner"
 import { providerLabel } from "@/components/studio/business/settings-model"
 import { accountOnFile, useBrandSettings, useSettingsReady, type PayoutAccount } from "@/components/studio/business/settings-store"
 import { useFocusReturn, useStudioReady } from "@/components/studio/business/shared"
@@ -418,6 +419,8 @@ export default function StudioPayoutsPage() {
           <Button size="sm" variant="secondary" onClick={() => void summary.revalidate()}>Try again</Button>
         </div>
       ) : null}
+
+      {live ? <PayoutNeededBanner summary={summary.data} role={member?.role} /> : null}
 
       {liveFailed ? null : !hydrated ? (
         <PayoutTilesSkeleton />

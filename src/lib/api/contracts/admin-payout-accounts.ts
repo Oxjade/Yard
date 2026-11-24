@@ -6,7 +6,8 @@ import type { PayoutAccountStatus } from "../../admin-storefront"
  * payout account (masked: bank, account name and the last 4 digits only, never the number) and
  * whether it can sell. Owner and Finance roles.
  */
-export const PAYOUT_ACCOUNT_FILTERS = ["all", "missing", "pending", "verified"] as const
+/** "owed": no payout account while Yard holds earnings for the brand ("Owed, no account"). */
+export const PAYOUT_ACCOUNT_FILTERS = ["all", "owed", "missing", "pending", "verified"] as const
 export type PayoutAccountFilter = (typeof PAYOUT_ACCOUNT_FILTERS)[number]
 
 export const adminPayoutAccountsQuery = z.object({
@@ -40,6 +41,15 @@ export type AdminPayoutAccountRowDto = {
     /** When it was added or last changed (ISO). */
     changedAt: string
   } | null
+  /**
+   * What Yard holds for the brand per currency (ledger: pending + available + reserve + in payout),
+   * the brand's own currency first; only currencies with something owed.
+   */
+  owed: { currency: string; minor: number }[]
+  /** No payout account while Yard owes the brand something: listed first, "Owed, no account". */
+  owedNoAccount: boolean
+  /** Its first paid sale without a payout account (ISO), or null. */
+  payoutNeededSince: string | null
   /** A storefront is published and live (not unpublished by Yard; a founding brand has launched). */
   storefrontLive: boolean
   canSell: boolean

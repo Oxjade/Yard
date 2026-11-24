@@ -9,6 +9,7 @@ import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { Segmented } from "@/components/admin/ui/segmented"
 import { payoutStatusLabel } from "@/lib/admin-storefront"
+import { formatOwed } from "@/lib/payout-needed"
 import { listAdminPayoutAccounts, payoutAccountsKey } from "@/lib/api/admin-storefront"
 import { PAYOUT_ACCOUNT_FILTERS, type AdminPayoutAccountRowDto, type PayoutAccountFilter } from "@/lib/api/contracts/admin-payout-accounts"
 import { errorMessage } from "@/lib/api/errors"
@@ -16,7 +17,7 @@ import { useApi } from "@/lib/api/use-api"
 import { useSearchParam, writeParams } from "./table"
 
 const PAGE_SIZE = 200
-const filterLabels: Record<PayoutAccountFilter, string> = { all: "All brands", missing: "Missing account", pending: "Pending", verified: "Verified" }
+const filterLabels: Record<PayoutAccountFilter, string> = { all: "All brands", owed: "Owed, no account", missing: "Missing account", pending: "Pending", verified: "Verified" }
 const statusTone = { none: "attention", pending: "muted", verified: "success" } as const
 const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
 const isFilter = (v: string | null): v is PayoutAccountFilter => !!v && (PAYOUT_ACCOUNT_FILTERS as readonly string[]).includes(v)
@@ -66,8 +67,27 @@ export function PayoutAccountsTab() {
     {
       key: "status",
       header: "Payout account",
-      sortValue: (r) => (r.status === "none" ? 0 : r.status === "pending" ? 1 : 2),
-      cell: (r) => <StatusBadge tone={statusTone[r.status]}>{payoutStatusLabel[r.status]}</StatusBadge>,
+      sortValue: (r) => (r.owedNoAccount ? -1 : r.status === "none" ? 0 : r.status === "pending" ? 1 : 2),
+      cell: (r) =>
+        r.owedNoAccount ? (
+          <span className="grid gap-0.5">
+            <span>
+              <StatusBadge tone="danger">Owed, no account</StatusBadge>
+            </span>
+            <span className="text-[11.5px] text-ink-2 tabular">
+              {formatOwed(r.owed)} held{r.payoutNeededSince ? ` since ${dateFmt.format(new Date(r.payoutNeededSince))}` : ""}
+            </span>
+          </span>
+        ) : (
+          <StatusBadge tone={statusTone[r.status]}>{payoutStatusLabel[r.status]}</StatusBadge>
+        ),
+    },
+    {
+      key: "owed",
+      header: "Owed",
+      hideBelow: "md",
+      sortValue: (r) => r.owed[0]?.minor ?? 0,
+      cell: (r) => (r.owed.length ? <span className="whitespace-nowrap text-ink tabular">{formatOwed(r.owed)}</span> : <span className="text-ink-3">—</span>),
     },
     {
       key: "bank",
@@ -116,7 +136,7 @@ export function PayoutAccountsTab() {
   return (
     <section className="grid gap-3" aria-label="Payout accounts">
       <p className="text-[12.5px] text-ink-3">
-        Every brand and the bank account Yard pays it into. Verified means a payment provider confirmed the account; pending means it&apos;s on file but unconfirmed, so check the name before paying it by hand. Only the last 4 digits are ever shown.
+        Every brand and the bank account Yard pays it into. Owed, no account (listed first) means Yard holds the brand&apos;s earnings and has nowhere to pay them yet; Yard emails it to add one. Verified means a payment provider confirmed the account; pending means it&apos;s on file but unconfirmed, so check the name before paying it by hand. Only the last 4 digits are ever shown.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <div className="rail overflow-x-auto">

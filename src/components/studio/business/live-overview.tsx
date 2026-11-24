@@ -12,6 +12,7 @@ import { InsightPanel } from "@/components/dashboard/insight/insight-panel"
 import { Segmented } from "@/components/dashboard/insight/segmented"
 import { StatCard } from "@/components/dashboard/insight/stat-card"
 import { SetupCard } from "@/components/studio/setup/setup-card"
+import { PayoutNeededBanner } from "@/components/studio/business/payout-needed-banner"
 import { WebsitePiecesCard } from "@/components/studio/catalog/website-pieces"
 import { SuggestionsCard } from "@/components/proposals/studio-proposals"
 import { currencies, type CurrencyCode } from "@/config/markets"
@@ -100,6 +101,8 @@ export function LiveOverview({ member }: { member: BrandProfile }) {
         </div>
       </header>
 
+      {/* Earnings waiting and no payout account: the payouts summary above (finance roles only). */}
+      <PayoutNeededBanner summary={payouts.data} role={member.role} className="mt-6" />
       {/* Server-backed setup guidance; nothing when dismissed or all done. */}
       <SetupCard className="mt-6" />
       <SuggestionsCard className="mt-6" />

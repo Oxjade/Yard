@@ -92,7 +92,7 @@ describe("GET /api/admin/finance/payout-accounts (listPayoutAccountsDb)", () => 
     assert.equal(by["pending-label"].status, "pending")
     assert.equal(by["missing-label"].status, "none")
     assert.equal(by["missing-label"].account, null)
-    assert.deepEqual(r.counts, { all: 9, missing: 3, pending: 5, verified: 1 })
+    assert.deepEqual(r.counts, { all: 9, owed: 0, missing: 3, pending: 5, verified: 1 })
   })
 
   it("masks the account: bank, name, last 4 and when it changed, never the number", async () => {

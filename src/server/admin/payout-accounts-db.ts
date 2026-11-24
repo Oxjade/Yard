@@ -1,17 +1,23 @@
-import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm"
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core"
 import { sellState, storefrontLive } from "../../lib/admin-storefront"
+import { owedList } from "../../lib/payout-needed"
 import type { AdminPayoutAccountRowDto, AdminPayoutAccountsDto, AdminPayoutAccountsQuery, PayoutAccountFilter } from "../../lib/api/contracts/admin-payout-accounts"
 import { brands } from "../db/schema/brands"
 import { brandOnboardings, storefrontVersions } from "../db/schema/catalog"
-import { brandPayoutAccounts } from "../db/schema/ledger"
+import { brandPayoutAccounts, ledgerAccounts } from "../db/schema/ledger"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any drizzle Postgres database or transaction (PGlite, node-postgres)
 export type Db = PgDatabase<PgQueryResultHKT, any>
 
 const verifiedSql = sql`(${brandPayoutAccounts.recipientCode} is not null and ${brandPayoutAccounts.recipientProvider} <> 'stub')`
+const OWED_KINDS = ["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold"]
+/** Yard owes the brand something in some currency (ledger_accounts_owner_kind_ccy_ux). */
+const owesSql = sql`exists (select 1 from ${ledgerAccounts} la where la.owner_kind = 'brand' and la.owner_id = "brands"."id" and la.kind in (${sql.join(OWED_KINDS.map((k) => sql`${k}`), sql`, `)}) group by la.currency having sum(la.balance_minor) > 0)`
+const owedNoAccountSql = sql`("brand_payout_accounts"."brand_id" is null and ${owesSql})`
 
 function statusWhere(status: PayoutAccountFilter): SQL | undefined {
+  if (status === "owed") return owedNoAccountSql
   if (status === "missing") return isNull(brandPayoutAccounts.brandId)
   if (status === "verified") return and(isNotNull(brandPayoutAccounts.brandId), verifiedSql)!
   if (status === "pending") return and(isNotNull(brandPayoutAccounts.brandId), sql`not ${verifiedSql}`)!
@@ -66,11 +72,15 @@ export async function listPayoutAccountsDb(d: Db, query: Partial<AdminPayoutAcco
         provider: brandPayoutAccounts.recipientProvider,
         verified: sql<boolean>`coalesce(${verifiedSql}, false)`,
         changedAt: brandPayoutAccounts.changedAt,
+        brandCurrency: brands.currency,
+        owedNoAccount: sql<boolean>`${owedNoAccountSql}`,
+        payoutNeededSince: brands.payoutNeededSince,
       })
       .from(brands)
       .leftJoin(brandPayoutAccounts, eq(brandPayoutAccounts.brandId, brands.id))
       .where(cond)
-      .orderBy(asc(sql`lower(${brands.name})`), asc(brands.id))
+      // Brands Yard owes with nowhere to pay them come first.
+      .orderBy(desc(owedNoAccountSql), asc(sql`lower(${brands.name})`), asc(brands.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     d.select({ total: sql<number>`count(*)::int` }).from(brands).leftJoin(brandPayoutAccounts, eq(brandPayoutAccounts.brandId, brands.id)).where(cond),
@@ -79,6 +89,7 @@ export async function listPayoutAccountsDb(d: Db, query: Partial<AdminPayoutAcco
         all: sql<number>`count(*)::int`,
         missing: sql<number>`count(*) filter (where ${brandPayoutAccounts.brandId} is null)::int`,
         verified: sql<number>`count(*) filter (where ${brandPayoutAccounts.brandId} is not null and ${verifiedSql})::int`,
+        owed: sql<number>`count(*) filter (where ${owedNoAccountSql})::int`,
       })
       .from(brands)
       .leftJoin(brandPayoutAccounts, eq(brandPayoutAccounts.brandId, brands.id)),
@@ -91,6 +102,19 @@ export async function listPayoutAccountsDb(d: Db, query: Partial<AdminPayoutAcco
       ? (await d.select({ brandId: brandOnboardings.brandId }).from(brandOnboardings).where(and(inArray(brandOnboardings.brandId, ids), inArray(brandOnboardings.status, ["draft", "submitted", "rejected"])))).map((r) => r.brandId)
       : [],
   )
+
+  // What Yard owes each brand on the page, per currency (one query for the page).
+  const balances = ids.length
+    ? await d
+        .select({ brandId: ledgerAccounts.ownerId, kind: ledgerAccounts.kind, currency: ledgerAccounts.currency, b: ledgerAccounts.balanceMinor })
+        .from(ledgerAccounts)
+        .where(and(eq(ledgerAccounts.ownerKind, "brand"), inArray(ledgerAccounts.ownerId, ids), inArray(ledgerAccounts.kind, OWED_KINDS)))
+    : []
+  const owedOf = (id: string, currency: string) => {
+    const by = new Map<string, number>()
+    for (const b of balances) if (b.brandId === id) by.set(b.currency, (by.get(b.currency) ?? 0) + Number(b.b))
+    return owedList([...by].map(([c, m]) => ({ currency: c, pendingMinor: m, availableMinor: 0, reserveMinor: 0, inPayoutMinor: 0 })), currency)
+  }
 
   const items = rows.map<AdminPayoutAccountRowDto>((r) => {
     const account = r.acctBrand
@@ -119,12 +143,15 @@ export async function listPayoutAccountsDb(d: Db, query: Partial<AdminPayoutAcco
       claimStatus: r.claimStatus,
       status: !account ? "none" : r.verified ? "verified" : "pending",
       account,
+      owed: owedOf(r.id, r.brandCurrency),
+      owedNoAccount: !!r.owedNoAccount,
+      payoutNeededSince: r.payoutNeededSince ? new Date(r.payoutNeededSince).toISOString() : null,
       storefrontLive: storefrontLive({ ...facts, name: r.name, liveProducts: 0 }),
       canSell: sell.canSell,
       reasons: sell.reasons,
     }
   })
-  const c = countRows[0] ?? { all: 0, missing: 0, verified: 0 }
-  const counts = { all: Number(c.all), missing: Number(c.missing), verified: Number(c.verified), pending: Number(c.all) - Number(c.missing) - Number(c.verified) }
+  const c = countRows[0] ?? { all: 0, missing: 0, verified: 0, owed: 0 }
+  const counts = { all: Number(c.all), owed: Number(c.owed), missing: Number(c.missing), verified: Number(c.verified), pending: Number(c.all) - Number(c.missing) - Number(c.verified) }
   return { items, total: Number(total), page, pageSize, counts }
 }

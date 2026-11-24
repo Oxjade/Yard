@@ -134,6 +134,9 @@ export function startSchedulers() {
   every(8 * MIN, 30 * MIN, () => runFeatureJob("payments", "reconcileTransfers"))
   every(untilUtcMidnight() + 10 * MIN, untilUtcMidnight, () => runFeatureJob("payments", "purgeStaleCarts"))
   every(13 * MIN, HOUR, () => runFeatureJob("orders", "hourly"))
+  // "Add your payout account" reminder (docs/BRAND-EMAILS.md): one indexed query a run on brands_payout_needed_ix,
+  // more only for a brand that is due. Cost scales with time, not with orders.
+  every(21 * MIN, HOUR, () => runFeatureJob("ledger", "payoutReminders"))
   every(untilUtcMidnight() + 30 * MIN, untilUtcMidnight, async () => {
     await runFeatureJob("ledger", "releaseReserves")
     await runFeatureJob("ledger", "reconcileDaily")

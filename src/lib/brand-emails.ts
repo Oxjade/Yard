@@ -220,6 +220,54 @@ export function shopLiveCopy(x: { brand: string; handle: string; shop: string; v
   }
 }
 
+/**
+ * "Add your payout account" (`brand_payout_needed`, ledger/payout-needed-db.ts). A brand sells
+ * without a payout account and Yard holds its earnings in the ledger. `variant` "sale": an order of
+ * theirs was just paid (`reference`), at most one a day. "reminder": once, 3 days after the first such
+ * sale. `owed`: what Yard holds for them, formatted ("₦45,000"); `sales`: paid sales waiting.
+ */
+export function payoutNeededCopy(x: { brand: string; owed: string; sales: number; reference?: string; variant: "sale" | "reminder" }): BrandEmailCopy {
+  const n = Math.max(1, Math.floor(x.sales || 1))
+  const salesText = n === 1 ? "1 sale" : `${n} sales`
+  const reference = x.reference?.trim()
+  const add = "Add your bank account in Studio and we'll get it to you. It takes about 2 minutes, and only the last four digits ever show."
+  const why = `You're getting this because you run payouts for ${x.brand} on Yard. It comes at most once a day and stops as soon as your payout account is in.`
+  const facts = [...(reference && x.variant === "sale" ? [{ label: "Order", value: reference }] : []), { label: "Earned so far", value: x.owed }, { label: "Sales waiting", value: String(n) }]
+  const action = { label: "Add payout account", url: "/studio/settings#payouts" }
+  if (x.variant === "reminder") {
+    return {
+      subject: `${x.owed} is waiting for you on Yard. Add your payout account so we can pay you`,
+      preheader: "We're holding your earnings safely. Tell us where to send them.",
+      eyebrow: "Yard Studio · Payouts",
+      heading: "Your earnings are waiting 💸",
+      greeting: `Hey ${x.brand},`,
+      paragraphs: [
+        `You've made ${salesText} on Yard and earned ${x.owed} so far. There's still no payout account on file, so we can't send it to you yet.`,
+        "Your money is safe: Yard holds it for you until you add a bank account. Nothing is lost while you wait.",
+        add,
+      ],
+      facts,
+      action,
+      why,
+    }
+  }
+  return {
+    subject: "You made a sale 🎉 Add your payout account so we can pay you",
+    preheader: `${x.owed} earned so far. Add a bank account and we'll send it your way.`,
+    eyebrow: "Yard Studio · Payouts",
+    heading: "You made a sale 🎉",
+    greeting: `Hey ${x.brand},`,
+    paragraphs: [
+      `${reference ? `Order ${reference} just got paid` : "One of your orders just got paid"}${n > 1 ? `, and that makes ${salesText} waiting for you` : ""}. Nice one.`,
+      `You've earned ${x.owed} so far. Yard holds your earnings safely until you add a bank account, so we've got nowhere to send them yet.`,
+      add,
+    ],
+    facts,
+    action,
+    why,
+  }
+}
+
 export function applicationRejectedCopy(x: { brand: string; name?: string; reason?: string }): BrandEmailCopy {
   const first = x.name?.trim().split(/\s+/)[0]
   return {

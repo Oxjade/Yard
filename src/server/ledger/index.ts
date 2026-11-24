@@ -1,5 +1,6 @@
 import "server-only"
 import { log } from "../log"
+import { payoutReminders as sendPayoutReminders } from "./payout-needed"
 import { releaseDueReserves } from "./postings"
 import { runReconciliation } from "./reconcile"
 
@@ -32,5 +33,10 @@ async function reconcileDaily() {
   await runReconciliation({ triggeredBy: "system" })
 }
 
+/** Hourly: the one "add your payout account" reminder, 3 days after a brand's first sale without one. */
+async function payoutReminders() {
+  await sendPayoutReminders()
+}
+
 /** For src/server/schedulers.ts (FeatureModule shape): register `ledger: () => import("./ledger")`. */
-export const jobs = { releaseReserves, reconcileDaily }
+export const jobs = { releaseReserves, reconcileDaily, payoutReminders }

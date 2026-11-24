@@ -68,6 +68,12 @@ export function NewsletterListView() {
                   <EnvelopeSimpleOpenIcon /> Welcome email
                 </a>
               </Button>
+              {/* The automatic "add your payout account" email to a brand that sold without one (src/server/ledger/payout-needed.ts). */}
+              <Button asChild size="sm" variant="secondary" className="h-10 sm:h-9">
+                <a href="/api/admin/emails/payout-needed/preview?format=html" target="_blank" rel="noopener">
+                  <EnvelopeSimpleOpenIcon /> Payout account email
+                </a>
+              </Button>
               <Button size="sm" variant="primary" className="h-10 sm:h-9" loading={creating} onClick={() => void create()}>
                 <PlusIcon /> New campaign
               </Button>

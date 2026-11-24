@@ -2,7 +2,7 @@ import "server-only"
 import { currencies, type CurrencyCode } from "@/config/markets"
 import { formatMoney } from "@/lib/money"
 import { getEnv } from "../env"
-import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, shopLiveCopy, storefrontNudgeCopy, websitePiecesCopy, type BrandEmailCopy } from "@/lib/brand-emails"
+import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, payoutNeededCopy, shopLiveCopy, storefrontNudgeCopy, websitePiecesCopy, type BrandEmailCopy } from "@/lib/brand-emails"
 import { shopDisplay } from "@/lib/publish-for-brand"
 import { newsletterGreeting, newsletterKindMeta, newsletterLink, parseNewsletterBody, type NewsletterBlock } from "@/lib/newsletter"
 import { decodeWelcomeBrands, welcomeCopy } from "@/lib/welcome-email"
@@ -448,6 +448,14 @@ export const templates = {
       return brandCopy(shopLiveCopy({ brand: v(x, "brand"), handle, shop: shopDisplay(getEnv().publicOrigin, handle), variant: x.variant === "claim" ? "claim" : "yard", payout: Number(x.payout) === 1 }))
     },
   },
+  // "Add your payout account" (ledger/payout-needed-db.ts): a sale paid while the brand has no payout account
+  // (`variant` "sale", with the order `reference`), or the one reminder 3 days later ("reminder"). `owed`: the
+  // formatted amount Yard holds for the brand; `sales`: paid sales waiting. Payouts mail: transactional.
+  brand_payout_needed: {
+    category: "payouts",
+    required: ["brand", "owed"],
+    build: (x) => brandCopy(payoutNeededCopy({ brand: v(x, "brand"), owed: v(x, "owed"), sales: Number(x.sales) || 1, reference: has(x, "reference") ? v(x, "reference") : undefined, variant: x.variant === "reminder" ? "reminder" : "sale" })),
+  },
   // An application sent back (catalog/onboarding.ts reviewOnboarding). `reason`: the admin's note.
   brand_rejected: {
     category: "account",
@@ -775,6 +783,7 @@ const ALIASES: Record<string, EmailTemplateKey> = {
   storefront_nudge: "brand_storefront_nudge",
   website_pieces: "brand_website_pieces",
   shop_live: "brand_shop_live",
+  payout_needed: "brand_payout_needed",
   founding: "founding_claim",
   order_confirmed: "order_confirmation",
   order: "order_confirmation",

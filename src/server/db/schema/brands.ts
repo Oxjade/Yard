@@ -72,6 +72,14 @@ export const brands = pgTable(
      */
     unpublishedAt: tz("unpublished_at"),
     unpublishedBy: text("unpublished_by").references((): AnyPgColumn => users.id),
+    /**
+     * "Add your payout account" emails (ledger/payout-needed-db.ts, docs/BRAND-EMAILS.md › Payout
+     * account needed): the brand's first paid sale while it had no payout account (the 3-day
+     * reminder's clock), the last such email (at most one per 24 hours) and the one reminder.
+     */
+    payoutNeededSince: tz("payout_needed_since"),
+    payoutNeededEmailedAt: tz("payout_needed_emailed_at"),
+    payoutNeededRemindedAt: tz("payout_needed_reminded_at"),
   },
   (t) => [
     uniqueIndex("brands_handle_ux").on(t.handle),
@@ -81,6 +89,8 @@ export const brands = pgTable(
     oneOf("brands_claim_status_ck", "claim_status", CLAIM_STATUSES),
     uniqueIndex("brands_creation_key_ux").on(t.createdBy, t.creationKey).where(raw("creation_key is not null")),
     index("brands_founding_ix").on(t.claimStatus, t.launchedAt).where(raw("founding")),
+    /** The payout-account reminder's one query: brands with an unpaid-out sale not reminded yet. */
+    index("brands_payout_needed_ix").on(t.payoutNeededSince).where(raw("payout_needed_since is not null and payout_needed_reminded_at is null")),
     check("brands_story_len_ck", raw("story is null or char_length(story) <= 2000")),
     check("brands_instagram_ck", raw("instagram is null or instagram ~ '^[A-Za-z0-9._]{1,30}$'")),
     check("brands_tiktok_ck", raw("tiktok is null or tiktok ~ '^[A-Za-z0-9._]{1,24}$'")),

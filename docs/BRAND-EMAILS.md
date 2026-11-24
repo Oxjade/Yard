@@ -10,7 +10,7 @@ development, prints each email to the server log.
 - Copy and rules: `src/lib/brand-emails.ts` (pure, unit-tested in `src/lib/brand-emails.test.ts`).
 - Templates: `src/server/email/templates.ts` (`brand_draft_nudge`, `brand_storefront_nudge`,
   `brand_rejected`, `listing_held`, `listing_back`, `brand_message`, `brand_shop_live`,
-  `brand_website_pieces`).
+  `brand_website_pieces`, `brand_payout_needed`).
 - Recipients: the brand's active **owners and admins** (`brandLeads` in
   `src/server/orders/brand-email.ts`); Yard setup is never a recipient. An application email goes to
   the applicant.
@@ -73,6 +73,56 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
   shows up the moment it's live. Want a second pair of eyes first? Message @support in Studio and we'll
   take a look.
 - Button: Publish my storefront → `/studio/storefront`
+
+## Payout account needed (always sent, not opt-out-able)
+
+A brand doesn't need a payout account to sell: Buy stays on and Yard holds what it earns in the
+ledger. When it sells without one, Yard emails it to add one (`brand_payout_needed`, category
+**payouts**, transactional). Copy: `payoutNeededCopy` in `src/lib/brand-emails.ts`; rules and the
+Studio banner: `src/lib/payout-needed.ts`; queries: `src/server/ledger/payout-needed-db.ts` (tested on
+PGlite in `payout-needed.test.ts`); wiring: `src/server/ledger/payout-needed.ts`.
+
+Recipients: the brand's active **owners and finance** members (Yard setup never). Only the owner can
+add the account, so the Studio banner tells finance and admins to ask them.
+
+| Email | Trigger | Once per |
+|---|---|---|
+| You made a sale (`variant` sale) | An order for the brand is marked **paid** (`payments/events.ts` `applyCharge`, after the ledger posting, in a savepoint of the payment's transaction, so an email problem never undoes the payment) and the brand has no saved payout account. The first such sale sets `brands.payout_needed_since`. | brand per 24 hours (`brands.payout_needed_emailed_at`, claimed with a conditional update; outbox key `payout_needed:{brandId}:{yyyy-mm-dd}:{email}` backs it up) |
+| Reminder (`variant` reminder) | Job `ledger.payoutReminders`, hourly: still no account 3 days after `payout_needed_since`, never reminded, no email in the last 24 hours, brand not closed. One query a run on the partial index `brands_payout_needed_ix`. A brand whose sales were all refunded is marked and not emailed. | brand, ever (`brands.payout_needed_reminded_at`, outbox key `payout_needed:reminder:{brandId}:{email}`) |
+
+Both stop once a payout account is saved. Sample brands are never emailed in production. Audited
+`brand_email.payout_needed` / `brand_email.payout_reminder` with `meta.emailed` and `meta.sales`.
+
+**You made a sale**
+- Subject: `You made a sale 🎉 Add your payout account so we can pay you`
+- Preview: {owed} earned so far. Add a bank account and we'll send it your way.
+- Heading: You made a sale 🎉
+- Hey {brand}, Order {reference} just got paid(, and that makes {n} sales waiting for you). Nice one.
+  You've earned {owed} so far. Yard holds your earnings safely until you add a bank account, so we've
+  got nowhere to send them yet. Add your bank account in Studio and we'll get it to you. It takes about
+  2 minutes, and only the last four digits ever show.
+- Facts: Order, Earned so far, Sales waiting.
+- Button: Add payout account → `/studio/settings#payouts` (the Studio sign-in gate keeps it as `next=`)
+
+**Reminder**
+- Subject: `{owed} is waiting for you on Yard. Add your payout account so we can pay you`
+- Heading: Your earnings are waiting 💸
+- You've made {n} sales on Yard and earned {owed} so far. There's still no payout account on file, so we
+  can't send it to you yet. Your money is safe: Yard holds it for you until you add a bank account.
+  (Same last line, facts without the order, and button.)
+
+{owed} is what Yard holds for the brand (ledger: pending + available + reserve + in payout), in the
+brand's currency first ("₦45,000", or "₦45,000 + $20"). {n} counts its paid sales not fully refunded.
+
+Studio Overview and Payouts show "You have {owed} waiting. Add your payout account to get paid." with
+**Add payout account** while the brand has earnings and no account (from `GET /api/studio/payouts`, no
+extra request). Admin › Finance › Payout accounts lists these brands first as **Owed, no account**, with
+what's held and since when, and has an **Owed, no account** filter. Admin › Newsletter › **Payout
+account email** previews it (`GET /api/admin/emails/payout-needed/preview?format=html&variant=sale|reminder`).
+
+Migration `drizzle/0034_payout_needed.sql` adds the three `brands` columns and the index, and starts
+the clock for brands that already hold earnings without an account (their first such sale), so those
+get the one reminder on the first run after deploy.
 
 ## Decision emails (always sent, not opt-out-able)
 
