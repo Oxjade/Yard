@@ -4,7 +4,7 @@ name: iOS build check
 
 on:
   push:
-    branches: [iOSyard]
+    branches: [iOSyard, mobileYard]
     paths: ["ios/**", ".github/workflows/ios-build.yml"]
   workflow_dispatch:
 
