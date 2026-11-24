@@ -8,6 +8,7 @@ import { db, withTx, type Tx } from "../db"
 import { adminMembers, brandMembers, brands, sessions, users } from "../db/schema"
 import { accountDeletions, adminMfa, userCredentials } from "../db/schema/identity"
 import { enqueueEmail } from "../email"
+import { queueShopperWelcome } from "../email/welcome"
 import { HttpError, badRequest, rateLimited, suspended } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
@@ -287,8 +288,11 @@ export async function confirmEmailVerification(token: string, meta: RequestMeta)
     // First proof of the email: the password set at sign-up is kept (this link was sent for that
     // sign-up, and a second sign-up for an unverified address drops it), but nothing else from
     // before verification survives: other sessions end and other email links are voided.
-    if (!(await credentialsOf(user.id))?.emailVerifiedAt) await supersedeUnverified(user.id, "email_verified", { keepPassword: true })
+    const firstProof = !(await credentialsOf(user.id))?.emailVerifiedAt
+    if (firstProof) await supersedeUnverified(user.id, "email_verified", { keepPassword: true })
     await upsertCredentials(user.id, { emailVerifiedAt: new Date() })
+    // The account is usable from here: the one-time shopper welcome (skips brand, team, admin, demo and test accounts).
+    if (firstProof) await queueShopperWelcome(user.id)
     if (user.status === "suspended" || (user.kind !== "shopper" && user.kind !== "brand_staff")) return { status: "verified" as const, signedIn: false as const }
     const out = await openSession({ actor: "shopper", user, brandId: null, method: "email_verification", meta })
     return { status: "verified" as const, signedIn: true as const, actor: "shopper" as const, profile: out.profile }
@@ -392,7 +396,10 @@ export async function resetPassword(token: string, password: string, meta: Reque
     const problem = passwordProblem(password, user.email)
     if (problem) throw badRequest({ password: problem })
     const now = new Date()
+    const firstProof = !(await credentialsOf(user.id))?.emailVerifiedAt
     await upsertCredentials(user.id, { passwordHash: hash, passwordUpdatedAt: now, emailVerifiedAt: now, failedCount: 0, firstFailedAt: null, lockedUntil: null })
+    // A reset link proves the email too: an account that never confirmed it becomes usable here.
+    if (firstProof) await queueShopperWelcome(user.id)
     await voidTokens(user.id, ["reset_password", "magic_link", "mfa_challenge"])
     await endSessionsForUser(user.id, ["shopper", "brand", "admin"], "password_reset")
     await sendAuthEmail(tx, AUTH_EMAIL_TEMPLATES.passwordChanged, user.email, { name: user.name }, `pw-changed:${user.id}:${now.getTime()}`)
@@ -464,8 +471,10 @@ export async function consumeMagicLink(token: string, meta: RequestMeta) {
     // First proof of the email by magic link: a password set before verification was not chosen
     // through this inbox, so it goes, with every earlier session (pre-hijack guard). The owner can
     // set a password afterwards from this fresh session.
-    if (!(await credentialsOf(user.id))?.emailVerifiedAt) await supersedeUnverified(user.id, "email_verified")
+    const firstProof = !(await credentialsOf(user.id))?.emailVerifiedAt
+    if (firstProof) await supersedeUnverified(user.id, "email_verified")
     await upsertCredentials(user.id, { emailVerifiedAt: new Date() })
+    if (firstProof) await queueShopperWelcome(user.id)
     const out = await openSession({ actor: "shopper", user, brandId: null, method: "magic_link", meta })
     return { status: "signed_in" as const, actor: "shopper" as const, profile: out.profile }
   })

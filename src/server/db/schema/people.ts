@@ -22,6 +22,11 @@ export const users = pgTable(
      * (src/server/media/serve.ts; teammates may open it too, though no endpoint lists them yet). No foreign key, like brands.logo_media_id.
      */
     photoMediaId: text("photo_media_id"),
+    /**
+     * When the one-time shopper welcome email was queued (src/server/email/welcome.ts). Set in the
+     * same transaction as the outbox row, so a retry or a second sign-in never queues it again.
+     */
+    welcomeEmailAt: tz("welcome_email_at"),
     createdAt: tz("created_at").notNull().defaultNow(),
   },
   (t) => [

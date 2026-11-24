@@ -5,6 +5,7 @@ import { getEnv } from "../env"
 import { applicationRejectedCopy, brandMessageCopy, draftNudgeCopy, isBrandEmailPreset, LISTING_STATES, listingBackCopy, listingHeldCopy, shopLiveCopy, storefrontNudgeCopy, websitePiecesCopy, type BrandEmailCopy } from "@/lib/brand-emails"
 import { shopDisplay } from "@/lib/publish-for-brand"
 import { newsletterGreeting, newsletterKindMeta, newsletterLink, parseNewsletterBody, type NewsletterBlock } from "@/lib/newsletter"
+import { decodeWelcomeBrands, welcomeCopy } from "@/lib/welcome-email"
 import { layoutHtml, layoutText, type EmailContent, type Fact, type Receipt, type ReceiptGroup, type ReceiptLine } from "./layout"
 
 /**
@@ -34,6 +35,8 @@ type Built = {
   /** Rich blocks after the paragraphs (Newsletter bodies); links are checked like the action's. */
   blocks?: NewsletterBlock[]
   action?: { label: string; url: string }
+  /** A quieter text link under the button (a Yard path; dropped when it isn't one). */
+  secondary?: { label: string; url: string }
   /** Optional hero image: a Yard path or a URL on Yard's origin (anything else is dropped). */
   image?: string
   imageAlt?: string
@@ -280,6 +283,13 @@ export const templates = {
       action: { label: "Secure my account", url: "/sign-in" },
       why: "You're getting this because this address was the email on a Yard account until just now.",
     }),
+  },
+  // One-time welcome for a new shopper account (src/server/email/welcome.ts). `brands`: JSON from
+  // encodeWelcomeBrands, filled from the live catalogue when the email is sent; fewer than 2 = no list.
+  shopper_welcome: {
+    category: "account",
+    required: [],
+    build: (x) => ({ ...welcomeCopy({ name: v(x, "name"), brands: decodeWelcomeBrands(x.brands) }) }),
   },
   team_invite: {
     category: "account",
@@ -780,6 +790,8 @@ const ALIASES: Record<string, EmailTemplateKey> = {
   cancelled: "order_cancelled",
   return_request: "return_requested",
   return_requested_brand: "return_requested",
+  welcome: "shopper_welcome",
+  shopper_welcome_email: "shopper_welcome",
   mfa: "mfa_reset",
   admin_mfa_reset: "mfa_reset",
 }
@@ -833,6 +845,7 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
   const link = t.outbound ? (u: string) => newsletterLink(u, getEnv().publicOrigin) : safeLink
   const action = b.action ? { label: b.action.label, url: link(b.action.url) } : null
   if (b.action && !action?.url) throw new Error(`email template ${key}: the link must be a Yard path or a URL on Yard's origin`)
+  const secondary = b.secondary ? safeLink(b.secondary.url) : null
   // A footer link off Yard's origin is dropped (it's a convenience, not the email's point).
   const footer = b.footerLink ? safeLink(b.footerLink.url) : null
   // Images are optional: one that isn't on Yard's origin is dropped, never rendered.
@@ -851,6 +864,7 @@ export function renderEmail(key: EmailTemplateKey, vars: Vars, opts: { unsubscri
     receipt,
     steps: b.steps ?? null,
     action: action ? { label: action.label, url: action.url! } : null,
+    secondary: secondary ? { label: b.secondary!.label, url: secondary } : null,
     showUrl: b.showUrl,
     note: b.note,
     why: b.why ?? WHY[t.category],

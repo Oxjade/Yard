@@ -61,9 +61,17 @@ export function NewsletterListView() {
         description="Write to shoppers and brands in Yard's voice. You write the words, the email looks like Yard. Marketing only reaches people who said yes."
         actions={
           can("comms.newsletter") ? (
-            <Button size="sm" variant="primary" className="h-10 sm:h-9" loading={creating} onClick={() => void create()}>
-              <PlusIcon /> New campaign
-            </Button>
+            <>
+              {/* The automatic one-time shopper welcome (src/server/email/welcome.ts), as a new shopper gets it now. */}
+              <Button asChild size="sm" variant="secondary" className="h-10 sm:h-9">
+                <a href="/api/admin/emails/welcome/preview?format=html" target="_blank" rel="noopener">
+                  <EnvelopeSimpleOpenIcon /> Welcome email
+                </a>
+              </Button>
+              <Button size="sm" variant="primary" className="h-10 sm:h-9" loading={creating} onClick={() => void create()}>
+                <PlusIcon /> New campaign
+              </Button>
+            </>
           ) : undefined
         }
       />

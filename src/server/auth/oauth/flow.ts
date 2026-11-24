@@ -14,6 +14,7 @@ import { hmacB64url, open, safeEqual, seal, sha256b64url, sha256hex } from "../.
 import { AUTH_COMPLETE_PATH, authKeys } from "../auth-env"
 import { getBrandActor, getShopper } from "../dal"
 import { assertEligible, credentialsOf, deletionPending, findUserByEmail, openSession, upsertCredentials, userById, type RequestMeta, type UserRow } from "../identity"
+import { queueShopperWelcome } from "../../email/welcome"
 import { limitOauthStart } from "../limits"
 import { markReauth } from "../session-auth"
 import { auth0ConnectionOfSubject } from "../../../lib/auth/auth0"
@@ -228,7 +229,7 @@ async function eligibility(actor: OAuthActor, user: UserRow, brandId: string | n
  * brand, or the refusal. `out.created` says whether this sign-in created the account (the app
  * asks "shop or sell").
  */
-async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor: OAuthActor, brandId: string | null, out: { created: boolean } = { created: false }): Promise<{ user: UserRow; brandId: string | null } | SignInRefusal> {
+async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor: OAuthActor, brandId: string | null, out: { created: boolean; firstProof?: boolean } = { created: false }): Promise<{ user: UserRow; brandId: string | null } | SignInRefusal> {
   const d = await db()
   const known = await identityBySubject(provider, p.subject)
   if (known) {
@@ -258,7 +259,10 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor
     // The provider verified this email, so it signs straight into the matching Yard account and
     // marks the Yard email as confirmed (no "sign in with your password first" detour).
     const cred = await credentialsOf(existing.id)
-    if (!cred?.emailVerifiedAt) await upsertCredentials(existing.id, { emailVerifiedAt: new Date() })
+    if (!cred?.emailVerifiedAt) {
+      await upsertCredentials(existing.id, { emailVerifiedAt: new Date() })
+      out.firstProof = true
+    }
     await linkIdentity(provider, existing.id, p)
     return { user: existing, brandId: ok.brandId }
   }
@@ -269,6 +273,7 @@ async function resolveSignInUser(provider: ProviderId, p: ProviderProfile, actor
   const u = await userById(id)
   if (!u) return { result: "error", reason: "new account not readable" }
   out.created = true
+  out.firstProof = p.emailVerified
   // A new account is a shopper: a brand sign-in still gets no_brand (the account stays, for shopping or applying).
   const ok = await eligibility(actor, u, brandId)
   if ("result" in ok) return ok
@@ -340,10 +345,13 @@ export async function handleOAuthCallback(provider: ProviderId, input: CallbackI
     }
     if (mode !== "signin") return done("invalid_state", "app flow not signin") // app flows only sign in (start refuses the rest)
     return await withTx(async () => {
-      const created = { created: false }
+      const created: { created: boolean; firstProof?: boolean } = { created: false }
       const outcome = await resolveSignInUser(provider, profile, actor, row!.brandId, created)
       if ("result" in outcome) return done(outcome.result, outcome.reason, outcome.userId)
       const { user: resolved, brandId } = outcome
+      // A shopper account usable for the first time (created here, or its email first proven by the
+      // provider): the one-time welcome. A Studio (brand) sign-in never gets it.
+      if (actor === "shopper" && created.firstProof) await queueShopperWelcome(resolved.id)
       if (app) {
         // The Custom Tab gets no session: the app exchanges this code (with its verifier) for one.
         const code = await createHandoff({ userId: resolved.id, actor, brandId, provider, mode, result: "signed_in", isNew: created.created, ...app })

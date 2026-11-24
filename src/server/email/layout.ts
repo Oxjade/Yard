@@ -37,6 +37,8 @@ export type EmailContent = {
   receipt?: Receipt | null
   steps?: { title: string; steps: string[] } | null
   action?: { label: string; url: string } | null
+  /** A quieter text link under the button, already checked against Yard's origin. */
+  secondary?: { label: string; url: string } | null
   /** Print the action URL under the button (auth links, so they can be pasted). */
   showUrl?: boolean
   /** A small line under the button (expiry, a safety note). */
@@ -256,6 +258,7 @@ ${c.facts?.length ? factsTable(c.facts) : ""}
 ${c.receipt ? receiptBlock(c.receipt) : ""}
 ${c.steps?.steps.length ? stepsBlock(c.steps) : ""}
 ${c.action ? button(c.action) : ""}
+${c.secondary ? `<p style="margin:16px 0 0;font-family:${BODY};font-size:14px;line-height:20px"><a href="${esc(c.secondary.url)}" target="_blank" style="color:${C.ink};text-decoration:underline;font-weight:600">${esc(c.secondary.label)}</a></p>` : ""}
 ${c.note ? `<p style="margin:18px 0 0;font-family:${BODY};font-size:13px;line-height:20px;color:${C.muted}">${esc(c.note)}</p>` : ""}
 ${c.action && c.showUrl ? `<p style="margin:14px 0 0;font-family:${BODY};font-size:12px;line-height:18px;color:${C.muted};word-break:break-all">Button not working? Paste this into your browser:<br><a href="${esc(c.action.url)}" style="color:${C.soft};text-decoration:underline">${esc(c.action.url)}</a></p>` : ""}
 </td></tr>
@@ -294,6 +297,7 @@ export function layoutText(c: EmailContent): string {
   }
   if (c.steps?.steps.length) out.push(c.steps.title, ...c.steps.steps.map((s, i) => `${i + 1}. ${s}`), "")
   if (c.action) out.push(`${c.action.label}: ${c.action.url}`, "")
+  if (c.secondary) out.push(`${c.secondary.label}: ${c.secondary.url}`, "")
   if (c.note) out.push(c.note, "")
   out.push("—", c.why)
   if (c.unsubscribeUrl) out.push(`Unsubscribe: ${c.unsubscribeUrl}`)

@@ -65,8 +65,16 @@ const BULK_GAP_MS = Math.max(100, Number(process.env.YARD_NEWSLETTER_GAP_MS) || 
 const BULK_RUN_MS = 45_000
 const isBulk = (template: string) => BULK_TEMPLATES.includes(template)
 
-/** Fills a bulk Newsletter row's content from its campaign; null = the campaign is gone or cancelled. Other rows pass through. */
+/**
+ * Fills a bulk Newsletter row's content from its campaign; null = the campaign is gone or cancelled.
+ * The shopper welcome gets its brands to follow from the live catalogue (picked at send time).
+ * Other rows pass through.
+ */
 async function withCampaign(ex: Executor, template: string, vars: Record<string, string | number>): Promise<Record<string, string | number> | null> {
+  if (template === "shopper_welcome") {
+    const { welcomeSendVars } = await import("./welcome")
+    return welcomeSendVars(ex, vars)
+  }
   if (!isBulk(template) || vars.body !== undefined || typeof vars.campaignId !== "string") return vars
   const { campaignVars } = await import("../newsletter/content")
   const c = await campaignVars(ex, vars.campaignId)
