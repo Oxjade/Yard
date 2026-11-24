@@ -545,6 +545,8 @@ export type OnboardingApplicationDto = {
   }
   revision: number
   brandId: string | null
+  /** The brand's public logo (/api/media/<id>; admin lists only), or null for its initials. */
+  brandLogoSrc?: string | null
   submittedAt: string | null
   reviewedAt: string | null
   reviewNote: string | null

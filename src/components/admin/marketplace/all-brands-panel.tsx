@@ -69,7 +69,7 @@ export function AllBrandsPanel({
       sortValue: (b) => b.name.toLowerCase(),
       cell: (b) => (
         <button type="button" onClick={() => open(b)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <Initials name={b.name} />
+          <Initials name={b.name} photo={b.logoSrc} />
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink group-hover:text-violet">{b.name}</span>
             <span className="block truncate text-[11.5px] text-ink-3">@{b.handle}</span>

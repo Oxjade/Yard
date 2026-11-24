@@ -33,6 +33,8 @@ export type AdminBrandRowDto = {
   name: string
   country: string
   city: string
+  /** The brand's public logo (/api/media/<id>), or null (absent from older servers) for its initials. */
+  logoSrc?: string | null
   /** The brand's first category slug, or null. */
   category: string | null
   reviewStatus: (typeof BRAND_REVIEW_STATUSES)[number]

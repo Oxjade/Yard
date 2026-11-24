@@ -11,6 +11,7 @@ import { users } from "../db/schema/people"
 import { notFound } from "../http/errors"
 import { deliveryFor } from "../shipping/orders"
 import { mediaSrc } from "../media/dto"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { variantLabelOf } from "../catalog/dto"
 import type { brandOrdersQuery, DisputeDto, OrderDetailDto, OrderLineDto, OrdersPageDto, OrderStatesDto, OrderSummaryDto, RefundDto, ReturnDto } from "./contracts"
 import { returnReasonLabels } from "./contracts"
@@ -21,7 +22,7 @@ type Viewer = "shopper" | "brand" | "admin"
 const CAPTURED = new Set(["paid", "partially_refunded"])
 const CANCELLABLE_MERCHANT = new Set(["pending_payment", "paid", "processing"])
 
-type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: string; name: string; handle: string } | null; customerName: string | null; groupReference: string | null }
+type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: string; name: string; handle: string } | null; brandLogo: string | null; customerName: string | null; groupReference: string | null }
 
 /** Payment state for an order with or without a v3 state row. */
 const paymentOf = (o: OrderRefRow, s: OrderStateRow | null) => s?.paymentStatus ?? (o.status === "refunded" ? "refunded" : o.paid ? "paid" : "pending")
@@ -48,7 +49,8 @@ function summaryOf(r: Row, states: OrderStatesDto): OrderSummaryDto {
     reference: r.order.reference,
     groupReference: r.groupReference ?? r.order.reference.replace(/-\d+$/, ""),
     checkoutId: r.state?.checkoutId ?? null,
-    brand: r.brand ?? { id: r.order.brandId, name: "The brand", handle: "" },
+    // logoSrc: the brand's public logo (media/brand-logo.ts), or null for its initials.
+    brand: r.brand ? { ...r.brand, logoSrc: brandLogoSrc(r.brandLogo) } : { id: r.order.brandId, name: "The brand", handle: "", logoSrc: null },
     customerName: r.customerName ?? "Customer",
     shipToPreview: { city: r.order.shipToCity, country: r.order.shipToCountry },
     placedAt: r.order.placedAt.toISOString(),
@@ -66,7 +68,7 @@ function summaryOf(r: Row, states: OrderStatesDto): OrderSummaryDto {
 
 async function selectRows(tx: Executor, where: SQL | undefined, limit: number) {
   const rows = await tx
-    .select({ order: orderRefs, state: orderStates, brand: { id: brands.id, name: brands.name, handle: brands.handle }, customerName: users.name, groupReference: orderGroups.reference })
+    .select({ order: orderRefs, state: orderStates, brand: { id: brands.id, name: brands.name, handle: brands.handle }, brandLogo: publicLogoIdSql(brands.logoMediaId), customerName: users.name, groupReference: orderGroups.reference })
     .from(orderRefs)
     .leftJoin(orderStates, eq(orderStates.orderRefId, orderRefs.id))
     .leftJoin(brands, eq(brands.id, orderRefs.brandId))

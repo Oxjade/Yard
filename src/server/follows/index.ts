@@ -13,6 +13,7 @@ import { getPreferencesMany } from "../email/preferences"
 import { badRequest, conflict, notFound } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { indexedProducts } from "../search"
 import { catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { productPublicWhere } from "../catalog/sellable"
@@ -67,14 +68,15 @@ export async function followedSince(userId: string, brandId: string): Promise<Da
 export async function listFollows(userId: string) {
   const d = await db()
   const rows = await d
-    .select({ brandId: shopperFollows.brandId, followedAt: shopperFollows.createdAt, handle: brands.handle, name: brands.name, city: brands.city, country: brands.country, verified: brands.verified, reviewStatus: brands.reviewStatus })
+    .select({ brandId: shopperFollows.brandId, followedAt: shopperFollows.createdAt, handle: brands.handle, name: brands.name, city: brands.city, country: brands.country, verified: brands.verified, reviewStatus: brands.reviewStatus, logo: publicLogoIdSql(brands.logoMediaId) })
     .from(shopperFollows)
     .innerJoin(brands, eq(brands.id, shopperFollows.brandId))
     .where(eq(shopperFollows.userId, userId))
     .orderBy(desc(shopperFollows.createdAt))
   const visible = rows.filter((r) => r.reviewStatus !== "suspended" && !refusedSampleBrand(r.brandId))
   const counts = await followerCounts(visible.map((r) => r.brandId))
-  return visible.map(({ reviewStatus: _r, ...r }) => ({ ...r, followedAt: r.followedAt.toISOString(), followers: counts[r.brandId] ?? 0 }))
+  // logoSrc: the brand's public logo (media/brand-logo.ts), or null for its initials.
+  return visible.map(({ reviewStatus: _r, logo, ...r }) => ({ ...r, logoSrc: brandLogoSrc(logo), followedAt: r.followedAt.toISOString(), followers: counts[r.brandId] ?? 0 }))
 }
 
 async function assertBrand(brandId: string) {

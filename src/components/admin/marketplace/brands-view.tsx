@@ -143,7 +143,7 @@ export function BrandsView() {
       sortValue: (a) => a.brandName.toLowerCase(),
       cell: (a) => (
         <button type="button" onClick={() => open(a)} className="group flex min-h-10 max-w-full min-w-0 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <Initials name={a.brandName} />
+          <Initials name={a.brandName} photo={a.logoSrc} />
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink group-hover:text-violet">{a.brandName}</span>
             <span className="block truncate text-[11.5px] text-ink-3">

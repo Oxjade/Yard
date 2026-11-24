@@ -18,6 +18,7 @@ import { brandInvites, sessionAuth } from "../db/schema/identity"
 import { brandPayoutAccounts } from "../db/schema/ledger"
 import { badRequest, conflict, notFound, rateLimited, rule } from "../http/errors"
 import { newId } from "../ids"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { keys } from "../security/keys"
 import { hmacB64url, sha256hex } from "../security/crypto"
 import { dailyHit, hit } from "../security/rate-limit"
@@ -486,7 +487,7 @@ export async function listFoundingBrandsForHome(limit = 12): Promise<FoundingHom
         city: brands.city,
         country: brands.country,
         story: brands.story,
-        logoMediaId: brands.logoMediaId,
+        logo: publicLogoIdSql(brands.logoMediaId),
         foundingBadge: brands.foundingBadge,
         forSale: sql<boolean>`${brandForSaleSql()}`,
         // Qualified by hand: inside a select, drizzle may print a column without its table, and a bare
@@ -504,7 +505,7 @@ export async function listFoundingBrandsForHome(limit = 12): Promise<FoundingHom
       city: r.city,
       country: r.country,
       story: r.story ? (r.story.length > 160 ? `${r.story.slice(0, 157).trimEnd()}…` : r.story) : null,
-      logoSrc: r.logoMediaId ? `/api/media/${encodeURIComponent(r.logoMediaId)}` : null,
+      logoSrc: brandLogoSrc(r.logo),
       coverSrc: r.cover ? `/api/media/${encodeURIComponent(r.cover)}` : null,
       foundingBadge: r.foundingBadge,
       forSale: !!r.forSale,

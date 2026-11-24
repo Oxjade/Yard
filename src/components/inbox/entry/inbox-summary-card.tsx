@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { SampleChip } from "@/components/ui/sample-chip"
 import { listConversations } from "@/lib/api/inbox"
 import { useApi } from "@/lib/api/use-api"
-import { brandById } from "@/lib/data/brands"
 import { useUnread } from "@/lib/realtime/unread"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { cn } from "@/lib/utils"
@@ -44,12 +43,11 @@ export function InboxSummaryCard({ className }: { className?: string }) {
         ) : (
           <ul className="grid gap-1">
             {latest.map((c) => {
-              const b = brandById.get(c.brand.id)
               const isUnread = c.unread > 0 || c.markedUnread
               return (
                 <li key={c.id}>
                   <Link href={`/inbox?thread=${c.id}`} className="flex items-center gap-3 rounded-lg p-2 hover:bg-white/[0.04]">
-                    {b ? <BrandMark brand={b} size="sm" /> : null}
+                    <BrandMark brand={c.brand} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5 text-sm text-ink">
                         <span className={cn("truncate", isUnread && "font-medium")}>{c.brand.name}</span>

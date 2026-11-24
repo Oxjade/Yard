@@ -99,7 +99,7 @@ export function BrandDetail({
       title={app.brandName}
       recordKey={app.id}
       description={`@${app.handle}, ${countryName(app.country)}`}
-      lead={<Initials name={app.brandName} size="lg" />}
+      lead={<Initials name={app.brandName} photo={app.logoSrc} size="lg" />}
       badges={
         <>
           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>

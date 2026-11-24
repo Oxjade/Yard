@@ -8,6 +8,7 @@ import { productById } from "@/lib/data/products"
 import type { t } from "../db"
 import { isSampleProduct } from "@/lib/data/sample-ids"
 import { sampleOff } from "../catalog/sample-guard"
+import { brandLogoSrc } from "../media/brand-logo"
 import { eventStillPublic, type PublicEventRow, type PublicPlaceRow } from "./public"
 
 /** Response DTOs (§1.10): built here, never a raw row. */
@@ -18,7 +19,7 @@ type EventRow = typeof t.locationEvents.$inferSelect
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
 
 /** The brand columns a public place read carries (public.ts); a Studio row has none. */
-type BrandCols = { brandName?: string; brandHandle?: string; brandVerified?: boolean; brandCategories?: string[] }
+type BrandCols = { brandName?: string; brandHandle?: string; brandVerified?: boolean; brandCategories?: string[]; brandLogo?: string | null }
 
 /** The sample brand, only in demo and development: production builds every DTO from the brands table. */
 const sampleBrand = (brandId: string) => (sampleOff() ? undefined : brandById.get(brandId))
@@ -32,6 +33,8 @@ function brandDto(brandId: string, row: BrandCols = {}) {
     name,
     verified: row.brandVerified ?? b?.verified ?? false,
     mark: { text: b?.mark.text ?? (name.replace(/[^A-Za-z0-9&]/g, "").slice(0, 2).toUpperCase() || "Y"), style: b?.mark.style ?? "grotesk" },
+    // The logo only while it is public media (media/brand-logo.ts), else the mark.
+    logoSrc: brandLogoSrc(row.brandLogo),
   }
 }
 

@@ -4,6 +4,7 @@ import type { AdminBrandRowDto, AdminBrandsDto, AdminBrandsQuery } from "../../l
 import { brands } from "../db/schema/brands"
 import { brandOnboardings, catalogProducts, storefrontVersions } from "../db/schema/catalog"
 import { storefrontLive } from "../../lib/admin-storefront"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any drizzle Postgres database or transaction (PGlite, node-postgres)
 export type Db = PgDatabase<PgQueryResultHKT, any>
@@ -78,6 +79,7 @@ export async function listAdminBrandsDb(d: Db, query: Partial<AdminBrandsQuery> 
         claimedNotLive: sql<boolean>`${claimedNotLiveSql()}`,
         hasVersion: sql<boolean>`exists (select 1 from ${storefrontVersions} where ${storefrontVersions.brandId} = ${brands.id})`,
         products,
+        logo: publicLogoIdSql(brands.logoMediaId),
         appId: app.appId,
         appStatus: app.appStatus,
         appSubmittedAt: app.appSubmittedAt,
@@ -98,6 +100,7 @@ export async function listAdminBrandsDb(d: Db, query: Partial<AdminBrandsQuery> 
     name: r.name,
     country: r.country,
     city: r.city,
+    logoSrc: brandLogoSrc(r.logo),
     category: r.categories[0] ?? null,
     reviewStatus: r.reviewStatus as AdminBrandRowDto["reviewStatus"],
     closedAt: iso(r.closedAt),

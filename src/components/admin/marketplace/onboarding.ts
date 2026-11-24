@@ -38,6 +38,7 @@ export function fromOnboardingApplication(o: OnboardingApplicationDto): BrandApp
       : `${o.status === "approved" ? "Approved" : "Submitted"} from Brand Studio onboarding. ${product?.name ? `First product: ${product.name}. ` : ""}${payout}`),
     products: product ? 1 : 0,
     brandId: o.brandId ?? undefined,
+    logoSrc: o.brandLogoSrc ?? null,
     onboardingId: o.id,
     reviewed: o.status === "approved",
     application: o.data,

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { PackageIcon as Package } from "@phosphor-icons/react"
 import { BrandCard } from "@/components/market/brand-card"
+import { BrandMark } from "@/components/market/brand-mark"
 import { DropCard } from "@/components/market/drop-card"
 import { ProductCard } from "@/components/market/product-card"
 import { Rail } from "@/components/market/rail"
@@ -19,6 +20,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { useApi } from "@/lib/api/use-api"
 import { Button } from "@/components/ui/button"
 import { brandById, drops as allDrops, productById, recommendBrands } from "@/lib/data"
+import { monogram } from "@/lib/order-brand"
 import { useOrders } from "@/lib/stores/orders"
 import { useSaved } from "@/lib/stores/saved"
 import { useSession } from "@/lib/stores/session"
@@ -63,7 +65,7 @@ function InlineEmpty({ icon: Icon, title, body, href, action }: { icon: React.Co
   )
 }
 
-type LiveFollow = { id: string; handle: string; name: string; city: string }
+type LiveFollow = { id: string; handle: string; name: string; city: string; logoSrc: string | null }
 
 /**
  * Production: the shopper's follows (GET /api/follows), their saved and recently viewed pieces
@@ -79,9 +81,9 @@ function useLiveYou(on: boolean, following: string[], wishlist: string[], viewed
   useEffect(() => {
     if (!on) return
     let live = true
-    api<{ items: { brandId: string; handle: string; name: string; city: string }[] }>("/api/follows")
+    api<{ items: { brandId: string; handle: string; name: string; city: string; logoSrc?: string | null }[] }>("/api/follows")
       .then((r) => {
-        if (live) setFollows(r.items.map((i) => ({ id: i.brandId, handle: i.handle, name: i.name, city: i.city })))
+        if (live) setFollows(r.items.map((i) => ({ id: i.brandId, handle: i.handle, name: i.name, city: i.city, logoSrc: i.logoSrc ?? null })))
       })
       .catch(() => {
         if (live) setFollows([])
@@ -249,6 +251,7 @@ export function YouOverview() {
           <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 sm:grid-cols-2 lg:grid-cols-4">
             {live.follows.map((f) => (
               <li key={f.id} className="flex min-w-0 items-center gap-3 rounded-lg p-3 transition-colors hover:bg-card">
+                <BrandMark brand={{ name: f.name, mark: { text: monogram(f.name), style: "grotesk" }, logoSrc: f.logoSrc }} size="sm" />
                 <div className="min-w-0 flex-1">
                   <Link href={`/brands/${f.handle}`} className="block truncate text-sm text-ink transition-colors hover:text-violet">
                     {f.name}

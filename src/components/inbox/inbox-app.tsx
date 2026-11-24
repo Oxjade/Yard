@@ -75,8 +75,8 @@ export function InboxApp() {
   // isn't one), so a ?brand= link opens a real brand's composer and never a sample one.
   const sampleOn = usePageSampleData()
   const sampleBrand = brandHandle && sampleOn ? brandByHandle.get(brandHandle) : undefined
-  const liveBrandQuery = useApi(!sampleOn && brandHandle ? `inbox:brand:${brandHandle}` : null, () => api<{ brand: { id: string; name: string } }>(`/api/catalog/storefronts/${encodeURIComponent(brandHandle!)}`), { revalidateOnFocus: false })
-  const brand: { id: string; name: string } | undefined = sampleBrand ?? (liveBrandQuery.data ? { id: liveBrandQuery.data.brand.id, name: liveBrandQuery.data.brand.name } : undefined)
+  const liveBrandQuery = useApi(!sampleOn && brandHandle ? `inbox:brand:${brandHandle}` : null, () => api<{ brand: { id: string; name: string; handle: string; logoSrc?: string | null } }>(`/api/catalog/storefronts/${encodeURIComponent(brandHandle!)}`), { revalidateOnFocus: false })
+  const brand: { id: string; name: string; handle?: string; logoSrc?: string | null } | undefined = sampleBrand ?? (liveBrandQuery.data ? { id: liveBrandQuery.data.brand.id, name: liveBrandQuery.data.brand.name, handle: liveBrandQuery.data.brand.handle, logoSrc: liveBrandQuery.data.brand.logoSrc ?? null } : undefined)
   const { data: byBrand, error: byBrandError, revalidate: retryByBrand } = useApi(brand && !thread && session.shopper ? `inbox:by-brand:${brand.id}` : null, () => conversationByBrand(brand!.id), { revalidateOnFocus: false })
 
   // An existing conversation with the brand opens as itself (keeping any product or order chip).
@@ -223,6 +223,8 @@ export function InboxApp() {
         initialAsk={askParam && !byBrand.conversation}
         onAskShown={onAskShown}
         brandName={brand.name}
+        brandHandle={brand.handle}
+        brandLogoSrc={brand.logoSrc}
         onCreated={onCreated}
         onBack={phone ? back : undefined}
         layer={phone}

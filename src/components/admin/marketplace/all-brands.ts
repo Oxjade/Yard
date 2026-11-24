@@ -52,6 +52,7 @@ export function brandRowToApplication(row: AdminBrandRowDto): BrandApplication {
     notes: `${NOTES[application]}${row.founding ? " A founding brand set up by Yard." : ""}`,
     products: row.products,
     brandId: row.id,
+    logoSrc: row.logoSrc ?? null,
     closedAt: row.closedAt ?? undefined,
     listing: { application, dated: !!row.since, founding: row.founding },
   }

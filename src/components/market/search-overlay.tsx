@@ -41,7 +41,8 @@ const liveTries = (data: CategoryCounts | undefined) =>
     .map((c) => c.name.toLowerCase())
 type SearchResponse = {
   items: { productId: string; brandId: string; brandName: string; slug: string | null; title: string; image: string | null; display: { amount: number; currency: string } }[]
-  brands: { brandId: string; handle: string; name: string; city: string; country: string }[]
+  /** `logoSrc`: the brand's public logo, or null for its initials. */
+  brands: { brandId: string; handle: string; name: string; city: string; country: string; logoSrc?: string | null }[]
 }
 
 /** Boards whose name matches the query ("trend" → Trending); "chart" or "charts" lists them all. */
@@ -244,7 +245,7 @@ export function SearchOverlay() {
                             {results.brands.map((b) => (
                               <li key={b.brandId}>
                                 <Link href={`/brands/${b.handle}`} onClick={close} className="press flex items-center gap-3 rounded-lg p-2 [--press-scale:0.985] hover:bg-white/6">
-                                  <BrandMark brand={{ name: b.name, mark: { text: b.name.slice(0, 2).toUpperCase(), style: "condensed" } }} size="sm" />
+                                  <BrandMark brand={{ name: b.name, mark: { text: b.name.slice(0, 2).toUpperCase(), style: "condensed" }, logoSrc: b.logoSrc }} size="sm" />
                                   <span className="text-sm text-ink">{b.name}</span>
                                   <span className="text-xs text-ink-2">{b.city}</span>
                                 </Link>

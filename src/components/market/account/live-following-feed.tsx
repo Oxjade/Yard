@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { RssIcon as Rss } from "@phosphor-icons/react"
+import { BrandMark } from "@/components/market/brand-mark"
 import { BrandsJoining } from "@/components/market/brands/brands-joining"
 import { LiveBrandCard } from "@/components/market/brands/live-brand-card"
 import { EmptyCard } from "@/components/market/editorial/empty-card"
@@ -15,10 +16,11 @@ import { toCatalogProduct, type PublicCatalogPage } from "@/lib/api/catalog-prod
 import { registerLiveProducts } from "@/lib/api/live-catalog"
 import { fetchPublicBrands, type PublicBrandCard } from "@/lib/api/public-brands"
 import type { Product } from "@/lib/data/types"
+import { monogram } from "@/lib/order-brand"
 import { useSaved } from "@/lib/stores/saved"
 import { YouNav } from "./you-nav"
 
-type Follow = { brandId: string; handle: string; name: string; city: string; country: string; followedAt: string }
+type Follow = { brandId: string; handle: string; name: string; city: string; country: string; followedAt: string; logoSrc?: string | null }
 
 const PER_BRAND = 6
 const PAGE = 12
@@ -209,6 +211,7 @@ export function LiveFollowingFeed() {
           <ul className="flex flex-col divide-y divide-line-soft rounded-lg border border-line-soft bg-card">
             {follows.map((f) => (
               <li key={f.brandId} className="flex min-w-0 items-center gap-3 p-3">
+                <BrandMark brand={{ name: f.name, mark: { text: monogram(f.name), style: "grotesk" }, logoSrc: f.logoSrc }} size="sm" />
                 <div className="min-w-0 flex-1">
                   <Link href={`/brands/${f.handle}`} className="block truncate text-sm text-ink transition-colors hover:text-violet">
                     {f.name}

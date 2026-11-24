@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm"
 import type { BrandPlaceBadgeDto, OnlineBrandsResult, PlaceDetailDto, PlaceSummaryDto } from "@/lib/api/contracts/around"
 import { brandById } from "@/lib/data/brands"
 import { db, t } from "../db"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { brandApprovedSql, notSampleBrandSql, sampleOff } from "../catalog/sample-guard"
 import { aroundMemo } from "./cache"
 import { toBadge, toPlaceDetail, toPlaceSummary } from "./dto"
@@ -85,7 +86,7 @@ export async function onlineBrands(citySlug: string): Promise<OnlineBrandsResult
   const now = Date.now()
   const d = await db()
   const inCity = await d
-    .select({ id: t.brands.id, name: t.brands.name, handle: t.brands.handle, city: t.brands.city, country: t.brands.country, verified: t.brands.verified })
+    .select({ id: t.brands.id, name: t.brands.name, handle: t.brands.handle, city: t.brands.city, country: t.brands.country, verified: t.brands.verified, logo: publicLogoIdSql(t.brands.logoMediaId) })
     .from(t.brands)
     .where(and(eq(t.brands.citySlug, citySlug), brandApprovedSql(t.brands.reviewStatus, t.brands.id), notSampleBrandSql(t.brands.id)))
   const l = current(await loadWorld(), now)
@@ -95,7 +96,7 @@ export async function onlineBrands(citySlug: string): Promise<OnlineBrandsResult
     .map((b) => {
       // The sample mark only in demo; production derives one from the name (brandListedSql already drops sample brands).
       const s = sampleOff() ? undefined : brandById.get(b.id)
-      return { id: b.id, handle: b.handle, name: b.name, verified: s?.verified ?? b.verified, mark: { text: s?.mark.text ?? (b.name.replace(/[^A-Za-z0-9&]/g, "").slice(0, 2).toUpperCase() || "Y"), style: s?.mark.style ?? "grotesk" }, city: b.city, country: b.country }
+      return { id: b.id, handle: b.handle, name: b.name, verified: s?.verified ?? b.verified, mark: { text: s?.mark.text ?? (b.name.replace(/[^A-Za-z0-9&]/g, "").slice(0, 2).toUpperCase() || "Y"), style: s?.mark.style ?? "grotesk" }, logoSrc: brandLogoSrc(b.logo), city: b.city, country: b.country }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
   return { city: citySlug, brands, maxAge: maxAgeFor(l, now, 60) }

@@ -51,6 +51,8 @@ export type BrandApplication = {
   notes: string
   products: number
   brandId?: string
+  /** The brand's public logo, or null/absent for its initials. */
+  logoSrc?: string | null
   onboardingId?: string
   /** The application was already approved: the brand is acted on by its status, not reviewed again. */
   reviewed?: boolean

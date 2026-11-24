@@ -8,6 +8,7 @@ import { catalogCategories, catalogCollectionProducts, catalogCollections, catal
 import { notFound } from "../http/errors"
 import { loadChildren, toPublicProduct } from "./dto"
 import { mediaSrc } from "../media/dto"
+import { brandLogoSrc, publicLogoIdSql, publicLogoSrcSql } from "../media/brand-logo"
 import type { PublicBrandsQuery, PublicProductsQuery } from "./contracts"
 import type { PublicBrandCard, PublicBrandsPage } from "@/lib/api/public-brands"
 import { brandForSaleSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
@@ -41,7 +42,7 @@ const brandSummary = {
    * Studio) while it is public media, else null for the monogram. Only public media, so the bare
    * /api/media address every visitor shares always loads (media/visibility.ts).
    */
-  logoSrc: sql<string | null>`(select '/api/media/' || lm.id from media_assets lm where lm.id = ${brands.logoMediaId} and lm.visibility = 'public' and lm.moderation_status <> 'removed')`,
+  logoSrc: publicLogoSrcSql(brands.logoMediaId),
 }
 
 export async function listPublicProducts(q: PublicProductsQuery) {
@@ -235,11 +236,12 @@ async function listedBrandByHandle(handleOrId: string) {
     .where(and(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)), brandListedSql()))
     .limit(1)
   if (!b) return null
-  const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}` }).from(brands).where(eq(brands.id, b.id)).limit(1)
+  const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}`, logo: publicLogoIdSql(brands.logoMediaId) }).from(brands).where(eq(brands.id, b.id)).limit(1)
   // Only public fields: never who created or claimed it, its idempotency key or agreement details.
   const pub: Partial<typeof b> = { ...b }
   for (const k of PRIVATE_BRAND_FIELDS) delete pub[k]
-  return { ...(pub as Omit<typeof b, (typeof PRIVATE_BRAND_FIELDS)[number]>), forSale: !!sale?.forSale, logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}` : null }
+  // The logo only while it is public media (media/brand-logo.ts), else the initials.
+  return { ...(pub as Omit<typeof b, (typeof PRIVATE_BRAND_FIELDS)[number]>), forSale: !!sale?.forSale, logoSrc: brandLogoSrc(sale?.logo) }
 }
 
 /** A brand's published collections (with product ids that are public, or that pass `productWhere`). */
@@ -354,7 +356,7 @@ export async function listPublicBrands(q: PublicBrandsQuery): Promise<PublicBran
         country: brands.country,
         categories: brands.categories,
         story: brands.story,
-        logoMediaId: brands.logoMediaId,
+        logo: publicLogoIdSql(brands.logoMediaId),
         verified: brands.verified,
         founding: brands.founding,
         foundingBadge: brands.foundingBadge,
@@ -378,7 +380,7 @@ export async function listPublicBrands(q: PublicBrandsQuery): Promise<PublicBran
       country: r.country,
       categories: r.categories,
       story: r.story ? (r.story.length > 160 ? `${r.story.slice(0, 157).trimEnd()}…` : r.story) : null,
-      logoSrc: r.logoMediaId ? `/api/media/${encodeURIComponent(r.logoMediaId)}` : null,
+      logoSrc: brandLogoSrc(r.logo),
       coverSrc: r.cover ? `/api/media/${encodeURIComponent(r.cover)}` : null,
       verified: r.verified,
       founding: r.founding,

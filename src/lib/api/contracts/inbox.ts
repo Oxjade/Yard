@@ -55,7 +55,8 @@ export const conversationSummary = z.object({
    * `brand` is always YARD_SUPPORT (Yard's own team) and whose replies come from side "support".
    */
   kind: z.enum(["brand", "support"]).default("brand"),
-  brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), mark: brandMark, verified: z.boolean() }),
+  /** `logoSrc`: the brand's public logo (/api/media/<id>), or null/absent for its initials (`mark`). */
+  brand: z.object({ id: z.string(), handle: z.string(), name: z.string(), mark: brandMark, logoSrc: z.string().nullable().optional(), verified: z.boolean() }),
   /** Brand side only. `photoSrc`: the shopper's profile photo (/api/media/<id>?as=brand), or null for initials. */
   customer: z.object({ id: z.string(), name: z.string(), photoSrc: z.string().nullable().optional() }).optional(),
   status: z.enum(["open", "resolved"]),

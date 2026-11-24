@@ -19,6 +19,6 @@ export function monogram(name: string) {
 export function orderBrand(order: Pick<MerchantOrder, "brandId" | "brand">): OrderBrand | null {
   const sample = brandById.get(order.brandId)
   if (sample) return { name: sample.name, handle: sample.handle, mark: sample.mark, sample }
-  if (order.brand?.name) return { name: order.brand.name, handle: order.brand.handle, mark: { text: monogram(order.brand.name), style: "grotesk" }, sample: null }
+  if (order.brand?.name) return { name: order.brand.name, handle: order.brand.handle, mark: { text: monogram(order.brand.name), style: "grotesk" }, logoSrc: order.brand.logoSrc ?? null, sample: null }
   return null
 }

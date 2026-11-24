@@ -87,12 +87,13 @@ export function ChartsThisWeek({ className }: { className?: string }) {
 }
 
 function ChartRow({ entry: e }: { entry: ChartEntryDto }) {
-  const brand = brandById.get(e.brand.id)
+  // The sample brand's mark in demo; a live brand uses the chart's own mark and its public logo.
+  const brand = brandById.get(e.brand.id) ?? e.brand
   return (
     <li>
       <Link href={`/brands/${e.brand.handle}`} className="flex min-h-14 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-violet">
         <span className="w-6 shrink-0 font-display text-lg leading-none text-ink tabular">{String(e.rank).padStart(2, "0")}</span>
-        {brand ? <BrandMark brand={brand} size="sm" /> : <span className="size-8 shrink-0 rounded-full bg-elevated" aria-hidden />}
+        <BrandMark brand={{ ...brand, logoSrc: e.brand.logoSrc ?? null }} size="sm" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-ink">{e.brand.name}</span>
           <span className="block truncate text-xs text-ink-2">

@@ -35,6 +35,7 @@ import type { Product } from "@/lib/data/types"
 import { blockBrand, patchConversation, sendMessage } from "@/lib/api/inbox"
 import { revalidatePrefix } from "@/lib/api/use-api"
 import { brandById } from "@/lib/data/brands"
+import { monogram } from "@/lib/order-brand"
 import { productById, products, variantLabel } from "@/lib/data/products"
 import { isSampleProduct } from "@/lib/data/sample-ids"
 import { sampleDataOff } from "@/lib/sample-switch"
@@ -104,6 +105,9 @@ type Props = {
   onAskShown?: () => void
   /** The brand's name when the page knows it (a live brand isn't in the sample data). */
   brandName?: string
+  /** A new thread's brand handle and public logo when the page knows them (from the storefront read). */
+  brandHandle?: string
+  brandLogoSrc?: string | null
   onCreated: (id: string) => void
   onBack?: () => void
   onConversation?: (c: ConversationSummary) => void
@@ -112,9 +116,8 @@ type Props = {
 }
 
 /** The shopper's thread (§6.2): header, quick-action cards, messages and the pill composer. */
-export function ShopperThread({ conversationId, brandId, newThreadInteraction, initialProduct, initialOrder, initialAsk, onAskShown, brandName: givenName, onCreated, onBack, onConversation, layer }: Props) {
+export function ShopperThread({ conversationId, brandId, newThreadInteraction, initialProduct, initialOrder, initialAsk, onAskShown, brandName: givenName, brandHandle: givenHandle, brandLogoSrc: givenLogo, onCreated, onBack, onConversation, layer }: Props) {
   const brand = brandById.get(brandId)
-  const brandName = brand?.name ?? givenName ?? "This brand"
   const shipTo = useSession((s) => s.shipTo)
   const shipToCity = useSession((s) => s.shipToCity)
   const [product, setProduct] = useState<ProductChip | null>(() => chipFor(initialProduct?.productId, initialProduct?.variantId))
@@ -169,6 +172,11 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
   const t = useThread({ side: "customer", conversationId, send, active: true, onConversation })
   const search = useThreadSearch("customer", conversationId, t, scroller)
   const conv = t.conversation
+  // The server's summary names the brand and carries its public logo (a live brand isn't in the
+  // sample data); before it loads, the sample brand or what the page passed in.
+  const brandName = (conv?.kind === "brand" ? conv.brand.name : undefined) ?? brand?.name ?? givenName ?? "This brand"
+  const brandHandle = (conv?.kind === "brand" ? conv.brand.handle : undefined) ?? brand?.handle ?? givenHandle ?? ""
+  const headerMark = conv?.kind === "brand" ? conv.brand : (brand ?? (givenName ? { name: givenName, mark: { text: monogram(givenName), style: "grotesk" as const }, logoSrc: givenLogo ?? null } : null))
   const interaction = conversationId ? conv?.interaction : newThreadInteraction
   const disabled = shopperDisabledReason(interaction, brandName)
   const canInteract = !disabled
@@ -286,8 +294,8 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
               <ArrowLeftIcon className="size-5" />
             </button>
           ) : null}
-          <Link href={`/brands/${brand?.handle ?? ""}`} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 focus-visible:outline-2 focus-visible:outline-violet">
-            {brand ? <BrandMark brand={brand} size="sm" className="size-9" /> : null}
+          <Link href={`/brands/${brandHandle}`} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 focus-visible:outline-2 focus-visible:outline-violet">
+            {headerMark ? <BrandMark brand={headerMark} size="sm" className="size-9" /> : <span aria-hidden className="size-9 shrink-0" />}
             <span className="min-w-0">
               <span className="flex items-center gap-1.5">
                 <span className="truncate text-[0.9375rem] font-medium text-ink">{brandName}</span>
@@ -309,7 +317,7 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-52">
               <DropdownMenuItem asChild>
-                <Link href={`/brands/${brand?.handle ?? ""}`}>
+                <Link href={`/brands/${brandHandle}`}>
                   <StorefrontIcon /> View storefront
                 </Link>
               </DropdownMenuItem>

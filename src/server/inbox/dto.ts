@@ -1,5 +1,6 @@
 import "server-only"
 import { photoSrc } from "../media/dto"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import type { ConversationSummary, MessageDto } from "@/lib/api/contracts/inbox"
@@ -45,6 +46,8 @@ function summaryFields(side: Side) {
     brandHandle: brands.handle,
     brandName: brands.name,
     brandReview: brands.reviewStatus,
+    /** The brand's logo id while it is public media (media/brand-logo.ts), else null for the initials. */
+    brandLogo: publicLogoIdSql(brands.logoMediaId),
     customerName: users.name,
     customerPhoto: users.photoMediaId,
     unread: conversationParticipants.unreadCount,
@@ -87,7 +90,7 @@ export function toSummary(r: SummaryRow, side: Side): ConversationSummary {
   return {
     id: c.id,
     kind: "brand",
-    brand: { id: c.brandId, handle: r.brandHandle, name: r.brandName, mark: { text: staticBrand?.mark.text ?? r.brandName.slice(0, 2).toUpperCase(), style: staticBrand?.mark.style ?? "grotesk" }, verified: r.brandReview === "verified" },
+    brand: { id: c.brandId, handle: r.brandHandle, name: r.brandName, mark: { text: staticBrand?.mark.text ?? r.brandName.slice(0, 2).toUpperCase(), style: staticBrand?.mark.style ?? "grotesk" }, logoSrc: brandLogoSrc(r.brandLogo), verified: r.brandReview === "verified" },
     customer: side === "brand" ? { id: c.customerId, name: r.customerName, photoSrc: photoSrc(r.customerPhoto, "brand") } : undefined,
     status: c.status as "open" | "resolved",
     // Moderation signals stay with the brand: a marked shopper never learns who marked them (§5.2).

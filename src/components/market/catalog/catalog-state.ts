@@ -65,11 +65,12 @@ export function sizeChipLabel(size: string) {
 
 export type SearchFacetPayload = {
   categories: { value: string; label: string; count: number }[]
-  brands: { value: string; handle: string; label: string; count: number }[]
+  /** `logoSrc`: the brand's public logo, or null/absent for its initials. */
+  brands: { value: string; handle: string; label: string; logoSrc?: string | null; count: number }[]
   /** The next page of `brands` (/api/search?brandCursor=), or null when that was all of them. */
   brandsNextCursor?: string | null
   /** Names of the brands filtered on (they may have no matches, or be on a later facet page). */
-  selectedBrands?: { value: string; handle: string; label: string }[]
+  selectedBrands?: { value: string; handle: string; label: string; logoSrc?: string | null }[]
   price: { currency: string; buckets: { minMinor: number; maxMinor: number | null; count: number }[] }
   sizes: { value: string; count: number }[]
   countries: { value: string; count: number }[]
@@ -87,7 +88,7 @@ export type CatalogSearchResponse = {
 /** The listing's server first page: its products and the search response they came from. */
 export type CatalogInitialPage = { key: string; products: Product[]; response: CatalogSearchResponse }
 
-export type CatalogBrandFacet = { brand: Pick<Brand, "id" | "handle" | "name" | "mark">; count: number }
+export type CatalogBrandFacet = { brand: Pick<Brand, "id" | "handle" | "name" | "mark" | "logoSrc">; count: number }
 
 export type CatalogFacets = {
   brandFacet: CatalogBrandFacet[]
@@ -148,7 +149,7 @@ export function catalogSearchKey(query: Record<string, string | number | undefin
  * also by handle once it is known on. In production (false) it is always the name's initials.
  */
 export function brandFacetEntries(brands: SearchFacetPayload["brands"], sampleData: boolean | null = false): CatalogBrandFacet[] {
-  return brands.map(({ value, handle, label, count }) => {
+  return brands.map(({ value, handle, label, logoSrc, count }) => {
     const known = sampleData === false ? undefined : (brandById.get(value) ?? (sampleData ? brandByHandle.get(handle) : undefined))
     return {
       brand: {
@@ -156,6 +157,7 @@ export function brandFacetEntries(brands: SearchFacetPayload["brands"], sampleDa
         handle,
         name: label,
         mark: known?.mark ?? { text: label.slice(0, 2).toUpperCase(), style: "condensed" as const },
+        logoSrc: logoSrc ?? null,
       },
       count,
     }
@@ -174,7 +176,7 @@ export function catalogFacetsFromSearch(payload: SearchFacetPayload, state: Cata
   for (const handle of state.brands) {
     if (brandFacet.some(({ brand }) => brand.handle === handle)) continue
     const selected = payload.selectedBrands?.find((b) => b.handle === handle)
-    const [entry] = brandFacetEntries([{ value: selected?.value ?? handle, handle, label: selected?.label ?? unknownBrandLabel(handle), count: 0 }], sampleData)
+    const [entry] = brandFacetEntries([{ value: selected?.value ?? handle, handle, label: selected?.label ?? unknownBrandLabel(handle), logoSrc: selected?.logoSrc, count: 0 }], sampleData)
     brandFacet.push(entry)
   }
 

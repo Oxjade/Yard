@@ -2,6 +2,7 @@ import "server-only"
 import { brandApprovedSql, notSampleBrandSql } from "../catalog/sample-guard"
 import { and, asc, eq, gt, inArray, or, type SQL } from "drizzle-orm"
 import { db, t } from "../db"
+import { publicLogoIdSql } from "../media/brand-logo"
 
 /**
  * The one public predicate (§6.4 Around API, §3.9). Every public read of places and events goes
@@ -25,7 +26,7 @@ export function publicPlaceWhere(now: Date): SQL {
 }
 
 /** A public place with its brand's public facts (name, handle, categories), so DTOs never need the sample catalogue. */
-export type PublicPlaceRow = typeof t.brandLocations.$inferSelect & { brandReviewStatus: string; brandName: string; brandHandle: string; brandVerified: boolean; brandCategories: string[] }
+export type PublicPlaceRow = typeof t.brandLocations.$inferSelect & { brandReviewStatus: string; brandName: string; brandHandle: string; brandVerified: boolean; brandCategories: string[]; brandLogo: string | null }
 export type PublicEventRow = typeof t.locationEvents.$inferSelect
 
 export type PublicFilter = { tiles?: string[]; brandId?: string; id?: string; citySlug?: string; kind?: string; now?: Date; limit?: number }
@@ -41,13 +42,13 @@ export async function publicPlaces(f: PublicFilter = {}): Promise<PublicPlaceRow
   if (f.citySlug) conds.push(eq(t.brandLocations.citySlug, f.citySlug))
   if (f.kind) conds.push(eq(t.brandLocations.kind, f.kind))
   const rows = await d
-    .select({ place: t.brandLocations, brandReviewStatus: t.brands.reviewStatus, brandName: t.brands.name, brandHandle: t.brands.handle, brandVerified: t.brands.verified, brandCategories: t.brands.categories })
+    .select({ place: t.brandLocations, brandReviewStatus: t.brands.reviewStatus, brandName: t.brands.name, brandHandle: t.brands.handle, brandVerified: t.brands.verified, brandCategories: t.brands.categories, brandLogo: publicLogoIdSql(t.brands.logoMediaId) })
     .from(t.brandLocations)
     .innerJoin(t.brands, eq(t.brands.id, t.brandLocations.brandId))
     .where(and(...conds))
     .orderBy(asc(t.brandLocations.id))
     .limit(f.limit ?? 2000)
-  return rows.map((r) => ({ ...r.place, brandReviewStatus: r.brandReviewStatus, brandName: r.brandName, brandHandle: r.brandHandle, brandVerified: r.brandVerified, brandCategories: r.brandCategories }))
+  return rows.map((r) => ({ ...r.place, brandReviewStatus: r.brandReviewStatus, brandName: r.brandName, brandHandle: r.brandHandle, brandVerified: r.brandVerified, brandCategories: r.brandCategories, brandLogo: r.brandLogo }))
 }
 
 /** Public events of places that already passed publicPlaces(): published ∧ approved ∧ ends_at > now. */

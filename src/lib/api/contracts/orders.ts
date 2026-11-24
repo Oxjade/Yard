@@ -3,7 +3,8 @@ export type OrderSummaryDto = {
   reference: string
   groupReference: string
   checkoutId: string | null
-  brand: { id: string; name: string; handle: string }
+  /** `logoSrc`: the brand's public logo (/api/media/<id>), or null for its initials. */
+  brand: { id: string; name: string; handle: string; logoSrc?: string | null }
   customerName: string
   shipToPreview: { city: string | null; country: string }
   placedAt: string

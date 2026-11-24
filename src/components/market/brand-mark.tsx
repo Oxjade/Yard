@@ -10,7 +10,7 @@ const sizes = {
 }
 
 /** Typographic logo mark — brands upload real logos in Brand Studio; this is the fallback. A live brand's uploaded logo (logoSrc) shows in its place. */
-export function BrandMark({ brand, size = "md", className }: { brand: Pick<Brand, "mark" | "name"> & { logoSrc?: string | null }; size?: keyof typeof sizes; className?: string }) {
+export function BrandMark({ brand, size = "md", className }: { brand: Pick<Brand, "name"> & { mark: { text: string; style: Brand["mark"]["style"] | (string & {}) }; logoSrc?: string | null }; size?: keyof typeof sizes; className?: string }) {
   if (brand.logoSrc)
     return (
       <span aria-hidden className={cn("inline-flex shrink-0 overflow-hidden border border-white/12 bg-obsidian", sizes[size], className)}>

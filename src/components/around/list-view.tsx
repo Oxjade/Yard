@@ -5,6 +5,7 @@ import { useMemo } from "react"
 import { StorefrontIcon } from "@phosphor-icons/react"
 import type { PlaceSummaryDto } from "@/lib/api/contracts/around"
 import { getOnlineBrands } from "@/lib/api/around"
+import { BrandMark } from "@/components/market/brand-mark"
 import { useApi } from "@/lib/api/use-api"
 import { haversineKm } from "@/lib/around/geo"
 import { brandById } from "@/lib/data/brands"
@@ -201,9 +202,13 @@ function OnlineOnly({ city }: { city: { slug: string; name: string } }) {
         {live.map((b) => (
           <li key={b.id} className="min-w-0">
             <Link href={`/brands/${b.handle}`} className="flex min-w-0 items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
-              <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-white/10 bg-obsidian font-display text-sm text-ink" aria-hidden>
-                {b.mark.text}
-              </span>
+              {b.logoSrc ? (
+                <BrandMark brand={b} size="sm" className="size-10 rounded-md" />
+              ) : (
+                <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-white/10 bg-obsidian font-display text-sm text-ink" aria-hidden>
+                  {b.mark.text}
+                </span>
+              )}
               <span className="min-w-0">
                 <span className="block truncate text-sm text-ink">{b.name}</span>
                 <span className="block truncate text-xs text-ink-2">{b.city}</span>

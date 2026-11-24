@@ -11,6 +11,7 @@ import { enqueueEmail } from "../email"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { notify } from "../notify"
 import { sendStudioPush } from "../push/studio"
 import { createStarterShipping } from "../shipping/profile"
@@ -316,7 +317,11 @@ export async function listSubmittedOnboardings(limit = 50) {
   const approved = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "approved")).orderBy(desc(brandOnboardings.reviewedAt)).limit(cap)
   // Waiting applications carry their risk signals (application-risk.ts): the queue's "Risky" flag.
   const risks = await applicationRisks(d, submitted)
-  return { onboardings: [...submitted.map((r) => ({ ...dto(r), risk: risks.get(r.id) })), ...approved.map(dto)] }
+  // Each row's brand logo (public media only, media/brand-logo.ts): one batched read for the page.
+  const brandIds = [...new Set([...submitted, ...approved].map((r) => r.brandId).filter((id): id is string => !!id))]
+  const logos = brandIds.length ? new Map((await d.select({ id: brands.id, logo: publicLogoIdSql(brands.logoMediaId) }).from(brands).where(inArray(brands.id, brandIds))).map((b) => [b.id, brandLogoSrc(b.logo)])) : new Map<string, string | null>()
+  const withLogo = (r: (typeof submitted)[number]) => ({ ...dto(r), brandLogoSrc: (r.brandId && logos.get(r.brandId)) || null })
+  return { onboardings: [...submitted.map((r) => ({ ...withLogo(r), risk: risks.get(r.id) })), ...approved.map(withLogo)] }
 }
 
 /** A first-product SKU within Studio's 40-character limit (a longer one would block every later save in the editor); the size stays whole. */

@@ -9,6 +9,7 @@ import { convert } from "@/lib/money"
 import { db } from "../db"
 import { brandListed } from "../auth/dal"
 import { brands } from "../db/schema"
+import { brandLogoSrc, publicLogoIdSql } from "../media/brand-logo"
 import { catalogProducts } from "../db/schema/catalog"
 import { shopperWishlist } from "../db/schema/charts"
 import { searchBrands, searchProducts } from "../db/schema/engagement"
@@ -282,10 +283,13 @@ export async function searchCatalog(p: SearchParams) {
       .groupBy(searchProducts.category)
       .orderBy(desc(count())),
     d
-      .select({ value: searchProducts.brandId, handle: searchProducts.brandHandle, label: searchProducts.brandName, count: count() })
+      // Joined to brands for the logo (public media only): one brand row per brand id, so grouping by
+      // its logo column keeps one row per brand.
+      .select({ value: searchProducts.brandId, handle: searchProducts.brandHandle, label: searchProducts.brandName, logo: publicLogoIdSql(brands.logoMediaId), count: count() })
       .from(searchProducts)
+      .leftJoin(brands, eq(brands.id, searchProducts.brandId))
       .where(and(...base, byStock, byCategory, bySubcategory, byPrice, bySize, byCountry))
-      .groupBy(searchProducts.brandId, searchProducts.brandHandle, searchProducts.brandName)
+      .groupBy(searchProducts.brandId, searchProducts.brandHandle, searchProducts.brandName, brands.logoMediaId)
       .orderBy(desc(count()), asc(searchProducts.brandName), asc(searchProducts.brandId))
       .limit(BRAND_FACET_PAGE + 1)
       .offset(brandOffset),
@@ -316,8 +320,8 @@ export async function searchCatalog(p: SearchParams) {
     // Names of the brands the shopper filtered on, so their chips read right even with no matches here.
     // Only brands the public may see: never a hidden brand, nor (production) a sample one.
     selectedHandles.length
-      ? d.select({ value: searchBrands.brandId, handle: searchBrands.handle, label: searchBrands.name }).from(searchBrands).where(and(brandVisible(), inArray(searchBrands.handle, selectedHandles)))
-      : Promise.resolve([] as { value: string; handle: string; label: string }[]),
+      ? d.select({ value: searchBrands.brandId, handle: searchBrands.handle, label: searchBrands.name, logo: publicLogoIdSql(brands.logoMediaId) }).from(searchBrands).leftJoin(brands, eq(brands.id, searchBrands.brandId)).where(and(brandVisible(), inArray(searchBrands.handle, selectedHandles)))
+      : Promise.resolve([] as { value: string; handle: string; label: string; logo: string | null }[]),
   ])
   const brandFacet = brandFacetPage.slice(0, BRAND_FACET_PAGE)
   const brandsNextCursor = brandFacetPage.length > BRAND_FACET_PAGE ? String(brandOffset + BRAND_FACET_PAGE) : null
@@ -359,9 +363,9 @@ export async function searchCatalog(p: SearchParams) {
     brands: brandHits,
     facets: {
       categories: categoryFacet.filter((c) => c.value).map((c) => ({ value: c.value!, label: categoryBySlug.get(c.value as never)?.name ?? c.value!, count: c.count })),
-      brands: brandFacet.map((b) => ({ value: b.value, handle: b.handle, label: b.label, count: b.count })),
+      brands: brandFacet.map((b) => ({ value: b.value, handle: b.handle, label: b.label, logoSrc: brandLogoSrc(b.logo), count: b.count })),
       brandsNextCursor,
-      selectedBrands,
+      selectedBrands: selectedBrands.map(({ logo, ...b }) => ({ ...b, logoSrc: brandLogoSrc(logo) })),
       price: { currency: p.currency, buckets: priceFacet },
       sizes: sizeFacet.filter((facet) => facet.count > 0),
       countries: countryFacet.filter((facet) => facet.value).map((facet) => ({ value: facet.value!, count: facet.count })),
@@ -375,13 +379,15 @@ export async function searchBrandsQuery(q: string, limit = 10) {
   if (!tsq) return []
   const d = await db()
   const query = sql`to_tsquery('simple', ${tsq})`
+  // Joined to brands for the logo (public media only, media/brand-logo.ts): one query, no per-row read.
   const rows = await d
-    .select({ brandId: searchBrands.brandId, handle: searchBrands.handle, name: searchBrands.name, city: searchBrands.city, country: searchBrands.country })
+    .select({ brandId: searchBrands.brandId, handle: searchBrands.handle, name: searchBrands.name, city: searchBrands.city, country: searchBrands.country, logo: publicLogoIdSql(brands.logoMediaId) })
     .from(searchBrands)
+    .leftJoin(brands, eq(brands.id, searchBrands.brandId))
     .where(and(brandVisible(), sql`${searchBrands.tsv} @@ ${query}`))
     .orderBy(desc(sql`ts_rank(${searchBrands.tsv}, ${query})`), asc(searchBrands.name))
     .limit(Math.min(limit, 20))
-  return rows
+  return rows.map(({ logo, ...r }) => ({ ...r, logoSrc: brandLogoSrc(logo) }))
 }
 
 /**

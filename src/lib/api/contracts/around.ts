@@ -38,6 +38,8 @@ export const placeBrandDto = z.object({
   name: z.string(),
   verified: z.boolean(),
   mark: z.object({ text: z.string(), style: z.enum(["condensed", "expanded", "grotesk"]) }),
+  /** The brand's public logo (/api/media/<id>), or null/absent for its mark. */
+  logoSrc: z.string().nullable().optional(),
 })
 
 export const nextEventDto = z.object({ id: z.string(), title: z.string(), startsAt: z.string(), endsAt: z.string(), kind: z.enum(LOCATION_EVENT_KINDS), hasDrop: z.boolean(), hasPromo: z.boolean() })

@@ -15,7 +15,6 @@ import type { ConversationSummary, ConversationsPage } from "@/lib/api/contracts
 import { errorMessage } from "@/lib/api/errors"
 import { listConversations } from "@/lib/api/inbox"
 import { useApi } from "@/lib/api/use-api"
-import { brandById } from "@/lib/data/brands"
 import { spring } from "@/lib/motion"
 import { useRealtimeEvent } from "@/lib/realtime/use-realtime"
 import { cn } from "@/lib/utils"
@@ -191,7 +190,6 @@ export function ConversationList({ selected, onSelect, filter, onFilter, q, onQu
 }
 
 function ConversationRow({ c, selected, onSelect }: { c: ConversationSummary; selected: boolean; onSelect: (c: ConversationSummary) => void }) {
-  const brand = brandById.get(c.brand.id)
   const unread = c.unread > 0 || c.markedUnread
   const preview = c.lastMessage ? `${c.lastMessage.side === "customer" && !c.lastMessage.held ? "You: " : ""}${c.lastMessage.preview}` : "No messages yet"
   return (
@@ -202,7 +200,8 @@ function ConversationRow({ c, selected, onSelect }: { c: ConversationSummary; se
         aria-current={selected ? "true" : undefined}
         className={cn("press flex w-full items-start gap-3 rounded-xl px-2.5 py-3 text-left [--press-scale:0.985] focus-visible:bg-white/[0.05] focus-visible:outline-none", selected ? "bg-purple/15" : "hover:bg-white/[0.04]")}
       >
-        {brand ? <BrandMark brand={brand} size="sm" className="size-10" /> : <span className="size-10 shrink-0 rounded-md border border-white/12" />}
+        {/* The server's mark (the sample brand's, else initials) and the brand's public logo. */}
+        <BrandMark brand={c.brand} size="sm" className="size-10" />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className={cn("truncate text-sm", unread ? "font-medium text-ink" : "text-ink")}>{c.brand.name}</span>
