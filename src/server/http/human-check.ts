@@ -1,6 +1,7 @@
 import "server-only"
 import type { NextRequest } from "next/server"
 import type { CaptchaConfigDto, HumanCheckFields } from "@/lib/api/contracts/human-check"
+import { appAttestGate, ATTEST_MESSAGE } from "../app-attest"
 import { log } from "../log"
 import { countEvent } from "../monitoring/minutes"
 import { badRequest } from "./errors"
@@ -18,6 +19,9 @@ import { badRequest } from "./errors"
  *     relies on the rate limits, the honeypot (the app sends none, so it never trips) and email
  *     verification instead (docs/APP.md). A token that is sent is always verified. If Cloudflare
  *     can't be reached the request goes ahead (logged), so an outage there never locks people out.
+ *  4. App attestation, for requests that claim to be the app (no Sec-Fetch-*): Play Integrity or
+ *     App Attest in the X-Yard-Attest header, bound to this request (src/server/app-attest).
+ *     YARD_APP_ATTEST=monitor (default) only counts; enforce refuses like a failed Turnstile check.
  *
  * A bot verdict is silent where the endpoint already gives every caller the same answer (sign-up,
  * reset, magic link): the caller returns that answer and nothing is created or sent.
@@ -50,15 +54,20 @@ async function verifyTurnstile(secret: string, token: string, ip: string | null)
 const CHALLENGE_MESSAGE = "Complete the quick check above, then try again."
 
 /**
- * Runs the three layers. Returns "bot" for the caller to answer silently (or refuse); throws a 400
- * on `turnstile` when the Turnstile check is required and missing or failed.
+ * Runs the layers. Returns "bot" for the caller to answer silently (or refuse); throws a 400 on
+ * `turnstile` when the Turnstile check is required and missing or failed, and on `attest` when
+ * app attestation is enforced and the app's request isn't attested. `bodySha256` is the route's
+ * hex sha256 of the raw body (RouteContext.bodySha256), which the attestation is bound to.
  */
-export async function humanCheck(req: NextRequest, fields: HumanCheckFields, kind: HumanKind, ip: string | null): Promise<"ok" | "bot"> {
+export async function humanCheck(req: NextRequest, fields: HumanCheckFields, kind: HumanKind, ip: string | null, bodySha256: string | null = null): Promise<"ok" | "bot"> {
   const s = screen(fields, kind)
   if (s.verdict === "bot") {
     countEvent(`human.bot.${kind}`)
     log.warn(`[yard] human-check: ${kind} refused as a bot (${s.reason})`)
     return "bot"
+  }
+  if (!fromWebBrowser(req.headers) && (await appAttestGate(req, bodySha256, kind)) === "block") {
+    throw badRequest({ attest: ATTEST_MESSAGE }, ATTEST_MESSAGE)
   }
   const keys = turnstileKeys()
   if (!keys) return "ok"

@@ -11,8 +11,8 @@ import { submitOnboarding } from "@/server/catalog/onboarding"
  */
 export const POST = route(
   { auth: "shopper", body: onboardingSubmitBody, rate: { key: "onboarding.submit", limit: 10, windowSec: 60, daily: 20 } },
-  async ({ req, actor, body, ip, ipHash }) => {
-    if ((await humanCheck(req, body, "apply", ip)) === "bot") throw rule("Something didn't look right with that submission. Reload the page and try again.")
+  async ({ req, actor, body, ip, ipHash, bodySha256 }) => {
+    if ((await humanCheck(req, body, "apply", ip, bodySha256)) === "bot") throw rule("Something didn't look right with that submission. Reload the page and try again.")
     return submitOnboarding(actor, { revision: body.revision }, ipHash)
   },
 )

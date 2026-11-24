@@ -74,10 +74,69 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
   `Sec-Fetch-Mode`). The app's native HTTP client sends neither header, so it is exempt. **Don't add
   `Sec-Fetch-*` headers to the app's requests**, and don't make API calls from a WebView's JavaScript.
 - Without the fields the honeypot and fill-time checks pass. The app relies on the per-IP and
-  per-email rate limits, the daily sign-up cap per network and email verification instead.
+  per-email rate limits, the daily sign-up cap per network, email verification and **app
+  attestation** (next section) instead.
 - A throwaway or test address (mailinator.com, example.com, *.test, …) is refused at sign-up and email
   change: 400 `validation` with `fields.email` = "Use an email address you'll keep. Temporary,
   disposable or test addresses can't be used on Yard." Show it under the email field.
+
+## App attestation (sign-up, password reset, magic link, brand application)
+
+So that a script can't claim to be the app on those endpoints, the apps prove they are the real
+Yard app on a real device: Google Play Integrity (Android, standard requests) or Apple App Attest
+(iOS). Server: `src/server/app-attest`; owner setup and the mode switch: docs/DEPLOY.md "App
+attestation".
+
+**Protected calls:** `POST /api/auth/sign-up`, `/api/auth/password/forgot`, `/api/auth/magic-link`,
+`/api/studio/apply` (and `/api/studio/onboarding/submit`). Only requests without `Sec-Fetch-*`
+headers (the app's native client) are checked; the website's requests never are.
+
+**Endpoints** (all public, rate-limited, same CSRF headers as every other call):
+
+- `GET /api/app/attest/config` → `{ mode: "off"|"monitor"|"enforce", android: { cloudProjectNumber } | null, ios: { environment: "production"|"development" } | null }`.
+  A platform is `null` when attestation is off or that platform isn't configured on the server:
+  then that app sends no header and does nothing else. Read it once at start (Android warms up the
+  Play Integrity token provider with `cloudProjectNumber`) and before a protected call.
+- `POST /api/app/attest/challenge { purpose: "request"|"register" }` → `{ challenge, expiresAt }`
+  (single use, ~5 minutes, stored hashed) or `{ challenge: null, expiresAt: null }` when off.
+  30 a minute per network.
+- `POST /api/app/attest/register { keyId, attestation, challenge }` (iOS only, once per install):
+  `keyId` from `DCAppAttestService.generateKey`, `attestation` = base64 of `attestKey(keyId,
+  clientDataHash: sha256(utf8(challenge)))`, `challenge` from a `register` challenge →
+  `{ registered: true }` or `{ registered: false, reason }`. Keep the key id (Keychain) only after
+  `registered: true`. 10 a minute per network.
+
+**Binding to one request.** For each protected call, get a `request` challenge, then
+
+```
+clientData     = "yard-attest/v1\n" + METHOD + "\n" + path + "\n" + hex(sha256(body bytes)) + "\n" + challenge
+clientDataHash = sha256(utf8(clientData))          // 32 bytes
+```
+
+`METHOD` upper case, `path` without host or query (`/api/auth/sign-up`), body = the exact JSON bytes
+sent (hash of empty bytes for no body), hex lower case.
+
+- Android: `StandardIntegrityTokenProvider.request(requestHash = hex(clientDataHash))`.
+- iOS: `DCAppAttestService.generateAssertion(keyId, clientDataHash: clientDataHash)`.
+
+**Header** `X-Yard-Attest` = unpadded base64url of compact JSON:
+
+```json
+{ "v": 1, "p": "android", "c": "<challenge>", "t": "<integrity token>" }
+{ "v": 1, "p": "ios", "c": "<challenge>", "k": "<key id>", "a": "<base64 assertion>" }
+```
+
+**When it can't attest** (no Play Services, an emulator or simulator, App Attest unsupported, a
+network error, any exception): send the request **without** the header. Never block the user in the
+app; the server's mode decides. Server checks: Android — `PLAY_RECOGNIZED`, our package and signing
+certificate, `MEETS_DEVICE_INTEGRITY`, the requestHash, a token under 5 minutes old; iOS — Apple's
+root chain, our team and bundle id, the environment, then per request the stored key's signature
+over this request and a counter that only goes up (a replayed assertion fails).
+
+**Server modes:** `monitor` (the default) only counts pass / fail / missing (Admin › Health).
+`enforce` answers an app request whose attestation fails — or is missing, once both platforms are
+configured — with 400 `validation`, `fields.attest` = "Yard couldn't confirm this request came from
+the Yard app. Update the app and try again." Show it like any other form error.
 
 ## Push notifications
 
@@ -514,7 +573,7 @@ in Studio later.
   `fields.email = "unverified"` when the account's email isn't confirmed yet (show the message and a
   "Resend verification email" action, `POST /api/auth/verify-email/request`); 401; 429 (10/min, 20/day).
 - **Bot protection:** the body may also carry `turnstileToken`, `hp` and `formStartedAt` (see "Bot
-  protection" below). The app sends none of them and needs no change.
+  protection" above). The app sends none of them; it sends `X-Yard-Attest` ("App attestation").
 - **Approval:** the applicant gets the email "Your shop is ready" (button "Open Studio") and a push
   (`kind "studio.approved"`, below), and `shopper.brands[].status` becomes `approved`.
 

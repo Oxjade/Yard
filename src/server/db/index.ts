@@ -22,6 +22,9 @@ export async function warmUp() {
   // Which payments this process takes, once at startup (YARD_PAYMENTS).
   const { paymentsStartupLine } = await import("../payments/config")
   log.once("payments-mode", "info", paymentsStartupLine())
+  // App attestation mode and which platforms are configured (a platform without settings is off).
+  const { logAttestConfig } = await import("../app-attest")
+  logAttestConfig()
   await getDb()
   const { purgeDisabledSessions } = await import("../auth/session")
   const ended = await purgeDisabledSessions()

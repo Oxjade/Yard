@@ -156,6 +156,66 @@ brand application needs a verified email.
 The disposable-email list is vendored (`src/server/auth/disposable-domains.data.ts`). Refresh it with
 `npm run email:disposable-update` now and then, review the diff and commit it.
 
+## App attestation: Play Integrity and App Attest (optional)
+
+The apps prove they are the real Yard app on a real device when they sign up, ask for a password
+reset or a magic link, or apply to sell (docs/APP.md "App attestation"). Without the settings below
+a platform is simply off; nothing breaks before the store accounts exist.
+
+| Variable | |
+|---|---|
+| `YARD_APP_ATTEST` | `off`, `monitor` (default) or `enforce` |
+| `PLAY_INTEGRITY_PACKAGE_NAME` | the Android package, `space.yardstore.app` |
+| `PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER` | the linked Google Cloud project's **number** (public; the app needs it) |
+| `PLAY_INTEGRITY_CERT_SHA256` | the app signing certificate's SHA-256 as Play Console shows it (`AB:CD:…`); comma separated for several |
+| `GOOGLE_APPLICATION_CREDENTIALS_PLAY` | **path** of the service account's JSON key file on the server, e.g. `/etc/yard/play-integrity.json` |
+| `APP_ATTEST_TEAM_ID` | Apple Developer Team ID (10 characters) |
+| `APP_ATTEST_BUNDLE_ID` | the iOS bundle id, `space.yardstore.app` |
+| `APP_ATTEST_ENV` | `production` (App Store and TestFlight builds; default) or `development` (Xcode debug builds) |
+
+Android needs all four `PLAY_*`/`GOOGLE_*` values and iOS both `APP_ATTEST_TEAM_ID` and
+`APP_ATTEST_BUNDLE_ID`; a platform missing any is off. The boot log says which:
+`[yard] App attestation: monitor; Android Play Integrity on; iOS App Attest off (set …)`.
+
+**Android, once (Google Play Console and Google Cloud):**
+
+1. Play Console › the Yard app › **Test and release › App integrity** › Play Integrity API › **Link a
+   Cloud project** (create one if needed). In Google Cloud, **APIs & Services › Enable APIs** ›
+   enable **Google Play Integrity API** for that project. Note the **project number** (Cloud
+   console home › Project info) for `PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER`.
+2. Same page in Play Console › **App signing**: copy the **App signing key certificate** SHA-256 into
+   `PLAY_INTEGRITY_CERT_SHA256`.
+3. Google Cloud › **IAM & Admin › Service accounts** › Create (e.g. `yard-play-integrity`), no roles
+   needed. Open it › **Keys › Add key › JSON**. The browser downloads the key file.
+4. Copy the file to the server without pasting it anywhere (e.g. `scp file.json you@server:` then
+   `sudo install -o root -g yard -m 640 file.json /etc/yard/play-integrity.json`), delete the
+   download, and set `GOOGLE_APPLICATION_CREDENTIALS_PLAY=/etc/yard/play-integrity.json`. Never commit
+   the file or paste its contents in chat or an issue.
+5. Free quota: 10,000 Play Integrity requests a day; Yard asks only on the four protected calls.
+
+**iOS, once (Apple Developer):**
+
+1. Certificates, Identifiers & Profiles › Identifiers › `space.yardstore.app` › enable **App
+   Attest** (under Capabilities), save, and regenerate the provisioning profiles. The app already
+   carries the entitlement (development for Debug, production for Release).
+2. Set `APP_ATTEST_TEAM_ID` (Membership details) and `APP_ATTEST_BUNDLE_ID`. Leave `APP_ATTEST_ENV`
+   unset (production) on the live server.
+
+Then check the configuration (above) and `sudo systemctl restart yard`.
+
+**From monitor to enforce.** Run `monitor` first (the default) with both apps released. Admin ›
+Health › Auth failures shows "App attestation: monitor" and pass / fail / missing for the last 24
+hours. Each failure is logged with its reason (`[yard] app attest: signup android attestation failed
+(device); allowed (monitor)`, at most one line a minute per reason). When real app users show up as
+**pass** and failures look like bots (sideloaded builds, emulators, replays), set
+`YARD_APP_ATTEST=enforce` and restart. In enforce, an app request whose attestation fails gets the
+same 400 as a failed human check; a request **without** a header is refused only once **both**
+platforms are configured (while one is off, a bot could claim to be that app). Old app versions
+that send no header, and phones without Google Play services, are refused at those four calls
+once both are configured: they can still sign up on the website. If Google can't be reached the
+request goes ahead (counted as unavailable). To back out: `YARD_APP_ATTEST=monitor` (or `off`) and
+restart.
+
 ## Who can open which page (production)
 
 With the demo switch off, `src/proxy.ts` decides before a page renders (`src/lib/access-gate.ts`

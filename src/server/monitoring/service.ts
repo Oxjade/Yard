@@ -11,6 +11,7 @@ import { businessCounts, mediaStorage, queueDepths, rateLimitBlocks, type Guards
 import { processState } from "./minutes"
 import { ACTIVITY_KINDS, RANGES, businessSeries, dailyRequests, dailyTotals, requestBuckets, requestSeries, utcDay, type MetricKey, type RangeKey } from "./series"
 import { flush, listDeploys, readRows, recordDeploy, rollupAndPrune, type Db } from "./store"
+import { attestConfig } from "../app-attest/config"
 
 /**
  * Admin › Health's real figures. Cost scales with time, not traffic: requests are counted in
@@ -143,6 +144,22 @@ const disk = () =>
     }
   })
 
+/** App attestation in the last 24 hours (src/server/app-attest): the mode, which platforms are on, and the verdicts. */
+function appAttestCounts(ev: Record<string, number>) {
+  const sum = (prefix: string) => Object.entries(ev).reduce((t, [k, v]) => (k === prefix || k.startsWith(`${prefix}.`) ? t + v : t), 0)
+  const c = attestConfig(process.env)
+  return {
+    mode: c.mode,
+    android: !!c.android,
+    ios: !!c.ios,
+    pass: sum("app_attest.pass"),
+    fail: sum("app_attest.fail"),
+    missing: sum("app_attest.missing"),
+    blocked: sum("app_attest.blocked"),
+    unavailable: sum("app_attest.unavailable"),
+  }
+}
+
 export type OpsResponse = Awaited<ReturnType<typeof operations>>
 
 /** Queue depth, storage, auth failures (24 h) and the deploy history. */
@@ -167,6 +184,7 @@ export function operations() {
         rateLimited: { signIn: blocks.auth, all: blocks.total, proxy: n("proxy.rate_limited") },
         searches: n("search"),
       },
+      appAttest: appAttestCounts(ev),
       deploys: deploys.map((x) => ({ id: x.id, version: x.version, gitSha: x.gitSha, firstSeenAt: x.firstSeenAt.toISOString(), lastBootAt: x.lastBootAt.toISOString(), boots: Number(x.boots), live: x.id === live })),
       process: { bootedAt: bootedAt().toISOString(), uptimeSec: Math.round(process.uptime()) },
     }

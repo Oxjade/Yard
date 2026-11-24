@@ -1,5 +1,5 @@
 import "server-only"
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { connection, type NextRequest } from "next/server"
 import { z, type ZodType } from "zod"
 import { getAdmin, requireActiveBrand, requireAdmin, requireShopper, type Actor, type AdminActor, type BrandActor, type ShopperActor } from "../auth/dal"
@@ -80,6 +80,8 @@ export type RouteContext<O> = {
   ip: string | null
   ipHash: string | null
   requestId: string
+  /** Hex sha256 of the raw JSON body as received (app attestation binds to it), or null when the route reads no body. */
+  bodySha256: string | null
 }
 
 type Handler<O> = (ctx: RouteContext<O>) => Promise<Response | unknown> | Response | unknown
@@ -136,9 +138,9 @@ function assertDeclaredSize(req: Request, max: number) {
   if (declared != null && /^\d+$/.test(declared.trim()) && Number(declared) > max) throw tooLarge(max)
 }
 
-/** Reads the body as text, counting bytes as they arrive and cancelling past the cap (chunked bodies too). */
-async function readCapped(req: Request, max: number) {
-  if (!req.body) return ""
+/** Reads the body as bytes, counting them as they arrive and cancelling past the cap (chunked bodies too). */
+async function readCapped(req: Request, max: number): Promise<Uint8Array> {
+  if (!req.body) return new Uint8Array(0)
   const reader = req.body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
@@ -158,14 +160,16 @@ async function readCapped(req: Request, max: number) {
     all.set(c, at)
     at += c.byteLength
   }
-  return new TextDecoder().decode(all)
+  return all
 }
 
-async function readJson(req: Request, max: number) {
-  const text = await readCapped(req, max)
-  if (!text.trim()) return undefined
+async function readJson(req: Request, max: number): Promise<{ value: unknown; sha256: string }> {
+  const raw = await readCapped(req, max)
+  const sha256 = createHash("sha256").update(raw).digest("hex")
+  const text = new TextDecoder().decode(raw)
+  if (!text.trim()) return { value: undefined, sha256 }
   try {
-    return JSON.parse(text) as unknown
+    return { value: JSON.parse(text) as unknown, sha256 }
   } catch {
     throw badRequest({ _: "Send a JSON body." }, "The request body isn't valid JSON.")
   }
@@ -355,11 +359,12 @@ export function route<const O extends RouteOpts>(opts: O, handler: Handler<O>) {
       const parsed = (opts.query ? opts.query.parse(rawQuery) : rawQuery) as Record<string, unknown>
       // A multi-actor handler only ever sees the kind that was authenticated (§1.10).
       const query = opts.auth === "multi" && actor && parsed && typeof parsed === "object" ? { ...parsed, as: actor.kind } : parsed
-      const body = opts.body ? opts.body.parse((await readJson(req, maxBody ?? DEFAULT_MAX_BODY)) ?? {}) : undefined
+      const read = opts.body ? await readJson(req, maxBody ?? DEFAULT_MAX_BODY) : null
+      const body = opts.body ? opts.body.parse(read?.value ?? {}) : undefined
       const raw = (await context?.params) ?? {}
       const params = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, Array.isArray(v) ? v.join("/") : v]))
       // 8. The handler.
-      const run = async () => handler({ req, actor: actor as ActorOf<O>, query: query as QueryOf<O>, body: body as BodyOf<O>, params, ip, ipHash, requestId })
+      const run = async () => handler({ req, actor: actor as ActorOf<O>, query: query as QueryOf<O>, body: body as BodyOf<O>, params, ip, ipHash, requestId, bodySha256: read?.sha256 ?? null })
       // Every Yard setup write leaves an admin-attributed row (writeAudit maps the role), written
       // inside the handler's first transaction, so the write and its audit commit together or not at all.
       const setupWrite = yardSetup && method !== "GET" && method !== "HEAD" ? yardSetup : null

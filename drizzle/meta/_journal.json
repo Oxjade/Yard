@@ -246,6 +246,13 @@
       "when": 1795526045983,
       "tag": "0034_payout_needed",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795528569453,
+      "tag": "0035_app_attest",
+      "breakpoints": true
     }
   ]
 }

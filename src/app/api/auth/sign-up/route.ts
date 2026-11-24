@@ -10,8 +10,8 @@ import { route } from "@/server/http/route"
  * A throwaway or test address is refused (400 on `email`); a bot (server/http/human-check.ts) gets
  * the same answer as everyone and nothing is created.
  */
-export const POST = route({ auth: "public", body: signUpBody, maxBody: 4 * 1024 }, async ({ req, body, ip, ipHash }) => {
+export const POST = route({ auth: "public", body: signUpBody, maxBody: 4 * 1024 }, async ({ req, body, ip, ipHash, bodySha256 }) => {
   const { human, rest } = splitHuman(body)
-  if ((await humanCheck(req, human, "signup", ip)) === "bot") return { status: "verify_email" as const }
+  if ((await humanCheck(req, human, "signup", ip, bodySha256)) === "bot") return { status: "verify_email" as const }
   return signUp(rest, metaOf(req, ipHash))
 })
