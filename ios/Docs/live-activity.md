@@ -76,30 +76,61 @@ Mapping: `cancelled`/`returned_to_sender`/`returned` event → end. Delivered (f
 (the API sends calendar dates). Progress while shipped is time-based between the ship event and the ETA
 (0.25…0.78). Wording follows the site ("Out for delivery", "Delayed", "Running late — new estimate").
 
-## Push updates (server work — not done)
+## Push updates (done: server and app)
 
-Activities are requested with `pushType: .token` (falls back to local-only if the request fails, e.g.
-no push entitlement). The token is printed (`[LiveActivity] push token for order …`) and kept in
-`LiveActivityManager.pushTokens` + UserDefaults `yard.liveActivity.pushTokens`. **Yard's server has no
-endpoint for it yet**, so until then the app updates the activity whenever it refreshes the order.
-To go live:
+The activity now updates while the app is closed: Yard's server sends APNs `liveactivity` pushes
+straight to Apple (not FCM) whenever the order's delivery changes. The app keeps updating it itself
+whenever it refreshes the order (`sync`), so in-app refreshes work as before and with pushes off.
 
-1. Add the Push Notifications capability (`aps-environment`) to the app target.
-2. Server endpoint to store `{ orderId, token }` (see the `TODO(server)` in `LiveActivityManager.storeToken`).
-3. On each shipment event, send APNs to the token: headers `apns-push-type: liveactivity`,
-   `apns-topic: space.yardstore.app.push-type.liveactivity`, `apns-priority: 10` (or 5), body:
+**App** (`LiveActivityManager` + `LiveActivityTokenSync.swift`):
+
+- Activities are requested with `pushType: .token` (local-only fallback if that fails, e.g. no
+  push entitlement). Each `pushTokenUpdates` value is uploaded to
+  `POST /api/orders/{id}/live-activity { token (hex), timeZone, appVersion }`; a rotated token is
+  uploaded and the old one `DELETE`d; when the activity ends (in the app, by a push `end`, or swiped
+  away: `activityStateUpdates`) its token is `DELETE`d. Failed uploads (offline, no session yet) are
+  kept in UserDefaults (`yard.liveActivity.tokenSync`) and retried by `resume()`.
+- iOS 17.2+: the phone's push-to-start token (`Activity.pushToStartTokenUpdates`) goes to
+  `POST /api/live-activity/push-to-start`. When an order first ships and no activity is tracking it,
+  the server starts one (alert "<Brand> shipped your order"); the app picks it up from
+  `Activity.activityUpdates` (also on a background launch: `YardPushAppDelegate` calls
+  `startObserving()`) and uploads its update token. A second activity for the same order is ended.
+- Sign-out: `SessionStore.signOut()` calls `LiveActivityManager.shared.signOut()` **before** the
+  session goes: it ends every activity and deletes this phone's tokens on the server.
+- Entitlements: `aps-environment` (development for Debug, production for Release) next to App
+  Attest. Info.plist: `NSSupportsLiveActivities` (already); `NSSupportsLiveActivitiesFrequentUpdates`
+  is left off (Yard sends a handful of pushes per order).
+- Tests: `YardTests/LiveActivityTokenSyncTests.swift` (fake uploader), `LiveActivityOrderTests.swift`
+  (the mapping, and decoding the server's payload).
+
+**Server** (website repo; docs/APP.md › Live Activity push, docs/DEPLOY.md › iOS Live Activity pushes):
+computes the state with a line-for-line port of `LiveActivityOrder.make(...)`
+(`src/server/push/live-activity-state.ts`, same test cases as `LiveActivityOrderTests.swift`) in the
+phone's time zone, and sends `update` (shipped, arriving soon, out for delivery), `end` with
+`dismissal-date` +2 h (delivered) or immediately (cancelled, returned). Request headers
+`apns-push-type: liveactivity`, `apns-topic: space.yardstore.app.push-type.liveactivity`,
+`apns-priority: 10` (new step) or `5`. Body:
 
 ```json
-{ "aps": { "timestamp": 1763064000, "event": "update",
-  "content-state": { "step": "outForDelivery", "etaDate": 785000000, "progress": 0.86, "statusLine": "Out for delivery in London" },
-  "stale-date": 1763092800 } }
+{ "aps": { "timestamp": 1795262400, "event": "update",
+  "content-state": { "step": "outForDelivery", "etaDate": 817070400, "progress": 0.86, "statusLine": "Out for delivery in London" },
+  "stale-date": 1795291200, "relevance-score": 100 } }
 ```
 
-`etaDate` is seconds since 2001-01-01 (Unix − 978307200; ActivityKit's default Date decoding) or omitted.
-Use `"event": "end"` with a final `content-state` and `"dismissal-date"` when delivered.
+`etaDate` is seconds since 2001-01-01 (Unix − 978307200): a `Date`'s default `Codable` encoding,
+which ActivityKit uses for `content-state` (Apple: no custom strategies). `timestamp`, `stale-date`
+and `dismissal-date` are Unix seconds. `LiveActivityOrderTests.testContentStateDecodesTheServerPayload`
+decodes exactly this with `JSONDecoder()`.
+
+**Owner, once** (details in the website's docs/DEPLOY.md): Apple Developer › Identifiers ›
+`space.yardstore.app` › enable Push Notifications; Keys › create a key with "Apple Push Notifications
+service (APNs)", download the .p8 (only once), put it on the server readable by the `yard` user
+(mode 600 or 640), and set `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`
+(and `APNS_ENV=development` only for a server that serves Xcode builds) in `/etc/yard.env`, never in
+chat. Then restart Yard.
 
 ## Unfinished / caveats
 
-- Not compiled (no Xcode here). Server push is not wired (above).
+- Compiled and unit-tested by the iOS CI (no Xcode here). Pushes need the owner's APNs key (above).
 - ETA beyond 24 h shows days rather than a ticking clock (an h:mm:ss timer past 24 h would read "98:11:08").
 - Start/stop hooks in OrderDetailView, YardApp and sign-out belong to other owners (lines above).

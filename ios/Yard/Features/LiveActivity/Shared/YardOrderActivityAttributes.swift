@@ -10,7 +10,9 @@ import Foundation
 // The ContentState is also the JSON an APNs Live Activity push must carry in `content-state`
 // (keys: step, etaDate, progress, statusLine). ActivityKit decodes pushes with the default Date
 // strategy, so `etaDate` is a number of seconds since 2001-01-01 (Unix seconds − 978307200).
-// See ios/Docs/live-activity.md for the exact payload.
+// See ios/Docs/live-activity.md for the exact payload. The server builds it in
+// src/server/push/apns-core.ts (website repo) and computes the state with a line-for-line port of
+// `LiveActivityOrder.make(...)` (src/server/push/live-activity-state.ts): change them together.
 
 /// One brand's part of an order, tracked on the Lock Screen and in the Dynamic Island.
 struct YardOrderActivityAttributes: ActivityAttributes {

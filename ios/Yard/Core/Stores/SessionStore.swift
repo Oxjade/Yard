@@ -83,6 +83,10 @@ final class SessionStore {
         // docs/APP.md: DELETE /api/devices first (needs the session), then the brand session
         // (Studio), then the shopper session.
         await YardPushCenter.shared.unregisterDevice()
+        // Live Activities too, while the session still exists: end them and remove their push tokens
+        // (and the push-to-start token) from the server. A signed-out phone shouldn't keep showing
+        // someone's order on the Lock Screen.
+        await LiveActivityManager.shared.signOut()
         do {
             try await api.send(.post, "/api/auth/sign-out", query: [URLQueryItem(name: "actor", value: "brand")])
         } catch {
@@ -96,8 +100,6 @@ final class SessionStore {
         shopper = nil
         pendingPhoto = nil
         session = Session.signedOut
-        // A signed-out phone shouldn't keep showing someone's order on the Lock Screen.
-        await LiveActivityManager.shared.endAll()
         // Local "opens in 10 minutes" drop alerts belong to the account that set them.
         await DropLocalReminder.cancelAll()
         await refresh()

@@ -107,6 +107,9 @@ extension LiveActivityOrder {
     }
 
     /// Pure mapping from the API's order + delivery to the activity (no I/O; easy to reason about).
+    /// The server pushes the same state, computed by a line-for-line port of this function
+    /// (website repo: src/server/push/live-activity-state.ts, same test cases as
+    /// YardTests/LiveActivityOrderTests.swift). Change both together.
     static func make(orderId: String, order: LiveActivityOrderDTO?, delivery: LiveActivityDeliveryDTO?, brandCity: String, now: Date) -> LiveActivityOrder {
         let brandName: String = order?.brand?.name ?? "The brand"
         let deliveryCity: String = delivery?.shipTo?.city ?? order?.shipToPreview?.city ?? ""

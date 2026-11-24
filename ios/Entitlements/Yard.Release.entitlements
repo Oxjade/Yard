@@ -5,5 +5,8 @@
 	<!-- App Attest (docs/APP.md "App attestation"): production keys for Release builds. -->
 	<key>com.apple.developer.devicecheck.appattest-environment</key>
 	<string>production</string>
+	<!-- Push Notifications: APNs Live Activity pushes (docs/APP.md "Live Activity push"); production for Release builds. -->
+	<key>aps-environment</key>
+	<string>production</string>
 </dict>
 </plist>

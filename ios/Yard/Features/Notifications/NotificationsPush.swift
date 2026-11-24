@@ -244,6 +244,9 @@ struct YardDeviceTokenBody: Encodable, Sendable {
 final class YardPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Live Activities: the server may wake the app for an activity it started (push-to-start)
+        // so the app can upload that activity's push token (Features/LiveActivity).
+        Task { @MainActor in LiveActivityManager.shared.startObserving() }
         return true
     }
 

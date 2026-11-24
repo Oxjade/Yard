@@ -15,10 +15,13 @@ import Observation
 //   // Sign out:
 //   Task { @MainActor in await LiveActivityManager.shared.endAll() }
 //
-// Push updates: every activity is requested with `pushType: .token`. Its APNs push token is printed
-// and kept in `pushTokens` (and UserDefaults). Yard's server has no endpoint to receive it yet, so
-// today the app updates the activity itself whenever it refreshes the order. Once the server sends
-// `liveactivity` APNs pushes (see ios/Docs/live-activity.md), POST the token where it says.
+// Push updates: every activity is requested with `pushType: .token`. Its APNs push token (and every
+// rotation) is uploaded to `POST /api/orders/{id}/live-activity` through `LiveActivityTokenSync`, and
+// removed when the activity ends, so Yard's server pushes delivery changes straight to the activity
+// while the app is closed (see ios/Docs/live-activity.md). On iOS 17.2+ the phone's push-to-start
+// token is uploaded too, so the server can start the activity when an order first ships; such an
+// activity is picked up from `Activity.activityUpdates`. The app still updates the activity itself
+// whenever it refreshes the order (`sync`).
 
 @Observable
 @MainActor
@@ -36,6 +39,13 @@ final class LiveActivityManager {
     private(set) var lastError: String?
 
     @ObservationIgnored private var tokenTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var stateTasks: [String: Task<Void, Never>] = [:]
+    /// New activities (incl. ones the server started with push-to-start).
+    @ObservationIgnored private var activityUpdatesTask: Task<Void, Never>?
+    /// The phone's push-to-start token (iOS 17.2+).
+    @ObservationIgnored private var startTokenTask: Task<Void, Never>?
+    /// Uploads push tokens to Yard's server (and retries what failed).
+    let tokenSync: LiveActivityTokenSync
     private static let tokensKey = "yard.liveActivity.pushTokens"
     /// Brand cities already resolved, so a refresh doesn't re-read the storefront.
     @ObservationIgnored private var brandCities: [String: String] = [:]
@@ -47,7 +57,8 @@ final class LiveActivityManager {
     /// when the person flips the switch in Settings.
     private(set) var areActivitiesEnabled: Bool = false
 
-    init() {
+    init(tokenSync: LiveActivityTokenSync? = nil) {
+        self.tokenSync = tokenSync ?? LiveActivityTokenSync.live()
         if let stored = UserDefaults.standard.dictionary(forKey: LiveActivityManager.tokensKey) as? [String: String] {
             pushTokens = stored
         }
@@ -166,19 +177,41 @@ final class LiveActivityManager {
         }
     }
 
-    /// On launch / foreground: re-attach token observers and refresh every running activity.
+    /// On launch / foreground: re-attach token observers, upload tokens that didn't reach the server
+    /// yet, and refresh every running activity.
     func resume() async {
         areActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
         refreshTracked()
+        startObserving()
         for activity in Activity<Attributes>.activities where isLive(activity) {
             observePushToken(of: activity)
             if !activity.attributes.brandCity.isEmpty {
                 brandCities[activity.attributes.orderId] = activity.attributes.brandCity
             }
         }
+        await tokenSync.retryPending()
         for orderId in trackedOrderIds {
             await sync(orderId: orderId)
         }
+    }
+
+    /// At launch (also a background launch, when the system wakes the app for an activity the server
+    /// started): watch new activities, the push-to-start token and the running activities' tokens.
+    func startObserving() {
+        observeNewActivities()
+        observePushToStartToken()
+        for activity in Activity<Attributes>.activities where isLive(activity) {
+            observePushToken(of: activity)
+        }
+    }
+
+    /// Before signing out (needs the session): ends every activity and removes this phone's tokens
+    /// from Yard's server, including the push-to-start token.
+    func signOut() async {
+        startTokenTask?.cancel()
+        startTokenTask = nil
+        await endAll()
+        await tokenSync.signOut()
     }
 
     // MARK: Private
@@ -205,26 +238,79 @@ final class LiveActivityManager {
         guard tokenTasks[orderId] == nil else { return }
         tokenTasks[orderId] = Task { @MainActor [weak self] in
             for await data in activity.pushTokenUpdates {
-                let hex = data.map { String(format: "%02x", $0) }.joined()
+                let hex = LiveActivityManager.hex(data)
                 print("[LiveActivity] push token for order \(orderId): \(hex)")
-                self?.storeToken(hex, orderId: orderId)
+                await self?.storeToken(hex, orderId: orderId)
+            }
+        }
+        // Ended or dismissed outside the app (a push `end`, the person swiping it away): forget it.
+        stateTasks[orderId] = Task { @MainActor [weak self] in
+            for await state in activity.activityStateUpdates {
+                if state == .ended || state == .dismissed {
+                    self?.forget(orderId: orderId)
+                    return
+                }
             }
         }
     }
 
-    private func storeToken(_ hex: String, orderId: String) {
+    /// Activities that appear while the app runs or is woken, including ones the server started with
+    /// a push-to-start token: watch their push token, and keep one per order.
+    private func observeNewActivities() {
+        guard activityUpdatesTask == nil else { return }
+        activityUpdatesTask = Task { @MainActor [weak self] in
+            for await activity in Activity<Attributes>.activityUpdates {
+                guard let self else { return }
+                let orderId = activity.attributes.orderId
+                let others = Activity<Attributes>.activities.filter { $0.id != activity.id && $0.attributes.orderId == orderId && self.isLive($0) }
+                if !others.isEmpty {
+                    // Already tracked in the app (e.g. started offline before the server knew): keep that one.
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                    continue
+                }
+                if !activity.attributes.brandCity.isEmpty { self.brandCities[orderId] = activity.attributes.brandCity }
+                self.observePushToken(of: activity)
+                self.refreshTracked()
+            }
+        }
+    }
+
+    /// iOS 17.2+: the token that lets Yard's server start an activity when an order first ships.
+    private func observePushToStartToken() {
+        guard startTokenTask == nil else { return }
+        if #available(iOS 17.2, *) {
+            startTokenTask = Task { @MainActor [weak self] in
+                for await data in Activity<Attributes>.pushToStartTokenUpdates {
+                    let hex = LiveActivityManager.hex(data)
+                    print("[LiveActivity] push-to-start token: \(hex)")
+                    await self?.tokenSync.startTokenChanged(hex)
+                }
+            }
+        }
+    }
+
+    private static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func storeToken(_ hex: String, orderId: String) async {
         pushTokens[orderId] = hex
         UserDefaults.standard.set(pushTokens, forKey: LiveActivityManager.tokensKey)
-        // TODO(server): POST { orderId, token: hex, kind: "liveactivity" } once Yard has an endpoint
-        // for it, so order.shipment events become APNs Live Activity pushes.
+        await tokenSync.tokenChanged(orderId: orderId, token: hex)
     }
 
     private func forget(orderId: String) {
         tokenTasks[orderId]?.cancel()
         tokenTasks[orderId] = nil
+        stateTasks[orderId]?.cancel()
+        stateTasks[orderId] = nil
         pushTokens[orderId] = nil
         UserDefaults.standard.set(pushTokens, forKey: LiveActivityManager.tokensKey)
         refreshTracked()
+        // The server stops pushing to this activity.
+        Task { @MainActor [weak self] in
+            await self?.tokenSync.activityEnded(orderId: orderId)
+        }
     }
 
     private func refreshTracked() {
