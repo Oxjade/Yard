@@ -45,8 +45,8 @@ export type CheckoutInput = {
   shipToCity?: string | null
   contact: { name: string; email: string; phone?: string }
   address: { line1: string; city: string; postcode?: string; country: CountryCode }
-  /** brandId → the shipping service chosen. */
-  shipping: Record<string, ShippingService>
+  /** brandId → the shipping option chosen (its key: the service, or a live courier rate's "c:…"). */
+  shipping: Record<string, string>
   /** The server's quote per brand (its signed token goes with the order). */
   quotes: Record<string, QuoteGroupDto>
   paymentMethod: "card" | "bank_transfer" | "ussd" | "mobile_money"
@@ -257,7 +257,7 @@ export const useOrders = create<OrdersState>()(
             ...(input.address.postcode ? { postalCode: input.address.postcode } : {}),
             ...(input.contact.phone ? { phone: input.contact.phone } : {}),
           },
-          shipping: bag.groups.map((g) => ({ brandId: g.brand.id, service: g.option!.service })),
+          shipping: bag.groups.map((g) => ({ brandId: g.brand.id, service: g.option!.service, ...(g.option!.key && g.option!.key !== g.option!.service ? { option: g.option!.key } : {}) })),
           expectedTotalMinor: bag.total ?? undefined,
           paymentMethod: input.paymentMethod,
         }
@@ -294,7 +294,7 @@ export const useOrders = create<OrdersState>()(
           const g = bag.groups.find((x) => x.brand.id === summary.brand.id)
           if (!g) throw new CheckoutError("other", "The server returned an order for a brand that isn't in this cart.")
           const service = (["standard", "express", "pickup"] as string[]).includes(summary.service) ? summary.service as ShippingService : g.option!.service
-          const estimate = g.quote?.options.find((o) => o.service === service)?.estimate
+          const estimate = (g.option?.service === service ? g.option : g.quote?.options.find((o) => o.service === service))?.estimate
           const delivery: DeliverySnapshot | undefined = estimate ? {
             basis: estimate.basis,
             dispatchFrom: estimate.dispatchFrom,
@@ -326,7 +326,7 @@ export const useOrders = create<OrdersState>()(
             commission: Math.round(summary.subtotalMinor * 0.05),
             placedAt: summary.placedAt,
             shippingAddress: { name: input.contact.name, line1: input.address.line1, city: input.address.city, country: input.address.country, postcode: input.address.postcode, phone: input.contact.phone },
-            shippingMethod: serviceLabel(service, g.option?.pickup?.area),
+            shippingMethod: g.option?.courier ? g.option.label : serviceLabel(service, g.option?.pickup?.area),
             delivery,
             timeline: [
               { at: summary.placedAt, label: "Order placed" },

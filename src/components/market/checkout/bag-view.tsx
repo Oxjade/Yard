@@ -166,7 +166,14 @@ export function BagView() {
                           )}
                         </span>
                         {g.notForSale ? null : g.quote ? (
-                          g.unavailable ? <span className="text-ink-3">{g.reason}. Remove its pieces or change the delivery country at checkout.</span> : <ArrivalChip estimate={g.estimate} className="justify-self-start" />
+                          g.unavailable ? (
+                            <span className="text-ink-3">{g.reason}. Remove its pieces or change the delivery country at checkout.</span>
+                          ) : (
+                            <>
+                              <ArrivalChip estimate={g.estimate} className="justify-self-start" />
+                              {g.quote.courierAtCheckout ? <span className="text-ink-3">Ships by courier: the courier&apos;s price is confirmed at checkout, once your address is in.</span> : null}
+                            </>
+                          )
                         ) : (
                           <Bone className="h-5 w-32 rounded-full" />
                         )}

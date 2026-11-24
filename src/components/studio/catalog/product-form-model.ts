@@ -37,6 +37,8 @@ export type ProductForm = {
   collectionIds: string[]
   processingMin: string
   processingMax: string
+  /** Packed weight of one piece in kg ("" = the brand's default parcel). */
+  weightKg: string
   status: ProductStatus
   /** datetime-local value, in the viewer's time zone */
   publishAt: string
@@ -74,6 +76,7 @@ export function fromProduct(p: Product, brand: Brand): ProductForm {
     collectionIds: [...p.collectionIds],
     processingMin: String(days[0]),
     processingMax: String(days[1]),
+    weightKg: p.weightGrams ? String(p.weightGrams / 1000) : "",
     status: p.status,
     publishAt: p.publishAt ? toLocalInput(p.publishAt) : "",
   }
@@ -97,6 +100,7 @@ export function emptyForm(brand: Brand): ProductForm {
     collectionIds: [],
     processingMin: String(brand.processingDays[0]),
     processingMax: String(brand.processingDays[1]),
+    weightKg: "",
     status: "draft",
     publishAt: "",
   }
@@ -214,6 +218,10 @@ export function validate(f: ProductForm, ctx: ValidateContext): Errors {
     else if (Number(v.stock) < v.reserved) e[`stock-${v.key}`] = `At least ${v.reserved}: that many are reserved for open orders.`
   }
 
+  if (f.weightKg.trim()) {
+    const kg = Number(f.weightKg.replace(",", "."))
+    if (!Number.isFinite(kg) || kg < 0.001 || kg > 70) e.weight = "Use a weight from 0.001 to 70 kg, or leave it empty."
+  }
   if (!isWhole(f.processingMin) || !isWhole(f.processingMax)) e.processing = "Use whole days, for example 1 to 3."
   else if (Number(f.processingMin) < 1) e.processing = "The shortest time is 1 day."
   else if (Number(f.processingMax) > 60) e.processing = "Keep it to 60 days or fewer."

@@ -18,8 +18,14 @@ export const LEDGER_OWNER_KINDS = ["brand", "platform"] as const
  * brand_payout_hold: requested payouts in review or in flight (liability).
  * platform_commission: commission revenue. platform_adjustments: manual corrections (equity).
  * provider_clearing: money held at the payment provider (asset, debit-normal).
+ * Courier shipping (docs/SHIPPING.md), Yard's money and never a brand's:
+ * shipping_collected: what shoppers paid for a live courier rate (credit-normal).
+ * shipping_spent: what the courier wallet paid for booked pickups (expense, debit-normal).
+ * courier_wallet: Yard's prepaid wallet at the courier aggregator (asset, debit-normal). Top-ups
+ * happen outside Yard, so its balance here is minus the total spent; the real balance is read from
+ * the provider (Admin › Delivery).
  */
-export const LEDGER_ACCOUNT_KINDS = ["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold", "platform_commission", "platform_adjustments", "provider_clearing"] as const
+export const LEDGER_ACCOUNT_KINDS = ["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold", "platform_commission", "platform_adjustments", "provider_clearing", "shipping_collected", "shipping_spent", "courier_wallet"] as const
 export const LEDGER_TX_KINDS = [
   "payment_captured",
   "refund",
@@ -32,6 +38,7 @@ export const LEDGER_TX_KINDS = [
   "payout_failed",
   "payout_reversed",
   "adjustment",
+  "courier_booked",
 ] as const
 export const ORDER_MONEY_STATUSES = ["captured", "completed", "refunded"] as const
 export const BRAND_TIERS = ["new", "standard", "trusted"] as const
@@ -49,7 +56,7 @@ export const ledgerAccounts = pgTable(
     ownerId: text("owner_id").notNull(),
     kind: text("kind").notNull(),
     currency: text("currency").notNull(),
-    /** 'debit' for provider_clearing, 'credit' for everything else. */
+    /** 'debit' for provider_clearing, shipping_spent and courier_wallet, 'credit' for everything else. */
     normal: text("normal").notNull(),
     /** Cached balance in the account's normal direction; always equal to the sum of its entries. */
     balanceMinor: bigint("balance_minor", { mode: "number" }).notNull().default(0),
@@ -137,6 +144,10 @@ export const ledgerOrderMoney = pgTable(
     reserveMinor: bigint("reserve_minor", { mode: "number" }).notNull(),
     refundedMinor: bigint("refunded_minor", { mode: "number" }).notNull().default(0),
     commissionRefundedMinor: bigint("commission_refunded_minor", { mode: "number" }).notNull().default(0),
+    /** The live courier rate the shopper paid on this order (Yard's, in shipping_collected; never the brand's). */
+    courierShippingMinor: bigint("courier_shipping_minor", { mode: "number" }).notNull().default(0),
+    /** The part of courierShippingMinor refunded so far. */
+    courierShippingRefundedMinor: bigint("courier_shipping_refunded_minor", { mode: "number" }).notNull().default(0),
     status: text("status").notNull().default("captured"),
     capturedAt: tz("captured_at").notNull().defaultNow(),
     completedAt: tz("completed_at"),
@@ -152,6 +163,7 @@ export const ledgerOrderMoney = pgTable(
     oneOf("ledger_order_money_status_ck", "status", ORDER_MONEY_STATUSES),
     oneOf("ledger_order_money_tier_ck", "tier", BRAND_TIERS),
     check("ledger_order_money_amounts_ck", raw("gross_minor > 0 and commission_minor >= 0 and pending_minor >= 0 and reserve_minor >= 0 and refunded_minor between 0 and gross_minor")),
+    check("ledger_order_money_courier_ck", raw("courier_shipping_minor >= 0 and courier_shipping_minor <= gross_minor and courier_shipping_refunded_minor between 0 and courier_shipping_minor")),
   ],
 )
 

@@ -1,5 +1,5 @@
 import type { AddressDraft, ContactDraft, PaymentDraft } from "./rules"
-import type { ShippingMethod } from "./shipping"
+import type { ShippingChoice } from "./shipping"
 
 /*
  * The checkout draft: what the shopper has typed so far, kept for this tab only
@@ -18,7 +18,7 @@ export type CheckoutDraft = {
   furthest: number
   contact: ContactDraft
   address: AddressDraft
-  shipping: Record<string, ShippingMethod>
+  shipping: Record<string, ShippingChoice>
   payment: PaymentDraft
   /**
    * The checkout attempt's idempotency key (§6.5): a retry after a reload, when the first answer

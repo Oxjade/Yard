@@ -31,6 +31,7 @@ import { oauthStates, sessions } from "../db/schema/people"
 import { notifications } from "../db/schema/platform"
 import { abuseAlerts, accountRestrictions, reports } from "../db/schema/safety"
 import { shippingClosures, shippingMethods, shippingProfiles, shippingZones } from "../db/schema/shipping"
+import { courierQuotes, courierSettings } from "../db/schema/courier"
 import { socialAccounts, socialPosts } from "../db/schema/social"
 
 /**
@@ -275,6 +276,9 @@ export const BRAND_FK_COLUMNS = [
   "chart_events.brand_id",
   "chart_flags.brand_id",
   "conversations.brand_id",
+  "courier_quotes.brand_id",
+  "courier_settings.brand_id",
+  "courier_shipments.brand_id",
   "delivery_complaints.brand_id",
   "drops.brand_id",
   "ledger_brand_settings.brand_id",
@@ -375,6 +379,8 @@ export async function eraseBrandRows(d: Db, brandId: string): Promise<EraseResul
   await d.delete(shippingMethods).where(eq(shippingMethods.brandId, brandId))
   await d.delete(shippingZones).where(eq(shippingZones.brandId, brandId))
   await d.delete(shippingClosures).where(eq(shippingClosures.brandId, brandId))
+  await d.delete(courierQuotes).where(eq(courierQuotes.brandId, brandId))
+  await d.delete(courierSettings).where(eq(courierSettings.brandId, brandId))
   await d.delete(locationEvents).where(eq(locationEvents.brandId, brandId))
   r("places", await gone(d.delete(brandLocations).where(eq(brandLocations.brandId, brandId)).returning({ id: brandLocations.id })))
 
@@ -480,6 +486,10 @@ export async function closeBrandRows(d: Db, brandId: string, by: { userId: strin
   r("invitesRevoked", await gone(d.update(brandInvites).set({ status: "revoked", revokedAt: now, revokedBy: by.userId }).where(and(eq(brandInvites.brandId, brandId), eq(brandInvites.status, "pending"))).returning({ id: brandInvites.id })))
   await d.delete(studioPushPreferences).where(eq(studioPushPreferences.brandId, brandId))
   await d.delete(authAppHandoffs).where(eq(authAppHandoffs.brandId, brandId))
+  // Courier pickup details (contact, address) and cached rates: nothing ships from a closed brand.
+  // Booked courier shipments stay with their orders.
+  await d.delete(courierQuotes).where(eq(courierQuotes.brandId, brandId))
+  await d.delete(courierSettings).where(eq(courierSettings.brandId, brandId))
   // Social access ends: the caller disconnects through SOCIAL first (tokens deleted, providers told
   // after commit); this marks any account left. Website watch and Yard's open suggestions stop.
   await d.update(socialAccounts).set({ status: "disconnected" }).where(eq(socialAccounts.brandId, brandId))

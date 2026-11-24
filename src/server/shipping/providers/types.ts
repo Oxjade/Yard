@@ -45,6 +45,10 @@ export type QuoteOption = {
   /** Only a carrier that declares `guaranteedDates` and returns a date may set this; none does in this build. */
   guaranteed: false
   pickup?: { name: string; area: string }
+  /** What the shopper picks (the service for manual rates; "c:{courier}:{service}" for a courier rate). */
+  key?: string
+  /** A live courier rate (docs/SHIPPING.md). `quoteId` and the rest stay server side; the DTO carries name, image, eta and expiry. */
+  courier?: { provider: string; quoteId: string; courierId: string; serviceCode: string; name: string; image: string | null; eta: string | null; expiresAt: string; amountMinor: number; currency: string }
 }
 
 /** A tracking update from a carrier (future: feeds shipment_events with source 'carrier'). */

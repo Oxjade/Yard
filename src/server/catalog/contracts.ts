@@ -53,6 +53,8 @@ const productFields = {
   priceMinor: minor,
   compareAtMinor: minor.nullable().optional(),
   processingDays: z.tuple([z.number().int().min(0).max(60), z.number().int().min(0).max(60)]).nullable().optional(),
+  /** Packed weight of one piece in grams, for live courier rates (docs/SHIPPING.md); null = the brand's default. */
+  weightGrams: z.number().int().min(1, { error: "At least 1 g." }).max(70_000, { error: "At most 70 kg." }).nullable().optional(),
   dropId: safeId().nullable().optional(),
   options: z.array(option).max(3),
   variants: z.array(variantInput).min(1, { error: "Add at least one variant." }).max(200),

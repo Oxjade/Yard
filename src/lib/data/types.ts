@@ -183,6 +183,8 @@ export type Product = {
   publishAt?: string
   /** Overrides the brand's processing time for this product, in business days [min, max]. */
   processingDays?: [number, number]
+  /** Packed weight of one piece in grams (live courier rates); unset = the brand's default parcel. */
+  weightGrams?: number
   collectionIds: string[]
   dropId?: string
   stats: { views7d: number; wishlists: number; sales30d: number; trend: number }

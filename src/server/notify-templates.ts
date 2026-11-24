@@ -72,6 +72,11 @@ export const templates = {
   "delivery.complaint_reply": { category: "delivery_update", build: (v) => ({ title: `${s(v.brand)} replied about your delivery`, body: "Open your order to read it." }) },
   "delivery.admin_issue": { category: "shipping_issue", build: (v) => ({ title: `Delivery issue: ${s(v.kind, "late order")}`, body: `Order ${s(v.reference)} with ${s(v.brand)}.` }) },
   "delivery.resolved": { category: "delivery_update", build: (v) => ({ title: `Your delivery issue on ${s(v.reference)} is resolved`, body: "Open your order for the details." }) },
+  // Courier shipping (docs/SHIPPING.md): the courier's own updates.
+  "delivery.delivered": { category: "delivery_update", build: (v) => ({ title: `Your order from ${s(v.brand, "the brand")} was delivered`, body: `${s(v.courier, "The courier")} marked it delivered. Something wrong? Tell the brand from your order.` }) },
+  "delivery.courier_wallet_low": { category: "shipping_issue", build: (v) => ({ title: `Courier wallet low: ${s(v.amount)}`, body: `Top up ${s(v.provider, "the courier wallet")} so brands can keep booking pickups.` }) },
+  // To the brand: `step` is "picked up", "delivered" or "cancelled by the courier".
+  "delivery.courier_for_brand": { category: "delivery_update", build: (v) => ({ title: `Order ${s(v.reference)}: ${s(v.step, "courier update")}`, body: `${s(v.courier, "The courier")}${v.tracking ? `, tracking ${s(v.tracking)}` : ""}.` }) },
   // A parcel that came back to the brand (shipment event `returned`, D's caller).
   "delivery.returned": { category: "delivery_update", build: (v) => ({ title: `${s(v.brand)} says your parcel came back to them`, body: "Open your order for what happens next." }) },
   // Social (S)

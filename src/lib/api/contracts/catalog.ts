@@ -17,6 +17,7 @@ export type StudioProductDto = {
   variants: { id: string; sku: string; options: Record<string, string>; label: string; priceMinor: number; available: number; inStock: boolean; status: string; onHand: number; held: number; priceOverrideMinor: number | null }[]
   available: number
   processingDays: [number, number] | null
+  weightGrams?: number | null
   dropId: string | null
   collectionIds: string[]
   publishedAt: string | null
@@ -51,6 +52,7 @@ export type StudioProductCreateBody = {
   priceMinor: number
   compareAtMinor?: number | null
   processingDays?: [number, number] | null
+  weightGrams?: number | null
   dropId?: string | null
   options?: { name: string; values: { value: string; hex?: string }[] }[]
   variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number }[]

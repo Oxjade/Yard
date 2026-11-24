@@ -17,7 +17,8 @@ const REFRESH_MS = 20 * 60_000
  * shows "Calculating shipping" only while `isLoading`, and its error state after a failure.
  * The quote is fetched for exactly these lines (no previous bag's quote is kept on screen).
  */
-export function useShippingQuote(lines: CartLine[], shipTo: CountryCode, shipToCity: string | null, currency: CurrencyCode, opts: { enabled?: boolean } = {}) {
+export function useShippingQuote(lines: CartLine[], shipTo: CountryCode, shipToCity: string | null, currency: CurrencyCode, opts: { enabled?: boolean; address?: QuoteBody["address"] | null } = {}) {
+  const address = opts.address ?? null
   const body = useMemo<QuoteBody | null>(() => {
     const byBrand = new Map<string, QuoteBody["groups"][number]>()
     for (const l of lines) {
@@ -28,8 +29,8 @@ export function useShippingQuote(lines: CartLine[], shipTo: CountryCode, shipToC
       byBrand.set(hit.product.brandId, g)
     }
     if (!byBrand.size) return null
-    return { to: shipTo, ...(shipToCity ? { city: shipToCity } : {}), currency, groups: [...byBrand.values()] }
-  }, [lines, shipTo, shipToCity, currency])
+    return { to: shipTo, ...(shipToCity ? { city: shipToCity } : {}), currency, groups: [...byBrand.values()], ...(address ? { address } : {}) }
+  }, [lines, shipTo, shipToCity, currency, address])
 
   const key = opts.enabled === false || !body ? null : `shipping:quote:${JSON.stringify(body)}`
   const q = useApi(key, () => postQuote(body!), { revalidateOnFocus: false, refreshInterval: REFRESH_MS, keepPrevious: false })

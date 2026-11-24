@@ -37,6 +37,8 @@ export type PublicProductDto = {
   variants: VariantDto[]
   available: number
   processingDays: [number, number] | null
+  /** Packed weight of one piece (grams), for courier rates; null = the brand's default. */
+  weightGrams: number | null
   dropId: string | null
   collectionIds: string[]
   publishedAt: string | null
@@ -114,6 +116,7 @@ function base(p: ProductRow, kids: Loaded, as?: "brand") {
     images: (kids.images.get(p.id) ?? []).map((i, n) => imageDto(i, as, p.title, n)),
     options: (kids.options.get(p.id) ?? []).map((o) => ({ name: o.name, values: o.values })),
     processingDays: p.processingMin != null && p.processingMax != null ? ([p.processingMin, p.processingMax] as [number, number]) : null,
+    weightGrams: p.weightGrams ?? null,
     // Production never points a piece at a sample drop (a demo-seeded database's link).
     dropId: p.dropId && !refusedSampleDrop(p.dropId) ? p.dropId : null,
     collectionIds: kids.collections.get(p.id) ?? [],

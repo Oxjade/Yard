@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 import type { BrandGroup } from "@/lib/cart"
 import { ArrivalChip, ShippingAmount, type QuoteState } from "@/components/market/delivery/delivery-bits"
 import { Bone } from "@/components/feedback/skeletons"
-import { chosenOption, shippingMethodLabel, type ShippingMethod } from "./shipping"
+import { chosenOption, shippingMethodLabel, type ShippingChoice } from "./shipping"
 
 /** Shipping and total are null until every brand has a quote (§6.5): never a number of our own. */
 export type CheckoutTotals = { subtotal: number; shipping: number | null; total: number | null; count: number }
@@ -23,7 +23,7 @@ type SummaryProps = {
   totals: CheckoutTotals
   currency: CurrencyCode
   shipTo: CountryCode
-  methodFor: (brandId: string) => ShippingMethod
+  methodFor: (brandId: string) => ShippingChoice
   quote: QuoteState
 }
 
@@ -69,7 +69,7 @@ function SummaryLines({ groups, currency, methodFor, quote }: Pick<SummaryProps,
             </ul>
             <div className="mt-3 grid gap-1.5 border-t border-line-soft pt-2.5 text-xs text-ink-2">
               <div className="flex min-h-4 items-center justify-between gap-3">
-                <span>{option ? (option.service === "pickup" ? option.label : `${shippingMethodLabel[option.service]} shipping`) : "Shipping"}</span>
+                <span>{option ? (option.service === "pickup" ? option.label : option.courier ? `${option.label} courier` : `${shippingMethodLabel[option.service]} shipping`) : "Shipping"}</span>
                 {option ? (
                   money(option.price.amount, currency, "text-xs text-ink-2")
                 ) : g.quote ? (

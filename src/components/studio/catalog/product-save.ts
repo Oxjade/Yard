@@ -34,6 +34,7 @@ export function liveProductBody(form: ProductForm, ctx: { brand: Brand; product?
     priceMinor: parseMoney(form.price, currency)!,
     compareAtMinor: form.compareAt.trim() ? parseMoney(form.compareAt, currency) : null,
     processingDays: [Number(form.processingMin), Number(form.processingMax)],
+    weightGrams: weightGramsOf(form.weightKg),
     dropId: product?.dropId ?? null,
     options: buildOptions(form).map((option) =>
       option.name === "Size"
@@ -109,6 +110,7 @@ export function localProductFrom(form: ProductForm, ctx: { brand: Brand; profile
     publishAt: publishAt ?? undefined,
     // Only a product that differs from the brand's default keeps its own processing time.
     processingDays: ownDays ? days : undefined,
+    weightGrams: weightGramsOf(form.weightKg) ?? undefined,
     collectionIds: form.collectionIds.filter((cid) => collections.some((c) => c.id === cid)),
     dropId: product?.dropId,
     stats: product?.stats ?? { views7d: 0, wishlists: 0, sales30d: 0, trend: 0 },
@@ -124,3 +126,9 @@ export async function publishLiveProduct(id: string, version: number): Promise<S
 
 /** The words for a failed publish. */
 export const publishError = (cause: unknown) => (cause instanceof ApiError || (cause instanceof Error && !(cause instanceof TypeError)) ? cause.message : "Check your connection and try again.")
+
+/** "0.45" kg → 450 g; empty → null (the brand's default parcel weight). */
+function weightGramsOf(kg: string): number | null {
+  const n = Number(kg.replace(",", ".").trim())
+  return kg.trim() && Number.isFinite(n) && n > 0 ? Math.max(1, Math.round(n * 1000)) : null
+}

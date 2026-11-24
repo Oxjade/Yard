@@ -37,9 +37,11 @@ export async function commissionBpsFor(tx: Executor, brandId: string): Promise<n
  * goes to platform_commission; the brand's net is split between brand_pending and brand_reserve
  * by tier. Provider clearing is debited with the gross. Idempotent per (paymentId, orderId).
  */
-export async function postPaymentCaptured(tx: Tx, input: { paymentId: string; orderId: string; brandId: string; currency: string; grossMinor: number }): Promise<void> {
+export async function postPaymentCaptured(tx: Tx, input: { paymentId: string; orderId: string; brandId: string; currency: string; grossMinor: number; courierShippingMinor?: number }): Promise<void> {
   assertCurrency(input.currency)
   if (!isMinor(input.grossMinor) || input.grossMinor <= 0) throw new LedgerError("grossMinor must be a positive integer")
+  const courier = input.courierShippingMinor ?? 0
+  if (!isMinor(courier) || courier < 0 || courier > input.grossMinor) throw new LedgerError("courierShippingMinor must be an integer between 0 and the gross")
   const [already] = await tx.select().from(ledgerOrderMoney).where(eq(ledgerOrderMoney.orderId, input.orderId))
   if (already) {
     if (already.paymentId !== input.paymentId) {
@@ -55,8 +57,11 @@ export async function postPaymentCaptured(tx: Tx, input: { paymentId: string; or
   const commissionBps = await commissionBpsFor(tx, input.brandId)
   const tier = await brandTier(tx, input.brandId)
   const reserveBps = ledgerConfig.reserves[tier].bps
-  const commission = Math.min(input.grossMinor, bpsOf(input.grossMinor, commissionBps))
-  const net = input.grossMinor - commission
+  // A live courier rate (docs/SHIPPING.md) is Yard's: it goes to shipping_collected, never to the
+  // brand, and commission is taken on the brand's part only.
+  const brandGross = input.grossMinor - courier
+  const commission = Math.min(brandGross, bpsOf(brandGross, commissionBps))
+  const net = brandGross - commission
   const reserve = Math.min(net, bpsOf(net, reserveBps))
   const pending = net - reserve
   const c = input.currency
@@ -66,6 +71,7 @@ export async function postPaymentCaptured(tx: Tx, input: { paymentId: string; or
     { account: platformAccount("platform_commission", c), direction: "credit", amount: commission },
     { account: brandAccount(input.brandId, "brand_pending", c), direction: "credit", amount: pending },
     { account: brandAccount(input.brandId, "brand_reserve", c), direction: "credit", amount: reserve },
+    { account: platformAccount("shipping_collected", c), direction: "credit", amount: courier },
   ]
   const res = await post(tx, {
     kind: "payment_captured",
@@ -90,6 +96,7 @@ export async function postPaymentCaptured(tx: Tx, input: { paymentId: string; or
     reserveBps,
     pendingMinor: pending,
     reserveMinor: reserve,
+    courierShippingMinor: courier,
   })
 }
 
@@ -115,9 +122,15 @@ export async function postRefund(tx: Tx, input: { refundId: string; orderId: str
   const remaining = om.grossMinor - om.refundedMinor
   if (input.amountMinor > remaining) throw new LedgerError(`refund ${input.amountMinor} exceeds the refundable ${remaining}`)
   const full = input.amountMinor === remaining
+  // Courier shipping (Yard's) comes back last: a refund takes the brand's part first, and only what
+  // is left over comes out of shipping_collected (a full refund returns the shipping too).
+  const split = splitRefund(om, input.amountMinor)
+  const brandAmount = split.brandMinor
+  const shippingBack = split.shippingMinor
   const commissionLeft = om.commissionMinor - om.commissionRefundedMinor
-  const commissionBack = full ? commissionLeft : Math.min(commissionLeft, Math.round((input.amountMinor * om.commissionMinor) / om.grossMinor))
-  const brandShare = input.amountMinor - commissionBack
+  const brandGross = om.grossMinor - om.courierShippingMinor
+  const commissionBack = split.brandFull ? commissionLeft : brandGross > 0 ? Math.min(commissionLeft, Math.round((brandAmount * om.commissionMinor) / brandGross)) : 0
+  const brandShare = brandAmount - commissionBack
   const fromPending = Math.min(om.pendingMinor, brandShare)
   const fromReserve = Math.min(om.reserveReleasedAt ? 0 : om.reserveMinor, brandShare - fromPending)
   const fromAvailable = brandShare - fromPending - fromReserve
@@ -137,6 +150,7 @@ export async function postRefund(tx: Tx, input: { refundId: string; orderId: str
       { account: brandAccount(om.brandId, "brand_pending", c), direction: "debit", amount: fromPending },
       { account: brandAccount(om.brandId, "brand_reserve", c), direction: "debit", amount: fromReserve },
       { account: brandAccount(om.brandId, "brand_available", c), direction: "debit", amount: fromAvailable },
+      { account: platformAccount("shipping_collected", c), direction: "debit", amount: shippingBack },
       { account: platformAccount("provider_clearing", c), direction: "credit", amount: input.amountMinor },
     ],
   })
@@ -144,12 +158,48 @@ export async function postRefund(tx: Tx, input: { refundId: string; orderId: str
     .update(ledgerOrderMoney)
     .set({
       refundedMinor: om.refundedMinor + input.amountMinor,
+      courierShippingRefundedMinor: om.courierShippingRefundedMinor + shippingBack,
       commissionRefundedMinor: om.commissionRefundedMinor + commissionBack,
       pendingMinor: om.pendingMinor - fromPending,
       reserveMinor: om.reserveMinor - fromReserve,
       status: full ? "refunded" : om.status,
     })
     .where(eq(ledgerOrderMoney.orderId, om.orderId))
+}
+
+/** How a refund splits between the brand's part of the order and Yard's courier shipping (brand first). */
+export function splitRefund(om: { grossMinor: number; refundedMinor: number; courierShippingMinor: number; courierShippingRefundedMinor: number }, amountMinor: number) {
+  const brandGross = om.grossMinor - om.courierShippingMinor
+  const brandRefunded = om.refundedMinor - om.courierShippingRefundedMinor
+  const brandLeft = Math.max(0, brandGross - brandRefunded)
+  const brandMinor = Math.min(amountMinor, brandLeft)
+  const shippingMinor = amountMinor - brandMinor
+  if (shippingMinor > om.courierShippingMinor - om.courierShippingRefundedMinor) throw new LedgerError("refund exceeds what's left of the order")
+  return { brandMinor, shippingMinor, brandFull: brandMinor === brandLeft }
+}
+
+/**
+ * Yard's courier wallet paid for a booked pickup (docs/SHIPPING.md): Dr shipping_spent, Cr
+ * courier_wallet, in the provider's currency. Nothing touches the brand's accounts or the payment
+ * provider's clearing account. Idempotent per shipment.
+ */
+export async function postCourierBooked(tx: Tx, input: { shipmentId: string; orderId: string; brandId: string; currency: string; costMinor: number; actor?: { kind: "brand" | "admin" | "system"; id?: string | null } }): Promise<void> {
+  assertCurrency(input.currency)
+  if (!isMinor(input.costMinor) || input.costMinor < 0) throw new LedgerError("costMinor must be a non-negative integer")
+  if (input.costMinor === 0) return
+  await post(tx, {
+    kind: "courier_booked",
+    idempotencyKey: `courier:${input.shipmentId}`,
+    currency: input.currency,
+    brandId: input.brandId,
+    orderId: input.orderId,
+    memo: "Courier pickup booked",
+    actor: input.actor,
+    legs: [
+      { account: platformAccount("shipping_spent", input.currency), direction: "debit", amount: input.costMinor },
+      { account: platformAccount("courier_wallet", input.currency), direction: "credit", amount: input.costMinor },
+    ],
+  })
 }
 
 /**

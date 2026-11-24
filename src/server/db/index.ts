@@ -22,6 +22,8 @@ export async function warmUp() {
   // Which payments this process takes, once at startup (YARD_PAYMENTS).
   const { paymentsStartupLine } = await import("../payments/config")
   log.once("payments-mode", "info", paymentsStartupLine())
+  const { courierStartupLine } = await import("../shipping/providers/courier")
+  log.once("courier-mode", "info", courierStartupLine())
   // App attestation mode and which platforms are configured (a platform without settings is off).
   const { logAttestConfig } = await import("../app-attest")
   logAttestConfig()

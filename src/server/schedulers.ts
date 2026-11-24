@@ -107,6 +107,7 @@ export function startSchedulers() {
     await runFeatureJob("social", "syncDue")
   })
   every(11 * MIN, HOUR, () => runFeatureJob("shipping", "checkLate"))
+  every(27 * MIN, HOUR, () => runFeatureJob("shipping", "courierHourly"))
   // Backend v3. All local database work and in-process timers: no paid service is called
   // unless a live provider key (Paystack, email) is configured.
   every(17 * MIN, HOUR, async () => {

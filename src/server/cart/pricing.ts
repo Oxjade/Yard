@@ -6,6 +6,8 @@ import { sampleOff } from "../catalog/sample-guard"
 import { convert } from "@/lib/money"
 import { getSellableVariants } from "../catalog"
 import { HttpError, badRequest } from "../http/errors"
+import type { CourierChoice } from "../shipping/courier-core"
+import type { ShopperAddress } from "../shipping/courier-quote"
 import { isCountry, isCurrency, quoteBrand, type PricedLine } from "../shipping/quote"
 
 /**
@@ -142,20 +144,34 @@ export type ShippingOption = {
   currency: string
   free: boolean
   estimate?: unknown
+  /** What the shopper picks: the service, or "c:{courier}:{service}" for a live courier rate. */
+  key: string
+  transit?: [number, number]
 }
 
-export type GroupQuote = { brandId: string; brandName: string; unavailable: boolean; reason?: string; options: ShippingOption[] }
+export type GroupQuote = {
+  brandId: string
+  brandName: string
+  unavailable: boolean
+  reason?: string
+  options: ShippingOption[]
+  /** Live courier rates by option key (checkout only; server side, never sent to the browser). */
+  courier?: Record<string, CourierChoice>
+}
 
 /** Quotes one brand group to a destination, prices in `currency`. A brand without shipping set up comes back unavailable. */
-export async function quoteGroup(group: BrandGroup, to: CountryCode, city: string | null | undefined, currency: CurrencyCode, now = Date.now()): Promise<GroupQuote> {
+export async function quoteGroup(group: BrandGroup, to: CountryCode, city: string | null | undefined, currency: CurrencyCode, now = Date.now(), address?: ShopperAddress | null): Promise<GroupQuote> {
   try {
-    const q = await quoteBrand({ brandId: group.brandId, lines: group.lines.map(engineLine), to, city, currency, now })
+    const q = await quoteBrand({ brandId: group.brandId, lines: group.lines.map(engineLine), to, city, currency, now, address })
+    const courier: Record<string, CourierChoice> = {}
+    for (const [key, c] of q.courier) courier[key] = { provider: c.provider, quoteId: c.quoteId, courierId: c.courierId, serviceCode: c.serviceCode, name: c.name, amountMinor: c.amountMinor, currency: c.currency, eta: c.eta }
     return {
       brandId: group.brandId,
       brandName: q.s.brand.name,
       unavailable: q.unavailable,
       reason: q.reason,
-      options: q.options.map((o) => ({ service: o.service, label: o.label, available: o.available, reason: o.reason, priceMinor: o.price.amount, currency: o.price.currency, free: !!o.free, estimate: o.estimate })),
+      options: q.options.map((o) => ({ service: o.service, label: o.label, available: o.available, reason: o.reason, priceMinor: o.price.amount, currency: o.price.currency, free: !!o.free, estimate: o.estimate, key: o.key ?? o.service, transit: o.transit })),
+      ...(Object.keys(courier).length ? { courier } : {}),
     }
   } catch (e) {
     if (e instanceof HttpError && (e.status === 503 || e.status === 404)) {

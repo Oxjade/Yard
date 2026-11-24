@@ -380,6 +380,8 @@ export type LedgerCurrencyRow = {
   providerClearingMinor: number
   commissionMinor: number
   adjustmentsMinor: number
+  /** Live courier rates shoppers paid (Yard's, docs/SHIPPING.md): also sits at the payment provider. */
+  shippingCollectedMinor?: number
   brandPendingMinor: number
   brandAvailableMinor: number
   brandReserveMinor: number
@@ -391,7 +393,7 @@ export type ReconLine = {
   currency: string
   bachs: { availableMinor: number; pendingMinor: number; totalMinor: number } | null
   /** Yard's ledger: money at the provider (provider_clearing) = owed to brands + commission + adjustments. */
-  ledger: { atProviderMinor: number; owedToBrandsMinor: number; commissionMinor: number; adjustmentsMinor: number }
+  ledger: { atProviderMinor: number; owedToBrandsMinor: number; commissionMinor: number; adjustmentsMinor: number; shippingCollectedMinor?: number }
   /** Bachs total − ledger at provider (null when not comparable). */
   differenceMinor: number | null
   status: ReconStatus
@@ -428,9 +430,10 @@ export function reconcileBachs(balances: BachsBalances | null, ledger: LedgerCur
       owedToBrandsMinor: r ? r.brandPendingMinor + r.brandAvailableMinor + r.brandReserveMinor + r.brandInPayoutMinor : 0,
       commissionMinor: r?.commissionMinor ?? 0,
       adjustmentsMinor: r?.adjustmentsMinor ?? 0,
+      ...(r?.shippingCollectedMinor ? { shippingCollectedMinor: r.shippingCollectedMinor } : {}),
     }
     const bal = held.get(c)
-    const ledgerEmpty = !r || (l.atProviderMinor === 0 && l.owedToBrandsMinor === 0 && l.commissionMinor === 0 && l.adjustmentsMinor === 0)
+    const ledgerEmpty = !r || (l.atProviderMinor === 0 && l.owedToBrandsMinor === 0 && l.commissionMinor === 0 && l.adjustmentsMinor === 0 && !l.shippingCollectedMinor)
     if (!balances) {
       if (ledgerEmpty && !HELD.includes(c)) continue
       lines.push({ currency: c, bachs: null, ledger: l, differenceMinor: null, status: "unavailable", message: "Bachs balance unavailable, so nothing is compared.", note: null })

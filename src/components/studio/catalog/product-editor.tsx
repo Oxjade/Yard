@@ -971,6 +971,9 @@ export function ProductEditor({ product, brand: profile, server }: { product?: P
                 )
               )}
             </fieldset>
+            <Field id="pf-weight" label="Packed weight (kg)" optional error={errors.weight} hint="One piece, packed. Couriers price by weight; leave it empty to use your default from Shipping & fulfilment." className="mt-4">
+              <Input {...control("pf-weight", errors.weight, true)} inputMode="decimal" value={form.weightKg} onChange={(e) => patch({ weightKg: e.target.value.replace(/[^\d.,]/g, "").slice(0, 6) })} placeholder="0.5" className={cn(inputClass, "w-28 tabular")} />
+            </Field>
           </Panel>
         </div>
 

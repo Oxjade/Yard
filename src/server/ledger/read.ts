@@ -261,6 +261,9 @@ export async function financeOverview() {
         providerClearingMinor: p("provider_clearing"),
         commissionMinor: p("platform_commission"),
         adjustmentsMinor: p("platform_adjustments"),
+        /** Courier shipping (Yard's, docs/SHIPPING.md): what shoppers paid, and what the courier wallet spent. */
+        shippingCollectedMinor: p("shipping_collected"),
+        shippingSpentMinor: p("shipping_spent"),
         brandPendingMinor: l("brand_pending"),
         brandAvailableMinor: l("brand_available"),
         brandReserveMinor: l("brand_reserve"),

@@ -618,3 +618,44 @@ export async function respondToComplaint(actor: BrandActor, order: OrderRefRow, 
     return toComplaintDto(row, "brand", await screensFor([c.id]))
   })
 }
+
+/* ---------- Courier updates (docs/SHIPPING.md) ---------- */
+
+/**
+ * A shipment step reported by the courier aggregator (booking, its webhook or a tracking poll),
+ * recorded like a brand's update but with source 'carrier'. Runs inside the caller's transaction.
+ * Moves the merchant status (shipped / delivered), recomputes the estimate, tells the shopper's
+ * open pages, and notifies them when it first ships (with the new estimate) and when it's
+ * delivered. Returns whether anything was recorded.
+ */
+export async function recordCarrierShipment(orderRefId: string, input: { status: "shipped" | "in_transit" | "delivered" | "exception"; carrier: string | null; trackingNumber: string | null; locationText?: string | null; occurredAt?: Date | null; brandName: string }) {
+  const d = await db()
+  const order = await d.query.orderRefs.findFirst({ where: (o, { eq }) => eq(o.id, orderRefId) })
+  if (!order) return { recorded: false as const }
+  const before = await eventsOf(order.id)
+  if (shipmentRefusal(order, before, input.status)) return { recorded: false as const }
+  const now = Date.now()
+  const at = input.occurredAt && input.occurredAt.getTime() <= now + 5 * 60_000 && input.occurredAt.getTime() >= order.placedAt.getTime() ? input.occurredAt : new Date(now)
+  const firstShip = input.status !== "exception" && input.status !== "delivered" ? !before.some((e) => SHIPPED.has(e.status)) : false
+  await d.insert(shipmentEvents).values({
+    id: newId("se"),
+    orderRefId: order.id,
+    status: input.status,
+    occurredAt: at,
+    carrier: input.carrier?.slice(0, 80) || null,
+    trackingNumber: input.trackingNumber?.toUpperCase().slice(0, 80) || null,
+    locationText: input.locationText?.slice(0, 120) || null,
+    source: "carrier",
+  })
+  const status = input.status === "delivered" ? "delivered" : SHIPPED.has(input.status) && PAID_STATES.includes(order.status) ? "shipped" : null
+  if (status) await d.update(orderRefs).set({ status }).where(eq(orderRefs.id, order.id))
+  const r = await recomputeOrder(order.id, `carrier:${input.status}`)
+  const estimate = estimateOnly(r.row)
+  const delivery = await deliveryFor({ ...order, status: status ?? order.status }, "brand")
+  await publish(channels.user(order.customerId), "order.estimate", { orderId: order.id, estimate, computedAt: delivery.estimate.computedAt, shippedOn: delivery.shippedOn })
+  const range = estimate.arrivalFrom && estimate.arrivalTo ? formatShortRange(estimate.arrivalFrom, estimate.arrivalTo) : "soon"
+  if (firstShip) await notify({ kind: "shopper", id: order.customerId }, { key: `shipped:${order.id}`, template: "delivery.shipped", vars: { brand: input.brandName, range }, href: `/you/orders/${order.id}` })
+  if (input.status === "delivered") await notify({ kind: "shopper", id: order.customerId }, { key: `delivered:${order.id}`, template: "delivery.delivered", vars: { brand: input.brandName, courier: input.carrier ?? undefined }, href: `/you/orders/${order.id}` })
+  if (input.status === "exception") await notifyLateOnce(order, input.brandName, range, now)
+  return { recorded: true as const, firstShip, range, order: { ...order, status: status ?? order.status } }
+}

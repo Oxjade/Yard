@@ -57,6 +57,8 @@ export const catalogProducts = pgTable(
     publishedAt: tz("published_at"),
     processingMin: integer("processing_min"),
     processingMax: integer("processing_max"),
+    /** Packed weight of one unit, for live courier rates (docs/SHIPPING.md); null = the brand's default parcel. */
+    weightGrams: integer("weight_grams"),
     /** ENGAGEMENT's drop id (not a foreign key: drops live in another area). */
     dropId: text("drop_id"),
     /** Admin moderation: hidden products never appear in public reads or sellable lookups. */
@@ -84,6 +86,7 @@ export const catalogProducts = pgTable(
     oneOf("catalog_products_moderation_ck", "moderation_status", PRODUCT_MODERATION),
     check("catalog_products_price_ck", raw("price_minor > 0 and (compare_at_minor is null or compare_at_minor > 0)")),
     check("catalog_products_processing_ck", raw("(processing_min is null and processing_max is null) or (processing_min >= 0 and processing_max >= processing_min)")),
+    check("catalog_products_weight_ck", raw("weight_grams is null or weight_grams between 1 and 70000")),
   ],
 )
 

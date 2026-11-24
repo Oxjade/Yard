@@ -287,6 +287,7 @@ export async function createProduct(actor: BrandActor, body: ProductCreateBody, 
       status: "draft",
       processingMin: body.processingDays ? Math.min(...body.processingDays) : null,
       processingMax: body.processingDays ? Math.max(...body.processingDays) : null,
+      weightGrams: body.weightGrams ?? null,
       dropId: body.dropId ?? null,
       createdAt: now,
       updatedAt: now,
@@ -333,6 +334,7 @@ export async function updateProduct(actor: BrandActor, productId: string, body: 
       patch.processingMin = body.processingDays ? Math.min(...body.processingDays) : null
       patch.processingMax = body.processingDays ? Math.max(...body.processingDays) : null
     }
+    if (body.weightGrams !== undefined) patch.weightGrams = body.weightGrams
     if (body.dropId !== undefined && body.dropId !== p.dropId) {
       await assertOwnDrop(tx, actor.brandId, body.dropId)
       patch.dropId = body.dropId

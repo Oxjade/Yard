@@ -25,4 +25,20 @@ export function invalidate(brandId?: string) {
   invalidateShippingCache(brandId)
 }
 
-export const jobs = { checkLate }
+/**
+ * Hourly (couriers, docs/SHIPPING.md): asks the provider about booked shipments with no news for
+ * 6 hours, checks the wallet balance (Admin is told once a day when it's low) and drops expired
+ * rate quotes. Nothing runs while YARD_SHIPPING_PROVIDER is off.
+ */
+export async function courierHourly(): Promise<void> {
+  const { getCourier } = await import("./providers")
+  if (!getCourier()) return
+  const { syncCourierShipments } = await import("./courier-book")
+  const { checkCourierWallet } = await import("./courier-admin")
+  const { purgeOldCourierQuotes } = await import("./courier-quote")
+  await syncCourierShipments()
+  await checkCourierWallet()
+  await purgeOldCourierQuotes()
+}
+
+export const jobs = { checkLate, courierHourly }

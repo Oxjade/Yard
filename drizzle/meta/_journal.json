@@ -253,6 +253,13 @@
       "when": 1795528569453,
       "tag": "0035_app_attest",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795537284434,
+      "tag": "0036_courier_shipping",
+      "breakpoints": true
     }
   ]
 }

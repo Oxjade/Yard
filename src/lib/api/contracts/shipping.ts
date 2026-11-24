@@ -63,6 +63,13 @@ export const quoteOptionDto = z.object({
   estimate: estimateDto.optional(),
   /** Pickup only: where the parcel is collected. */
   pickup: z.object({ name: z.string(), area: z.string() }).optional(),
+  /**
+   * What the shopper picks: the service for the brand's own rates, "c:{courier}:{service}" for a live
+   * courier rate. Absent from older answers (the service is the key then).
+   */
+  key: z.string().optional(),
+  /** A live courier rate (docs/SHIPPING.md): the courier, its own ETA words and until when the price is held. */
+  courier: z.object({ name: z.string(), image: z.string().nullable(), eta: z.string().nullable(), expiresAt: z.string() }).optional(),
 })
 export type QuoteOptionDto = z.infer<typeof quoteOptionDto>
 
@@ -123,6 +130,20 @@ export const quoteBody = z
     city: safeLine().trim().max(60).optional(),
     currency,
     groups: z.array(z.object({ brandId: idText(), lines: z.array(quoteLine).min(1).max(50) }).strict()).min(1).max(20),
+    /** The full delivery address (checkout, signed in): live courier rates need it. Ignored otherwise. */
+    address: z
+      .object({
+        name: safeLine().trim().min(1).max(80),
+        /** Ignored: the signed-in shopper's account email is used. */
+        email: z.string().trim().email().max(200).optional(),
+        phone: safeLine().trim().min(6).max(30),
+        line1: safeLine().trim().min(1).max(200),
+        city: safeLine().trim().min(1).max(80),
+        region: safeLine().trim().max(80).optional(),
+        postcode: safeLine().trim().max(20).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 export type QuoteBody = z.infer<typeof quoteBody>
@@ -137,6 +158,8 @@ export const quoteGroupDto = z.object({
   reason: z.string().optional(),
   /** Signed over brand, destination, lines, subtotal and the option prices; expires in 30 minutes. */
   quoteToken: z.string(),
+  /** This brand ships with a live courier: its prices appear once the delivery address is in (checkout). */
+  courierAtCheckout: z.boolean().optional(),
 })
 export type QuoteGroupDto = z.infer<typeof quoteGroupDto>
 
@@ -372,4 +395,102 @@ export const shippingRealtimeEvents = {
     computedAt: z.string().optional(),
     shippedOn: date.nullable().optional(),
   }),
+}
+
+/* ---------- Courier shipping (docs/SHIPPING.md) ---------- */
+
+/** PUT /api/studio/shipping/courier: where couriers collect from, and the default parcel. */
+export const courierSettingsBody = z
+  .object({
+    contactName: safeLine().trim().min(1, { error: "Add a contact name." }).max(120),
+    phone: safeLine()
+      .trim()
+      .regex(/^\+?[0-9 ()-]{6,24}$/, { error: "Enter a phone number the courier can call." }),
+    email: z.string().trim().email({ error: "Enter an email address." }).max(200),
+    address: safeLine().trim().min(5, { error: "Add the street address." }).max(300),
+    city: safeLine().trim().min(1, { error: "Add the city." }).max(80),
+    state: safeLine().trim().max(80).optional(),
+    country: country,
+    parcelWeightGrams: z.number().int().min(10, { error: "At least 10 g." }).max(70_000, { error: "At most 70 kg." }),
+    parcelLengthCm: z.number().int().min(1).max(300),
+    parcelWidthCm: z.number().int().min(1).max(300),
+    parcelHeightCm: z.number().int().min(1).max(300),
+  })
+  .strict()
+export type CourierSettingsBody = z.infer<typeof courierSettingsBody>
+
+export type CourierSettingsDto = {
+  /** A courier aggregator is connected on this deployment. */
+  available: boolean
+  provider: { id: string; label: string; sandbox: boolean } | null
+  /** Courier rates are offered only in this currency and from these countries. */
+  currency: string
+  originCountries: string[]
+  settings:
+    | (Omit<CourierSettingsBody, "state"> & { state: string; verified: boolean; formattedAddress: string | null; verifiedAt: string | null; updatedAt: string })
+    | null
+  /** Why shoppers don't see courier rates for this brand yet, when they don't. */
+  blocker: string | null
+  /** After a save: something the brand should know (the address was saved but couldn't be verified yet). */
+  notice?: string | null
+}
+
+/** GET /api/studio/orders/{id}/courier: the courier side of one order. */
+export type StudioCourierDto = {
+  /** The shopper paid a live courier rate on this order. */
+  courierOrder: boolean
+  choice: { name: string; amountMinor: number; currency: string; eta: string | null } | null
+  /** Why "Book pickup" isn't offered (null when it is, or once booked). */
+  refusal: string | null
+  shipment: {
+    id: string
+    status: string
+    courierName: string | null
+    trackingCode: string | null
+    trackingUrl: string | null
+    labelUrl: string | null
+    /** Yard's printable label for the parcel (always there once booked). */
+    printUrl: string
+    collectedMinor: number
+    costMinor: number | null
+    priceDiffMinor: number
+    requoted: boolean
+    currency: string
+    error: string | null
+    bookedAt: string | null
+  } | null
+}
+
+export const bookPickupBody = z.object({}).strict()
+
+/** GET /api/admin/delivery/couriers: Admin › Delivery › Couriers. */
+export type AdminCouriersDto = {
+  provider: { id: string; label: string; sandbox: boolean } | null
+  /** The provider's prepaid wallet, read-only (null when couriers are off). */
+  wallet: { amountMinor: number; currency: string; low: boolean; lowAtMinor: number; readAt: string } | { error: string } | null
+  absorbCapMinor: number
+  /** Ledger, per currency: what shoppers paid for courier rates vs what the courier wallet spent. */
+  totals: { currency: string; collectedMinor: number; spentMinor: number }[]
+  counts: Record<string, number>
+  shipments: {
+    id: string
+    orderId: string
+    reference: string
+    brand: string
+    status: string
+    courierName: string | null
+    trackingCode: string | null
+    trackingUrl: string | null
+    labelUrl: string | null
+    currency: string
+    collectedMinor: number
+    costMinor: number | null
+    priceDiffMinor: number
+    requoted: boolean
+    overCap: boolean
+    error: string | null
+    bookedAt: string | null
+    updatedAt: string
+  }[]
+  failures: { id: string; kind: string; detail: string | null; orderId: string | null; at: string }[]
 }

@@ -26,6 +26,7 @@ import { complaintKindLabels, DELIVERY_TABS, type DeliveryIssueDto, type Deliver
 import { useApi } from "@/lib/api/use-api"
 import { cn } from "@/lib/utils"
 import { useAdminSampleData } from "../sample"
+import { CouriersPanel } from "./couriers-panel"
 import { formatNumber } from "@/lib/money"
 import { LoadError, NotInQueue, RelatedLinks, ServerActivity, TrustActionBar, TrustGate, pushAudit, sheetTrack, useAdminSession, useQueueFigures, useQueueLive, useServerDecision, type TrustAction } from "./shared"
 
@@ -86,9 +87,10 @@ export function DeliveryView() {
         title="Delivery"
         description="Orders past their delivery estimate, complaints from shoppers, carrier exceptions and the holiday calendar."
         live={!sampleOn}
-        note={sampleOn ? "Order history is sample data anchored to 5 Nov 2026. Every date here is an estimate from the brand's settings; no carrier is connected in this build. Sample orders estimated after they were already late have no promise on record, so their days late aren't counted." : "Every date here is an estimate from the brand's settings; no carrier is connected in this build."}
+        note={sampleOn ? "Order history is sample data anchored to 5 Nov 2026. Every date here is an estimate from the brand's settings; no carrier is connected in this build. Sample orders estimated after they were already late have no promise on record, so their days late aren't counted." : "Every date here is an estimate. Courier orders follow the courier's own updates; the rest follow the brand's."}
       />
       <TrustGate feature="Delivery" anyOf={["shipping.view"]}>
+        <CouriersPanel />
         <DeliveryQueues />
       </TrustGate>
     </Reveal>

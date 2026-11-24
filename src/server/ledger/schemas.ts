@@ -47,7 +47,7 @@ export const brandSettingsBody = z.strictObject({
 export const ledgerQuery = z.strictObject({
   brandId: safeId().optional(),
   currency: currency.optional(),
-  account: z.enum(["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold", "platform_commission", "platform_adjustments", "provider_clearing"]).optional(),
+  account: z.enum(["brand_pending", "brand_available", "brand_reserve", "brand_payout_hold", "platform_commission", "platform_adjustments", "provider_clearing", "shipping_collected", "shipping_spent", "courier_wallet"]).optional(),
   before: entryCursor,
   limit,
 })

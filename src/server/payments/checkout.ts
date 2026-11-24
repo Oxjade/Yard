@@ -95,7 +95,16 @@ export const startCheckoutBody = z
       .strict(),
     /** One delivery choice per brand in the cart. */
     shipping: z
-      .array(z.object({ brandId: safeId(), service: z.enum(SHIPPING_SERVICES) }).strict())
+      .array(
+        z
+          .object({
+            brandId: safeId(),
+            service: z.enum(SHIPPING_SERVICES),
+            /** The option's key from the quote ("c:{courier}:{service}" for a live courier rate); the service decides without it. */
+            option: z.string().min(1).max(80).regex(/^[\w:.-]+$/).optional(),
+          })
+          .strict(),
+      )
       .min(1)
       .max(20),
     /** The total the shopper was shown. When sent and different, the checkout is refused with 409 and the new totals. */
@@ -265,18 +274,23 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
 
   // 2. Shipping per brand, through the shipping engine.
   const groups = groupByBrand(lines)
-  const choice = new Map(body.shipping.map((s) => [s.brandId, s.service]))
+  const choice = new Map(body.shipping.map((s) => [s.brandId, s]))
   const fields: Record<string, string> = {}
   for (const g of groups) if (!choice.has(g.brandId)) fields[`shipping.${g.brandId}`] = "Choose a delivery option for this brand."
   for (const s of body.shipping) if (!groups.some((g) => g.brandId === s.brandId)) fields[`shipping.${s.brandId}`] = "This brand isn't in your cart."
   if (Object.keys(fields).length) throw badRequest(fields)
 
   const now = Date.now()
+  // The address as checkout's delivery step quoted it, so a live courier price held for this
+  // shopper is found again (docs/SHIPPING.md). No phone: no courier rates.
+  const t = body.shipTo
+  const address = t.phone ? { name: t.name, email: actor.email, phone: t.phone, line1: [t.line1, t.line2].filter(Boolean).join(", "), city: t.city, region: t.region, postcode: t.postalCode, country: to } : null
   const priced = await Promise.all(
     groups.map(async (g) => {
-      const q = await quoteGroup(g, to, body.shipTo.city, currency, now)
-      const service = choice.get(g.brandId)!
-      const option = q.options.find((o) => o.service === service && o.available)
+      const q = await quoteGroup(g, to, body.shipTo.city, currency, now, address)
+      const chosen = choice.get(g.brandId)!
+      const service = chosen.service
+      const option = q.options.find((o) => o.available && (chosen.option ? o.key === chosen.option : o.service === service))
       if (!option) throw new HttpError(409, "conflict", "A delivery option changed. Choose again.", { [`shipping.${g.brandId}`]: q.reason ?? "This delivery option isn't available to your address." })
       const subtotalMinor = g.subtotalMinor
       return {
@@ -284,9 +298,10 @@ export async function startCheckout(actor: ShopperActor, body: StartCheckoutBody
         brandName: q.brandName,
         lines: g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId!, title: l.variantLabel ? `${l.title ?? ""} — ${l.variantLabel}` : (l.title ?? ""), qty: l.qty, unitMinor: l.unitMinor })),
         shippingMinor: option.priceMinor,
-        shippingService: service,
+        shippingService: option.service,
         subtotalMinor,
         totalMinor: subtotalMinor + option.priceMinor,
+        ...(q.courier?.[option.key] ? { courier: q.courier[option.key], shippingLabel: option.label, transit: option.transit } : {}),
       }
     }),
   )

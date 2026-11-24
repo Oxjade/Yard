@@ -29,7 +29,7 @@ import { useCheckoutOptions, usePaymentsMode } from "./payment-options"
 import { Bone } from "@/components/feedback/skeletons"
 import { RetryButton } from "@/components/market/delivery/delivery-bits"
 import { businessDays, formatDay } from "@/lib/shipping/format"
-import { arrivalRange, chosenOption, shippingMethodLabel, type ShippingMethod } from "./shipping"
+import { arrivalRange, chosenOption, optionKey, optionTitle, type ShippingChoice } from "./shipping"
 
 const selectClass = "w-full data-[size=default]:h-11"
 const dialPad: Record<number, string> = { 2: "pl-9", 3: "pl-11", 4: "pl-13" }
@@ -172,7 +172,7 @@ export function ShippingStep({
   groups: BrandGroup[]
   currency: CurrencyCode
   country: CountryCode
-  onChange: (brandId: string, method: ShippingMethod) => void
+  onChange: (brandId: string, choice: ShippingChoice) => void
   quote: QuoteStatus
   onRemoveBrand: (brandId: string) => void
 }) {
@@ -234,20 +234,20 @@ export function ShippingStep({
                 </Button>
               </div>
             ) : (
-              <OptionGroup value={option.service} onValueChange={(v) => onChange(g.brand.id, v as ShippingMethod)} label={`Shipping for ${g.brand.name}`} className={cn("mt-4", (g.options?.length ?? 0) > 1 && "sm:grid-cols-2")}>
+              <OptionGroup value={optionKey(option)} onValueChange={(v) => onChange(g.brand.id, v)} label={`Shipping for ${g.brand.name}`} className={cn("mt-4", (g.options?.length ?? 0) > 1 && "sm:grid-cols-2")}>
                 {(g.options ?? []).map((o) => {
                   const range = arrivalRange(o.estimate)
                   return (
                     <OptionCard
-                      key={o.service}
-                      value={o.service}
-                      checked={option.service === o.service}
+                      key={optionKey(o)}
+                      value={optionKey(o)}
+                      checked={optionKey(option) === optionKey(o)}
                       ringId={`ship-ring-${g.brand.id}`}
                       title={o.label}
                       description={
                         <>
                           {o.service === "pickup" ? (o.estimate?.arrivalFrom ? `Est. ready ${formatDay(o.estimate.arrivalFrom)}` : "Ready once packed") : range ? `Est. arrival ${range}` : "Estimated arrival unavailable"}
-                          <span className="block text-ink-3">{o.service === "pickup" ? "Collect from the brand's store" : `${businessDays(o.transit)} in transit`}</span>
+                          <span className="block text-ink-3">{o.service === "pickup" ? "Collect from the brand's store" : o.courier ? `Courier${o.courier.eta ? `: ${o.courier.eta}` : `, ${businessDays(o.transit)} in transit`}` : `${businessDays(o.transit)} in transit`}</span>
                         </>
                       }
                       aside={o.free ? "Free" : <Price amount={o.price.amount} currency={currency} />}
@@ -387,7 +387,7 @@ export function ReviewStep({
   groups: BrandGroup[]
   currency: CurrencyCode
   country: CountryCode
-  methodFor: (brandId: string) => ShippingMethod
+  methodFor: (brandId: string) => ShippingChoice
   onEdit: (step: number) => void
 }) {
   const rules = countryRules[country]
@@ -415,7 +415,7 @@ export function ReviewStep({
                 <span>{g.brand.name}</span>
                 {o ? (
                   <span className="text-ink-2">
-                    {o.service === "pickup" ? o.label : shippingMethodLabel[o.service]}
+                    {optionTitle(o)}
                     {range && o.service !== "pickup" ? `, est. arrival ${range}` : o.service === "pickup" && o.estimate?.arrivalFrom ? `, est. ready ${formatDay(o.estimate.arrivalFrom)}` : ""},{" "}
                     {o.free ? "free" : <Price amount={o.price.amount} currency={currency} className="text-ink-2" />}
                   </span>

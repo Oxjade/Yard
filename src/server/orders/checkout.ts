@@ -13,6 +13,7 @@ import { enqueueEmail } from "../email"
 import { badRequest, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { COURIER_PROVIDER_PREFIX, type CourierChoice } from "../shipping/courier-core"
 import { computeEstimate, estimateValues } from "../shipping/orders"
 import { addEvent, announce, assertAmbientTx, brandName, customerEmail, orderUrl, setMerchantStatus, updateState } from "./core"
 import { refundCancelledPaidOrder } from "./cancel"
@@ -22,7 +23,18 @@ import { money } from "./refunds"
 /* ---------- Contract input shapes (as written in the v3 brief) ---------- */
 
 export type CheckoutLineInput = { variantId: string; productId: string; title: string; qty: number; unitMinor: number }
-export type CheckoutGroupInput = { brandId: string; lines: CheckoutLineInput[]; shippingMinor: number; shippingService: string; subtotalMinor: number; totalMinor: number }
+export type CheckoutGroupInput = {
+  brandId: string
+  lines: CheckoutLineInput[]
+  shippingMinor: number
+  shippingService: string
+  subtotalMinor: number
+  totalMinor: number
+  /** A live courier rate the shopper chose (docs/SHIPPING.md): kept on the order for "Book pickup" and the ledger. */
+  courier?: CourierChoice
+  shippingLabel?: string
+  transit?: [number, number]
+}
 export type CreateOrdersInput = { checkoutId: string; customerId: string; currency: string; groups: CheckoutGroupInput[]; shipTo: unknown }
 
 const shipToSchema = z
@@ -83,6 +95,7 @@ export async function createOrdersFromCheckout(tx: Tx, input: CreateOrdersInput)
     }
     const subtotal = g.lines.reduce((s, l) => s + l.qty * l.unitMinor, 0)
     if (!isMinor(g.shippingMinor) || subtotal !== g.subtotalMinor || g.subtotalMinor + g.shippingMinor !== g.totalMinor) throw rule(`Checkout group ${i + 1}'s totals don't add up.`)
+    if (g.courier && (g.courier.currency !== input.currency || g.courier.amountMinor !== g.shippingMinor)) throw rule(`Checkout group ${i + 1}'s courier price doesn't match its shipping.`)
   }
 
   const now = new Date()
@@ -113,7 +126,15 @@ export async function createOrdersFromCheckout(tx: Tx, input: CreateOrdersInput)
         shipToCountry: shipTo.country,
         shipToCity: shipTo.city?.trim() || null,
         service: g.shippingService,
-        quoted: { price: { amount: g.shippingMinor, currency: input.currency } },
+        quoted: g.courier
+          ? {
+              price: { amount: g.shippingMinor, currency: input.currency },
+              providerId: `${COURIER_PROVIDER_PREFIX}${g.courier.provider}`,
+              label: g.shippingLabel ?? g.courier.name,
+              ...(g.transit ? { transit: g.transit } : {}),
+              courier: g.courier,
+            }
+          : { price: { amount: g.shippingMinor, currency: input.currency } },
         // order_refs.source only allows seed|browser today; v3 checkout orders are browser orders.
         source: "browser",
         createdAt: now,
@@ -286,9 +307,9 @@ export async function markCheckoutPaymentFailed(tx: Tx, input: { checkoutId: str
 export async function getOrderForMoney(
   tx: Tx,
   orderId: string,
-): Promise<{ orderId: string; brandId: string; customerId: string; currency: string; totalMinor: number; paymentId: string | null; status: string } | null> {
+): Promise<{ orderId: string; brandId: string; customerId: string; currency: string; totalMinor: number; paymentId: string | null; status: string; courierShippingMinor: number } | null> {
   const [row] = await tx
-    .select({ orderId: orderRefs.id, brandId: orderRefs.brandId, customerId: orderRefs.customerId, currency: orderRefs.currency, totalMinor: orderRefs.totalMinor, merchant: orderRefs.status, paymentId: orderStates.paymentId, payment: orderStates.paymentStatus })
+    .select({ orderId: orderRefs.id, brandId: orderRefs.brandId, customerId: orderRefs.customerId, currency: orderRefs.currency, totalMinor: orderRefs.totalMinor, shippingMinor: orderRefs.shippingMinor, quoted: orderRefs.quoted, merchant: orderRefs.status, paymentId: orderStates.paymentId, payment: orderStates.paymentStatus })
     .from(orderRefs)
     .leftJoin(orderStates, eq(orderStates.orderRefId, orderRefs.id))
     .where(eq(orderRefs.id, orderId))
@@ -296,6 +317,9 @@ export async function getOrderForMoney(
   if (!row) return null
   // `status` is the payment state (pending|paid|failed|partially_refunded|refunded); legacy orders without a state row read from the merchant status.
   const status = row.payment ?? (row.merchant === "refunded" ? "refunded" : row.merchant === "pending_payment" ? "pending" : "paid")
-  return { orderId: row.orderId, brandId: row.brandId, customerId: row.customerId, currency: row.currency, totalMinor: row.totalMinor, paymentId: row.paymentId ?? null, status }
+  // A live courier rate is Yard's money (docs/SHIPPING.md): the ledger keeps it out of the brand's share.
+  const courier = (row.quoted as { courier?: CourierChoice } | null)?.courier
+  const courierShippingMinor = courier && courier.currency === row.currency ? Math.min(row.shippingMinor, row.totalMinor) : 0
+  return { orderId: row.orderId, brandId: row.brandId, customerId: row.customerId, currency: row.currency, totalMinor: row.totalMinor, paymentId: row.paymentId ?? null, status, courierShippingMinor }
 }
 

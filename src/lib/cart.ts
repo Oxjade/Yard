@@ -60,14 +60,21 @@ export type BrandGroup = {
   shippingKnown: boolean
 }
 
-/** The option a bag or a review shows for a brand: the chosen service when it's offered, else standard, else the first parcel option. */
-export function optionFor(options: QuoteOptionDto[] | null | undefined, service?: ShippingService | null): QuoteOptionDto | null {
+/** What a shopper picks for a brand: the option's key (a live courier rate's "c:…", else the service). */
+export const optionKey = (o: Pick<QuoteOptionDto, "key" | "service">) => o.key ?? o.service
+
+/**
+ * The option a bag or a review shows for a brand: the chosen one (by key, or by service) when it's
+ * offered, else standard (the cheapest courier when couriers price it), else the first parcel option.
+ */
+export function optionFor(options: QuoteOptionDto[] | null | undefined, choice?: string | null): QuoteOptionDto | null {
   if (!options) return null
   const available = options.filter((o) => o.available)
-  return (service ? available.find((o) => o.service === service) : undefined) ?? available.find((o) => o.service === "standard") ?? available.find((o) => o.service !== "pickup") ?? null
+  const picked = choice ? (available.find((o) => optionKey(o) === choice) ?? available.find((o) => o.service === choice && !o.courier)) : undefined
+  return picked ?? available.find((o) => o.service === "standard") ?? available.find((o) => o.service !== "pickup") ?? null
 }
 
-export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: CurrencyCode, quotes?: Record<string, QuoteGroupDto> | null, chosen?: (brandId: string) => ShippingService | undefined) {
+export function priceCart(lines: CartLine[], shipTo: CountryCode, currency: CurrencyCode, quotes?: Record<string, QuoteGroupDto> | null, chosen?: (brandId: string) => string | undefined) {
   const groups = new Map<string, BrandGroup>()
   for (const line of lines) {
     const hit = variantById.get(line.variantId)

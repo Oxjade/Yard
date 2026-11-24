@@ -16,7 +16,9 @@ import { badRequest, notConfigured, notFound } from "../http/errors"
 import { hmacB64url, safeEqual } from "../security/crypto"
 import { keys } from "../security/keys"
 import { holidaysFor, loadBrandShipping, toRef, type BrandShipping } from "./profile"
-import { getProvider, type QuoteOption } from "./providers"
+import { mergeCourierOptions } from "./courier-core"
+import { courierOptionsFor, type ShopperAddress } from "./courier-quote"
+import { getProvider, zoneFor, type QuoteOption } from "./providers"
 
 export const QUOTE_TTL_MS = 30 * 60_000
 
@@ -91,20 +93,24 @@ export type BrandQuote = {
   subtotal: { amount: number; currency: CurrencyCode }
   calendars: { H: Calendar; T: Calendar }
   cutoffAt: string | null
+  /** The brand ships with a live courier, priced once the full address is known. */
+  courierAtCheckout: boolean
+  /** Server-side details of each courier option, by option key (the quote id never reaches the browser). */
+  courier: Map<string, NonNullable<QuoteOption["courier"]>>
 }
 
 /**
  * Prices and estimates one brand's lines to a destination: the provider's options (brand
  * currency), converted to the shopper's currency, each with an estimate from the engine.
  */
-export async function quoteBrand(input: { brandId: string; lines: PricedLine[]; to: CountryCode; city?: string | null; currency: CurrencyCode; now: number; releaseAtMs?: number }): Promise<BrandQuote> {
+export async function quoteBrand(input: { brandId: string; lines: PricedLine[]; to: CountryCode; city?: string | null; currency: CurrencyCode; now: number; releaseAtMs?: number; address?: ShopperAddress | null }): Promise<BrandQuote> {
   const s = await loadBrandShipping(input.brandId)
   if (!s) throw notConfigured("Delivery estimates aren't set up for this brand yet.")
   if (!brandListed(s.brand)) throw notFound()
   const brandCur = s.profile.currency as CurrencyCode
   const subtotalBrand = subtotalIn(input.lines, brandCur)
   const provider = getProvider(s.profile.providerId)
-  const raw: QuoteOption[] = await provider.quote({
+  const manual: QuoteOption[] = await provider.quote({
     brandId: s.brand.id,
     profile: s.profile,
     zones: s.zones,
@@ -113,6 +119,22 @@ export async function quoteBrand(input: { brandId: string; lines: PricedLine[]; 
     subtotal: { amount: subtotalBrand, currency: brandCur },
     lines: input.lines.map((l) => ({ productId: l.product.id, qty: l.qty })),
   })
+  // Live courier rates (docs/SHIPPING.md) replace the brand's own parcel rates when there are any;
+  // its store pickup stays. No courier answer (off, no address yet, provider down): manual rates.
+  const zone = zoneFor(s.zones, input.to)
+  const std = zone?.methods.find((m) => m.service === "standard")
+  const live = input.lines.length
+    ? await courierOptionsFor({
+        s,
+        lines: input.lines.map((l) => ({ productId: l.product.id, qty: l.qty, unitMinor: l.product.price, currency: l.product.currency })),
+        address: input.address ? { ...input.address, country: input.to } : null,
+        currency: input.currency,
+        now: input.now,
+        fallbackTransit: std ? [std.transitMin, Math.max(std.transitMin, std.transitMax)] : [1, 3],
+      })
+    : { options: [], atCheckout: false }
+  const raw: QuoteOption[] = mergeCourierOptions(manual, live.options)
+  const courier = new Map(live.options.filter((o) => o.courier && o.key).map((o) => [o.key!, o.courier!]))
   const calendars = await calendarsFor(s, input.to)
   const handling = groupHandling([s.profile.handlingMin, s.profile.handlingMax], input.lines.map((l) => ({ processingDays: l.product.processingDays })))
   const options: QuoteOptionDto[] = raw.map((o) => {
@@ -146,6 +168,8 @@ export async function quoteBrand(input: { brandId: string; lines: PricedLine[]; 
       guaranteed: false,
       estimate,
       pickup: o.pickup,
+      key: o.key ?? o.service,
+      ...(o.courier ? { courier: { name: o.courier.name, image: o.courier.image, eta: o.courier.eta, expiresAt: o.courier.expiresAt } } : {}),
     }
   })
   const available = options.filter((o) => o.available)
@@ -160,6 +184,8 @@ export async function quoteBrand(input: { brandId: string; lines: PricedLine[]; 
     subtotal: { amount: subtotalIn(input.lines, input.currency), currency: input.currency },
     calendars,
     cutoffAt: beforeCutoff ? new Date(zonedTimeToUtc(today, s.profile.cutoffLocal, s.profile.timeZone)).toISOString() : null,
+    courierAtCheckout: live.atCheckout,
+    courier,
   }
 }
 
@@ -227,8 +253,8 @@ type TokenPayload = {
   sub: number
   /** "productId:variantId:qty", sorted. */
   l: string[]
-  /** The available options' prices (shopper currency), by service. */
-  o: Partial<Record<"standard" | "express" | "pickup", number>>
+  /** The available options' prices (shopper currency), by service (and courier option key). */
+  o: Partial<Record<string, number>>
   exp: number
 }
 
@@ -255,7 +281,7 @@ export function verifyQuote(token: string): TokenPayload | null {
 
 /* ---------- POST /api/shipping/quote ---------- */
 
-export async function quoteGroups(body: { to: string; city?: string; currency: string; groups: { brandId: string; lines: { productId: string; variantId: string; qty: number }[] }[] }) {
+export async function quoteGroups(body: { to: string; city?: string; currency: string; groups: { brandId: string; lines: { productId: string; variantId: string; qty: number }[] }[]; address?: Omit<ShopperAddress, "country"> | null }) {
   if (!isCountry(body.to)) throw badRequest({ to: "Choose one of Yard's markets." })
   if (!isCurrency(body.currency)) throw badRequest({ currency: "Choose one of Yard's currencies." })
   const to = body.to
@@ -279,9 +305,13 @@ export async function quoteGroups(body: { to: string; city?: string; currency: s
   })
   const groups: QuoteGroupDto[] = []
   for (const r of resolved) {
-    const q = await quoteBrand({ brandId: r.brandId, lines: r.lines, to, city: body.city, currency, now })
+    const q = await quoteBrand({ brandId: r.brandId, lines: r.lines, to, city: body.city, currency, now, address: body.address ? { ...body.address, country: to } : null })
     const prices: TokenPayload["o"] = {}
-    for (const o of q.options) if (o.available) prices[o.service] = o.price.amount
+    // The first available option per service is what a service-only choice gets.
+    for (const o of q.options) if (o.available) {
+      prices[o.service] ??= o.price.amount
+      if (o.key && o.key !== o.service) prices[o.key] = o.price.amount
+    }
     groups.push({
       brandId: r.brandId,
       brand: brandDto(q.s),
@@ -290,6 +320,7 @@ export async function quoteGroups(body: { to: string; city?: string; currency: s
       options: q.options,
       unavailable: q.unavailable,
       reason: q.reason,
+      ...(q.courierAtCheckout ? { courierAtCheckout: true } : {}),
       quoteToken: signQuote({ b: r.brandId, to, c: citySlugFor(body.city, to), cur: currency, sub: q.subtotal.amount, l: lineKey(r.lines.map((l) => ({ productId: l.product.id, variantId: l.variantId, qty: l.qty }))), o: prices, exp }),
     })
   }

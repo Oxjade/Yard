@@ -47,7 +47,7 @@ import { CheckoutSkeleton } from "./skeletons"
 import { clearCheckoutDraft, readCheckoutDraft, writeCheckoutDraft } from "./draft"
 import { checkoutSteps, StepIndicator } from "./step-indicator"
 import { AddressStep, ContactStep, PaymentStep, ReviewStep, ShippingStep } from "./steps"
-import { type ShippingMethod } from "./shipping"
+import { type ShippingChoice } from "./shipping"
 import { useStoresReady } from "./use-stores-ready"
 
 const REVIEW = checkoutSteps.length - 1
@@ -178,7 +178,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   const [saved] = useState(() => readCheckoutDraft(userEmail))
   const [contact, setContact] = useState<ContactDraft>(() => saved?.contact ?? { name: userName, email: userEmail, phone: "" })
   const [address, setAddress] = useState<AddressDraft>(() => saved?.address ?? { line1: "", line2: "", city: "", region: "", postcode: "", landmark: "" })
-  const [shipping, setShipping] = useState<Record<string, ShippingMethod>>(() => saved?.shipping ?? {})
+  const [shipping, setShipping] = useState<Record<string, ShippingChoice>>(() => saved?.shipping ?? {})
   const [payment, setPayment] = useState<PaymentDraft>(() => ({ method: saved?.payment?.method ?? "card" }))
   const [step, setStep] = useState(() => resumeStep(saved, country, currency))
   const [dir, setDir] = useState(1)
@@ -207,8 +207,21 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
   // The delivery city: the address's once the shopper has given it, else the one chosen on a
   // product page (it decides store pickup). The quote follows it.
   const quoteCity = step >= 2 && address.city.trim() ? address.city.trim().slice(0, 60) : shipToCity
-  const quote = useShippingQuote(lines, country, quoteCity, currency)
-  const methodFor = (brandId: string): ShippingMethod => shipping[brandId] ?? "standard"
+  // From the delivery step on, the full address goes with the quote: brands that ship with a live
+  // courier are priced for it (docs/SHIPPING.md). Sent exactly as Place order sends it, so the
+  // price held for this address is the one charged.
+  const contactOk = Object.keys(validateContact(contact, country)).length === 0
+  const addressOk = Object.keys(validateAddress(address, country)).length === 0
+  const quotePhone = parsePhone(contact.phone, country) ?? contact.phone.trim()
+  const quoteAddress = useMemo(
+    () =>
+      step >= 2 && contactOk && addressOk && quotePhone.length >= 6
+        ? { name: contact.name.trim(), phone: quotePhone, line1: [address.line1.trim(), address.line2.trim()].filter(Boolean).join(", "), city: cityLine(address.city, address.region), ...(address.postcode.trim() ? { postcode: address.postcode.trim().toUpperCase() } : {}) }
+        : null,
+    [step, contactOk, addressOk, quotePhone, contact.name, address.line1, address.line2, address.city, address.region, address.postcode],
+  )
+  const quote = useShippingQuote(lines, country, quoteCity, currency, { address: quoteAddress })
+  const methodFor = (brandId: string): ShippingChoice => shipping[brandId] ?? "standard"
   const bag = useMemo(() => priceCart(lines, country, currency, quote.quotes, (b) => shipping[b]), [lines, country, currency, quote.quotes, shipping])
   const totals: CheckoutTotals = { subtotal: bag.subtotal, shipping: bag.shipping, total: bag.total, count: bagCount(lines) }
   const quoteFailed = !quote.isLoading && !!quote.error && !quote.quotes
@@ -335,7 +348,7 @@ function CheckoutSteps({ userName, userEmail, onPlaced }: { userName: string; us
           postcode: address.postcode.trim().toUpperCase() || undefined,
           country,
         },
-        shipping: Object.fromEntries(bag.groups.map((g) => [g.brand.id, g.option?.service ?? methodFor(g.brand.id)])),
+        shipping: Object.fromEntries(bag.groups.map((g) => [g.brand.id, g.option ? (g.option.key ?? g.option.service) : methodFor(g.brand.id)])),
         quotes: quote.quotes ?? {},
         paymentMethod: method,
         payment: { label: paymentSummary(method, country), holder: contact.name.trim() },

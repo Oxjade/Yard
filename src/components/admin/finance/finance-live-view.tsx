@@ -29,7 +29,7 @@ const options: { value: Tab; label: string }[] = [
   { value: "commission", label: "Commission" },
 ]
 type Overview = {
-  currencies: { currency: string; providerClearingMinor: number; commissionMinor: number; adjustmentsMinor: number; brandPendingMinor: number; brandAvailableMinor: number; brandReserveMinor: number; brandInPayoutMinor: number }[]
+  currencies: { currency: string; providerClearingMinor: number; commissionMinor: number; adjustmentsMinor: number; brandPendingMinor: number; brandAvailableMinor: number; brandReserveMinor: number; brandInPayoutMinor: number; shippingCollectedMinor?: number; shippingSpentMinor?: number }[]
   payoutQueue: { status: string; currency: string; n: number; total: number }[]
 }
 
@@ -52,7 +52,7 @@ export function FinanceLiveView() {
           {overview.error ? <div role="alert" className="admin-inset grid gap-2 p-3"><p className="text-sm text-danger">{errorMessage(overview.error, "Couldn't load finance overview.")}</p><button className="text-left text-sm text-ink-2" type="button" onClick={() => void overview.revalidate()}>Retry</button></div> : null}
           {(overview.data?.currencies ?? []).map((row) => <div key={row.currency} className="admin-panel grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
             <h2 className="col-span-2 text-sm font-medium text-ink sm:col-span-4">{row.currency}</h2>
-            {[["Provider clearing", row.providerClearingMinor], ["Brand pending", row.brandPendingMinor], ["Brand available", row.brandAvailableMinor], ["Payouts in flight", row.brandInPayoutMinor], ["Brand reserve", row.brandReserveMinor], ["Commission", row.commissionMinor], ["Adjustments", row.adjustmentsMinor]].map(([label, amount]) => <p key={label} className="min-w-0 text-[11px] text-ink-3">{label}<span className="mt-1 block truncate text-sm tabular text-ink">{formatMoney(Number(amount), (row.currency in currencies ? row.currency : "USD") as CurrencyCode)}</span></p>)}
+            {[["Provider clearing", row.providerClearingMinor], ["Brand pending", row.brandPendingMinor], ["Brand available", row.brandAvailableMinor], ["Payouts in flight", row.brandInPayoutMinor], ["Brand reserve", row.brandReserveMinor], ["Commission", row.commissionMinor], ["Adjustments", row.adjustmentsMinor], ...(row.shippingCollectedMinor || row.shippingSpentMinor ? [["Courier shipping collected", row.shippingCollectedMinor ?? 0], ["Courier shipping spent", row.shippingSpentMinor ?? 0]] : [])].map(([label, amount]) => <p key={label} className="min-w-0 text-[11px] text-ink-3">{label}<span className="mt-1 block truncate text-sm tabular text-ink">{formatMoney(Number(amount), (row.currency in currencies ? row.currency : "USD") as CurrencyCode)}</span></p>)}
           </div>)}
           {overview.isLoading && !overview.data ? <div className="skeleton h-32 rounded-lg" aria-label="Loading finance overview" /> : null}
           {!overview.isLoading && !overview.error && !overview.data?.currencies.length ? <p className="text-sm text-ink-3">No ledger balances have been recorded yet.</p> : null}

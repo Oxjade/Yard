@@ -8,7 +8,8 @@ import { runReconciliation } from "./reconcile"
  * LEDGER contract (backend v3): the double-entry ledger, balances, payouts and reconciliation.
  *
  * Contract postings (take the caller's transaction, idempotent):
- *   postPaymentCaptured(tx, { paymentId, orderId, brandId, currency, grossMinor })
+ *   postPaymentCaptured(tx, { paymentId, orderId, brandId, currency, grossMinor, courierShippingMinor? })
+ *   postCourierBooked(tx, { shipmentId, orderId, brandId, currency, costMinor })   (docs/SHIPPING.md)
  *   postRefund(tx, { refundId, orderId, brandId, currency, amountMinor })
  *   postOrderCompleted(tx, { orderId, brandId })
  * Provider outcome handler for CHECKOUT's webhook:
@@ -16,7 +17,7 @@ import { runReconciliation } from "./reconcile"
  */
 export const IMPL: string = "LEDGER-v3-2026-11-08"
 
-export { postPaymentCaptured, postRefund, postOrderCompleted, brandTier } from "./postings"
+export { postPaymentCaptured, postRefund, postOrderCompleted, postCourierBooked, brandTier } from "./postings"
 export { handleTransferEvent, type TransferEvent } from "./payouts"
 export { brandBalances, type BrandBalanceDto, type PayoutDto, type PayoutAccountDto, type StatementEntryDto } from "./read"
 export { runReconciliation, type ProviderEvent } from "./reconcile"

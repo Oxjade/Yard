@@ -19,3 +19,5 @@ export function getProvider(id: string | null | undefined): ShippingProvider {
 export function carrierProviders() {
   return Object.values(registry).filter((p) => p.kind === "carrier")
 }
+export { courierConfig, getCourier, courierStartupLine } from "./courier"
+export { CourierError, type CourierProvider, type CourierRate } from "./courier-types"

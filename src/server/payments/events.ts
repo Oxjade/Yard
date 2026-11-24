@@ -283,7 +283,7 @@ export async function applyCharge(tx: Tx, charge: Charge): Promise<{ status: "pr
   for (const orderId of orderIds) {
     const o = await getOrderForMoney(tx, orderId)
     if (!o) throw new Error(`order ${orderId} missing after markCheckoutPaid`)
-    await postPaymentCaptured(tx, { paymentId: pay.id, orderId, brandId: o.brandId, currency: o.currency, grossMinor: o.totalMinor })
+    await postPaymentCaptured(tx, { paymentId: pay.id, orderId, brandId: o.brandId, currency: o.currency, grossMinor: o.totalMinor, courierShippingMinor: o.courierShippingMinor })
   }
   if (late) {
     const note = "Paid after the checkout ended; the orders were cancelled and are refunded automatically."

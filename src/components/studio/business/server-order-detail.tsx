@@ -11,6 +11,7 @@ import { InfoTip } from "@/components/feedback/info-tip"
 import { reconcileOrder } from "@/components/market/delivery/reconcile"
 import { Panel } from "@/components/studio/catalog/fields"
 import { OrderDeliveryCard } from "@/components/studio/shipping/order-delivery-card"
+import { OrderCourierPanel, useBookPickup } from "@/components/studio/shipping/order-courier-panel"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
@@ -231,6 +232,15 @@ function ServerOrderView({ dto: d, origin, onChanged }: { dto: StudioOrderDto; o
     }
   }
   const markProcessing = () => void post("processing", {}, { title: `#${d.reference} is processing`, description: "Add tracking when it ships." })
+  // A live courier rate on this order (docs/SHIPPING.md): "Book pickup" is the step that ships it.
+  const courier = useBookPickup(d.id, refresh)
+  const cd = courier.q.data
+  const bookable = !!cd?.courierOrder && !cd.refusal && !(cd.shipment && ["booking", "booked", "in_transit", "delivered", "needs_review"].includes(cd.shipment.status))
+  const bookButton = bookable ? (
+    <Button size="sm" variant="primary" loading={courier.pending} onClick={() => act(() => void courier.book())}>
+      <Truck /> Book pickup
+    </Button>
+  ) : null
   const markDelivered = () => void post("shipment", { status: "delivered", occurredAt: new Date().toISOString() }, { title: `#${d.reference} marked delivered`, description: "The returns window starts today. The shopper's order updates too." })
 
   const delayable = canFulfil && (o.status === "paid" || o.status === "processing" || o.status === "shipped")
@@ -267,14 +277,15 @@ function ServerOrderView({ dto: d, origin, onChanged }: { dto: StudioOrderDto; o
       <>
         {moreMenu}
         <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
-        <Button size="sm" variant="primary" loading={busy} onClick={() => act(markProcessing)}><PackageCheck /> Mark as processing</Button>
+        {bookButton ?? <Button size="sm" variant="primary" loading={busy} onClick={() => act(markProcessing)}><PackageCheck /> Mark as processing</Button>}
       </>
     )
   } else if (canFulfil && o.status === "processing") {
     actions = (
       <>
         {moreMenu}
-        <Button size="sm" variant="primary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>
+        {bookButton ? <Button size="sm" variant="secondary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button> : null}
+        {bookButton ?? <Button size="sm" variant="primary" onClick={() => act(() => setDialog("tracking"))}><Truck /> Add tracking</Button>}
       </>
     )
   } else if (canFulfil && o.status === "shipped") {
@@ -318,6 +329,7 @@ function ServerOrderView({ dto: d, origin, onChanged }: { dto: StudioOrderDto; o
           {shownReturns.map((r) => (
             <ReturnPanel key={r.id} order={d} ret={r} canFulfil={canFulfil} onAction={openReturn} />
           ))}
+          <OrderCourierPanel orderId={d.id} canFulfil={canFulfil} onBooked={refresh} />
           <FulfilmentPanel order={o} live canCancel={canFulfil && d.actions.canCancel} onCancel={() => act(() => setDialog("cancel"))} />
           <OrderDeliveryCard order={o} brand={d.brand} />
           <ItemsPanel order={o} cur={o.currency} />

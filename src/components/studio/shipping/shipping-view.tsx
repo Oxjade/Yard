@@ -26,6 +26,7 @@ import { roleCantSentence } from "@/lib/permissions"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { formatDay, formatRange } from "@/lib/shipping/format"
 import { cn } from "@/lib/utils"
+import { CourierPickup } from "./courier-pickup"
 import { countriesLabel, DAYS, freeCountries, fromDto, newKey, previewEstimate, serviceName, toBody, validate, type MethodForm, type ShippingForm, type ZoneForm } from "./model"
 
 const sections = [
@@ -435,19 +436,16 @@ function ShippingForm({ data, onSaved }: { data: StudioShippingDto; onSaved: (d:
           </div>
         </Panel>
 
-        <Panel id="providers" title="Delivery providers" description="Where your rates and estimates come from.">
+        <Panel id="providers" title="Delivery providers" description="Where your rates and estimates come from, and where couriers collect.">
           <ul className="grid gap-3 text-sm">
             <li className="flex items-start gap-3">
               <TruckIcon className="mt-0.5 size-4 shrink-0 text-violet" aria-hidden />
               <span>
-                <span className="text-ink">Manual rates — active.</span> <span className="text-ink-2">Prices and transit times come from the zones above. Never guaranteed: shoppers always see estimates.</span>
+                <span className="text-ink">Your rates — active.</span> <span className="text-ink-2">Prices and transit times come from the zones above. Never guaranteed: shoppers always see estimates. When a courier prices an order (below), checkout offers the courier instead, and falls back to these whenever the courier can&apos;t answer.</span>
               </span>
             </li>
-            <li className="flex items-start gap-3">
-              <TruckIcon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
-              <span className="text-ink-2">Carrier integrations: none connected. Carrier rates, tracking and labels will plug in here.</span>
-            </li>
           </ul>
+          <CourierPickup brandId={session?.brand.id ?? null} canManage={canManage} />
         </Panel>
 
         {canManage ? (

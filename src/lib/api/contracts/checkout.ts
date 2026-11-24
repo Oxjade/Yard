@@ -11,7 +11,8 @@ export type StartCheckoutRequest = {
     country: string
     phone?: string
   }
-  shipping: { brandId: string; service: "standard" | "express" | "pickup" }[]
+  /** `option`: the chosen option's key when it isn't the service itself (a live courier rate, "c:{courier}:{service}"). */
+  shipping: { brandId: string; service: "standard" | "express" | "pickup"; option?: string }[]
   expectedTotalMinor?: number
   /** How the shopper chose to pay; the provider's hosted page (Paystack or Bachs) offers that method. Card details are typed only there. */
   paymentMethod?: "card" | "bank_transfer" | "ussd" | "mobile_money"

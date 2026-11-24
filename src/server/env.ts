@@ -7,6 +7,7 @@ import { z } from "zod"
 import { googleVerificationFile, indexNowKey, siteVerificationWarnings, verificationTokens } from "../lib/seo/site-verification"
 import { yardSocials, yardSocialWarnings, type YardSocial } from "../lib/socials"
 import { seedDemoFrom } from "./demo-switch"
+import { courierConfigProblems } from "./shipping/providers/courier-config"
 import { log } from "./log"
 import { yard } from "./state"
 
@@ -284,6 +285,10 @@ function parse(): Env {
   }
   if (payments === "stub" && !dev && !seedDemo) problems.push("YARD_PAYMENTS=stub is for development or an isolated demo deployment (YARD_SEED_DEMO=1) only; use off until a provider is connected")
   if (!dev && !building && !paymentsRaw && paystackKey) log.once("env:paystack-off", "warn", "[yard] PAYSTACK_SECRET_KEY is set but YARD_PAYMENTS isn't: payments stay off. Set YARD_PAYMENTS=paystack to take payments.")
+
+  // Courier aggregator (YARD_SHIPPING_PROVIDER, docs/SHIPPING.md): off unless set; a bad key or
+  // setting is fatal in production like the payment keys, and turns couriers off elsewhere.
+  problems.push(...courierConfigProblems(process.env, { dev, allowHttp: on(e.YARD_ALLOW_HTTP) }))
 
   // Search engines: optional, so a typo is a warning (the site keeps running), never a boot failure.
   for (const w of siteVerificationWarnings(e)) log.once(`env:seo:${w}`, "warn", `[yard] ${w}.`)

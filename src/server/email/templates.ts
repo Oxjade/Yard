@@ -560,6 +560,20 @@ export const templates = {
       action: { label: "Track order", url: v(x, "url") },
     }),
   },
+  delivered: {
+    category: "orders",
+    required: ["reference", "url"],
+    build: (x) => ({
+      subject: `${v(x, "brand", "Your order")} was delivered`,
+      preheader: has(x, "courier") ? `${v(x, "courier")} marked it delivered.` : "Your order arrived.",
+      eyebrow: "Delivered",
+      heading: "It's arrived",
+      greeting: hey(x),
+      paragraphs: [`${has(x, "courier") ? v(x, "courier") : "The courier"} marked ${has(x, "brand") ? `${v(x, "brand")}'s part of ` : ""}order ${v(x, "reference")} as delivered.`, "If it didn't reach you, or something's wrong with it, tell the brand from your order page."],
+      facts: facts({ label: "Order", value: v(x, "reference") }, has(x, "courier") && { label: "Courier", value: v(x, "courier") }, has(x, "tracking") && { label: "Tracking", value: v(x, "tracking") }),
+      action: { label: "View order", url: v(x, "url") },
+    }),
+  },
   refund: {
     category: "orders",
     required: ["reference", "amount", "url"],

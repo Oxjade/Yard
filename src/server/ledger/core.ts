@@ -24,9 +24,11 @@ export class LedgerError extends Error {
 
 export const PLATFORM = "platform"
 export const brandAccount = (brandId: string, kind: "brand_pending" | "brand_available" | "brand_reserve" | "brand_payout_hold", currency: string): AccountRef => ({ ownerKind: "brand", ownerId: brandId, kind, currency })
-export const platformAccount = (kind: "platform_commission" | "platform_adjustments" | "provider_clearing", currency: string): AccountRef => ({ ownerKind: "platform", ownerId: PLATFORM, kind, currency })
+export const platformAccount = (kind: "platform_commission" | "platform_adjustments" | "provider_clearing" | "shipping_collected" | "shipping_spent" | "courier_wallet", currency: string): AccountRef => ({ ownerKind: "platform", ownerId: PLATFORM, kind, currency })
 
-const normalOf = (kind: AccountKind) => (kind === "provider_clearing" ? "debit" : "credit")
+/** Assets and expenses are debit-normal; liabilities, revenue and equity credit-normal. */
+const DEBIT_NORMAL = new Set<AccountKind>(["provider_clearing", "shipping_spent", "courier_wallet"])
+export const normalOf = (kind: AccountKind) => (DEBIT_NORMAL.has(kind) ? "debit" : "credit")
 
 export const isMinor = (n: number) => Number.isSafeInteger(n)
 export const assertCurrency = (c: string) => {

@@ -1,5 +1,9 @@
 import { api } from "./client"
 import type {
+  AdminCouriersDto,
+  CourierSettingsBody,
+  CourierSettingsDto,
+  StudioCourierDto,
   ComplaintBody,
   ComplaintDto,
   DeliveryDto,
@@ -60,4 +64,27 @@ export function postShipmentEvent(orderId: string, body: ShipmentEventBody) {
 
 export function respondToComplaint(orderId: string, message: string) {
   return api<{ complaint: ComplaintDto }>(`/api/studio/orders/${encodeURIComponent(orderId)}/complaint-response`, { body: { message } })
+}
+
+/* ---------- Courier shipping (docs/SHIPPING.md) ---------- */
+
+export const STUDIO_COURIER_KEY = "studio:shipping:courier"
+export function getCourierSettings() {
+  return api<CourierSettingsDto>("/api/studio/shipping/courier")
+}
+export function saveCourierSettings(body: CourierSettingsBody) {
+  return api<CourierSettingsDto>("/api/studio/shipping/courier", { method: "PUT", body })
+}
+
+export const studioCourierKey = (orderId: string) => `studio:courier:${orderId}`
+export function getStudioCourier(orderId: string) {
+  return api<StudioCourierDto>(`/api/studio/orders/${encodeURIComponent(orderId)}/courier`)
+}
+export function bookCourierPickup(orderId: string) {
+  return api<StudioCourierDto>(`/api/studio/orders/${encodeURIComponent(orderId)}/courier/book`, { body: {} })
+}
+
+export const ADMIN_COURIERS_KEY = "admin:delivery:couriers"
+export function getAdminCouriers() {
+  return api<AdminCouriersDto>("/api/admin/delivery/couriers")
 }

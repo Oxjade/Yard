@@ -1,5 +1,5 @@
-import { optionFor, type BrandGroup, type ShippingService } from "@/lib/cart"
-import type { EstimateDto } from "@/lib/api/contracts/shipping"
+import { optionFor, optionKey, type BrandGroup, type ShippingService } from "@/lib/cart"
+import type { EstimateDto, QuoteOptionDto } from "@/lib/api/contracts/shipping"
 import { formatRange, formatShortRange } from "@/lib/shipping/format"
 
 /**
@@ -9,6 +9,9 @@ import { formatRange, formatShortRange } from "@/lib/shipping/format"
  */
 
 export type ShippingMethod = ShippingService
+/** A brand's chosen option: its key (a service, or "c:{courier}:{service}" for a live courier rate). */
+export type ShippingChoice = string
+export { optionKey }
 
 export const shippingMethodLabel: Record<ShippingMethod, string> = {
   standard: "Standard",
@@ -46,7 +49,12 @@ export function arrivalRange(estimate: Pick<EstimateDto, "arrivalFrom" | "arriva
   return short ? formatShortRange(estimate.arrivalFrom, estimate.arrivalTo) : formatRange(estimate.arrivalFrom, estimate.arrivalTo)
 }
 
-/** The option a review row shows for a brand: the chosen method when offered, else the default. */
-export function chosenOption(group: BrandGroup, method: ShippingMethod) {
-  return optionFor(group.options, method)
+/** The option a review row shows for a brand: the chosen one when offered, else the default. */
+export function chosenOption(group: BrandGroup, choice: ShippingChoice) {
+  return optionFor(group.options, choice)
+}
+
+/** How an option is named: the courier (live rates), the pickup point, else Standard / Express. */
+export function optionTitle(o: Pick<QuoteOptionDto, "service" | "label" | "courier">) {
+  return o.courier || o.service === "pickup" ? o.label : shippingMethodLabel[o.service]
 }

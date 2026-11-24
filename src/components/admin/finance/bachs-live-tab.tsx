@@ -168,7 +168,7 @@ function BalancesPanel({ v, retry }: { v: Connected; retry: () => void }) {
               <Amount label="Difference (Bachs − ledger)" minor={l.differenceMinor} currency={l.currency} strong />
             </div>
             <p className={`text-[12px] ${l.status === "shortfall" ? "text-danger" : "text-ink-2"}`}>
-              {l.bachs ? `Bachs ${minorMoney(l.bachs.totalMinor, l.currency)} vs Yard owes brands ${minorMoney(l.ledger.owedToBrandsMinor, l.currency)} + commission ${minorMoney(l.ledger.commissionMinor, l.currency)}${l.ledger.adjustmentsMinor ? ` + adjustments ${minorMoney(l.ledger.adjustmentsMinor, l.currency)}` : ""}. ` : ""}
+              {l.bachs ? `Bachs ${minorMoney(l.bachs.totalMinor, l.currency)} vs Yard owes brands ${minorMoney(l.ledger.owedToBrandsMinor, l.currency)} + commission ${minorMoney(l.ledger.commissionMinor, l.currency)}${l.ledger.adjustmentsMinor ? ` + adjustments ${minorMoney(l.ledger.adjustmentsMinor, l.currency)}` : ""}${l.ledger.shippingCollectedMinor ? ` + courier shipping ${minorMoney(l.ledger.shippingCollectedMinor, l.currency)}` : ""}. ` : ""}
               {l.message}
             </p>
             {l.note ? <p className="text-[12px] text-ink-3">{l.note}</p> : null}

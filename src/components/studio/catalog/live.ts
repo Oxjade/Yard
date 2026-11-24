@@ -38,6 +38,7 @@ export function fromStudioProduct(dto: StudioProductDto): StudioProduct {
     updatedAt: dto.updatedAt,
     ...(dto.publishAt ? { publishAt: dto.publishAt } : {}),
     ...(dto.processingDays ? { processingDays: dto.processingDays } : {}),
+    ...(dto.weightGrams ? { weightGrams: dto.weightGrams } : {}),
     collectionIds: dto.collectionIds,
     ...(dto.dropId ? { dropId: dto.dropId } : {}),
     stats: { views7d: 0, wishlists: 0, sales30d: 0, trend: 0 },
