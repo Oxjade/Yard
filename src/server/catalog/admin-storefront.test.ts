@@ -118,7 +118,7 @@ describe("Admin › Brands › Publish / Unpublish storefront", () => {
   it("blockers refuse; warnings (no products, no payout account) only caution", async () => {
     const empty = await facts("empty-label")
     assert.deepEqual(publishBlockers(empty), [])
-    assert.deepEqual(publishWarnings(empty), ["No live products, so the shop will show as empty until products are published.", "No payout account yet, so Yard can't pay the brand for sales until it adds one in Studio."])
+    assert.deepEqual(publishWarnings(empty), ["No live products, so the shop will show as empty until products are published.", "No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio."])
     const founding = await facts("founding-label")
     assert.deepEqual(publishWarnings(founding), ["No payout account, so Buy stays off until the brand adds one in Studio."])
     assert.deepEqual(publishBlockers(await facts("suspended-label")), ["Yard has suspended suspended-label. Reinstate it from Brands first.".replace("suspended-label", "Suspended Label")])

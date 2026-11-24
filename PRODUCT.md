@@ -6,11 +6,11 @@ product
 
 ## Users
 
-Shoppers discover, follow, and buy independent brands. Brand operators use Studio to onboard and manage their catalog and storefront. Yard staff use the admin tools to operate the marketplace.
+Shoppers discover, follow, and buy from independent brands and trusted stores. Brand and store operators use Studio to onboard and manage their catalog and storefront. Yard staff use the admin tools to operate the marketplace.
 
 ## Product Purpose
 
-Yard is a global, discovery-driven marketplace for independent brands. It helps shoppers find relevant pieces and helps brands reach customers through a managed storefront and commerce workflow.
+Yard is a global, discovery-driven marketplace for independent brands and trusted stores, including retailers and resellers of genuine products. Each seller is responsible for selling genuine products. It helps shoppers find relevant pieces and helps sellers reach customers through a managed storefront and commerce workflow.
 
 ## Brand Personality
 

@@ -116,7 +116,10 @@ export function suggestionStillFits(s: { kind: string; baseVersion: number | nul
 /* ---------- Copy ---------- */
 
 export const CLAIM_GOES_LIVE_COPY = "Your shop goes live the moment you claim it. Change anything later in Studio."
+/** A founding brand (lib/sell-rule.ts): Buy stays off until its payout account is saved. */
 export const PAYOUT_NUDGE_COPY = "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes."
+/** Every other brand: the shop takes orders already, and the account is where Yard pays it. */
+export const PAYOUT_TO_GET_PAID_COPY = "Your shop can take orders now. One thing left: add your payout account so Yard can pay you. Takes about 2 minutes."
 export const PAYOUTS_PATH = "/studio/settings#payouts"
 export const shopPath = (handle: string) => `/brands/${handle}`
 /** "yardstore.space/brands/handle": the link as a person reads it. */

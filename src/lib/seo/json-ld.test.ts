@@ -181,7 +181,7 @@ describe("brand, collection and site JSON-LD", () => {
     assert.equal(org["@type"], "Organization")
     assert.equal(org.url, "https://yardstore.space/brands/clay-works")
     assert.equal(org.logo, "https://yardstore.space/api/media/logo")
-    assert.equal(org.description, "Clay Works is an independent brand from Accra, GH, selling on Yard.")
+    assert.equal(org.description, "Clay Works, from Accra, GH, sells on Yard.")
     assert.deepEqual(org.sameAs, ["https://www.instagram.com/clayworks", "https://www.tiktok.com/@clay.works", "https://clay.example"])
     assert.deepEqual(org.address, { "@type": "PostalAddress", addressLocality: "Accra", addressCountry: "GH" })
     assert.equal(list["@type"], "ItemList")

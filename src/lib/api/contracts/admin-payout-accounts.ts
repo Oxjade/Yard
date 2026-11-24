@@ -52,9 +52,12 @@ export type AdminPayoutAccountRowDto = {
   payoutNeededSince: string | null
   /** A storefront is published and live (not unpublished by Yard; a founding brand has launched). */
   storefrontLive: boolean
+  /** Shoppers can buy from it now (sell rule: src/lib/sell-rule.ts; a payout account is needed only by founding brands). */
   canSell: boolean
   /** Why it can't sell, in the order the admin should fix them. */
   reasons: string[]
+  /** It can sell but has no payout account: "Add a payout account to get paid". Null otherwise. */
+  sellNote: string | null
 }
 
 export type AdminPayoutAccountsDto = {

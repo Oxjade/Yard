@@ -23,7 +23,7 @@ export function BrandsJoining({ compact = false, className, title = "Brands are 
       <div className="min-w-0">
         <p className="text-base break-words text-ink">{title}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-pretty break-words text-ink-2">
-          Independent studios are setting up their storefronts now. Their pieces, drops and stories appear here the day they open.
+          Independent brands and trusted stores are setting up their storefronts now. Their pieces, drops and stories appear here the day they open.
         </p>
       </div>
       <div className="flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row sm:items-center">

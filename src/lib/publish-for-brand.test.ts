@@ -8,6 +8,7 @@ import {
   EMPTY_SHOP_WARNING,
   GO_LIVE_ON_CLAIM_DEFAULT,
   PAYOUT_NUDGE_COPY,
+  PAYOUT_TO_GET_PAID_COPY,
   publishChecklist,
   publishForBrandBlock,
   publishForBrandLabel,
@@ -172,11 +173,18 @@ describe("you're live email", () => {
     assert.doesNotMatch(text, /payout/)
   })
 
-  it("adds the payout line and link when there's no payout account", () => {
+  it("adds the payout line and link when there's no payout account: the shop already takes orders", () => {
     const c = shopLiveCopy({ ...base, variant: "yard", payout: false })
     const last = c.linkParagraphs!.at(-1)!
-    assert.equal(last[0].text.trim(), PAYOUT_NUDGE_COPY)
+    assert.equal(last[0].text.trim(), PAYOUT_TO_GET_PAID_COPY)
+    assert.equal(PAYOUT_TO_GET_PAID_COPY, "Your shop can take orders now. One thing left: add your payout account so Yard can pay you. Takes about 2 minutes.")
     assert.equal(last[1].href, "/studio/settings#payouts")
+  })
+
+  it("says Buy waits for the payout account only for a founding brand (lib/sell-rule.ts)", () => {
+    const c = shopLiveCopy({ ...base, variant: "claim", payout: false, buyNeedsPayout: true })
+    assert.equal(c.linkParagraphs!.at(-1)![0].text.trim(), PAYOUT_NUDGE_COPY)
+    assert.equal(PAYOUT_NUDGE_COPY, "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes.")
   })
 
   it("claim variant", () => {

@@ -149,6 +149,7 @@ export async function listPayoutAccountsDb(d: Db, query: Partial<AdminPayoutAcco
       storefrontLive: storefrontLive({ ...facts, name: r.name, liveProducts: 0 }),
       canSell: sell.canSell,
       reasons: sell.reasons,
+      sellNote: sell.note,
     }
   })
   const c = countRows[0] ?? { all: 0, missing: 0, verified: 0, owed: 0 }

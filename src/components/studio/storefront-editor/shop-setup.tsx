@@ -58,7 +58,7 @@ import { PreviewFrame, type Device } from "./preview-frame"
 const STEPS = [
   { key: "logo", label: "Logo", title: "Add your logo", body: "It sits in a circle at the top of your shop and next to everything you sell." },
   { key: "banner", label: "Banner", title: "Add a banner", body: "One wide photo across the top of your shop. Make it feel like you." },
-  { key: "about", label: "About", title: "Tell people who you are", body: "A line under your name. What you make, and the vibe." },
+  { key: "about", label: "About", title: "Tell people who you are", body: "A line under your name. What you sell, and the vibe." },
   { key: "review", label: "Review", title: "Looks fire?", body: "This is your shop's header, exactly as shoppers will see it." },
 ] as const
 type StepKey = (typeof STEPS)[number]["key"]

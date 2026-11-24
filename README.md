@@ -1,6 +1,6 @@
 # Yard
 
-A global, discovery-driven marketplace for independent brands. It has three experiences:
+A global, discovery-driven marketplace for independent brands and trusted stores. It has three experiences:
 
 | Area | Route | Feel |
 |---|---|---|

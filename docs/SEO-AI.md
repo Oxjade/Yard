@@ -49,7 +49,7 @@ Each page has one `<script type="application/ld+json">` with a single `@graph`, 
 ### Metadata
 
 - **Product and brand pages** have a title, a meta description, a canonical URL, Open Graph and Twitter cards with images.
-- **Fallback description:** when a brand leaves a product description empty, it is built from facts: "{Product} by {Brand}, {city}. {price}. {category}." A brand with no intro or story gets "{Brand} is an independent brand from {city}, {country}, selling on Yard."
+- **Fallback description:** when a brand leaves a product description empty, it is built from facts: "{Product} by {Brand}, {city}. {price}. {category}." A brand with no intro or story gets "{Brand}, from {city}, {country}, sells on Yard."
 - **Canonical URLs** are also set on categories, collections, drops and charts.
 - The root `<head>` links `/llms.txt` as `rel="alternate"`.
 

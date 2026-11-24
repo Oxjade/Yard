@@ -34,8 +34,10 @@ function useDebounced(value: string, ms: number) {
 /**
  * Admin › Finance › Payout accounts (Owner and Finance): every brand and whether it has added a
  * payout account (none / pending / verified), the bank, account name and last 4 digits (never the
- * number), when it was added or changed, and whether the brand can sell (an account, a live
- * storefront, good standing). GET /api/admin/finance/payout-accounts.
+ * number), when it was added or changed, and whether the brand can sell (a live storefront, good
+ * standing, and the sell rule: only a founding brand needs a payout account to sell; any other
+ * brand without one can sell, noted "Add a payout account to get paid").
+ * GET /api/admin/finance/payout-accounts.
  */
 export function PayoutAccountsTab() {
   const param = useSearchParam("status")
@@ -121,7 +123,16 @@ export function PayoutAccountsTab() {
       sortValue: (r) => (r.canSell ? 1 : 0),
       cell: (r) =>
         r.canSell ? (
-          <StatusBadge tone="success">Yes</StatusBadge>
+          r.sellNote ? (
+            <span className="grid gap-0.5">
+              <span>
+                <StatusBadge tone="success">Yes</StatusBadge>
+              </span>
+              <span className="text-[11.5px] text-ink-3">{r.sellNote}</span>
+            </span>
+          ) : (
+            <StatusBadge tone="success">Yes</StatusBadge>
+          )
         ) : (
           <span className="grid gap-0.5">
             <span>

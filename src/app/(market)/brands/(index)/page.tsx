@@ -29,7 +29,7 @@ export default function BrandsPage() {
   if (!getEnv().seedDemo) {
     return (
       <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
-        <Suspense fallback={<>{header("Independent studios, each with its own storefront.")}</>}>
+        <Suspense fallback={<>{header("Independent brands and trusted stores, each with its own storefront.")}</>}>
           <LiveBrands />
         </Suspense>
       </div>
@@ -43,7 +43,7 @@ export default function BrandsPage() {
     <div className="mx-auto max-w-page px-4 pt-28 md:px-8 md:pt-32">
       {header(
         <>
-          {brands.length} independent studios from {countryCount} countries, each with its own storefront. Follow the ones you like and their new pieces, drops and stories come to you.
+          {brands.length} brands and stores from {countryCount} countries, each with its own storefront. Follow the ones you like and their new pieces, drops and stories come to you.
         </>,
       )}
 
@@ -67,7 +67,7 @@ async function LiveBrands() {
   if (!initial) {
     return (
       <>
-        {header("Independent studios, each with its own storefront.")}
+        {header("Independent brands and trusted stores, each with its own storefront.")}
         <BrandsJoining className="mt-10 md:mt-14" title="Brands couldn't be loaded right now" />
       </>
     )
@@ -75,10 +75,10 @@ async function LiveBrands() {
   const countries = new Set(initial.brands.map((b) => b.country)).size
   const blurb =
     initial.total === 0
-      ? "Independent studios, each with its own storefront. The first ones are opening soon."
+      ? "Independent brands and trusted stores, each with its own storefront. The first ones are opening soon."
       : initial.total === 1
         ? "One independent studio with its own storefront so far. Follow it and its new pieces, drops and stories come to you."
-        : `${initial.total} independent studios${initial.nextOffset === null && countries > 1 ? ` from ${countries} countries` : ""}, each with its own storefront. Follow the ones you like and their new pieces, drops and stories come to you.`
+        : `${initial.total} brands and stores${initial.nextOffset === null && countries > 1 ? ` from ${countries} countries` : ""}, each with its own storefront. Follow the ones you like and their new pieces, drops and stories come to you.`
   return (
     <>
       {header(blurb)}

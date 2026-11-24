@@ -6,9 +6,12 @@
  * A brand's shop is live on Yard when its storefront has been published (a storefront version
  * exists), Yard hasn't unpublished it (brands.unpublished_at), a founding brand has launched
  * (launched_at, set by its first publish), and the brand isn't restricted, suspended or closed.
- * Selling is narrower still (catalog/sellable.ts brandForSaleSql): an unclaimed founding brand
- * never sells, and a claimed one sells once it has a payout account.
+ * Selling follows the sell rule (src/lib/sell-rule.ts, the twin of catalog/for-sale-sql.ts
+ * brandForSaleSql): an ordinary brand sells without a payout account (Yard holds its earnings);
+ * an unclaimed founding brand never sells, and a claimed one sells once it has a payout account.
  */
+
+import { notForSaleOf } from "./sell-rule"
 
 export type PayoutAccountStatus = "none" | "pending" | "verified"
 
@@ -87,9 +90,10 @@ export function publishBlockers(f: AdminStorefrontFacts): string[] {
 export function publishWarnings(f: AdminStorefrontFacts): string[] {
   const out: string[] = []
   if (f.liveProducts <= 0) out.push("No live products, so the shop will show as empty until products are published.")
-  if (f.founding && f.claimStatus === "unclaimed") out.push("Not claimed yet, so Buy stays off until the owner claims it and adds a payout account.")
-  else if (!f.payoutAccount && f.founding) out.push("No payout account, so Buy stays off until the brand adds one in Studio.")
-  else if (!f.payoutAccount) out.push("No payout account yet, so Yard can't pay the brand for sales until it adds one in Studio.")
+  const block = notForSaleOf(f.claimStatus, f.payoutAccount)
+  if (block === "unclaimed") out.push("Not claimed yet, so Buy stays off until the owner claims it and adds a payout account.")
+  else if (block === "no_payout_account") out.push("No payout account, so Buy stays off until the brand adds one in Studio.")
+  else if (!f.payoutAccount) out.push("No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio.")
   return out
 }
 
@@ -108,16 +112,23 @@ export function storefrontActionPlan(f: AdminStorefrontFacts, action: AdminStore
   return { kind: "run" }
 }
 
-/** The sell check for Admin › Finance › Payout accounts: an account, a live storefront, and a brand in good standing. */
-export function sellState(f: Pick<AdminStorefrontFacts, "founding" | "claimStatus" | "reviewStatus" | "closed" | "hasVersion" | "launched" | "unpublished" | "payoutAccount" | "underReview">): { canSell: boolean; reasons: string[] } {
+/**
+ * The sell check for Admin › Finance › Payout accounts: a live storefront, a brand in good standing,
+ * and the sell rule (src/lib/sell-rule.ts, the same rule checkout uses). A payout account is a
+ * blocker only where that rule makes it one (a founding brand); an ordinary brand without one can
+ * sell, and `note` says to add one so Yard can pay it.
+ */
+export function sellState(f: Pick<AdminStorefrontFacts, "claimStatus" | "reviewStatus" | "closed" | "hasVersion" | "founding" | "launched" | "unpublished" | "payoutAccount" | "underReview">): { canSell: boolean; reasons: string[]; note: string | null } {
   const reasons: string[] = []
   if (f.closed) reasons.push("Closed")
   else if (f.reviewStatus === "suspended") reasons.push("Suspended")
   else if (f.reviewStatus === "restricted") reasons.push("Restricted")
   else if (f.underReview || f.reviewStatus === "pending_review") reasons.push("In review")
-  if (f.founding && f.claimStatus === "unclaimed") reasons.push("Not claimed")
-  if (!f.payoutAccount) reasons.push("No payout account")
+  const block = notForSaleOf(f.claimStatus, f.payoutAccount)
+  if (block === "unclaimed") reasons.push("Not claimed")
+  if (block === "unclaimed" ? !f.payoutAccount : block === "no_payout_account") reasons.push("No payout account")
   if (f.unpublished) reasons.push("Unpublished by Yard")
   else if (!f.hasVersion || (f.founding && !f.launched)) reasons.push("Storefront not published")
-  return { canSell: reasons.length === 0, reasons }
+  const canSell = reasons.length === 0
+  return { canSell, reasons, note: canSell && !f.payoutAccount ? "Add a payout account to get paid" : null }
 }

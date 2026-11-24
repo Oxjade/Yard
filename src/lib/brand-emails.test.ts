@@ -233,6 +233,14 @@ describe("admin one-tap emails", () => {
     assert.equal(brandEmailSendBody.safeParse({ ...ok, to: "someone@else.com" }).success, false)
     assert.equal(brandEmailSendBody.safeParse({ ...ok, preset: "spam" }).success, false)
   })
+  it("the payout preset says the shop can take orders; Buy waits for the account only for a founding brand", () => {
+    const ordinary = brandEmailPresets.payout_account.body("N")
+    assert.match(ordinary, /^Your shop can take orders, but there's no payout account on file yet/)
+    assert.match(ordinary, /Add one so Yard can pay you\./)
+    assert.doesNotMatch(ordinary, /nearly ready to sell|Buy stays off/)
+    assert.match(brandEmailPresets.payout_account.body("N", { buyNeedsPayout: true }), /^There's no payout account on file yet, so Buy stays off on your shop/)
+  })
+
   it("splits the message into paragraphs on blank lines and signs it with the admin's first name", () => {
     assert.deepEqual(bodyParagraphs("One\nline\n\n\nTwo\r\n\r\nThree  "), ["One line", "Two", "Three"])
     const c = brandMessageCopy({ brand: "Narcisista", preset: "payout_account", subject: " Let's get Narcisista paid ", body: "First.\n\nSecond.", signoff: "Tolu Ade" })

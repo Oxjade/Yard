@@ -8,6 +8,8 @@
  * never fake urgency. Decision emails stay kind and say exactly what to do next.
  */
 
+import { PAYOUT_NUDGE_COPY, PAYOUT_TO_GET_PAID_COPY } from "./publish-for-brand"
+
 /* ---------- Reminder rules (catalog/nudges.ts runs them every 30 minutes) ---------- */
 
 const HOUR = 3600_000
@@ -199,9 +201,11 @@ export function websitePiecesCopy(x: { brand: string; count: number }): BrandEma
 /**
  * "Your shop is live": Yard published the brand's storefront for it (Admin › Publish storefront for
  * {brand}), or it went live the moment the owner claimed it ("Go live when they claim").
- * `shop` is how the link reads ("yardstore.space/brands/handle"); `payout` false adds the payout nudge.
+ * `shop` is how the link reads ("yardstore.space/brands/handle"); `payout` false adds the payout nudge:
+ * "so shoppers can buy" only when `buyNeedsPayout` (a founding brand, lib/sell-rule.ts), else the shop
+ * already takes orders and the account is how Yard pays it.
  */
-export function shopLiveCopy(x: { brand: string; handle: string; shop: string; variant: "yard" | "claim"; payout: boolean }): BrandEmailCopy {
+export function shopLiveCopy(x: { brand: string; handle: string; shop: string; variant: "yard" | "claim"; payout: boolean; buyNeedsPayout?: boolean }): BrandEmailCopy {
   const claim = x.variant === "claim"
   return {
     subject: claim ? `You claimed ${x.brand} and you're live 🎉` : `${x.brand}, your shop is live on Yard 🎉`,
@@ -213,7 +217,7 @@ export function shopLiveCopy(x: { brand: string; handle: string; shop: string; v
     linkParagraphs: [
       [{ text: "Your shop: " }, { text: x.shop, href: `/brands/${x.handle}`, bold: true }],
       [{ text: "Change anything in " }, { text: "Studio", href: "/studio" }, { text: " anytime." }],
-      ...(x.payout ? [] : [[{ text: "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes. " }, { text: "Add my payout account", href: "/studio/settings#payouts" }]]),
+      ...(x.payout ? [] : [[{ text: `${x.buyNeedsPayout ? PAYOUT_NUDGE_COPY : PAYOUT_TO_GET_PAID_COPY} ` }, { text: "Add my payout account", href: "/studio/settings#payouts" }]]),
     ],
     action: { label: "See my shop", url: `/brands/${x.handle}` },
     why: `You're getting this because you run ${x.brand} on Yard.`,
@@ -391,7 +395,8 @@ type PresetDef = {
   hint: string
   heading: string
   subject: (brand: string) => string
-  body: (brand: string) => string
+  /** `buyNeedsPayout`: Buy stays off until a payout account is saved (a founding brand, lib/sell-rule.ts). */
+  body: (brand: string, o?: { buyNeedsPayout?: boolean }) => string
   action: { label: string; url: string }
 }
 
@@ -418,8 +423,8 @@ export const brandEmailPresets: Record<BrandEmailPreset, PresetDef> = {
     hint: "No payout account on file",
     heading: "Where should the money go? 💸",
     subject: (b) => `Let's get ${b} paid`,
-    body: () =>
-      "You're nearly ready to sell, but there's no payout account on file yet, so we've got nowhere to send your earnings.\n\nIt takes about two minutes: Studio, then Settings, then Payouts. Only the last four digits ever show in Studio.",
+    body: (_b, o) =>
+      `${o?.buyNeedsPayout ? "There's no payout account on file yet, so Buy stays off on your shop and we've got nowhere to send your earnings. Add one and shoppers can buy straight away." : "Your shop can take orders, but there's no payout account on file yet, so we've got nowhere to send your earnings. Add one so Yard can pay you."}\n\nIt takes about two minutes: Studio, then Settings, then Payouts. Only the last four digits ever show in Studio.`,
     action: { label: "Add my payout account", url: "/studio/settings#payouts" },
   },
   photos: {

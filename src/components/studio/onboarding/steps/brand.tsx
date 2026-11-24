@@ -125,7 +125,7 @@ export function BrandStep({ onNext }: StepProps) {
         </div>
       </Panel>
 
-      <Panel title="What you make" description="Your main category decides where you appear first. Add more categories later.">
+      <Panel title="What you sell" description="Your main category decides where you appear first. Add more categories later.">
         <div className="grid gap-4">
           <Field id="ob-category" label="Category" as="legend" error={e.category}>
             <ChoiceGroup id="ob-category" label="Category" value={brand.category} onValueChange={(v) => set({ category: v as typeof brand.category })} error={e.category} className="flex flex-wrap gap-1.5">

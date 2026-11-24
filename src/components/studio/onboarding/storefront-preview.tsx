@@ -150,7 +150,7 @@ export function StorefrontPreview({ data, size = "panel", eager, className }: { 
   const large = size === "large"
   const template: StorefrontTemplate = storefront.template ?? "editorial"
   const name = brand.name.trim() || "Your brand"
-  const intro = brand.description.trim() || "A line about what you make and where you make it."
+  const intro = brand.description.trim() || "A line about what you sell and where you're based."
   const place = business.city.trim() && business.country ? `${business.city.trim()}, ${countries[business.country].name}` : business.country ? countries[business.country].name : "Your city"
   const family = storefrontType[storefront.typePreset]?.family ?? storefrontType.condensed.family
   const mini = miniType[storefront.typePreset] ?? miniType.condensed

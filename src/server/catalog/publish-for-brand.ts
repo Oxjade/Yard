@@ -1,6 +1,7 @@
 import "server-only"
 import { and, asc, eq, sql } from "drizzle-orm"
 import { brandRolePermissions } from "@/lib/permissions"
+import { payoutAccountNeededToSell } from "@/lib/sell-rule"
 import { acceptEachSuggestion, claimGoLivePlan, publishChecklist, publishForBrandBlock, publishForBrandOutcome, suggestionStillFits, type PublishForBrandFacts } from "@/lib/publish-for-brand"
 import { writeAudit } from "../audit"
 import type { AdminActor, BrandActor } from "../auth/dal"
@@ -87,8 +88,9 @@ export function assertMayPublishFor(admin: AdminActor, b: Pick<BrandRow, "name" 
   if (b.founding && b.claimStatus === "unclaimed" && !admin.permissions.includes("brands.founding")) throw forbidden(`Only Yard owners can publish ${b.name} before it's claimed.`)
 }
 
-export const shopEmail = (tx: Tx, b: { id: string; handle: string }, variant: "yard" | "claim", payout: boolean) =>
-  emailBrandLeads(tx, b.id, "brand_shop_live", { handle: b.handle, variant, payout: payout ? 1 : 0 }, `brand_shop_live:${variant}:${b.id}`)
+/** `buy` 1: Buy stays off until a payout account is saved (a founding brand, lib/sell-rule.ts), so the nudge says so. */
+export const shopEmail = (tx: Tx, b: { id: string; handle: string; claimStatus: string }, variant: "yard" | "claim", payout: boolean) =>
+  emailBrandLeads(tx, b.id, "brand_shop_live", { handle: b.handle, variant, payout: payout ? 1 : 0, buy: payoutAccountNeededToSell(b.claimStatus) ? 1 : 0 }, `brand_shop_live:${variant}:${b.id}`)
 
 export type PublishForBrandPreview = {
   brand: { id: string; name: string; handle: string; founding: boolean; claimStatus: string }

@@ -91,7 +91,7 @@ export function LiveFollowingFeed() {
     suggested === null ? null : suggestions.length ? (
       <section aria-labelledby="start-title" className="mt-24 md:mt-32">
         <div id="start-title">
-          <SectionHeader title={follows?.length ? "More brands on Yard" : "Brands to start with"} description="Independent studios with their own storefront on Yard." href="/brands" action="All brands" />
+          <SectionHeader title={follows?.length ? "More brands on Yard" : "Brands to start with"} description="Independent brands and trusted stores, each with its own storefront on Yard." href="/brands" action="All brands" />
         </div>
         <ul className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-4">
           {suggestions.map((b) => (

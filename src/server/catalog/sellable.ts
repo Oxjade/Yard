@@ -6,6 +6,8 @@ import { db, type Executor } from "../db"
 import { mediaSrc } from "../media"
 import { variantLabelOf } from "./dto"
 import { brandApprovedSql, notSampleBrandSql } from "./sample-guard"
+import { brandForSaleSql } from "./for-sale-sql"
+import type { NotForSaleReason } from "../../lib/sell-rule"
 
 /**
  * The one public-visibility predicate for products: published (or scheduled and due, before the
@@ -38,17 +40,9 @@ export function brandListedSql() {
   return and(brandApprovedSql(brands.reviewStatus, brands.id), brandLaunchedSql())!
 }
 
-/**
- * The one not-for-sale predicate (founding brands). An unclaimed brand never sells; a claimed one
- * sells once it has a payout account; every ordinary brand (claim_status 'none') sells as before.
- * Used by getSellableVariants (cart pricing, PDP availability, watches, search) and isSellable
- * (the stock hold inside checkout), so no path can sell around it.
- */
-export function brandForSaleSql() {
-  return sql`(${brands.claimStatus} <> 'unclaimed' and (${brands.claimStatus} <> 'claimed' or exists (select 1 from brand_payout_accounts bpa where bpa.brand_id = ${brands.id})))`
-}
-
-export type NotForSaleReason = "unclaimed" | "no_payout_account"
+// The one not-for-sale predicate (founding brands) and its reasons: for-sale-sql.ts and lib/sell-rule.ts.
+export { brandForSaleSql } from "./for-sale-sql"
+export type { NotForSaleReason } from "../../lib/sell-rule"
 
 /** Why a brand isn't selling, from its claim status (only meaningful when brandForSaleSql is false). */
 export const notForSaleReason = (claimStatus: string): NotForSaleReason => (claimStatus === "unclaimed" ? "unclaimed" : "no_payout_account")

@@ -320,7 +320,7 @@ export const templates = {
       paragraphs: [
         `Welcome to Yard. We've reviewed ${v(x, "brand")} and you're approved to sell. Open Studio on the web or in the Yard app.`,
         "Start creating as soon as you can: add your products with photos, options and stock, dress up your storefront, and plan your first drop so your followers are there the moment it opens.",
-        "Before your first sale, add your payout account in Studio so your earnings reach you.",
+        "Add your payout account in Studio so Yard can pay you. You can take orders before it's in: we hold your earnings until it is.",
         "Need guidance at any point? Message @support, the Yard team, from Yard Support in the Studio sidebar. We reply right there in Studio.",
       ],
       facts: facts({ label: "Brand", value: v(x, "brand") }, has(x, "handle") && { label: "Storefront", value: `@${v(x, "handle")}` }),
@@ -438,14 +438,16 @@ export const templates = {
     build: (x) => brandCopy(websitePiecesCopy({ brand: v(x, "brand"), count: Number(x.count) || 1 })),
   },
   // "You're live 🎉": Yard published the shop for the brand (`variant` "yard") or it went live on claim
-  // ("claim"); catalog/publish-for-brand.ts. `handle`: the brand's handle; `payout` 0 adds the payout nudge.
+  // ("claim"); catalog/publish-for-brand.ts. `handle`: the brand's handle; `payout` 0 adds the payout nudge;
+  // `buy` 1 when Buy stays off until the account is saved (a founding brand), else the shop already takes orders.
+  // Without `buy` (queued before it existed), the claim variant is a founding brand and the yard one is read as ordinary.
   brand_shop_live: {
     category: "account",
     required: ["brand", "handle"],
     build: (x) => {
       const handle = v(x, "handle")
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(handle)) throw new Error("email template brand_shop_live: the handle isn't a brand handle")
-      return brandCopy(shopLiveCopy({ brand: v(x, "brand"), handle, shop: shopDisplay(getEnv().publicOrigin, handle), variant: x.variant === "claim" ? "claim" : "yard", payout: Number(x.payout) === 1 }))
+      return brandCopy(shopLiveCopy({ brand: v(x, "brand"), handle, shop: shopDisplay(getEnv().publicOrigin, handle), variant: x.variant === "claim" ? "claim" : "yard", payout: Number(x.payout) === 1, buyNeedsPayout: x.buy === undefined ? x.variant === "claim" : Number(x.buy) === 1 }))
     },
   },
   // "Add your payout account" (ledger/payout-needed-db.ts): a sale paid while the brand has no payout account

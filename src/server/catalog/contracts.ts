@@ -195,7 +195,7 @@ export const onboardingStepSchemas = {
     markText: z.string().regex(/^[A-Za-z0-9&]{1,3}$/, { error: "Use 1 to 3 letters or numbers." }).optional(),
     markStyle: z.enum(["condensed", "expanded", "grotesk"]).default("condensed"),
     logoMediaId: safeId().nullable().optional(),
-    description: safeLine({ max: 160 }).min(20, { error: "Write at least 20 characters, so shoppers know what you make." }),
+    description: safeLine({ max: 160 }).min(20, { error: "Write at least 20 characters, so shoppers know what you sell." }),
   }),
   storefront: z.strictObject({
     coverMediaId: safeId().nullable().optional(),

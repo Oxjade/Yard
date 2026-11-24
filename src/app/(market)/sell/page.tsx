@@ -8,7 +8,7 @@ import { sitePhotos } from "@/lib/site-images"
 
 export const metadata: Metadata = {
   title: `Sell on ${site.name}`,
-  description: `Open your brand's storefront on ${site.name}: pieces, drops, orders and payouts in one place. Commission: ${commissionTerms} on completed sales.`,
+  description: `Open your brand's or store's storefront on ${site.name}: pieces, drops, orders and payouts in one place. Commission: ${commissionTerms} on completed sales.`,
   alternates: { canonical: "/sell" },
 }
 
@@ -22,7 +22,7 @@ const points = [
 ]
 
 const steps = [
-  { title: "Apply", body: "Tell us about your brand and what you make. It takes a few minutes." },
+  { title: "Apply", body: "Tell us about your brand or store and what you sell. It takes a few minutes." },
   { title: "Set up your storefront", body: "Add your logo, banner, story, shipping and payout details in Brand Studio." },
   { title: "List your pieces", body: "Add products with photos, options and stock, or plan your first drop." },
   { title: "Sell and get paid", body: "Fulfil orders from Brand Studio and receive your payouts." },
@@ -30,16 +30,16 @@ const steps = [
 
 const photos = [sitePhotos.adeewaGreen, sitePhotos.greatnessWheelie, sitePhotos.saveYourSolBlack]
 
-/** /sell: the brand side of Yard. Buying lives everywhere else; this page is for people who make things. */
+/** /sell: the seller side of Yard. Buying lives everywhere else; this page is for brands and stores that sell. */
 export default function SellPage() {
   return (
     <div className="mx-auto max-w-page px-4 pt-28 pb-16 md:px-8 md:pt-32">
       <section className="grid min-w-0 gap-10 lg:grid-cols-[1.1fr_1fr] lg:items-center">
         <div className="min-w-0">
-          <p className="text-sm text-ink-2">For brands</p>
+          <p className="text-sm text-ink-2">For brands and stores</p>
           <h1 className="mt-3 font-display text-display-lg text-balance text-ink">Sell on {site.name}</h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-pretty text-ink-2">
-            {site.name} is where independent brands open their storefront, run drops and reach shoppers who follow them. Fashion, beauty, art, home, tech or something new: if you make it, there&apos;s room for it here. Apply once, set up in Brand Studio, and start selling.
+            {site.name} is where independent brands and trusted stores open their storefront, run drops and reach shoppers who follow them. Fashion, beauty, art, home, tech or something new: whether you make it or stock genuine pieces from other brands, there&apos;s room for it here. Apply once, set up in Brand Studio, and start selling.
           </p>
           <div className="mt-8 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button asChild variant="primary" size="lg">

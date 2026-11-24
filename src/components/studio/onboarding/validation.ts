@@ -28,7 +28,7 @@ export function validateBrand(b: OnboardingData["brand"]): Errors {
     markText: b.logoMode === "mark" && !/^[A-Za-z0-9&]{1,3}$/.test(b.markText.trim()) ? "Use 1 to 3 letters or numbers." : undefined,
     description:
       b.description.trim().length < 20
-        ? "Write at least 20 characters, so shoppers know what you make."
+        ? "Write at least 20 characters, so shoppers know what you sell."
         : b.description.trim().length > 160
           ? "Keep it to 160 characters or fewer."
           : undefined,

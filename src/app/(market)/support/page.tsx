@@ -64,7 +64,7 @@ export default function SupportPage() {
 
       <LegalSection title="Sell on Yard">
         <p>
-          Independent brands can open a store on Yard for free. Start from <LegalLink href="/studio">Brand Studio</LegalLink>, where you&apos;ll set up your store, list products and manage orders. The terms for brands are in the <LegalLink href="/legal/seller-agreement">Seller agreement</LegalLink>.
+          Independent brands and stores, including retailers and resellers of genuine products, can open a store on Yard for free. Start from <LegalLink href="/studio">Brand Studio</LegalLink>, where you&apos;ll set up your store, list products and manage orders. The terms for sellers are in the <LegalLink href="/legal/seller-agreement">Seller agreement</LegalLink>.
         </p>
       </LegalSection>
 

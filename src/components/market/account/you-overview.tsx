@@ -316,7 +316,7 @@ export function YouOverview() {
       {liveRecommended.length ? (
         <section aria-labelledby="you-recommended" className="mt-16 md:mt-20">
           <div id="you-recommended">
-            <SectionHeader title="Brands on Yard" description="Independent studios with their own storefront." href="/brands" action="All brands" />
+            <SectionHeader title="Brands on Yard" description="Independent brands and trusted stores, each with its own storefront." href="/brands" action="All brands" />
           </div>
           <ul className="rail -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 *:w-[78vw] *:shrink-0 *:snap-start sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 sm:*:w-auto lg:grid-cols-4">
             {liveRecommended.map((b) => (

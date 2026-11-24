@@ -158,7 +158,7 @@ function WelcomeHero() {
             ))}
           </h1>
           <p style={delay(600)} className="hero-lift mt-6 max-w-md text-pretty text-base leading-relaxed text-ink/85 md:text-lg">
-            Small runs from independent brands you won&apos;t find anywhere else, from streetwear and jewelry to prints, skin care and ceramics. Follow a brand and we&apos;ll tell you when its next drop opens.
+            Small runs from independent brands, and trusted stores alongside them, from streetwear and jewelry to prints, skin care and ceramics. Follow a brand and we&apos;ll tell you when its next drop opens.
           </p>
           <div style={delay(720)} className="hero-lift mt-8 flex flex-wrap items-center gap-3">
             <Button asChild variant="primary" size="lg"><Link href="/shop">Shop now</Link></Button>

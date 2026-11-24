@@ -107,7 +107,7 @@ export function welcomeCopy(x: { name?: string; brands: WelcomeBrand[] }): Welco
     heading: "You're in 👋",
     ...(first ? { greeting: `Hey ${first},` } : {}),
     paragraphs: [
-      "Yard is where independent brands drop their pieces, and where you find them first. Small labels, real makers, nothing you'll see on everyone else.",
+      "Yard is where independent brands drop their pieces, and where you find them first, alongside trusted stores selling genuine pieces.",
       "Here's the move: follow a brand and you'll hear about its drops before they're gone. No follow, no heads-up.",
     ],
     blocks: list

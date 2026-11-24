@@ -214,7 +214,7 @@ function ProfileSection() {
   const errors = {
     name: form.name.trim().length < 2 ? "Enter your brand name." : form.name.trim().length > 40 ? "Keep it to 40 characters." : undefined,
     handle: handle.ok ? undefined : handle.message,
-    description: desc < 40 ? "Write at least 40 characters so shoppers know what you make." : desc > 300 ? "Keep it to 300 characters." : undefined,
+    description: desc < 40 ? "Write at least 40 characters so shoppers know what you sell." : desc > 300 ? "Keep it to 300 characters." : undefined,
     city: form.city.trim().length < 2 ? "Enter the city you work from." : undefined,
   }
   const shown: Partial<typeof errors> = submitted ? errors : {}

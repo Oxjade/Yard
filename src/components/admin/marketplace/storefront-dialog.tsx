@@ -19,7 +19,7 @@ import { formatDate } from "./format"
  * Admin › Brands › Publish / Unpublish storefront, for any brand that isn't closed (brands.restrict;
  * the server also asks brands.founding for an unclaimed founding brand). The owner asked for a modal
  * confirmation: it says what goes live (the number of live products) and anything that holds the
- * shop back (no products, no payout account so Buy stays off or Yard can't pay the brand), and
+ * shop back (no products; no payout account, so Buy stays off for a founding brand, or the shop takes orders but Yard can't pay an ordinary brand yet), and
  * refuses with the reason when the brand can't be published (suspended, restricted, in review).
  */
 

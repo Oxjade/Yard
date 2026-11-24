@@ -569,7 +569,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved, onDeleted }
       <ClaimSection brand={b} onSaved={saved} />
       <BadgeSection brand={b} onSaved={saved} />
       {unclaimed ? <ProfileSection key={`${b.id}:${b.logo?.mediaId}:${b.banner?.mediaId}`} brand={b} onSaved={saved} disabled={onHold} /> : null}
-      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} /> : null}
+      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} claimStatus={b.claimStatus} /> : null}
 
       <DetailSection title="Activity">
         <ServerActivity subjectIds={[b.id]} extra={b.createdAt ? [{ at: `${b.createdAt}T00:00:00.000Z`, label: "Founding brand created" }] : []} empty="No activity recorded yet." />

@@ -318,7 +318,7 @@ export function brandDescription(b: SeoBrandInput) {
   const own = plainText(b.description, 1000)
   if (own) return own
   const where = [b.city, b.country].filter(Boolean).join(", ")
-  return `${b.name} is an independent brand${where ? ` from ${where}` : ""}, selling on Yard.`
+  return `${b.name}${where ? `, from ${where},` : ""} sells on Yard.`
 }
 
 /** The brand as an Organization, plus an ItemList of its live products. */
