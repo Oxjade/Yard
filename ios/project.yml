@@ -42,6 +42,13 @@ targets:
         ENABLE_PREVIEWS: YES
         SWIFT_STRICT_CONCURRENCY: minimal
         CODE_SIGN_STYLE: Automatic
+      # App Attest (Yard/Core/Networking/AppAttest.swift): development keys for Debug, production
+      # for Release (App Store and TestFlight). The App ID needs the App Attest capability.
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Entitlements/Yard.Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Entitlements/Yard.Release.entitlements
     info:
       path: Yard/Resources/Info.plist
       properties:

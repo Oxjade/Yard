@@ -33,13 +33,17 @@ struct EmptyResponse: Decodable, Sendable {
 /// try await APIClient.shared.send(.delete, "/api/cart/lines/\(variantId)")   // ignore the body
 /// ```
 final class APIClient: @unchecked Sendable {
-    static let shared = APIClient()
+    static let shared = APIClient(attestor: AppAttestor.live)
 
     let session: URLSession
     let decoder: JSONDecoder
     let encoder: JSONEncoder
+    /// App attestation for the protected calls (sign-up, reset, magic link, apply): they carry
+    /// `X-Yard-Attest` when the attestor can make one (`AppAttest.swift`). Nil: never attested.
+    let attestor: AppAttestor?
 
-    init(session: URLSession? = nil) {
+    init(session: URLSession? = nil, attestor: AppAttestor? = nil) {
+        self.attestor = attestor
         if let session {
             self.session = session
         } else {
@@ -105,7 +109,8 @@ final class APIClient: @unchecked Sendable {
 
     /// Performs the request and returns the raw body of a 2xx response; throws `APIError` otherwise.
     func data(_ method: HTTPMethod, _ path: String, query: [URLQueryItem] = [], body: (any Encodable)? = nil) async throws -> Data {
-        let request = try makeRequest(method, path, query: query, body: body)
+        var request = try makeRequest(method, path, query: query, body: body)
+        let attested = await attest(&request)
         let result: (Data, URLResponse)
         do {
             result = try await session.data(for: request)
@@ -118,9 +123,21 @@ final class APIClient: @unchecked Sendable {
             throw APIError(status: 0, code: "network", message: "We couldn't reach Yard. Try again.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(status: http.statusCode, data: data)
+            let error = Self.error(status: http.statusCode, data: data)
+            // The server refused this install's attestation (enforce mode): register a new key next time.
+            if attested, error.fields["attest"] != nil, let attestor { await attestor.forgetKey() }
+            throw error
         }
         return data
+    }
+
+    /// Adds `X-Yard-Attest` to a protected request when the attestor can make one. True when added.
+    func attest(_ request: inout URLRequest) async -> Bool {
+        guard let attestor, let method = request.httpMethod, let url = request.url,
+              AppAttest.isProtected(method: method, path: url.path) else { return false }
+        guard let value = await attestor.headerValue(method: method, path: url.path, body: request.httpBody ?? Data()) else { return false }
+        request.setValue(value, forHTTPHeaderField: AppAttest.header)
+        return true
     }
 
     /// Builds a `URLRequest` with Yard's required headers. Exposed for uploads/streams that need
