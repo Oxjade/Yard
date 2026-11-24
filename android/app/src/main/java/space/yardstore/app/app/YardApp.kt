@@ -8,6 +8,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 import space.yardstore.app.core.Config
 import space.yardstore.app.features.liveactivity.LiveTrackingManager
@@ -36,6 +37,9 @@ class YardApp : Application(), SingletonImageLoader.Factory {
         // shopper's (docs/APP.md › Sessions).
         container.session.addBeforeSignOutListener { container.studio.signOutBrand() }
         LiveTrackingManager.install(this)
+        // App attestation warm-up: read the server's config and prepare Play Integrity's token
+        // provider now, so sign-up and friends don't wait for it (failures are silent).
+        container.appScope.launch { container.api.attestor?.warmUp() }
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

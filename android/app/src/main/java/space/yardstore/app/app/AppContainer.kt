@@ -8,6 +8,10 @@ import kotlinx.coroutines.SupervisorJob
 import space.yardstore.app.core.AppearanceStore
 import space.yardstore.app.core.Config
 import space.yardstore.app.core.networking.APIClient
+import space.yardstore.app.core.networking.AppAttestChallenge
+import space.yardstore.app.core.networking.AppAttestConfig
+import space.yardstore.app.core.networking.AppAttestor
+import space.yardstore.app.core.networking.PlayIntegrityTokenSource
 import space.yardstore.app.core.networking.PersistentCookieJar
 import space.yardstore.app.core.stores.CartStore
 import space.yardstore.app.core.stores.FollowStore
@@ -25,6 +29,18 @@ import space.yardstore.app.features.you.YouRegion
 class AppContainer(context: Context) {
     val cookieJar = PersistentCookieJar(Config.preferences)
     val api: APIClient = APIClient(APIClient.buildHttpClient(cookieJar)).also { APIClient.install(it) }
+
+    init {
+        // App attestation (docs/APP.md "App attestation"): Play Integrity on the protected calls.
+        // Without Play services the source just yields no token and requests go without the header.
+        runCatching { PlayIntegrityTokenSource(context) }.getOrNull()?.let { source ->
+            api.attestor = AppAttestor(
+                source = source,
+                fetchConfig = { api.get<AppAttestConfig>("/api/app/attest/config") },
+                fetchChallenge = { api.post<AppAttestChallenge>("/api/app/attest/challenge", body = mapOf("purpose" to "request")) },
+            )
+        }
+    }
 
     val session = SessionStore(api)
     /** Studio mode: the brand session, the active brand, the remembered mode (features/studio). */

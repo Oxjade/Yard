@@ -123,6 +123,9 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     // Around: WebViewAssetLoader serves the bundled MapLibre GL JS globe (assets/around/).
     implementation(libs.androidx.webkit)
+    // App attestation: Play Integrity standard requests on sign-up, reset, magic link and apply
+    // (core/networking/AppAttest.kt, docs/APP.md "App attestation").
+    implementation(libs.play.integrity)
 
     // Push (FCM). Initialised only when google-services.json is present (see above).
     implementation(platform(libs.firebase.bom))

@@ -151,9 +151,26 @@ class APIClient(
         }
     }
 
+    /**
+     * App attestation for the protected calls (sign-up, reset, magic link, apply): when set, those
+     * requests carry `X-Yard-Attest` ([AppAttest]). Installed by `AppContainer`; null in tests and
+     * previews unless a test installs a fake.
+     */
+    @Volatile var attestor: AppAttestor? = null
+
     /** Performs the request and returns the raw body of a 2xx response; throws [APIError] otherwise. */
     suspend fun data(method: HTTPMethod, path: String, query: Query = emptyList(), body: Any? = null): String =
-        execute(makeRequest(method, path, query, body))
+        execute(attested(makeRequest(method, path, query, body)))
+
+    /** Adds `X-Yard-Attest` to a protected request when the attestor can make one; otherwise unchanged. */
+    suspend fun attested(request: Request): Request {
+        val att = attestor ?: return request
+        val path = request.url.encodedPath
+        if (!AppAttest.isProtected(request.method, path)) return request
+        val bytes = request.body?.let { b -> okio.Buffer().also { b.writeTo(it) }.readByteArray() } ?: ByteArray(0)
+        val header = att.headerFor(request.method, path, bytes) ?: return request
+        return request.newBuilder().header(AppAttest.HEADER, header).build()
+    }
 
     /** Sends a prepared request (e.g. from [makeRequest], modified) and returns the 2xx body. */
     suspend fun execute(request: Request): String {
