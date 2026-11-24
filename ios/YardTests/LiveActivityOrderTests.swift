@@ -35,7 +35,7 @@ private func delivery(_ events: [(String, String)], estimate: [String: Any]? = d
 private let fixedNow = YardDate.parse("2026-11-19T12:00:00.000Z")!
 private typealias State = YardOrderActivityAttributes.ContentState
 
-private func run(_ o: LiveActivityOrderDTO, _ d: LiveActivityDeliveryDTO, now: Date = fixedNow, brandCity: String = "Lagos") -> LiveActivityOrder {
+private func mapOrder(_ o: LiveActivityOrderDTO, _ d: LiveActivityDeliveryDTO, now: Date = fixedNow, brandCity: String = "Lagos") -> LiveActivityOrder {
     LiveActivityOrder.make(orderId: "or_test", order: o, delivery: d, brandCity: brandCity, now: now)
 }
 
@@ -44,40 +44,40 @@ final class LiveActivityOrderTests: XCTestCase {
     private var ship: Date { YardDate.parse(shipAt)! }
 
     func testCancelledEnds() {
-        let r = run(order("cancelled"), delivery([("shipped", shipAt)]))
+        let r = mapOrder(order("cancelled"), delivery([("shipped", shipAt)]))
         XCTAssertTrue(r.isClosed)
         XCTAssertNil(r.state)
     }
 
     func testReturnedToSenderEnds() {
-        XCTAssertTrue(run(order("returned_to_sender"), delivery([])).isClosed)
+        XCTAssertTrue(mapOrder(order("returned_to_sender"), delivery([])).isClosed)
     }
 
     func testReturnedEventEnds() {
-        let r = run(order("shipped"), delivery([("shipped", shipAt), ("returned", "2026-11-19T09:00:00.000Z")]))
+        let r = mapOrder(order("shipped"), delivery([("shipped", shipAt), ("returned", "2026-11-19T09:00:00.000Z")]))
         XCTAssertTrue(r.isClosed)
         XCTAssertNil(r.state)
     }
 
     func testDeliveredByFulfilment() {
-        let s = run(order("delivered"), delivery([("shipped", shipAt)])).state
+        let s = mapOrder(order("delivered"), delivery([("shipped", shipAt)])).state
         XCTAssertEqual(s, State(step: .delivered, etaDate: nil, progress: 1, statusLine: "Delivered"))
     }
 
     func testDeliveredByEvent() {
-        XCTAssertEqual(run(order("shipped"), delivery([("shipped", shipAt), ("delivered", "2026-11-19T10:00:00.000Z")])).state?.step, .delivered)
+        XCTAssertEqual(mapOrder(order("shipped"), delivery([("shipped", shipAt), ("delivered", "2026-11-19T10:00:00.000Z")])).state?.step, .delivered)
     }
 
     func testDeliveredByEstimate() {
-        XCTAssertEqual(run(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "delivered", "deliveredOn": "2026-11-19", "late": false])).state?.step, .delivered)
+        XCTAssertEqual(mapOrder(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "delivered", "deliveredOn": "2026-11-19", "late": false])).state?.step, .delivered)
     }
 
     func testDeliveredByOrderDate() {
-        XCTAssertEqual(run(order("shipped", deliveredAt: "2026-11-19T10:00:00.000Z"), delivery([("shipped", shipAt)])).state?.step, .delivered)
+        XCTAssertEqual(mapOrder(order("shipped", deliveredAt: "2026-11-19T10:00:00.000Z"), delivery([("shipped", shipAt)])).state?.step, .delivered)
     }
 
     func testOutForDelivery() {
-        let r = run(order("shipped"), delivery([("shipped", shipAt), ("out_for_delivery", "2026-11-19T07:00:00.000Z")]))
+        let r = mapOrder(order("shipped"), delivery([("shipped", shipAt), ("out_for_delivery", "2026-11-19T07:00:00.000Z")]))
         XCTAssertFalse(r.isClosed)
         XCTAssertEqual(r.state?.step, .outForDelivery)
         XCTAssertEqual(r.state?.etaDate, eta)
@@ -86,19 +86,19 @@ final class LiveActivityOrderTests: XCTestCase {
     }
 
     func testOutForDeliveryThenExceptionStaysOut() {
-        let r = run(order("shipped"), delivery([("shipped", shipAt), ("out_for_delivery", "2026-11-19T07:00:00.000Z"), ("exception", "2026-11-19T09:00:00.000Z")]))
+        let r = mapOrder(order("shipped"), delivery([("shipped", shipAt), ("out_for_delivery", "2026-11-19T07:00:00.000Z"), ("exception", "2026-11-19T09:00:00.000Z")]))
         XCTAssertEqual(r.state?.step, .outForDelivery)
     }
 
     func testOutForDeliveryNoCity() {
-        let r = run(order("shipped", city: nil), delivery([("out_for_delivery", "2026-11-19T07:00:00.000Z")], city: nil))
+        let r = mapOrder(order("shipped", city: nil), delivery([("out_for_delivery", "2026-11-19T07:00:00.000Z")], city: nil))
         XCTAssertEqual(r.state?.statusLine, "Out for delivery")
     }
 
     func testShippedHalfway() {
         let half = ship.addingTimeInterval(eta.timeIntervalSince(ship) / 2)
         guard half < LiveActivityDates.startOfDay("2026-11-21")! else { return } // inside the window: arrivingSoon covers it
-        let s = run(order("shipped"), delivery([("shipped", shipAt)]), now: half).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt)]), now: half).state
         XCTAssertEqual(s?.step, .shipped)
         XCTAssertEqual(s?.etaDate, eta)
         XCTAssertEqual(s?.progress ?? 0, 0.25 + 0.53 * 0.5, accuracy: 1e-9)
@@ -106,27 +106,27 @@ final class LiveActivityOrderTests: XCTestCase {
     }
 
     func testShippedBeforeShipEvent() {
-        XCTAssertEqual(run(order("shipped"), delivery([("shipped", shipAt)]), now: ship.addingTimeInterval(-3_600)).state?.progress, 0.25)
+        XCTAssertEqual(mapOrder(order("shipped"), delivery([("shipped", shipAt)]), now: ship.addingTimeInterval(-3_600)).state?.progress, 0.25)
     }
 
     func testShippedNoBrandCity() {
-        XCTAssertEqual(run(order("shipped"), delivery([("in_transit", shipAt)]), brandCity: "").state?.statusLine, "On its way")
+        XCTAssertEqual(mapOrder(order("shipped"), delivery([("in_transit", shipAt)]), brandCity: "").state?.statusLine, "On its way")
     }
 
     func testShippedLastException() {
-        let s = run(order("shipped"), delivery([("shipped", shipAt), ("exception", "2026-11-19T09:00:00.000Z")])).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt), ("exception", "2026-11-19T09:00:00.000Z")])).state
         XCTAssertEqual(s?.step, .shipped)
         XCTAssertEqual(s?.statusLine, "Delayed — Ojuelegba Supply reported a delay")
     }
 
     func testShippedLate() {
-        let s = run(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "late", "arrivalFrom": "2026-11-21", "arrivalTo": "2026-11-22", "late": true])).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "late", "arrivalFrom": "2026-11-21", "arrivalTo": "2026-11-22", "late": true])).state
         XCTAssertEqual(s?.statusLine, "Running late — new estimate")
     }
 
     func testArrivingSoon() {
         let at = LiveActivityDates.startOfDay("2026-11-21")!.addingTimeInterval(3_600)
-        let s = run(order("shipped"), delivery([("shipped", shipAt)]), now: at).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt)]), now: at).state
         let fraction = at.timeIntervalSince(ship) / eta.timeIntervalSince(ship)
         XCTAssertEqual(s?.step, .arrivingSoon)
         XCTAssertEqual(s?.etaDate, eta)
@@ -136,49 +136,49 @@ final class LiveActivityOrderTests: XCTestCase {
 
     func testArrivingSoonLate() {
         let at = LiveActivityDates.startOfDay("2026-11-21")!.addingTimeInterval(3_600)
-        let s = run(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "late", "arrivalFrom": "2026-11-21", "arrivalTo": "2026-11-22", "late": true]), now: at).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt)], estimate: ["basis": "late", "arrivalFrom": "2026-11-21", "arrivalTo": "2026-11-22", "late": true]), now: at).state
         XCTAssertEqual(s?.statusLine, "Running late — arriving soon in London")
     }
 
     func testPackedProcessing() {
-        let s = run(order("processing"), delivery([])).state
+        let s = mapOrder(order("processing"), delivery([])).state
         XCTAssertEqual(s, State(step: .packed, etaDate: eta, progress: 0.08, statusLine: "Packed by Ojuelegba Supply"))
     }
 
     func testPackedLabelCreated() {
-        XCTAssertEqual(run(order("unfulfilled"), delivery([("label_created", shipAt)])).state?.step, .packed)
+        XCTAssertEqual(mapOrder(order("unfulfilled"), delivery([("label_created", shipAt)])).state?.step, .packed)
     }
 
     func testUnfulfilledNotTracked() {
-        let r = run(order("unfulfilled"), delivery([]))
+        let r = mapOrder(order("unfulfilled"), delivery([]))
         XCTAssertFalse(r.isClosed)
         XCTAssertNil(r.state)
     }
 
     func testShippedOnDateWhenNoEvent() {
         let start = LiveActivityDates.startOfDay("2026-11-18")!
-        let s = run(order("shipped"), delivery([], shippedOn: "2026-11-18")).state
+        let s = mapOrder(order("shipped"), delivery([], shippedOn: "2026-11-18")).state
         let fraction = fixedNow.timeIntervalSince(start) / eta.timeIntervalSince(start)
         XCTAssertEqual(s?.progress ?? 0, 0.25 + 0.53 * min(max(fraction, 0), 1), accuracy: 1e-9)
     }
 
     func testNoEstimate() {
-        let s = run(order("shipped"), delivery([("shipped", shipAt)], estimate: nil)).state
+        let s = mapOrder(order("shipped"), delivery([("shipped", shipAt)], estimate: nil)).state
         XCTAssertEqual(s, State(step: .shipped, etaDate: nil, progress: 0.25, statusLine: "On its way from Lagos"))
     }
 
     func testNoBrandName() {
-        XCTAssertEqual(run(order("processing", brand: nil), delivery([])).state?.statusLine, "Packed by The brand")
+        XCTAssertEqual(mapOrder(order("processing", brand: nil), delivery([])).state?.statusLine, "Packed by The brand")
     }
 
     func testCityFromOrderWhenDeliveryHasNone() {
-        let r = run(order("shipped", city: "Abuja"), delivery([("out_for_delivery", shipAt)], city: nil))
+        let r = mapOrder(order("shipped", city: "Abuja"), delivery([("out_for_delivery", shipAt)], city: nil))
         XCTAssertEqual(r.deliveryCity, "Abuja")
         XCTAssertEqual(r.state?.statusLine, "Out for delivery in Abuja")
     }
 
     func testEventsOutOfOrderAreSorted() {
-        XCTAssertEqual(run(order("shipped"), delivery([("out_for_delivery", "2026-11-19T07:00:00.000Z"), ("shipped", shipAt)])).state?.step, .outForDelivery)
+        XCTAssertEqual(mapOrder(order("shipped"), delivery([("out_for_delivery", "2026-11-19T07:00:00.000Z"), ("shipped", shipAt)])).state?.step, .outForDelivery)
     }
 
     // MARK: The push payload, as Yard's server writes it
