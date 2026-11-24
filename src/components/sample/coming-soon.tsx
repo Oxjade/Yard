@@ -11,8 +11,6 @@ import { Button } from "@/components/ui/button"
  */
 export const COMING_SOON = {
   studio: {
-    analytics: { title: "Analytics", body: "Sales, traffic and conversion reports are on their way. Your Overview, Orders and Payouts already show your real figures.", back: { href: "/studio", label: "Back to Overview" } },
-    customers: { title: "Customers", body: "A customer list with order history is on its way. Each order already shows who placed it and where it ships.", back: { href: "/studio/orders", label: "Open orders" } },
     promotions: { title: "Promotions", body: "Discount codes and sales are on their way. You'll set them up here when they launch.", back: { href: "/studio", label: "Back to Overview" } },
     advertising: { title: "Advertising", body: "Sponsored placements across Yard are on their way. You'll plan and track campaigns here when they launch.", back: { href: "/studio", label: "Back to Overview" } },
   },

@@ -29,7 +29,7 @@ export const shopperFollows = pgTable(
       .references(() => brands.id),
     createdAt: tz("created_at").notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.brandId], name: "shopper_follows_pk" })],
+  (t) => [primaryKey({ columns: [t.userId, t.brandId], name: "shopper_follows_pk" }), index("shopper_follows_brand_ix").on(t.brandId)],
 )
 
 export const shopperWishlist = pgTable(
@@ -59,7 +59,7 @@ export const shopperReminders = pgTable(
       .references(() => brands.id),
     createdAt: tz("created_at").notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.dropId], name: "shopper_reminders_pk" })],
+  (t) => [primaryKey({ columns: [t.userId, t.dropId], name: "shopper_reminders_pk" }), index("shopper_reminders_drop_ix").on(t.dropId)],
 )
 
 export const chartFlags = pgTable(

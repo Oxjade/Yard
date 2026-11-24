@@ -12,8 +12,9 @@ import { PayoutsLiveTab } from "./payouts-live-tab"
 import { FinanceOperations } from "./finance-live-operations"
 import { FinanceControls } from "./finance-live-controls"
 import { BachsLiveTab } from "./bachs-live-tab"
+import { CommissionLiveTab } from "./commission-live-tab"
 
-type Tab = "overview" | "payouts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation" | "bachs"
+type Tab = "overview" | "payouts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation" | "bachs" | "commission"
 const options: { value: Tab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "payouts", label: "Payouts" },
@@ -23,6 +24,7 @@ const options: { value: Tab; label: string }[] = [
   { value: "brands", label: "Brand settings" },
   { value: "reconciliation", label: "Reconciliation" },
   { value: "bachs", label: "Bachs" },
+  { value: "commission", label: "Commission" },
 ]
 type Overview = {
   currencies: { currency: string; providerClearingMinor: number; commissionMinor: number; adjustmentsMinor: number; brandPendingMinor: number; brandAvailableMinor: number; brandReserveMinor: number; brandInPayoutMinor: number }[]
@@ -58,6 +60,7 @@ export function FinanceLiveView() {
       {tab === "batches" || tab === "ledger" || tab === "adjustments" ? <FinanceOperations tab={tab} /> : null}
       {tab === "brands" || tab === "reconciliation" ? <FinanceControls tab={tab} /> : null}
       {tab === "bachs" ? <BachsLiveTab /> : null}
+      {tab === "commission" ? <CommissionLiveTab /> : null}
     </div>
   )
 }

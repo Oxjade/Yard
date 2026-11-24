@@ -22,6 +22,10 @@ import { cn } from "@/lib/utils"
 import { buildCustomers, countryName, customersDescription, formatDateYear, itemCount, plural, relativeDay, segmentMeta, vipThreshold, type BrandCustomer, type Segment } from "./model"
 import { Thumb } from "@/components/studio/catalog/parts"
 import { Initials, PhoneSort, phoneCell, useFocusReturn, useStudioReady } from "./shared"
+import { LiveCustomers } from "./live-customers"
+import { SessionGate } from "@/components/session/session-gate"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { useServerSession } from "@/lib/session/use-server-session"
 
 type Tab = "all" | Segment
 type Sort = "recent" | "spent" | "orders"
@@ -39,7 +43,24 @@ const tabs: { value: Tab; label: string }[] = [
   { value: "vip", label: "VIP" },
 ]
 
+/**
+ * A real brand's session (not a demo account) gets its customers from Yard's server. The sample
+ * list (this browser's sample orders) is for demo and development only: in production, everyone
+ * else gets the Studio sign-in, never sample customers.
+ */
 export function CustomersIndex() {
+  const member = useServerSession((s) => s.brand)
+  const sampleData = usePageSampleData()
+  if (member && !member.demo) return <LiveCustomers key={member.brand.id} member={member} />
+  if (sampleData) return <SampleCustomersIndex />
+  return (
+    <SessionGate surface="studio" feature="Customers">
+      {member ? <LiveCustomers key={member.brand.id} member={member} /> : null}
+    </SessionGate>
+  )
+}
+
+function SampleCustomersIndex() {
   const ready = useStudioReady()
   const router = useRouter()
   const pathname = usePathname()

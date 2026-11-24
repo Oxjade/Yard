@@ -147,6 +147,8 @@ export const ledgerOrderMoney = pgTable(
     index("ledger_order_money_brand_ix").on(t.brandId, t.status),
     index("ledger_order_money_payment_ix").on(t.paymentId),
     index("ledger_order_money_reserve_ix").on(t.reserveReleaseAt),
+    /** Commission and GMV by day (Control Center, Finance › Commission). */
+    index("ledger_order_money_captured_ix").on(t.capturedAt),
     oneOf("ledger_order_money_status_ck", "status", ORDER_MONEY_STATUSES),
     oneOf("ledger_order_money_tier_ck", "tier", BRAND_TIERS),
     check("ledger_order_money_amounts_ck", raw("gross_minor > 0 and commission_minor >= 0 and pending_minor >= 0 and reserve_minor >= 0 and refunded_minor between 0 and gross_minor")),

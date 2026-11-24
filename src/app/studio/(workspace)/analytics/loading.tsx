@@ -1,6 +1,6 @@
 import { AnalyticsSkeleton, analyticsDescription } from "@/components/studio/business/skeletons"
-import { STUDIO_BRAND_ID, brandById } from "@/lib/data/brands"
 
+/** Neutral copy: this shell is shared by the demo and by real brands, so it names no brand. */
 export default function AnalyticsLoading() {
-  return <AnalyticsSkeleton description={analyticsDescription(brandById.get(STUDIO_BRAND_ID)!.name)} />
+  return <AnalyticsSkeleton description={analyticsDescription("your brand")} />
 }

@@ -491,9 +491,9 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         { href: "/studio/drops", label: "Drops", icon: CalendarDotsIcon },
       ],
     },
-    // Promotions, Advertising, Customers and Analytics have only sample data so far: they show in
-    // demo and development only (production serves them as "coming soon", src/proxy.ts). Until the
-    // session says which, they stay hidden, so production never flashes them.
+    // Promotions and Advertising have only sample data so far: they show in demo and development
+    // only (production serves them as "coming soon", src/proxy.ts). Until the session says which,
+    // they stay hidden, so production never flashes them. Customers and Analytics read real data.
     ...(sampleData
       ? [
           {
@@ -510,12 +510,8 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
       items: [
         { href: "/studio/shipping", label: "Shipping & fulfilment", icon: TruckIcon },
         { href: "/studio/payouts", label: "Payouts", icon: WalletIcon },
-        ...(sampleData
-          ? [
-              { href: "/studio/customers", label: "Customers", icon: UsersIcon },
-              { href: "/studio/analytics", label: "Analytics", icon: ChartBarIcon },
-            ]
-          : []),
+        { href: "/studio/customers", label: "Customers", icon: UsersIcon },
+        { href: "/studio/analytics", label: "Analytics", icon: ChartBarIcon },
         { href: "/studio/settings", label: "Settings", icon: GearIcon },
         { href: "/studio/support", label: "Yard Support", icon: LifebuoyIcon, badge: supportUnread || undefined, badgeLabel: "unread", tone: "attention" },
       ],

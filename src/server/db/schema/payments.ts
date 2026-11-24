@@ -130,6 +130,8 @@ export const payments = pgTable(
   (t) => [
     uniqueIndex("payments_reference_ux").on(t.reference),
     index("payments_checkout_ix").on(t.checkoutId),
+    /** Payment success by period (Control Center). */
+    index("payments_created_ix").on(t.createdAt),
     uniqueIndex("payments_checkout_live_ux").on(t.checkoutId).where(raw("status in ('initialized', 'succeeded', 'review')")),
     oneOf("payments_status_ck", "status", PAYMENT_STATUSES),
     oneOf("payments_provider_ck", "provider", PAYMENT_PROVIDERS),

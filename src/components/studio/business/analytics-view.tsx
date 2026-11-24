@@ -28,12 +28,33 @@ import { Thumb } from "@/components/studio/catalog/parts"
 import { bestSellers, lowConversion, periodSummary, productTraffic, salesByProduct, useBrandSeries, type ProductSales } from "./brand-series"
 import { ShareBar } from "./shared"
 import { AnalyticsBodySkeleton, analyticsDescription } from "./skeletons"
+import { LiveAnalytics } from "./live-analytics"
+import { SessionGate } from "@/components/session/session-gate"
+import { usePageSampleData } from "@/components/sample/sample-data-context"
+import { useServerSession } from "@/lib/session/use-server-session"
 
 type TrendMetric = "revenue" | "orders"
 
 const periods: Period[] = ["7d", "30d", "90d"]
 
+/**
+ * A real brand's session (not a demo account) gets Analytics from Yard's server. The sample page
+ * (this browser's sample orders and generated traffic) is for demo and development only: in
+ * production, everyone else gets the Studio sign-in, never sample figures.
+ */
 export function AnalyticsView() {
+  const member = useServerSession((s) => s.brand)
+  const sampleData = usePageSampleData()
+  if (member && !member.demo) return <LiveAnalytics key={member.brand.id} member={member} />
+  if (sampleData) return <SampleAnalyticsView />
+  return (
+    <SessionGate surface="studio" feature="Analytics">
+      {member ? <LiveAnalytics key={member.brand.id} member={member} /> : null}
+    </SessionGate>
+  )
+}
+
+function SampleAnalyticsView() {
   const ready = useGrowthReady()
   const [period, setPeriod] = useState<Period>("30d")
   const brandId = useStudio((s) => s.brandId)

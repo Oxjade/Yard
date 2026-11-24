@@ -55,6 +55,7 @@ import { useLiveMoney } from "@/components/admin/finance/live-counts"
 import { useServerSession } from "@/lib/session/use-server-session"
 import { SessionGate } from "@/components/session/session-gate"
 import { BusinessFigures } from "@/components/admin/overview/business-figures"
+import { MarketplacePerformance } from "@/components/admin/overview/marketplace-performance"
 import { LiveMonitoringSlot } from "@/components/admin/overview/monitoring-slot"
 import { OverviewActivityHeatmap } from "@/components/admin/platform/health/activity"
 import { TrafficByCountry } from "@/components/admin/overview/traffic-by-country"
@@ -755,14 +756,17 @@ export function ControlCenter() {
   const charges = transactions.filter((t) => t.type === "charge")
   const byProvider = (["paystack", "flutterwave", "stripe"] as const).map((p) => ({ p, n: charges.filter((c) => c.provider === p).length, ok: charges.filter((c) => c.provider === p && c.status === "succeeded").length }))
 
-  // Production (the demo switch off): the performance figures, revenue mix, weekday rhythm, health
-  // and payments panels read sample data, so only the decision queues and the audit log show.
+  // Production (the demo switch off): the business figures, and for Owner and Finance the
+  // marketplace performance panels (GMV, commission, volume, revenue by brand, weekday rhythm,
+  // payments) read from the ledger and the order tables. Service health is on Admin › Health and
+  // in the live monitoring below.
   if (!sampleData) {
     return (
       <SessionGate surface="admin" feature="the Control Center">
         <Reveal ssrVisible className="@container grid gap-3">
           <CommandStrip />
           <BusinessFigures />
+          <MarketplacePerformance />
           <RevealItem className="min-w-0">
             <OverviewActivityHeatmap />
           </RevealItem>

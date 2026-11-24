@@ -51,9 +51,10 @@ function guardApi(request: NextRequest): NextResponse {
 }
 
 /**
- * Sample-data screens in production. These pages have only made-up data so far (Studio analytics,
- * customers, promotions and advertising; Control Center advertising; the marketplace's
- * stories and curated collections). With the demo switch off (getEnv().seedDemo, read per request
+ * Sample-data screens in production. These pages have only made-up data so far (Studio promotions
+ * and advertising; Control Center advertising; the marketplace's stories and curated
+ * collections): the features behind them don't exist yet. Studio Analytics and Customers read
+ * real data (src/server/analytics) and are no longer gated. With the demo switch off (getEnv().seedDemo, read per request
  * here, never baked in at build), each address redirects to its "coming soon" page; demo and
  * development pass straight through, so those screens stay exactly as they are. A redirect rather
  * than a rewrite: the coming-soon pages are prerendered at their own address, and chrome that reads
@@ -63,8 +64,6 @@ function guardApi(request: NextRequest): NextResponse {
  * static (ensureStatic = "navigation"), which forbids request-time work anywhere in the route.
  */
 const GATED: [prefix: string, target: string][] = [
-  ["/studio/analytics", "/studio/coming-soon/analytics"],
-  ["/studio/customers", "/studio/coming-soon/customers"],
   ["/studio/campaigns", "/studio/coming-soon/promotions"],
   ["/studio/advertising", "/studio/coming-soon/advertising"],
   ["/admin/advertising", "/admin/coming-soon/advertising"],
@@ -151,8 +150,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/studio/analytics/:path*",
-    "/studio/customers/:path*",
     "/studio/campaigns/:path*",
     "/studio/advertising/:path*",
     "/admin/advertising/:path*",

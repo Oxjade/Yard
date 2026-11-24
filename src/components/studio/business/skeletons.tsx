@@ -109,11 +109,12 @@ export function OrderDetailSkeleton() {
   )
 }
 
-export function CustomersSkeleton({ description }: { description: string }) {
+/** `sample`: the demo's "Sample data" note (off for the shell a real brand may see first). */
+export function CustomersSkeleton({ description, sample = true }: { description: string; sample?: boolean }) {
   return (
     <div role="status" aria-label="Loading customers" className="grid gap-6">
       <PageHeader title="Customers" description={description}>
-        <SampleDataNote className="mt-3" />
+        {sample ? <SampleDataNote className="mt-3" /> : null}
       </PageHeader>
       <TableBlockSkeleton tabs={4} cols={6} />
     </div>
