@@ -163,7 +163,7 @@ export type Product = {
   slug: string
   brandId: string
   /** Live catalogue identity for brands that aren't in the local sample directory. */
-  brandSummary?: Pick<Brand, "id" | "handle" | "name" | "verified" | "city" | "country" | "foundingBadge" | "forSale" | "hasStorefront">
+  brandSummary?: Pick<Brand, "id" | "handle" | "name" | "verified" | "city" | "country" | "foundingBadge" | "forSale" | "hasStorefront" | "logoSrc">
   name: string
   description: string
   details: string[]

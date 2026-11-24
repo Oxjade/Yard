@@ -36,6 +36,12 @@ const brandSummary = {
   forSale: sql<boolean>`${brandForSaleSql()}`,
   /** The brand has published a storefront, so its name links to /brands/<handle>. */
   hasStorefront: sql<boolean>`exists (select 1 from catalog_storefront_versions sfv where sfv.brand_id = ${brands.id})`,
+  /**
+   * The brand's logo (brands.logo_media_id: set by Yard for a founding brand, or by the brand in
+   * Studio) while it is public media, else null for the monogram. Only public media, so the bare
+   * /api/media address every visitor shares always loads (media/visibility.ts).
+   */
+  logoSrc: sql<string | null>`(select '/api/media/' || lm.id from media_assets lm where lm.id = ${brands.logoMediaId} and lm.visibility = 'public' and lm.moderation_status <> 'removed')`,
 }
 
 export async function listPublicProducts(q: PublicProductsQuery) {
@@ -197,7 +203,9 @@ export async function memberPreviewProduct(slugOrId: string, brandId: string) {
   const dto = toPublicProduct(row.p, kids)
   // Its photos are private until the shop opens: the member reads them as the brand.
   const images = dto.images.map((image) => (image.mediaId ? { ...image, src: mediaSrc(image.mediaId, "brand") } : image))
-  return { product: { ...dto, images, brand: row.brand } }
+  // Its logo is private until then too: the member reads it as the brand as well.
+  const brand = { ...row.brand, logoSrc: row.vis.logoMediaId ? mediaSrc(row.vis.logoMediaId, "brand") : null }
+  return { product: { ...dto, images, brand } }
 }
 
 export async function publicCategories() {

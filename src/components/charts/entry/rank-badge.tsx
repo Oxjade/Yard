@@ -9,13 +9,15 @@ import type { BrandRankDto } from "@/lib/api/contracts/charts"
 import { useApi } from "@/lib/api/use-api"
 import { duration, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { rankBadgeLabel } from "./rank-label"
 
 /**
  * A brand's best weekly chart position (§6.3 "Entry component for N"), for storefronts and brand
  * cards: "#3 on Trending this week". Renders nothing until the data arrives and nothing when the
  * brand has no rank 20 or better (or in a storefront preview); no layout space is reserved, it is
- * a meta item that fades in. While rankings include the sample baseline the label ends with
- * " · sample" and a tooltip says so.
+ * a meta item that fades in. Only where rankings include the sample baseline (demo and
+ * development, the server's `sample: true`) does the label end with " · sample", with a tooltip
+ * saying so; production answers `sample: false` and the label is the rank alone.
  *
  * `variant="meta"` is a quiet inline item for a meta row; `variant="stat"` is a small chip whose
  * hit area reaches 40 px tall on phones without changing its look. Inside something that is
@@ -26,7 +28,8 @@ export function RankBadge({ brandId, variant = "meta", preview = false, asLink =
   const { data } = useApi<BrandRankDto>(preview ? null : `/api/charts/brand/${brandId}`, () => getBrandRank(brandId), { revalidateOnFocus: false })
   const best = data?.best
   if (!best) return null
-  const label = `${best.label}${data.sample ? " · sample" : ""}`
+  const sample = data.sample === true
+  const label = rankBadgeLabel(data)!
   const look = cn(
     "relative inline-flex items-center gap-1.5 outline-none",
     variant === "stat" ? "h-7 rounded-full border border-white/12 px-2.5 text-xs text-ink after:absolute after:inset-x-0 after:-inset-y-[6px] after:content-['']" : "rounded-sm text-ink-2",
@@ -49,7 +52,7 @@ export function RankBadge({ brandId, variant = "meta", preview = false, asLink =
   )
   return (
     <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: duration.hover, ease: ease.out }} className="inline-flex">
-      {data.sample ? (
+      {sample ? (
         <Tooltip>
           <TooltipTrigger asChild>{badge}</TooltipTrigger>
           <TooltipContent>Rankings include sample activity in this build.</TooltipContent>

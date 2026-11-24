@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { SealCheckIcon as BadgeCheck, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
+import { BellSimpleIcon, SealCheckIcon as BadgeCheck, ShoppingBagOpenIcon as ShoppingBag } from "@phosphor-icons/react"
 import { AnimatePresence, motion } from "motion/react"
 import { PlaceBadge } from "@/components/around/entry/place-badge"
 import { RankBadge } from "@/components/charts/entry/rank-badge"
@@ -29,7 +29,7 @@ import { NotifyButton } from "../notify-button"
 import { Price } from "../price"
 import { ProductBadge, primaryBadge } from "../product-badge"
 import { WishlistButton } from "../wishlist-button"
-import { DeliverySummary, ReturnsDetails, ShippingDetails } from "./delivery"
+import { DeliverySummary, DutiesNote, ReturnsDetails, ShippingDetails } from "./delivery"
 import { DropModule } from "./drop-module"
 import { ProductGallery } from "./product-gallery"
 import { ColourSwatches, QuantityStepper, SizeGrid, StockLine } from "./product-options"
@@ -234,6 +234,10 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
   // Acid is for the action the shopper can take (add, choose a size, get notified). A blocked
   // state is not an action, so it drops to the quiet secondary slab instead of a dimmed acid one.
   const addVariant = addDisabled ? "secondary" : "primary"
+  // A quantity only means something when the piece can be bought (or is waiting on a release or the cart cap).
+  const showStepper = !opening && action !== "sold-out"
+  // An imported piece often has no detail lines: no "Details" row with nothing under it.
+  const hasDetails = product.details.length > 0 || product.variants.length === 1
 
   return (
     <>
@@ -292,9 +296,11 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
             <Price amount={product.price} currency={product.currency} compareAt={product.compareAt} size="lg" />
             {product.compareAt ? <ProductBadge kind="sale" /> : null}
           </div>
-          <p className="mt-1.5 text-xs text-ink-3">Duties and taxes are confirmed at checkout.</p>
+          {/* Cross-border only: nothing when the shopper and the brand are in the same country. */}
+          <DutiesNote brand={brand} product={product} className="mt-1.5 text-xs text-ink-3" />
 
-          <p className="mt-5 max-w-prose text-pretty text-[0.9375rem] leading-relaxed text-ink-2">{product.description}</p>
+          {/* The brand's own line breaks (imported descriptions are plain text with \n): kept as text, never parsed as HTML. */}
+          {product.description.trim() ? <p className="mt-5 max-w-prose text-pretty break-words whitespace-pre-line text-[0.9375rem] leading-relaxed text-ink-2">{product.description.trim()}</p> : null}
 
           {activeDrop && phase ? (
             <div className="mt-6">
@@ -338,10 +344,15 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
 
           {/* Quantity, availability and the main action */}
           <div ref={ctaRef} className="mt-8">
-            <div className="flex items-center justify-between gap-4">
-              {opening ? <span aria-hidden /> : <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={blocked} />}
-              <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} className="justify-end text-right" />
-            </div>
+            {/* No quantity to pick while opening or sold out: the availability line stands alone. */}
+            {showStepper ? (
+              <div className="flex items-center justify-between gap-4">
+                <QuantityStepper value={qty} max={maxQty} onChange={sel.setQuantity} disabled={blocked} />
+                <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} className="justify-end text-right" />
+              </div>
+            ) : (
+              <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} />
+            )}
             <div className="mt-3 flex gap-2">
               {action === "opening" ? (
                 sel.variant ? (
@@ -379,6 +390,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
               ) : sel.sizes.length ? (
                 // The whole piece is sold out and no size is chosen yet: Notify me is per size.
                 <Button type="button" variant="secondary" size="xl" className="mt-2 h-12 w-full text-[0.9375rem]" onClick={() => promptSize(sizeGridRef.current)}>
+                  <BellSimpleIcon className="size-5" aria-hidden />
                   Get notified when it&apos;s back
                 </Button>
               ) : null
@@ -414,21 +426,25 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
             <h2 id="pdp-info-title" className="sr-only">
               Product information
             </h2>
-            <Accordion type="multiple" defaultValue={["details"]} className="border-t border-line">
-              <AccordionItem value="details" className="border-line">
-                <AccordionTrigger className="py-4 text-[0.9375rem] text-ink hover:no-underline">Details</AccordionTrigger>
-                <AccordionContent className="pb-5">
-                  <ul className="grid gap-2 text-sm text-ink-2">
-                    {product.details.map((d) => (
-                      <li key={d} className="flex gap-3">
-                        <span className="mt-2 size-1 shrink-0 rounded-full bg-ink-3" aria-hidden />
-                        {d}
-                      </li>
-                    ))}
-                  </ul>
-                  {sel.variant ? <p className="mt-4 text-xs text-ink-3 tabular">Reference {sel.variant.sku}</p> : null}
-                </AccordionContent>
-              </AccordionItem>
+            <Accordion type="multiple" defaultValue={hasDetails ? ["details"] : []} className="border-t border-line">
+              {hasDetails ? (
+                <AccordionItem value="details" className="border-line">
+                  <AccordionTrigger className="py-4 text-[0.9375rem] text-ink hover:no-underline">Details</AccordionTrigger>
+                  <AccordionContent className="pb-5">
+                    {product.details.length ? (
+                      <ul className="grid gap-2 text-sm text-ink-2">
+                        {product.details.map((d) => (
+                          <li key={d} className="flex gap-3">
+                            <span className="mt-2 size-1 shrink-0 rounded-full bg-ink-3" aria-hidden />
+                            {d}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {sel.variant ? <p className={product.details.length ? "mt-4 text-xs text-ink-3 tabular" : "text-xs text-ink-3 tabular"}>Reference {sel.variant.sku}</p> : null}
+                  </AccordionContent>
+                </AccordionItem>
+              ) : null}
               <AccordionItem value="shipping" className="border-line">
                 <AccordionTrigger className="py-4 text-[0.9375rem] text-ink hover:no-underline">Shipping</AccordionTrigger>
                 <AccordionContent className="pb-5">

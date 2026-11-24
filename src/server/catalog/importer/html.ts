@@ -17,18 +17,23 @@ export function decodeEntities(s: string) {
   })
 }
 
-/** Plain text from an HTML fragment: block tags become line breaks, everything else is dropped. */
+/**
+ * Plain text from an HTML fragment: block tags become line breaks, everything else is dropped. Line
+ * breaks the source already has (a plain-text description, "\r\n" or "\n") are kept, so
+ * "Material : PVC\nHeight : 42cm" stays two lines; the product page shows them as breaks.
+ */
 export function htmlToText(html: string | null | undefined, max = 4000) {
   if (!html) return ""
   const text = decodeEntities(
     html
       .replace(/<(script|style|noscript|template)[\s\S]*?<\/\1>/gi, "")
-      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<br\b[^>]*>/gi, "\n")
       .replace(/<\/(p|div|li|h[1-6]|tr|ul|ol|section|article)>/gi, "\n")
       .replace(/<li[^>]*>/gi, "• ")
       .replace(/<[^>]+>/g, ""),
   )
   return text
+    .replace(/\r\n?/g, "\n")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .replace(/[ \t ]+/g, " ")
     .replace(/ *\n */g, "\n")

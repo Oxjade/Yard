@@ -12,8 +12,12 @@ import { refreshFlags } from "./antifraud"
 import { addDays, dropAnchor, todayUtc } from "./baseline"
 import { boardKeyString, datesNeeded, editionWindow, loadPrior, priorFrom, rankBoard, withMovement, writeSnapshots, type BoardKey, type ChartKind, type EditionEntry, type Stat } from "./editions"
 import { refusedSampleBrand, sampleOff } from "../catalog/sample-guard"
+
 import { dropStatus, listed, loadBrands, loadFrozen, loadHolds, loadUniverse, maxEventSeq, PERIOD_DAYS, type BrandRow, type Period } from "./metrics"
 import { categoryLabel, cityName, countryName, scopeKey, type Scope } from "./scope"
+
+/** Whether rankings include the labelled sample baseline: demo and development only. Production says false, so nothing is ever labelled "sample" there. */
+const sampleBaseline = () => !sampleOff()
 
 /**
  * The public reads (§6.3 "Charts API"): the live board with movement and history, the scopes
@@ -80,7 +84,7 @@ async function flagsFresh(now: number) {
 
 /* ── DTOs ────────────────────────────────────────────────────────────────── */
 
-export function brandDto(row: Pick<BrandRow, "id" | "handle" | "name" | "city" | "country" | "categories">): ChartBrandDto {
+export function brandDto(row: Pick<BrandRow, "id" | "handle" | "name" | "city" | "country" | "categories"> & { logoSrc?: string | null }): ChartBrandDto {
   const b = sampleOff() ? undefined : brandById.get(row.id)
   return {
     id: row.id,
@@ -93,6 +97,7 @@ export function brandDto(row: Pick<BrandRow, "id" | "handle" | "name" | "city" |
     countryName: countryName(row.country) ?? row.country,
     category: categoryLabel(row.categories[0] ?? "") ?? "",
     cover: b ? { src: b.cover.src, alt: b.cover.alt } : null,
+    logoSrc: row.logoSrc ?? null,
   }
 }
 
@@ -237,7 +242,7 @@ async function fallbackFor(r: ResolvedQuery): Promise<ChartBoardDto["fallback"]>
 
 /** A scope with fewer than MIN_COHORT eligible brands: no entries, where to go instead. */
 async function smallBoard(r: ResolvedQuery, cohortSize: number): Promise<ChartBoardDto> {
-  return { chart: kindToSlug(r.kind), period: r.period, scope: scopeDto(r.scope), sample: true, sponsored: [], callouts: {}, state: "small_cohort", edition: null, cohortSize, entries: [], fallback: await fallbackFor(r) }
+  return { chart: kindToSlug(r.kind), period: r.period, scope: scopeDto(r.scope), sample: sampleBaseline(), sponsored: [], callouts: {}, state: "small_cohort", edition: null, cohortSize, entries: [], fallback: await fallbackFor(r) }
 }
 
 /** Live board compute: rank today's edition, carry movement from stored finals, write the live snapshot. */
@@ -252,7 +257,7 @@ async function computeLive(r: ResolvedQuery, now: number): Promise<{ dto: ChartB
   const u = await loadUniverse(addDays(today, -2 * len + 1), today, { now, anchor })
   const ranked = rankBoard(u, key, today)
   const brands = new Map(u.brands.map((b) => [b.id, b]))
-  const base = { chart: kindToSlug(r.kind), period: r.period, scope: scopeDto(r.scope), sample: true as const, sponsored: [], callouts: {} }
+  const base = { chart: kindToSlug(r.kind), period: r.period, scope: scopeDto(r.scope), sample: sampleBaseline(), sponsored: [], callouts: {} }
   if (ranked.small) return { dto: await smallBoard(r, ranked.cohortSize), maxSeq: u.maxSeq }
 
   const prior = await loadPrior([key], datesNeeded(today, [r.period]))
@@ -320,7 +325,7 @@ async function latestFinal(r: ResolvedQuery, now: number): Promise<ChartBoardDto
     entries: dtos,
     sponsored: [],
     callouts: callouts(dtos),
-    sample: true,
+    sample: sampleBaseline(),
   }
 }
 
@@ -363,7 +368,7 @@ export async function getBoard(q: ChartQuery, now = Date.now()): Promise<ChartBo
         entries: [],
         sponsored: [],
         callouts: {},
-        sample: true,
+        sample: sampleBaseline(),
       } satisfies ChartBoardDto
     } finally {
       s.locks.delete(key)
@@ -420,12 +425,12 @@ const boardWords: Partial<Record<ChartKind, string>> = { top: "Top brands", tren
 
 /**
  * GET /api/charts/brand/{id}: the weekly Top brands, Trending, Emerging or City board where the
- * brand ranks 20th or better, in that order of preference. Unlisted brands get `{ sample: true }`.
+ * brand ranks 20th or better, in that order of preference. Unlisted brands get no `best`. `sample` is true only where the sample baseline counts (demo and development).
  */
 export async function getBrandBest(brandId: string, now = Date.now()): Promise<BrandRankDto> {
   const brands = await loadBrands()
   const row = brands.find((b) => b.id === brandId)
-  if (!row || !listed(row)) return { sample: true }
+  if (!row || !listed(row)) return { sample: sampleBaseline() }
   const tries: { kind: ChartKind; q: ChartQuery }[] = [
     { kind: "top", q: { chart: "top", period: "weekly" } },
     { kind: "trending", q: { chart: "trending", period: "weekly" } },
@@ -438,8 +443,8 @@ export async function getBrandBest(brandId: string, now = Date.now()): Promise<B
     if (!entry || entry.rank > 20) continue
     const href = tr.kind === "city" ? `/charts?chart=city&period=weekly&city=${row.citySlug}` : `/charts?chart=${kindToSlug(tr.kind)}&period=weekly`
     const label = tr.kind === "city" ? `#${entry.rank} in ${cityName(row.citySlug, row.city) ?? row.city} this week` : `#${entry.rank} on ${boardWords[tr.kind]} this week`
-    return { best: { chart: tr.kind, period: "weekly", scope: tr.kind === "city" ? `city:${row.citySlug}` : "global", rank: entry.rank, label, href }, sample: true }
+    return { best: { chart: tr.kind, period: "weekly", scope: tr.kind === "city" ? `city:${row.citySlug}` : "global", rank: entry.rank, label, href }, sample: sampleBaseline() }
   }
-  return { sample: true }
+  return { sample: sampleBaseline() }
 }
 

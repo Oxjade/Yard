@@ -544,6 +544,17 @@ const product = (over: Partial<ImportProductDto> = {}): ImportProductDto => ({
 })
 
 describe("normalisation", () => {
+  it("keeps a description's line breaks: plain-text newlines, CRLF, <br> with attributes and block tags", () => {
+    const desc = (description: string) => normalizeProduct({ sourceUrl: "https://x.example.com/p/9", title: "Naruto Ninja Scroll Figurine", description, price: "20000", currency: "NGN", images: [] }, NORM)!.description
+    assert.equal(desc("Material : PVC\n\nHeight : 42cm"), "Material : PVC\n\nHeight : 42cm")
+    assert.equal(desc("Material : PVC\r\nHeight : 42cm"), "Material : PVC\nHeight : 42cm")
+    assert.equal(desc("Material : PVC&#13;&#10;Height : 42cm"), "Material : PVC\nHeight : 42cm")
+    assert.equal(desc('Material : PVC<br class="x">Height : 42cm<BR/>Boxed'), "Material : PVC\nHeight : 42cm\nBoxed")
+    assert.equal(desc("<p>Material : PVC</p><p>Height : 42cm</p>"), "Material : PVC\nHeight : 42cm")
+    // Markup never survives as markup: tags are dropped, an escaped tag stays text.
+    assert.equal(desc("<script>alert(1)</script><b>Bold</b> &lt;i&gt;"), "Bold <i>")
+  })
+
   it("reads prices in any common format into minor units", () => {
     assert.equal(priceToMinor("₦17,000", "NGN"), 1_700_000)
     assert.equal(priceToMinor("1.234,56", "EUR"), 123_456)

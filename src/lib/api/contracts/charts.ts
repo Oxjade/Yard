@@ -6,8 +6,8 @@ import { CHART_KINDS, CHART_MOVEMENTS, CHART_PERIODS } from "./enums"
 
 /**
  * Charts contracts (cluster C, §6.3). Public DTOs only: `score` and `components` never appear here
- * (Admin reads them through its own endpoints). Every board response carries `sample: true` while
- * the labelled sample baseline is part of the ranking.
+ * (Admin reads them through its own endpoints). `sample` is true only while the labelled sample
+ * baseline is part of the ranking (demo and development); production always answers false.
  */
 
 /** URL spelling of the boards (`?chart=most-followed`); the database uses the snake_case kinds. */
@@ -67,6 +67,8 @@ export const chartBrandDto = z.object({
   /** The brand's first category, as a label ("Streetwear"). */
   category: z.string(),
   cover: imageRef.nullable(),
+  /** The brand's public logo, shown in place of the monogram; null (or absent) for the monogram. */
+  logoSrc: z.string().nullable().optional(),
 })
 export type ChartBrandDto = z.infer<typeof chartBrandDto>
 
@@ -131,7 +133,7 @@ export const chartBoardDto = z.object({
       nearestCity: z.object({ slug: z.string(), name: z.string(), eligible: z.number() }).optional(),
     })
     .optional(),
-  sample: z.literal(true),
+  sample: z.boolean(),
 })
 export type ChartBoardDto = z.infer<typeof chartBoardDto>
 
@@ -153,7 +155,7 @@ export type ChartScopesDto = z.infer<typeof chartScopesDto>
 
 export const brandRankDto = z.object({
   best: z.object({ chart: z.enum(CHART_KINDS), period: z.literal("weekly"), scope: z.string(), rank: z.number(), label: z.string(), href: z.string() }).optional(),
-  sample: z.literal(true),
+  sample: z.boolean(),
 })
 export type BrandRankDto = z.infer<typeof brandRankDto>
 

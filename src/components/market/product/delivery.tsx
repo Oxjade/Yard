@@ -67,6 +67,23 @@ function holidayNote(o: QuoteOptionDto | null) {
   return list.length ? `Includes ${andList(list)}.` : null
 }
 
+/**
+ * "Duties and taxes are confirmed at checkout." under the price, for cross-border delivery only:
+ * the shopper's destination is another country than the one the brand ships from (the estimate's
+ * origin, else the brand's country). A Nigerian shopper buying from a Nigerian brand sees nothing.
+ * Nothing either until the destination is known (after hydration), so it never flashes.
+ */
+export function DutiesNote({ brand, product, className }: { brand: Brand; product: Product; className?: string }) {
+  const hydrated = useHydrated()
+  const shipTo = useSession((s) => s.shipTo)
+  const { data } = useProductEstimate(product)
+  if (!hydrated) return null
+  const to = (data?.destination.country as CountryCode | undefined) ?? shipTo
+  const from = (data?.brand.originCountry as CountryCode | undefined) ?? brand.shipsFrom
+  if (!to || !from || to === from) return null
+  return <p className={className}>Duties and taxes are confirmed at checkout.</p>
+}
+
 /** Lines under Add to bag: destination, estimated delivery, dispatch, express, who ships it, returns (§6.5). */
 export function DeliverySummary({ brand, product, drop, status = "available", variantId }: { brand: Brand; product: Product; drop?: Drop | null; status?: "available" | "unreleased" | "unavailable"; variantId?: string | null }) {
   const e = useProductEstimate(product, status === "unreleased" ? drop : null)

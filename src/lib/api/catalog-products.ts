@@ -25,7 +25,7 @@ export type PublicCatalogProduct = {
   dropId: string | null
   collectionIds: string[]
   createdAt: string
-  brand: { id: string; handle: string; name: string; verified: boolean; city: string; country: string; foundingBadge?: boolean; forSale?: boolean; hasStorefront?: boolean }
+  brand: { id: string; handle: string; name: string; verified: boolean; city: string; country: string; foundingBadge?: boolean; forSale?: boolean; hasStorefront?: boolean; logoSrc?: string | null }
 }
 
 export type PublicCatalogPage = { products: PublicCatalogProduct[]; total: number; nextOffset: number | null }
@@ -35,7 +35,7 @@ export function toCatalogProduct(row: PublicCatalogProduct): Product {
     id: row.id,
     slug: row.slug,
     brandId: row.brandId,
-    brandSummary: { id: row.brand.id, handle: row.brand.handle, name: row.brand.name, verified: row.brand.verified, city: row.brand.city, country: row.brand.country as CountryCode, foundingBadge: !!row.brand.foundingBadge, forSale: row.brand.forSale !== false, hasStorefront: !!row.brand.hasStorefront },
+    brandSummary: { id: row.brand.id, handle: row.brand.handle, name: row.brand.name, verified: row.brand.verified, city: row.brand.city, country: row.brand.country as CountryCode, foundingBadge: !!row.brand.foundingBadge, forSale: row.brand.forSale !== false, hasStorefront: !!row.brand.hasStorefront, logoSrc: row.brand.logoSrc ?? null },
     name: row.title,
     description: row.description,
     details: row.details,

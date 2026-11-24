@@ -5,7 +5,7 @@ import { drops } from "@/lib/data/catalog"
 import { products } from "@/lib/data/products"
 import type { Drop } from "@/lib/data/types"
 import { db, t } from "../db"
-import { brandApproved, refusedSampleBrand } from "../catalog/sample-guard"
+import { brandApproved, refusedSampleBrand, sampleOff } from "../catalog/sample-guard"
 import { addDays, dayStart, dayTotal, dropAnchor, dropTimes, emptyDay, repeatRate, sampleDaily, type DayCounts } from "./baseline"
 import { uniqueSavers, type BrandInput, type DropInput, type Metrics, type SaverRow } from "./score"
 
@@ -26,6 +26,8 @@ export type BrandRow = {
   reviewStatus: string
   joinedAt: string
   followersBase: number
+  /** The brand's logo while it is public media (the bare /api/media address), else null for the monogram. */
+  logoSrc: string | null
 }
 
 /** Everything a board needs, loaded once for a date range and reused by every board in it. */
@@ -66,8 +68,10 @@ export const listed = (b: { id?: string; reviewStatus: string }) => brandApprove
 
 export async function loadBrands(): Promise<BrandRow[]> {
   const d = await db()
-  const rows = await d.select().from(t.brands)
-  return rows.map((r) => ({
+  const rows = await d
+    .select({ r: t.brands, logoSrc: sql<string | null>`(select '/api/media/' || lm.id from media_assets lm where lm.id = ${t.brands.logoMediaId} and lm.visibility = 'public' and lm.moderation_status <> 'removed')` })
+    .from(t.brands)
+  return rows.map(({ r, logoSrc }) => ({
     id: r.id,
     handle: r.handle,
     name: r.name,
@@ -78,6 +82,7 @@ export async function loadBrands(): Promise<BrandRow[]> {
     reviewStatus: r.reviewStatus,
     joinedAt: r.joinedAt ?? "2026-01-01",
     followersBase: r.followersBase,
+    logoSrc,
   }))
 }
 
@@ -147,7 +152,8 @@ export async function loadUniverse(from: string, to: string, opts: { now?: numbe
   for (const b of brands) {
     const m = new Map<string, DayCounts>()
     const hasPosts = posts.has(b.id)
-    for (const day of dayList) m.set(day, sampleDaily(b.id, day, { hasPosts, anchor }))
+    // The sample baseline only in demo and development: production ranks on counted live signals alone.
+    for (const day of dayList) m.set(day, sampleOff() ? emptyDay() : sampleDaily(b.id, day, { hasPosts, anchor }))
     days.set(b.id, m)
   }
 

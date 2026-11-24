@@ -21,9 +21,14 @@
 // title must be in the <head>. /llms.txt's "N products from M brands" must match the public
 // catalogue (/api/search, what /shop lists, and the sitemap's product pages), and while /api/health
 // says payments are off it must not say how payment is taken.
+// On a production server (GET /api/session says sampleData:false) the home, product and brand pages
+// must not say "sample" anywhere a shopper reads it (text, aria-label, title, alt), and the brand
+// rank the RankBadge fetches after load (/api/charts/brands) must answer sample:false with no
+// "sample" in its label: production never shows sample data, sample ranks or the word "sample".
 // Exit code 1 when an indexable page has a missing alt, no description, not exactly one <h1>, not
-// exactly one <title> (or, as a bot, its title outside the <head>), more than one description, or
-// when llms.txt disagrees with the catalogue or the payments switch.
+// exactly one <title> (or, as a bot, its title outside the <head>), more than one description,
+// when llms.txt disagrees with the catalogue or the payments switch, or (production) when a page or
+// a brand rank says "sample".
 // Plain Node 22+, no dependencies; behind an HTTPS proxy run with NODE_USE_ENV_PROXY=1.
 import { execFileSync, spawnSync } from "node:child_process"
 import { writeFileSync, mkdirSync } from "node:fs"
@@ -175,7 +180,12 @@ function analyse(html) {
   const canonical = (markup.match(/<link\b[^>]*>/gi) ?? []).find((t) => /\srel\s*=\s*["']?canonical/i.test(t))
   const h1s = (markup.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/gi) ?? []).map((t) => decode(t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, 60))
   const title = titleAny ? decode(titleAny[1].trim()) : ""
+  // What a shopper reads: the text, plus the attributes a screen reader or a tooltip says aloud.
+  const said = (markup.match(/\s(?:aria-label|title|alt|placeholder)\s*=\s*("[^"]*"|'[^']*')/gi) ?? []).map((a) => a.replace(/^[^=]*=\s*["']|["']$/g, ""))
+  const readable = decode([markup.replace(/<[^>]+>/g, " "), ...said].join(" ")).replace(/\s+/g, " ")
+  const sampleWords = [...readable.matchAll(/.{0,40}\bsample\b.{0,40}/gi)].map((m) => m[0].trim()).slice(0, 3)
   return {
+    sampleWords,
     imgs: imgs.length,
     missingAlt: missing.length,
     emptyAlt: empty.length,
@@ -333,6 +343,55 @@ const llms = { problems: [], notes: [] }
     if (!/Checkout: opening soon/.test(txt.body)) llms.problems.push("payments are off, but llms.txt doesn't say checkout is opening soon")
   }
 }
+// ── Production shows no sample data: the word "sample" on the home, product and brand pages, and
+// the brand ranks their RankBadges fetch after load (so they are never in the HTML).
+const sampleCheck = { checked: false, problems: [], notes: [] }
+{
+  let sampleData = null
+  try {
+    sampleData = JSON.parse((await get("/api/session")).body).sampleData ?? null
+  } catch {}
+  if (sampleData !== false) sampleCheck.notes.push(`sample data ${sampleData === true ? "is on (a demo)" : "unknown"}: not checked`)
+  else {
+    sampleCheck.checked = true
+    const scoped = pages.filter((p) => p.status === 200 && (p.path === "/" || /^\/(products|brands)\//.test(p.path)))
+    for (const p of scoped) if (p.sampleWords.length) sampleCheck.problems.push(`${p.path} says "${p.sampleWords[0]}"`)
+    const ids = new Set()
+    for (let offset = 0, guard = 0; offset !== null && guard < 20; guard++) {
+      const r = await get(`/api/catalog/products?limit=60&offset=${offset}`)
+      let j = null
+      try {
+        j = JSON.parse(r.body)
+      } catch {}
+      if (!j?.products) {
+        sampleCheck.notes.push(`/api/catalog/products: HTTP ${r.status}, ranks not read`)
+        break
+      }
+      for (const prod of j.products) ids.add(prod.brandId)
+      offset = j.nextOffset ?? null
+    }
+    const list = [...ids]
+    let ranked = 0
+    for (let i = 0; i < list.length; i += 48) {
+      const r = await get(`/api/charts/brands?ids=${encodeURIComponent(list.slice(i, i + 48).join(","))}`)
+      let j = null
+      try {
+        j = JSON.parse(r.body)
+      } catch {}
+      if (!j?.ranks) {
+        sampleCheck.problems.push(`/api/charts/brands: HTTP ${r.status}`)
+        continue
+      }
+      for (const [id, rank] of Object.entries(j.ranks)) {
+        if (rank.best) ranked++
+        if (rank.sample !== false) sampleCheck.problems.push(`brand ${id}: rank answers sample:${JSON.stringify(rank.sample)}`)
+        if (rank.best && /\bsample\b/i.test(rank.best.label)) sampleCheck.problems.push(`brand ${id}: rank label "${rank.best.label}"`)
+      }
+    }
+    sampleCheck.notes.push(`${scoped.length} home, product and brand pages read; ${list.length} brand ranks read (${ranked} ranked)`)
+  }
+}
+
 const dupDesc = Object.entries(Object.groupBy(indexable.filter((p) => p.description), (p) => p.description)).filter(([, v]) => v.length > 1)
 const esc = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")
 const sum = (k) => pages.reduce((n, p) => n + (p[k] ?? 0), 0)
@@ -357,6 +416,7 @@ L.push(`| Indexable pages whose title is not in the head${plain ? " (not checked
 L.push(`| Pages (200) with more than one meta description | **${fail.descriptionCount.length}** |`)
 L.push(`| ${Object.keys(BOTS).join(", ")} on ${botPaths.join(", ")}: one <title>, in the head, at most one description | ${botFails.length ? `**${botFails.length} failed**: ${botFails.slice(0, 6).map((r) => `${r.bot} ${r.path} (HTTP ${r.status}, ${r.titleCount} titles, ${r.titleInHead ? "in head" : "not in head"})`).join("; ")}` : `ok (${botRows.length} requests)`} |`)
 L.push(`| llms.txt against the public catalogue and payments | ${llms.problems.length ? `**${llms.problems.length} problems**: ${llms.problems.map(esc).join("; ")}` : "ok"} (${llms.notes.map(esc).join("; ")}) |`)
+L.push(`| Production: no "sample" on home, product and brand pages or in brand ranks | ${sampleCheck.problems.length ? `**${sampleCheck.problems.length} problems**: ${sampleCheck.problems.slice(0, 8).map(esc).join("; ")}` : sampleCheck.checked ? "ok" : "skipped"} (${sampleCheck.notes.map(esc).join("; ")}) |`)
 L.push(`| Titles over 60 characters | ${fail.longTitle.length} |`)
 L.push(`| Descriptions over 160 characters | ${fail.longDescription.length} |`)
 L.push(`| Descriptions shared by more than one page | ${dupDesc.length} groups (${dupDesc.reduce((n, [, v]) => n + v.length, 0)} pages) |`)
@@ -423,5 +483,5 @@ if (out) {
   console.log(`wrote ${out}`)
 }
 console.log(L.slice(0, L.indexOf("## robots.txt as Bingbot reads it")).join("\n"))
-const bad = fail.missingAlt.length + fail.noDescription.length + fail.h1.length + fail.titleCount.length + fail.titleNotInHead.length + fail.descriptionCount.length + llms.problems.length + botFails.length + blocked.length + rendered.filter((p) => p.rendered.missingAlt || p.rendered.h1 !== 1).length
+const bad = fail.missingAlt.length + fail.noDescription.length + fail.h1.length + fail.titleCount.length + fail.titleNotInHead.length + fail.descriptionCount.length + llms.problems.length + sampleCheck.problems.length + botFails.length + blocked.length + rendered.filter((p) => p.rendered.missingAlt || p.rendered.h1 !== 1).length
 process.exit(bad ? 1 : 0)
