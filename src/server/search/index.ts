@@ -102,8 +102,8 @@ export async function reindexBrand(brandId: string): Promise<void> {
     return
   }
   const sample = sampleOff() ? undefined : brandById.get(b.id)
-  // The same listed rule as every public read: not restricted or suspended, and a founding brand
-  // only once its storefront is published (launched_at).
+  // The same listed rule as every public read: approved by Yard (never pending review, restricted or
+  // suspended), and a founding brand only once its storefront is published (launched_at).
   const listed = brandListed(b) && !refusedSampleBrand(b.id)
   const values = {
     handle: b.handle,

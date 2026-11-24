@@ -12,7 +12,7 @@ import { requestScope } from "../auth/dal"
 import { memo } from "../cache"
 import { loadChildren, toPublicProduct, type PublicProductDto } from "../catalog/dto"
 import { listPublicBrands, publicCategories } from "../catalog/public"
-import { refusedSampleBrand } from "../catalog/sample-guard"
+import { demoSampleBrand, refusedSampleBrand } from "../catalog/sample-guard"
 import { brandForSaleSql, brandListedSql, productPublicWhere } from "../catalog/sellable"
 import { db } from "../db"
 import { getEnv } from "../env"
@@ -145,7 +145,7 @@ async function* publicCatalogue(): AsyncGenerator<CatalogueRow[]> {
       const eligible = feedEligible(
         {
           product: { status: r.p.status, publishAt: r.p.publishAt, moderationStatus: r.p.moderationStatus },
-          brand: { founding: r.brand.founding, launchedAt: r.brand.launchedAt, unpublishedAt: r.brand.unpublishedAt, reviewStatus: r.brand.reviewStatus, sample: refusedSampleBrand(r.brand.id) },
+          brand: { founding: r.brand.founding, launchedAt: r.brand.launchedAt, unpublishedAt: r.brand.unpublishedAt, reviewStatus: r.brand.reviewStatus, sample: refusedSampleBrand(r.brand.id), demoSample: demoSampleBrand(r.brand.id) },
           forSale: !!r.brand.forSale,
           variants: dto.variants.length,
           images: dto.images.length,

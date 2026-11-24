@@ -44,7 +44,7 @@ const refuse = (error: HttpError, reason: Refusal["reason"], until: Date | null 
 export async function shopperCanInteract(actor: ShopperActor, target: { brandId: string; locked?: boolean }): Promise<InteractResult> {
   const d = await db()
   const [brand] = await d
-    .select({ name: brands.name, reviewStatus: brands.reviewStatus, founding: brands.founding, launchedAt: brands.launchedAt, claimStatus: brands.claimStatus })
+    .select({ id: brands.id, name: brands.name, reviewStatus: brands.reviewStatus, founding: brands.founding, launchedAt: brands.launchedAt, claimStatus: brands.claimStatus })
     .from(brands)
     .where(eq(brands.id, target.brandId))
     .limit(1)

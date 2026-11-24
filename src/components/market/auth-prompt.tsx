@@ -13,6 +13,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { clearOnboardingAuthReturn } from "@/lib/session/auth-return"
 import { site } from "@/config/site"
 import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
+import { HumanCheck, useHumanCheck } from "@/components/auth/human-check"
 
 const copy: Record<AuthIntent, { title: string; body: string }> = {
   follow: { title: "Sign in to follow brands", body: "Following puts their new products, drops and stories in your Following feed." },
@@ -83,6 +84,8 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
   const passwordRef = useRef<HTMLInputElement>(null)
   const uid = useId()
   const ids = { email: `${uid}-email`, emailError: `${uid}-email-error`, password: `${uid}-password`, passwordError: `${uid}-password-error` }
+  // Bot protection for sign-up, reset and sign-in links (server/http/human-check.ts).
+  const human = useHumanCheck()
 
   useEffect(() => {
     let active = true
@@ -124,7 +127,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     setNotice(null)
     try {
       if (mode === "signup") {
-        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
+        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password, ...human.fields() } })
         // A sign-up from here isn't the brand wizard's: its link mustn't return to onboarding.
         clearOnboardingAuthReturn()
         setSignupSent(true)
@@ -149,6 +152,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
         setFailure(errorMessage(e, "Couldn't sign in. Check your email and password, then try again."))
       }
     } finally {
+      if (mode === "signup") human.reset()
       setBusy(null)
     }
   }
@@ -165,11 +169,12 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     setFailure(null)
     setNotice(null)
     try {
-      await api<{ ok: true }>("/api/auth/password/forgot", { body: { email: email.trim() } })
+      await api<{ ok: true }>("/api/auth/password/forgot", { body: { email: email.trim(), ...human.fields() } })
       setNotice("If an account exists for that address, a password reset link has been sent.")
     } catch (e) {
       setFailure(errorMessage(e, "Couldn't request a reset link. Try again."))
     } finally {
+      human.reset()
       setBusy(null)
     }
   }
@@ -186,12 +191,13 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
     setFailure(null)
     setNotice(null)
     try {
-      await api<{ ok: true }>("/api/auth/magic-link", { body: { email: email.trim() } })
+      await api<{ ok: true }>("/api/auth/magic-link", { body: { email: email.trim(), ...human.fields() } })
       clearOnboardingAuthReturn()
       setNotice("If an account exists for that address, a sign-in link has been sent.")
     } catch (e) {
       setFailure(errorMessage(e, "Couldn't request a sign-in link. Try again."))
     } finally {
+      human.reset()
       setBusy(null)
     }
   }
@@ -268,6 +274,7 @@ export function AuthForm({ onDone }: { onDone?: () => void }) {
           />
           {errors.password ? <p id={ids.passwordError} className="text-xs text-danger">{errors.password}</p> : null}
         </div>
+        <HumanCheck check={human} />
         <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "signup" || busy === "email"} disabled={!!busy}>{mode === "signup" ? "Create account" : "Sign in"}</Button>
         {mode === "signin" ? <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={!!busy} onClick={() => void requestPasswordReset()}>{busy === "forgot" ? "Sending reset link…" : "Forgot password?"}</button> : null}
         {failure ? (

@@ -1,6 +1,6 @@
 import "server-only"
-import { notSampleBrandSql } from "../catalog/sample-guard"
-import { and, asc, eq, gt, inArray, notInArray, or, type SQL } from "drizzle-orm"
+import { brandApprovedSql, notSampleBrandSql } from "../catalog/sample-guard"
+import { and, asc, eq, gt, inArray, or, type SQL } from "drizzle-orm"
 import { db, t } from "../db"
 
 /**
@@ -8,17 +8,16 @@ import { db, t } from "../db"
  * through here:
  * - places: published ∧ approved ∧ brandListed(brand) ∧ (store or showroom, or ends_at > now);
  * - events: the same, plus their place passes, and ends_at > now.
- * So a draft, hidden, pending, rejected, removed or ended place, or one of a restricted or
- * suspended brand, never reaches the map, the list, a detail page or PlaceBadge.
+ * So a draft, hidden, pending, rejected, removed or ended place, or one of a brand Yard hasn't
+ * approved (pending review, restricted or suspended), never reaches the map, the list, a detail page or PlaceBadge.
  */
-
-const UNLISTED = ["restricted", "suspended"]
 
 export function publicPlaceWhere(now: Date): SQL {
   return and(
     eq(t.brandLocations.visibility, "published"),
     eq(t.brandLocations.moderationStatus, "approved"),
-    notInArray(t.brands.reviewStatus, UNLISTED),
+    // Approved brands only: a brand waiting for review (or restricted, suspended) has no public place.
+    brandApprovedSql(t.brands.reviewStatus, t.brands.id),
     // Production: never a sample brand's place, even from a demo-seeded database.
     notSampleBrandSql(t.brandLocations.brandId),
     or(inArray(t.brandLocations.kind, ["store", "showroom"]), gt(t.brandLocations.endsAt, now)),

@@ -10,6 +10,7 @@ import { afterIdentityChange } from "@/lib/session/identity"
 import { socialButtons, type ProvidersStatus, type SocialButton } from "@/lib/auth/auth0"
 import { SocialMark, startSocialSignIn } from "@/components/auth/social-sign-in"
 import { AuthenticatorQr } from "@/components/auth/authenticator-qr"
+import { HumanCheck, useHumanCheck } from "@/components/auth/human-check"
 
 type Surface = "studio" | "admin"
 type ChallengeMode = "enrol" | "verify"
@@ -34,6 +35,8 @@ export function ServerActorSignIn({ surface, onSignedIn, onHold }: Props) {
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
   const [busy, setBusy] = useState(false)
+  // Bot protection for the reset link (server/http/human-check.ts).
+  const human = useHumanCheck()
   const [failure, setFailure] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<string | null>(null)
   const [challengeMode, setChallengeMode] = useState<ChallengeMode | null>(null)
@@ -131,12 +134,13 @@ export function ServerActorSignIn({ surface, onSignedIn, onHold }: Props) {
     setFailure(null)
     setNotice(null)
     try {
-      await api<{ ok: true }>(kind === "forgot" ? "/api/auth/password/forgot" : "/api/auth/verify-email/request", { body: { email: address } })
+      await api<{ ok: true }>(kind === "forgot" ? "/api/auth/password/forgot" : "/api/auth/verify-email/request", { body: kind === "forgot" ? { email: address, ...human.fields() } : { email: address } })
       setNotice(kind === "forgot" ? "If an account exists for that address, a password reset link has been sent." : "If that address still needs verifying, a new verification link has been sent.")
       if (kind === "verify") setUnverified(false)
     } catch (error) {
       setFailure(errorMessage(error, kind === "forgot" ? "Couldn't request a reset link. Try again." : "Couldn't send a new verification link. Try again."))
     } finally {
+      if (kind === "forgot") human.reset()
       setSending(null)
     }
   }
@@ -212,6 +216,7 @@ export function ServerActorSignIn({ surface, onSignedIn, onHold }: Props) {
       </div>
       {failure ? <p role="alert" className="text-sm text-danger">{failure}</p> : null}
       {notice ? <p role="status" className="text-sm leading-relaxed text-ink-2">{notice}</p> : null}
+      <HumanCheck check={human} />
       <Button type="submit" variant="primary" loading={busy} disabled={busy || !!sending}>Sign in</Button>
       {unverified ? (
         <button type="button" className="justify-self-center text-sm text-violet underline-offset-4 hover:underline" disabled={busy || !!sending} onClick={() => void sendEmailLink("verify")}>

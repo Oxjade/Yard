@@ -7,6 +7,7 @@ import type { BrandActor, ShopperActor } from "../auth/dal"
 import { profileFor, userById, type RequestMeta } from "../auth/identity"
 import { createSession, endCurrentSession, sessionsAllowed } from "../auth/session"
 import { sessionAuthOf } from "../auth/session-auth"
+import { assertMayApply } from "../catalog/applicant-guard"
 import { handleStatus } from "../catalog/onboarding"
 import { catalogChanged } from "../catalog/hooks"
 import { kickImports } from "../catalog/importer/service"
@@ -85,6 +86,12 @@ export async function getApplication(shopper: ShopperActor): Promise<{ applicati
  */
 export async function applyFromApp(shopper: ShopperActor, body: StudioApplyBody, ipHash: string | null): Promise<{ status: 200 | 201; result: StudioApplyResult }> {
   if (shopper.demo) throw rule("Demo accounts can't apply to sell on Yard.")
+  // Same rules as the website wizard (catalog/applicant-guard.ts), unless one is already waiting (then unchanged, 200).
+  {
+    const d = await db()
+    const current = await latestApplication(d, shopper.userId)
+    if (current?.status !== "submitted") await assertMayApply(d, shopper.userId, { newBrand: !current?.brandId })
+  }
   let created = false
   let row
   try {

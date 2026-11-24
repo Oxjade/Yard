@@ -1,9 +1,9 @@
 import "server-only"
-import { and, eq, notInArray } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import type { BrandPlaceBadgeDto, OnlineBrandsResult, PlaceDetailDto, PlaceSummaryDto } from "@/lib/api/contracts/around"
 import { brandById } from "@/lib/data/brands"
 import { db, t } from "../db"
-import { notSampleBrandSql, sampleOff } from "../catalog/sample-guard"
+import { brandApprovedSql, notSampleBrandSql, sampleOff } from "../catalog/sample-guard"
 import { aroundMemo } from "./cache"
 import { toBadge, toPlaceDetail, toPlaceSummary } from "./dto"
 import { eventStillPublic, publicEvents, publicPlaces, stillPublic, type PublicEventRow, type PublicPlaceRow } from "./public"
@@ -87,7 +87,7 @@ export async function onlineBrands(citySlug: string): Promise<OnlineBrandsResult
   const inCity = await d
     .select({ id: t.brands.id, name: t.brands.name, handle: t.brands.handle, city: t.brands.city, country: t.brands.country, verified: t.brands.verified })
     .from(t.brands)
-    .where(and(eq(t.brands.citySlug, citySlug), notInArray(t.brands.reviewStatus, ["restricted", "suspended"]), notSampleBrandSql(t.brands.id)))
+    .where(and(eq(t.brands.citySlug, citySlug), brandApprovedSql(t.brands.reviewStatus, t.brands.id), notSampleBrandSql(t.brands.id)))
   const l = current(await loadWorld(), now)
   const withPlaces = new Set(l.places.map((p) => p.brandId))
   const brands = inCity

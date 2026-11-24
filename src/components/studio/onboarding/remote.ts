@@ -6,6 +6,7 @@ import { apiUpload } from "@/lib/api/upload"
 import { readImageBlob } from "./image-utils"
 import { parsePrice } from "./validation"
 import type { ImageRef, OnboardingData, StepId } from "./store"
+import type { HumanCheckFields } from "@/lib/api/contracts/human-check"
 
 export type OnboardingStatus = "draft" | "submitted" | "approved" | "rejected"
 
@@ -201,8 +202,9 @@ export function saveOnboardingStep(step: Exclude<StepId, "publish">, data: Onboa
   })
 }
 
-export function submitOnboarding(revision: number) {
-  return api<OnboardingStepResponse>("/api/studio/onboarding/submit", { method: "POST", body: { revision } })
+/** `human`: the bot-protection fields (components/auth/human-check.tsx). */
+export function submitOnboarding(revision: number, human: HumanCheckFields = {}) {
+  return api<OnboardingStepResponse>("/api/studio/onboarding/submit", { method: "POST", body: { revision, ...human } })
 }
 
 export function checkOnboardingHandle(handle: string, signal?: AbortSignal) {

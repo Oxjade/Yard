@@ -5,17 +5,17 @@ import { catalogImages, catalogProducts, catalogVariants } from "../db/schema/ca
 import { db, type Executor } from "../db"
 import { mediaSrc } from "../media"
 import { variantLabelOf } from "./dto"
-import { notSampleBrandSql } from "./sample-guard"
+import { brandApprovedSql, notSampleBrandSql } from "./sample-guard"
 
 /**
  * The one public-visibility predicate for products: published (or scheduled and due, before the
- * job flips it), not hidden by moderation, of a listed brand (not restricted or suspended).
+ * job flips it), not hidden by moderation, of a listed brand (approved by Yard: brandApprovedSql).
  */
 export function productPublicWhere(now = new Date()) {
   return and(
     or(eq(catalogProducts.status, "published"), and(eq(catalogProducts.status, "scheduled"), lte(catalogProducts.publishAt, now))),
     eq(catalogProducts.moderationStatus, "ok"),
-    sql`${brands.reviewStatus} not in ('restricted', 'suspended')`,
+    brandApprovedSql(brands.reviewStatus, brands.id),
     brandLaunchedSql(),
   )
 }
@@ -30,11 +30,12 @@ export function brandLaunchedSql() {
 }
 
 /**
- * A brand is listed (public) when it isn't restricted or suspended and, for a founding brand, has
- * launched: the rule the public storefront read uses (public.ts listedBrandByHandle), in SQL.
+ * A brand is listed (public) when Yard has approved it (verified: never pending review, restricted
+ * or suspended) and, for a founding brand, has launched: the rule the public storefront read uses
+ * (public.ts listedBrandByHandle), in SQL.
  */
 export function brandListedSql() {
-  return and(sql`${brands.reviewStatus} not in ('restricted', 'suspended')`, brandLaunchedSql())!
+  return and(brandApprovedSql(brands.reviewStatus, brands.id), brandLaunchedSql())!
 }
 
 /**

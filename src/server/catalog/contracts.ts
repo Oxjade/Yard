@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { humanCheckFields } from "@/lib/api/contracts/human-check"
 import { currencyCodes } from "@/config/markets"
 import { safeId, safeLine, safeText } from "@/lib/api/contracts/common"
 import { PROPOSAL_STATUSES } from "@/lib/api/contracts/proposals"
@@ -239,7 +240,7 @@ export const onboardingStepSchemas = {
 export type OnboardingStep = keyof typeof onboardingStepSchemas
 
 export const onboardingStepBody = z.strictObject({ data: z.unknown(), revision: z.number().int().min(0) })
-export const onboardingSubmitBody = z.strictObject({ revision: z.number().int().positive() })
+export const onboardingSubmitBody = z.strictObject({ revision: z.number().int().positive(), ...humanCheckFields })
 export const handleQuery = z.object({ handle: z.string().max(40) })
 
 /* ---------- Public brand list ---------- */

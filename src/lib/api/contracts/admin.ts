@@ -549,6 +549,8 @@ export type OnboardingApplicationDto = {
   reviewedAt: string | null
   reviewNote: string | null
   updatedAt: string
+  /** Waiting applications only: "high" is the queue's Risky flag, with the signals behind it (server/catalog/application-risk.ts). */
+  risk?: { level: "low" | "high"; reasons: string[] }
 }
 
 export type AdminCatalogProductDto = {

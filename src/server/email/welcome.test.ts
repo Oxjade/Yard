@@ -218,9 +218,9 @@ if (!CHILD) {
       assert.doesNotMatch(r["4"].html, /b5-brand/)
     })
 
-    it("brand list respects /brands visibility: not restricted, suspended, closed or unlaunched founding", () => {
+    it("brand list respects /brands visibility: not pending review, restricted, suspended, closed or unlaunched founding", () => {
       const handles = child("visibility") as { handles: string[] }
-      assert.deepEqual([...handles.handles].sort(), ["founding-live-brand", "listed-brand", "pending-brand"])
+      assert.deepEqual([...handles.handles].sort(), ["founding-live-brand", "listed-brand"])
     })
   })
 } else {

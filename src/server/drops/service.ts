@@ -8,7 +8,7 @@ import { db, withTx } from "../db"
 import { brandMembers, brands, shopperFollows, shopperReminders } from "../db/schema"
 import { dropClaims, dropEntries, dropItems, drops } from "../db/schema/engagement"
 import { brandForSale, brandLaunchedSql, notForSaleMessage } from "../catalog/sellable"
-import { notSampleBrandSql, refusedSampleDrop, sampleOff } from "../catalog/sample-guard"
+import { brandApproved, brandApprovedSql, notSampleBrandSql, refusedSampleDrop, sampleOff } from "../catalog/sample-guard"
 import { signalActorFor, type RequestMeta } from "../follows"
 import { badRequest, conflict, forbidden, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
@@ -114,10 +114,10 @@ async function dtos(rows: DropRow[]) {
 /* ---------- Public reads ---------- */
 
 /**
- * The catalogue's listing rule for a drop's brand: not restricted or suspended, and (founding
+ * The catalogue's listing rule for a drop's brand: approved by Yard (sample-guard brandApprovedSql), and (founding
  * brands) launched. A drop of a brand whose storefront is hidden is hidden with it.
  */
-const listedBrandSql = sql`${drops.brandId} in (select b.id from brands b where b.review_status not in ('restricted', 'suspended') and (not b.founding or b.launched_at is not null))`
+const listedBrandSql = () => sql`${drops.brandId} in (select b.id from brands b where ${brandApprovedSql(sql.raw("b.review_status"), sql.raw("b.id"))} and (not b.founding or b.launched_at is not null))`
 
 export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended" | "all"; brandId?: string; limit?: number; cursor?: string; source?: "all" | "brands" }) {
   const d = await db()
@@ -125,7 +125,7 @@ export async function listPublicDrops(q: { phase?: "upcoming" | "live" | "ended"
   const limit = q.limit ?? 24
   const offset = q.cursor ? Number(q.cursor) : 0
   // Production never lists a sample brand's drop, even from a demo-seeded database (sample-guard.ts).
-  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined, listedBrandSql, notSampleBrandSql(drops.brandId)]
+  const conds: (SQL | undefined)[] = [notInArray(drops.status, ["draft", "cancelled"]), q.brandId ? eq(drops.brandId, q.brandId) : undefined, listedBrandSql(), notSampleBrandSql(drops.brandId)]
   // Demo pages show the sample drops on the demo clock themselves; this leaves the brand-created ones.
   if (q.source === "brands") conds.push(sql`coalesce(${drops.createdBy}, '') <> 'seed'`)
   let order = [asc(drops.startsAt)]
@@ -160,7 +160,7 @@ export async function loadDrop(idOrSlug: string, opts: { brandId?: string } = {}
   if (opts.brandId) return row.brandId === opts.brandId ? row : null
   if (row.status === "draft") return null
   const [b] = await d.select({ s: brands.reviewStatus, launched: sql<boolean>`${brandLaunchedSql()}` }).from(brands).where(eq(brands.id, row.brandId)).limit(1)
-  if (!b || b.s === "suspended" || b.s === "restricted" || !b.launched) return null
+  if (!b || !brandApproved({ id: row.brandId, reviewStatus: b.s }) || !b.launched) return null
   return row
 }
 
@@ -172,7 +172,7 @@ export async function currentDropForProduct(productId: string): Promise<{ id: st
     .select({ id: drops.id, slug: drops.slug })
     .from(dropItems)
     .innerJoin(drops, eq(drops.id, dropItems.dropId))
-    .where(and(eq(dropItems.productId, productId), inArray(drops.status, ["scheduled", "live"]), gt(drops.endsAt, now), listedBrandSql, notSampleBrandSql(drops.brandId)))
+    .where(and(eq(dropItems.productId, productId), inArray(drops.status, ["scheduled", "live"]), gt(drops.endsAt, now), listedBrandSql(), notSampleBrandSql(drops.brandId)))
     .orderBy(asc(drops.startsAt))
     .limit(1)
   return hit ?? null
@@ -191,7 +191,7 @@ export async function upcomingReleases(productIds: string[], now = new Date()): 
     .select({ productId: dropItems.productId, startsAt: drops.startsAt })
     .from(dropItems)
     .innerJoin(drops, eq(drops.id, dropItems.dropId))
-    .where(and(inArray(dropItems.productId, [...new Set(productIds)]), inArray(drops.status, ["scheduled", "live"]), gt(drops.startsAt, now), listedBrandSql, notSampleBrandSql(drops.brandId)))
+    .where(and(inArray(dropItems.productId, [...new Set(productIds)]), inArray(drops.status, ["scheduled", "live"]), gt(drops.startsAt, now), listedBrandSql(), notSampleBrandSql(drops.brandId)))
   for (const r of rows) {
     const seen = out.get(r.productId)
     if (!seen || r.startsAt < seen) out.set(r.productId, r.startsAt)
@@ -205,7 +205,7 @@ export async function publicDropPages(limit = 5000): Promise<{ slug: string; nam
   return d
     .select({ slug: drops.slug, name: drops.name, updatedAt: drops.updatedAt, brandId: drops.brandId })
     .from(drops)
-    .where(and(notInArray(drops.status, ["draft", "cancelled"]), listedBrandSql, notSampleBrandSql(drops.brandId)))
+    .where(and(notInArray(drops.status, ["draft", "cancelled"]), listedBrandSql(), notSampleBrandSql(drops.brandId)))
     .orderBy(desc(drops.startsAt), asc(drops.id))
     .limit(limit)
 }

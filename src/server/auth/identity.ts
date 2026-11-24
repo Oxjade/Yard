@@ -14,7 +14,8 @@ import { newId } from "../ids"
 import { log } from "../log"
 import { countEvent } from "../monitoring/minutes"
 import { authLinks } from "./auth-env"
-import { clearSignInEmailLimit, limitEmailSend, limitSignIn, limitTokenConsume, LOCKOUT } from "./limits"
+import { clearSignInEmailLimit, limitEmailSend, limitSignIn, limitSignupPerIp, limitTokenConsume, LOCKOUT } from "./limits"
+import { assertUsableEmail, findUserByCanonicalEmail } from "./email-dupes"
 import { hashPassword, needsRehash, passwordProblem, verifyPassword } from "./passwords"
 import { createSession, endCurrentSession, endSession, endSessionsForUser, type ActorKind } from "./session"
 import { recordSessionAuth, type AuthMethod } from "./session-auth"
@@ -217,11 +218,15 @@ export async function openSession(input: { actor: ActorKind; user: UserRow; bran
  */
 export async function signUp(input: { name: string; email: string; password: string }, meta: RequestMeta) {
   const email = normalizeEmail(input.email)
+  // Throwaway and test addresses never open an account (email-policy.ts); refused before any limit is spent.
+  assertUsableEmail(email)
   await limitEmailSend("signup", email, meta.ipHash)
+  await limitSignupPerIp(meta.ipHash)
   const problem = passwordProblem(input.password, email)
   if (problem) throw badRequest({ password: problem })
   const hash = await hashPassword(input.password) // outside the transaction
-  const existing = await findUserByEmail(email)
+  // The same mailbox typed another way (a.b+x@gmail.com for ab@gmail.com) is the existing account.
+  const existing = (await findUserByEmail(email)) ?? (await findUserByCanonicalEmail(email))
   await withTx(async (tx) => {
     if (existing) {
       // Demo accounts, admins and pending deletions get nothing. A real shopper account gets a
@@ -346,7 +351,11 @@ export async function signInWithPassword(input: { email: string; password: strin
   if (cred?.passwordHash && needsRehash(cred.passwordHash)) patch.passwordHash = await hashPassword(input.password)
   await upsertCredentials(user.id, patch)
 
-  const brandId = await assertEligible(input.actor, user, input.brandId)
+  // The Control Center sign-in never says whether an address is an admin's (or suspended): a right
+  // password on a non-admin account gets the same answer as a wrong one.
+  const brandId = await assertEligible(input.actor, user, input.brandId).catch((e) => {
+    throw input.actor === "admin" ? wrongPassword() : e
+  })
   if (!cred?.emailVerifiedAt) {
     await requestEmailVerification(email, meta).catch(() => undefined)
     return { status: "verify_email" }

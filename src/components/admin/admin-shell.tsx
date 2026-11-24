@@ -310,12 +310,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const signedIn = useServerSession((s) => !!s.admin)
   const bare = pathname === ADMIN_SIGN_IN_PATH || pathname.startsWith(`${ADMIN_SIGN_IN_PATH}/`)
   const signedOut = !bare && status === "ready" && !signedIn
+  // Production: signed in as a shopper or a brand, not an admin, the Control Center isn't theirs:
+  // back to the landing page (src/lib/access-gate.ts; the proxy does the same before rendering).
+  const elsewhere = useServerSession((s) => s.sampleData === false && !!(s.shopper || s.brand))
 
   useEffect(() => {
     if (!signedOut) return
+    if (elsewhere) return router.replace("/")
     const here = `${window.location.pathname}${window.location.search}`
     router.replace(`${ADMIN_SIGN_IN_PATH}?next=${encodeURIComponent(here)}`)
-  }, [signedOut, router])
+  }, [signedOut, elsewhere, router])
 
   if (bare) return <div className="min-h-dvh bg-[#080808] text-sm">{children}</div>
   if (signedIn) return <AdminWorkspace>{children}</AdminWorkspace>

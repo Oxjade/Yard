@@ -27,6 +27,7 @@ import { BusinessStep } from "./steps/business"
 import { ProductStep } from "./steps/product"
 import { PaymentsStep } from "./steps/payments"
 import { PublishStep } from "./steps/publish"
+import { HumanCheck, useHumanCheck } from "@/components/auth/human-check"
 
 const stepComponents = [AccountStep, BrandStep, StorefrontStep, BusinessStep, ProductStep, PaymentsStep, PublishStep]
 const LAST = STEPS.length - 1
@@ -101,7 +102,9 @@ function Wizard() {
     else if (saved) return
     else toast.message("Your latest edit is not saved yet", { description: "Try Continue again to include it." })
   }, { errorToast: false, onError: showOnboardingError })
-  const publish = useAsyncAction(() => submitOnboardingProgress(), {
+  // Bot protection for the submission (server/http/human-check.ts); a Turnstile token works once.
+  const human = useHumanCheck()
+  const publish = useAsyncAction(() => submitOnboardingProgress(human.fields()).finally(human.reset), {
     success: "Application submitted",
     errorToast: false,
     onError: showOnboardingError,
@@ -191,6 +194,7 @@ function Wizard() {
             </motion.div>
           </AnimatePresence>
 
+          <HumanCheck check={human} />
           <WizardFooter step={step} publishing={publishing} onBack={back} />
         </div>
 

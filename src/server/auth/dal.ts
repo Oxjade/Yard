@@ -17,6 +17,7 @@ import {
 } from "@/lib/permissions"
 import { loadSession, sessionsAllowed, type SessionRow } from "./session"
 import { sessionAuthOf } from "./session-auth"
+import { brandApproved } from "../catalog/sample-guard"
 
 /**
  * The Data Access Layer (§2.2). Every getter re-reads the session close to the data; each is
@@ -227,11 +228,12 @@ export async function requireAdmin(permission: AdminPermission | "any_admin"): P
 }
 
 /** `brandListed(brand)`: the single predicate behind every public read (§2.2, §3.9). */
-export function brandListed(brand: { reviewStatus: string; founding?: boolean; launchedAt?: Date | null; unpublishedAt?: Date | null }) {
+export function brandListed(brand: { id?: string; reviewStatus: string; founding?: boolean; launchedAt?: Date | null; unpublishedAt?: Date | null }) {
   // A founding brand is listed only once it has launched (first storefront publish); callers that
   // pass the whole brand row get that gate, ordinary brands are unaffected. A storefront Yard
   // unpublished (Admin › Brands) isn't listed either.
   if (brand.founding && brand.launchedAt === null) return false
   if (brand.unpublishedAt) return false
-  return brand.reviewStatus !== "restricted" && brand.reviewStatus !== "suspended"
+  // Only a brand Yard approved: pending review (a new application), restricted and suspended stay out.
+  return brandApproved(brand)
 }

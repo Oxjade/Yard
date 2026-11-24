@@ -10,6 +10,7 @@ import { authLinks } from "./auth-env"
 import type { BrandActor, ShopperActor } from "./dal"
 import { AUTH_EMAIL_TEMPLATES, credentialsOf, findUserByEmail, normalizeEmail, sendAuthEmail, upsertCredentials, userById, type RequestMeta } from "./identity"
 import { limitEmailSend, limitTokenConsume } from "./limits"
+import { assertUsableEmail, findUserByCanonicalEmail } from "./email-dupes"
 import { verifyPassword } from "./passwords"
 import { requireRecentReauth } from "./reauth"
 import { consumeToken, issueToken, voidTokens } from "./tokens"
@@ -121,6 +122,8 @@ export async function requestEmailChange(actor: AccountActor, input: { email: st
   if (user.demo) throw rule("Demo accounts can't change their email.")
   const next = normalizeEmail(input.email)
   if (next === normalizeEmail(user.email)) throw badRequest({ email: "That's already your email." })
+  // No throwaway or test address (email-policy.ts), and not another account's mailbox typed differently.
+  assertUsableEmail(next)
   const cred = await credentialsOf(user.id)
   if (cred?.passwordHash) {
     if (!input.currentPassword) throw badRequest({ currentPassword: "Enter your current password." })
@@ -130,6 +133,8 @@ export async function requestEmailChange(actor: AccountActor, input: { email: st
     await requireRecentReauth(actor, REAUTH_MAX_AGE)
   }
   if (await takenByOther(next, user.id)) throw badRequest({ email: TAKEN })
+  const sameMailbox = await findUserByCanonicalEmail(next)
+  if (sameMailbox && sameMailbox.id !== user.id) throw badRequest({ email: TAKEN })
   // Counted only for a link that is really sent (a wrong password never spends the address's budget).
   await limitEmailSend("change_email", next, meta.ipHash)
   await withTx(async (tx) => {

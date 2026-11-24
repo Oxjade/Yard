@@ -5,6 +5,7 @@ import { guardConfigFrom, guardRequest, TokenBuckets, type GuardConfig } from ".
 import { logRequest } from "./server/http/request-log"
 import { countEvent } from "./server/monitoring/minutes"
 import { BRAND_SESSION_COOKIES, studioGateRedirect } from "./lib/studio-gate"
+import { cookieHints, pageAccess, type AdminAccess, type StudioAccess } from "./lib/access-gate"
 
 /**
  * The global per-IP safety net for /api/* (src/server/http/api-guard.ts): YARD_RATE_API_PER_MIN
@@ -135,7 +136,38 @@ async function checkPage(request: NextRequest, check: PageCheck): Promise<NextRe
   return NextResponse.rewrite(target)
 }
 
-export function proxy(request: NextRequest) {
+/**
+ * The Control Center, Brand Studio and the shopper's own pages in production (src/lib/access-gate.ts
+ * has the whole matrix). The cookie check runs here for free; when a page needs more than a cookie
+ * (a real admin whose role holds the section; a shopper who belongs to a brand) the proxy asks
+ * GET /api/pages/access with the visitor's cookies, which reads the session through the DAL. A
+ * session renewed by that read (rotation) hands its new cookie on to the visitor's response.
+ */
+async function askAccess<T>(request: NextRequest, params: Record<string, string>): Promise<{ body: T | null; setCookies: string[] }> {
+  const origin = process.env.__NEXT_PRIVATE_ORIGIN || request.nextUrl.origin
+  const url = new URL("/api/pages/access", origin)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  try {
+    const res = await fetch(url, { cache: "no-store", headers: { cookie: request.headers.get("cookie") ?? "" }, signal: AbortSignal.timeout(5000) })
+    const setCookies = res.headers.getSetCookie?.() ?? []
+    return { body: res.ok ? ((await res.json()) as T) : null, setCookies }
+  } catch {
+    return { body: null, setCookies: [] }
+  }
+}
+
+function redirectTo(request: NextRequest, target: string, setCookies: string[] = []) {
+  const url = request.nextUrl.clone()
+  const q = target.indexOf("?")
+  url.pathname = q < 0 ? target : target.slice(0, q)
+  url.search = q < 0 ? "" : target.slice(q)
+  const res = NextResponse.redirect(url, 307)
+  res.headers.set("Cache-Control", "no-store")
+  for (const c of setCookies) res.headers.append("Set-Cookie", c)
+  return res
+}
+
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
   if (path.startsWith("/api/")) return guardApi(request)
   const check = pageCheck(path)
@@ -144,6 +176,31 @@ export function proxy(request: NextRequest) {
   // Brand Studio needs a brand session in production (src/lib/studio-gate.ts): signed out, the
   // page is never served; the visitor goes to the Studio sign-in and comes back here afterwards.
   const signIn = studioGateRedirect({ path, search: request.nextUrl.search, seedDemo: false, hasBrandCookie: BRAND_SESSION_COOKIES.some((c) => !!request.cookies.get(c)?.value) })
+  // The Control Center, a shopper's way into Studio and the shopper's own pages (src/lib/access-gate.ts).
+  const hints = cookieHints((c) => !!request.cookies.get(c)?.value)
+  let renewed: string[] = []
+  const ask = async <T,>(params: Record<string, string>) => {
+    const { body, setCookies } = await askAccess<T>(request, params)
+    renewed = setCookies
+    return body
+  }
+  const access = await pageAccess({
+    path,
+    search: request.nextUrl.search,
+    cookies: hints,
+    studioSignIn: signIn,
+    ask: { admin: (p) => ask<AdminAccess>({ area: "admin", path: p }), studio: () => ask<StudioAccess>({ area: "studio" }) },
+  })
+  if (access.kind === "redirect") return redirectTo(request, access.to, renewed)
+  if (access.kind === "rewrite") {
+    const url = request.nextUrl.clone()
+    url.pathname = access.to
+    url.search = ""
+    const res = NextResponse.rewrite(url)
+    res.headers.set("Cache-Control", "no-store")
+    for (const c of renewed) res.headers.append("Set-Cookie", c)
+    return res
+  }
   if (signIn) {
     const url = request.nextUrl.clone()
     const q = signIn.indexOf("?")
@@ -154,11 +211,17 @@ export function proxy(request: NextRequest) {
     return res
   }
   const hit = GATED.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))
-  if (!hit) return NextResponse.next()
+  if (!hit) {
+    const next = NextResponse.next()
+    for (const c of renewed) next.headers.append("Set-Cookie", c)
+    return next
+  }
   const url = request.nextUrl.clone()
   url.pathname = hit[1]
   url.search = ""
-  return NextResponse.redirect(url, 307)
+  const out = NextResponse.redirect(url, 307)
+  for (const c of renewed) out.headers.append("Set-Cookie", c)
+  return out
 }
 
 export const config = {
@@ -169,6 +232,21 @@ export const config = {
     "/studio/campaigns/:path*",
     "/studio/advertising/:path*",
     "/admin/advertising/:path*",
+    // The Control Center and the shopper's own pages (src/lib/access-gate.ts).
+    "/admin",
+    "/admin/:path*",
+    "/you",
+    "/you/:path*",
+    "/inbox",
+    "/inbox/:path*",
+    "/notifications",
+    "/notifications/:path*",
+    "/wishlist",
+    "/wishlist/:path*",
+    "/following",
+    "/following/:path*",
+    "/checkout",
+    "/checkout/:path*",
     "/stories/:path*",
     "/collections/:path*",
     "/drops/:slug",

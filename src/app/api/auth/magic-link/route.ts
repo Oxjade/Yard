@@ -1,7 +1,11 @@
-import { emailOnlyBody } from "@/server/auth/contracts"
+import { emailRequestBody } from "@/server/auth/contracts"
 import { metaOf } from "@/server/auth/http"
 import { requestMagicLink } from "@/server/auth/identity"
+import { humanCheck } from "@/server/http/human-check"
 import { route } from "@/server/http/route"
 
-/** POST /api/auth/magic-link { email } → { ok: true } (a 15-minute sign-in link, shoppers only). */
-export const POST = route({ auth: "public", body: emailOnlyBody, maxBody: 2 * 1024 }, async ({ req, body, ipHash }) => requestMagicLink(body.email, metaOf(req, ipHash)))
+/** POST /api/auth/magic-link { email, turnstileToken?, hp?, formStartedAt? } → { ok: true } (a 15-minute sign-in link, shoppers only). A bot gets the same answer and no email. */
+export const POST = route({ auth: "public", body: emailRequestBody, maxBody: 4 * 1024 }, async ({ req, body, ip, ipHash }) => {
+  if ((await humanCheck(req, body, "magic", ip)) === "bot") return { ok: true as const }
+  return requestMagicLink(body.email, metaOf(req, ipHash))
+})

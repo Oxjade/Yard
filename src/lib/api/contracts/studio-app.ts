@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { humanCheckFields } from "./human-check"
 import { countries } from "@/config/markets"
 import { safeId, safeLine } from "./common"
 
@@ -63,6 +64,8 @@ export const studioApplyBody = z
     country: countryCode,
     /** Optional: one line about what you sell (shown to Yard's reviewers). */
     about: safeLine({ max: 160 }).optional(),
+    /** Optional bot-protection fields (the website sends them; the app may leave them out). */
+    ...humanCheckFields,
   })
   .superRefine((b, ctx) => {
     const ig = b.instagram?.trim()

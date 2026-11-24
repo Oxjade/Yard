@@ -17,6 +17,7 @@ import { useServerSession } from "@/lib/session/use-server-session"
 import { useSession, type SessionUser } from "@/lib/stores/session"
 import { control, Field, inputClass, Panel } from "@/components/studio/growth/form"
 import { StepForm, useStepForm, type StepProps } from "../step-form"
+import { HumanCheck, useHumanCheck } from "@/components/auth/human-check"
 import { useOnboarding } from "../store"
 import { isEmail } from "../validation"
 
@@ -52,6 +53,7 @@ export function AccountStep({ onNext }: StepProps) {
   const [needsVerification, setNeedsVerification] = useState(false)
   const [serverErrors, setServerErrors] = useState<{ name?: string; email?: string; password?: string }>({})
   const pendingRef = useRef<HTMLDivElement>(null)
+  const human = useHumanCheck()
   const signedIn = hydrated ? user : null
   const demoSession = serverSession.shopper?.demo === true
 
@@ -97,7 +99,7 @@ export function AccountStep({ onNext }: StepProps) {
     setServerErrors({})
     try {
       if (mode === "signup") {
-        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password } })
+        await api<{ status: "verify_email" }>("/api/auth/sign-up", { body: { name: name.trim(), email: email.trim(), password, ...human.fields() } })
         setOnboardingAuthReturn()
         // An address that already has an account gets a sign-in link instead, so name neither.
         showPending(`We sent a link from Yard to ${email.trim()}. Open it on this device to come straight back here.`)
@@ -127,6 +129,7 @@ export function AccountStep({ onNext }: StepProps) {
       setServerErrors(nextErrors)
       setFailure(Object.values(nextErrors).some(Boolean) ? null : errorMessage(error, "Couldn't continue. Check your details and try again."))
     } finally {
+      human.reset()
       setBusy(null)
     }
   }
@@ -290,6 +293,7 @@ export function AccountStep({ onNext }: StepProps) {
             </InputGroup>
           </Field>
         </div>
+        <HumanCheck check={human} />
         {mode === "signup" ? <p className="mt-4 text-xs text-ink-3">By continuing you agree to the <Link href="/legal/seller-agreement" className="text-violet underline-offset-4 hover:underline">seller terms</Link> and the <Link href="/legal/privacy" className="text-violet underline-offset-4 hover:underline">privacy policy</Link>.</p> : null}
         {providers.demo.shopper ? <Button type="button" variant="secondary" size="lg" className="mt-4 w-full" loading={busy === "demo"} disabled={!!busy} onClick={() => void signInDemo()}>Continue as demo shopper</Button> : null}
         {failure ? <p role="alert" className="mt-3 text-sm text-danger">{failure}</p> : null}

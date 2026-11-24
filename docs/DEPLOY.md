@@ -126,6 +126,58 @@ It lists every problem at once and exits 1, or prints `configuration OK: product
 imports TypeScript sources through the `@/` alias, which a release can't load without the dev
 tooling). A release built before the tools were bundled has no `tools/`; deploy a newer build first.
 
+## Bot protection: Cloudflare Turnstile (optional)
+
+Sign-up, password reset, magic-link requests and brand applications always use a honeypot, a minimum
+fill time and rate limits. With these two keys in `/etc/yard.env` the website also shows Cloudflare
+Turnstile (free), checked on the server. Without them Turnstile is simply off and never blocks anyone.
+
+| Variable | |
+|---|---|
+| `TURNSTILE_SITE_KEY` | public site key (the browser sees it) |
+| `TURNSTILE_SECRET_KEY` | secret key (server only) |
+
+1. Cloudflare dashboard (a free account is enough) › **Turnstile** › **Add widget**.
+2. Name it "Yard", add the site's public hostname (and `localhost` only on a test server), Widget mode **Managed**, no pre-clearance. Create.
+3. Copy the **Site Key** and **Secret Key** straight into `/etc/yard.env` on the server
+   (`sudo nano /etc/yard.env`, the file stays `root:yard`, mode 640). Never paste them in chat, an
+   issue or a commit.
+4. Check the configuration (above), then `sudo systemctl restart yard`.
+
+Only requests from a web browser need the Turnstile token: the mobile apps call the same endpoints
+without one (docs/APP.md "Bot protection"). If Cloudflare can't be reached, requests go ahead and the
+log says `[yard] human-check: Turnstile unreachable`. Bot refusals are logged
+(`[yard] human-check: … refused as a bot`) and counted (`human.bot.*`, `human.challenge_*`).
+
+`YARD_MAX_BRANDS_PER_ACCOUNT` (optional, default 3): the most brands one account may own; a new
+application beyond it is refused. One application may wait for review per account at a time, and a
+brand application needs a verified email.
+
+The disposable-email list is vendored (`src/server/auth/disposable-domains.data.ts`). Refresh it with
+`npm run email:disposable-update` now and then, review the diff and commit it.
+
+## Who can open which page (production)
+
+With the demo switch off, `src/proxy.ts` decides before a page renders (`src/lib/access-gate.ts`
+has the rules; `src/lib/access-gate.test.ts` is the matrix):
+
+| Visitor | `/admin/**` | `/studio/**` | `/you`, `/inbox`, `/notifications`, `/wishlist`, `/following`, `/checkout` |
+|---|---|---|---|
+| Signed out | 307 `/admin/sign-in?next=…` | 307 `/studio/sign-in?next=…` | 307 `/sign-in?next=…` |
+| Shopper with no brand | 307 `/` | 307 `/sell` | served |
+| Brand member | 307 `/` | served (signed out of Studio: its sign-in) | served |
+| Admin | served; a section outside the role shows "You don't have access to this" | Studio sign-in | `/sign-in` |
+
+`/admin/sign-in`, `/studio/sign-in`, `/studio/onboarding`, `/bag` and `/sell` are open to everyone;
+`/dev/**` answers 404 in every production build. The proxy only looks for the session cookie; the
+Control Center (and a shopper's way into Studio) is confirmed on the server through
+`GET /api/pages/access`, and every API checks the session and permission again (401/403). The demo
+and development are unchanged.
+
+New brands stay `pending_review` and are invisible everywhere public (storefront 404, `/brands`,
+`/shop`, search, sitemap, feeds, `llms.txt`, charts, the homepage) until an admin approves them. After
+deploying this, run `npm run search:reindex` once so brands already waiting leave the search index.
+
 ## Options
 
 | Command | |

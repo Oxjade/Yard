@@ -15,6 +15,8 @@ import { notify } from "../notify"
 import { sendStudioPush } from "../push/studio"
 import { createStarterShipping } from "../shipping/profile"
 import { onboardingStepSchemas, type OnboardingStep } from "./contracts"
+import { assertMayApply } from "./applicant-guard"
+import { applicationRisks } from "./application-risk"
 import { catalogChanged } from "./hooks"
 import { moveStock } from "./stock"
 import { DEFAULT_STOREFRONT } from "./storefront"
@@ -206,6 +208,8 @@ export async function submitOnboarding(actor: ShopperActor, body: { revision: nu
     if (row.status === "submitted") return { onboarding: dto(row) }
     if (row.status === "approved") throw rule("Your brand is already approved.")
     if (row.revision !== body.revision) throw conflict("This application changed in another tab. Reload to continue.")
+    // A verified, permanent email; one application waiting at a time; a cap on brands per account.
+    await assertMayApply(tx, actor.userId, { newBrand: !row.brandId, exceptOnboardingId: row.id })
     const missing = ONBOARDING_STEPS.filter((s) => !(row.data as Record<string, unknown>)[s])
     if (missing.length) throw badRequest(Object.fromEntries(missing.map((s) => [s, "Finish this step first."])), "Some steps aren't finished yet.")
     // Re-validate every step against today's rules (a handle may have been taken meanwhile).
@@ -310,7 +314,9 @@ export async function listSubmittedOnboardings(limit = 50) {
   const submitted = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "submitted")).orderBy(brandOnboardings.submittedAt).limit(cap)
   // Approved applications too (newest first), so a brand stays in Admin › Brands after it's approved.
   const approved = await d.select().from(brandOnboardings).where(eq(brandOnboardings.status, "approved")).orderBy(desc(brandOnboardings.reviewedAt)).limit(cap)
-  return { onboardings: [...submitted, ...approved].map(dto) }
+  // Waiting applications carry their risk signals (application-risk.ts): the queue's "Risky" flag.
+  const risks = await applicationRisks(d, submitted)
+  return { onboardings: [...submitted.map((r) => ({ ...dto(r), risk: risks.get(r.id) })), ...approved.map(dto)] }
 }
 
 /** A first-product SKU within Studio's 40-character limit (a longer one would block every later save in the editor); the size stays whole. */

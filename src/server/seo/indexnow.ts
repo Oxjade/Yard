@@ -3,7 +3,7 @@ import { and, eq, inArray, lte, ne, sql } from "drizzle-orm"
 import { brandPageVisibility, productPageVisibility, type VisibilityBrand } from "@/lib/page-visibility"
 import { decideSubmissions, flushQueue, type Candidate, type FlushResult, type QueueRow, type QueueStore } from "@/lib/seo/indexnow"
 import { absoluteUrl, publicOrigin } from "@/lib/seo/url"
-import { refusedSampleBrand } from "../catalog/sample-guard"
+import { demoSampleBrand, refusedSampleBrand } from "../catalog/sample-guard"
 import { db } from "../db"
 import { brands, catalogProducts, catalogVariants, indexnowUrls } from "../db/schema"
 import { drops } from "../db/schema/engagement"
@@ -36,7 +36,7 @@ const CHUNK = 1000
 const chunks = <T,>(list: T[]) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK))
 
 type BrandRow = { id: string; handle: string; founding: boolean; launchedAt: Date | null; reviewStatus: string }
-const visBrand = (b: BrandRow): VisibilityBrand => ({ founding: b.founding, launchedAt: b.launchedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id) })
+const visBrand = (b: BrandRow): VisibilityBrand => ({ founding: b.founding, launchedAt: b.launchedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id), demoSample: demoSampleBrand(b.id) })
 /** Was this brand ever public? Ordinary brands from the start; founding brands once launched; samples never. */
 const brandEverPublic = (b: BrandRow) => !refusedSampleBrand(b.id) && (!b.founding || b.launchedAt !== null)
 const brandCols = { id: brands.id, handle: brands.handle, founding: brands.founding, launchedAt: brands.launchedAt, reviewStatus: brands.reviewStatus }

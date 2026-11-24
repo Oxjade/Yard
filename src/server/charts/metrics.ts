@@ -5,7 +5,7 @@ import { drops } from "@/lib/data/catalog"
 import { products } from "@/lib/data/products"
 import type { Drop } from "@/lib/data/types"
 import { db, t } from "../db"
-import { refusedSampleBrand } from "../catalog/sample-guard"
+import { brandApproved, refusedSampleBrand } from "../catalog/sample-guard"
 import { addDays, dayStart, dayTotal, dropAnchor, dropTimes, emptyDay, repeatRate, sampleDaily, type DayCounts } from "./baseline"
 import { uniqueSavers, type BrandInput, type DropInput, type Metrics, type SaverRow } from "./score"
 
@@ -61,7 +61,8 @@ const DAY = 86_400_000
 
 /** `brandListed` (§2.2) for a row. */
 /** Listed on the charts: not restricted or suspended, and (production) never a sample brand, even from a demo-seeded database. */
-export const listed = (b: { id?: string; reviewStatus: string }) => b.reviewStatus !== "restricted" && b.reviewStatus !== "suspended" && !refusedSampleBrand(b.id)
+/** On the charts: a brand Yard approved (never pending review, restricted or suspended), never a refused sample. */
+export const listed = (b: { id?: string; reviewStatus: string }) => brandApproved(b) && !refusedSampleBrand(b.id)
 
 export async function loadBrands(): Promise<BrandRow[]> {
   const d = await db()

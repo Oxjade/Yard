@@ -8,6 +8,7 @@ import { useSession, type SessionUser } from "@/lib/stores/session"
 import { errorMessage } from "@/lib/api/errors"
 import { stepComplete } from "./validation"
 import { getOnboarding, onboardingDataFromServer, saveOnboardingStep as saveOnboardingStepRequest, submitOnboarding as submitOnboardingRequest, type OnboardingDto, type OnboardingStatus } from "./remote"
+import type { HumanCheckFields } from "@/lib/api/contracts/human-check"
 
 /**
  * Merchant onboarding progress, loaded and saved against the signed-in shopper's application.
@@ -268,11 +269,11 @@ export async function saveAllOnboardingProgress({ skipIncomplete = false }: { sk
   return true
 }
 
-export async function submitOnboardingProgress() {
+export async function submitOnboardingProgress(human: HumanCheckFields = {}) {
   const user = useSession.getState().user
   if (!user) throw new Error("Sign in before submitting your brand application.")
   if (!(await saveAllOnboardingProgress())) throw new Error("This step changed while it was saving. Submit again to include your latest edits.")
-  const response = await submitOnboardingRequest(useOnboarding.getState().revision)
+  const response = await submitOnboardingRequest(useOnboarding.getState().revision, human)
   applySavedDto(response.onboarding)
   useOnboarding.setState({ publishedAt: response.onboarding.submittedAt ?? stamp(), status: response.onboarding.status })
 }

@@ -4,9 +4,9 @@ import { brandPageVisibility, memberPreviewLine, opensSoonTitle, productPageVisi
 
 const now = new Date("2026-11-19T12:00:00Z")
 const product = (over: Partial<VisibilityProduct> = {}): VisibilityProduct => ({ status: "published", publishAt: null, moderationStatus: "ok", ...over })
-const ordinary: VisibilityBrand = { founding: false, launchedAt: null, reviewStatus: "approved" }
-const unlaunched: VisibilityBrand = { founding: true, launchedAt: null, reviewStatus: "approved" }
-const launched: VisibilityBrand = { founding: true, launchedAt: new Date("2026-11-01T00:00:00Z"), reviewStatus: "approved" }
+const ordinary: VisibilityBrand = { founding: false, launchedAt: null, reviewStatus: "verified" }
+const unlaunched: VisibilityBrand = { founding: true, launchedAt: null, reviewStatus: "verified" }
+const launched: VisibilityBrand = { founding: true, launchedAt: new Date("2026-11-01T00:00:00Z"), reviewStatus: "verified" }
 
 describe("product page visibility", () => {
   it("a published piece of a launched founding brand (or an ordinary brand) shows normally", () => {
@@ -40,6 +40,16 @@ describe("product page visibility", () => {
       assert.equal(productPageVisibility(product(), { ...launched, reviewStatus }, now), "none")
       assert.equal(productPageVisibility(product(), { ...ordinary, reviewStatus }, now), "none")
     }
+  })
+
+  it("a brand waiting for Yard's review (a new application) stays not-found until approved", () => {
+    for (const reviewStatus of ["pending_review", "draft", "rejected"]) {
+      assert.equal(productPageVisibility(product(), { ...ordinary, reviewStatus }, now), "none")
+      assert.equal(brandPageVisibility({ ...ordinary, reviewStatus }), "none")
+      assert.equal(brandPageVisibility({ ...launched, reviewStatus }), "none")
+    }
+    // The demo's bundled sample applications keep their seeded status.
+    assert.equal(brandPageVisibility({ ...ordinary, reviewStatus: "pending_review", demoSample: true }), "public")
   })
 
   it("a refused sample brand (production) stays not-found", () => {

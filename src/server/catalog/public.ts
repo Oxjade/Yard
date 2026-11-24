@@ -10,9 +10,9 @@ import { loadChildren, toPublicProduct } from "./dto"
 import { mediaSrc } from "../media/dto"
 import type { PublicBrandsQuery, PublicProductsQuery } from "./contracts"
 import type { PublicBrandCard, PublicBrandsPage } from "@/lib/api/public-brands"
-import { brandForSaleSql, brandLaunchedSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
+import { brandForSaleSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
 import { brandPageVisibility, productPageVisibility } from "@/lib/page-visibility"
-import { refusedSampleBrand } from "./sample-guard"
+import { demoSampleBrand, refusedSampleBrand } from "./sample-guard"
 
 /**
  * Public catalogue reads. Every read goes through productPublicWhere (published, not hidden,
@@ -138,7 +138,7 @@ const visibilityBrandCols = {
   reviewStatus: brands.reviewStatus,
 }
 type VisibilityBrandRow = { id: string; handle: string; name: string; logoMediaId: string | null; logoPublic: boolean; founding: boolean; launchedAt: Date | null; unpublishedAt: Date | null; reviewStatus: string }
-const visibilityBrand = (b: VisibilityBrandRow) => ({ founding: b.founding, launchedAt: b.launchedAt, unpublishedAt: b.unpublishedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id) })
+const visibilityBrand = (b: VisibilityBrandRow) => ({ founding: b.founding, launchedAt: b.launchedAt, unpublishedAt: b.unpublishedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id), demoSample: demoSampleBrand(b.id) })
 const toOpensSoonBrand = (b: VisibilityBrandRow): OpensSoonBrand => ({
   id: b.id,
   handle: b.handle,
@@ -228,7 +228,7 @@ async function listedBrandByHandle(handleOrId: string) {
   const [b] = await d
     .select()
     .from(brands)
-    .where(and(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)), sql`${brands.reviewStatus} not in ('restricted', 'suspended')`, brandLaunchedSql()))
+    .where(and(or(eq(brands.handle, handleOrId), eq(brands.id, handleOrId)), brandListedSql()))
     .limit(1)
   if (!b) return null
   const [sale] = await d.select({ forSale: sql<boolean>`${brandForSaleSql()}` }).from(brands).where(eq(brands.id, b.id)).limit(1)

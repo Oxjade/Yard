@@ -31,12 +31,12 @@ const product = (over: Partial<SeoProductInput> = {}): SeoProductInput => ({
 
 describe("feed eligibility (on top of productPublicWhere)", () => {
   const live: VisibilityProduct = { status: "published", publishAt: null, moderationStatus: "ok" }
-  const ordinary: VisibilityBrand = { founding: false, launchedAt: null, reviewStatus: "approved" }
+  const ordinary: VisibilityBrand = { founding: false, launchedAt: null, reviewStatus: "verified" }
   const ok = { product: live, brand: ordinary, forSale: true, variants: 1, images: 1 }
 
   it("a published piece of a listed brand that sells is in", () => {
     assert.equal(feedEligible(ok, now), true)
-    assert.equal(feedEligible({ ...ok, brand: { founding: true, launchedAt: new Date("2026-11-01T00:00:00Z"), reviewStatus: "approved" } }, now), true)
+    assert.equal(feedEligible({ ...ok, brand: { founding: true, launchedAt: new Date("2026-11-01T00:00:00Z"), reviewStatus: "verified" } }, now), true)
   })
 
   it("drafts, archived, not-yet-due and moderation-hidden pieces are out", () => {
@@ -47,7 +47,7 @@ describe("feed eligibility (on top of productPublicWhere)", () => {
   })
 
   it("an opens-soon piece (founding brand not launched) is out", () => {
-    assert.equal(feedEligible({ ...ok, brand: { founding: true, launchedAt: null, reviewStatus: "approved" } }, now), false)
+    assert.equal(feedEligible({ ...ok, brand: { founding: true, launchedAt: null, reviewStatus: "verified" } }, now), false)
   })
 
   it("restricted, suspended and refused-sample brands are out", () => {

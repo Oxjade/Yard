@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ADMIN_ROLES, TEAM_ROLES } from "@/lib/api/contracts/enums"
+import { humanCheckFields } from "@/lib/api/contracts/human-check"
 
 /**
  * Request bodies for the v3 auth routes (strict: unknown fields are a 400). Plain zod with no
@@ -16,7 +17,9 @@ const recovery = z.string().trim().min(10, "Enter a recovery code.").max(20, "En
 const id = z.string().min(1).max(64).regex(/^[\w-]+$/)
 export const signInActor = z.enum(["shopper", "brand", "admin"])
 
-export const signUpBody = z.object({ name, email, password: newPassword }).strict()
+/** Sign-up, reset and magic-link requests also take the optional bot-protection fields (server/http/human-check.ts). */
+export const signUpBody = z.object({ name, email, password: newPassword, ...humanCheckFields }).strict()
+export const emailRequestBody = z.object({ email, ...humanCheckFields }).strict()
 export const signInBody = z.object({ email, password, actor: signInActor.default("shopper"), brandId: id.optional() }).strict()
 export const emailOnlyBody = z.object({ email }).strict()
 export const tokenBody = z.object({ token }).strict()

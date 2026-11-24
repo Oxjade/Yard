@@ -43,6 +43,25 @@ export function refuseSampleDrop(id: unknown, field?: string) {
 }
 
 /**
+ * A brand Yard has approved (review_status 'verified'). New brands start as 'pending_review' and
+ * stay off every public surface (storefront, /brands, /shop, search, sitemap, feeds, llms.txt,
+ * charts, the homepage) until an admin approves them; restricted and suspended brands are out too.
+ * The demo keeps its bundled sample brands as seeded (two of them are 'pending_review' sample
+ * applications), so only real brands need the approval there.
+ */
+export const demoSampleBrand = (id: unknown) => !sampleOff() && isSampleBrand(id)
+export const brandApproved = (b: { id?: string | null; reviewStatus: string }) => b.reviewStatus === "verified" || demoSampleBrand(b.id)
+
+/** SQL for brandApproved: `status` is the brand's review_status, `id` its id. */
+export function brandApprovedSql(status: AnyColumn | SQL, id: AnyColumn | SQL): SQL {
+  if (sampleOff()) return sql`${status} = 'verified'`
+  return sql`(${status} = 'verified' or ${id} in (${sql.join(
+    [...SAMPLE_BRAND_IDS].map((x) => sql`${x}`),
+    sql`, `,
+  )}))`
+}
+
+/**
  * SQL: `column` is not a sample brand id, in production; always true in demo. The one rule behind
  * every public catalogue read (sellable.ts productPublicWhere / brandListedSql), so a demo-seeded
  * database can't leak sample brands, products, collections or drops into production.

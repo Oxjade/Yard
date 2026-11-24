@@ -63,6 +63,22 @@ cookies are not the app's. Code: `src/server/auth/oauth/app-core.ts` (pure), `fl
      (a wrong verifier doesn't spend the code). 403 `csrf` without the headers above. 429 when rate limited.
    - App sign-ins are shopper or brand only, which never need MFA.
 
+## Bot protection (sign-up, password reset, magic link, brand application)
+
+`POST /api/auth/sign-up`, `/api/auth/password/forgot`, `/api/auth/magic-link`, `/api/studio/apply` and
+`/api/studio/onboarding/submit` accept three **optional** fields the website adds (src/server/http/human-check.ts):
+`turnstileToken` (Cloudflare Turnstile), `hp` (a honeypot the website hides; any value marks a bot) and
+`formStartedAt` (ms since epoch, for a minimum fill time). The app sends none of them and keeps working:
+
+- Turnstile is only required for requests from a web browser (they carry `Sec-Fetch-Site` /
+  `Sec-Fetch-Mode`). The app's native HTTP client sends neither header, so it is exempt. **Don't add
+  `Sec-Fetch-*` headers to the app's requests**, and don't make API calls from a WebView's JavaScript.
+- Without the fields the honeypot and fill-time checks pass. The app relies on the per-IP and
+  per-email rate limits, the daily sign-up cap per network and email verification instead.
+- A throwaway or test address (mailinator.com, example.com, *.test, …) is refused at sign-up and email
+  change: 400 `validation` with `fields.email` = "Use an email address you'll keep. Temporary,
+  disposable or test addresses can't be used on Yard." Show it under the email field.
+
 ## Push notifications
 
 - `POST /api/devices { platform: "android"|"ios", token (≤ 4096), appVersion?, studio? }` → 204. Upsert by token. `studio: true`: the app can open Studio, so this device also gets Studio pushes (see "Studio in the app").
@@ -493,7 +509,12 @@ in Studio later.
   "Choose one of Yard's categories.", "Choose a country Yard sells in."); 409 `conflict` "You have an
   application in progress on the website. Finish it there, or clear it, then apply here."; 422 `rule`
   ("Your shop is already approved. Open Studio to manage it.", "Your shop is on hold by Yard…",
-  "Demo accounts can't apply to sell on Yard."); 401; 429 (10/min, 20/day).
+  "Demo accounts can't apply to sell on Yard.", "You already have an application waiting for Yard's review…",
+  "An account can run up to 3 brands on Yard…", a throwaway or test email address); 403 `forbidden` with
+  `fields.email = "unverified"` when the account's email isn't confirmed yet (show the message and a
+  "Resend verification email" action, `POST /api/auth/verify-email/request`); 401; 429 (10/min, 20/day).
+- **Bot protection:** the body may also carry `turnstileToken`, `hp` and `formStartedAt` (see "Bot
+  protection" below). The app sends none of them and needs no change.
 - **Approval:** the applicant gets the email "Your shop is ready" (button "Open Studio") and a push
   (`kind "studio.approved"`, below), and `shopper.brands[].status` becomes `approved`.
 

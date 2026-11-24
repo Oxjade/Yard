@@ -34,8 +34,9 @@ import { mediaAssets } from "../db/schema"
 export const CATALOG_IMAGE_PURPOSES = ["social_post", "location_image", "onboarding_image", "storefront_cover", "drop_image"] as const
 const CATALOG_PURPOSES = sql.raw(`(${CATALOG_IMAGE_PURPOSES.map((p) => `'${p}'`).join(", ")})`)
 
-// Listed: not restricted or suspended, and (founding brands) launched with a published storefront.
-const listed = (alias: string) => sql.raw(`${alias}.review_status not in ('restricted', 'suspended') and (not ${alias}.founding or ${alias}.launched_at is not null)`)
+// Listed: approved by Yard (verified; never pending review, restricted or suspended), and (founding
+// brands) launched with a published storefront.
+const listed = (alias: string) => sql.raw(`${alias}.review_status = 'verified' and (not ${alias}.founding or ${alias}.launched_at is not null)`)
 
 /** Any reference at all, whatever its visibility or moderation (what keeps a file from the purge). */
 export const referencedAtAll = sql.raw(`(

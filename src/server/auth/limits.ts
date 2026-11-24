@@ -4,6 +4,7 @@ import { rateLimited } from "../http/errors"
 import { sha256hex } from "../security/crypto"
 import { hit, recordAbuse } from "../security/rate-limit"
 import { yard } from "../state"
+import { canonicalEmail } from "./email-policy"
 
 /**
  * Sign-in rate limits (§5.1 pattern): per client IP (one global bucket when the IP is unknown)
@@ -17,6 +18,10 @@ export const LIMITS = {
   emailSendPerIp: { limit: 10, windowSec: 3600 },
   emailSendPerEmail: { limit: 3, windowSec: 3600 },
   emailSendGlobalUnknownIp: { limit: 300, windowSec: 3600 },
+  // New accounts from one address in a day (on top of the hourly email budget above): a household
+  // or an office signs up a handful, a bot farm hundreds. CGNAT carriers share addresses, so not lower.
+  signupPerIpDay: { limit: 20, windowSec: 86_400 },
+  signupGlobalUnknownIpDay: { limit: 500, windowSec: 86_400 },
   tokenConsumePerIp: { limit: 30, windowSec: 600 },
   mfaPerUser: { limit: 10, windowSec: 600 },
   // Control Center (admin) sign-in is stricter than shoppers' and brands', on top of the buckets above.
@@ -34,7 +39,8 @@ export const LIMITS = {
 /** Durable lockout: this many wrong passwords within the window locks the account for LOCK_MIN. */
 export const LOCKOUT = { failures: 10, windowMin: 15, lockMin: 15 }
 
-export const emailKey = (email: string) => sha256hex(`auth-email|${email.trim().toLowerCase()}`).slice(0, 24)
+/** One bucket per mailbox: a.b+1@gmail.com and ab+2@gmail.com spend the same budget (email-policy.ts canonicalEmail). */
+export const emailKey = (email: string) => sha256hex(`auth-email|${canonicalEmail(email)}`).slice(0, 24)
 
 async function check(key: string, limit: number, windowSec: number, action: string, ipHash: string | null, message: string) {
   const r = hit(key, limit, windowSec)
@@ -102,4 +108,11 @@ export async function limitPerUser(action: "mfa" | "reauth", userId: string, ipH
 
 export async function limitOauthStart(ipHash: string | null) {
   await check(`auth.oauth:${ipHash ?? "anon-global"}`, ipHash ? LIMITS.oauthStartPerIp.limit : LIMITS.oauthStartPerIp.limit * 20, LIMITS.oauthStartPerIp.windowSec, "auth.oauth", ipHash, "Too many sign-in attempts. Try again in a few minutes.")
+}
+
+/** Sign-ups per client IP per day (or one shared daily budget when the IP is unknown). */
+export async function limitSignupPerIp(ipHash: string | null) {
+  const msg = "Too many new accounts from your network today. Try again tomorrow, or sign in to an account you already have."
+  if (ipHash) await check(`auth.signup:ip-day:${ipHash}`, getEnv().dev ? 500 : LIMITS.signupPerIpDay.limit, LIMITS.signupPerIpDay.windowSec, "auth.signup", ipHash, msg)
+  else await check("auth.signup:anon-global-day", LIMITS.signupGlobalUnknownIpDay.limit, LIMITS.signupGlobalUnknownIpDay.windowSec, "auth.signup", null, msg)
 }

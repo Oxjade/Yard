@@ -25,7 +25,7 @@ import { createStarterShipping } from "../shipping/profile"
 import { catalogChanged } from "./hooks"
 import { handleStatus, type HandleStatus } from "./onboarding"
 import { brandForSaleSql, brandListedSql, imageSrc } from "./sellable"
-import { notSampleBrandSql } from "./sample-guard"
+import { brandApprovedSql, notSampleBrandSql } from "./sample-guard"
 import { DEFAULT_STOREFRONT } from "./storefront"
 import { assertBrandImages, slugify } from "./studio"
 
@@ -488,7 +488,7 @@ export async function listFoundingBrandsForHome(limit = 12): Promise<FoundingHom
         cover: sql<string | null>`(select sv.config ->> 'coverMediaId' from catalog_storefront_versions sv where sv.brand_id = "brands"."id" order by sv.version desc limit 1)`,
       })
       .from(brands)
-      .where(and(eq(brands.founding, true), isNotNull(brands.launchedAt), isNull(brands.unpublishedAt), sql`${brands.reviewStatus} not in ('restricted', 'suspended')`, notSampleBrandSql(brands.id)))
+      .where(and(eq(brands.founding, true), isNotNull(brands.launchedAt), isNull(brands.unpublishedAt), brandApprovedSql(brands.reviewStatus, brands.id), notSampleBrandSql(brands.id)))
       .orderBy(desc(brands.launchedAt), asc(brands.id))
       .limit(Math.min(48, Math.max(1, limit)))
     return rows.map((r) => ({

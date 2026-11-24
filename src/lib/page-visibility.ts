@@ -9,7 +9,8 @@
  *   and a Follow button, never the piece's photos, price or details; the brand's own members get a
  *   preview with "Publish my shop".
  * - "none": not found. Drafts, archived, scheduled-not-due, moderation-hidden pieces, and anything
- *   of a restricted or suspended brand (or a sample brand in production) stay not-found.
+ *   of a brand Yard hasn't approved (pending review, restricted or suspended) or a sample brand in
+ *   production stay not-found. A new brand is invisible until an admin approves it.
  */
 export type PageVisibility = "public" | "opens-soon" | "none"
 
@@ -21,6 +22,8 @@ export type VisibilityBrand = {
   unpublishedAt?: Date | null
   /** A bundled sample brand while production refuses samples (sample-guard.ts). */
   sample?: boolean
+  /** A bundled sample brand in the demo, which keeps its seeded review status (sample-guard.ts demoSampleBrand). */
+  demoSample?: boolean
 }
 
 export type VisibilityProduct = {
@@ -29,8 +32,8 @@ export type VisibilityProduct = {
   moderationStatus: string
 }
 
-/** A brand Yard lists: not restricted or suspended, not a refused sample. Launch is separate. */
-const brandStanding = (b: VisibilityBrand) => !b.sample && b.reviewStatus !== "restricted" && b.reviewStatus !== "suspended"
+/** A brand Yard lists: approved (verified), not a refused sample. Launch is separate. */
+const brandStanding = (b: VisibilityBrand) => !b.sample && (b.reviewStatus === "verified" || !!b.demoSample)
 
 /** A founding brand is public once its storefront is published; ordinary brands always are, unless Yard unpublished the shop. */
 const brandLaunched = (b: VisibilityBrand) => (!b.founding || b.launchedAt !== null) && !b.unpublishedAt
