@@ -55,6 +55,11 @@ export type PayoutRulesDto = {
 
 export type PayoutSummaryDto = {
   currency: string
+  /**
+   * How approved payouts reach the brand: "manual" (Bachs: Yard pays the bank account by transfer
+   * and records it), "provider" (Paystack transfers) or "test" (stub or payments off: nothing is paid).
+   */
+  payoutMethod?: "manual" | "provider" | "test"
   balances: BrandBalanceDto[]
   account: PayoutAccountDto | null
   payouts: PayoutDto[]

@@ -17,6 +17,8 @@ export type VisibilityBrand = {
   founding: boolean
   launchedAt: Date | null
   reviewStatus: string
+  /** Yard unpublished the brand's storefront (Admin › Brands): hidden like an unlaunched shop until republished. */
+  unpublishedAt?: Date | null
   /** A bundled sample brand while production refuses samples (sample-guard.ts). */
   sample?: boolean
 }
@@ -30,8 +32,8 @@ export type VisibilityProduct = {
 /** A brand Yard lists: not restricted or suspended, not a refused sample. Launch is separate. */
 const brandStanding = (b: VisibilityBrand) => !b.sample && b.reviewStatus !== "restricted" && b.reviewStatus !== "suspended"
 
-/** A founding brand is public once its storefront is published; ordinary brands always are. */
-const brandLaunched = (b: VisibilityBrand) => !b.founding || b.launchedAt !== null
+/** A founding brand is public once its storefront is published; ordinary brands always are, unless Yard unpublished the shop. */
+const brandLaunched = (b: VisibilityBrand) => (!b.founding || b.launchedAt !== null) && !b.unpublishedAt
 
 export function brandPageVisibility(b: VisibilityBrand | null | undefined): PageVisibility {
   if (!b || !brandStanding(b)) return "none"

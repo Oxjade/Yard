@@ -12,7 +12,7 @@ export const ADMIN_BRAND_APPLICATION_STATES = ["none", "draft", "submitted", "ap
 export type AdminBrandApplicationState = (typeof ADMIN_BRAND_APPLICATION_STATES)[number]
 
 /** `status` filter: "all", a review status (open brands only), closed, founding, or by application. */
-export const ADMIN_BRAND_STATUS_FILTERS = ["all", ...BRAND_REVIEW_STATUSES, "closed", "founding", "no_application", "draft", "rejected"] as const
+export const ADMIN_BRAND_STATUS_FILTERS = ["all", ...BRAND_REVIEW_STATUSES, "closed", "founding", "claimed_not_live", "no_application", "draft", "rejected"] as const
 export type AdminBrandStatusFilter = (typeof ADMIN_BRAND_STATUS_FILTERS)[number]
 
 export const ADMIN_BRANDS_MAX_PAGE_SIZE = 200
@@ -45,6 +45,8 @@ export type AdminBrandRowDto = {
   /** When the brand joined, else when its application was submitted or started (ISO), or null. */
   since: string | null
   application: { id: string; status: Exclude<AdminBrandApplicationState, "none">; submittedAt: string | null } | null
+  /** The shop on the marketplace: live (published, not unpublished by Yard, launched, in good standing), or unpublished by Yard. */
+  storefront?: { live: boolean; unpublished: boolean; claimedNotLive?: boolean }
 }
 
 export type AdminBrandsDto = { items: AdminBrandRowDto[]; total: number; page: number; pageSize: number }

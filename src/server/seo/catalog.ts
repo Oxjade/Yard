@@ -123,6 +123,7 @@ async function* publicCatalogue(): AsyncGenerator<CatalogueRow[]> {
           country: brands.country,
           founding: brands.founding,
           launchedAt: brands.launchedAt,
+          unpublishedAt: brands.unpublishedAt,
           reviewStatus: brands.reviewStatus,
           forSale: sql<boolean>`${brandForSaleSql()}`,
         },
@@ -144,7 +145,7 @@ async function* publicCatalogue(): AsyncGenerator<CatalogueRow[]> {
       const eligible = feedEligible(
         {
           product: { status: r.p.status, publishAt: r.p.publishAt, moderationStatus: r.p.moderationStatus },
-          brand: { founding: r.brand.founding, launchedAt: r.brand.launchedAt, reviewStatus: r.brand.reviewStatus, sample: refusedSampleBrand(r.brand.id) },
+          brand: { founding: r.brand.founding, launchedAt: r.brand.launchedAt, unpublishedAt: r.brand.unpublishedAt, reviewStatus: r.brand.reviewStatus, sample: refusedSampleBrand(r.brand.id) },
           forSale: !!r.brand.forSale,
           variants: dto.variants.length,
           images: dto.images.length,

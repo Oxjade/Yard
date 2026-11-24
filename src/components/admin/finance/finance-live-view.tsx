@@ -13,11 +13,13 @@ import { FinanceOperations } from "./finance-live-operations"
 import { FinanceControls } from "./finance-live-controls"
 import { BachsLiveTab } from "./bachs-live-tab"
 import { CommissionLiveTab } from "./commission-live-tab"
+import { PayoutAccountsTab } from "./payout-accounts-tab"
 
-type Tab = "overview" | "payouts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation" | "bachs" | "commission"
+type Tab = "overview" | "payouts" | "accounts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation" | "bachs" | "commission"
 const options: { value: Tab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "payouts", label: "Payouts" },
+  { value: "accounts", label: "Payout accounts" },
   { value: "batches", label: "Batches" },
   { value: "ledger", label: "Ledger" },
   { value: "adjustments", label: "Adjustments" },
@@ -61,6 +63,7 @@ export function FinanceLiveView() {
       {tab === "brands" || tab === "reconciliation" ? <FinanceControls tab={tab} /> : null}
       {tab === "bachs" ? <BachsLiveTab /> : null}
       {tab === "commission" ? <CommissionLiveTab /> : null}
+      {tab === "accounts" ? <PayoutAccountsTab /> : null}
     </div>
   )
 }

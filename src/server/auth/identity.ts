@@ -130,7 +130,7 @@ export async function profileFor(actor: ActorKind, user: UserRow, brandId: strin
   return {
     userId: user.id,
     name: user.name,
-    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus as BrandProfile["brand"]["reviewStatus"], logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}?as=brand` : null },
+    brand: { id: b.id, handle: b.handle, name: b.name, reviewStatus: b.reviewStatus as BrandProfile["brand"]["reviewStatus"], logoSrc: b.logoMediaId ? `/api/media/${encodeURIComponent(b.logoMediaId)}?as=brand` : null, city: b.city, country: b.country, currency: b.currency },
     role,
     permissions: brandRolePermissions[role],
     // Yard setup works on a real founding brand, so Studio reads its live data even when the admin

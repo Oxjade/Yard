@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import { Initials } from "./bits"
 import { BrandEmailSection } from "./brand-email-section"
 import { PublishForBrandSection } from "./publish-for-brand-section"
+import { StorefrontSection, type StorefrontAction, type StorefrontTarget } from "./storefront-dialog"
 import { allowedBrandActions, brandActions, onServer, useBrandStatusBlock, type BrandActionKey } from "./brand-actions"
 import { AdminImg, ServerActivity, TrustActionBar, useAdminSession } from "@/components/admin/trust/shared"
 import { verificationChecklist, type CheckState } from "./derive"
@@ -53,6 +54,7 @@ export function BrandDetail({
   onOpenChange,
   onDecide,
   onDelete,
+  onStorefront,
 }: {
   app: BrandApplication | null
   open: boolean
@@ -60,6 +62,8 @@ export function BrandDetail({
   onDecide: (key: BrandActionKey, a: BrandApplication) => void
   /** Admin › Brands › Delete brand (owner admins; the section hides itself for everyone else). */
   onDelete?: (t: DeleteTarget) => void
+  /** Admin › Brands › Publish / Unpublish storefront (storefront-dialog.tsx): opens the confirmation. */
+  onStorefront?: (t: StorefrontTarget, action: StorefrontAction) => void
 }) {
   // Keep the last record while the sheet animates out.
   // Relative days count from the same today as every other Control Center page.
@@ -132,7 +136,11 @@ export function BrandDetail({
 
       {app.brandId ? <ProductsSection appId={app.id} brandId={app.brandId} brandName={app.brandName} products={app.products} canPropose={canPropose} /> : null}
 
-      {app.brandId && app.status !== "pending_review" && (!app.onboardingId || app.reviewed) ? <PublishForBrandSection brandId={app.brandId} brandName={app.brandName} /> : null}
+      {app.brandId && onStorefront ? (
+        <StorefrontSection key={app.brandId} brandId={app.brandId} brandName={app.brandName} onAsk={onStorefront} />
+      ) : app.brandId && app.status !== "pending_review" && (!app.onboardingId || app.reviewed) ? (
+        <PublishForBrandSection brandId={app.brandId} brandName={app.brandName} />
+      ) : null}
 
       {app.application ? <ApplicationSection data={app.application} /> : null}
 

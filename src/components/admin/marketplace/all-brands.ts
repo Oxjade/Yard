@@ -84,6 +84,8 @@ export function matchesBrandFilter(row: AdminBrandRowDto, filter: AdminBrandStat
       return !!row.closedAt
     case "founding":
       return row.founding
+    case "claimed_not_live":
+      return !!row.storefront?.claimedNotLive
     case "no_application":
       return !row.application
     case "draft":
@@ -101,6 +103,7 @@ export const brandFilterOptions: { value: Exclude<AdminBrandStatusFilter, "all">
   { value: "suspended", label: "Suspended" },
   { value: "closed", label: "Closed" },
   { value: "founding", label: "Founding" },
+  { value: "claimed_not_live", label: "Claimed, not live yet" },
   { value: "no_application", label: "No application" },
   { value: "draft", label: "Draft application" },
   { value: "rejected", label: "Rejected application" },

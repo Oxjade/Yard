@@ -4,6 +4,7 @@ import { seedDemoFrom } from "./server/demo-switch"
 import { guardConfigFrom, guardRequest, TokenBuckets, type GuardConfig } from "./server/http/api-guard"
 import { logRequest } from "./server/http/request-log"
 import { countEvent } from "./server/monitoring/minutes"
+import { BRAND_SESSION_COOKIES, studioGateRedirect } from "./lib/studio-gate"
 
 /**
  * The global per-IP safety net for /api/* (src/server/http/api-guard.ts): YARD_RATE_API_PER_MIN
@@ -140,6 +141,18 @@ export function proxy(request: NextRequest) {
   const check = pageCheck(path)
   if (check) return checkPage(request, check)
   if (seedDemoFrom(process.env)) return NextResponse.next()
+  // Brand Studio needs a brand session in production (src/lib/studio-gate.ts): signed out, the
+  // page is never served; the visitor goes to the Studio sign-in and comes back here afterwards.
+  const signIn = studioGateRedirect({ path, search: request.nextUrl.search, seedDemo: false, hasBrandCookie: BRAND_SESSION_COOKIES.some((c) => !!request.cookies.get(c)?.value) })
+  if (signIn) {
+    const url = request.nextUrl.clone()
+    const q = signIn.indexOf("?")
+    url.pathname = q < 0 ? signIn : signIn.slice(0, q)
+    url.search = q < 0 ? "" : signIn.slice(q)
+    const res = NextResponse.redirect(url, 307)
+    res.headers.set("Cache-Control", "no-store")
+    return res
+  }
   const hit = GATED.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))
   if (!hit) return NextResponse.next()
   const url = request.nextUrl.clone()
@@ -150,6 +163,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // Every Studio page: the sign-in gate (src/lib/studio-gate.ts) runs before GATED.
+    "/studio",
+    "/studio/:path*",
     "/studio/campaigns/:path*",
     "/studio/advertising/:path*",
     "/admin/advertising/:path*",

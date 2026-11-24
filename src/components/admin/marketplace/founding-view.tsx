@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowSquareOutIcon, EyeIcon, GlobeIcon, LinkSimpleIcon, PlusIcon, SealIcon, TrashIcon, TrashSimpleIcon } from "@phosphor-icons/react"
+import { ArrowSquareOutIcon, EyeIcon, GlobeIcon, LinkSimpleIcon, PlusIcon, RocketLaunchIcon, SealIcon, TrashIcon, TrashSimpleIcon } from "@phosphor-icons/react"
 import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
 import { AdminImg, useAdminSession } from "@/components/admin/trust/shared"
@@ -22,6 +22,10 @@ import { FoundingDetail, foundingStatusMeta } from "./founding-detail"
 import { useCanDeleteBrands, useDeleteBrand } from "./delete-brand-dialog"
 import { countryName, formatDate, formatDateTime } from "./format"
 import { useSearchParam, writeParams } from "./url-state"
+import { useStorefrontAction } from "./storefront-dialog"
+
+/** Claimed by its owner but never launched: Admin can make it live (storefront-dialog.tsx). */
+const claimedNotLive = (b: FoundingBrandRow) => b.claimStatus === "claimed" && !b.launchedAt && b.reviewStatus !== "suspended" && b.reviewStatus !== "restricted"
 
 /**
  * Founding brands (owner only, brands.founding): the brands Yard creates and sets up itself before
@@ -121,7 +125,18 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
       ),
     },
     { key: "place", header: "Based in", hideBelow: "md", sortValue: (b) => `${countryName(b.country)} ${b.city}`, cell: (b) => <span className="whitespace-nowrap text-ink-2">{b.city}, {countryName(b.country)}</span> },
-    { key: "status", header: "Status", hideBelow: "sm", sortValue: (b) => ["setting_up", "link_sent", "claimed", "live"].indexOf(b.status), cell: (b) => <StatusBadge tone={foundingStatusMeta[b.status].tone}>{foundingStatusMeta[b.status].label}</StatusBadge> },
+    {
+      key: "status",
+      header: "Status",
+      hideBelow: "sm",
+      sortValue: (b) => ["setting_up", "link_sent", "claimed", "live"].indexOf(b.status),
+      cell: (b) => (
+        <span className="flex flex-col items-start gap-1">
+          <StatusBadge tone={foundingStatusMeta[b.status].tone}>{foundingStatusMeta[b.status].label}</StatusBadge>
+          {claimedNotLive(b) ? <StatusBadge tone="attention">Claimed, not live yet</StatusBadge> : null}
+        </span>
+      ),
+    },
     {
       key: "link",
       header: "Claim",
@@ -148,8 +163,11 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
     setRemoved((s) => new Set(s).add(r.brandId))
     writeParams({ brand: null })
   })
+  // Make live (claimed by its owner, not launched): the same confirmation as Publish storefront.
+  const storefront = useStorefrontAction()
   const rowActions: RowAction<FoundingBrandRow>[] = [
     { label: "Open", icon: EyeIcon, onSelect: open },
+    { label: "Make live", icon: RocketLaunchIcon, separatorBefore: true, hidden: (b) => !claimedNotLive(b), onSelect: (b) => storefront.ask({ brandId: b.id, name: b.name }, "publish") },
     { label: "Open in Studio as Yard setup", icon: ArrowSquareOutIcon, separatorBefore: true, hidden: (b) => b.claimStatus === "claimed", disabled: (b) => b.reviewStatus === "suspended" || b.reviewStatus === "restricted", disabledReason: (b) => (b.reviewStatus === "suspended" || b.reviewStatus === "restricted" ? `Yard has ${b.reviewStatus} this brand.` : undefined), onSelect: (b) => void setup(b) },
     { label: "Send or re-send claim link", icon: LinkSimpleIcon, hidden: (b) => b.claimStatus === "claimed", onSelect: open },
     { label: "Revoke claim link", icon: TrashSimpleIcon, destructive: true, hidden: (b) => !b.claimLink || b.claimLink.status !== "pending" || b.claimStatus === "claimed", onSelect: (b) => void revoke(b) },
@@ -169,7 +187,7 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
         columns={columns}
         getId={(b) => b.id}
         loading={loading}
-        search={{ placeholder: "Search founding brands, handles or emails", text: (b) => [b.name, b.handle, b.city, countryName(b.country), b.claimLink?.email ?? "", foundingStatusMeta[b.status].label].join(" ") }}
+        search={{ placeholder: "Search founding brands, handles or emails", text: (b) => [b.name, b.handle, b.city, countryName(b.country), b.claimLink?.email ?? "", foundingStatusMeta[b.status].label, claimedNotLive(b) ? "Claimed, not live yet" : ""].join(" ") }}
         toolbar={
           <div className="flex shrink-0 items-center gap-2">
             {canFromWebsite ? (
@@ -229,6 +247,7 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
         }}
       />
       {deletion.dialog}
+      {storefront.dialog}
     </div>
   )
 }

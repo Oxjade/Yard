@@ -387,7 +387,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
   // A queue's item shows for an admin whose role holds its view permission (§8.1). Signed out, it
   // shows (the page asks to sign in); while the session loads, it waits, so it never flashes in or out.
   const sees = (...p: AdminPermission[]) => session.status === "ready" && (!admin || p.some((x) => canAdmin(admin.role, x)))
-  const serverDecisions = (c?.messages ?? 0) + (c?.content ?? 0) + (c?.places ?? 0) + (c?.charts ?? 0) + (c?.delivery ?? 0)
+  const serverDecisions = (c?.messages ?? 0) + (c?.content ?? 0) + (c?.places ?? 0) + (c?.charts ?? 0) + (c?.delivery ?? 0) + (c?.golive ?? 0)
   const decisions = pendingBrands + openModeration + refunds + payoutsToApprove + inReview + serverDecisions
 
   type Item = ShellNavGroup["items"][number]
@@ -400,7 +400,7 @@ function AdminWorkspace({ children }: { children: React.ReactNode }) {
     {
       label: "Marketplace",
       items: [
-        { href: "/admin/brands", label: "Brands", icon: SealCheckIcon, badge: n(pendingBrands), badgeLabel: "to review", tone: "attention" },
+        { href: "/admin/brands", label: "Brands", icon: SealCheckIcon, badge: n(pendingBrands + (c?.golive ?? 0)), badgeLabel: "to review or make live", tone: "attention" },
         { href: "/admin/users", label: "Users", icon: UsersIcon, badge: q(c?.abuse), badgeLabel: "abuse alerts", tone: "attention" },
         // A real admin sees Orders with shipping.view, as GET /api/orders/admin checks; demo and signed-out keep it.
         ...when(!money.live || sees("shipping.view"), { href: "/admin/orders", label: "Orders", icon: ShoppingCartIcon }),

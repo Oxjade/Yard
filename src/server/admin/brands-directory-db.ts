@@ -2,10 +2,20 @@ import { and, asc, desc, eq, ilike, isNotNull, isNull, or, sql, type SQL } from 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core"
 import type { AdminBrandRowDto, AdminBrandsDto, AdminBrandsQuery } from "../../lib/api/contracts/admin-brands"
 import { brands } from "../db/schema/brands"
-import { brandOnboardings, catalogProducts } from "../db/schema/catalog"
+import { brandOnboardings, catalogProducts, storefrontVersions } from "../db/schema/catalog"
+import { storefrontLive } from "../../lib/admin-storefront"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any drizzle Postgres database or transaction (PGlite, node-postgres)
 export type Db = PgDatabase<PgQueryResultHKT, any>
+
+/**
+ * A founding brand its owner has claimed that isn't live yet (Admin › Brands › Make live): never
+ * launched, or launched without a storefront version. Not closed, restricted or suspended, and not
+ * one Yard unpublished on purpose. Brands with "Go live when they claim" on are live already.
+ */
+export function claimedNotLiveSql() {
+  return sql`(${brands.founding} and ${brands.claimStatus} = 'claimed' and ${brands.closedAt} is null and ${brands.reviewStatus} not in ('restricted', 'suspended') and ${brands.unpublishedAt} is null and (${brands.launchedAt} is null or not exists (select 1 from ${storefrontVersions} where ${storefrontVersions.brandId} = ${brands.id})))`
+}
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null)
 
@@ -42,6 +52,7 @@ export async function listAdminBrandsDb(d: Db, query: Partial<AdminBrandsQuery> 
   }
   if (status === "closed") where.push(isNotNull(brands.closedAt))
   else if (status === "founding") where.push(eq(brands.founding, true))
+  else if (status === "claimed_not_live") where.push(claimedNotLiveSql())
   else if (status === "no_application") where.push(isNull(app.appId))
   else if (status === "draft" || status === "rejected") where.push(sql`${app.appStatus} = ${status}`)
   else if (status !== "all") where.push(and(eq(brands.reviewStatus, status), isNull(brands.closedAt))!)
@@ -63,6 +74,9 @@ export async function listAdminBrandsDb(d: Db, query: Partial<AdminBrandsQuery> 
         claimStatus: brands.claimStatus,
         joinedAt: brands.joinedAt,
         launchedAt: brands.launchedAt,
+        unpublishedAt: brands.unpublishedAt,
+        claimedNotLive: sql<boolean>`${claimedNotLiveSql()}`,
+        hasVersion: sql<boolean>`exists (select 1 from ${storefrontVersions} where ${storefrontVersions.brandId} = ${brands.id})`,
         products,
         appId: app.appId,
         appStatus: app.appStatus,
@@ -92,6 +106,11 @@ export async function listAdminBrandsDb(d: Db, query: Partial<AdminBrandsQuery> 
     products: Number(r.products),
     since: iso(r.joinedAt) ?? iso(r.appSubmittedAt) ?? iso(r.appCreatedAt) ?? iso(r.launchedAt),
     application: r.appId ? { id: r.appId, status: r.appStatus as NonNullable<AdminBrandRowDto["application"]>["status"], submittedAt: iso(r.appSubmittedAt) } : null,
+    storefront: {
+      live: storefrontLive({ name: r.name, founding: r.founding, claimStatus: r.claimStatus, reviewStatus: r.reviewStatus, closed: !!r.closedAt, underReview: false, hasVersion: !!r.hasVersion, launched: !!r.launchedAt, unpublished: !!r.unpublishedAt, liveProducts: 0, payoutAccount: false }),
+      unpublished: !!r.unpublishedAt,
+      claimedNotLive: !!r.claimedNotLive,
+    },
   }))
   return { items, total: Number(total), page, pageSize }
 }

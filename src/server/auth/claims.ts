@@ -191,7 +191,10 @@ export async function acceptClaim(input: ClaimAcceptBody, shopper: ShopperActor 
       ipHash: meta.ipHash,
       meta: { invite: invite.id, agreementVersion: SELLER_AGREEMENT_VERSION, newAccount: !existing, setupSessionsEnded: ended },
     })
-    await notifyAdmins("brands.founding", { key: `founding-claimed:${b.id}`, template: "founding.claimed", vars: { brand: b.name, owner: user.name }, href: `/admin/brands?tab=founding&brand=${b.id}` })
+    // Without "Go live when they claim" the brand stays hidden until Yard makes it live: the
+    // notification opens that action (Admin › Brands › Make live) straight away.
+    const href = b.goLiveOnClaim ? `/admin/brands?tab=founding&brand=${b.id}` : `/admin/brands?tab=all&review=${encodeURIComponent(`brand:${b.id}`)}&golive=${encodeURIComponent(b.id)}`
+    await notifyAdmins("brands.founding", { key: `founding-claimed:${b.id}`, template: "founding.claimed", vars: { brand: b.name, owner: user.name }, href })
     catalogChanged({ reindexBrands: [b.id] })
     const session = await openSession({ actor: "brand", user, brandId: b.id, method: "claim", meta })
     return { profile: session.profile, brandId: b.id, user: { id: user.id, name: user.name } }

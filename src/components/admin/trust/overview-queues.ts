@@ -137,3 +137,14 @@ export function useServerQueueTotal(): { total: number; ready: boolean } {
   // Abuse alerts aren't an Overview tab; the headline counts what the Decision queue shows.
   return { total: c ? (c.messages ?? 0) + (c.content ?? 0) + (c.places ?? 0) + (c.charts ?? 0) + (c.delivery ?? 0) : 0, ready: !admin || !!c }
 }
+
+/**
+ * Founding brands their owners claimed that aren't live yet (Admin › Brands › Make live), for an
+ * admin whose role holds brands.restrict; undefined for everyone else. The same cache entry as the
+ * queue counts above.
+ */
+export function useGoLiveCount(): number | undefined {
+  const admin = useServerSession((s) => s.admin)
+  const counts = useApi(admin ? `${adminKeys.counts}:${admin.id}` : null, getQueueCounts, { refreshInterval: 60_000 })
+  return counts.data?.golive
+}

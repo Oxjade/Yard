@@ -65,6 +65,13 @@ export const brands = pgTable(
      */
     closedAt: tz("closed_at"),
     closedBy: text("closed_by").references((): AnyPgColumn => users.id),
+    /**
+     * Admin › Brands › Unpublish storefront: Yard took the brand's shop off the marketplace (its
+     * storefront, products and listing are hidden, catalog/sellable.ts brandLaunchedSql) without
+     * restricting the brand. Cleared by Publish storefront. Null for every brand Yard hasn't unpublished.
+     */
+    unpublishedAt: tz("unpublished_at"),
+    unpublishedBy: text("unpublished_by").references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex("brands_handle_ux").on(t.handle),

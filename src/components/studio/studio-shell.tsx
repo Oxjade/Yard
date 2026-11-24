@@ -219,7 +219,9 @@ function StudioLocalResults({ query, go }: { query: string; go: (href: string) =
   const sample = useSampleData()
   // The Customers page's own derivation, so a result's order count matches the panel it opens.
   const customers = useMemo(() => (sample ? buildCustomers(orders, currency) : []), [sample, orders, currency])
-  if (!query) return null
+  // The browser's products and orders are the sample brand's: production never lists them (a real
+  // brand's records come from the server pages, and the palette's server results below).
+  if (!query || !sample) return null
 
   // An order found by one of its items says which one, since its title and detail don't show it.
   const terms = queryTerms(query)

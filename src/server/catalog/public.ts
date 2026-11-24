@@ -134,10 +134,11 @@ const visibilityBrandCols = {
   logoPublic: sql<boolean>`exists (select 1 from media_assets lm where lm.id = ${brands.logoMediaId} and lm.visibility = 'public' and lm.moderation_status <> 'removed')`,
   founding: brands.founding,
   launchedAt: brands.launchedAt,
+  unpublishedAt: brands.unpublishedAt,
   reviewStatus: brands.reviewStatus,
 }
-type VisibilityBrandRow = { id: string; handle: string; name: string; logoMediaId: string | null; logoPublic: boolean; founding: boolean; launchedAt: Date | null; reviewStatus: string }
-const visibilityBrand = (b: VisibilityBrandRow) => ({ founding: b.founding, launchedAt: b.launchedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id) })
+type VisibilityBrandRow = { id: string; handle: string; name: string; logoMediaId: string | null; logoPublic: boolean; founding: boolean; launchedAt: Date | null; unpublishedAt: Date | null; reviewStatus: string }
+const visibilityBrand = (b: VisibilityBrandRow) => ({ founding: b.founding, launchedAt: b.launchedAt, unpublishedAt: b.unpublishedAt, reviewStatus: b.reviewStatus, sample: refusedSampleBrand(b.id) })
 const toOpensSoonBrand = (b: VisibilityBrandRow): OpensSoonBrand => ({
   id: b.id,
   handle: b.handle,

@@ -22,11 +22,11 @@ export function productPublicWhere(now = new Date()) {
 
 /**
  * A founding brand is public only once its storefront has been published (launched_at). Ordinary
- * brands always pass. In production a sample brand (src/lib/data, by id) never passes, even when a
+ * brands always pass, unless Yard unpublished the storefront (Admin › Brands, unpublished_at). In production a sample brand (src/lib/data, by id) never passes, even when a
  * demo-seeded database holds its row (sample-guard.ts notSampleBrandSql; always true in demo).
  */
 export function brandLaunchedSql() {
-  return sql`((not ${brands.founding} or ${brands.launchedAt} is not null) and ${notSampleBrandSql(brands.id)})`
+  return sql`((not ${brands.founding} or ${brands.launchedAt} is not null) and ${brands.unpublishedAt} is null and ${notSampleBrandSql(brands.id)})`
 }
 
 /**

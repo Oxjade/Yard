@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useMemo } from "react"
+import { useEffect, useId, useMemo } from "react"
 import { ClockIcon, HourglassIcon, IdentificationCardIcon, ShieldWarningIcon, EyeIcon, TrashIcon } from "@phosphor-icons/react"
 import { DataTable, bulkBarControl, type BulkAction, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
@@ -25,6 +25,7 @@ import { FoundingPanel } from "./founding-view"
 import { useBrandApplications } from "./onboarding"
 import { ALL_BRANDS_TAB, isAllBrandsRecordId, resolveReview } from "./all-brands"
 import { AllBrandsPanel } from "./all-brands-panel"
+import { useStorefrontAction } from "./storefront-dialog"
 import { adminKeys, listAllAdminBrands } from "@/lib/api/admin"
 import { useApi } from "@/lib/api/use-api"
 import { AdminPageHead, PanelRail, StatRow } from "./page-head"
@@ -119,6 +120,15 @@ export function BrandsView() {
   // Delete brand (owner admins): after it runs, back to the list (the sheet closes; the lists refresh).
   const canDelete = useCanDeleteBrands().can
   const deletion = useDeleteBrand(() => writeParams({ review: null }))
+  const storefront = useStorefrontAction()
+  // ?golive=<brandId> (the "brand was claimed" notification): open Make live for that brand once.
+  const goLive = useSearchParam("golive")
+  const askStorefront = storefront.ask
+  useEffect(() => {
+    if (!goLive) return
+    askStorefront({ brandId: goLive, name: "this brand" }, "publish")
+    writeParams({ golive: null })
+  }, [goLive, askStorefront])
   const askDelete = (a: BrandApplication) => (a.brandId ? deletion.ask({ brandId: a.brandId, name: a.brandName, handle: a.handle }) : undefined)
   const decideOne = (key: BrandActionKey, a: BrandApplication) => decide(key, [a])
   const decide = (key: BrandActionKey, list: BrandApplication[]) => {
@@ -251,6 +261,7 @@ export function BrandsView() {
               blockFor={blockFor}
               onDecide={decideOne}
               onDelete={(b) => deletion.ask({ brandId: b.id, name: b.name, handle: b.handle })}
+              onStorefront={(b, action) => storefront.ask({ brandId: b.id, name: b.name }, action)}
             />
           ) : (
           <>
@@ -283,12 +294,14 @@ export function BrandsView() {
         open={!!reviewing}
         onDecide={(key, a) => decide(key, [a])}
         onDelete={canDelete ? deletion.ask : undefined}
+        onStorefront={storefront.ask}
         onOpenChange={(o) => {
           if (!o) writeParams({ review: null })
         }}
       />
       {dialog}
       {deletion.dialog}
+      {storefront.dialog}
     </Reveal>
   )
 }

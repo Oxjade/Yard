@@ -83,11 +83,11 @@ async function factsOf(d: Executor, b: BrandRow): Promise<PublishForBrandFacts> 
 }
 
 /** An unclaimed founding brand is Yard setup territory: only admins with brands.founding (owners) publish it. */
-function assertMayPublishFor(admin: AdminActor, b: BrandRow) {
+export function assertMayPublishFor(admin: AdminActor, b: Pick<BrandRow, "name" | "founding" | "claimStatus">) {
   if (b.founding && b.claimStatus === "unclaimed" && !admin.permissions.includes("brands.founding")) throw forbidden(`Only Yard owners can publish ${b.name} before it's claimed.`)
 }
 
-const shopEmail = (tx: Tx, b: { id: string; handle: string }, variant: "yard" | "claim", payout: boolean) =>
+export const shopEmail = (tx: Tx, b: { id: string; handle: string }, variant: "yard" | "claim", payout: boolean) =>
   emailBrandLeads(tx, b.id, "brand_shop_live", { handle: b.handle, variant, payout: payout ? 1 : 0 }, `brand_shop_live:${variant}:${b.id}`)
 
 export type PublishForBrandPreview = {
@@ -224,7 +224,7 @@ export async function goLiveAfterClaim(input: { brandId: string; user: { id: str
 
   const fresh = await loadBrand(await db(), b.id)
   const published = await isPublished(await db(), b.id)
-  const live = (fresh.founding ? !!fresh.launchedAt : published) && fresh.reviewStatus !== "restricted" && fresh.reviewStatus !== "suspended"
+  const live = (fresh.founding ? !!fresh.launchedAt : published) && !fresh.unpublishedAt && fresh.reviewStatus !== "restricted" && fresh.reviewStatus !== "suspended"
   const payoutAccount = await hasPayoutAccount(await db(), b.id)
   const liveProducts = await liveProductCount(await db(), b.id)
   if (plan.acceptSuggestions || plan.publish || live) {

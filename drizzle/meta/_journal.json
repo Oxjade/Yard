@@ -232,6 +232,13 @@
       "when": 1795521013044,
       "tag": "0032_shopper_welcome",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795521127869,
+      "tag": "0033_storefront_unpublish",
+      "breakpoints": true
     }
   ]
 }

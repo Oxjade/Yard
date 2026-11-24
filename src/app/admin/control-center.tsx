@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useIsPresent } from "motion/react"
 import { toast } from "sonner"
 import {
   SealCheckIcon as BadgeCheck,
+  RocketLaunchIcon as RocketLaunch,
   MoneyIcon as Banknote,
   ChartLineUpIcon,
   CoinsIcon,
@@ -40,7 +41,7 @@ import { anchorDay } from "@/components/admin/finance/format"
 import { recordTime } from "@/components/admin/platform/format"
 import { entryLabel, readable } from "@/components/admin/platform/security/audit-words"
 import { Segmented, segmentedTabId } from "@/components/admin/ui/segmented"
-import { isServerQueueTab, useServerAuditTrail, useServerQueueTotal, useServerQueues, type ServerQueueTab } from "@/components/admin/trust/overview-queues"
+import { isServerQueueTab, useGoLiveCount, useServerAuditTrail, useServerQueueTotal, useServerQueues, type ServerQueueTab } from "@/components/admin/trust/overview-queues"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { useNow } from "@/hooks/use-now"
 import { chartEasing, chartIn, transition } from "@/lib/motion"
@@ -136,8 +137,11 @@ function CommandStrip() {
   // day every figure on this page and the others counts up to. It waits for the client's clock.
   const hour = hydrated ? new Date().getHours() : 12
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+  // Claimed founding brands that aren't live yet: Brands › All brands, filtered, where Make live is.
+  const golive = useGoLiveCount()
   const chips = [
     { href: "/admin/brands", label: "Brands to review", count: pendingBrands, icon: BadgeCheck },
+    ...(golive !== undefined ? [{ href: "/admin/brands?tab=all&status=claimed_not_live", label: "Claimed brands waiting to go live", count: golive, icon: RocketLaunch }] : []),
     // Awaiting approval and held (a held one needs a release): the Finance Payouts tab's count.
     ...(!liveMoney || money.finance ? [{ href: "/admin/finance?tab=payouts", label: "Payouts to decide", count: payouts, icon: Banknote }] : []),
     ...(liveMoney ? [] : [{ href: "/admin/finance?tab=refunds", label: "Refund requests", count: refunds, icon: RotateCcw }]),

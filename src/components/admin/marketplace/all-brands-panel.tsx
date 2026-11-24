@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { EyeIcon, TrashIcon } from "@phosphor-icons/react"
+import { EyeIcon, EyeSlashIcon, RocketLaunchIcon, TrashIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { DataTable, type Column, type RowAction } from "@/components/dashboard/data-table"
 import { StatusBadge } from "@/components/dashboard/status-badge"
@@ -37,6 +37,7 @@ export function AllBrandsPanel({
   blockFor,
   onDecide,
   onDelete,
+  onStorefront,
 }: {
   brands: AdminBrandRowDto[] | undefined
   loading: boolean
@@ -49,6 +50,8 @@ export function AllBrandsPanel({
   blockFor: (a: BrandApplication) => string | undefined
   onDecide: (key: BrandActionKey, a: BrandApplication) => void
   onDelete: (row: AdminBrandRowDto) => void
+  /** Publish / Unpublish storefront (storefront-dialog.tsx), for any brand that isn't closed. */
+  onStorefront?: (row: AdminBrandRowDto, action: "publish" | "unpublish") => void
 }) {
   const param = useSearchParam("status")
   const filter: AdminBrandStatusFilter = isFilter(param) ? param : "all"
@@ -85,6 +88,8 @@ export function AllBrandsPanel({
           <span className="flex flex-wrap items-center gap-1">
             {b.closedAt ? <StatusBadge tone="danger">Closed</StatusBadge> : <StatusBadge tone={brandStatusMeta[b.reviewStatus].tone}>{brandStatusMeta[b.reviewStatus].label}</StatusBadge>}
             {b.founding ? <StatusBadge tone="info">Founding</StatusBadge> : null}
+            {b.storefront?.unpublished && !b.closedAt ? <StatusBadge tone="attention">Unpublished</StatusBadge> : null}
+            {b.storefront?.claimedNotLive ? <StatusBadge tone="attention">Claimed, not live yet</StatusBadge> : null}
           </span>
           <span className="text-[11.5px] whitespace-nowrap text-ink-3">{applicationLabel[applicationState(b)]}</span>
         </span>
@@ -106,6 +111,13 @@ export function AllBrandsPanel({
       disabledReason: (b: AdminBrandRowDto) => blockFor(recordFor(b)),
       onSelect: (b: AdminBrandRowDto) => onDecide(key, recordFor(b)),
     })),
+    ...(onStorefront
+      ? [
+          { label: "Make live", icon: RocketLaunchIcon, separatorBefore: true, hidden: (b: AdminBrandRowDto) => !b.storefront?.claimedNotLive, onSelect: (b: AdminBrandRowDto) => onStorefront(b, "publish") },
+          { label: "Publish storefront", icon: RocketLaunchIcon, separatorBefore: true, hidden: (b: AdminBrandRowDto) => !!b.closedAt || !!b.storefront?.live || !!b.storefront?.claimedNotLive, onSelect: (b: AdminBrandRowDto) => onStorefront(b, "publish") },
+          { label: "Unpublish storefront", icon: EyeSlashIcon, hidden: (b: AdminBrandRowDto) => !!b.closedAt || !b.storefront?.live, onSelect: (b: AdminBrandRowDto) => onStorefront(b, "unpublish") },
+        ]
+      : []),
     { label: "Delete brand", icon: TrashIcon, destructive: true, separatorBefore: true, hidden: (b) => !canDelete || !!b.closedAt, onSelect: onDelete },
   ]
 

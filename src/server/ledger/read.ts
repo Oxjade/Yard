@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, lt, sql, type SQL } from "drizzle-orm"
 import { db, type Executor } from "../db"
 import { brands } from "../db/schema"
 import { brandPayoutAccounts, ledgerAccounts, ledgerBrandSettings, ledgerEntries, ledgerTransactions, payoutApprovals, payouts } from "../db/schema/ledger"
+import { paymentsConfig } from "../payments/config"
 import { ledgerConfig, minPayoutFor } from "./config"
 import { PLATFORM } from "./core"
 import { brandTier } from "./postings"
@@ -158,6 +159,16 @@ export async function getPayoutAccount(brandId: string): Promise<PayoutAccountDt
 }
 
 /** Studio › Payouts summary: balances, rules, account and recent payouts. */
+/**
+ * How approved payouts reach brands with this server's payments setup: "manual" with Bachs (Yard
+ * pays each brand's bank account by hand and records it, docs/BACHS.md › Payouts to brands),
+ * "provider" with Paystack transfers, "test" with the stub or payments off (nothing is paid).
+ */
+export function payoutMethod(): "manual" | "provider" | "test" {
+  const provider = paymentsConfig().provider
+  return provider === "bachs" ? "manual" : provider === "paystack" ? "provider" : "test"
+}
+
 export async function brandPayoutSummary(brandId: string, brandCurrency: string) {
   const d = await db()
   const [balances, account, recent, settingsRows, tier] = await Promise.all([
@@ -171,6 +182,7 @@ export async function brandPayoutSummary(brandId: string, brandCurrency: string)
   const currency = account?.currency ?? brandCurrency
   return {
     currency,
+    payoutMethod: payoutMethod(),
     balances: balances.length ? balances : [{ currency, pendingMinor: 0, availableMinor: 0, reserveMinor: 0, inPayoutMinor: 0 }],
     account,
     payouts: recent,

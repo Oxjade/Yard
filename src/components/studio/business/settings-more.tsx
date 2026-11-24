@@ -17,7 +17,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { site } from "@/config/site"
+import type { CurrencyCode } from "@/config/markets"
 import { useAsyncAction } from "@/hooks/use-async-action"
+import { api } from "@/lib/api/client"
+import { useApi } from "@/lib/api/use-api"
+import { PAYOUT_HOLD_DAYS } from "@/lib/payouts"
 import { convert, formatMoney } from "@/lib/money"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -82,7 +86,7 @@ export function ReturnsSection() {
   }
 
   return (
-    <Panel id="returns" title="Returns" description="Shoppers see your policy on product pages and at checkout. Changes saved here reach them once the backend is connected.">
+    <Panel id="returns" title="Returns" description="Your return policy. In this demo it is saved in this browser only.">
       <form noValidate onSubmit={submit} className="grid gap-5">
         <div className="flex items-start gap-3">
           <Switch id="returns-accepts" checked={form.accepts} onCheckedChange={(v) => set("accepts", v)} className="mt-0.5" />
@@ -135,7 +139,7 @@ export function ReturnsSection() {
           <Checkbox id="returns-drops" checked={form.dropsFinalSale} onCheckedChange={(v) => set("dropsFinalSale", v === true)} className="mt-0.5" />
           <Label htmlFor="returns-drops" className="grid gap-0.5 text-[13px] font-normal text-ink">
             Drop pieces are final sale
-            <span className="text-xs text-ink-3">Once the backend is connected, drop pages say so before release, so shoppers know before they buy.</span>
+            <span className="text-xs text-ink-3">Part of this demo policy, saved in this browser only.</span>
           </Label>
         </div>
 
@@ -330,8 +334,10 @@ export function TeamSection() {
 
 /* ---------- Fees ---------- */
 
-export function FeesPanel() {
-  const cur = useBrandSettings((s) => s.profile.currency)
+/** `currency`: a real brand's own (its session profile); the demo reads the sample brand's settings. */
+export function FeesPanel({ currency }: { currency?: CurrencyCode }) {
+  const sampleCur = useBrandSettings((s) => s.profile.currency)
+  const cur = currency ?? sampleCur
   const example = convert(10_000, "USD", cur)
   const pct = commissionLabel()
   return (
@@ -347,6 +353,140 @@ export function FeesPanel() {
           </p>
         </div>
       </div>
+    </Panel>
+  )
+}
+
+/* ---------- Live brands (Yard's server, never the sample settings) ---------- */
+
+/**
+ * Returns for a real brand: Yard's return window applies to every order (orders/core.ts
+ * RETURN_WINDOW_DAYS, the same days as the payout hold), and the brand decides each request on the
+ * order. There is no per-brand policy on the server, so nothing here is editable.
+ */
+export function LiveReturnsSection() {
+  return (
+    <Panel id="returns" title="Returns" description="How returns work on Yard for your orders.">
+      <ul className="grid gap-2 text-sm text-ink-2">
+        <li>Shoppers can ask for a return from their order page within {PAYOUT_HOLD_DAYS} days of delivery.</li>
+        <li>Each request shows on the order in Orders, where you approve or decline it. Approved items come back to you before the refund.</li>
+        <li>Your earnings from an order become available to pay out once its return window closes.</li>
+      </ul>
+    </Panel>
+  )
+}
+
+type InviteRow = { id: string; email: string; role: TeamRole; roleLabel: string; status: string; invitedBy: string | null; createdAt: string; expiresAt: string }
+const invitesKey = (brandId: string) => `studio.team.invites:${brandId}`
+
+/**
+ * The team for a real brand: the signed-in member and the brand's invites on Yard's server
+ * (GET/POST /api/auth/invites, DELETE /api/auth/invites/{id}). Owners invite any role; admins any
+ * role but owner and admin (the server decides; this only hides what it would refuse).
+ */
+export function LiveTeamSection({ member }: { member: { name: string; role: string; brand: { id: string } } }) {
+  const manager = member.role === "owner" || member.role === "admin"
+  const q = useApi<{ invites: InviteRow[] }>(invitesKey(member.brand.id), () => api<{ invites: InviteRow[] }>("/api/auth/invites"))
+  const [email, setEmail] = useState("")
+  const [role, setInviteRole] = useState<TeamRole | "">("")
+  const [submitted, setSubmitted] = useState(false)
+  const roles = invitableRoles.filter((r) => member.role === "owner" || r !== "admin")
+  const pending = (q.data?.invites ?? []).filter((i) => i.status === "pending")
+  const clean = email.trim().toLowerCase()
+  const errors = {
+    email: !clean ? "Enter their email address." : !EMAIL_RE.test(clean) ? "Enter a valid email address, like name@studio.com." : pending.some((i) => i.email === clean) ? "There's already a pending invite for this email." : undefined,
+    role: !role ? "Choose what they can do." : undefined,
+  }
+  const shown: Partial<typeof errors> = submitted ? errors : {}
+
+  const send = useAsyncAction(
+    async () => {
+      await api("/api/auth/invites", { body: { email: clean, role } })
+      await q.revalidate()
+      setEmail("")
+      setInviteRole("")
+      setSubmitted(false)
+    },
+    { success: "Invite sent", successDescription: "They get an email with a link to join your team." },
+  )
+  const revoke = useAsyncAction(
+    async (id: string) => {
+      await api(`/api/auth/invites/${encodeURIComponent(id)}`, { method: "DELETE" })
+      await q.revalidate()
+    },
+    { success: "Invite cancelled" },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitted(true)
+    if (errors.email || errors.role) {
+      document.getElementById(errors.email ? "invite-email" : "invite-role")?.focus()
+      return
+    }
+    void send.run()
+  }
+
+  return (
+    <Panel id="team" title="Team" description="Invite people to work in Studio. Each role only sees what it needs.">
+      <ul className="divide-y divide-line-soft rounded-md border border-line-soft">
+        <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3">
+          <Initials name={member.name} />
+          <span className="grid min-w-[10rem] flex-1 gap-0.5">
+            <span className="truncate text-sm text-ink">{member.name}</span>
+            <span className="truncate text-xs text-ink-3">You</span>
+          </span>
+          <span className="text-sm text-ink-2">{roleMeta[member.role as TeamRole]?.label ?? member.role}</span>
+        </li>
+        {pending.map((i) => (
+          <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3">
+            <Initials name={i.email} />
+            <span className="grid min-w-[10rem] flex-1 gap-0.5">
+              <span className="truncate text-sm text-ink">{i.email}</span>
+              <span className="truncate text-xs text-ink-3">Invited{i.invitedBy ? ` by ${i.invitedBy}` : ""}, expires {new Date(i.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <StatusBadge tone="muted">Invited</StatusBadge>
+              <span className="text-sm text-ink-2">{i.roleLabel}</span>
+              {manager ? (
+                <Button type="button" size="icon-sm" variant="ghost" aria-label={`Cancel invite for ${i.email}`} disabled={revoke.pending} onClick={() => void revoke.run(i.id)} className="size-11 text-ink-2 hover:text-danger md:size-8">
+                  <Trash2 />
+                </Button>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {q.error && !q.data ? <p role="alert" className="mt-3 text-sm text-danger">Couldn&apos;t load your team&apos;s invites.</p> : null}
+
+      {manager ? (
+        <form noValidate onSubmit={submit} className="mt-5 grid gap-3 border-t border-line-soft pt-5 md:grid-cols-[minmax(0,1fr)_200px_auto] md:items-start">
+          <Field id="invite-email" label="Invite by email" error={shown.email}>
+            <Input {...control("invite-email", shown.email)} type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="name@studio.com" autoComplete="off" />
+          </Field>
+          <Field id="invite-role" label="Role" error={shown.role}>
+            <Select value={role} onValueChange={(v) => setInviteRole(v as TeamRole)}>
+              <SelectTrigger {...control("invite-role", shown.role)} className={selectClass}>
+                <SelectValue placeholder="Choose a role" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {roles.map((r) => (
+                  <SelectItem key={r} value={r}>{roleMeta[r].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="grid gap-1.5">
+            <span aria-hidden className="hidden min-h-4 md:block" />
+            <Button type="submit" size="sm" variant="secondary" className="h-11 md:h-9" loading={send.pending} success={send.succeeded}>
+              <UserPlus /> Send invite
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <p className="mt-3 text-xs text-ink-3">Only the brand&apos;s owners and admins can invite people.</p>
+      )}
+      {role ? <p className="mt-2 text-xs text-ink-3">{roleMeta[role].label}: {roleMeta[role].can.toLowerCase()}.</p> : null}
     </Panel>
   )
 }

@@ -227,9 +227,11 @@ export async function requireAdmin(permission: AdminPermission | "any_admin"): P
 }
 
 /** `brandListed(brand)`: the single predicate behind every public read (§2.2, §3.9). */
-export function brandListed(brand: { reviewStatus: string; founding?: boolean; launchedAt?: Date | null }) {
+export function brandListed(brand: { reviewStatus: string; founding?: boolean; launchedAt?: Date | null; unpublishedAt?: Date | null }) {
   // A founding brand is listed only once it has launched (first storefront publish); callers that
-  // pass the whole brand row get that gate, ordinary brands are unaffected.
+  // pass the whole brand row get that gate, ordinary brands are unaffected. A storefront Yard
+  // unpublished (Admin › Brands) isn't listed either.
   if (brand.founding && brand.launchedAt === null) return false
+  if (brand.unpublishedAt) return false
   return brand.reviewStatus !== "restricted" && brand.reviewStatus !== "suspended"
 }

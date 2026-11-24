@@ -58,8 +58,14 @@ type PayoutItem = {
 /** "Paystack to GTBank •••• 4821" */
 const accountText = (a: PayoutAccount) => `${providerLabel[a.provider]} to ${a.bankName} •••• ${a.last4}`
 
-const liveAccountText = (a: NonNullable<PayoutSummaryDto["account"]>) =>
-  `${a.recipientProvider === "paystack" ? "Paystack" : "Test provider"} to ${a.bankName} •••• ${a.accountLast4}`
+/**
+ * "GTBank •••• 4821": the bank and the last 4 digits (the account name shows beneath). A provider
+ * is named only when the account really is one of its recipients (Paystack); Yard pays every other
+ * account by hand (docs/BACHS.md › Payouts to brands).
+ */
+const liveAccountText = (a: NonNullable<PayoutSummaryDto["account"]>) => `${a.recipientProvider === "paystack" ? "Paystack to " : ""}${a.bankName} •••• ${a.accountLast4}`
+
+type PayoutMethod = NonNullable<PayoutSummaryDto["payoutMethod"]>
 
 const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
 
@@ -98,16 +104,21 @@ function livePayoutMeta(status: string): { label: string; tone: Tone } {
   return { label: "Cancelled", tone: "muted" }
 }
 
-function livePayoutNote(p: PayoutDto) {
+function livePayoutNote(p: PayoutDto, method: PayoutMethod) {
+  const test = method === "test" && p.stubRecipient
+  if (method === "manual") {
+    if (p.status === "approved") return "Approved. Yard pays it to your bank account by transfer."
+    if (p.status === "paid") return "Paid to your bank account by Yard."
+  }
   if (p.status === "failed") return p.lastError ?? "The transfer failed. The amount returned to available."
   if (p.status === "rejected") return p.rejectReason ?? "The platform team rejected this request. The amount returned to available."
   if (p.status === "cancelled") return "Cancelled. The amount returned to available."
   if (p.status === "requested") return "Waiting for platform review."
   if (p.status === "awaiting_second_approval") return "Waiting for a second platform approval."
   if (p.status === "approved") return "Approved. Waiting to be included in a transfer batch."
-  if (p.status === "sending" || p.status === "processing") return p.stubRecipient ? "Test transfer in progress; no money moves." : "Completes when the payment provider confirms the transfer."
-  if (p.status === "paid") return p.stubRecipient ? "Test transfer completed; no money moved." : p.providerRef ? `Provider reference ${p.providerRef}.` : "Transfer confirmed by the payment provider."
-  return p.stubRecipient ? "Test payout; no money moves." : ""
+  if (p.status === "sending" || p.status === "processing") return test ? "Test transfer in progress; no money moves." : "Completes when the payment provider confirms the transfer."
+  if (p.status === "paid") return test ? "Test transfer completed; no money moved." : p.providerRef ? `Provider reference ${p.providerRef}.` : "Transfer confirmed by the payment provider."
+  return test ? "Test payout; no money moves." : ""
 }
 
 function payoutTimestamp(p: PayoutDto) {
@@ -177,6 +188,9 @@ export default function StudioPayoutsPage() {
   const liveBalance = summary.data?.balances.find((b) => b.currency === cur)
   const otherCurrencyEarnings = live && !liveBalance ? (summary.data?.balances.find((b) => b.availableMinor > 0 || b.pendingMinor > 0)?.currency ?? null) : null
   const liveAccount = summary.data?.account ?? null
+  // Older servers don't say: a stub recipient then reads as a test account, as before.
+  const method: PayoutMethod = summary.data?.payoutMethod ?? (liveAccount?.recipientProvider === "paystack" ? "provider" : "test")
+  const testAccount = method === "test" && liveAccount?.recipientProvider === "stub"
   const rules = summary.data?.rules
   const demoBalances = useMemo(() => payoutBalances(demoOrders, demoPayouts, demoBrandId, demoBrand.currency), [demoOrders, demoPayouts, demoBrandId, demoBrand.currency])
   const availableMinor = live ? Math.max(0, liveBalance?.availableMinor ?? 0) : demoBalances.available
@@ -256,7 +270,7 @@ export default function StudioPayoutsPage() {
     },
     {
       success: "Payout requested",
-      successDescription: live && liveAccount?.recipientProvider === "stub" ? "It's under review. This test account moves no money." : "It's under review by the platform team. Nothing moves until the provider confirms the transfer.",
+      successDescription: live && testAccount ? "It's under review. This test account moves no money." : live && method === "manual" ? "It's under review by Yard. Once approved, Yard pays it to your bank account by transfer." : "It's under review by the platform team. Nothing moves until the provider confirms the transfer.",
       // The server's reason (balance changed, cooldown, hold, minimum, rate limit) replaces the generic message.
       errorToast: false,
       onError: (cause) => {
@@ -304,11 +318,11 @@ export default function StudioPayoutsPage() {
       timestamp: payoutTimestamp(p),
       // A payout doesn't carry its recipient's bank details, and the account on file may have changed since.
       destination: "",
-      note: livePayoutNote(p),
+      note: livePayoutNote(p, method),
       cancellable: p.status === "requested" || p.status === "awaiting_second_approval",
       meta: livePayoutMeta(p.status),
     }))
-  }, [summary.data, cur])
+  }, [summary.data, cur, method])
 
   const demoItems: PayoutItem[] = useMemo(
     () =>
@@ -437,9 +451,9 @@ export default function StudioPayoutsPage() {
                   liveAccount ? (
                     <>
                       <p className="mt-1 text-xs text-ink-3">{liveAccount.accountName}</p>
-                      {liveAccount.recipientProvider === "stub" ? (
+                      {testAccount ? (
                         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3"><Clock className="size-3.5 text-ink-3" /> Test recipient: payouts move no money.</p>
-                      ) : liveAccount.verified ? (
+                      ) : method === "manual" ? null : liveAccount.verified ? (
                         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3"><ShieldCheck className="size-3.5 text-violet" /> Verified</p>
                       ) : (
                         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3"><Clock className="size-3.5 text-ink-3" /> Provider verification is still pending.</p>
@@ -461,7 +475,7 @@ export default function StudioPayoutsPage() {
                       <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-2">
                         <Clock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
                         <span>
-                          A change to {accountText(pendingChange)} is saved in Settings and waits for the provider to verify it, which needs the backend. Until then payouts keep going here.
+                          A change to {accountText(pendingChange)} is saved in Settings, in this demo only. Sample payouts keep going here.
                         </span>
                       </p>
                     ) : (
@@ -484,7 +498,11 @@ export default function StudioPayoutsPage() {
           <Button asChild variant="secondary" size="sm" className="w-fit">
             <Link href="/studio/settings#payouts">{live && summary.data && !liveAccount ? "Add in Settings" : "Change in Settings"}</Link>
           </Button>
-          <p className="max-w-sm text-xs text-ink-3 md:text-right">Requests are reviewed by Yard, then sent to your bank. They&apos;re marked completed once the payment provider confirms the transfer.</p>
+          <p className="max-w-sm text-xs text-ink-3 md:text-right">
+            {live && method === "manual"
+              ? "Request a payout when you have an available balance. Yard reviews it and pays it to this account by bank transfer."
+              : "Requests are reviewed by Yard, then sent to your bank. They're marked completed once the payment provider confirms the transfer."}
+          </p>
         </div>
       </section>
 
@@ -562,9 +580,9 @@ export default function StudioPayoutsPage() {
                 <div className="flex justify-between gap-4"><dt className="text-ink-2">Fee</dt><dd className="tabular text-ink">{formatMoney(0, cur)}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-ink-2">You receive</dt><dd className="tabular font-medium text-ink">{formatMoney(amountMinor, cur)}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-ink-2">To</dt><dd className="text-right text-ink">{destination}</dd></div>
-                <div className="flex justify-between gap-4"><dt className="text-ink-2">Next step</dt><dd className="text-right text-ink-2">Platform review, then the provider transfers it</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-ink-2">Next step</dt><dd className="text-right text-ink-2">{live && method === "manual" ? "Yard reviews it, then pays it to your bank by transfer" : "Platform review, then the provider transfers it"}</dd></div>
               </dl>
-              {live && liveAccount?.recipientProvider === "stub" ? <p className="text-xs text-ink-3">This brand pays through the test recipient. The request is recorded, but no money moves.</p> : null}
+              {live && testAccount ? <p className="text-xs text-ink-3">This brand pays through the test recipient. The request is recorded, but no money moves.</p> : null}
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={() => setStep("form")} disabled={request.pending}>Back</Button>
                 <Button type="button" variant="primary" onClick={() => void request.run()} loading={request.pending} success={request.succeeded}>Submit request</Button>

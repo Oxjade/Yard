@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { countries, type CountryCode } from "@/config/markets"
+import { countries, currencies, type CountryCode, type CurrencyCode } from "@/config/markets"
 import { Bone } from "@/components/feedback/skeletons"
 import { api, ApiError } from "@/lib/api/client"
 import type { PayoutSummaryDto } from "@/lib/api/contracts/payouts"
@@ -22,6 +22,7 @@ import { brandEmailKeys, getStudioEmailSettings, updateStudioEmailSettings } fro
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useServerSession } from "@/lib/session/use-server-session"
+import type { BrandProfile } from "@/lib/api/contracts/session"
 import { AccountDetails } from "@/components/market/account/account-details"
 import { toast } from "sonner"
 import { categories } from "@/lib/data/catalog"
@@ -32,7 +33,7 @@ import { useStudio } from "@/lib/stores/studio"
 import { duration, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "./model"
-import { FeesPanel, ReturnsSection, ShippingSection, TeamSection } from "./settings-more"
+import { FeesPanel, LiveReturnsSection, LiveTeamSection, ReturnsSection, ShippingSection, TeamSection } from "./settings-more"
 import { settingsDescription, accountNumberError, accountNumberLabel, bankCodeFor, banksFor, checkHandle, countryOptions, currencyOptions, providerLabel, providersFor, scheduleLabel } from "./settings-model"
 import { SaveRow } from "./settings-parts"
 import { useFocusReturn } from "./shared"
@@ -55,7 +56,12 @@ const sections = [
 type SectionId = (typeof sections)[number]["id"]
 
 export function SettingsView() {
-  const ready = useSettingsReady()
+  const storeReady = useSettingsReady()
+  // A real brand's sections read Yard's server (or say how Yard works); the browser's sample
+  // settings belong to the demo brand and never render for it.
+  const member = useServerSession((s) => s.brand)
+  const live = !!member && !member.demo
+  const ready = live || storeReady
   const [active, setActive] = useState<SectionId>("profile")
 
   useEffect(() => {
@@ -125,12 +131,12 @@ export function SettingsView() {
 
         {ready ? (
           <div className="grid min-w-0 gap-6">
-            <ProfileSection />
+            {live && member ? <LiveProfileSection member={member} /> : <ProfileSection />}
             <PayoutsSection />
             <ShippingSection />
-            <ReturnsSection />
-            <TeamSection />
-            <FeesPanel />
+            {live ? <LiveReturnsSection /> : <ReturnsSection />}
+            {live && member ? <LiveTeamSection member={member} /> : <TeamSection />}
+            <FeesPanel currency={live && member?.brand.currency && member.brand.currency in currencies ? (member.brand.currency as CurrencyCode) : undefined} />
             <EmailsSection />
             <YourAccountSection />
             <HelpSection />
@@ -146,6 +152,41 @@ export function SettingsView() {
 }
 
 /* ---------- Brand profile ---------- */
+
+type LiveMember = BrandProfile
+
+/**
+ * A real brand's profile, as Yard holds it (the session's brand). Read-only: Studio has no way to
+ * rename a brand or move its address yet, so it says who to ask instead of offering a form that
+ * would only save in this browser.
+ */
+function LiveProfileSection({ member }: { member: LiveMember }) {
+  const b = member.brand
+  const country = b.country && b.country in countries ? countries[b.country as CountryCode].name : b.country
+  const facts: [string, React.ReactNode][] = [
+    ["Brand name", b.name],
+    ["Storefront address", <Link key="h" href={`/brands/${b.handle}`} className="text-violet underline-offset-2 hover:underline">/brands/{b.handle}</Link>],
+    ["Based in", [b.city, country].filter(Boolean).join(", ") || "Not set"],
+    ["Currency", b.currency ?? "Not set"],
+  ]
+  return (
+    <Panel id="profile" title="Brand profile" description="How your brand appears across the marketplace and on your storefront.">
+      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+        {facts.map(([label, value]) => (
+          <div key={label} className="grid gap-0.5">
+            <dt className="text-xs text-ink-3">{label}</dt>
+            <dd className="text-sm text-ink">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-4 text-xs text-ink-2">
+        Your logo, banner and intro are edited in{" "}
+        <Link href="/studio/storefront" className="text-violet underline-offset-2 hover:underline">Storefront</Link>. To change your brand name, address, city or currency,{" "}
+        <Link href="/studio/support" className="text-violet underline-offset-2 hover:underline">message Yard Support</Link>.
+      </p>
+    </Panel>
+  )
+}
 
 const fieldName: Record<keyof ProfileSettings, string> = { name: "name", handle: "handle", category: "category", description: "description", city: "city", country: "country", currency: "currency" }
 
@@ -254,7 +295,7 @@ function ProfileSection() {
               form.currency !== saved.currency
                 ? "Prices you've set stay as they are; edit them on each product."
                 : saved.currency !== live.currency
-                  ? `Saved. Prices, payouts and reports stay in ${live.currency} until the backend is connected.`
+                  ? `Saved in this demo only. Prices, payouts and reports stay in ${live.currency}.`
                   : "Used for prices, payouts and reports."
             }
           >
@@ -295,8 +336,8 @@ function ProfileSection() {
           <p className="mt-4 flex gap-2 rounded-md border border-line-soft bg-surface/60 p-3 text-xs text-ink-2">
             <Info className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
             <span>
-              Your saved {listFields(pendingFields)} {pendingFields.length > 1 ? "are" : "is"} kept here in Settings. The rest of Studio and your storefront still show {live.name}
-              {saved.currency !== live.currency ? ` in ${live.currency}` : ""} until the backend is connected.
+              Your saved {listFields(pendingFields)} {pendingFields.length > 1 ? "are" : "is"} kept here in Settings, in this demo only. The rest of Studio and your storefront still show {live.name}
+              {saved.currency !== live.currency ? ` in ${live.currency}` : ""}.
             </span>
           </p>
         ) : null}
@@ -346,7 +387,7 @@ function PayoutsSection() {
           <p className="mt-0.5 truncate text-xs text-ink-2">{a.accountName}, {countries[a.country].name}</p>
           {a.status === "pending" && a.changedAt ? (
             <p className="mt-1 text-xs text-ink-3">
-              Saved here {formatDateTime(a.changedAt)} UTC. It stays pending until the backend is connected and {providerLabel[a.provider]} confirms the name. Until then payouts keep going to {onFile.bankName} <span className="tabular">•••• {onFile.last4}</span>.
+              Saved here {formatDateTime(a.changedAt)} UTC, in this demo only. Sample payouts keep going to {onFile.bankName} <span className="tabular">•••• {onFile.last4}</span>.
             </p>
           ) : null}
         </div>
@@ -374,7 +415,7 @@ function PayoutsSection() {
       </AnimatePresence>
       </>}
 
-      <form
+      {live ? <PayoutFlow /> : <form
         noValidate
         onSubmit={(e) => {
           e.preventDefault()
@@ -382,7 +423,7 @@ function PayoutsSection() {
         }}
         className="mt-5 border-t border-line-soft pt-5"
       >
-        <Field id="payout-schedule" label="Payout schedule" hint="Automatic payouts send your available balance once the backend is connected. Until then, request a payout any time from Payouts." className="max-w-sm">
+        <Field id="payout-schedule" label="Payout schedule" hint="Sample setting in this demo. On Yard, you request a payout from Payouts, Yard pays it to your bank account and marks it paid." className="max-w-sm">
           <Select value={schedule} onValueChange={(v) => setSchedule(v as PayoutSchedule)}>
             <SelectTrigger id="payout-schedule" aria-describedby="payout-schedule-hint" className={selectClass}>
               <SelectValue />
@@ -395,8 +436,39 @@ function PayoutsSection() {
           </Select>
         </Field>
         <SaveRow dirty={schedule !== payout.schedule} savedAt={savedAt} onDiscard={() => setSchedule(payout.schedule)} saveLabel="Save schedule" pending={save.pending} succeeded={save.succeeded} />
-      </form>
+      </form>}
     </Panel>
+  )
+}
+
+/**
+ * How a real brand gets paid, as the ledger does it (server/ledger/payouts.ts): there is no
+ * automatic schedule. The brand requests a payout from its available balance, Yard reviews and
+ * approves it, pays it to the bank account on file by bank transfer (payouts to brands are manual,
+ * docs/BACHS.md › Payouts to brands) and marks it paid, which Payouts then shows.
+ */
+function PayoutFlow() {
+  const steps = [
+    ["Request", "When you have an available balance, request a payout from Payouts. Earnings become available once an order's return window closes."],
+    ["Yard pays you", "Yard reviews the request and pays it by bank transfer to the account above."],
+    ["Marked paid", "Once the transfer is sent, Yard marks the payout paid. You see it in Payouts and get an email."],
+  ] as const
+  return (
+    <div className="mt-5 border-t border-line-soft pt-5">
+      <p className="text-[13px] font-medium text-ink">How payouts work</p>
+      <ol className="mt-3 grid gap-3 sm:grid-cols-3">
+        {steps.map(([title, body], i) => (
+          <li key={title} className="grid content-start gap-1 rounded-md border border-line-soft bg-surface/40 p-3">
+            <span className="text-xs text-ink-3 tabular">{i + 1}</span>
+            <span className="text-sm text-ink">{title}</span>
+            <span className="text-xs text-ink-2">{body}</span>
+          </li>
+        ))}
+      </ol>
+      <Button asChild size="sm" variant="secondary" className="mt-3">
+        <Link href="/studio/payouts">Open Payouts</Link>
+      </Button>
+    </div>
   )
 }
 
@@ -408,7 +480,7 @@ function countryFor(currency: string | undefined, fallback: CountryCode): Countr
   return hit ?? fallback
 }
 
-type LiveAccountSave = { currency: string; onSaved: () => Promise<unknown> }
+type LiveAccountSave = { currency: string; manual?: boolean; onSaved: () => Promise<unknown> }
 
 /** A real brand's payout account: read from and saved to the ledger (PUT /api/studio/payouts/account). */
 function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string; role: string; fallbackCountry: CountryCode }) {
@@ -436,6 +508,8 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
   }
 
   const a = summary.data.account
+  // Older servers don't say: a stub recipient then reads as a test account, as before.
+  const method = summary.data.payoutMethod ?? (a?.recipientProvider === "paystack" ? "provider" : "test")
   const country = a && a.country in countries ? (a.country as CountryCode) : countryFor(summary.data.currency, fallbackCountry)
   const cooldownUntil = summary.data.rules.cooldownUntil
 
@@ -455,9 +529,11 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
           {a ? (
             <>
               <p className="text-sm text-ink">
+                {a.recipientProvider === "paystack" ? "Paystack to " : ""}
                 {a.bankName} <span className="tabular">•••• {a.accountLast4}</span>
               </p>
               <p className="mt-0.5 truncate text-xs text-ink-2">{a.accountName}, {a.country in countries ? countries[a.country as CountryCode].name : a.country}, paid in {a.currency}</p>
+              {method === "manual" ? <p className="mt-1 text-xs text-ink-3">Saved {new Date(a.changedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Yard pays your payouts to this account by bank transfer.</p> : null}
               {cooldownUntil ? <p className="mt-1 text-xs text-ink-3">Changed recently. Payout requests reopen after {new Date(cooldownUntil).toLocaleString("en-GB")}.</p> : null}
             </>
           ) : (
@@ -468,7 +544,9 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
           )}
         </div>
         {a ? (
-          a.recipientProvider === "stub" ? (
+          method === "manual" && !a.verified ? (
+            <StatusBadge tone="muted" className="col-start-2 w-fit sm:col-start-auto">On file</StatusBadge>
+          ) : a.recipientProvider === "stub" ? (
             <StatusBadge tone="muted" className="col-start-2 w-fit sm:col-start-auto">Test account</StatusBadge>
           ) : a.verified ? (
             <span className="col-start-2 inline-flex items-center gap-1.5 text-xs text-ink-2 sm:col-start-auto"><ShieldCheck className="size-3.5 text-violet" aria-hidden /> Verified</span>
@@ -481,7 +559,7 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
       <AnimatePresence initial={false} mode="wait">
         {changing ? (
           <motion.div key="form" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: duration.dropdown, ease: ease.out }}>
-            <AccountForm country={country} onDone={() => setChanging(false)} live={{ currency: countries[country].currency, onSaved: () => summary.revalidate() }} />
+            <AccountForm country={country} onDone={() => setChanging(false)} live={{ currency: countries[country].currency, manual: method === "manual", onSaved: () => summary.revalidate() }} />
           </motion.div>
         ) : owner ? (
           <motion.div key="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: duration.hover }} className="mt-3">
@@ -626,11 +704,13 @@ function AccountForm({ country, onDone, live }: { country: CountryCode; onDone: 
             <DialogTitle>{live ? "Save this payout account?" : "Change your payout account?"}</DialogTitle>
             {live ? (
               <DialogDescription>
-                The payment provider checks the account with your bank, then payouts go to it. Payout requests pause for 24 hours after a change, which protects you if someone else made it.
+                {live.manual
+                  ? "Yard pays your payouts to this account by bank transfer, so check the name matches your bank's records. Payout requests pause for 24 hours after a change, which protects you if someone else made it."
+                  : "The payment provider checks the account with your bank, then payouts go to it. Payout requests pause for 24 hours after a change, which protects you if someone else made it."}
               </DialogDescription>
             ) : (
             <DialogDescription>
-              The new account is saved here in Settings as pending. Once the backend is connected, {providerLabel[provider]} confirms the name and payouts move to it, after a 48-hour pause that protects you if someone else made the change. Until then payouts keep going to {onFile.bankName} <span className="tabular">•••• {onFile.last4}</span>.
+              The new account is saved here in Settings as pending, in this demo only. Sample payouts keep going to {onFile.bankName} <span className="tabular">•••• {onFile.last4}</span>.
             </DialogDescription>
             )}
           </DialogHeader>
