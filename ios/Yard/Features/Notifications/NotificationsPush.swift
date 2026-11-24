@@ -13,10 +13,13 @@ import Observation
 // The modifier needs Router, FollowStore and SessionStore from the environment, so it must sit
 // below the `.environment(...)` calls (anywhere after them in the modifier chain is fine).
 //
-// SERVER GAP: the website has no endpoint to receive an APNs device token yet, and sends no pushes.
-// The token is kept in UserDefaults (`YardPushCenter.tokenDefaultsKey`, hex) and in
-// `YardPushCenter.shared.deviceToken`; `uploadTokenIfPossible()` is where the POST goes once the
-// server adds one (see ios/Docs/notifications.md).
+// Device registration (docs/APP.md › Push notifications): `POST /api/devices { platform: "ios",
+// token, appVersion, studio }` once signed in, `DELETE /api/devices { token }` before sign-out.
+// `studio: true` when the account can open Studio, so the device also gets Studio pushes.
+// GAP: the token sent is the APNs device token (hex). The server's sender is FCM (Firebase), which
+// needs an FCM registration token; the app has no Firebase SDK (no third-party packages), so
+// pushes reach iOS only once the server sends to APNs directly (or the Firebase iOS SDK is added
+// and its FCM token is sent here instead). See ios/Docs/studio.md.
 
 // MARK: - Permission
 
@@ -105,6 +108,12 @@ final class YardPushCenter {
     private(set) var registrationError: String?
     /// A notification href the user tapped, waiting for the UI to route it.
     var pendingHref: String?
+    /// A tapped Studio push (`data.scope == "studio"`): its link and brand, waiting for the UI.
+    var pendingStudio: StudioPushTap?
+    /// Whether this account can open Studio (sent as `studio` when registering the device).
+    private(set) var studioCapable: Bool = false
+    /// What was last registered, so it isn't re-sent on every foreground.
+    @ObservationIgnored private var registered: (token: String, studio: Bool)?
     /// The soft prompt ("Get drop alerts?") shown before the system prompt.
     var primingReason: PrimingReason?
 
@@ -128,13 +137,35 @@ final class YardPushCenter {
         registrationError = error.localizedDescription
     }
 
-    /// Sends the device token to Yard. The server has NO device-token endpoint yet, so this is a
-    /// no-op that keeps the token locally. When the endpoint exists (suggested:
-    /// `POST /api/notifications/devices { token, platform: "ios", environment }`, shopper auth),
-    /// call it here and on every sign-in.
+    /// Sends the device token to Yard (`POST /api/devices`, needs the shopper session; 401 when
+    /// signed out is ignored). Called on sign-in, on a new token and when Studio access changes.
     func uploadTokenIfPossible() async {
-        guard deviceToken != nil else { return }
-        // Intentionally nothing to call yet: no endpoint on the server.
+        guard let token = deviceToken, !token.isEmpty else { return }
+        if let registered, registered.token == token, registered.studio == studioCapable { return }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let body = YardDeviceBody(platform: "ios", token: token, appVersion: version, studio: studioCapable)
+        do {
+            try await APIClient.shared.send(.post, "/api/devices", body: body)
+            registered = (token, studioCapable)
+        } catch {
+            // Signed out or offline: tried again on the next sign-in or foreground.
+        }
+    }
+
+    /// Studio access changed for the signed-in account: re-register with `studio`.
+    func setStudioCapable(_ capable: Bool) {
+        guard capable != studioCapable else { return }
+        studioCapable = capable
+        if capable {
+            Task { @MainActor in await self.uploadTokenIfPossible() }
+        }
+    }
+
+    /// `DELETE /api/devices { token }`: call before signing out (it needs the session).
+    func unregisterDevice() async {
+        guard let token = deviceToken, !token.isEmpty else { return }
+        try? await APIClient.shared.send(.delete, "/api/devices", body: YardDeviceTokenBody(token: token))
+        registered = nil
     }
 
     // Soft prompt
@@ -167,12 +198,42 @@ final class YardPushCenter {
     /// Records a tapped push's destination. Payload contract (for the server, once it sends pushes):
     /// `{ "aps": { "alert": { "title", "body" } }, "href": "/you/orders/ord_1", "key": "<event key>" }`.
     func handleTap(userInfo: [AnyHashable: Any]) {
+        // Studio push (docs/APP.md › Push for brands): `scope: "studio"`, `brandId`, `link`, `url`.
+        if (userInfo["scope"] as? String) == "studio" {
+            let raw = (userInfo["link"] as? String) ?? (userInfo["url"] as? String) ?? "yard://studio"
+            let link = URL(string: raw).flatMap { StudioLink(url: $0) } ?? StudioLink(path: raw) ?? .home
+            pendingStudio = StudioPushTap(link: link, brandId: userInfo["brandId"] as? String)
+            return
+        }
+        if let url = userInfo["url"] as? String, !url.isEmpty, (userInfo["href"] as? String)?.isEmpty ?? true {
+            pendingHref = url
+            return
+        }
         if let href = userInfo["href"] as? String, !href.isEmpty {
             pendingHref = href
         } else {
             pendingHref = "/notifications"
         }
     }
+}
+
+/// A tapped Studio push waiting to be opened.
+struct StudioPushTap: Equatable, Sendable {
+    let link: StudioLink
+    let brandId: String?
+}
+
+/// POST /api/devices body.
+struct YardDeviceBody: Encodable, Sendable {
+    let platform: String
+    let token: String
+    let appVersion: String?
+    let studio: Bool
+}
+
+/// DELETE /api/devices body.
+struct YardDeviceTokenBody: Encodable, Sendable {
+    let token: String
 }
 
 // MARK: - App delegate
@@ -201,9 +262,13 @@ final class YardPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        let href: String = (userInfo["href"] as? String) ?? ""
+        // Copy the string fields the router needs (the dictionary itself isn't Sendable).
+        var fields: [String: String] = [:]
+        for key in ["href", "url", "scope", "brandId", "link", "kind", "id"] {
+            if let value = userInfo[key] as? String, !value.isEmpty { fields[key] = value }
+        }
         Task { @MainActor in
-            YardPushCenter.shared.handleTap(userInfo: href.isEmpty ? [:] : ["href": href])
+            YardPushCenter.shared.handleTap(userInfo: fields)
         }
         completionHandler()
     }
@@ -225,6 +290,7 @@ private struct YardPushNotificationsModifier: ViewModifier {
     @Environment(Router.self) private var router
     @Environment(FollowStore.self) private var follows
     @Environment(SessionStore.self) private var session
+    @Environment(StudioStore.self) private var studio
 
     private let center = YardPushCenter.shared
 
@@ -248,6 +314,20 @@ private struct YardPushNotificationsModifier: ViewModifier {
                 guard follows.hasLoaded, !follows.isLoading else { return }
                 guard newValue.count == oldValue.count + 1, oldValue.isSubset(of: newValue) else { return }
                 center.offerPermission(reason: .follow)
+            }
+            .onChange(of: center.pendingStudio) { _, tap in
+                guard let tap else { return }
+                center.pendingStudio = nil
+                if !studio.open(tap.link, brandId: tap.brandId) {
+                    // E.g. "Your shop is ready": the brand isn't in this session yet. Re-read it.
+                    Task { @MainActor in
+                        await session.refresh()
+                        studio.sync(shopper: session.shopper)
+                        if !studio.open(tap.link, brandId: tap.brandId) {
+                            router.show(.notifications, in: .you)
+                        }
+                    }
+                }
             }
             .onChange(of: center.pendingHref) { _, href in
                 guard let href else { return }
@@ -285,7 +365,7 @@ private struct YardPushNotificationsModifier: ViewModifier {
             return
         }
         switch route {
-        case .order, .orders, .conversation, .inbox, .myDrops, .notifications:
+        case .order, .orders, .conversation, .inbox, .support, .myDrops, .notifications:
             router.show(route, in: .you)
         default:
             router.show(route, in: .home)

@@ -157,6 +157,7 @@ struct FollowingView: View {
                 ) { router.present(.signIn) }
             } else {
                 content
+                    .yardCrossfade(model.phase)
             }
         }
         .yardScreenBackground()

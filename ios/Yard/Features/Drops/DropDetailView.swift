@@ -109,7 +109,7 @@ struct DropDetailView: View {
                     .padding(.horizontal, Spacing.gutter)
                     .padding(.top, Spacing.s)
                     .padding(.bottom, Spacing.s)
-                    .background(.ultraThinMaterial)
+                    .yardGlassBar()
                 }
             }
         }
@@ -121,16 +121,31 @@ struct DropDetailView: View {
     private func hero(_ drop: Drop, phase: DropLivePhase) -> some View {
         Color.clear
             .aspectRatio(4.0 / 5.0, contentMode: .fit)
-            .overlay { RemoteImage(url: drop.imageURL, maxPixelSize: 1600) }
+            .overlay {
+                RemoteImage(url: drop.imageURL, maxPixelSize: 1600) {
+                    BrandArtwork(name: drop.brandName, seed: drop.brand.id)
+                }
+            }
+            // A light top shade so the capsules read on bright photos; the title sits below the hero.
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [Color.yard.scrim.opacity(0.28), Color.yard.scrim.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 120)
+                    .allowsHitTesting(false)
+            }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: Spacing.xs) {
                     DropStatusBadge(drop: drop, phase: phase, onPhoto: true)
-                    Tag(drop.accessLabel, style: .onPhoto)
-                    if drop.sponsored { Tag("Sponsored", style: .onPhoto) }
+                    DropPhotoCapsule(text: drop.accessLabel)
+                    if drop.sponsored { DropPhotoCapsule(text: "Sponsored") }
                 }
-                .padding(Spacing.m)
+                .padding(Spacing.l)
             }
-            .clipShape(.yardImage)
+            .clipShape(.yardCard)
+            .overlay {
+                RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                    .strokeBorder(Color.yard.onPhoto.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: Color.yard.scrim.opacity(0.2), radius: 18, y: 10)
             .padding(.horizontal, Spacing.gridGap)
             .accessibilityLabel(Text(drop.name))
     }

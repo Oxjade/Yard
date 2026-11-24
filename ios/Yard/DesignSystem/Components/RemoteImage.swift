@@ -30,6 +30,30 @@ final class ImagePipeline: @unchecked Sendable {
         memory.object(forKey: key(url, maxPixelSize))
     }
 
+    /// Puts an image the app already has (e.g. a profile photo it just uploaded) in the memory
+    /// cache under `url`, downsized so its longest side is at most `maxPixelSize` pixels, so the
+    /// first load of that URL is instant.
+    func store(_ image: UIImage, for url: URL, maxPixelSize: CGFloat) {
+        let pixelW = image.size.width * image.scale
+        let pixelH = image.size.height * image.scale
+        guard pixelW >= 1, pixelH >= 1, maxPixelSize >= 1 else { return }
+        let k = min(1, maxPixelSize / max(pixelW, pixelH))
+        let stored: UIImage
+        if k >= 1 {
+            stored = image
+        } else {
+            let target = CGSize(width: max(1, (pixelW * k).rounded()), height: max(1, (pixelH * k).rounded()))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            stored = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: target))
+            }
+        }
+        let cost = Int(stored.size.width * stored.size.height * stored.scale * stored.scale * 4)
+        memory.setObject(stored, forKey: key(url, maxPixelSize), cost: cost)
+    }
+
     /// Fetches (or returns cached) and downsamples so the longest side is at most `maxPixelSize` pixels.
     func image(for url: URL, maxPixelSize: CGFloat = 1200) async throws -> UIImage {
         let cacheKey = key(url, maxPixelSize)

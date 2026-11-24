@@ -109,6 +109,7 @@ struct MyDropsView: View {
                                         } label: {
                                             Label("Remove reminder", systemImage: "bell.slash")
                                         }
+                                        .disabled(model.busyIds.contains(drop.id))
                                     }
                                 }
                             }
@@ -165,7 +166,11 @@ struct MyDropsView: View {
     }
 
     private func removeReminder(_ drop: Drop) {
+        // A double tap must not send two DELETEs (and show two toasts).
+        guard !model.busyIds.contains(drop.id) else { return }
+        model.busyIds.insert(drop.id)
         Task { @MainActor in
+            defer { model.busyIds.remove(drop.id) }
             do {
                 _ = try await DropActions.setReminder(false, drop: drop)
                 toast.show("Reminder removed", style: .info)
@@ -188,6 +193,8 @@ final class MyDropsViewModel {
 
     var state: LoadState = .loading
     var response: MyDropsResponse?
+    /// Drop ids with a reminder change in flight (guards double taps).
+    var busyIds: Set<String> = []
 
     init() {}
 

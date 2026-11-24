@@ -40,6 +40,7 @@ struct ChartsRankMove: View {
             }
             Text(text)
                 .font(.yardCaptionEmphasis.monospacedDigit())
+                .yardNumericTransition(Double(abs(delta)))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 7)
@@ -196,6 +197,7 @@ struct ChartsPodiumCard: View {
         Text(ChartsFormat.two(entry.rank))
             .font(.yardDisplay(lead ? 64 : 44).monospacedDigit())
             .foregroundStyle(entry.rank == 1 ? Color.yard.onAcid : Color.yard.ink)
+            .yardNumericTransition(Double(entry.rank))
             .padding(.horizontal, lead ? 12 : 9)
             .padding(.top, lead ? 4 : 2)
             .padding(.bottom, lead ? 0 : -2)
@@ -270,7 +272,7 @@ struct ChartsRow: View {
                 Text(ChartsFormat.two(entry.rank))
                     .font(.yardDisplay(34).monospacedDigit())
                     .foregroundStyle(Color.yard.ink)
-                    .contentTransition(.numericText())
+                    .yardNumericTransition(Double(entry.rank))
                 ChartsRankMove(movement: entry.movement, delta: entry.delta)
             }
             .frame(width: 50)

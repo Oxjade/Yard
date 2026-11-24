@@ -37,6 +37,9 @@ final class HomeFeedModel {
     /// Follow ids the Following feed was built from (rebuild when they change).
     private(set) var builtForFollowIds: Set<String> = []
 
+    /// Bumped by every refresh, so a next page fetched for the old feed is dropped.
+    @ObservationIgnored private var generation: Int = 0
+
     private static let pageSize: Int = 24
     private static let perBrand: Int = 6
     private static let maxBrands: Int = 24
@@ -60,6 +63,9 @@ final class HomeFeedModel {
 
     /// Reloads from scratch (pull to refresh, retry).
     func refresh(followIds: [String]) async {
+        // Fence any in-flight loadMore(): its page belongs to the feed being replaced.
+        generation += 1
+        isLoadingMore = false
         if items.isEmpty { phase = .loading }
         loadMoreFailed = false
         do {
@@ -99,21 +105,25 @@ final class HomeFeedModel {
             return
         }
         guard let offset = nextOffset else { return }
+        let gen = generation
         isLoadingMore = true
         loadMoreFailed = false
-        defer { isLoadingMore = false }
+        defer { if gen == generation { isLoadingMore = false } }
         var extra: [URLQueryItem] = []
         if case .category(let category) = tab {
             extra.append(URLQueryItem(name: "category", value: category.slug))
         }
         do {
             let page = try await fetchProducts(extra: extra, offset: offset)
+            // A refresh started meanwhile rebuilt the feed: this page is stale.
+            guard gen == generation else { return }
             let known = Set(products.map(\.id))
             products.append(contentsOf: page.products.filter { !known.contains($0.id) }.map(HomeShape.shaped))
             nextOffset = page.nextOffset
             rebuild()
         } catch {
             if HomeFeedModel.isCancellation(error) { return }
+            guard gen == generation else { return }
             loadMoreFailed = true
         }
     }

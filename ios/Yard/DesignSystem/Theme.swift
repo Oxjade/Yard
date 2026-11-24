@@ -38,6 +38,9 @@ struct YardPalette: Sendable {
     let purple = Color(light: UIColor(yardHex: 0x6D28D9), dark: UIColor(yardHex: 0x6D28D9))
     /// Violet: #A78BFA dark / #6D28D9 light (readable purple text on either background).
     let violet = Color(light: UIColor(yardHex: 0x6D28D9), dark: UIColor(yardHex: 0xA78BFA))
+    /// Studio violet #9452FF in both modes: the seller side ("Sell on Yard", Studio accents).
+    /// Put `onPhoto` (white) text on it.
+    let studio = Color(light: UIColor(yardHex: 0x9452FF), dark: UIColor(yardHex: 0x9452FF))
     /// Errors and destructive actions. Dark #FF4D4D / light #D92D20.
     let danger = Color(light: UIColor(yardHex: 0xD92D20), dark: UIColor(yardHex: 0xFF4D4D))
     /// Success. Dark #22C55E / light #16A34A.
@@ -47,8 +50,38 @@ struct YardPalette: Sendable {
     let onPhoto = Color(light: UIColor(yardHex: 0xFFFFFF), dark: UIColor(yardHex: 0xFFFFFF))
     /// Text on an `onPhoto` (white) pill: #0B0B0B in both modes.
     let onPhotoInk = Color(light: UIColor(yardHex: 0x0B0B0B), dark: UIColor(yardHex: 0x0B0B0B))
+    /// The lit top edge of glass surfaces (tab pill, floating buttons, overlay pills).
+    let glassEdge = Color(light: UIColor(white: 1, alpha: 0.85), dark: UIColor(white: 1, alpha: 0.18))
+    /// A faint wash laid over glass so it reads as a surface, not a hole. Use as-is.
+    let glassTint = Color(light: UIColor(white: 1, alpha: 0.35), dark: UIColor(white: 1, alpha: 0.04))
     /// Scrim for gradients over photos (black, fixed). Use with `.opacity(…)`.
     let scrim = Color(light: UIColor(yardHex: 0x000000), dark: UIColor(yardHex: 0x000000))
+
+    // MARK: Studio Home ("wallet" look)
+    // Derived from the brand tokens above, never new hues; same mapping as Android's
+    // `Color.yard.studio*`. Acid appears only as small traces (active tab, unread dot, the Accept all
+    // arrow, the delta arrow).
+
+    /// The violet hero: the brand `studio` violet #9452FF (white on it 4.3:1; text there is large or semibold).
+    var studioAccent: Color { studio }
+    /// The hero's inset card: halfway from `studio` #9452FF to brand `purple` #6D28D9 (#803DEC; white on it 5.5:1).
+    var studioAccentDeep: Color { Color(light: UIColor(yardHex: 0x803DEC), dark: UIColor(yardHex: 0x803DEC)) }
+    /// Text/icons on the violet: `onPhoto` (white).
+    var onStudioAccent: Color { onPhoto }
+    /// Studio Home's canvas: `bg` (#080808 / warm #F6F5F1).
+    var studioCanvas: Color { bg }
+    /// Tiles and rows: `surface` (#121212 / #FFFFFF).
+    var studioTile: Color { surface }
+    /// A disc or chip on a tile: `surface2` (#1A1A1A / #EFEDE7).
+    var studioTile2: Color { surface2 }
+    /// The one contrast tile: `ink` (near-white in dark, near-black in light). Put `onStudioContrast` on it.
+    var studioContrast: Color { ink }
+    /// Text on `studioContrast`: `bg`.
+    var onStudioContrast: Color { bg }
+    /// Violet-tinted icon disc on a tile: the studio violet at 16%.
+    var studioAccentTint: Color { studio.opacity(0.16) }
+    /// A violet icon on `studioAccentTint`: `violet` (#A78BFA / #6D28D9).
+    var studioAccentInk: Color { violet }
 }
 
 extension Color {

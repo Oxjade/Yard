@@ -30,6 +30,7 @@ struct ShopView: View {
                     .padding(.bottom, Spacing.l)
                 Section {
                     results
+                        .yardCrossfade(model.phase.crossfadeKey)
                         .padding(.top, Spacing.m)
                 } header: {
                     ShopFilterBar(model: model)

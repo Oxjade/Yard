@@ -57,7 +57,11 @@ final class CollectionModel {
 
     var sortedProducts: [Product] { sort.apply(to: products) }
 
-    var brandName: String { brand?.name ?? brandHandle }
+    /// The brand's name; falls back to the handle when it is missing or empty (decoded leniently as "").
+    var brandName: String {
+        let name: String = brand?.name ?? ""
+        return name.isEmpty ? brandHandle : name
+    }
 
     /// The collection photo, else its first piece's photo (as the website does).
     var coverURL: URL? { collection?.imageURL ?? products.first?.coverURL }
@@ -158,6 +162,7 @@ struct CollectionView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase.crossfadeKey)
             .yardScreenBackground()
             .navigationTitle(model.collection?.name ?? "Collection")
             .navigationBarTitleDisplayMode(.inline)
@@ -469,4 +474,16 @@ private func collectionPreviewModel() -> CollectionModel {
     NavigationStack { CollectionView(previewModel: collectionPreviewModel()) }
         .yardPreviewEnvironment()
         .preferredColorScheme(.light)
+}
+
+extension CollectionModel.Phase {
+    /// Which state is showing (the error payload isn't Equatable): keys the skeleton → content crossfade.
+    var crossfadeKey: Int {
+        switch self {
+        case .loading: return 0
+        case .loaded: return 1
+        case .notFound: return 2
+        case .failed: return 3
+        }
+    }
 }

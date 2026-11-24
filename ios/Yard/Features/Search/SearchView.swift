@@ -39,8 +39,8 @@ struct SearchHomeView: View {
     @State private var recents: [String] = []
     @FocusState private var isFieldFocused: Bool
 
-    init(model: SearchLiveModel = SearchLiveModel(), initialText: String = "", recents: [String]? = nil) {
-        _model = State(initialValue: model)
+    init(model: SearchLiveModel? = nil, initialText: String = "", recents: [String]? = nil) {
+        _model = State(initialValue: model ?? SearchLiveModel())
         _text = State(initialValue: initialText)
         _recents = State(initialValue: recents ?? SearchRecents.load())
     }
@@ -110,6 +110,13 @@ struct SearchHomeView: View {
                 focusSoon()
             } else {
                 isFieldFocused = false
+            }
+        }
+        .onChange(of: router.reselectCount) { _, _ in
+            // Re-tapping the Search tab doesn't change `selectedTab`; it pops to root.
+            if router.selectedTab == .search && router.depth == 0 {
+                recents = SearchRecents.load()
+                focusSoon()
             }
         }
     }

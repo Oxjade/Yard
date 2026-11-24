@@ -7,8 +7,10 @@ private struct InboxPhotoSelection: Identifiable {
     let index: Int
 }
 
-/// The thread UI shared by `ConversationView(id:)` and `BrandConversationView(brandId:)`:
-/// header (brand + menu), pinned order context, bubbles with day separators, composer.
+/// The thread UI shared by `ConversationView(id:)`, `BrandConversationView(brandId:)` and
+/// `SupportConversationView` (Yard Support: Yard mark + "Yard Support", no menu, "Seen" receipts,
+/// an order chip from "Get help from Yard"): header, pinned order context, bubbles with day
+/// separators, composer.
 /// Polls every 5 s while open and active; marks read on open and as replies arrive.
 @MainActor
 struct InboxThreadScreen: View {
@@ -30,8 +32,12 @@ struct InboxThreadScreen: View {
             .background(Color.yard.bg.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) { header }
-                ToolbarItem(placement: .topBarTrailing) { menu }
+                ToolbarItem(placement: .principal) {
+                    if model.isSupport { supportHeader } else { header }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !model.isSupport { menu }
+                }
             }
             .toolbarBackground(Color.yard.bg, for: .navigationBar)
             .task { await model.load() }
@@ -93,7 +99,7 @@ struct InboxThreadScreen: View {
                         olderButton
                     }
                     if model.isEmpty {
-                        intro
+                        if model.isSupport { supportIntro } else { intro }
                     }
                     ForEach(model.items) { item in
                         row(item)
@@ -120,11 +126,15 @@ struct InboxThreadScreen: View {
                 InboxComposer(
                     placeholder: "Message \(model.displayName)",
                     disabledReason: model.disabledReason,
-                    allowsPhotos: model.conversationId != nil || model.brandId != nil,
-                    focus: $composerFocused
-                ) { text, photos in
-                    model.send(text: text, photos: photos)
-                }
+                    // Yard Support photos upload into the thread, so they're offered once it exists.
+                    allowsPhotos: model.isSupport ? model.conversationId != nil : (model.conversationId != nil || model.brandId != nil),
+                    focus: $composerFocused,
+                    attachedOrder: model.isSupport ? model.supportOrder : nil,
+                    onRemoveOrder: { model.supportOrder = nil },
+                    onSend: { text, photos in
+                        model.send(text: text, photos: photos)
+                    }
+                )
             }
             .onAppear { scrollToBottom(proxy, animated: false) }
             .onChange(of: model.items.last?.id) { _, _ in
@@ -155,14 +165,23 @@ struct InboxThreadScreen: View {
         case .day(_, let label):
             InboxDaySeparator(label: label)
         case .message(let m, let showsTime):
-            InboxMessageRow(
-                message: m,
-                showsTime: showsTime,
-                productImage: m.product.flatMap { model.productImages[$0.productId] },
-                onOpenPhotos: { attachments, index in
-                    photoSelection = InboxPhotoSelection(attachments: attachments, index: index)
+            VStack(alignment: .trailing, spacing: Spacing.xxs) {
+                InboxMessageRow(
+                    message: m,
+                    showsTime: showsTime,
+                    productImage: m.product.flatMap { model.productImages[$0.productId] },
+                    onOpenPhotos: { attachments, index in
+                        photoSelection = InboxPhotoSelection(attachments: attachments, index: index)
+                    }
+                )
+                if m.id == model.seenMessageId {
+                    Text("Seen")
+                        .font(.yardMicro)
+                        .foregroundStyle(Color.yard.ink3)
+                        .padding(.horizontal, Spacing.xs)
+                        .accessibilityLabel(Text("Seen by Yard Support"))
                 }
-            )
+            }
         case .pending(let p):
             InboxPendingRow(pending: p, onRetry: { model.retry(p) }, onDiscard: { model.discard(p) })
         }
@@ -199,7 +218,43 @@ struct InboxThreadScreen: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Yard Support's empty state (web support-thread.tsx wording).
+    private var supportIntro: some View {
+        VStack(spacing: Spacing.s) {
+            InboxSupportMark(size: 72)
+            Text("Message Yard Support")
+                .font(.yardHeadline)
+                .foregroundStyle(Color.yard.ink)
+                .multilineTextAlignment(.center)
+            Text("Questions about an order, a payment, your account or anything on Yard. Our team replies here and in your notifications.")
+                .font(.yardCallout)
+                .foregroundStyle(Color.yard.ink2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+        }
+        .padding(.vertical, Spacing.xxxl)
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: Header & menu
+
+    /// Yard mark + "Yard Support" (no storefront to open, no menu).
+    private var supportHeader: some View {
+        HStack(spacing: Spacing.s) {
+            InboxSupportMark(size: 32)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Yard Support")
+                    .font(.yardHeadline)
+                    .foregroundStyle(Color.yard.ink)
+                    .lineLimit(1)
+                Text(model.conversation?.status == "resolved" ? "Resolved. Writing again reopens it." : "The Yard team. We usually reply within a day.")
+                    .font(.yardMicro)
+                    .foregroundStyle(Color.yard.ink3)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
 
     private var header: some View {
         Button {
@@ -313,6 +368,33 @@ enum InboxThreadPreviewData {
         ]
         return InboxThreadModel(preview: conversation, messages: messages)
     }
+
+    @MainActor
+    static func supportModel() -> InboxThreadModel {
+        let yard = InboxBrandRef(id: "yard_support", handle: "support", name: "Yard Support", verified: true, markText: "Y")
+        let conversation = InboxConversation(id: "cv_support", brand: yard, createdAt: iso(-200_000), interaction: InboxInteraction(canSend: true), kind: "support")
+        let order = InboxOrderCard(orderId: "mo_1", reference: "YD-4821", status: "shipped", placedAt: iso(-300_000), total: InboxMoney(amount: 12000, currency: "USD"), itemCount: 2)
+        let messages: [InboxMessage] = [
+            InboxMessage(id: "s1", seq: 1, side: "customer", kind: "order", body: "My parcel shows delivered but it isn't here.", order: order, createdAt: iso(-7_200)),
+            InboxMessage(id: "s2", seq: 2, side: "support", body: "Sorry about that. We've asked the brand for the carrier's proof of delivery and will update you here.", createdAt: iso(-3_600)),
+        ]
+        let model = InboxThreadModel(preview: conversation, messages: messages)
+        model.receiptsEnabled = true
+        model.theirReadUpToSeq = 1
+        return model
+    }
+}
+
+#Preview("Yard Support — dark") {
+    NavigationStack { InboxThreadScreen(model: InboxThreadPreviewData.supportModel()) }
+        .yardPreviewEnvironment()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Yard Support — light") {
+    NavigationStack { InboxThreadScreen(model: InboxThreadPreviewData.supportModel()) }
+        .yardPreviewEnvironment()
+        .preferredColorScheme(.light)
 }
 
 #Preview("Thread — dark") {

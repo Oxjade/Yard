@@ -84,7 +84,10 @@ final class ProductDetailModel {
 
     // MARK: Loading
 
-    func load(destinationCountry: String?, currency: String) async {
+    /// Loads (or refreshes) the product. Returns the error message when a refresh failed while
+    /// the product is already on screen (it is kept), so the view can toast it; nil otherwise.
+    @discardableResult
+    func load(destinationCountry: String?, currency: String) async -> String? {
         if product == nil { phase = .loading }
         do {
             let escaped = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
@@ -97,19 +100,24 @@ final class ProductDetailModel {
             }
             phase = .loaded
         } catch let error as APIError {
-            if error.isCancelled { return }
+            if error.isCancelled { return nil }
             if product == nil {
                 phase = error.isNotFound ? .notFound : .failed(error.message)
+                return nil
             }
-            return
+            return error.message
         } catch {
-            if product == nil { phase = .failed(APIError.message(for: error)) }
-            return
+            if product == nil {
+                phase = .failed(APIError.message(for: error))
+                return nil
+            }
+            return APIError.message(for: error)
         }
-        guard let loaded = product else { return }
+        guard let loaded = product else { return nil }
         async let rails: Void = loadRails(for: loaded)
         async let ship: Void = loadEstimate(for: loaded, destinationCountry: destinationCountry, currency: currency)
         _ = await (rails, ship)
+        return nil
     }
 
     private func loadRails(for p: Product) async {

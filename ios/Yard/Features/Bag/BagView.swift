@@ -28,10 +28,16 @@ struct BagView: View {
 
     var body: some View {
         content
+            .yardCrossfade("\(cart.cart == nil)|\(cart.cart?.lines.isEmpty ?? false)|\(cart.lastError == nil)")
             .yardScreenBackground()
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .onAppear {
+                // The checkout may have changed the country (CheckoutModel.changeCountry).
+                let saved: String = BagMarkets.shipTo
+                if saved != shipTo { shipTo = saved }
+            }
             .task { await cart.load() }
             .task(id: quoteKey) { await loadQuotes() }
             .onChange(of: shipTo) { _, newValue in
@@ -238,10 +244,7 @@ struct BagView: View {
         }
         .padding(.horizontal, Spacing.gutter)
         .padding(.vertical, Spacing.m)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.yard.line).frame(height: 1)
-        }
+        .yardGlassBar()
     }
 
     // MARK: Actions

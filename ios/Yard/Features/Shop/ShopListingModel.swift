@@ -232,3 +232,14 @@ final class ShopListingModel {
         return false
     }
 }
+
+extension ShopListingModel.Phase {
+    /// Which state is showing (the error payload isn't Equatable): keys the skeleton → content crossfade.
+    var crossfadeKey: Int {
+        switch self {
+        case .loading: return 0
+        case .loaded: return 1
+        case .failed: return 2
+        }
+    }
+}

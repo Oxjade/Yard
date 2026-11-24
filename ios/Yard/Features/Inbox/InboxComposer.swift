@@ -4,14 +4,28 @@ import UIKit
 
 /// The pill composer: photo button (shopper inbox attachments), growing text field, acid send.
 /// When the shopper can't send, it shows why instead (blocked, paused, closed…).
+/// Yard Support can carry an order as a removable chip ("Get help from Yard"); it goes with the next send.
 @MainActor
 struct InboxComposer: View {
     let placeholder: String
     let disabledReason: String?
-    /// Photos need a conversation or a brand to upload against; both are always known here.
+    /// Photos need a conversation or a brand to upload against.
     let allowsPhotos: Bool
     var focus: FocusState<Bool>.Binding
+    /// Yard Support: the order attached to the next message, shown as a chip.
+    let attachedOrder: SupportOrderChip?
+    let onRemoveOrder: () -> Void
     let onSend: (String, [Data]) -> Void
+
+    init(placeholder: String, disabledReason: String?, allowsPhotos: Bool, focus: FocusState<Bool>.Binding, attachedOrder: SupportOrderChip? = nil, onRemoveOrder: @escaping () -> Void = {}, onSend: @escaping (String, [Data]) -> Void) {
+        self.placeholder = placeholder
+        self.disabledReason = disabledReason
+        self.allowsPhotos = allowsPhotos
+        self.focus = focus
+        self.attachedOrder = attachedOrder
+        self.onRemoveOrder = onRemoveOrder
+        self.onSend = onSend
+    }
 
     @Environment(ToastCenter.self) private var toast
 
@@ -25,7 +39,7 @@ struct InboxComposer: View {
     private static let maxLength = 2000
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canSend: Bool { (!trimmed.isEmpty || !photos.isEmpty) && !isPreparing && text.count <= Self.maxLength }
+    private var canSend: Bool { (!trimmed.isEmpty || !photos.isEmpty || attachedOrder != nil) && !isPreparing && text.count <= Self.maxLength }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +57,7 @@ struct InboxComposer: View {
                 .padding(.vertical, Spacing.m)
             } else {
                 VStack(alignment: .leading, spacing: Spacing.s) {
+                    if let order = attachedOrder { orderChip(order) }
                     if !photos.isEmpty || isPreparing { attachmentsRow }
                     inputRow
                     if text.count > Self.maxLength - 200 {
@@ -103,6 +118,39 @@ struct InboxComposer: View {
             .accessibilityLabel(Text("Send message"))
             .animation(Motion.snappy, value: canSend)
         }
+    }
+
+    /// "Order YD-…" with a remove button (web composer's order chip).
+    private func orderChip(_ order: SupportOrderChip) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "shippingbox")
+                .font(.yardCaption)
+                .foregroundStyle(Color.yard.ink2)
+            Text("Order \(order.reference)")
+                .font(.yardCaptionEmphasis)
+                .foregroundStyle(Color.yard.ink)
+                .monospacedDigit()
+                .lineLimit(1)
+            Button {
+                withAnimation(Motion.snappy) { onRemoveOrder() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.yard.ink2)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Remove order \(order.reference)"))
+        }
+        .padding(.leading, Spacing.m)
+        .padding(.trailing, Spacing.xs)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(Color.yard.surface2))
+        .overlay(Capsule().strokeBorder(Color.yard.line, lineWidth: 1))
+        .padding(.horizontal, Spacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Attached: order \(order.reference)"))
     }
 
     private var attachmentsRow: some View {

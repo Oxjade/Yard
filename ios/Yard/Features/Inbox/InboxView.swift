@@ -5,7 +5,7 @@ import SwiftUI
 /// The shopper's conversation list (GET /api/inbox/conversations), newest activity first.
 @Observable @MainActor
 final class InboxListModel {
-    enum Phase {
+    enum Phase: Equatable {
         case idle
         case loading
         case loaded
@@ -20,8 +20,25 @@ final class InboxListModel {
     var query: String = ""
     /// Ids with a swipe action in flight (row dims).
     var busyIds: Set<String> = []
+    /// The shopper's Yard Support thread (GET /api/support/conversation); not in the list endpoint.
+    var support: InboxConversation?
 
     private var generation = 0
+
+    /// Yard Support, pinned above the inbox once it has a message (not under Archived/Blocked or a search).
+    var pinnedSupport: InboxConversation? {
+        guard filter == .inbox, query.isEmpty, let s = support, s.lastMessage != nil else { return nil }
+        return s
+    }
+
+    /// GET /api/support/conversation (best effort: the list works without it).
+    func loadSupport() async {
+        do {
+            support = try await SupportAPI.conversation()
+        } catch {
+            // Keep what we had; the next refresh tries again.
+        }
+    }
 
     var hasLoaded: Bool {
         if case .loaded = phase { return true }
@@ -33,6 +50,7 @@ final class InboxListModel {
         generation += 1
         let gen = generation
         if !hasLoaded || items.isEmpty { phase = .loading }
+        await loadSupport()
         do {
             let page = try await InboxAPI.conversations(filter: filter, query: query, cursor: nil)
             guard gen == generation else { return }
@@ -51,6 +69,7 @@ final class InboxListModel {
     func refresh() async {
         generation += 1
         let gen = generation
+        await loadSupport()
         do {
             let page = try await InboxAPI.conversations(filter: filter, query: query, cursor: nil)
             guard gen == generation else { return }
@@ -152,6 +171,7 @@ struct InboxView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.yard.bg.ignoresSafeArea())
             .navigationTitle("Inbox")
@@ -206,7 +226,7 @@ struct InboxView: View {
                     action: { Task { @MainActor in await model.load() } }
                 )
             case .loaded:
-                if model.items.isEmpty {
+                if model.items.isEmpty && model.pinnedSupport == nil {
                     emptyState
                         .refreshable { await model.refresh() }
                 } else {
@@ -229,8 +249,11 @@ struct InboxView: View {
                     case .archived:
                         EmptyState(title: "No archived conversations", message: "Archive a conversation to tidy your inbox. It comes back when someone writes.", systemImage: "archivebox")
                     case .inbox:
-                        EmptyState(title: "No messages yet", message: "Ask a brand about sizing, stock or delivery — start from any storefront or product.", systemImage: "bubble.left.and.bubble.right", actionTitle: "Browse brands") {
-                            router.push(.brandsDirectory)
+                        VStack(spacing: Spacing.m) {
+                            EmptyState(title: "No messages yet", message: "Ask a brand about sizing, stock or delivery — start from any storefront or product.", systemImage: "bubble.left.and.bubble.right", actionTitle: "Browse brands") {
+                                router.push(.brandsDirectory)
+                            }
+                            supportLink
                         }
                     }
                 }
@@ -248,6 +271,18 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets(top: Spacing.s, leading: Spacing.gutter, bottom: Spacing.s, trailing: Spacing.gutter))
                     .listRowBackground(Color.yard.bg)
                     .listRowSeparator(.hidden)
+            }
+            if let support = model.pinnedSupport {
+                Button {
+                    router.push(.support(orderId: nil, orderReference: nil))
+                } label: {
+                    InboxConversationRow(conversation: support)
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: Spacing.m, leading: Spacing.gutter, bottom: Spacing.m, trailing: Spacing.gutter))
+                .listRowBackground(Color.yard.bg)
+                .listRowSeparatorTint(Color.yard.line)
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 64 }
             }
             ForEach(model.items) { c in
                 Button {
@@ -274,12 +309,39 @@ struct InboxView: View {
                     .listRowBackground(Color.yard.bg)
                     .listRowSeparator(.hidden)
             }
+            if model.filter == .inbox && model.query.isEmpty && model.pinnedSupport == nil && model.nextCursor == nil {
+                supportLink
+                    .listRowInsets(EdgeInsets(top: Spacing.l, leading: Spacing.gutter, bottom: Spacing.l, trailing: Spacing.gutter))
+                    .listRowBackground(Color.yard.bg)
+                    .listRowSeparator(.hidden)
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.yard.bg)
         .refreshable { await model.refresh() }
-        .animation(Motion.spring, value: model.items.map(\.id))
+        .yardAnimation(Motion.spring, value: model.items.map(\.id))
+    }
+
+    /// "Message Yard Support" until the shopper's support thread exists (then it's the pinned row).
+    private var supportLink: some View {
+        Button {
+            router.push(.support(orderId: nil, orderReference: nil))
+        } label: {
+            HStack(spacing: Spacing.s) {
+                InboxSupportMark(size: 28)
+                Text("Message Yard Support")
+                    .font(.yardCaptionEmphasis)
+                    .foregroundStyle(Color.yard.ink)
+                Image(systemName: "chevron.right")
+                    .font(.yardMicro)
+                    .foregroundStyle(Color.yard.ink3)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(Text("Opens a conversation with Yard's team"))
     }
 
     private var filterBanner: some View {
@@ -394,11 +456,17 @@ private struct InboxSearchModifier: ViewModifier {
 /// One conversation: brand avatar, name, time, preview, state tags, unread dot.
 struct InboxConversationRow: View {
     let conversation: InboxConversation
+    // Not private: a private property would make the memberwise init private.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         let c = conversation
         HStack(alignment: .top, spacing: Spacing.m) {
-            BrandAvatar(name: c.brand.name, size: 52, verified: c.brand.verified)
+            if c.isSupport {
+                InboxSupportMark(size: 52)
+            } else {
+                BrandAvatar(name: c.brand.name, size: 52, verified: c.brand.verified)
+            }
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                     Text(c.brand.name)
@@ -428,6 +496,7 @@ struct InboxConversationRow: View {
                         .fill(Color.yard.violet)
                         .frame(width: 10, height: 10)
                         .padding(.top, 5)
+                        .scaleEffect(c.isUnread || reduceMotion ? 1 : 0.2)
                         .opacity(c.isUnread ? 1 : 0)
                         .accessibilityHidden(true)
                 }
@@ -441,6 +510,8 @@ struct InboxConversationRow: View {
                 }
             }
         }
+        // Read/unread flips (opening a thread, swipe Mark read/unread) ease instead of snapping.
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: c.isUnread)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(Text(c.isUnread ? "Unread" : ""))
@@ -478,6 +549,7 @@ private enum InboxPreviewData {
         InboxConversation(id: "cv_1", brand: InboxBrandRef(id: "b1", handle: "acme", name: "Acme Studio", verified: true), lastMessage: InboxLastMessage(preview: "Yes — the M fits true to size. Restock lands Friday.", at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-600)), side: "brand"), unread: 2, createdAt: "2026-11-01T10:00:00Z"),
         InboxConversation(id: "cv_2", brand: InboxBrandRef(id: "b2", handle: "lagos", name: "Lagos Thread"), lastMessage: InboxLastMessage(preview: "How long does delivery to London usually take?", at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-90_000)), side: "customer"), muted: true, createdAt: "2026-11-01T10:00:00Z"),
         InboxConversation(id: "cv_3", brand: InboxBrandRef(id: "b3", handle: "kumasi", name: "Kumasi Thread Co."), status: "resolved", lastMessage: InboxLastMessage(preview: "Thanks!", at: "2026-10-02T10:00:00Z", side: "customer"), createdAt: "2026-10-01T10:00:00Z"),
+        InboxConversation(id: "cv_4", brand: InboxBrandRef(id: "yard_support", handle: "support", name: "Yard Support", verified: true), lastMessage: InboxLastMessage(preview: "We've asked the brand for proof of delivery.", at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-1_200)), side: "support"), unread: 1, createdAt: "2026-11-01T10:00:00Z", kind: "support"),
     ]
 }
 

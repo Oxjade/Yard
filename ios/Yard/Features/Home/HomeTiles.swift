@@ -159,26 +159,20 @@ struct HomeDropTile: View {
     var body: some View {
         NavigationLink(value: Route.drop(id: drop.slug.isEmpty ? drop.id : drop.slug)) {
             VStack(alignment: .leading, spacing: 6) {
-                ZStack {
-                    Color.yard.surface2
-                    if drop.imageURL != nil {
-                        RemoteImage(url: drop.imageURL, maxPixelSize: 700)
-                    } else {
-                        Text(drop.name)
-                            .yardDisplay(28)
-                            .foregroundStyle(Color.yard.ink3)
-                            .multilineTextAlignment(.center)
-                            .padding(Spacing.m)
+                Color.clear
+                    .overlay {
+                        RemoteImage(url: drop.imageURL, maxPixelSize: 700) {
+                            BrandArtwork(name: drop.brandName, seed: drop.brand.id, style: .initials)
+                        }
                     }
-                }
+                    .overlay { PhotoScrim(start: 0.55, strength: 0.5) }
                 .aspectRatio(1 / HomeShape.dropRatio, contentMode: .fit)
                 .clipShape(.yardImage)
                 .overlay(alignment: .topLeading) {
-                    HStack(spacing: Spacing.xs) {
-                        Tag(drop.isLive ? "Live" : "Drop", style: drop.isLive ? .acid : .onPhoto, systemImage: drop.isLive ? "dot.radiowaves.left.and.right" : "bolt.fill")
-                        if drop.sponsored { Tag("Sponsored", style: .onPhoto) }
-                    }
-                    .padding(Spacing.s)
+                    // Compact status only: the 2-column tile (about 159pt inside on an SE) can't
+                    // hold a full status and a Sponsored capsule, so Sponsored sits in the caption.
+                    DropStatusBadge(drop: drop, phase: drop.livePhase(at: Date()), onPhoto: true, compact: true)
+                        .padding(Spacing.s)
                 }
                 .overlay(alignment: .bottomLeading) {
                     HomeDropCountdown(drop: drop).padding(Spacing.s)
@@ -189,7 +183,7 @@ struct HomeDropTile: View {
                         .font(.yardCallout.weight(.semibold))
                         .foregroundStyle(Color.yard.ink)
                         .lineLimit(1)
-                    Text([drop.brand.name ?? "", drop.accessLabel].filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text([drop.sponsored ? "Sponsored" : "", drop.brand.name ?? "", drop.accessLabel].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.yardCaption)
                         .foregroundStyle(Color.yard.ink2)
                         .lineLimit(1)
@@ -214,9 +208,7 @@ struct HomeDropCountdown: View {
                 .foregroundStyle(Color.yard.onPhoto)
                 .padding(.horizontal, Spacing.s)
                 .frame(height: 26)
-                .background(.ultraThinMaterial, in: Capsule())
-                .environment(\.colorScheme, .dark)
-                .contentTransition(.numericText())
+                .yardGlass(Capsule(), onPhoto: true)
         }
         .accessibilityLabel(Text(HomeDropCountdown.label(for: drop, now: Date())))
     }

@@ -1,9 +1,12 @@
 import SwiftUI
+import SafariServices
 
 /// Sign in or join (presented as a sheet by `router.present(.signIn)`, or pushed).
 ///
 /// - "Continue with Google" (and any other provider the server lists at GET /api/auth/providers)
 ///   → POST /api/auth/oauth/{provider}/start → in-app web sheet → /auth/complete (AuthWebSheet).
+///   An account with no recorded "shop or sell" choice then sees the root's full-screen
+///   "What brings you to Yard?" (RoleChoiceView); brand members go straight to Studio.
 /// - Email + password: POST /api/auth/sign-in (handles `verify_email`).
 /// - Create account: POST /api/auth/sign-up → "check your email".
 /// - "Email me a sign-in link": POST /api/auth/magic-link. "Forgot password?": POST /api/auth/password/forgot.
@@ -17,6 +20,7 @@ struct SignInView: View {
     @Environment(ToastCenter.self) private var toast
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(StudioStore.self) private var studio
 
     @AppStorage(AuthOnboarding.onboardedKey) private var onboarded: Bool = false
 
@@ -131,7 +135,7 @@ struct SignInView: View {
                 if showDemo {
                     YardButton("Continue as demo shopper", style: .secondary, isLoading: model.busy == .demo) {
                         Task { @MainActor in
-                            if await model.signInDemo() { await completeSignIn() }
+                            if await model.signInDemo() { await completeSignIn(social: false) }
                         }
                     }
                     .disabled(model.busy != nil && model.busy != .demo)
@@ -296,7 +300,7 @@ struct SignInView: View {
     private func submit() {
         Task { @MainActor in
             if await model.submit(focus: setFocus) {
-                await completeSignIn()
+                await completeSignIn(social: false)
             }
         }
     }
@@ -304,20 +308,25 @@ struct SignInView: View {
     private func handleWebOutcome(_ outcome: AuthWebOutcome) {
         let signedIn = model.finishSocial(outcome)
         guard signedIn else { return }
-        Task { @MainActor in await completeSignIn() }
+        Task { @MainActor in await completeSignIn(social: true) }
     }
 
     /// The server says signed in: re-read the session, confirm a shopper is there, then go on.
-    private func completeSignIn() async {
+    /// A social sign-in first asks "What brings you to Yard?" (as the website does), so a brand
+    /// signing in with Google isn't left in a shopper account with no way to start selling.
+    private func completeSignIn(social: Bool) async {
         focus = nil
         await session.didSignIn()
-        guard session.isSignedIn else {
+        guard let shopper = session.shopper else {
             model.reportUnconfirmedSignIn()
             return
         }
         justSignedIn = true
         signedInTick += 1
-        if onboarded {
+        // New accounts get the root's role screen; brand members open Studio (remembered mode);
+        // returning shoppers who finished Welcome just close.
+        studio.sync(shopper: shopper)
+        if studio.needsRoleChoice || studio.canOpenStudio || onboarded {
             close()
         } else {
             showWelcome = true

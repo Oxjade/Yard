@@ -52,7 +52,7 @@ struct Chip: View {
         }
         .buttonStyle(PressableButtonStyle())
         .disabled(!isEnabled)
-        .animation(Motion.snappy, value: isSelected)
+        .yardAnimation(Motion.snappy, value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

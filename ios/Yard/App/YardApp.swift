@@ -11,6 +11,7 @@ struct YardApp: App {
     @State private var saved = SavedStore()
     @State private var router = Router()
     @State private var toast = ToastCenter()
+    @State private var studio = StudioStore()
 
     /// Notification-center delegate and APNs token (Features/Notifications/NotificationsPush.swift).
     @UIApplicationDelegateAdaptor(YardPushAppDelegate.self) private var pushDelegate
@@ -27,14 +28,16 @@ struct YardApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // BEFORE the .environment calls: a modifier applied after them sits above them
+                // and can't read the router, follow store or session (it crashed at launch).
+                .yardPushNotifications()
                 .environment(session)
                 .environment(cart)
                 .environment(follows)
                 .environment(saved)
                 .environment(router)
                 .environment(toast)
-                // After the environment: it reads the router, follow store and session from it.
-                .yardPushNotifications()
+                .environment(studio)
                 .preferredColorScheme(preferredScheme)
                 .tint(Color.yard.ink)
                 .task {
@@ -42,6 +45,19 @@ struct YardApp: App {
                     YouRegion.restore(into: cart)
                 }
                 .onOpenURL { url in
+                    // Studio links (yard://studio/…) open Studio mode when this account has a brand.
+                    if let link = StudioLink(url: url) {
+                        if !studio.open(link) { toast.show("Studio isn't open for this account.") }
+                        return
+                    }
+                    // An email-change confirmation link (normally opened on the website).
+                    if YouEmailChangeLink.canHandle(url) {
+                        Task { @MainActor in
+                            let message = await YouEmailChangeLink.handle(url, session: session)
+                            toast.show(message)
+                        }
+                        return
+                    }
                     // Email sign-in and verification links are consumed in the app.
                     if AuthEmailLinks.canHandle(url) {
                         Task { @MainActor in
@@ -56,6 +72,14 @@ struct YardApp: App {
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     guard let url = activity.webpageURL else { return }
+                    if let link = StudioLink(url: url), studio.open(link) { return }
+                    if YouEmailChangeLink.canHandle(url) {
+                        Task { @MainActor in
+                            let message = await YouEmailChangeLink.handle(url, session: session)
+                            toast.show(message)
+                        }
+                        return
+                    }
                     if AuthEmailLinks.canHandle(url) {
                         Task { @MainActor in
                             if let message = await AuthEmailLinks.handle(url, session: session) { toast.show(message) }

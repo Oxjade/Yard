@@ -8,6 +8,7 @@ struct ProductGallery<Overlay: View>: View {
     @Binding var index: Int
     let onOpen: (Int) -> Void
     let overlayContent: () -> Overlay
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(images: [ProductImage], index: Binding<Int>, onOpen: @escaping (Int) -> Void, @ViewBuilder overlay: @escaping () -> Overlay) {
         self.images = images
@@ -59,6 +60,7 @@ struct ProductGallery<Overlay: View>: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .sensoryFeedback(.selection, trigger: index)
             }
 
             if images.count > 1 {
@@ -87,8 +89,8 @@ struct ProductGallery<Overlay: View>: View {
         }
         .padding(.horizontal, Spacing.s)
         .padding(.vertical, 6)
-        .background(Color.yard.scrim.opacity(0.28), in: Capsule())
-        .animation(Motion.snappy, value: index)
+        .yardGlass(Capsule(), onPhoto: true)
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: index)
         .accessibilityHidden(true)
     }
 
@@ -98,7 +100,7 @@ struct ProductGallery<Overlay: View>: View {
                 HStack(spacing: Spacing.s) {
                     ForEach(Array(images.enumerated()), id: \.offset) { offset, image in
                         Button {
-                            withAnimation(Motion.spring) { index = offset }
+                            withAnimation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion)) { index = offset }
                         } label: {
                             RemoteImage(url: image.url, contentMode: .fill, maxPixelSize: 200)
                                 .frame(width: 56, height: 68)
@@ -108,6 +110,7 @@ struct ProductGallery<Overlay: View>: View {
                                         .strokeBorder(offset == index ? Color.yard.ink : Color.yard.line, lineWidth: offset == index ? 2 : 1)
                                 )
                                 .opacity(offset == index ? 1 : 0.7)
+                                .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: index)
                         }
                         .buttonStyle(PressableButtonStyle())
                         .id(offset)
@@ -118,7 +121,7 @@ struct ProductGallery<Overlay: View>: View {
                 .padding(.horizontal, Spacing.gutter)
             }
             .onChange(of: index) { _, newValue in
-                withAnimation(Motion.spring) { proxy.scrollTo(newValue, anchor: .center) }
+                withAnimation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion)) { proxy.scrollTo(newValue, anchor: .center) }
             }
         }
     }
@@ -133,6 +136,7 @@ struct ProductPhotoViewer: View {
     @State private var dismissOffset: CGFloat = 0
     @State private var isZoomed: Bool = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(images: [ProductImage], startIndex: Int) {
         self.images = images
@@ -152,7 +156,7 @@ struct ProductPhotoViewer: View {
 
             TabView(selection: $index) {
                 ForEach(Array(images.enumerated()), id: \.offset) { offset, image in
-                    ProductZoomableImage(url: image.url, isZoomed: $isZoomed)
+                    ProductZoomableImage(url: image.url, photoAspectRatio: image.aspectRatio, isZoomed: $isZoomed)
                         .tag(offset)
                 }
             }
@@ -172,7 +176,7 @@ struct ProductPhotoViewer: View {
                         if dismissOffset > 120 || value.predictedEndTranslation.height > 260 {
                             dismiss()
                         } else {
-                            withAnimation(Motion.spring) { dismissOffset = 0 }
+                            withAnimation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion)) { dismissOffset = 0 }
                         }
                     }
             )
@@ -183,9 +187,10 @@ struct ProductPhotoViewer: View {
                         .font(.yardCaptionEmphasis)
                         .monospacedDigit()
                         .foregroundStyle(Color.yard.onPhoto)
+                        .yardNumericTransition(Double(index))
                         .padding(.horizontal, Spacing.m)
                         .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .yardGlass(Capsule(), onPhoto: true)
                 }
                 Spacer()
                 GlassIconButton(systemImage: "xmark", accessibilityLabel: "Close") {
@@ -198,67 +203,146 @@ struct ProductPhotoViewer: View {
         }
         .environment(\.colorScheme, .dark)
         .statusBarHidden(true)
+        .sensoryFeedback(.selection, trigger: index)
         .onChange(of: index) { _, _ in isZoomed = false }
     }
 }
 
-/// One photo that zooms (pinch / double-tap) and pans while zoomed.
+/// One photo that zooms (pinch / double-tap toward the tapped point) and pans while zoomed. Pan
+/// and pinch overshoot the edges with resistance and settle back with `Motion.spring`; under
+/// Reduce Motion they stop at the edge and settle with a short fade.
 @MainActor
 private struct ProductZoomableImage: View {
     let url: URL?
+    /// The photo's width / height from the API, if known (else read from the loaded image).
+    let photoAspectRatio: Double?
     @Binding var isZoomed: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
 
+    static let maxScale: CGFloat = 5
+    static let maxPixelSize: CGFloat = 2000
+    static let doubleTapScale: CGFloat = 2.5
+
     var body: some View {
-        RemoteImage(url: url, contentMode: .fit, maxPixelSize: 2000)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(scale)
-            .offset(offset)
-            .contentShape(Rectangle())
-            .gesture(
-                MagnifyGesture()
-                    .onChanged { value in
-                        scale = min(max(lastScale * value.magnification, 1), 5)
-                    }
-                    .onEnded { _ in
-                        lastScale = scale
-                        if scale <= 1.01 { reset() } else { isZoomed = true }
-                    }
-            )
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        offset = CGSize(width: lastOffset.width + value.translation.width,
-                                        height: lastOffset.height + value.translation.height)
-                    }
-                    .onEnded { _ in lastOffset = offset },
-                including: scale > 1 ? .all : .subviews
-            )
-            .onTapGesture(count: 2) {
-                withAnimation(Motion.spring) {
-                    if scale > 1 {
-                        reset()
-                    } else {
-                        scale = 2.5
-                        lastScale = 2.5
-                        isZoomed = true
-                    }
+        GeometryReader { geo in
+            let size = geo.size
+            RemoteImage(url: url, contentMode: .fit, maxPixelSize: Self.maxPixelSize)
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(scale)
+                .offset(offset)
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnifyGesture()
+                        .onChanged { value in
+                            let target = lastScale * value.magnification
+                            scale = reduceMotion ? min(max(target, 1), Self.maxScale) : Self.rubberScale(target)
+                        }
+                        .onEnded { _ in settle(in: size) }
+                )
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            let raw = CGSize(width: lastOffset.width + value.translation.width,
+                                             height: lastOffset.height + value.translation.height)
+                            offset = livePan(raw, in: size)
+                        }
+                        .onEnded { _ in settle(in: size) },
+                    including: scale > 1 ? .all : .subviews
+                )
+                .onTapGesture(count: 2, coordinateSpace: .local) { location in
+                    toggleZoom(at: location, in: size)
                 }
-            }
-            .accessibilityAddTraits(.isImage)
-            .accessibilityHint(Text("Double-tap to zoom"))
+        }
+        .accessibilityElement()
+        .accessibilityAddTraits(.isImage)
+        .accessibilityLabel(Text("Photo"))
+        .accessibilityHint(Text("Double-tap to zoom"))
     }
 
-    private func reset() {
-        scale = 1
-        lastScale = 1
-        offset = .zero
-        lastOffset = .zero
-        isZoomed = false
+    /// Pinch past 1× or 5× gives a little, then settles back.
+    static func rubberScale(_ s: CGFloat) -> CGFloat {
+        if s < 1 { return 1 - RubberBand.value(1 - s, limit: 0, dimension: 0.25) }
+        if s > maxScale { return maxScale + RubberBand.value(s - maxScale, limit: 0, dimension: 1) }
+        return s
+    }
+
+    /// The photo's aspect ratio: the API's, else the decoded image's, else the container's.
+    private func photoAspect(in size: CGSize) -> CGFloat {
+        if let ratio = photoAspectRatio, ratio.isFinite, ratio > 0 { return CGFloat(ratio) }
+        if let url, let image = ImagePipeline.shared.cachedImage(for: url, maxPixelSize: Self.maxPixelSize),
+           image.size.width > 0, image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        guard size.width > 0, size.height > 0 else { return 1 }
+        return size.width / size.height
+    }
+
+    /// The photo's drawn size at 1× (`.fit`: letterboxed when its shape differs from the screen's).
+    static func fittedSize(aspect: CGFloat, in size: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0, aspect.isFinite, aspect > 0 else { return size }
+        if aspect > size.width / size.height {
+            return CGSize(width: size.width, height: size.width / aspect)
+        }
+        return CGSize(width: size.height * aspect, height: size.height)
+    }
+
+    /// How far a photo zoomed to `scale` may pan before its edge comes inside the screen edge
+    /// (0 on an axis where the zoomed photo still fits the screen: it stays centred there).
+    static func panLimits(fitted: CGSize, scale: CGFloat, in size: CGSize) -> CGSize {
+        CGSize(width: max(0, (fitted.width * scale - size.width) / 2),
+               height: max(0, (fitted.height * scale - size.height) / 2))
+    }
+
+    private func limits(scale: CGFloat, in size: CGSize) -> CGSize {
+        Self.panLimits(fitted: Self.fittedSize(aspect: photoAspect(in: size), in: size), scale: scale, in: size)
+    }
+
+    private func clamp(_ o: CGSize, scale: CGFloat, in size: CGSize) -> CGSize {
+        let l = limits(scale: scale, in: size)
+        return CGSize(width: min(l.width, max(-l.width, o.width)), height: min(l.height, max(-l.height, o.height)))
+    }
+
+    private func livePan(_ raw: CGSize, in size: CGSize) -> CGSize {
+        if reduceMotion { return clamp(raw, scale: scale, in: size) }
+        let l = limits(scale: max(1, scale), in: size)
+        return CGSize(width: RubberBand.value(raw.width, limit: l.width, dimension: size.width * 0.2),
+                      height: RubberBand.value(raw.height, limit: l.height, dimension: size.height * 0.2))
+    }
+
+    private func settle(in size: CGSize) {
+        let s = min(max(scale, 1), Self.maxScale)
+        let o = s <= 1.01 ? CGSize.zero : clamp(offset, scale: s, in: size)
+        withAnimation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion)) {
+            scale = s <= 1.01 ? 1 : s
+            offset = o
+        }
+        lastScale = s <= 1.01 ? 1 : s
+        lastOffset = o
+        isZoomed = s > 1.01
+    }
+
+    private func toggleZoom(at location: CGPoint, in size: CGSize) {
+        withAnimation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion)) {
+            if scale > 1.01 {
+                scale = 1
+                offset = .zero
+            } else {
+                let s = Self.doubleTapScale
+                // Keep the tapped point under the finger.
+                let toward = CGSize(width: (size.width / 2 - location.x) * (s - 1),
+                                    height: (size.height / 2 - location.y) * (s - 1))
+                scale = s
+                offset = clamp(toward, scale: s, in: size)
+            }
+        }
+        lastScale = scale
+        lastOffset = offset
+        isZoomed = scale > 1.01
     }
 }
 

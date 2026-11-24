@@ -46,7 +46,9 @@ struct LiveActivityTrackButton: View {
             defer { isWorking = false }
             do {
                 let order = try await LiveActivityOrder.load(orderId: orderId)
-                if order.state == nil || order.isClosed {
+                if order.isClosed {
+                    message = "This order is closed."
+                } else if order.state == nil {
                     message = "Tracking starts once the brand ships it."
                 } else if order.state?.step == .delivered {
                     message = "This order has been delivered."

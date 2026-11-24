@@ -56,12 +56,14 @@ final class SearchResultsModel {
         inStockOnly = false
     }
 
-    /// Loads the first page with the current filters.
-    func load(currency: String) async {
+    /// Loads the first page with the current filters. `refreshing` (pull to refresh) keeps the
+    /// loaded results on screen instead of swapping them for the skeleton, and keeps them if it fails.
+    func load(currency: String, refreshing: Bool = false) async {
         guard !skipsNetwork else { return }
         generation += 1
         let current = generation
-        phase = .loading
+        let keepsContent: Bool = refreshing && phase == .loaded
+        if !keepsContent { phase = .loading }
         loadMoreError = nil
         isLoadingMore = false
         do {
@@ -79,6 +81,7 @@ final class SearchResultsModel {
         } catch {
             guard current == generation, !Task.isCancelled else { return }
             if let apiError = error as? APIError, apiError.isCancelled { return }
+            if keepsContent { return }
             phase = .failed(SearchLiveModel.message(for: error))
         }
     }

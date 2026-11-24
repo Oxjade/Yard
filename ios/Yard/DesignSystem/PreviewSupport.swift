@@ -16,6 +16,7 @@ extension View {
             .environment(SavedStore.preview())
             .environment(Router())
             .environment(toast)
+            .environment(StudioStore.preview(inStudio: false))
             .yardToastHost(toast)
             .tint(Color.yard.ink)
     }

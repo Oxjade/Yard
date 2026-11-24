@@ -22,6 +22,8 @@ final class AroundViewModel {
     private(set) var logos: [String: URL] = [:]
 
     @ObservationIgnored private var logosLoaded = false
+    /// A world-list fetch is running (independent of `phase`, which stays .loaded on refreshes).
+    @ObservationIgnored private var inFlight = false
 
     init() {}
 
@@ -53,7 +55,9 @@ final class AroundViewModel {
     // MARK: Loading
 
     func load() async {
-        if isLoading { return }
+        if inFlight || isLoading { return }
+        inFlight = true
+        defer { inFlight = false }
         if places.isEmpty { phase = .loading }
         do {
             let res = try await APIClient.shared.get(

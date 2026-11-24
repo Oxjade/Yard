@@ -81,8 +81,9 @@ final class ChartsViewModel {
         }
     }
 
-    /// Loads the board for the current query. `silent` refreshes keep the board on screen.
-    func load(silent: Bool = false) async {
+    /// Loads the board for the current query. Reloading the board already on screen (pull to
+    /// refresh, the refresh loop) keeps it there: no skeleton, and a failure only sets `refreshFailed`.
+    func load() async {
         let q = effectiveQuery
         generation += 1
         let gen = generation

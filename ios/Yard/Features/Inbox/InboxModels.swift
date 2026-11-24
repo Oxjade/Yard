@@ -37,7 +37,7 @@ struct InboxBrandRef: Decodable, Hashable, Sendable {
 struct InboxLastMessage: Decodable, Hashable, Sendable {
     let preview: String
     let at: String
-    /// "customer" | "brand" | "system".
+    /// "customer" | "brand" | "system" | "support" (Yard Support).
     let side: String
     let held: Bool
 
@@ -98,6 +98,11 @@ struct InboxConversation: Decodable, Hashable, Sendable, Identifiable {
     let createdAt: String
     /// Only on single-conversation reads.
     let interaction: InboxInteraction?
+    /// "brand" (a brand conversation) | "support" (the shopper's Yard Support thread). Missing = "brand".
+    let kind: String
+
+    /// The shopper's conversation with Yard Support (`conversation.brand` is always Yard Support).
+    var isSupport: Bool { kind == "support" }
 
     var isUnread: Bool { unread > 0 || markedUnread }
     /// Newest activity: the last message, else when it started.
@@ -109,7 +114,7 @@ struct InboxConversation: Decodable, Hashable, Sendable, Identifiable {
         return (m.side == "customer" && !m.held ? "You: " : "") + m.preview
     }
 
-    init(id: String, brand: InboxBrandRef, status: String = "open", locked: Bool = false, lastMessage: InboxLastMessage? = nil, unread: Int = 0, markedUnread: Bool = false, archived: Bool = false, muted: Bool = false, blockedByMe: Bool = false, blockedByThem: Bool = false, sample: Bool = false, createdAt: String = "", interaction: InboxInteraction? = nil) {
+    init(id: String, brand: InboxBrandRef, status: String = "open", locked: Bool = false, lastMessage: InboxLastMessage? = nil, unread: Int = 0, markedUnread: Bool = false, archived: Bool = false, muted: Bool = false, blockedByMe: Bool = false, blockedByThem: Bool = false, sample: Bool = false, createdAt: String = "", interaction: InboxInteraction? = nil, kind: String = "brand") {
         self.id = id
         self.brand = brand
         self.status = status
@@ -124,11 +129,17 @@ struct InboxConversation: Decodable, Hashable, Sendable, Identifiable {
         self.sample = sample
         self.createdAt = createdAt
         self.interaction = interaction
+        self.kind = kind
     }
 
     /// A copy with local read state cleared (after mark-read).
     func markingRead() -> InboxConversation {
-        InboxConversation(id: id, brand: brand, status: status, locked: locked, lastMessage: lastMessage, unread: 0, markedUnread: false, archived: archived, muted: muted, blockedByMe: blockedByMe, blockedByThem: blockedByThem, sample: sample, createdAt: createdAt, interaction: interaction)
+        InboxConversation(id: id, brand: brand, status: status, locked: locked, lastMessage: lastMessage, unread: 0, markedUnread: false, archived: archived, muted: muted, blockedByMe: blockedByMe, blockedByThem: blockedByThem, sample: sample, createdAt: createdAt, interaction: interaction, kind: kind)
+    }
+
+    /// A copy carrying `interaction` (list and send reads don't include it).
+    func withInteraction(_ interaction: InboxInteraction?) -> InboxConversation {
+        InboxConversation(id: id, brand: brand, status: status, locked: locked, lastMessage: lastMessage, unread: unread, markedUnread: markedUnread, archived: archived, muted: muted, blockedByMe: blockedByMe, blockedByThem: blockedByThem, sample: sample, createdAt: createdAt, interaction: interaction, kind: kind)
     }
 
     private struct Blocked: Decodable {
@@ -136,7 +147,7 @@ struct InboxConversation: Decodable, Hashable, Sendable, Identifiable {
         let byThem: Bool?
     }
 
-    enum CodingKeys: String, CodingKey { case id, brand, status, locked, lastMessage, unread, markedUnread, archived, muted, blocked, sample, createdAt, interaction }
+    enum CodingKeys: String, CodingKey { case id, brand, status, locked, lastMessage, unread, markedUnread, archived, muted, blocked, sample, createdAt, interaction, kind }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -154,6 +165,7 @@ struct InboxConversation: Decodable, Hashable, Sendable, Identifiable {
         sample = c.lenient(.sample, false)
         createdAt = c.lenient(.createdAt, "")
         interaction = c.lenientOptional(.interaction)
+        kind = c.lenient(.kind, "brand")
     }
 }
 
@@ -262,7 +274,7 @@ struct InboxAttachment: Decodable, Hashable, Sendable {
 struct InboxMessage: Decodable, Hashable, Sendable, Identifiable {
     let id: String
     let seq: Int
-    /// "customer" | "brand" | "system".
+    /// "customer" | "brand" | "system" | "support" (Yard Support's replies).
     let side: String
     /// "text" | "product" | "order" | "image" | "system".
     let kind: String
@@ -316,18 +328,44 @@ struct InboxMessage: Decodable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// GET /api/inbox/conversations/{id}/messages → `threadDto`.
+/// `threadDto.receipts`: how far the other side has read (`theirs`), and whether receipts are on.
+struct InboxReceipts: Decodable, Hashable, Sendable {
+    /// The other side has read every message with `seq <= theirsUpToSeq` (nil = nothing yet).
+    let theirsUpToSeq: Int?
+    let enabled: Bool
+
+    init(theirsUpToSeq: Int?, enabled: Bool) {
+        self.theirsUpToSeq = theirsUpToSeq
+        self.enabled = enabled
+    }
+
+    private struct Theirs: Decodable {
+        let upToSeq: Int?
+    }
+
+    enum CodingKeys: String, CodingKey { case theirs, enabled }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let theirs: Theirs? = c.lenientOptional(.theirs)
+        theirsUpToSeq = theirs?.upToSeq
+        enabled = c.lenient(.enabled, false)
+    }
+}
+
+/// GET /api/inbox/conversations/{id}/messages (and /api/support/conversation/messages) → `threadDto`.
 struct InboxThread: Decodable, Sendable {
     let conversation: InboxConversation
     let messages: [InboxMessage]
     let hasMore: Bool
+    let receipts: InboxReceipts?
 
-    enum CodingKeys: String, CodingKey { case conversation, messages, hasMore }
+    enum CodingKeys: String, CodingKey { case conversation, messages, hasMore, receipts }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         conversation = try c.decode(InboxConversation.self, forKey: .conversation)
         messages = c.lenient(.messages, [])
         hasMore = c.lenient(.hasMore, false)
+        receipts = c.lenientOptional(.receipts)
     }
 }
 

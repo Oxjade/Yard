@@ -244,6 +244,7 @@ enum DropActions {
         switch outcome {
         case .scheduled: return ("Reminder set. We'll alert you 10 minutes before it opens.", .success)
         case .denied: return ("Reminder set. Turn on notifications for Yard in Settings to get an alert on this iPhone.", .success)
+        case .failed: return ("Reminder set. We couldn't schedule an alert on this iPhone.", .success)
         case .tooSoon, .removed: return ("Reminder set", .success)
         }
     }
@@ -258,11 +259,15 @@ enum DropLocalReminder {
         case denied
         case tooSoon
         case removed
+        /// Notifications are allowed but iOS refused to schedule the alert.
+        case failed
     }
+
+    static let identifierPrefix = "yard.drop-reminder."
 
     static let leadTime: TimeInterval = 10 * 60
 
-    static func identifier(for dropId: String) -> String { "yard.drop-reminder.\(dropId)" }
+    static func identifier(for dropId: String) -> String { "\(identifierPrefix)\(dropId)" }
 
     /// Schedules (or reschedules: same identifier replaces) the alert. `prompt` asks for
     /// notification permission when it hasn't been asked yet; syncing passes false.
@@ -314,12 +319,22 @@ enum DropLocalReminder {
             try await center.add(request)
             return .scheduled
         } catch {
-            return .denied
+            return .failed
         }
     }
 
     static func cancel(dropId: String) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier(for: dropId)])
+    }
+
+    /// Removes every pending drop alert (sign out: they belong to the previous account).
+    static func cancelAll() async {
+        let center = UNUserNotificationCenter.current()
+        let pending: [UNNotificationRequest] = await center.pendingNotificationRequests()
+        let ids: [String] = pending.map { $0.identifier }.filter { $0.hasPrefix(identifierPrefix) }
+        if !ids.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+        }
     }
 
     /// Keeps the local alert in line with the server's reminder (set on the web, or moved by the brand).
@@ -338,17 +353,21 @@ enum DropLocalReminder {
 struct DropLivePulse: View {
     var color: Color = Color.yard.onAcid
     var size: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            PhaseAnimator([false, true]) { expanded in
-                Circle()
-                    .fill(color)
-                    .frame(width: size, height: size)
-                    .scaleEffect(expanded ? 2.6 : 1)
-                    .opacity(expanded ? 0 : 0.55)
-            } animation: { expanded in
-                expanded ? Animation.easeOut(duration: 1.1) : nil
+            // Under Reduce Motion the dot stays still: the colour alone says "live".
+            if !reduceMotion {
+                PhaseAnimator([false, true]) { expanded in
+                    Circle()
+                        .fill(color)
+                        .frame(width: size, height: size)
+                        .scaleEffect(expanded ? 2.6 : 1)
+                        .opacity(expanded ? 0 : 0.55)
+                } animation: { expanded in
+                    expanded ? Animation.easeOut(duration: 1.1) : nil
+                }
             }
             Circle()
                 .fill(color)
@@ -359,18 +378,62 @@ struct DropLivePulse: View {
     }
 }
 
-/// Status badge: acid with the live pulse when the shopper can act now, neutral otherwise.
+/// Status badge.
+/// - On a photo: a small frosted capsule (always dark glass, white text) with an acid live dot
+///   when the shopper can act now. It sits inset 16pt from the photo's corner.
+/// - Off a photo: acid with the pulse when hot, a neutral tag otherwise.
 struct DropStatusBadge: View {
     let drop: Drop
     let phase: DropLivePhase
     var onPhoto: Bool = false
+    /// Short labels ("Live", "Entries", "Soon") for narrow tiles such as Home's 2-column grid,
+    /// like Android's Home tile tags. The capsule never truncates.
+    var compact: Bool = false
+
+    init(drop: Drop, phase: DropLivePhase, onPhoto: Bool = false, compact: Bool = false) {
+        self.drop = drop
+        self.phase = phase
+        self.onPhoto = onPhoto
+        self.compact = compact
+    }
+
+    private var label: String {
+        guard compact else { return drop.statusLabel(phase) }
+        switch phase {
+        case .entriesOpen: return "Entries"
+        case .earlyAccess: return "Early"
+        case .live: return "Live"
+        case .ended: return "Ended"
+        case .upcoming: return "Soon"
+        }
+    }
 
     var body: some View {
-        if drop.isHot(phase) {
+        let hot = drop.isHot(phase)
+        if onPhoto {
+            HStack(spacing: 5) {
+                if hot {
+                    DropLivePulse(color: Color.yard.acid, size: 6)
+                        .frame(width: 12, height: 12)
+                }
+                Text(label.uppercased())
+                    .font(.yardMicro)
+                    .tracking(0.6)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .foregroundStyle(Color.yard.onPhoto)
+            .padding(.leading, hot ? 7 : 10)
+            .padding(.trailing, 10)
+            // Padding, not a fixed height, so large Dynamic Type grows the glass (as Android does).
+            .padding(.vertical, 5)
+            .frame(minHeight: 26)
+            .yardGlass(Capsule(), onPhoto: true)
+        } else if hot {
             HStack(spacing: 4) {
                 DropLivePulse(color: Color.yard.onAcid, size: 6)
                     .frame(width: 12, height: 12)
-                Text(drop.statusLabel(phase).uppercased())
+                Text(label.uppercased())
                     .font(.yardMicro)
                     .lineLimit(1)
             }
@@ -380,8 +443,25 @@ struct DropStatusBadge: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(Color.yard.acid))
         } else {
-            Tag(drop.statusLabel(phase), style: onPhoto ? .onPhoto : .neutral)
+            Tag(label, style: .neutral)
         }
+    }
+}
+
+/// A plain-text capsule on a photo matching `DropStatusBadge` (access label, "Sponsored").
+struct DropPhotoCapsule: View {
+    let text: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.yardMicro)
+            .tracking(0.6)
+            .lineLimit(1)
+            .foregroundStyle(Color.yard.onPhoto.opacity(0.9))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(minHeight: 26)
+            .yardGlass(Capsule(), onPhoto: true)
     }
 }
 

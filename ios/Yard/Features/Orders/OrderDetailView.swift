@@ -87,6 +87,7 @@ struct OrderDetailView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.order == nil)
             .yardScreenBackground()
             .navigationTitle("Your order")
             .navigationBarTitleDisplayMode(.inline)
@@ -449,6 +450,15 @@ struct OrderDetailView: View {
             // Help
             section("Help") {
                 VStack(spacing: 0) {
+                    // Yard Support with this order attached (web: "Get help from Yard" on the order page).
+                    Button {
+                        router.push(.support(orderId: order.id, orderReference: order.summary.reference))
+                    } label: {
+                        SettingsRow("Get help from Yard", systemImage: "questionmark.bubble")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(order.id.isEmpty)
+                    Divider().overlay(Color.yard.line)
                     Button {
                         router.push(.messageBrand(brandId: order.summary.brand.id))
                     } label: {
@@ -473,9 +483,11 @@ struct OrderDetailView: View {
                 }
             }
 
-            Text("Placed \(order.summary.placedDate.map { OrderText.longDate($0) } ?? "")")
-                .font(.yardCaption)
-                .foregroundStyle(Color.yard.ink3)
+            if let placed = order.summary.placedDate {
+                Text("Placed \(OrderText.longDate(placed))")
+                    .font(.yardCaption)
+                    .foregroundStyle(Color.yard.ink3)
+            }
         }
     }
 
@@ -670,6 +682,8 @@ struct OrderReturnSheet: View {
             }
         }
         .background(Color.yard.bg.ignoresSafeArea())
+        // Holds a typed note: only the X closes it.
+        .interactiveDismissDisabled()
         .yardSheet(detents: [.large])
     }
 

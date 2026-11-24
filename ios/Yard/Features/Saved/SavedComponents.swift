@@ -59,7 +59,7 @@ struct SavedSignInInvite: View {
     }
 }
 
-/// Bottom sheet to pick a size/variant before moving a saved piece to the bag.
+/// Bottom sheet to pick an option (variant) before moving a saved piece to the bag.
 @MainActor
 struct SavedVariantSheet: View {
     let product: Product
@@ -80,7 +80,7 @@ struct SavedVariantSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            YardSheetHeader("Choose a size", subtitle: product.title) { dismiss() }
+            YardSheetHeader("Choose an option", subtitle: product.title) { dismiss() }
             ScrollView {
                 FlowChips(variants: product.variants, selectedId: selectedId) { variant in
                     withAnimation(Motion.snappy) { selectedId = variant.id }
@@ -91,7 +91,7 @@ struct SavedVariantSheet: View {
                 if let selected {
                     PriceText(minor: selected.priceMinor, currency: product.currency, compareAtMinor: nil, font: .yardBodyEmphasis, color: Color.yard.ink)
                 }
-                YardButton(selected == nil ? "Pick a size" : "Move to bag", systemImage: "bag", style: .primary) {
+                YardButton(selected == nil ? "Pick an option" : "Move to bag", systemImage: "bag", style: .primary) {
                     guard let selected else { return }
                     dismiss()
                     onConfirm(selected)

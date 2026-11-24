@@ -147,6 +147,10 @@ enum OrderTimelineBuilder {
 /// The vertical timeline: dot column with connecting rails, title, timestamp, note.
 struct OrderTimelineView: View {
     let steps: [OrderTimelineStep]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The first time the timeline shows, the steps arrive one after another and the rails draw
+    /// down to the current step. Under Reduce Motion everything is simply there.
+    @State private var revealed: Bool = false
 
     init(steps: [OrderTimelineStep]) {
         self.steps = steps
@@ -155,9 +159,17 @@ struct OrderTimelineView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(steps.indices, id: \.self) { (index: Int) in
-                OrderTimelineRow(step: steps[index], isFirst: index == 0, isLast: index == steps.count - 1, nextState: index + 1 < steps.count ? steps[index + 1].state : nil)
+                OrderTimelineRow(
+                    step: steps[index],
+                    isFirst: index == 0,
+                    isLast: index == steps.count - 1,
+                    nextState: index + 1 < steps.count ? steps[index + 1].state : nil,
+                    revealed: revealed || reduceMotion,
+                    revealAnimation: reduceMotion ? nil : Motion.arrive.delay(Double(index) * 0.07)
+                )
             }
         }
+        .onAppear { revealed = true }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Order progress")
     }
@@ -168,6 +180,8 @@ private struct OrderTimelineRow: View {
     let isFirst: Bool
     let isLast: Bool
     let nextState: OrderTimelineStep.Progress?
+    let revealed: Bool
+    let revealAnimation: Animation?
 
     private var railColor: Color {
         guard let nextState else { return Color.clear }
@@ -188,6 +202,7 @@ private struct OrderTimelineRow: View {
                         .fill(railColor)
                         .frame(width: 1.5)
                         .frame(minHeight: 22, maxHeight: .infinity)
+                        .scaleEffect(x: 1, y: revealed ? 1 : 0, anchor: .top)
                         .padding(.vertical, Spacing.xs)
                 }
             }
@@ -212,7 +227,10 @@ private struct OrderTimelineRow: View {
             }
             .padding(.bottom, isLast ? 0 : Spacing.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(revealed ? 1 : 0)
+            .offset(y: revealed ? 0 : 6)
         }
+        .animation(revealAnimation, value: revealed)
         .accessibilityElement(children: .combine)
         .accessibilityValue(Text(accessibilityState))
     }
@@ -239,6 +257,7 @@ private struct OrderTimelineRow: View {
 struct OrderTimelineDot: View {
     let state: OrderTimelineStep.Progress
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(state: OrderTimelineStep.Progress) {
         self.state = state
@@ -272,7 +291,8 @@ struct OrderTimelineDot: View {
             }
         }
         .onAppear {
-            guard state == .current else { return }
+            // No repeating pulse under Reduce Motion: the solid current dot says enough.
+            guard state == .current, !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.5).repeatForever(autoreverses: false)) {
                 pulse = true
             }

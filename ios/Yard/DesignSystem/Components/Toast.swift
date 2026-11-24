@@ -100,9 +100,7 @@ struct ToastView: View {
         }
         .padding(.horizontal, Spacing.l)
         .padding(.vertical, Spacing.m)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.yard.line, lineWidth: 1))
-        .shadow(color: Color.yard.scrim.opacity(0.18), radius: 16, y: 6)
+        .yardGlass(Capsule(), elevation: .floating)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isStaticText)
     }
@@ -111,6 +109,7 @@ struct ToastView: View {
 @MainActor
 private struct ToastHostModifier: ViewModifier {
     let center: ToastCenter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
@@ -118,7 +117,7 @@ private struct ToastHostModifier: ViewModifier {
                 ToastView(toast: toast)
                     .padding(.horizontal, Spacing.gutter)
                     .padding(.top, Spacing.s)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .scale(scale: 0.94, anchor: .top)).combined(with: .opacity))
                     .onTapGesture { center.dismiss() }
                     .id(toast.id)
             }

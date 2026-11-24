@@ -15,7 +15,7 @@ import WebKit
 /// How the web flow ended.
 enum AuthWebOutcome: Equatable {
     /// Reached /auth/complete with `result=` (e.g. "signed_in", "cancelled", "invalid_state").
-    case completed(result: String)
+    case completed(result: String, message: String? = nil)
     /// The shopper closed the sheet.
     case cancelled
     /// The page could not load.
@@ -215,8 +215,8 @@ private struct AuthWebView: UIViewRepresentable {
         private func complete(with url: URL, webView: WKWebView) {
             guard !completed else { return }
             completed = true
-            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let result = items.first(where: { $0.name == "result" })?.value ?? "error"
+            let completion = AuthOAuthCompletion.parse(url)
+            let result = completion.result
             let store = webView.configuration.websiteDataStore.httpCookieStore
             parent.isLoading = true
             Task { @MainActor in
@@ -230,7 +230,7 @@ private struct AuthWebView: UIViewRepresentable {
                     attempt += 1
                     try? await Task.sleep(nanoseconds: 300_000_000)
                 }
-                self.parent.onFinish(.completed(result: result))
+                self.parent.onFinish(.completed(result: result, message: completion.message))
             }
         }
 

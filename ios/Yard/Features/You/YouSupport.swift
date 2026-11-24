@@ -240,6 +240,8 @@ struct YouTextField: View {
     var isSecure: Bool = false
     var error: String? = nil
     var contentType: UITextContentType? = nil
+    var capitalization: TextInputAutocapitalization = .never
+    var keyboard: UIKeyboardType = .default
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -251,8 +253,9 @@ struct YouTextField: View {
                     SecureField("", text: $text)
                 } else {
                     TextField("", text: $text)
-                        .textInputAutocapitalization(.never)
+                        .textInputAutocapitalization(capitalization)
                         .autocorrectionDisabled(true)
+                        .keyboardType(keyboard)
                 }
             }
             .textContentType(contentType)

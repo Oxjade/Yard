@@ -17,6 +17,8 @@ struct ProductDetailView: View {
     @State private var showsSizePrompt: Bool = false
     @State private var isAdding: Bool = false
     @State private var addedCount: Int = 0
+    /// "Added" on the main button for a moment after a real add succeeds.
+    @State private var justAdded: Bool = false
     @State private var descriptionExpanded: Bool = false
 
     @Environment(SessionStore.self) private var session
@@ -25,6 +27,7 @@ struct ProductDetailView: View {
     @Environment(SavedStore.self) private var saved
     @Environment(Router.self) private var router
     @Environment(ToastCenter.self) private var toast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(slug: String) {
         self.slug = slug
@@ -39,6 +42,7 @@ struct ProductDetailView: View {
 
     var body: some View {
         content
+            .yardCrossfade(model.phase)
             .background(Color.yard.bg.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -46,7 +50,7 @@ struct ProductDetailView: View {
             .toolbar { toolbarContent }
             .task(id: slug) {
                 if model.product == nil {
-                    await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+                    _ = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
                 }
             }
             .sheet(isPresented: $showsSizeSheet) {
@@ -58,9 +62,11 @@ struct ProductDetailView: View {
                 ProductPhotoViewer(images: model.product?.images ?? [], startIndex: start.index)
             }
             .sensoryFeedback(.success, trigger: addedCount)
-            .onChange(of: model.variant?.id) { _, newValue in
-                guard let id = newValue, session.isSignedIn else { return }
-                Task { @MainActor in await model.loadWatch(variantId: id) }
+            // Back-in-stock state for the selected variant: also for a variant selected from the
+            // start (single-size / no-option products) and again after signing in.
+            .task(id: "\(model.variant?.id ?? "")-\(session.isSignedIn)") {
+                guard let id = model.variant?.id, session.isSignedIn else { return }
+                await model.loadWatch(variantId: id)
             }
     }
 
@@ -78,7 +84,7 @@ struct ProductDetailView: View {
                        actionTitle: "Go back") { router.pop() }
         case .failed(let message):
             EmptyState.error(message: message) {
-                await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+                _ = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
             }
         case .loaded:
             if let product = model.product {
@@ -133,7 +139,9 @@ struct ProductDetailView: View {
         }
         .scrollIndicators(.hidden)
         .refreshable {
-            await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency)
+            if let message = await model.load(destinationCountry: cart.destinationCountry, currency: cart.currency) {
+                toast.show(message, style: .error)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             bottomBar(product)
@@ -297,7 +305,7 @@ struct ProductDetailView: View {
                 .transition(.opacity)
             }
         }
-        .animation(Motion.snappy, value: action)
+        .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: action)
     }
 
     private var effectiveQuantity: Int {
@@ -626,14 +634,7 @@ struct ProductDetailView: View {
         .padding(.horizontal, Spacing.gutter)
         .padding(.top, Spacing.m)
         .padding(.bottom, Spacing.s)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.yard.line).frame(height: 1)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .yardGlassBar()
     }
 
     private var sizePillTitle: String {
@@ -647,9 +648,10 @@ struct ProductDetailView: View {
     private func primaryButton(_ action: ProductBuyAction) -> some View {
         switch action {
         case .ready, .chooseSize:
-            YardButton("Add to bag", systemImage: "bag", isLoading: isAdding) {
+            YardButton(justAdded ? "Added" : "Add to bag", systemImage: justAdded ? "checkmark" : "bag", isLoading: isAdding) {
                 addToBag()
             }
+            .animation(Motion.resolved(Motion.snappy, reduceMotion: reduceMotion), value: justAdded)
         case .opening:
             notifyButton(prompt: true)
         case .soldOut:
@@ -714,7 +716,7 @@ struct ProductDetailView: View {
                                 .contentTransition(.numericText())
                         }
                     }
-                    .animation(Motion.spring, value: cart.count)
+                    .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: cart.count)
             }
             .accessibilityLabel(Text(cart.count > 0 ? "Bag, \(cart.count) items" : "Bag"))
         }
@@ -752,6 +754,12 @@ struct ProductDetailView: View {
                 addedCount += 1
                 model.quantity = 1
                 showsSizeSheet = false
+                justAdded = true
+                let tick = addedCount
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    if addedCount == tick { justAdded = false }
+                }
                 toast.show(qty > 1 ? "\(qty) added to your bag" : "Added to your bag", style: .success, systemImage: "bag.fill")
             } catch {
                 toast.show(error)
@@ -772,7 +780,7 @@ struct ProductDetailView: View {
         Task { @MainActor in
             do {
                 let now = try await model.toggleWatch(variantId: variantId)
-                toast.show(now ? "We'll let you know when it's available" : "Stopped watching this size",
+                toast.show(now ? "We'll let you know when it's available" : "Stopped watching this one",
                            style: now ? .success : .info,
                            systemImage: now ? "bell.fill" : "bell.slash")
             } catch {

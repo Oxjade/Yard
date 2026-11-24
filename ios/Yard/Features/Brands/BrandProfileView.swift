@@ -20,6 +20,7 @@ struct BrandProfileView: View {
     @Environment(ToastCenter.self) private var toast
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var model: BrandProfileModel
     @State private var tab: BrandProfileTab = .products
@@ -44,6 +45,7 @@ struct BrandProfileView: View {
         ZStack(alignment: .top) {
             Color.yard.bg.ignoresSafeArea()
             content
+                .yardCrossfade(model.phase)
             topBar
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -227,6 +229,7 @@ struct BrandProfileView: View {
                     } else if following {
                         Image(systemName: "checkmark")
                             .font(.system(size: 15, weight: .bold))
+                            .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.scale(scale: 0.4).combined(with: .opacity))
                     }
                     Text(following ? "Following" : "Follow")
                         .font(.yardBodyEmphasis)
@@ -234,19 +237,21 @@ struct BrandProfileView: View {
                 .foregroundStyle(following ? Color.yard.onPhoto : Color.yard.onPhotoInk)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(
-                    Capsule().fill(following ? Color.yard.onPhoto.opacity(0.16) : Color.yard.onPhoto)
-                )
-                .overlay(
-                    Capsule().strokeBorder(Color.yard.onPhoto.opacity(following ? 0.4 : 0), lineWidth: 1)
-                )
+                .background {
+                    // Following: the pill turns to dark glass so the photo shows through.
+                    if following {
+                        Color.clear.yardGlass(Capsule(), onPhoto: true)
+                    } else {
+                        Capsule().fill(Color.yard.onPhoto)
+                    }
+                }
                 .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle())
+            .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
             .disabled(followBusy)
             .sensoryFeedback(.success, trigger: followTick)
             .accessibilityLabel(following ? "Following \(brand.name). Double-tap to unfollow." : "Follow \(brand.name)")
-            .animation(Motion.spring, value: following)
+            .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: following)
 
             Button {
                 guard session.isSignedIn else {
@@ -259,11 +264,10 @@ struct BrandProfileView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Color.yard.onPhoto)
                     .frame(width: 54, height: 54)
-                    .background(Circle().fill(Color.yard.onPhoto.opacity(0.12)))
-                    .overlay(Circle().strokeBorder(Color.yard.onPhoto.opacity(0.35), lineWidth: 1))
+                    .yardGlass(Circle(), onPhoto: true)
                     .contentShape(Circle())
             }
-            .buttonStyle(PressableButtonStyle())
+            .buttonStyle(PressableButtonStyle(scale: Motion.pressScale))
             .accessibilityLabel("Message \(brand.name)")
         }
     }
@@ -313,7 +317,7 @@ struct BrandProfileView: View {
                         Text(Formatters.count(item.value))
                             .font(.yardNumber(28))
                             .foregroundStyle(Color.yard.onPhoto)
-                            .contentTransition(.numericText())
+                            .yardNumericTransition(Double(item.value))
                         Text(item.label)
                             .font(.yardCaption)
                             .foregroundStyle(Color.yard.onPhoto.opacity(0.68))
@@ -324,7 +328,7 @@ struct BrandProfileView: View {
                 }
             }
             .padding(.vertical, Spacing.xs)
-            .animation(Motion.spring, value: model.followers)
+            .animation(Motion.resolved(Motion.spring, reduceMotion: reduceMotion), value: model.followers)
         }
     }
 
@@ -399,8 +403,10 @@ struct BrandProfileView: View {
     }
 
     private func announcementRow(_ announcement: StorefrontConfig.Announcement) -> some View {
-        Button {
-            guard let href = announcement.href, !href.isEmpty else { return }
+        // An empty href is no link: no chevron, not tappable.
+        let hasLink: Bool = !(announcement.href ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        return Button {
+            guard hasLink, let href = announcement.href else { return }
             if let route = Route(path: href) {
                 router.push(route)
             } else if let url = Config.url(for: href) {
@@ -415,7 +421,7 @@ struct BrandProfileView: View {
                     .foregroundStyle(Color.yard.ink)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
-                if announcement.href != nil {
+                if hasLink {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.yard.ink3)
@@ -425,7 +431,7 @@ struct BrandProfileView: View {
             .yardCard(background: Color.yard.surface)
         }
         .buttonStyle(PressableButtonStyle())
-        .disabled(announcement.href == nil)
+        .disabled(!hasLink)
     }
 
     // MARK: Products
@@ -465,6 +471,12 @@ struct BrandProfileView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.l)
+            } else if model.productsLoadMoreFailed {
+                YardButton("Load more", style: .secondary, size: .medium, fullWidth: false) {
+                    Task { @MainActor in await model.loadMoreProducts() }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.l)
             }
         }
     }

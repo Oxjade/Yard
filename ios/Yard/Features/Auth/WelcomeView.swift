@@ -42,7 +42,7 @@ struct WelcomeView: View {
 
     private let steps: [StepCopy] = [
         StepCopy(title: "What do you shop for?", body: "Pick as many as you like. We use them to order Discover and suggest brands."),
-        StepCopy(title: "Which looks feel like you?", body: "Looks cut across categories. Pick any that fit, or skip."),
+        StepCopy(title: "Which vibes feel like you?", body: "Vibes cut across categories. Pick any that fit, or skip."),
         StepCopy(title: "Brands to start with", body: "Picked from your answers. Follow a few and their new pieces, drops and stories fill your Following feed."),
     ]
 

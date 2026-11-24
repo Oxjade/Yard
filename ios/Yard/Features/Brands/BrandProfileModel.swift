@@ -47,6 +47,8 @@ final class BrandProfileModel {
     private(set) var productsNextOffset: Int?
     private(set) var productsLoading: Bool = false
     private(set) var productsLoadingMore: Bool = false
+    /// The last next-page fetch failed: the view shows a "Load more" button to retry.
+    private(set) var productsLoadMoreFailed: Bool = false
     private(set) var productsError: String?
 
     private(set) var drops: [Drop] = []
@@ -139,6 +141,7 @@ final class BrandProfileModel {
     func loadProducts(brandId: String) async {
         productsLoading = true
         productsError = nil
+        productsLoadMoreFailed = false
         do {
             let page = try await APIClient.shared.get("/api/catalog/products", query: productQuery(brandId: brandId, offset: 0), as: ProductsPage.self)
             products = page.products
@@ -157,6 +160,7 @@ final class BrandProfileModel {
     func loadMoreProducts() async {
         guard let brandId = brand?.id, let offset = productsNextOffset, !productsLoadingMore, !productsLoading else { return }
         productsLoadingMore = true
+        productsLoadMoreFailed = false
         do {
             let page = try await APIClient.shared.get("/api/catalog/products", query: productQuery(brandId: brandId, offset: offset), as: ProductsPage.self)
             let known = Set(products.map(\.id))
@@ -164,7 +168,13 @@ final class BrandProfileModel {
             productsTotal = page.total
             productsNextOffset = page.nextOffset
         } catch {
-            // Keep what is shown; scrolling to the end again retries.
+            // Keep what is shown; the view offers "Load more" to retry (the last tile's
+            // onAppear won't fire again while it stays on screen).
+            if let apiError = error as? APIError, apiError.isCancelled {
+                // Cancelled: no retry prompt; the next scroll to the end retries.
+            } else {
+                productsLoadMoreFailed = true
+            }
         }
         productsLoadingMore = false
     }
