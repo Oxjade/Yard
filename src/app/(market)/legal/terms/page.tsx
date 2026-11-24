@@ -98,7 +98,7 @@ export default function TermsPage() {
 
       <LegalSection title="10. Selling on Yard">
         <p>
-          Brands that sell on Yard also agree to the <LegalLink href="/legal/seller-agreement">Seller agreement</LegalLink>. In summary, brands list their own products and are responsible for them, fulfil and ship their orders, handle returns in line with our <LegalLink href="/legal/refunds">Returns and refunds policy</LegalLink>, and respond to shoppers promptly. Sellers may list only genuine products: counterfeits, replicas, &quot;first copy&quot; items and other imitations of another brand&apos;s products are not allowed on Yard. Opening a store on Yard is free. Yard charges no commission on sales placed before 12 February 2027; after that, Yard charges a commission of 3.5% on each completed sale. Payouts are made to the brand&apos;s registered account after deducting commission and any refunds.
+          Brands that sell on Yard also agree to the <LegalLink href="/legal/seller-agreement">Seller agreement</LegalLink>. In summary, brands list their own products and are responsible for them, fulfil and ship their orders, handle returns in line with our <LegalLink href="/legal/refunds">Returns and refunds policy</LegalLink>, and respond to shoppers promptly. Opening a store on Yard is free. Yard charges no commission on sales placed before 12 February 2027; after that, Yard charges a commission of 3.5% on each completed sale. Payouts are made to the brand&apos;s registered account after deducting commission and any refunds.
         </p>
       </LegalSection>
 
