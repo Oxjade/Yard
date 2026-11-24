@@ -224,7 +224,7 @@ export function BrandsView() {
         title={founding ? "Founding brands" : allTab ? "All brands" : "Brand review"}
         description={
           founding
-            ? "Brands Yard creates and sets up itself. Each owner claims theirs with a single-use link, then adds a payout account to start selling."
+            ? "Brands Yard creates and sets up itself. Each owner claims theirs with a single-use link, and the shop can take orders from then on. A payout account is how Yard pays them."
             : allTab
               ? "Every brand on Yard, whatever its application says: drafts, rejected and no application, closed and founding brands included."
               : "Open a brand for its verification checklist, notes and history. Every decision asks for a reason."

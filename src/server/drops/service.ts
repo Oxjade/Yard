@@ -618,7 +618,7 @@ async function assertBrandCanRelease(brandId: string) {
   if (!b || b.review === "restricted" || b.review === "suspended") throw rule("Your brand can't schedule drops while its account is under review. Contact Yard support.")
   if (!b.launched) throw rule("Publish your storefront before scheduling a drop.")
   const sale = await brandForSale(d, brandId)
-  if (!sale.forSale) throw rule("Add a payout account before scheduling a drop, so shoppers can buy from it.")
+  if (!sale.forSale) throw rule("Drops can be scheduled once the owner claims this store, so shoppers can buy from it.")
 }
 
 export async function scheduleDrop(actor: BrandActor, row: DropRow, expectedVersion: number, ipHash: string | null) {

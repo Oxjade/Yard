@@ -7,8 +7,8 @@
  * exists), Yard hasn't unpublished it (brands.unpublished_at), a founding brand has launched
  * (launched_at, set by its first publish), and the brand isn't restricted, suspended or closed.
  * Selling follows the sell rule (src/lib/sell-rule.ts, the twin of catalog/for-sale-sql.ts
- * brandForSaleSql): an ordinary brand sells without a payout account (Yard holds its earnings);
- * an unclaimed founding brand never sells, and a claimed one sells once it has a payout account.
+ * brandForSaleSql): a payout account is never needed to sell (Yard holds the earnings and asks the
+ * brand to add one); only an unclaimed founding brand never sells.
  */
 
 import { notForSaleOf } from "./sell-rule"
@@ -90,9 +90,7 @@ export function publishBlockers(f: AdminStorefrontFacts): string[] {
 export function publishWarnings(f: AdminStorefrontFacts): string[] {
   const out: string[] = []
   if (f.liveProducts <= 0) out.push("No live products, so the shop will show as empty until products are published.")
-  const block = notForSaleOf(f.claimStatus, f.payoutAccount)
-  if (block === "unclaimed") out.push("Not claimed yet, so Buy stays off until the owner claims it and adds a payout account.")
-  else if (block === "no_payout_account") out.push("No payout account, so Buy stays off until the brand adds one in Studio.")
+  if (notForSaleOf(f.claimStatus) === "unclaimed") out.push("Not claimed yet, so Buy stays off until the owner claims it.")
   else if (!f.payoutAccount) out.push("No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio.")
   return out
 }
@@ -114,9 +112,9 @@ export function storefrontActionPlan(f: AdminStorefrontFacts, action: AdminStore
 
 /**
  * The sell check for Admin › Finance › Payout accounts: a live storefront, a brand in good standing,
- * and the sell rule (src/lib/sell-rule.ts, the same rule checkout uses). A payout account is a
- * blocker only where that rule makes it one (a founding brand); an ordinary brand without one can
- * sell, and `note` says to add one so Yard can pay it.
+ * and the sell rule (src/lib/sell-rule.ts, the same rule checkout uses). A payout account is never a
+ * blocker: a brand without one (ordinary, or a claimed founding brand) can sell, and `note` says to
+ * add one so Yard can pay it.
  */
 export function sellState(f: Pick<AdminStorefrontFacts, "claimStatus" | "reviewStatus" | "closed" | "hasVersion" | "founding" | "launched" | "unpublished" | "payoutAccount" | "underReview">): { canSell: boolean; reasons: string[]; note: string | null } {
   const reasons: string[] = []
@@ -124,9 +122,7 @@ export function sellState(f: Pick<AdminStorefrontFacts, "claimStatus" | "reviewS
   else if (f.reviewStatus === "suspended") reasons.push("Suspended")
   else if (f.reviewStatus === "restricted") reasons.push("Restricted")
   else if (f.underReview || f.reviewStatus === "pending_review") reasons.push("In review")
-  const block = notForSaleOf(f.claimStatus, f.payoutAccount)
-  if (block === "unclaimed") reasons.push("Not claimed")
-  if (block === "unclaimed" ? !f.payoutAccount : block === "no_payout_account") reasons.push("No payout account")
+  if (notForSaleOf(f.claimStatus) === "unclaimed") reasons.push("Not claimed")
   if (f.unpublished) reasons.push("Unpublished by Yard")
   else if (!f.hasVersion || (f.founding && !f.launched)) reasons.push("Storefront not published")
   const canSell = reasons.length === 0

@@ -17,8 +17,9 @@ import { listPayoutAccountsDb, type Db } from "./payout-accounts-db"
 /* Admin › Finance › Payout accounts (admin/payout-accounts-db.ts) on a real (in-memory) database with
  * every migration applied: every brand is listed with its payout account status, the account is
  * masked (bank, name, last 4; the sealed number never leaves the table), the filters and search
- * work, and "can sell" needs a live storefront, good standing and the sell rule (a payout account
- * only for founding brands; checked against catalog/for-sale-sql.ts brandForSaleSql below). */
+ * work, and "can sell" needs a live storefront, good standing and the sell rule (never a payout
+ * account; only an unclaimed founding brand is held back; checked against catalog/for-sale-sql.ts
+ * brandForSaleSql below). */
 
 let pg: PGlite
 let d: ReturnType<typeof drizzle>
@@ -138,7 +139,7 @@ describe("GET /api/admin/finance/payout-accounts (listPayoutAccountsDb)", () => 
     assert.deepEqual(by["restricted-label"].reasons, ["Restricted"])
     assert.deepEqual(by["closed-label"].reasons, ["Closed", "Storefront not published"])
     assert.equal(by["closed-label"].sellNote, null)
-    assert.deepEqual(by["founding-label"].reasons, ["Not claimed", "No payout account"])
+    assert.deepEqual(by["founding-label"].reasons, ["Not claimed"])
     assert.deepEqual(by["review-label"].reasons, ["In review", "Storefront not published"])
   })
 
@@ -150,18 +151,19 @@ describe("GET /api/admin/finance/payout-accounts (listPayoutAccountsDb)", () => 
 })
 
 describe("can sell matches the sell rule checkout uses (brandForSaleSql)", () => {
-  it("a claimed founding brand without a payout account can't sell; with one it can", async () => {
+  it("a claimed founding brand sells without a payout account (with the note to add one), and with one", async () => {
     await brand("claimed-label", { name: "Claimed Label", founding: true, claimStatus: "claimed", launchedAt: new Date("2026-11-01T10:00:00Z") })
     await published("claimed-label")
     const row = async () => (await listPayoutAccountsDb(db(), adminPayoutAccountsQuery.parse({ q: "claimed-label" }))).items[0]
     let r = await row()
-    assert.equal(r.canSell, false)
-    assert.deepEqual(r.reasons, ["No payout account"])
-    assert.equal(r.sellNote, null)
+    assert.equal(r.canSell, true)
+    assert.deepEqual(r.reasons, [])
+    assert.equal(r.sellNote, "Add a payout account to get paid")
     await account("claimed-label")
     r = await row()
     assert.equal(r.canSell, true)
     assert.deepEqual(r.reasons, [])
+    assert.equal(r.sellNote, null)
   })
 
   it("lib/sell-rule.ts agrees with brandForSaleSql on every claim status, with and without an account", async () => {
@@ -174,7 +176,7 @@ describe("can sell matches the sell rule checkout uses (brandForSaleSql)", () =>
         const key = `rule-${claimStatus}-${withAccount ? "acct" : "none"}`
         await brand(key, { founding: claimStatus !== "none", claimStatus })
         if (withAccount) await account(key)
-        assert.equal(await forSale(`b_${key}`), notForSaleOf(claimStatus, withAccount) === null, key)
+        assert.equal(await forSale(`b_${key}`), notForSaleOf(claimStatus) === null, key)
       }
     }
   })

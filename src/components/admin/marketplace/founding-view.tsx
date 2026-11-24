@@ -18,7 +18,7 @@ import { useApi } from "@/lib/api/use-api"
 import { formatNumber } from "@/lib/money"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { Initials } from "./bits"
-import { FoundingDetail, foundingStatusMeta } from "./founding-detail"
+import { FoundingDetail, foundingStatusMeta, noPayoutHint } from "./founding-detail"
 import { useCanDeleteBrands, useDeleteBrand } from "./delete-brand-dialog"
 import { countryName, formatDate, formatDateTime } from "./format"
 import { useSearchParam, writeParams } from "./url-state"
@@ -133,6 +133,7 @@ export function FoundingPanel({ phone }: { phone: boolean }) {
       cell: (b) => (
         <span className="flex flex-col items-start gap-1">
           <StatusBadge tone={foundingStatusMeta[b.status].tone}>{foundingStatusMeta[b.status].label}</StatusBadge>
+          {noPayoutHint(b) ? <span className="text-[11px] text-ink-3">No payout account</span> : null}
           {claimedNotLive(b) ? <StatusBadge tone="attention">Claimed, not live yet</StatusBadge> : null}
         </span>
       ),

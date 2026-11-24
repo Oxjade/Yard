@@ -12,7 +12,7 @@ import { countries, type CountryCode } from "@/config/markets"
 import { ApiError } from "@/lib/api/client"
 import { fieldErrors } from "@/lib/api/errors"
 import { acceptClaim, previewClaim, type ClaimAcceptDto, type ClaimPreviewDto } from "@/lib/api/founding"
-import { CLAIM_GOES_LIVE_COPY, PAYOUT_NUDGE_COPY, shopDisplay } from "@/lib/publish-for-brand"
+import { CLAIM_GOES_LIVE_COPY, PAYOUT_TO_GET_PAID_COPY, shopDisplay } from "@/lib/publish-for-brand"
 import { afterIdentityChange } from "@/lib/session/identity"
 import { useServerSession } from "@/lib/session/use-server-session"
 
@@ -23,7 +23,8 @@ import { useServerSession } from "@/lib/session/use-server-session"
  * account here, accepts the seller agreement and becomes the brand's owner. When the shop goes
  * live on claim ("Go live when they claim", or Yard already published it) the page says
  * "You're live 🎉" with the shop's link and the payout nudge; otherwise Studio opens on
- * Settings → Payouts. Either way selling starts once the payout account is saved.
+ * Settings → Payouts. Either way the shop can take orders without a payout account; the account is
+ * where Yard pays the brand.
  */
 
 type Refusal = { kind: "invalid" | "expired" | "revoked" | "used" | "on_hold" | "error"; message: string }
@@ -106,7 +107,7 @@ export function AuthClaim() {
         window.scrollTo({ top: 0 })
         return
       }
-      // Settings → Payouts, with the note that selling starts once the payout account is saved.
+      // Settings → Payouts, with the note that the shop can take orders and the account is how Yard pays it.
       const [path, hash] = r.redirect.split("#")
       router.replace(`${path}${path.includes("?") ? "&" : "?"}claimed=1${hash ? `#${hash}` : ""}`)
     } catch (cause) {
@@ -150,7 +151,7 @@ export function AuthClaim() {
           You&apos;re one of Yard&apos;s founding brands
         </p>
         <h1 className="mt-3 font-display text-display-lg text-balance break-words text-ink">Claim {p.brand.name}</h1>
-        <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Thank you for being one of the first brands on Yard. Your store is ready: we set it up for you. Claim it to become its owner, then add your payout account in Studio to start selling.</p>
+        <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-2">Thank you for being one of the first brands on Yard. Your store is ready: we set it up for you. Claim it to become its owner and your shop can take orders. Add your payout account in Studio so Yard can pay you.</p>
         {p.goesLive ? (
           <p className="mt-4 flex items-start gap-2.5 rounded-lg border border-violet/30 bg-violet/10 px-4 py-3 text-sm leading-relaxed text-ink">
             <RocketLaunchIcon weight="fill" aria-hidden className="mt-0.5 size-4 shrink-0 text-violet" />
@@ -320,7 +321,7 @@ function LiveNow({ brand, shop }: { brand: string; shop: ClaimAcceptDto["shop"] 
             <WalletIcon weight="fill" aria-hidden className="size-4 text-acid" />
             One thing left
           </h2>
-          <p className="text-sm leading-relaxed text-ink-2">{PAYOUT_NUDGE_COPY.replace(/^One thing left: a/, "A")}</p>
+          <p className="text-sm leading-relaxed text-ink-2">{PAYOUT_TO_GET_PAID_COPY.replace("One thing left: a", "A")}</p>
           <Button asChild variant="primary" size="lg" className="w-full sm:w-fit">
             <Link href={payoutHref}>Add payout account</Link>
           </Button>

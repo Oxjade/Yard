@@ -7,7 +7,6 @@ import {
   CLAIM_GOES_LIVE_COPY,
   EMPTY_SHOP_WARNING,
   GO_LIVE_ON_CLAIM_DEFAULT,
-  PAYOUT_NUDGE_COPY,
   PAYOUT_TO_GET_PAID_COPY,
   publishChecklist,
   publishForBrandBlock,
@@ -181,10 +180,11 @@ describe("you're live email", () => {
     assert.equal(last[1].href, "/studio/settings#payouts")
   })
 
-  it("says Buy waits for the payout account only for a founding brand (lib/sell-rule.ts)", () => {
-    const c = shopLiveCopy({ ...base, variant: "claim", payout: false, buyNeedsPayout: true })
-    assert.equal(c.linkParagraphs!.at(-1)![0].text.trim(), PAYOUT_NUDGE_COPY)
-    assert.equal(PAYOUT_NUDGE_COPY, "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes.")
+  it("a founding brand's claim variant says the same: the shop takes orders, the account is how Yard pays (lib/sell-rule.ts)", () => {
+    const c = shopLiveCopy({ ...base, variant: "claim", payout: false })
+    assert.equal(c.linkParagraphs!.at(-1)![0].text.trim(), PAYOUT_TO_GET_PAID_COPY)
+    const text = c.linkParagraphs!.map((p) => p.map((r) => r.text).join("")).join("\n")
+    assert.doesNotMatch(text, /so shoppers can buy|Buy stays off/)
   })
 
   it("claim variant", () => {

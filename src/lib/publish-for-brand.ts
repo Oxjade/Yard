@@ -48,7 +48,7 @@ export function publishChecklist(f: Pick<PublishForBrandFacts, "logo" | "banner"
  *
  * Unclaimed founding brands are allowed: Yard already launches them itself today (Yard setup
  * publishes the storefront from Studio, storefront.ts sets launched_at), so this is the same act
- * from the tray. They're still never for sale until claimed with a payout account (sellable.ts).
+ * from the tray. They're still never for sale until claimed (sellable.ts brandForSaleSql).
  */
 export function publishForBrandBlock(f: Pick<PublishForBrandFacts, "name" | "reviewStatus" | "underReview">): string | null {
   if (f.reviewStatus === "suspended") return `Yard has suspended ${f.name}. Reinstate it from Brands first.`
@@ -116,9 +116,7 @@ export function suggestionStillFits(s: { kind: string; baseVersion: number | nul
 /* ---------- Copy ---------- */
 
 export const CLAIM_GOES_LIVE_COPY = "Your shop goes live the moment you claim it. Change anything later in Studio."
-/** A founding brand (lib/sell-rule.ts): Buy stays off until its payout account is saved. */
-export const PAYOUT_NUDGE_COPY = "One thing left: add your payout account so shoppers can buy. Takes about 2 minutes."
-/** Every other brand: the shop takes orders already, and the account is where Yard pays it. */
+/** Every brand, founding or not (lib/sell-rule.ts): the shop takes orders already, and the account is where Yard pays it. */
 export const PAYOUT_TO_GET_PAID_COPY = "Your shop can take orders now. One thing left: add your payout account so Yard can pay you. Takes about 2 minutes."
 export const PAYOUTS_PATH = "/studio/settings#payouts"
 export const shopPath = (handle: string) => `/brands/${handle}`

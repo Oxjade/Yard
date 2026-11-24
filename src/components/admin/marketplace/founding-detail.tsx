@@ -48,11 +48,14 @@ import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
  * tray (no dialogs); every write goes to the server and shows the server's own message.
  */
 
+/** A claimed founding brand sells without a payout account (lib/sell-rule.ts); Admin shows a small hint that it has none. */
+export const noPayoutHint = (b: Pick<FoundingBrandRow, "claimStatus" | "hasPayoutAccount">) => b.claimStatus === "claimed" && !b.hasPayoutAccount
+
 export const foundingStatusMeta: Record<FoundingStatus, { label: string; tone: "info" | "attention" | "neutral" | "success"; hint: string }> = {
   setting_up: { label: "Setting up", tone: "info", hint: "Yard is setting it up. No claim link is out." },
   link_sent: { label: "Link sent", tone: "attention", hint: "A claim link is waiting for the owner." },
-  claimed: { label: "Claimed", tone: "neutral", hint: "Claimed. Selling starts once the owner adds a payout account and the storefront is published." },
-  live: { label: "Live", tone: "success", hint: "Claimed, payout account added and storefront published." },
+  claimed: { label: "Claimed", tone: "neutral", hint: "Claimed. It takes orders once its storefront is published. A payout account is how Yard pays the owner." },
+  live: { label: "Live", tone: "success", hint: "Claimed and storefront published, so it takes orders. A payout account is how Yard pays the owner." },
 }
 
 const fieldClass = "h-10 rounded-md border-white/10 bg-white/[0.02] text-[13px]"
@@ -344,7 +347,7 @@ function CreateSheet({ open, onOpenChange, onCreated }: { open: boolean; onOpenC
       lead={<Initials name={f.name || "New brand"} size="lg" />}
       actions={
         <div className="grid gap-2.5">
-          {stepNote ? <p className="text-[11.5px] leading-snug text-ink-3">{stepNote}</p> : <p className="text-[11.5px] leading-snug text-ink-3">It&apos;s created verified, with the Founding badge on, starter shipping and a storefront draft. It stays hidden until its storefront is published, and isn&apos;t for sale until the owner claims it and adds a payout account.</p>}
+          {stepNote ? <p className="text-[11.5px] leading-snug text-ink-3">{stepNote}</p> : <p className="text-[11.5px] leading-snug text-ink-3">It&apos;s created verified, with the Founding badge on, starter shipping and a storefront draft. It stays hidden until its storefront is published, and isn&apos;t for sale until the owner claims it. Once claimed it can take orders; a payout account is how Yard pays the owner.</p>}
           <ActionErrorNote error={failure} onReload={() => window.location.reload()} />
           <div className="flex flex-wrap items-center justify-end gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
             <Button type="button" size="sm" variant="secondary" className="h-10 sm:h-9" onClick={() => onOpenChange(false)}>
@@ -536,6 +539,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved, onDeleted }
       badges={
         <>
           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          {noPayoutHint(b) ? <StatusBadge tone="muted">No payout account</StatusBadge> : null}
           {b.foundingBadge ? <StatusBadge tone="neutral">Founding badge on</StatusBadge> : <StatusBadge tone="muted">Badge off</StatusBadge>}
           {onHold ? <StatusBadge tone="danger">{b.reviewStatus === "suspended" ? "Suspended" : "Restricted"}</StatusBadge> : null}
         </>
@@ -569,7 +573,7 @@ function BrandSheet({ id: brandId, row, open, onOpenChange, onSaved, onDeleted }
       <ClaimSection brand={b} onSaved={saved} />
       <BadgeSection brand={b} onSaved={saved} />
       {unclaimed ? <ProfileSection key={`${b.id}:${b.logo?.mediaId}:${b.banner?.mediaId}`} brand={b} onSaved={saved} disabled={onHold} /> : null}
-      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} claimStatus={b.claimStatus} /> : null}
+      {b.claimStatus === "claimed" ? <BrandEmailSection brandId={b.id} brandName={b.name} /> : null}
 
       <DetailSection title="Activity">
         <ServerActivity subjectIds={[b.id]} extra={b.createdAt ? [{ at: `${b.createdAt}T00:00:00.000Z`, label: "Founding brand created" }] : []} empty="No activity recorded yet." />

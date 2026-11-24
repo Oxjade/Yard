@@ -75,7 +75,7 @@ export type SeoProductInput = {
   subcategory?: string | null
   variants: SeoVariant[]
   brand: SeoBrandRef
-  /** False while the brand isn't selling yet (founding brand not claimed / no payout account). */
+  /** False while the brand isn't selling yet (a founding brand not claimed yet). */
   forSale: boolean
   /** ISO time an upcoming drop opens: the piece can't be bought before then. */
   releaseAt?: string | null

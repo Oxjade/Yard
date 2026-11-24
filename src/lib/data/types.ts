@@ -126,7 +126,7 @@ export type Brand = {
   returnsDays: number
   /** Live catalogue only: Yard shows the "Founding brand" badge (an admin toggle). */
   foundingBadge?: boolean
-  /** Live catalogue only: false while a founding brand isn't selling yet (unclaimed, or no payout account). */
+  /** Live catalogue only: false while a founding brand isn't selling yet (unclaimed). */
   forSale?: boolean
   /** Live catalogue only: the brand has published a storefront (its name links to /brands/<handle>). */
   hasStorefront?: boolean

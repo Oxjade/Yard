@@ -81,8 +81,6 @@ export async function savePayoutAccount(actor: BrandActor, input: SavePayoutAcco
   if (!created.ok) throw rule(created.message)
   return withTx(async (tx) => {
     const now = new Date()
-    const [prior] = await tx.select({ brandId: brandPayoutAccounts.brandId }).from(brandPayoutAccounts).where(eq(brandPayoutAccounts.brandId, actor.brandId)).limit(1)
-    const firstAccount = !prior
     const row = {
       brandId: actor.brandId,
       country: input.country,
@@ -115,10 +113,9 @@ export async function savePayoutAccount(actor: BrandActor, input: SavePayoutAcco
     afterCommit(async () => {
       await publish(channels.admin, "finance.payout_account_changed", { brandId: actor.brandId })
     })
-    // A claimed founding brand starts selling once it has a payout account: drop the public memo.
-    // Search stores availability and sizes as zero while a brand isn't selling, so re-index its
-    // catalogue on the first account (a later bank change doesn't change what is for sale).
-    catalogChanged(firstAccount ? { reindexBrands: [actor.brandId] } : { brands: [actor.brandId] })
+    // A payout account doesn't change what is for sale (lib/sell-rule.ts): a claimed founding brand
+    // already sells from its claim (auth/claims.ts re-indexes then). Drop the public memo.
+    catalogChanged({ brands: [actor.brandId] })
     return toAccountDto(saved)
   })
 }

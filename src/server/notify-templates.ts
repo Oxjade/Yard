@@ -97,7 +97,7 @@ export const templates = {
   "brand.status": { category: "account_status", build: (v) => ({ title: `Yard ${s(v.status, "updated")} ${s(v.brand, "your brand")}`, body: `Reason: ${s(v.reason)}.` }) },
   // Founding brands: an owner claimed the store Yard set up.
   "brand.approved": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "Your brand")} is approved`, body: "You can sell on Yard now. Add your pieces, set up your storefront and plan your first drop. Need guidance? Message @support from Yard Support in Studio." }) },
-  "founding.claimed": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "A founding brand")} was claimed`, body: `${s(v.owner, "Its owner")} is now the owner. Selling starts once a payout account is added.` }) },
+  "founding.claimed": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "A founding brand")} was claimed`, body: `${s(v.owner, "Its owner")} is now the owner. The shop can take orders now; they add a payout account so Yard can pay them.` }) },
   // F1 self-test (dev only)
   selftest: { category: "system_alert", build: (v) => ({ title: "Self-test notification", body: `Transaction self-test ${s(v.run)}.` }) },
 } satisfies Record<string, Template>

@@ -23,7 +23,7 @@ export const brands = pgTable(
     /**
      * Founding brands (set up by Yard before launch, then claimed by their owner). `claim_status`
      * 'none' is every ordinary brand; 'unclaimed' is visible once launched but never for sale;
-     * 'claimed' sells once a payout account exists (catalog/sellable.ts brandForSaleSql).
+     * 'claimed' sells, with or without a payout account (catalog/sellable.ts brandForSaleSql).
      */
     founding: boolean("founding").notNull().default(false),
     foundingBadge: boolean("founding_badge").notNull().default(false),

@@ -35,7 +35,8 @@ import { assertBrandImages, slugify } from "./studio"
  *
  *  - A founding brand is an ordinary `brands` row: review_status 'verified', founding = true,
  *    claim_status 'unclaimed'. It is public once its storefront is published (launched_at) and
- *    never for sale until claimed AND it has a payout account (sellable.ts brandForSaleSql).
+ *    never for sale until claimed (sellable.ts brandForSaleSql). Once claimed it sells with or without
+ *    a payout account; without one Yard holds its earnings and emails it to add one (ledger/payout-needed-db.ts).
  *  - Yard setup is a temporary brand_members row (role yard_setup) plus a brand session that only
  *    openSetupSession creates (session_auth method yard_setup, 8 h). The DAL re-checks the admin's
  *    brands.founding permission and the unclaimed state on every request, and route() limits it
@@ -92,8 +93,12 @@ function assertNotOnHold(b: typeof brands.$inferSelect) {
 
 /* ---------- Status and rows ---------- */
 
-export function deriveFoundingStatus(b: { claimStatus: string; launchedAt: Date | null }, opts: { pendingLink: boolean; hasPayoutAccount: boolean }): FoundingStatus {
-  if (b.claimStatus === "claimed") return opts.hasPayoutAccount && b.launchedAt ? "live" : "claimed"
+/**
+ * "Live": claimed, launched and its storefront published (and not unpublished by Yard), so it takes
+ * orders. A payout account plays no part (lib/sell-rule.ts); the admin UI hints when it's missing.
+ */
+export function deriveFoundingStatus(b: { claimStatus: string; launchedAt: Date | null; unpublishedAt?: Date | null }, opts: { pendingLink: boolean; storefrontPublished: boolean }): FoundingStatus {
+  if (b.claimStatus === "claimed") return b.launchedAt && opts.storefrontPublished && !b.unpublishedAt ? "live" : "claimed"
   return opts.pendingLink ? "link_sent" : "setting_up"
 }
 
@@ -126,6 +131,7 @@ async function rowsFor(d: Executor, list: (typeof brands.$inferSelect)[]): Promi
     const link = links.find((l) => l.brandId === b.id) ?? null
     const pendingLive = !!link && link.expiresAt.getTime() > now
     const hasPayoutAccount = payout.some((p) => p.brandId === b.id)
+    const storefrontPublished = live.some((v) => v.brandId === b.id)
     const draft = drafts.find((x) => x.brandId === b.id)
     const cover = typeof draft?.config.coverMediaId === "string" ? draft.config.coverMediaId : null
     const c = counts.find((x) => x.brandId === b.id)
@@ -146,13 +152,13 @@ async function rowsFor(d: Executor, list: (typeof brands.$inferSelect)[]): Promi
       foundingBadge: b.foundingBadge,
       reviewStatus: b.reviewStatus,
       claimStatus: b.claimStatus === "claimed" ? "claimed" : "unclaimed",
-      status: deriveFoundingStatus(b, { pendingLink: pendingLive, hasPayoutAccount }),
+      status: deriveFoundingStatus(b, { pendingLink: pendingLive, storefrontPublished }),
       createdAt: b.joinedAt,
       launchedAt: b.launchedAt?.toISOString() ?? null,
       claimedAt: b.claimedAt?.toISOString() ?? null,
       claimedBy: claimer ? { id: claimer.id, name: claimer.name } : null,
       hasPayoutAccount,
-      storefrontPublished: live.some((v) => v.brandId === b.id),
+      storefrontPublished,
       goLiveOnClaim: b.goLiveOnClaim,
       products: { total: c?.total ?? 0, published: c?.published ?? 0 },
       claimLink: link ? { id: link.id, email: link.email, status: pendingLive ? "pending" : "expired", createdAt: link.createdAt.toISOString(), expiresAt: link.expiresAt.toISOString() } : null,

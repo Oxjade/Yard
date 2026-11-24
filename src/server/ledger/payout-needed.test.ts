@@ -183,6 +183,17 @@ if (!CHILD) {
       assert.equal(row.payoutNeededSince, null)
     })
 
+    it("a claimed founding brand without a payout account gets the email and the reminder too (it sells from its claim)", async () => {
+      const b = await brand("founder")
+      await d.update(brands).set({ founding: true, claimStatus: "claimed", launchedAt: T0 }).where(eq(brands.id, b))
+      const r = await paid(await sale(b, 3_000_000, T0), T0)
+      assert.ok("queued" in r[0] && r[0].queued === 2)
+      assert.deepEqual((await outbox()).map((x) => x.toEmail).sort(), ["money@founder.shop", "owner@founder.shop"])
+      await d.delete(emailOutbox)
+      const reminded = await sendPayoutReminders(db(), inTx, enqueue, { now: at(72) })
+      assert.ok(reminded.length === 1 && "queued" in reminded[0] && reminded[0].variant === "reminder" && reminded[0].queued === 2)
+    })
+
     it("at most one per brand in 24 hours, however many orders; the next one counts every sale waiting", async () => {
       const b = await brand("busy")
       await paid(await sale(b, 1_000_000, T0), T0)

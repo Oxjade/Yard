@@ -7,7 +7,7 @@ import { mediaSrc } from "../media"
 import { variantLabelOf } from "./dto"
 import { brandApprovedSql, notSampleBrandSql } from "./sample-guard"
 import { brandForSaleSql } from "./for-sale-sql"
-import type { NotForSaleReason } from "../../lib/sell-rule"
+import { notForSaleOf, type NotForSaleReason } from "../../lib/sell-rule"
 
 /**
  * The one public-visibility predicate for products: published (or scheduled and due, before the
@@ -40,12 +40,10 @@ export function brandListedSql() {
   return and(brandApprovedSql(brands.reviewStatus, brands.id), brandLaunchedSql())!
 }
 
-// The one not-for-sale predicate (founding brands) and its reasons: for-sale-sql.ts and lib/sell-rule.ts.
+// The one not-for-sale predicate (unclaimed founding brands) and its reason: for-sale-sql.ts and lib/sell-rule.ts.
 export { brandForSaleSql } from "./for-sale-sql"
 export type { NotForSaleReason } from "../../lib/sell-rule"
 
-/** Why a brand isn't selling, from its claim status (only meaningful when brandForSaleSql is false). */
-export const notForSaleReason = (claimStatus: string): NotForSaleReason => (claimStatus === "unclaimed" ? "unclaimed" : "no_payout_account")
 
 /** The sentence shoppers see for a brand that isn't selling yet. */
 export const notForSaleMessage = (brandName: string | null | undefined) => `${brandName ?? "This brand"} isn't selling on Yard yet. Tap Notify me to hear when it opens.`
@@ -94,7 +92,7 @@ export async function getSellableVariants(variantIds: string[]): Promise<
     currency: string
     /** 0 whenever the brand isn't selling (forSale false), whatever is on hand. */
     available: number
-    /** False for an unclaimed founding brand, or a claimed one without a payout account. Show "Notify me", not "Sold out". */
+    /** False for an unclaimed founding brand. Show "Notify me", not "Sold out". */
     forSale: boolean
     notForSale: NotForSaleReason | null
     imagePath?: string
@@ -146,7 +144,7 @@ export async function getSellableVariants(variantIds: string[]): Promise<
       currency: r.currency,
       available: r.forSale ? Math.max(0, r.onHand - r.held) : 0,
       forSale: !!r.forSale,
-      notForSale: r.forSale ? null : notForSaleReason(r.claimStatus),
+      notForSale: r.forSale ? null : notForSaleOf(r.claimStatus),
       ...(imagePath ? { imagePath } : {}),
     }
   })

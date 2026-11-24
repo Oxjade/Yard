@@ -120,7 +120,7 @@ describe("Admin › Brands › Publish / Unpublish storefront", () => {
     assert.deepEqual(publishBlockers(empty), [])
     assert.deepEqual(publishWarnings(empty), ["No live products, so the shop will show as empty until products are published.", "No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio."])
     const founding = await facts("founding-label")
-    assert.deepEqual(publishWarnings(founding), ["No payout account, so Buy stays off until the brand adds one in Studio."])
+    assert.deepEqual(publishWarnings(founding), ["No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio."])
     assert.deepEqual(publishBlockers(await facts("suspended-label")), ["Yard has suspended suspended-label. Reinstate it from Brands first.".replace("suspended-label", "Suspended Label")])
     assert.deepEqual(publishBlockers(await facts("review-label")), ["Review Label's application isn't approved yet. Approve it before publishing its storefront."])
     assert.deepEqual(publishBlockers(await facts("closed-label")), ["Closed Label is closed, so its storefront can't be published."])
@@ -220,7 +220,7 @@ describe("Admin › Brands › Publish / Unpublish storefront", () => {
     assert.deepEqual(storefrontActionPlan(await facts("claimed-label"), "publish"), { kind: "run" })
     assert.deepEqual(storefrontActionPlan(await facts("claimed-nodraft"), "publish"), { kind: "run" })
     assert.deepEqual(storefrontActionPlan(await facts("golive-label"), "publish"), { kind: "already" })
-    assert.deepEqual(publishWarnings(await facts("claimed-label")), ["No payout account, so Buy stays off until the brand adds one in Studio."])
+    assert.deepEqual(publishWarnings(await facts("claimed-label")), ["No payout account yet. The shop can take orders, but Yard can't pay the brand until it adds one in Studio."])
   })
 
   it("Make live: the brand launches, its public page opens and its published products show", async () => {
@@ -259,7 +259,7 @@ describe("Admin › Brands › Publish / Unpublish storefront", () => {
     assert.deepEqual(storefrontActionPlan(base, "unpublish"), { kind: "run" })
     assert.deepEqual(storefrontActionPlan({ ...base, unpublished: true }, "publish"), { kind: "run" })
     assert.deepEqual(storefrontActionPlan({ ...base, founding: true, claimStatus: "unclaimed" }, "publish"), { kind: "run" })
-    assert.deepEqual(publishWarnings({ ...base, founding: true, claimStatus: "unclaimed", payoutAccount: false }), ["Not claimed yet, so Buy stays off until the owner claims it and adds a payout account."])
+    assert.deepEqual(publishWarnings({ ...base, founding: true, claimStatus: "unclaimed", payoutAccount: false }), ["Not claimed yet, so Buy stays off until the owner claims it."])
     assert.deepEqual(storefrontActionPlan({ ...base, reviewStatus: "restricted" }, "publish"), { kind: "blocked", message: "Yard has restricted X, so publishing is paused. Lift the restriction first." })
   })
 })

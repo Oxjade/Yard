@@ -77,8 +77,9 @@ Every reminder's footer links there ("Not into reminders? Switch them off in Stu
 ## Payout account needed (always sent, not opt-out-able)
 
 A brand doesn't need a payout account to sell: Buy stays on and Yard holds what it earns in the
-ledger. The one exception is a founding brand: once claimed, its Buy turns on when its payout account
-is saved (the sell rule: `src/lib/sell-rule.ts`, `catalog/for-sale-sql.ts` `brandForSaleSql`). When it sells without one, Yard emails it to add one (`brand_payout_needed`, category
+ledger. That includes a claimed founding brand, which takes orders from its claim; only an unclaimed
+founding brand never sells (the sell rule: `src/lib/sell-rule.ts`, `catalog/for-sale-sql.ts`
+`brandForSaleSql`). When a brand, founding or not, sells without one, Yard emails it to add one (`brand_payout_needed`, category
 **payouts**, transactional). Copy: `payoutNeededCopy` in `src/lib/brand-emails.ts`; rules and the
 Studio banner: `src/lib/payout-needed.ts`; queries: `src/server/ledger/payout-needed-db.ts` (tested on
 PGlite in `payout-needed.test.ts`); wiring: `src/server/ledger/payout-needed.ts`.
@@ -160,8 +161,8 @@ reviewed before publishing, so lifting a restriction is the "listing approved" m
   Change anything in Studio anytime. ("Studio" links to `/studio`.)
   *(No payout account yet:)* Your shop can take orders now. One thing left: add your payout account so
   Yard can pay you. Takes about 2 minutes. **Add my payout account** → `/studio/settings#payouts`
-  *(A founding brand, where Buy waits for the account, `buy` 1:)* One thing left: add your payout
-  account so shoppers can buy. Takes about 2 minutes.
+  (The same for a founding brand: it takes orders from its claim. A `buy` var on emails queued under
+  the old rule is ignored.)
 - Button: See my shop → `/brands/{handle}`
 
 **You're live** (on claim)
@@ -237,12 +238,10 @@ Prefilled bodies (editable):
 - **Publish your storefront**: Your storefront is set up but not published yet, so Yard shoppers can't
   find you. / Head to Storefront in Studio, check your banner and story, and hit Publish. Your pieces
   show up the moment it's live.
-- **Add a payout account**: Your shop can take orders, but there's no payout account on file yet, so
-  we've got nowhere to send your earnings. Add one so Yard can pay you. / It takes about two minutes:
-  Studio, then Settings, then Payouts. Only the last four digits ever show in Studio. *(A claimed
-  founding brand, where Buy waits for the account:)* the first paragraph reads "There's no payout
-  account on file yet, so Buy stays off on your shop and we've got nowhere to send your earnings. Add
-  one and shoppers can buy straight away."
+- **Add a payout account**: Your shop can take orders now, but there's no payout account on file yet,
+  so we've got nowhere to send your earnings. Add one so Yard can pay you. / It takes about two
+  minutes: Studio, then Settings, then Payouts. Only the last four digits ever show in Studio. (The
+  same words for a claimed founding brand.)
 - **Photos need love**: Your pieces look great, but a few of the photos aren't doing them justice yet.
   / Quick wins: natural light, a clean background, the whole piece in frame and a close-up of the
   details. Shoppers buy what they can see. / Swap them in Studio whenever you're ready.

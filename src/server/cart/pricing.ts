@@ -66,7 +66,7 @@ export async function priceLines(lines: { variantId: string; qty: number }[], cu
     if (!s) {
       return { variantId: l.variantId, productId: null, brandId: null, title: null, variantLabel: null, imagePath: null, qty: l.qty, available: 0, unitPrice: null, unitMinor: 0, lineMinor: 0, status: "unavailable" as const, unavailableReason: "gone" as const }
     }
-    // A brand that isn't selling yet (founding, unclaimed or without a payout account): shown, never
+    // A brand that isn't selling yet (an unclaimed founding brand): shown, never
     // priced, never grouped for shipping or checkout.
     if (!s.forSale) {
       return {

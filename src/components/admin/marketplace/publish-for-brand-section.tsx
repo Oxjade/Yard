@@ -96,7 +96,7 @@ function Section({ brandId, brandName, onPublished }: { brandId: string; brandNa
             </p>
           ) : null}
           <p className="text-[11.5px] text-ink-3">
-            {unclaimed ? "Shoppers can find it at once, but it isn't for sale until the owner claims it and adds a payout account." : `We'll email ${name}'s owners and admins “You're live 🎉”${p.payoutAccount ? "." : ", with a nudge to add their payout account."}`}
+            {unclaimed ? "Shoppers can find it at once, but it isn't for sale until the owner claims it." : `We'll email ${name}'s owners and admins “You're live 🎉”${p.payoutAccount ? "." : ", with a nudge to add their payout account."}`}
           </p>
           <ActionErrorNote error={failure} onReload={() => window.location.reload()} />
           <div className="flex flex-wrap items-center justify-end gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">

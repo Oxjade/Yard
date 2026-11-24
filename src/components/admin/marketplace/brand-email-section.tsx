@@ -15,7 +15,6 @@ import { errorMessage, fieldErrors } from "@/lib/api/errors"
 import { actionKey } from "@/lib/api/founding"
 import { useApi } from "@/lib/api/use-api"
 import { BRAND_EMAIL_BODY_MAX, BRAND_EMAIL_PRESETS, BRAND_EMAIL_SUBJECT_MAX, brandEmailPresets, type BrandEmailPreset } from "@/lib/brand-emails"
-import { payoutAccountNeededToSell } from "@/lib/sell-rule"
 import { useNow } from "@/hooks/use-now"
 import { cn } from "@/lib/utils"
 import { useAdminSession } from "@/components/admin/trust/shared"
@@ -27,8 +26,7 @@ const fieldClass = "h-10 rounded-md border-white/10 bg-white/[0.02] text-[13px]"
 type EmailsQuery = ReturnType<typeof useApi<BrandEmailContextDto>>
 
 type Draft = { preset: BrandEmailPreset; subject: string; body: string }
-/** `claimStatus` picks the payout wording: Buy is off without an account only for a founding brand (lib/sell-rule.ts). */
-const draftFor = (preset: BrandEmailPreset, brand: string, claimStatus = "none"): Draft => ({ preset, subject: brandEmailPresets[preset].subject(brand), body: brandEmailPresets[preset].body(brand, { buyNeedsPayout: payoutAccountNeededToSell(claimStatus) }) })
+const draftFor = (preset: BrandEmailPreset, brand: string): Draft => ({ preset, subject: brandEmailPresets[preset].subject(brand), body: brandEmailPresets[preset].body(brand) })
 
 /** "Tue 11:04 PM": when a capped brand can be emailed again, in the admin's own time zone. */
 const sendAgainAt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
@@ -44,13 +42,13 @@ const sendAgainAt = (iso: string) => new Date(iso).toLocaleString(undefined, { w
  * looking at it and helping it list, so the composer only opens when asked, and only then takes
  * focus (the subject). Collapsing keeps the draft.
  */
-export function BrandEmailSection({ brandId, brandName, claimStatus }: { brandId: string; brandName: string; claimStatus?: string }) {
+export function BrandEmailSection({ brandId, brandName }: { brandId: string; brandName: string }) {
   const session = useAdminSession()
   if (!session.can("brands.email")) return null
-  return <EmailSection key={brandId} brandId={brandId} brandName={brandName} claimStatus={claimStatus} />
+  return <EmailSection key={brandId} brandId={brandId} brandName={brandName} />
 }
 
-function EmailSection({ brandId, brandName, claimStatus }: { brandId: string; brandName: string; claimStatus?: string }) {
+function EmailSection({ brandId, brandName }: { brandId: string; brandName: string }) {
   const id = useId()
   const q = useApi(brandEmailKeys.one(brandId), () => getBrandEmails(brandId), { revalidateOnFocus: true })
   const ctx = q.data
@@ -91,17 +89,16 @@ function EmailSection({ brandId, brandName, claimStatus }: { brandId: string; br
         <CaretDownIcon className={cn("size-4 shrink-0 text-ink-3 transition-transform duration-150", open && "rotate-180")} aria-hidden />
       </button>
       <div id={`${id}-panel`} hidden={!open} className="min-w-0">
-        {mounted ? <Composer id={id} brandId={brandId} brandName={brandName} claimStatus={claimStatus} q={q} /> : null}
+        {mounted ? <Composer id={id} brandId={brandId} brandName={brandName} q={q} /> : null}
       </div>
     </section>
   )
 }
 
-function Composer({ id, brandId, brandName, claimStatus, q }: { id: string; brandId: string; brandName: string; claimStatus?: string; q: EmailsQuery }) {
+function Composer({ id, brandId, brandName, q }: { id: string; brandId: string; brandName: string; q: EmailsQuery }) {
   const now = useNow(60_000)
   const ctx = q.data
   const name = ctx?.brand.name ?? brandName
-  const claim = ctx?.brand.claimStatus ?? claimStatus
   const [draft, setDraft] = useState<Draft>(() => draftFor("finish_listing", name))
   const [errors, setErrors] = useState<{ subject?: string; body?: string }>({})
   const [busy, setBusy] = useState<"send" | "preview" | null>(null)
@@ -117,7 +114,7 @@ function Composer({ id, brandId, brandName, claimStatus, q }: { id: string; bran
   const blocked = ctx && !recipients.length ? (ctx.brand.claimStatus === "unclaimed" ? `${name} has no owner yet. Send the claim link first.` : `${name} has no active owner or admin to email.`) : capped ? `${name} already got ${ctx!.dailyLimit} emails from Yard in the last 24 hours.` : null
 
   function choose(p: BrandEmailPreset) {
-    setDraft(draftFor(p, name, claim))
+    setDraft(draftFor(p, name))
     setErrors({})
     setPreview(null)
     setFailure(null)
@@ -174,7 +171,7 @@ function Composer({ id, brandId, brandName, claimStatus, q }: { id: string; bran
       q.mutate(r)
       const to = r.recipients.length === 1 ? (r.recipients[0].name ?? r.recipients[0].email) : plural(r.emailed, "person", "people")
       toast.success(r.created ? `Sent to ${to}` : "That email already went out", { description: r.created ? "It leaves the outbox in a moment. Recorded in the audit log." : "Nothing was sent twice." })
-      setDraft(draftFor(draft.preset, name, claim))
+      setDraft(draftFor(draft.preset, name))
       setPreview(null)
       key.current = actionKey()
     } catch (cause) {

@@ -519,7 +519,7 @@ function LivePayoutAccount({ brandId, role, fallbackCountry }: { brandId: string
         <div role="status" className="mb-3 flex items-start gap-2.5 rounded-md border border-violet/40 bg-violet/[0.08] p-3">
           <Info className="mt-0.5 size-4 shrink-0 text-violet" aria-hidden />
           <p className="min-w-0 text-sm text-ink-2">
-            <span className="text-ink">Your store is yours.</span> Add your payout account to start selling: shoppers can see your pieces now, and Buy turns on as soon as it&apos;s saved.
+            <span className="text-ink">Your store is yours.</span> Your shop can take orders now. Add your payout account so Yard can pay you.
           </p>
         </div>
       ) : null}

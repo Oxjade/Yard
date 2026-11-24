@@ -72,7 +72,7 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
   const drawClosed = (phase === "live" || phase === "ended") && drop?.access === "draw"
   // The drop module explains the buy box while the drop decides it: upcoming, live, or a closed draw.
   const activeDrop = drop && (phase === "upcoming" || phase === "live" || drawClosed) ? drop : null
-  // A founding brand that isn't selling yet (unclaimed, or no payout account): the piece shows,
+  // A founding brand that isn't selling yet (unclaimed): the piece shows,
   // but the buy box offers Notify me and Follow instead of Add to cart (the server refuses it too).
   const opening = brand.forSale === false || product.brandSummary?.forSale === false
   const hydrated = useHydrated()

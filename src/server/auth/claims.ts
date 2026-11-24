@@ -24,8 +24,9 @@ import { endBrandSessions } from "./session"
  * issueClaimLink, a brand_invites row of kind founding_claim, role owner). /auth/claim POSTs the
  * token here: preview, then accept. Accepting proves the email, records the seller agreement,
  * makes the claimant the brand's OWNER, removes every Yard setup membership and ends those
- * sessions, marks the brand claimed and opens a brand session on it. Selling turns on only once
- * the owner adds a payout account (catalog/sellable.ts brandForSaleSql).
+ * sessions, marks the brand claimed and opens a brand session on it. Selling turns on with the claim,
+ * payout account or not (catalog/sellable.ts brandForSaleSql); without one, Yard holds the earnings
+ * and emails the owner to add one (ledger/payout-needed-db.ts).
  *
  * Refusals are distinct so the page can say what happened: unknown 404, expired 410, used 409,
  * revoked 410, brand on hold 403. Every refusal of a real link is audited; attempts are rate
