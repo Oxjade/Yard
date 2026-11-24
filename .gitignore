@@ -19,6 +19,8 @@
 
 # production
 /build
+# the bundled release tools (npm run build › scripts/bundle-tools.mjs)
+/tools/
 
 # misc
 .DS_Store

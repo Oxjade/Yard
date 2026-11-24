@@ -42,6 +42,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Bundled release tools (scripts/bundle-tools.mjs output).
+    "tools/**",
   ]),
 ]);
 

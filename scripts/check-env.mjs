@@ -1,5 +1,13 @@
 #!/usr/bin/env node
-// node scripts/check-env.mjs  (tools/check-env.mjs in a release)
+// On the server (a release built by CI, run as the yard user with /etc/yard.env loaded):
+//   sudo runuser -u yard -- bash -c 'set -a; . /etc/yard.env; set +a; cd /home/yard/app && node tools/check-env.mjs'
+// In a checkout with dev dependencies:
+//   node --conditions=react-server --import tsx scripts/check-env.mjs
+//
+// tools/check-env.mjs is THIS file bundled into plain JavaScript by scripts/bundle-tools.mjs (npm run
+// build's postbuild), because a release has no TypeScript loader for the "@/server" path alias.
+// Run as plain `node scripts/check-env.mjs` where the alias can't load, it hands over to
+// tools/check-env.mjs when that exists, so the old command keeps working in a release.
 //
 // Validates the server's configuration exactly as the server will at startup (src/server/env.ts)
 // and prints EVERY problem at once, one per line, so a deployment is fixed in one pass rather than
@@ -22,8 +30,10 @@
 // Support, the home page's JSON-LD sameAs and llms.txt.
 //   YARD_SOCIAL_INSTAGRAM  YARD_SOCIAL_TIKTOK  YARD_SOCIAL_X  YARD_SOCIAL_YOUTUBE  YARD_SOCIAL_THREADS
 //   YARD_SOCIAL_FACEBOOK   YARD_SOCIAL_SNAPCHAT  YARD_SOCIAL_WHATSAPP  YARD_SOCIAL_LINKEDIN
+import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { parseEnv } from "node:util"
 
 process.env.NODE_ENV ||= "production"
@@ -35,8 +45,29 @@ for (const file of [`.env.${nodeEnv}.local`, nodeEnv === "test" ? null : ".env.l
   for (const [k, v] of Object.entries(parseEnv(readFileSync(p, "utf8")))) if (process.env[k] === undefined) process.env[k] = v
 }
 
+// The server's own validation. Plain `node` can't resolve the "@/server" alias (nor load TypeScript):
+// then run the bundled tools/check-env.mjs of this release instead, with the same environment.
+let getEnv
 try {
-  const { getEnv } = await import("@/server/env")
+  ;({ getEnv } = await import("@/server/env"))
+} catch (e) {
+  const missing = e?.code === "ERR_MODULE_NOT_FOUND" || e?.code === "ERR_UNSUPPORTED_DIR_IMPORT" || e?.code === "ERR_UNKNOWN_FILE_EXTENSION" || /server-only|cannot be imported/i.test(String(e?.message))
+  if (!missing) throw e
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const bundled = [path.join(process.cwd(), "tools", "check-env.mjs"), path.join(here, "..", "tools", "check-env.mjs")].find((p) => existsSync(p) && path.resolve(p) !== fileURLToPath(import.meta.url))
+  if (!bundled) {
+    console.error(
+      "check-env: this Node can't load the server's TypeScript sources here, and there is no bundled tools/check-env.mjs.\n" +
+        "  In a release: cd to the release folder (/home/yard/app) and run node tools/check-env.mjs (CI's npm run build bundles it).\n" +
+        "  In a checkout: node --conditions=react-server --import tsx scripts/check-env.mjs (or npm run build first).",
+    )
+    process.exit(1)
+  }
+  const r = spawnSync(process.execPath, [bundled, ...process.argv.slice(2)], { stdio: "inherit", env: process.env })
+  process.exit(r.status ?? 1)
+}
+
+try {
   const env = getEnv()
   const db = env.databaseUrl ? `Postgres (${new URL(env.databaseUrl).host}${new URL(env.databaseUrl).pathname})` : "PGlite (embedded)"
   const seo = env.seo

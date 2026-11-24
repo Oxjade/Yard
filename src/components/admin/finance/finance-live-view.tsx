@@ -11,8 +11,9 @@ import { useSearchParam, writeParams } from "./table"
 import { PayoutsLiveTab } from "./payouts-live-tab"
 import { FinanceOperations } from "./finance-live-operations"
 import { FinanceControls } from "./finance-live-controls"
+import { BachsLiveTab } from "./bachs-live-tab"
 
-type Tab = "overview" | "payouts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation"
+type Tab = "overview" | "payouts" | "batches" | "ledger" | "adjustments" | "brands" | "reconciliation" | "bachs"
 const options: { value: Tab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "payouts", label: "Payouts" },
@@ -21,6 +22,7 @@ const options: { value: Tab; label: string }[] = [
   { value: "adjustments", label: "Adjustments" },
   { value: "brands", label: "Brand settings" },
   { value: "reconciliation", label: "Reconciliation" },
+  { value: "bachs", label: "Bachs" },
 ]
 type Overview = {
   currencies: { currency: string; providerClearingMinor: number; commissionMinor: number; adjustmentsMinor: number; brandPendingMinor: number; brandAvailableMinor: number; brandReserveMinor: number; brandInPayoutMinor: number }[]
@@ -55,6 +57,7 @@ export function FinanceLiveView() {
       {tab === "payouts" ? <PayoutsLiveTab focus={focus} ready={!overview.isLoading} queue={overview.data?.payoutQueue} /> : null}
       {tab === "batches" || tab === "ledger" || tab === "adjustments" ? <FinanceOperations tab={tab} /> : null}
       {tab === "brands" || tab === "reconciliation" ? <FinanceControls tab={tab} /> : null}
+      {tab === "bachs" ? <BachsLiveTab /> : null}
     </div>
   )
 }

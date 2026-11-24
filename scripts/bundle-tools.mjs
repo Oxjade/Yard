@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// node scripts/bundle-tools.mjs [--out DIR]   (default DIR: .next/standalone/tools)
+// node scripts/bundle-tools.mjs [--out DIR]   (default DIR: tools/ at the project root)
 //
-// The command-line tools a deployment runs beside the standalone server, each bundled into one
-// plain .mjs file so the server needs only `node` (no npm install, no tsx, no TypeScript):
+// The command-line tools a deployment runs beside the server, each bundled into one plain .mjs
+// file so the server needs only `node` (no tsx, no TypeScript, no path aliases):
 //   tools/db-migrate.mjs    npm run db:migrate   (advisory-locked migrations + reference seeds)
 //   tools/check-env.mjs     validates the production configuration, every problem at once
 //   tools/create-admin.mjs  npm run admin:create (the first owner admin)
-// Run it after `next build`. The release must also carry drizzle/ (the migrations) and public/
-// next to the tools' working directory, as the standalone server does. Bundled with the
+// `npm run build` runs it after `next build` (the package.json postbuild), while devDependencies
+// (esbuild) are still installed, and server-scripts/yard-package.sh ships tools/ in the release
+// archive. The tools run from the release folder, which also holds drizzle/ (the migrations) and
+// public/ from the checkout. Bundled with the
 // react-server condition (server-only resolves to nothing, as under Next); PGlite is stubbed out and
 // pg's optional native binding stays external: a deployment uses Postgres (DATABASE_URL).
 import { mkdirSync } from "node:fs"
@@ -17,7 +19,7 @@ import { build } from "esbuild"
 
 const { values } = parseArgs({ options: { out: { type: "string" } } })
 const root = path.resolve(import.meta.dirname, "..")
-const out = path.resolve(values.out ?? path.join(root, ".next", "standalone", "tools"))
+const out = path.resolve(values.out ?? path.join(root, "tools"))
 mkdirSync(out, { recursive: true })
 
 // PGlite (and its wasm) never ships in the tools: they run against Postgres. drizzle's PGlite driver

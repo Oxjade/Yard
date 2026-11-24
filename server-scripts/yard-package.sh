@@ -14,6 +14,9 @@
 #                   .next/dev (dev-server output) and .next/standalone (not used: the service
 #                   runs `npm start` from the release folder)
 #   node_modules/   production dependencies only (tsx, which the scripts load, is one)
+#   tools/          the bundled command-line tools (npm run build's postbuild, scripts/bundle-tools.mjs):
+#                   check-env.mjs, db-migrate.mjs, create-admin.mjs, plain JavaScript that runs with
+#                   just `node` (no tsx, no "@/" path aliases), e.g. node tools/check-env.mjs
 #   public/, package.json, package-lock.json
 #   release.json what the build saw (commit, deployment id, public URL, verification tokens, Node)
 set -euo pipefail
@@ -25,6 +28,9 @@ NAME="yard-build-$SHA12.tar.gz"
 
 [ -f .next/BUILD_ID ] || { echo "No finished build here (.next/BUILD_ID is missing): run npm run build first." >&2; exit 1; }
 [ -d node_modules ] || { echo "node_modules is missing." >&2; exit 1; }
+for tool in check-env db-migrate create-admin; do
+  [ -s "tools/$tool.mjs" ] || { echo "tools/$tool.mjs is missing: npm run build bundles it (postbuild: scripts/bundle-tools.mjs) before npm prune." >&2; exit 1; }
+done
 if [ -d node_modules/eslint-config-next ] || [ -d node_modules/drizzle-kit ]; then
   echo "node_modules still has dev dependencies: run npm prune --omit=dev before packaging." >&2
   exit 1
@@ -49,7 +55,7 @@ mkdir -p "$OUT"
 tar --anchored \
   --exclude=.next/cache --exclude=.next/dev --exclude=.next/standalone \
   --exclude=node_modules/.cache \
-  -czf "$OUT/$NAME" .next node_modules public package.json package-lock.json release.json
+  -czf "$OUT/$NAME" .next node_modules tools public package.json package-lock.json release.json
 rm -f release.json
 ( cd "$OUT" && sha256sum "$NAME" > "$NAME.sha256" )
 echo "Packed $OUT/$NAME ($(du -h "$OUT/$NAME" | cut -f1))"
