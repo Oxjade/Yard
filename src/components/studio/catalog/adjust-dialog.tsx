@@ -65,7 +65,8 @@ function AdjustForm({ product, variant, onDone, onStockUpdated }: { product: Pro
 
   const label = variantLabel(variant.options) || "Default variant"
   const n = /^[+-]?\d+$/.test(delta.trim()) ? Number(delta.trim()) : null
-  const available = availableStock(variant)
+  // "Not tracked": the dialog works from the real count underneath; saving a change turns tracking on.
+  const available = variant.untracked ? Math.max(0, variant.stock - variant.reserved) : availableStock(variant)
   const nextStock = n === null ? null : variant.stock + n
   const nextAvailable = nextStock === null ? null : Math.max(0, nextStock - variant.reserved)
   const recent = log.filter((e) => e.variantId === variant.id).slice(0, 3)
@@ -119,7 +120,7 @@ function AdjustForm({ product, variant, onDone, onStockUpdated }: { product: Pro
       useStudio.setState({
         products: state.products.map((item) => item.id !== product.id ? item : {
           ...item,
-          variants: item.variants.map((currentVariant) => currentVariant.id === variant.id ? { ...currentVariant, stock: stock.onHand, reserved: stock.held } : currentVariant),
+          variants: item.variants.map((currentVariant) => currentVariant.id === variant.id ? { ...currentVariant, stock: stock.onHand, reserved: stock.held, untracked: false } : currentVariant),
         }),
         ...(movements ? {
           inventoryLog: [
@@ -162,6 +163,8 @@ function AdjustForm({ product, variant, onDone, onStockUpdated }: { product: Pro
           {product.name}, {label}. <span className="text-xs whitespace-nowrap tabular">{variant.sku}</span>
         </DialogDescription>
       </DialogHeader>
+
+      {variant.untracked ? <p className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-xs text-ink-2">In stock, not tracked right now. Saving a change here starts counting from the numbers below.</p> : null}
 
       <dl className="grid grid-cols-3 gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-3 text-center">
         {[

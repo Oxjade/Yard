@@ -186,7 +186,7 @@ export async function brandAnalyticsDb(d: Db, brandId: string, currency: string,
   if (ids.length) {
     const r = await d.execute(sql`
       select p.id, p.title, ((p.status = 'published' or (p.status = 'scheduled' and p.publish_at <= now())) and p.moderation_status = 'ok') as live,
-        (select count(*)::int from catalog_variants v where v.product_id = p.id and v.status = 'active' and v.on_hand - v.held <= 0) as sold_out,
+        (select count(*)::int from catalog_variants v where v.product_id = p.id and v.status = 'active' and v.track_stock and v.on_hand - v.held <= 0) as sold_out,
         i.media_id, i.path, i.alt
       from catalog_products p
       left join lateral (select ci.media_id, ci.path, ci.alt from catalog_product_images ci where ci.product_id = p.id order by ci.position limit 1) i on true

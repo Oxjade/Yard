@@ -78,7 +78,7 @@ export function FieldValue({ field, value, detail }: { field: ProposalField; val
             <li key={v.id ?? `n${i}`} className="tabular">
               {Object.values(v.options).join(", ") || "Default"} <span className="text-ink-3">{v.sku}</span>
               {v.priceMinor != null ? <span className="text-ink-3">, {money(v.priceMinor, c)}</span> : null}
-              {!v.id ? <span className="text-ink-3">, new{v.initialStock ? `, ${v.initialStock} in stock` : ""}</span> : null}
+              {!v.id ? <span className="text-ink-3">, new{v.initialStock ? `, ${v.initialStock} in stock` : v.untracked ? ", in stock (count not tracked)" : ""}</span> : null}
             </li>
           ))}
         </ul>
@@ -186,7 +186,7 @@ export function ProposedProduct({ detail }: { detail: ProposalDetailDto }) {
           <div>
             <dt className="text-[11px] text-ink-3">Variants</dt>
             <dd className="text-ink-2">
-              {p.variants.length} {p.variants.length === 1 ? "variant" : "variants"}, {total} in stock
+              {p.variants.length} {p.variants.length === 1 ? "variant" : "variants"}, {total > 0 || !p.variants.some((v) => v.untracked) ? `${total} in stock` : "in stock (count not tracked)"}
             </dd>
           </div>
           {p.processingDays ? (

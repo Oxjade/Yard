@@ -115,7 +115,7 @@ export async function assertCollections(d: Executor, brandId: string, ids: strin
 }
 
 type OptionIn = { name: string; values: { value: string; hex?: string }[] }
-type VariantIn = { id?: string; sku: string; options: Record<string, string>; priceMinor?: number | null; initialStock?: number }
+type VariantIn = { id?: string; sku: string; options: Record<string, string>; priceMinor?: number | null; initialStock?: number; untracked?: true }
 
 /** Variant option maps must use exactly the product's option names and listed values, with no duplicate combination or SKU. */
 export function validateVariants(options: OptionIn[], variants: VariantIn[]) {
@@ -238,7 +238,7 @@ export async function listStudioProducts(actor: BrandActor, q: { status: string;
     where.push(or(ilike(catalogProducts.title, like), sql`exists (select 1 from catalog_variants v where v.product_id = ${catalogProducts.id} and v.sku ilike ${like})`))
   }
   if (q.collectionId) where.push(sql`exists (select 1 from catalog_collection_products cp where cp.product_id = ${catalogProducts.id} and cp.collection_id = ${q.collectionId})`)
-  if (q.lowStock === "1") where.push(sql`exists (select 1 from catalog_variants v where v.product_id = ${catalogProducts.id} and v.status = 'active' and v.on_hand - v.held <= 3)`)
+  if (q.lowStock === "1") where.push(sql`exists (select 1 from catalog_variants v where v.product_id = ${catalogProducts.id} and v.status = 'active' and v.track_stock and v.on_hand - v.held <= 3)`)
   const rows = await d
     .select({ p: catalogProducts, total: sql<number>`count(*) over ()`.mapWith(Number) })
     .from(catalogProducts)
@@ -297,7 +297,7 @@ export async function createProduct(actor: BrandActor, body: ProductCreateBody, 
     await writeOptions(tx, id, body.options)
     for (const [position, v] of body.variants.entries()) {
       const vid = newId("pv")
-      await tx.insert(catalogVariants).values({ id: vid, productId: id, brandId: actor.brandId, sku: v.sku.trim(), options: v.options, priceMinor: v.priceMinor ?? null, position })
+      await tx.insert(catalogVariants).values({ id: vid, productId: id, brandId: actor.brandId, sku: v.sku.trim(), options: v.options, priceMinor: v.priceMinor ?? null, position, trackStock: !(v.untracked && !v.initialStock) })
       if (v.initialStock) await moveStock(tx, { variantId: vid, brandId: actor.brandId, delta: v.initialStock, reason: "adjustment", note: "Opening stock", actor: { kind: "brand", id: actor.userId } })
     }
     await writeImages(tx, actor.brandId, id, body.images)
@@ -359,6 +359,7 @@ export async function updateProduct(actor: BrandActor, productId: string, body: 
       variants.forEach((v, i) => {
         if (v.id && !currentIds.has(v.id)) fields[`variants.${i}.id`] = "That variant isn't on this product."
         if (v.id && v.initialStock !== undefined) fields[`variants.${i}.initialStock`] = "Change stock for existing variants from the stock panel."
+        if (v.id && v.untracked) fields[`variants.${i}.untracked`] = "Change stock for existing variants from the stock panel."
       })
       if (Object.keys(fields).length) throw badRequest(fields)
       await assertSkusFree(tx, actor.brandId, variants, p.id)
@@ -373,7 +374,7 @@ export async function updateProduct(actor: BrandActor, productId: string, body: 
           if (v.id) await tx.update(catalogVariants).set({ sku: v.sku.trim(), options: v.options, priceMinor: v.priceMinor ?? null, position, status: "active", updatedAt: now }).where(eq(catalogVariants.id, v.id))
           else {
             const vid = newId("pv")
-            await tx.insert(catalogVariants).values({ id: vid, productId: p.id, brandId: actor.brandId, sku: v.sku.trim(), options: v.options, priceMinor: v.priceMinor ?? null, position })
+            await tx.insert(catalogVariants).values({ id: vid, productId: p.id, brandId: actor.brandId, sku: v.sku.trim(), options: v.options, priceMinor: v.priceMinor ?? null, position, trackStock: !(v.untracked && !v.initialStock) })
             if (v.initialStock) await moveStock(tx, { variantId: vid, brandId: actor.brandId, delta: v.initialStock, reason: "adjustment", note: "Opening stock", actor: { kind: "brand", id: actor.userId } })
           }
         }

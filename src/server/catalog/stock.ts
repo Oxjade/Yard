@@ -7,6 +7,7 @@ import { catalogVariants, stockHolds, stockMovements } from "../db/schema/catalo
 import { notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { availableOf } from "./availability"
 import { catalogChanged } from "./hooks"
 import { isSellable } from "./sellable"
 
@@ -35,7 +36,7 @@ function aggregate(lines: Line[]) {
 async function lockVariants(tx: Executor, ids: string[]) {
   if (!ids.length) return []
   return tx
-    .select({ id: catalogVariants.id, brandId: catalogVariants.brandId, onHand: catalogVariants.onHand, held: catalogVariants.held, productId: catalogVariants.productId, status: catalogVariants.status })
+    .select({ id: catalogVariants.id, brandId: catalogVariants.brandId, onHand: catalogVariants.onHand, held: catalogVariants.held, trackStock: catalogVariants.trackStock, productId: catalogVariants.productId, status: catalogVariants.status })
     .from(catalogVariants)
     .where(inArray(catalogVariants.id, [...ids].sort()))
     .orderBy(asc(catalogVariants.id))
@@ -99,7 +100,8 @@ export async function holdStock(tx: Tx, input: { holdKey: string; lines: Line[];
   const shortages: { variantId: string; available: number }[] = []
   for (const [variantId, q] of want) {
     const v = byId.get(variantId)
-    const available = v && sellable.has(variantId) ? v.onHand - v.held + (giveBack.get(variantId) ?? 0) : 0
+    // An untracked variant ("available, stock not tracked") always has enough.
+    const available = v && sellable.has(variantId) ? (v.trackStock ? v.onHand - v.held + (giveBack.get(variantId) ?? 0) : availableOf(v)) : 0
     if (available < q) shortages.push({ variantId, available: Math.max(0, available) })
   }
   if (shortages.length) return { ok: false, shortages }
@@ -150,7 +152,13 @@ export async function commitHold(tx: Tx, holdKey: string): Promise<void> {
     if (h.status === "active") {
       await tx.update(catalogVariants).set({ held: sql`${catalogVariants.held} - ${h.qty}` }).where(eq(catalogVariants.id, h.variantId))
       v.held -= h.qty
-    } else {
+    }
+    if (!v.trackStock) {
+      // Stock not tracked: the sale is recorded, on_hand doesn't move (there is no count to take from).
+      await tx.insert(stockMovements).values({ id: newId("sm"), variantId: h.variantId, brandId: v.brandId, delta: 0, onHandAfter: v.onHand, reason: "sale", note: `${h.qty} sold (stock not tracked)`, refType: "hold", refId: holdKey })
+      continue
+    }
+    if (h.status !== "active") {
       const available = v.onHand - v.held
       if (available < h.qty) {
         take = Math.max(0, available)
@@ -250,8 +258,11 @@ export async function adjustStock(actor: BrandActor, variantId: string, body: { 
     const delta = body.mode === "set" ? body.qty - v.onHand : body.qty
     if (body.mode === "set" && body.qty < 0) throw rule("Stock can't be below zero.")
     if (v.onHand + delta < v.held) throw rule(`${v.held} of these are held in checkouts right now, so stock can't go below ${v.held}.`)
-    if (delta === 0) return { variantId, onHand: v.onHand, held: v.held, available: v.onHand - v.held }
-    const onHand = await moveStock(tx, { variantId, brandId: v.brandId, delta, reason: body.mode === "set" ? "set" : body.reason, note: body.note ?? null, actor: { kind: "brand", id: actor.userId } })
+    // A count turns tracking back on for a variant that was "available, stock not tracked".
+    const startsTracking = !v.trackStock
+    if (delta === 0 && !startsTracking) return { variantId, onHand: v.onHand, held: v.held, available: v.onHand - v.held, tracked: true }
+    const onHand = delta === 0 ? v.onHand : await moveStock(tx, { variantId, brandId: v.brandId, delta, reason: body.mode === "set" ? "set" : body.reason, note: body.note ?? null, actor: { kind: "brand", id: actor.userId } })
+    if (startsTracking) await tx.update(catalogVariants).set({ trackStock: true, updatedAt: new Date() }).where(eq(catalogVariants.id, variantId))
     await writeAudit({
       actor: { kind: "brand", id: actor.userId, name: actor.name, role: actor.role },
       action: "catalog.stock_changed",
@@ -260,10 +271,11 @@ export async function adjustStock(actor: BrandActor, variantId: string, body: { 
       subjectId: variantId,
       brandId: actor.brandId,
       ipHash,
-      meta: { mode: body.mode, delta, onHand, reason: body.reason },
+      meta: { mode: body.mode, delta, onHand, reason: body.reason, ...(startsTracking ? { tracking: "on" } : {}) },
     })
-    catalogChanged({ products: [v.productId], variants: [variantId], restocked: v.onHand - v.held <= 0 && delta > 0 ? [variantId] : [] })
-    return { variantId, onHand, held: v.held, available: onHand - v.held }
+    const wasOut = availableOf(v) <= 0
+    catalogChanged({ products: [v.productId], variants: [variantId], restocked: wasOut && onHand - v.held > 0 ? [variantId] : [], reindexVariants: startsTracking })
+    return { variantId, onHand, held: v.held, available: onHand - v.held, tracked: true }
   })
 }
 
@@ -280,4 +292,87 @@ export async function listMovements(actor: BrandActor, variantId: string, limit 
   return {
     movements: rows.map((m) => ({ id: m.id, delta: m.delta, onHandAfter: m.onHandAfter, reason: m.reason, note: m.note, refType: m.refType, refId: m.refId, actorKind: m.actorKind, at: m.createdAt.toISOString() })),
   }
+}
+
+/**
+ * Studio › Products, bulk "Mark available": every active variant of these products of the brand
+ * becomes "available, stock not tracked" (no count is invented: on_hand stays as it is). Variants
+ * already untracked are left alone. Sold-out sizes come back, so back-in-stock alerts go out.
+ */
+export async function markUntracked(actor: BrandActor, productIds: string[], ipHash: string | null) {
+  const ids = [...new Set(productIds)].slice(0, 200)
+  if (!ids.length) return { products: 0, variants: 0 }
+  return withTx(async (tx) => {
+    const rows = await tx
+      .select({ id: catalogVariants.id, productId: catalogVariants.productId, onHand: catalogVariants.onHand, held: catalogVariants.held, trackStock: catalogVariants.trackStock })
+      .from(catalogVariants)
+      .where(and(eq(catalogVariants.brandId, actor.brandId), inArray(catalogVariants.productId, ids), eq(catalogVariants.status, "active"), eq(catalogVariants.trackStock, true)))
+      .orderBy(asc(catalogVariants.id))
+      .for("update")
+    if (!rows.length) return { products: 0, variants: 0 }
+    await tx
+      .update(catalogVariants)
+      .set({ trackStock: false, updatedAt: new Date() })
+      .where(inArray(catalogVariants.id, rows.map((r) => r.id)))
+    const products = [...new Set(rows.map((r) => r.productId))]
+    await writeAudit({
+      actor: { kind: "brand", id: actor.userId, name: actor.name, role: actor.role },
+      action: "catalog.stock_untracked",
+      target: `${products.length} products`,
+      subjectType: "catalog_product",
+      subjectId: products[0],
+      brandId: actor.brandId,
+      ipHash,
+      meta: { products, variants: rows.length },
+    })
+    catalogChanged({ products, variants: rows.map((r) => r.id), restocked: rows.filter((r) => r.onHand - r.held <= 0).map((r) => r.id) })
+    return { products: products.length, variants: rows.length }
+  })
+}
+
+/**
+ * Studio › Products, bulk "Set stock": every active size of these products of the brand gets the
+ * count `qty` (a stock count, as Adjust › set). Untracked sizes start tracking. A size with more
+ * held in checkouts than `qty` keeps its count and is reported, never pushed below what's held.
+ */
+export async function bulkSetStock(actor: BrandActor, productIds: string[], qty: number, ipHash: string | null) {
+  const ids = [...new Set(productIds)].slice(0, 200)
+  return withTx(async (tx) => {
+    const variants = await tx
+      .select({ id: catalogVariants.id })
+      .from(catalogVariants)
+      .where(and(eq(catalogVariants.brandId, actor.brandId), inArray(catalogVariants.productId, ids), eq(catalogVariants.status, "active")))
+    const rows = await lockVariants(tx, variants.map((v) => v.id))
+    const changed: string[] = []
+    const restocked: string[] = []
+    const products = new Set<string>()
+    let held = 0
+    for (const v of rows) {
+      if (qty < v.held) {
+        held++
+        continue
+      }
+      const delta = qty - v.onHand
+      if (delta === 0 && v.trackStock) continue
+      if (delta !== 0) await moveStock(tx, { variantId: v.id, brandId: v.brandId, delta, reason: "set", note: "Set for several products", actor: { kind: "brand", id: actor.userId } })
+      if (!v.trackStock) await tx.update(catalogVariants).set({ trackStock: true, updatedAt: new Date() }).where(eq(catalogVariants.id, v.id))
+      if (availableOf(v) <= 0 && qty - v.held > 0) restocked.push(v.id)
+      changed.push(v.id)
+      products.add(v.productId)
+    }
+    if (changed.length) {
+      await writeAudit({
+        actor: { kind: "brand", id: actor.userId, name: actor.name, role: actor.role },
+        action: "catalog.stock_bulk_set",
+        target: `${products.size} products`,
+        subjectType: "catalog_product",
+        subjectId: [...products][0],
+        brandId: actor.brandId,
+        ipHash,
+        meta: { qty, products: [...products], variants: changed.length, keptForHolds: held },
+      })
+      catalogChanged({ products: [...products], variants: changed, restocked, reindexVariants: true })
+    }
+    return { products: products.size, variants: changed.length, keptForHolds: held }
+  })
 }

@@ -133,11 +133,13 @@ export function StockLine({ selection, locked = false, closed = false, opening =
   } else if (closed) {
     ;[text, tone] = ["Drawn winners only", "muted"]
   } else if (variant && stock !== null) {
-    if (stock === 0) [text, tone] = ["Sold out", "out"]
+    if (stock === 0) [text, tone] = ["Sold out right now", "out"]
     else if (stock <= LOW_STOCK) [text, tone] = [`Only ${stock} left`, "low"]
     else [text, tone] = ["In stock", "ok"]
   } else if (needsSize && colourStock === 0) {
-    ;[text, tone] = [colour ? `Sold out in ${colour.toLowerCase()}` : "Sold out", "out"]
+    ;[text, tone] = [colour ? `Sold out in ${colour.toLowerCase()}` : "Sold out right now", "out"]
+  } else if (sizes.length && sizesInStock === 0) {
+    ;[text, tone] = ["Sold out right now", "out"]
   } else {
     ;[text, tone] = [`${sizesInStock} of ${sizes.length} sizes in stock`, "muted"]
   }

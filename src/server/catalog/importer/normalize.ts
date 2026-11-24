@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { currencies } from "@/config/markets"
-import { IMPORT_MAX_IMAGES, ONE_SIZE, type ImportAvailability, type ImportChoiceBody, type ImportOptionDto, type ImportProductDto, type ImportVariantDto } from "@/lib/api/contracts/imports"
+import { IMPORT_MAX_IMAGES, ONE_SIZE, availableUncounted, type ImportAvailability, type ImportChoiceBody, type ImportOptionDto, type ImportProductDto, type ImportVariantDto } from "@/lib/api/contracts/imports"
 import type { ProposalProductBody } from "../contracts"
 import { htmlToText } from "./html"
 import { cleanHref } from "./url"
@@ -278,7 +278,9 @@ export function normalizeProduct(raw: RawProduct, ctx: NormalizeContext): Import
     if (variants.length > 1) warnings.push(`The site counts ${raw.sharedStock} in stock across all sizes. Split evenly: check each size.`)
   }
   for (const v of variants) if (v.stock == null && (v.available === false || availability === "out_of_stock")) v.stock = 0
-  if (variants.some((v) => v.stock == null)) warnings.push("Stock count not shown on the site: set it, or these sizes show as sold out.")
+  // Available on the site without a count: in stock on Yard, count not tracked (never 0, never a made-up number).
+  if (variants.some((v) => availableUncounted(v, availability))) warnings.push("In stock on the site, no count shown: imported as in stock with the count not tracked. Type a count to track it.")
+  if (variants.some((v) => v.stock == null && !availableUncounted(v, availability))) warnings.push("Stock count not shown on the site: set it, or these sizes show as sold out.")
   if (availability === "out_of_stock") warnings.push("Sold out on the site.")
 
   const images = cleanImages(raw.images, raw.sourceUrl)
@@ -393,12 +395,16 @@ export function proposalBodyOf(p: ImportProductDto, choice: ImportChoiceBody, me
     options,
     variants: variants.map((v) => {
       const label = variantLabel(v.options, order)
-      const stock = choice.stock[label] ?? v.stock ?? 0
+      const typed = choice.stock[label]
+      // A typed count wins; else the site's count; else, when the site says it's available without a
+      // count, "stock not tracked"; else 0 (sold out or unknown).
+      const untracked = typed === undefined && availableUncounted(v, p.availability)
+      const stock = typed ?? v.stock ?? 0
       return {
         sku: order.length ? `${base}-${order.map((n) => skuPart(v.options[n])).join("-")}`.slice(0, 64) : base,
         options: v.options,
         priceMinor: v.priceMinor != null && choice.currency === p.currency && v.priceMinor !== choice.priceMinor ? v.priceMinor : null,
-        ...(stock > 0 ? { initialStock: Math.min(1_000_000, stock) } : {}),
+        ...(stock > 0 ? { initialStock: Math.min(1_000_000, stock) } : untracked ? { untracked: true as const } : {}),
       }
     }),
     images: mediaIds.map((mediaId) => ({ mediaId, alt: clip(choice.title.trim(), 200) })),

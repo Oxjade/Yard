@@ -4,13 +4,14 @@ import { requestScope } from "../auth/dal"
 import { memo } from "../cache"
 import { db } from "../db"
 import { brands } from "../db/schema"
-import { catalogCategories, catalogCollectionProducts, catalogCollections, catalogProducts, catalogVariants, storefrontVersions } from "../db/schema/catalog"
+import { catalogCategories, catalogCollectionProducts, catalogCollections, catalogProducts, storefrontVersions } from "../db/schema/catalog"
 import { notFound } from "../http/errors"
 import { loadChildren, toPublicProduct } from "./dto"
 import { mediaSrc } from "../media/dto"
 import type { PublicBrandsQuery, PublicProductsQuery } from "./contracts"
 import type { PublicBrandCard, PublicBrandsPage } from "@/lib/api/public-brands"
 import { brandForSaleSql, brandListedSql, getSellableVariants, productPublicWhere } from "./sellable"
+import { inStockFirstOrder, productInStockSql } from "./availability"
 import { brandPageVisibility, productPageVisibility } from "@/lib/page-visibility"
 import { demoSampleBrand, refusedSampleBrand } from "./sample-guard"
 
@@ -59,23 +60,18 @@ export async function listPublicProducts(q: PublicProductsQuery) {
             .where(and(eq(catalogCollectionProducts.productId, catalogProducts.id), eq(catalogCollections.status, "published"), or(eq(catalogCollections.id, q.collection), eq(catalogCollections.handle, q.collection)))),
         ),
       )
-    if (q.inStock === "1")
-      where.push(
-        exists(
-          d
-            .select({ one: sql`1` })
-            .from(catalogVariants)
-            .where(and(eq(catalogVariants.productId, catalogProducts.id), eq(catalogVariants.status, "active"), sql`${catalogVariants.onHand} > ${catalogVariants.held}`)),
-        ),
-      )
-    const order =
-      q.sort === "price_asc"
+    if (q.inStock === "1") where.push(productInStockSql())
+    // Pieces a shopper can buy first, sold out last; the asked-for sort applies within each group.
+    const order = [
+      inStockFirstOrder(brandForSaleSql()),
+      ...(q.sort === "price_asc"
         ? [asc(catalogProducts.priceMinor), asc(catalogProducts.id)]
         : q.sort === "price_desc"
           ? [desc(catalogProducts.priceMinor), asc(catalogProducts.id)]
           : q.sort === "title"
             ? [asc(catalogProducts.title), asc(catalogProducts.id)]
-            : [desc(sql`coalesce(${catalogProducts.publishedAt}, ${catalogProducts.createdAt})`), asc(catalogProducts.id)]
+            : [desc(sql`coalesce(${catalogProducts.publishedAt}, ${catalogProducts.createdAt})`), asc(catalogProducts.id)]),
+    ]
     const rows = await d
       .select({ p: catalogProducts, brand: brandSummary, total: sql<number>`count(*) over ()`.mapWith(Number) })
       .from(catalogProducts)

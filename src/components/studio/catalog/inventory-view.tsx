@@ -149,7 +149,7 @@ export function InventoryView() {
       header: "Available",
       align: "right",
       sortValue: (r) => r.available,
-      cell: (r) => <Changing value={r.available} className={cn("font-medium", r.level === "in" ? "text-ink" : "text-acid")} />,
+      cell: (r) => (r.variant.untracked ? <span className="text-ink-2">Not tracked</span> : <Changing value={r.available} className={cn("font-medium", r.level === "in" ? "text-ink" : "text-acid")} />),
     },
     { key: "reserved", header: "Reserved", align: "right", hideBelow: "lg", sortValue: (r) => r.variant.reserved, cell: (r) => <Changing value={r.variant.reserved} className="text-ink-2" /> },
     { key: "sold", header: "Sold, 30 days", align: "right", hideBelow: "lg", sortValue: (r) => r.sold, cell: (r) => <span className="text-ink-2">{r.sold}</span> },

@@ -31,7 +31,7 @@ export function fromStudioProduct(dto: StudioProductDto): StudioProduct {
     options,
     variants: dto.variants
       .filter((variant) => variant.status === "active")
-      .map((variant) => ({ id: variant.id, sku: variant.sku, options: variant.options, stock: variant.onHand, reserved: variant.held, priceOverrideMinor: variant.priceOverrideMinor })),
+      .map((variant) => ({ id: variant.id, sku: variant.sku, options: variant.options, stock: variant.onHand, reserved: variant.held, priceOverrideMinor: variant.priceOverrideMinor, ...(variant.tracked === false ? { untracked: true } : {}) })),
     badges,
     status: productStatuses.includes(dto.status as ProductStatus) ? dto.status as ProductStatus : "draft",
     createdAt: dto.createdAt,

@@ -4,6 +4,7 @@ import { brands } from "../db/schema"
 import { catalogImages, catalogProducts, catalogVariants } from "../db/schema/catalog"
 import { db, type Executor } from "../db"
 import { mediaSrc } from "../media"
+import { availableOf } from "./availability"
 import { variantLabelOf } from "./dto"
 import { brandApprovedSql, notSampleBrandSql } from "./sample-guard"
 import { brandForSaleSql } from "./for-sale-sql"
@@ -113,6 +114,7 @@ export async function getSellableVariants(variantIds: string[]): Promise<
       currency: catalogProducts.currency,
       onHand: catalogVariants.onHand,
       held: catalogVariants.held,
+      trackStock: catalogVariants.trackStock,
       brandName: brands.name,
       claimStatus: brands.claimStatus,
       forSale: sql<boolean>`${brandForSaleSql()}`,
@@ -142,7 +144,7 @@ export async function getSellableVariants(variantIds: string[]): Promise<
       variantLabel: variantLabelOf(r.options),
       priceMinor: r.variantPrice ?? r.productPrice,
       currency: r.currency,
-      available: r.forSale ? Math.max(0, r.onHand - r.held) : 0,
+      available: r.forSale ? availableOf(r) : 0,
       forSale: !!r.forSale,
       notForSale: r.forSale ? null : notForSaleOf(r.claimStatus),
       ...(imagePath ? { imagePath } : {}),
@@ -183,7 +185,7 @@ export async function getProductForSearch(productId: string): Promise<{
   if (!row) return null
   const p = row.p
   const [variants, [img], [pub]] = await Promise.all([
-    d.select({ id: catalogVariants.id, options: catalogVariants.options, onHand: catalogVariants.onHand, held: catalogVariants.held }).from(catalogVariants).where(and(eq(catalogVariants.productId, p.id), eq(catalogVariants.status, "active"))),
+    d.select({ id: catalogVariants.id, options: catalogVariants.options, onHand: catalogVariants.onHand, held: catalogVariants.held, trackStock: catalogVariants.trackStock }).from(catalogVariants).where(and(eq(catalogVariants.productId, p.id), eq(catalogVariants.status, "active"))),
     d.select({ mediaId: catalogImages.mediaId, path: catalogImages.path }).from(catalogImages).where(eq(catalogImages.productId, p.id)).orderBy(asc(catalogImages.position)).limit(1),
     d.select({ id: catalogProducts.id }).from(catalogProducts).innerJoin(brands, eq(brands.id, catalogProducts.brandId)).where(and(eq(catalogProducts.id, p.id), productPublicWhere())).limit(1),
   ])
@@ -196,12 +198,12 @@ export async function getProductForSearch(productId: string): Promise<{
     category: p.categorySlug,
     subcategory: p.subcategory,
     // A brand that isn't selling yet (founding, unclaimed) reads as nothing available, never as a size in stock.
-    sizes: row.forSale ? [...new Set(variants.filter((v) => v.onHand > v.held && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))] : [],
+    sizes: row.forSale ? [...new Set(variants.filter((v) => availableOf(v) > 0 && v.options.Size && v.options.Size !== "One size").map((v) => v.options.Size))] : [],
     tags: p.tags,
     priceMinor: p.priceMinor,
     compareAtMinor: p.compareAtMinor,
     currency: p.currency,
-    available: row.forSale ? variants.reduce((n, v) => n + Math.max(0, v.onHand - v.held), 0) : 0,
+    available: row.forSale ? variants.reduce((n, v) => n + availableOf(v), 0) : 0,
     variantIds: variants.map((v) => v.id),
     image: img ? (imageSrc(img) ?? null) : null,
     visible: !!pub,

@@ -71,7 +71,7 @@ export async function listingFacts(brandId: string): Promise<ListingFacts> {
     const [[images], [stock]] = await Promise.all([
       d.select({ n: sql<number>`count(*)::int` }).from(catalogImages).where(eq(catalogImages.productId, id)),
       d
-        .select({ n: sql<number>`coalesce(sum(${catalogVariants.onHand}), 0)::int` })
+        .select({ n: sql<number>`coalesce(sum(case when ${catalogVariants.trackStock} then ${catalogVariants.onHand} else 1 end), 0)::int` })
         .from(catalogVariants)
         .where(and(eq(catalogVariants.productId, id), inArray(catalogVariants.status, ["active"]))),
     ])

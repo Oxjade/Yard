@@ -14,7 +14,7 @@ export type StudioProductDto = {
   currency: string
   images: { id: string; src: string; alt: string; width: number | null; height: number | null; mediaId: string | null }[]
   options: { name: string; values: { value: string; hex?: string }[] }[]
-  variants: { id: string; sku: string; options: Record<string, string>; label: string; priceMinor: number; available: number; inStock: boolean; status: string; onHand: number; held: number; priceOverrideMinor: number | null }[]
+  variants: { id: string; sku: string; options: Record<string, string>; label: string; priceMinor: number; available: number; inStock: boolean; status: string; onHand: number; held: number; priceOverrideMinor: number | null; tracked: boolean }[]
   available: number
   processingDays: [number, number] | null
   weightGrams?: number | null
@@ -55,7 +55,7 @@ export type StudioProductCreateBody = {
   weightGrams?: number | null
   dropId?: string | null
   options?: { name: string; values: { value: string; hex?: string }[] }[]
-  variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number }[]
+  variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number; untracked?: true }[]
   images?: { id?: string; mediaId?: string; alt?: string }[]
   collectionIds?: string[]
 }

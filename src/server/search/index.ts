@@ -234,16 +234,21 @@ export async function searchCatalog(p: SearchParams) {
     .where(sql`${shopperWishlist.createdAt} > now() - make_interval(days => ${TRENDING_DAYS})`)
     .groupBy(shopperWishlist.productId)
     .as("recent_saves")
-  const order =
-    p.sort === "trending"
+  // Pieces a shopper can buy first (available is 0 for sold out and for a brand that isn't selling
+  // yet), sold out last; the asked-for sort applies within each group.
+  const inStockFirst = sql`(${searchProducts.available} > 0) desc`
+  const order = [
+    inStockFirst,
+    ...(p.sort === "trending"
       ? [sql`coalesce(${recentSaves.saves}, 0) desc`, ...(query ? [desc(rank)] : []), sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
       : p.sort === "price_asc"
-      ? [asc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
-      : p.sort === "price_desc"
-        ? [desc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
-        : p.sort === "newest" || !query
-          ? [sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
-          : [desc(rank), desc(searchProducts.available), asc(searchProducts.productId)]
+        ? [asc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
+        : p.sort === "price_desc"
+          ? [desc(searchProducts.priceUsdMinor), asc(searchProducts.productId)]
+          : p.sort === "newest" || !query
+            ? [sql`${searchProducts.publishedAt} desc nulls last`, asc(searchProducts.productId)]
+            : [desc(rank), desc(searchProducts.available), asc(searchProducts.productId)]),
+  ]
 
   const rowFields = {
     productId: searchProducts.productId,

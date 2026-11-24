@@ -41,6 +41,7 @@ import { DetailSection, DetailSheet, Facts, LinkRow, insetClass } from "./detail
 import { DeleteBrandSection, useDeleteBrand } from "./delete-brand-dialog"
 import { categoryName, countryName, formatDate, formatDateTime } from "./format"
 import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
+import { ImportedStockAction } from "@/components/admin/importer/imported-stock-action"
 
 /*
  * The founding-brand tray (owner only, brands.founding): the inline create form, and one brand's
@@ -621,6 +622,7 @@ function ProductsSection({ brand: b }: { brand: FoundingBrandRow }) {
           hint={b.claimStatus === "claimed" ? `Copy ${b.name}'s products from their own shop` : b.goLiveOnClaim ? "From their own shop, live the moment they claim" : "From their own shop, as suggestions for the owner"}
         />
       ) : null}
+      {canImport && b.products.total ? <ImportedStockAction brandId={b.id} brandName={b.name} /> : null}
       {canPropose && (b.claimStatus === "claimed" || b.goLiveOnClaim) ? (
         <ul className="grid gap-1.5">
           <li>

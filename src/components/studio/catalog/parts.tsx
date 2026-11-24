@@ -21,7 +21,9 @@ export function Thumb({ image, size = 40, className, loading }: { image?: ImageA
 }
 
 /** A product's total stock: acid when low, "Out of stock" at zero. */
-export function ProductStock({ available }: { available: number }) {
+/** `untracked`/`variants`: how many of the product's variants are "available, stock not tracked". */
+export function ProductStock({ available, untracked = 0, variants = 0 }: { available: number; untracked?: number; variants?: number }) {
+  if (untracked > 0 && untracked >= variants) return <span className="whitespace-nowrap text-ink">In stock, not tracked</span>
   const level = productLevel(available)
   if (level === "out") return <StatusBadge tone="attention">Out of stock</StatusBadge>
   return (

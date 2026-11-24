@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -28,6 +28,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { SampleChip } from "@/components/ui/sample-chip"
 import type { ConversationSummary, Interaction, MessageDto, SendMessageBody } from "@/lib/api/contracts/inbox"
 import { errorMessage } from "@/lib/api/errors"
+import { api } from "@/lib/api/client"
+import type { PublicCatalogProduct } from "@/lib/api/catalog-products"
+import { askAvailabilityText } from "@/lib/ask-brand"
+import type { Product } from "@/lib/data/types"
 import { blockBrand, patchConversation, sendMessage } from "@/lib/api/inbox"
 import { revalidatePrefix } from "@/lib/api/use-api"
 import { brandById } from "@/lib/data/brands"
@@ -66,12 +70,25 @@ export function shopperDisabledReason(i: Interaction | undefined, brand: string)
   }
 }
 
+/** The chip for a piece the page already holds (a sample piece, or one the picker loaded from the server). */
+function chipOf(p: Pick<Product, "id" | "name" | "price" | "currency" | "variants">, variantId?: string | null): ProductChip {
+  const v = variantId ? p.variants.find((x) => x.id === variantId) : undefined
+  return { productId: p.id, variantId: v?.id, name: p.name, variantLabel: v ? variantLabel(v.options) : undefined, price: { amount: p.price, currency: p.currency } }
+}
+
 function chipFor(productId: string | null | undefined, variantId?: string | null): ProductChip | null {
   // Production never offers a sample piece as a chip (a ?product= link from an earlier visit).
   const p = productId && !(sampleDataOff() && isSampleProduct(productId)) ? productById.get(productId) : undefined
-  if (!p) return null
+  return p ? chipOf(p, variantId) : null
+}
+
+/** A live piece's chip, from the public catalogue (a ?product= link from a product page): null when it isn't public. */
+async function liveChipFor(productId: string, variantId?: string | null): Promise<ProductChip | null> {
+  const r = await api<{ product: Omit<PublicCatalogProduct, "variants"> & { variants: (PublicCatalogProduct["variants"][number] & { label?: string })[] } }>(`/api/catalog/products/${encodeURIComponent(productId)}`).catch(() => null)
+  if (!r) return null
+  const p = r.product
   const v = variantId ? p.variants.find((x) => x.id === variantId) : undefined
-  return { productId: p.id, variantId: v?.id, name: p.name, variantLabel: v ? variantLabel(v.options) : undefined, price: { amount: p.price, currency: p.currency } }
+  return { productId: p.id, variantId: v?.id, name: p.title, variantLabel: v ? (v.label ?? variantLabel(v.options)) : undefined, price: { amount: p.priceMinor, currency: p.currency } }
 }
 
 type Props = {
@@ -81,6 +98,12 @@ type Props = {
   newThreadInteraction?: Interaction
   initialProduct?: { productId: string; variantId?: string | null } | null
   initialOrder?: OrderChip | null
+  /** "Ask the brand" (?ask=availability): put the availability question in the composer once, with the piece attached. */
+  initialAsk?: boolean
+  /** Called once the question is in the composer, so a reload or the created thread doesn't add it again. */
+  onAskShown?: () => void
+  /** The brand's name when the page knows it (a live brand isn't in the sample data). */
+  brandName?: string
   onCreated: (id: string) => void
   onBack?: () => void
   onConversation?: (c: ConversationSummary) => void
@@ -89,9 +112,9 @@ type Props = {
 }
 
 /** The shopper's thread (§6.2): header, quick-action cards, messages and the pill composer. */
-export function ShopperThread({ conversationId, brandId, newThreadInteraction, initialProduct, initialOrder, onCreated, onBack, onConversation, layer }: Props) {
+export function ShopperThread({ conversationId, brandId, newThreadInteraction, initialProduct, initialOrder, initialAsk, onAskShown, brandName: givenName, onCreated, onBack, onConversation, layer }: Props) {
   const brand = brandById.get(brandId)
-  const brandName = brand?.name ?? "This brand"
+  const brandName = brand?.name ?? givenName ?? "This brand"
   const shipTo = useSession((s) => s.shipTo)
   const shipToCity = useSession((s) => s.shipToCity)
   const [product, setProduct] = useState<ProductChip | null>(() => chipFor(initialProduct?.productId, initialProduct?.variantId))
@@ -102,6 +125,25 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
   const [report, setReport] = useState<{ type: "message" | "conversation"; id: string } | null>(null)
   const composer = useRef<ComposerApi | null>(null)
   const scroller = useRef<ScrollerApi | null>(null)
+
+  // A live piece isn't in the sample data: its chip comes from the public catalogue.
+  const wantProduct = initialProduct?.productId ?? null
+  const wantVariant = initialProduct?.variantId ?? null
+  const [chipLoading, setChipLoading] = useState(() => !!wantProduct && !product)
+  useEffect(() => {
+    if (!wantProduct || product) return
+    let live = true
+    void liveChipFor(wantProduct, wantVariant).then((chip) => {
+      if (!live) return
+      if (chip) setProduct(chip)
+      setChipLoading(false)
+    })
+    return () => {
+      live = false
+    }
+    // Only for the piece the page was opened with; a chip cleared by the shopper stays cleared.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantProduct, wantVariant])
   const createdRef = useRef<string | null>(null)
 
   const send = useCallback(
@@ -130,6 +172,17 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
   const interaction = conversationId ? conv?.interaction : newThreadInteraction
   const disabled = shopperDisabledReason(interaction, brandName)
   const canInteract = !disabled
+
+  // "Ask the brand": the availability question goes in the composer once the piece's chip is ready
+  // (and the composer is on screen), editable before it's sent.
+  const asked = useRef(false)
+  const composerShown = !(conversationId && t.status !== "ready")
+  useEffect(() => {
+    if (!initialAsk || asked.current || chipLoading || !composerShown || !canInteract || !composer.current) return
+    asked.current = true
+    composer.current.insert(askAvailabilityText(product?.name ?? "piece", product?.variantLabel), { topic: "availability" })
+    onAskShown?.()
+  }, [initialAsk, chipLoading, composerShown, canInteract, product, onAskShown])
 
   const sampleProduct = product ?? (sampleDataOff() ? null : chipFor(products.find((p) => p.brandId === brandId && p.status === "published")?.id))
   const pieceName = product?.name ?? "this piece"
@@ -366,7 +419,7 @@ export function ShopperThread({ conversationId, brandId, newThreadInteraction, i
           className={layer ? "border-t border-line-soft" : ""}
         />
       )}
-      <ProductPicker open={pickProduct} onOpenChange={setPickProduct} brandId={brandId} onPick={(p) => setProduct(chipFor(p.id))} />
+      <ProductPicker open={pickProduct} onOpenChange={setPickProduct} brandId={brandId} onPick={(p) => setProduct(chipFor(p.id) ?? chipOf(p))} />
       <OrderHelp open={orderHelp} onOpenChange={setOrderHelp} brandId={brandId} onAttach={(o) => setOrder({ orderId: o.id, reference: o.reference })} />
       <ReportSheet open={!!report} onOpenChange={(o) => !o && setReport(null)} subjectType={report?.type ?? "conversation"} subjectId={report?.id ?? ""} as="shopper" subjectLabel={report?.type === "message" ? "message" : "conversation"} />
     </section>

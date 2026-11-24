@@ -1,5 +1,5 @@
 import { api } from "./client"
-import type { AdminWatchDto, ImportDetailDto, ImportListDto, ImportRunBody, ImportScanBody, StudioSitePiecesDto } from "./contracts/imports"
+import type { AdminWatchDto, ImportedStockDto, ImportDetailDto, ImportListDto, ImportRunBody, ImportScanBody, StudioSitePiecesDto } from "./contracts/imports"
 
 /** Typed wrappers over /api/admin/brand-imports (Import from website, docs/IMPORTER.md). */
 
@@ -29,3 +29,8 @@ export const actOnStudioWebsitePiece = (id: string, action: "add" | "skip") => a
 export const addStudioWebsitePieces = (body: { ids?: string[]; idempotencyKey: string }) =>
   api<StudioSitePiecesDto & { accepted: string[]; skipped: { id: string; reason: string }[]; replayed?: boolean }>("/api/studio/catalog/website-pieces/add-all", { body })
 export const STUDIO_WEBSITE_PIECES_KEY = "studio.website_pieces"
+
+/* ---------- imported stock: "Mark imported products as available (stock not tracked)" ---------- */
+
+export const previewImportedStock = (brandId: string) => api<ImportedStockDto>("/api/admin/brand-imports/stock", { query: { brandId } })
+export const markImportedStockAvailable = (brandId: string) => api<ImportedStockDto>("/api/admin/brand-imports/stock", { body: { brandId } })

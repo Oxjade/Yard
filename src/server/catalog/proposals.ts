@@ -131,7 +131,7 @@ function createBodyOf(view: ProductView) {
     compareAtMinor: view.compareAtMinor,
     processingDays: view.processingDays,
     options: view.options,
-    variants: view.variants.map((v) => ({ sku: v.sku, options: v.options, priceMinor: v.priceMinor, ...(v.initialStock ? { initialStock: v.initialStock } : {}) })),
+    variants: view.variants.map((v) => ({ sku: v.sku, options: v.options, priceMinor: v.priceMinor, ...(v.initialStock ? { initialStock: v.initialStock } : {}), ...(v.untracked && !v.initialStock ? { untracked: true as const } : {}) })),
     images: view.images.map((i) => ({ mediaId: i.mediaId, alt: i.alt })),
     collectionIds: view.collectionIds,
   })

@@ -260,6 +260,13 @@
       "when": 1795537284434,
       "tag": "0036_courier_shipping",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795540782252,
+      "tag": "0037_untracked_stock",
+      "breakpoints": true
     }
   ]
 }

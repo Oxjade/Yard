@@ -21,9 +21,11 @@ const chipClass =
   "press inline-flex h-10 shrink-0 items-center rounded-full border border-line px-4 text-sm whitespace-nowrap text-ink transition-colors hover:border-ink-2/50 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-violet [--press-scale:0.96]"
 
 /**
- * The home page's shoppable grid (production): the newest public pieces, so a visitor who lands
- * on / from a search can start shopping without finding /shop first. Server-rendered, so the
- * HTML carries real /products/… links (and an ItemList) for crawlers.
+ * The home page's shoppable grid (production): the newest public pieces a shopper can buy, so a
+ * visitor who lands on / from a search can start shopping without finding /shop first. Pieces in
+ * stock come first (newest first); sold-out ones only fill the grid when there aren't 16 in stock
+ * (listPublicProducts sorts in-stock first in SQL). Server-rendered, so the HTML carries real
+ * /products/… links (and an ItemList) for crawlers.
  *
  * One catalogue read, listPublicProducts: the same productPublicWhere visibility as /shop and
  * every public read (published or due, not moderated away, the brand not restricted or

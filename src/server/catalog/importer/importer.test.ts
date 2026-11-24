@@ -247,7 +247,8 @@ describe("Shopify adapter", () => {
     assert.match(hoodie.description, /480 gsm fleece\.\n• Puff print\n• Made in Lagos/)
     assert.equal(hoodie.subcategory, "Hoodies")
     assert.equal(hoodie.images.length, 2)
-    assert.ok(hoodie.warnings.some((w) => /Stock count not shown/.test(w)))
+    // Shopify says available without a count: in stock, count not tracked (L is sold out on the site: 0).
+    assert.ok(hoodie.warnings.some((w) => /no count shown: imported as in stock with the count not tracked/.test(w)))
     // "Default Title" is no option at all: One size.
     assert.equal(tote.options.length, 0)
     assert.equal(tote.variants.length, 1)
@@ -332,7 +333,7 @@ describe("Bumpa adapter (real responses of themangabookshop981.bumpa.shop, trimm
     const untracked = normalizeProduct(bumpaProduct({ ...p, id: 3, manage_stock: false, quantity: 0, in_stock: true } as never, B, "NGN"), NORM)!
     assert.equal(untracked.availability, "in_stock")
     assert.equal(untracked.variants[0].stock, null)
-    assert.ok(untracked.warnings.some((w) => /Stock count not shown/.test(w)))
+    assert.ok(untracked.warnings.some((w) => /no count shown: imported as in stock with the count not tracked/.test(w)))
   })
 
   it("reads a product's variations from its detail record: size, colour, stock and price", async () => {
@@ -409,6 +410,67 @@ describe("WooCommerce adapter", () => {
     assert.ok(ring.warnings.includes("No photos found. Products need a photo to go live."))
     assert.equal(ring.variants[0].stock, 0)
     assert.equal(ring.categorySlug, "jewelry")
+  })
+})
+
+describe("available on the site, no count shown (Shopify, WooCommerce, untracked Bumpa)", () => {
+  // What a variant becomes in the suggestion: a count, "stock not tracked", or nothing (0, sold out).
+  const stockOf = (v: { initialStock?: number; untracked?: true }) => (v.initialStock ? v.initialStock : v.untracked ? "untracked" : 0)
+  const choose = (p: ImportProductDto, stock: Record<string, number> = {}) => importChoiceBody.parse({ key: p.key, title: p.title, priceMinor: p.priceMinor ?? 1000, currency: p.currency ?? "NGN", categorySlug: "streetwear", stock })
+
+  it("Shopify: available variants come in as in stock, count not tracked; sold-out ones stay sold out", async () => {
+    const O = "https://testlabel.example.com"
+    const { fetch } = site({ [`${O}/`]: [HTML, read("shopify/home.html")], [`${O}/products.json?limit=250&page=1`]: ["application/json", read("shopify/products.json")] })
+    const r = await scanSite(O, { fetch, normalize: NORM, existing: NONE })
+    const [hoodie, tote] = r.products
+    const body = proposalBodyOf(hoodie, choose(hoodie), [], { defaultProcessing: [1, 3] })
+    assert.deepEqual(
+      body.variants.map((v) => [`${v.options.Size} / ${v.options.Colour}`, stockOf(v)]),
+      [
+        ["S / Black", "untracked"],
+        ["M / Black", "untracked"],
+        ["L / Black", 0],
+        ["M / Sand", "untracked"],
+      ],
+    )
+    // Never an invented number.
+    assert.ok(body.variants.every((v) => v.initialStock === undefined))
+    // The product form (and so the suggestion) accepts it.
+    assert.doesNotThrow(() => adminProposalCreateBody.parse({ kind: "new", brandId: "b_x", product: body }))
+    assert.deepEqual(proposalBodyOf(tote, choose(tote), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), ["untracked"])
+  })
+
+  it("a count the admin types wins over not tracked, 0 included", async () => {
+    const O = "https://testlabel.example.com"
+    const { fetch } = site({ [`${O}/`]: [HTML, read("shopify/home.html")], [`${O}/products.json?limit=250&page=1`]: ["application/json", read("shopify/products.json")] })
+    const [hoodie] = (await scanSite(O, { fetch, normalize: NORM, existing: NONE })).products
+    const body = proposalBodyOf(hoodie, choose(hoodie, { "S / Black": 3, "M / Black": 0 }), [], { defaultProcessing: [1, 3] })
+    assert.deepEqual(body.variants.map(stockOf), [3, 0, 0, "untracked"])
+  })
+
+  it("WooCommerce: is_in_stock without a count is in stock, not tracked; out of stock is 0", async () => {
+    const O = "https://shop.example.org"
+    const { fetch } = site({ [`${O}/`]: [HTML, '<html><link rel="stylesheet" href="/wp-content/plugins/woocommerce/style.css"></html>'], [`${O}/wp-json/wc/store/v1/products?per_page=100&page=1`]: ["application/json; charset=UTF-8", read("woocommerce/products.json")] })
+    const [shirt, ring] = (await scanSite(O, { fetch, normalize: { ...NORM, brandCategory: "fashion" }, existing: NONE })).products
+    assert.equal(shirt.availability, "in_stock")
+    assert.deepEqual(proposalBodyOf(shirt, choose(shirt), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), ["untracked", "untracked"])
+    assert.deepEqual(proposalBodyOf(ring, choose(ring), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), [0])
+  })
+
+  it("Bumpa: a product that doesn't manage stock is in stock, not tracked; a counted one keeps its count", () => {
+    const listing = JSON.parse(read("bumpa/products.json"))
+    const p = listing.products.data[1]
+    const off = normalizeProduct(bumpaProduct({ ...p, id: 3, manage_stock: false, quantity: 0, in_stock: true } as never, "https://themangabookshop981.bumpa.shop", "NGN"), NORM)!
+    assert.deepEqual(proposalBodyOf(off, choose(off), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), ["untracked"])
+    const counted = normalizeProduct(bumpaProduct({ ...p, id: 4, manage_stock: true, quantity: 2, in_stock: true } as never, "https://themangabookshop981.bumpa.shop", "NGN"), NORM)!
+    assert.deepEqual(proposalBodyOf(counted, choose(counted), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), [2])
+  })
+
+  it("a site that says nothing about availability stays at 0, with the old warning", () => {
+    const p = normalizeProduct({ sourceUrl: "https://x.example.com/p/1", title: "Plain Tee", price: "10000", currency: "NGN", images: [] }, NORM)!
+    assert.equal(p.availability, "unknown")
+    assert.ok(p.warnings.some((w) => /Stock count not shown/.test(w)))
+    assert.deepEqual(proposalBodyOf(p, choose(p), [], { defaultProcessing: [1, 3] }).variants.map(stockOf), [0])
   })
 })
 

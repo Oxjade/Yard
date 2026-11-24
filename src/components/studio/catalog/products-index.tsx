@@ -11,6 +11,8 @@ import { SuggestionsBanner } from "@/components/proposals/studio-proposals"
 import { WebsitePiecesSection } from "@/components/studio/catalog/website-pieces"
 import { productStatusMeta } from "@/components/dashboard/status-badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNow } from "@/hooks/use-now"
 import { ApiError, api } from "@/lib/api/client"
@@ -136,6 +138,9 @@ export function ProductsIndex() {
   const [sort, setSort] = useState<Sort>("updated")
   const [archiving, setArchiving] = useState<Product[] | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
+  const [stocking, setStocking] = useState<Product[] | null>(null)
+  const [stockMode, setStockMode] = useState<"untracked" | "set">("untracked")
+  const [stockQty, setStockQty] = useState("")
 
   const ordered = useMemo(() => new Set(orders.flatMap((o) => o.lines.map((l) => l.productId))), [orders])
   const loadError = live && liveProducts.error ? (liveProducts.error instanceof ApiError ? liveProducts.error.message : "Couldn't load this brand's catalogue.") : null
@@ -242,6 +247,49 @@ export function ProductsIndex() {
     })
   }
 
+  /** Settles the bulk Set stock that opened the dialog (as Archive does). */
+  const stockAnswer = useRef<((confirmed: boolean) => void) | null>(null)
+  function answerStock(confirmed: boolean) {
+    stockAnswer.current?.(confirmed)
+    stockAnswer.current = null
+  }
+  function askStock(list: Product[]) {
+    const targets = list.filter((p) => p.status !== "archived")
+    if (!targets.length) return false
+    answerStock(false)
+    setStockMode("untracked")
+    setStockQty("")
+    setStocking(targets)
+    return new Promise<boolean>((resolve) => {
+      stockAnswer.current = resolve
+    })
+  }
+  const stockQtyValid = /^\d{1,7}$/.test(stockQty.trim())
+
+  /** Every size of the selected products: "In stock, not tracked", or one count for all. */
+  async function setStock(list: Product[], mode: "untracked" | "set", qty: number) {
+    const ids = list.map((p) => p.id)
+    if (live) {
+      try {
+        const r = await api<{ products: number; variants: number; keptForHolds?: number }>("/api/studio/catalog/products/stock", { body: mode === "untracked" ? { mode, productIds: ids } : { mode, productIds: ids, qty } })
+        await liveProducts.revalidate()
+        if (!r.variants) toast.success(mode === "untracked" ? "Already in stock, not tracked" : "Nothing needed changing")
+        else toast.success(mode === "untracked" ? `${plural(r.products, "product")} in stock, not tracked` : `Stock set to ${qty} for ${plural(r.variants, "size")}`)
+        if (r.keptForHolds) toast.message(`${plural(r.keptForHolds, "size")} kept ${r.keptForHolds === 1 ? "its" : "their"} count`, { description: "More are held in checkouts right now than the number you set." })
+      } catch (e) {
+        toast.error("Stock couldn't be changed", { description: e instanceof ApiError ? e.message : "Check your connection and try again." })
+      }
+      return
+    }
+    const state = useStudio.getState()
+    useStudio.setState({
+      products: state.products.map((p) =>
+        !ids.includes(p.id) ? p : { ...p, variants: p.variants.map((v) => (mode === "untracked" ? { ...v, untracked: true } : { ...v, stock: Math.max(qty, v.reserved), untracked: false })) },
+      ),
+    })
+    toast.success(mode === "untracked" ? `${plural(ids.length, "product")} in stock, not tracked` : `Stock set to ${qty} for ${plural(ids.length, "product")}`)
+  }
+
   async function restore(list: Product[]) {
     if (live) {
       const targets = list.filter((p) => p.status === "archived")
@@ -324,7 +372,7 @@ export function ProductsIndex() {
             {/* Phones: status, price and stock ride under the name, since their columns are hidden. */}
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2 sm:hidden">
               <span className="text-ink tabular">{formatMoney(p.price, p.currency)}</span>
-              <ProductStock available={totalAvailable(p)} />
+              <ProductStock available={totalAvailable(p)} untracked={p.variants.filter((v) => v.untracked).length} variants={p.variants.length} />
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-2 sm:hidden">
               <ListingPill status={p.status} hidden={hidden} />
@@ -355,8 +403,11 @@ export function ProductsIndex() {
       sortValue: (p) => totalAvailable(p),
       cell: (p) => (
         <span className="grid gap-0.5">
-          <ProductStock available={totalAvailable(p)} />
-          <span className="text-xs text-ink-3">{plural(p.variants.length, "variant")}</span>
+          <ProductStock available={totalAvailable(p)} untracked={p.variants.filter((v) => v.untracked).length} variants={p.variants.length} />
+          <span className="text-xs text-ink-3">
+            {plural(p.variants.length, "variant")}
+            {p.variants.some((v) => v.untracked) && !p.variants.every((v) => v.untracked) ? `, ${p.variants.filter((v) => v.untracked).length} not tracked` : ""}
+          </span>
         </span>
       ),
     },
@@ -397,7 +448,7 @@ export function ProductsIndex() {
   const bulkActions: BulkAction<Product>[] =
     tab === "archived"
       ? [{ label: "Restore as drafts", onSelect: restore, appliesTo: (p) => p.status === "archived", disabledReason: "None of the selected products is archived." }, bulkPublish]
-      : [bulkPublish, { label: "Archive", onSelect: askArchive, appliesTo: (p) => p.status !== "archived", disabledReason: "The selected products are already archived." }]
+      : [bulkPublish, { label: "Set stock", onSelect: askStock, appliesTo: (p) => p.status !== "archived" && p.variants.length > 0, disabledReason: "None of the selected products has sizes to stock." }, { label: "Archive", onSelect: askArchive, appliesTo: (p) => p.status !== "archived", disabledReason: "The selected products are already archived." }]
 
   const empty =
     category !== "all"
@@ -504,6 +555,52 @@ export function ProductsIndex() {
         }}
         returnFocus={toSelectAll}
       />
+      <ConfirmDialog
+        open={!!stocking}
+        onOpenChange={(o) => {
+          if (o) return
+          answerStock(false)
+          setStocking(null)
+        }}
+        tone="primary"
+        title={stocking?.length === 1 ? `Set stock for ${stocking[0].name}` : `Set stock for ${plural(stocking?.length ?? 0, "product")}`}
+        body="Applies to every size of the selected products."
+        confirmLabel={stockMode === "untracked" ? "Mark in stock" : "Set stock"}
+        confirmDisabled={stockMode === "set" && !stockQtyValid}
+        onConfirm={() => {
+          if (stocking) void setStock(stocking, stockMode, Number(stockQty.trim() || 0))
+          answerStock(true)
+        }}
+        returnFocus={toSelectAll}
+      >
+        <RadioGroup value={stockMode} onValueChange={(v) => setStockMode(v as "untracked" | "set")} className="grid gap-3" aria-label="How to stock them">
+          <label htmlFor="bulk-stock-untracked" className="flex cursor-pointer items-start gap-3 rounded-lg border border-line-soft p-3 has-[[data-state=checked]]:border-ink-2/60">
+            <RadioGroupItem id="bulk-stock-untracked" value="untracked" className="mt-0.5" />
+            <span className="grid gap-0.5">
+              <span className="text-sm text-ink">In stock, count not tracked</span>
+              <span className="text-xs text-ink-2">Shoppers can always buy them. No number is shown. Good when you make to order or don&apos;t count.</span>
+            </span>
+          </label>
+          <label htmlFor="bulk-stock-set" className="flex cursor-pointer items-start gap-3 rounded-lg border border-line-soft p-3 has-[[data-state=checked]]:border-ink-2/60">
+            <RadioGroupItem id="bulk-stock-set" value="set" className="mt-0.5" />
+            <span className="grid min-w-0 flex-1 gap-1.5">
+              <span className="text-sm text-ink">Set every size to a count</span>
+              <Input
+                value={stockQty}
+                onChange={(e) => {
+                  setStockMode("set")
+                  setStockQty(e.target.value.replace(/\D/g, "").slice(0, 7))
+                }}
+                inputMode="numeric"
+                placeholder="For example 10"
+                aria-label="Units per size"
+                aria-invalid={stockMode === "set" && !!stockQty && !stockQtyValid}
+                className="h-9 max-w-40"
+              />
+            </span>
+          </label>
+        </RadioGroup>
+      </ConfirmDialog>
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

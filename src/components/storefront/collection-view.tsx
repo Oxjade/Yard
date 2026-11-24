@@ -11,6 +11,7 @@ import { EmptyCard } from "@/components/market/editorial/empty-card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { duration, ease } from "@/lib/motion"
+import { inStockFirst, productInStock } from "@/lib/in-stock-first"
 import { cn } from "@/lib/utils"
 import type { Brand, Collection, Product, StorefrontConfig } from "@/lib/data/types"
 import { AccentLink } from "./parts"
@@ -26,13 +27,17 @@ const sorts: { value: Sort; label: string }[] = [
   { value: "price-desc", label: "Price, high to low" },
 ]
 
+/** The chosen order within each group, pieces a shopper can buy first and sold out last. */
 function sortProducts(list: Product[], sort: Sort) {
-  if (sort === "featured") return list // the brand's own order
-  return [...list].sort((a, b) => {
-    if (sort === "newest") return b.createdAt.localeCompare(a.createdAt)
-    if (sort === "price-asc") return a.price - b.price
-    return b.price - a.price
-  })
+  const ordered =
+    sort === "featured"
+      ? list // the brand's own order
+      : [...list].sort((a, b) => {
+          if (sort === "newest") return b.createdAt.localeCompare(a.createdAt)
+          if (sort === "price-asc") return a.price - b.price
+          return b.price - a.price
+        })
+  return inStockFirst(ordered, productInStock)
 }
 
 /**

@@ -154,6 +154,8 @@ export type Variant = {
   reserved: number
   /** Live server price override in minor units, when the variant has its own price. */
   priceOverrideMinor?: number | null
+  /** "Available, stock not tracked": always in stock, no count (availableStock reports UNTRACKED_AVAILABLE). */
+  untracked?: boolean
 }
 
 export type Product = {

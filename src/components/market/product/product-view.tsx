@@ -7,7 +7,7 @@ import { SealCheckIcon as BadgeCheck, ShoppingBagOpenIcon as ShoppingBag } from 
 import { AnimatePresence, motion } from "motion/react"
 import { PlaceBadge } from "@/components/around/entry/place-badge"
 import { RankBadge } from "@/components/charts/entry/rank-badge"
-import { MessageBrandButton } from "@/components/inbox/entry"
+import { AskBrandButton, MessageBrandButton, useCanAskBrand } from "@/components/inbox/entry"
 import { SeenOnFeed } from "@/components/storefront/social/seen-on-feed"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
@@ -45,7 +45,7 @@ const actionLabel: Record<Action, string> = {
   locked: "Not released yet",
   closed: "Entries closed",
   "choose-size": "Select a size",
-  "sold-out": "Sold out",
+  "sold-out": "Sold out right now",
   limit: "Add to cart",
   ready: "Add to cart",
 }
@@ -97,6 +97,8 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
   const qty = Math.min(sel.quantity, Math.max(1, maxQty))
 
   const productSoldOut = productStock(product) === 0
+  // Sold out (the piece, or the size chosen): "Ask the brand" instead of a dead button, then Notify me.
+  const canAsk = useCanAskBrand(brand.id)
   const soldOut = productSoldOut || (sel.variant !== undefined && sel.stock === 0) || (sel.needsSize && sel.colourStock === 0)
   const action: Action = opening ? "opening" : phase === "upcoming" ? "locked" : drawClosed ? "closed" : soldOut ? "sold-out" : sel.needsSize ? "choose-size" : maxQty === 0 ? "limit" : "ready"
   const fitNote = product.details.find((d) => /\bfit\b|size down|size up|true to size/i.test(d))
@@ -204,8 +206,10 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
           : `Your cart already holds the most you can buy at once (${MAX_QTY_PER_LINE}).`
       : action === "ready" && inBag > 0
         ? `${inBag} already in your cart.`
-        : action === "sold-out" && !sel.variant
-          ? `Sold out for now. Save it to keep it in your wishlist, or see more from ${brand.name} below.`
+        : action === "sold-out"
+          ? canAsk
+            ? `Ask ${brand.name} if it's coming back, or get notified when it is.`
+            : `Sold out for now. Save it to keep it in your wishlist, or see more from ${brand.name} below.`
           : null
 
   // The label changes with the selection (Select a size, Add to cart, Sold out): a short roll.
@@ -349,6 +353,8 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                 )
               ) : action === "locked" && activeDrop ? (
                 <NotifyButton drop={activeDrop} variant="primary" size="lg" className="h-14 flex-1 text-base" />
+              ) : action === "sold-out" && canAsk ? (
+                <AskBrandButton brand={brand} productId={product.id} variantId={sel.variant?.id ?? null} className="min-w-0 flex-1" />
               ) : action === "sold-out" && sel.variant && sel.stock === 0 ? (
                 <BackInStockButton variantId={sel.variant.id} className="min-w-0 flex-1" />
               ) : (
@@ -367,6 +373,16 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
               )}
               <WishlistButton variant="button" productId={product.id} name={product.name} />
             </div>
+            {action === "sold-out" && canAsk ? (
+              sel.variant && sel.stock === 0 ? (
+                <BackInStockButton variantId={sel.variant.id} secondary className="mt-2" />
+              ) : sel.sizes.length ? (
+                // The whole piece is sold out and no size is chosen yet: Notify me is per size.
+                <Button type="button" variant="secondary" size="xl" className="mt-2 h-12 w-full text-[0.9375rem]" onClick={() => promptSize(sizeGridRef.current)}>
+                  Get notified when it&apos;s back
+                </Button>
+              ) : null
+            ) : null}
             <AnimatePresence initial={false}>
               {helper ? (
                 <motion.p
@@ -474,6 +490,8 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={() => setSheetOpen(true)}>
                   Select a size
                 </Button>
+              ) : action === "sold-out" && canAsk ? (
+                <AskBrandButton brand={brand} productId={product.id} variantId={sel.variant?.id ?? null} size="lg" className="h-11 px-4" />
               ) : action === "sold-out" && sel.variant && sel.stock === 0 && sel.sizes.length ? (
                 <Button type="button" variant="primary" size="lg" className="h-11 px-4" onClick={() => setSheetOpen(true)}>
                   Notify me
@@ -515,7 +533,12 @@ export function ProductView({ product, brand, drop, dropPanel, children }: { pro
                 <StockLine selection={sel} locked={action === "locked"} closed={action === "closed"} opening={opening} />
                 <SizeGuide sizes={sel.sizes} selected={sel.size} brandName={brand.name} fitNote={fitNote} />
               </div>
-              {(action === "sold-out" || action === "opening") && sel.variant && (opening || sel.stock === 0) ? (
+              {action === "sold-out" && canAsk ? (
+                <div className="grid gap-2">
+                  <AskBrandButton brand={brand} productId={product.id} variantId={sel.variant?.id ?? null} className="w-full" onOpen={() => setSheetOpen(false)} />
+                  {sel.variant && sel.stock === 0 ? <BackInStockButton variantId={sel.variant.id} secondary /> : null}
+                </div>
+              ) : (action === "sold-out" || action === "opening") && sel.variant && (opening || sel.stock === 0) ? (
                 <BackInStockButton variantId={sel.variant.id} />
               ) : action === "opening" ? (
                 <Button type="button" variant="primary" size="xl" className="w-full" onClick={() => promptSize(sheetGridRef.current)}>

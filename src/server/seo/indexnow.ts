@@ -48,7 +48,7 @@ export async function productsAtZero(productIds: string[]): Promise<string[]> {
   const out: string[] = []
   for (const ids of chunks([...new Set(productIds)])) {
     const rows = await d
-      .select({ productId: catalogVariants.productId, available: sql<number>`coalesce(sum(greatest(${catalogVariants.onHand} - ${catalogVariants.held}, 0)), 0)::int` })
+      .select({ productId: catalogVariants.productId, available: sql<number>`coalesce(sum(case when ${catalogVariants.trackStock} then greatest(${catalogVariants.onHand} - ${catalogVariants.held}, 0) else 1 end), 0)::int` })
       .from(catalogVariants)
       .where(inArray(catalogVariants.productId, ids))
       .groupBy(catalogVariants.productId)

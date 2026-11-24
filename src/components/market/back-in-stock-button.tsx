@@ -9,7 +9,11 @@ import { useSession } from "@/lib/stores/session"
 
 type Watch = { variantId: string; watching: boolean }
 
-export function BackInStockButton({ variantId, className }: { variantId: string; className?: string }) {
+/**
+ * Notify me when a size is back (back_in_stock). `secondary`: the quieter second action under "Ask
+ * the brand" on a sold-out piece, reading "Get notified when it's back".
+ */
+export function BackInStockButton({ variantId, className, secondary = false }: { variantId: string; className?: string; secondary?: boolean }) {
   const user = useSession((state) => state.user)
   const requireAuth = useSession((state) => state.requireAuth)
   const [watch, setWatch] = useState<Watch | null>(null)
@@ -55,9 +59,9 @@ export function BackInStockButton({ variantId, className }: { variantId: string;
   }
 
   return <div className={className}>
-    <Button type="button" variant={active ? "secondary" : "primary"} size="xl" loading={busy} disabled={busy} aria-pressed={active} onClick={onClick} className="h-14 w-full text-base">
+    <Button type="button" variant={active || secondary ? "secondary" : "primary"} size="xl" loading={busy} disabled={busy} aria-pressed={active} onClick={onClick} className={secondary ? "h-12 w-full text-[0.9375rem]" : "h-14 w-full text-base"}>
       <BellSimpleIcon className="size-5" aria-hidden />
-      {active ? "Stop watching" : "Notify me"}
+      {active ? "Stop watching" : secondary ? "Get notified when it's back" : "Notify me"}
     </Button>
     {error ? <p role="alert" className="mt-2 text-xs text-danger">{error}</p> : null}
   </div>

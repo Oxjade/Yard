@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { CheckIcon, PlusIcon, ShoppingBagOpenIcon } from "@phosphor-icons/react"
+import { ChatCircleDotsIcon, CheckIcon, PlusIcon, ShoppingBagOpenIcon } from "@phosphor-icons/react"
 import { motion } from "motion/react"
 import { ChipRadioGroup } from "@/components/market/catalog/chip"
 import { useDropClock } from "@/components/market/editorial/use-drop-phase"
@@ -9,6 +9,9 @@ import { usePageSampleDataState } from "@/components/sample/sample-data-context"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useAsyncAction } from "@/hooks/use-async-action"
 import { availableStock } from "@/lib/data/products"
+import { askBrandHref } from "@/lib/ask-brand"
+import { useServerSession } from "@/lib/session/use-server-session"
+import { useMessageBrand } from "@/components/inbox/entry/message-brand-button"
 import { duration, ease, spring } from "@/lib/motion"
 import { flyToCart } from "@/lib/fly-to-cart"
 import { MAX_QTY_PER_LINE, useCart } from "@/lib/stores/cart"
@@ -144,13 +147,21 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
 
   // A founding brand that isn't selling yet: the card says so (the product page has Notify me).
   const opening = product.brandSummary?.forSale === false
+  // Sold out: the capsule asks the brand instead of being a dead end (the card's tag still says
+  // "Sold out"). Not for the brand's own members, who reply from Studio, nor without a brand handle.
+  const brandHandle = product.brandSummary?.handle
+  const ownBrand = useServerSession((s) => s.brand?.brand.id === product.brandId)
+  const askable = soldOut && !opening && !!brandHandle && !ownBrand
+  const goAsk = useMessageBrand()
   // Sold out reads as such on every card, drop or not; a tap only shows the words.
   const closed: Closed | undefined = opening
     ? { reason: "opening soon, not on sale yet", label: "Opening soon", describedBy: blocked?.describedBy, onAttempt: () => {} }
-    : soldOut
+    : soldOut && !askable
       ? { reason: "sold out", label: "Sold out", describedBy: blocked?.describedBy, onAttempt: () => {} }
-      : blocked
-  const pickable = !single && !closed
+      : soldOut
+        ? undefined
+        : blocked
+  const pickable = !single && !closed && !askable
   // Adding closed while the picker was up (the drop's clock moved on): put it away, so it
   // can't open again by itself if adding reopens later.
   if (open && !pickable) setOpen(false)
@@ -180,7 +191,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   // From the tap until the flash ends the capsule belongs to the add: it keeps the add's look
   // (an add that just reached a drop's limit still confirms in acid) and ignores repeat presses.
   const busy = adding.pending || added
-  const readyLabel = closed ? closed.label : single ? "Add to cart" : `Choose ${noun}`
+  const readyLabel = askable ? "Ask the brand" : closed ? closed.label : single ? "Add to cart" : `Choose ${noun}`
 
   function commit(variantId: string) {
     setOpen(false)
@@ -193,7 +204,9 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
   const closedLook = closed !== undefined && !busy
   const ariaLabel = opening
     ? `${product.name} isn't on sale yet: its brand is opening soon`
-    : soldOut
+    : askable
+      ? `${product.name} is sold out right now. Ask ${product.brandSummary?.name ?? "the brand"} if it's coming back`
+      : soldOut
     ? `${product.name} is sold out`
     : closed
       ? `Add ${product.name} to cart, ${closedWords(closed)}`
@@ -232,6 +245,10 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
         e.preventDefault()
         e.stopPropagation()
         if (busy) return
+        if (askable) {
+          goAsk(askBrandHref({ handle: brandHandle! }, product.id))
+          return
+        }
         if (closed) {
           setExplainAt(Date.now())
           return closed.onAttempt()
@@ -251,6 +268,7 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
       aria-disabled={closedLook ? true : undefined}
       aria-describedby={closed?.describedBy}
       {...(single || pickable ? {} : noPopup)}
+      data-ask={askable ? "" : undefined}
       data-expanded={expanded ? "" : undefined}
       data-phase={busy ? "added" : closed ? "closed" : pickerOpen ? "picking" : "ready"}
       style={{ width }}
@@ -293,7 +311,11 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
           ) : (
             <>
               <PlusIcon className={cn("col-start-1 row-start-1 size-[18px] transition-[opacity,transform] duration-200 ease-out-quint", closedLook && "opacity-60", whenOpen.plusOut)} />
-              <ShoppingBagOpenIcon className={cn("col-start-1 row-start-1 size-[18px] scale-75 opacity-0 transition-[opacity,transform] duration-200 ease-out-quint", whenOpen.bagIn)} />
+              {askable ? (
+                <ChatCircleDotsIcon className={cn("col-start-1 row-start-1 size-[18px] scale-75 opacity-0 transition-[opacity,transform] duration-200 ease-out-quint", whenOpen.bagIn)} />
+              ) : (
+                <ShoppingBagOpenIcon className={cn("col-start-1 row-start-1 size-[18px] scale-75 opacity-0 transition-[opacity,transform] duration-200 ease-out-quint", whenOpen.bagIn)} />
+              )}
             </>
           )}
         </motion.span>
@@ -369,6 +391,20 @@ function QuickAddButton({ product, className, closed: blocked }: { product: Prod
             {sizeVariants[0] && availableStock(sizeVariants[0]) === 0 ? `${colour} is sold out` : `Add ${colour} to cart`}
           </button>
         )}
+        {brandHandle && !ownBrand && sizeVariants.some((v) => availableStock(v) === 0) ? (
+          // A size or colour sold out: ask the brand about it rather than a dead end.
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              goAsk(askBrandHref({ handle: brandHandle }, product.id))
+            }}
+            className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-xs text-ink-2 underline-offset-4 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-violet"
+          >
+            <ChatCircleDotsIcon className="size-4" aria-hidden />
+            Sold out in your size? <span className="text-ink">Ask the brand</span>
+          </button>
+        ) : null}
       </PopoverContent>
     </Popover>
   )

@@ -26,6 +26,7 @@ import { categoryName, countryName, daysSince, formatDate, plural, relDays } fro
 import { brandStatusMeta, kycMeta, riskMeta } from "./meta"
 import { useLast } from "./use-last"
 import { WebsitePiecesTray } from "@/components/admin/importer/website-watch"
+import { ImportedStockAction } from "@/components/admin/importer/imported-stock-action"
 import { DeleteBrandSection, type DeleteTarget } from "./delete-brand-dialog"
 import { applicationLabel } from "./all-brands"
 
@@ -241,6 +242,9 @@ function ProductsSection({ appId, brandId, brandName, products, canPropose }: { 
           </li>
           <li>
             <LinkRow href={`/admin/products/suggestions?brand=${encodeURIComponent(brandId)}&status=all`} label="Suggestions from Yard" hint={`What Yard suggested to ${brandName}`} />
+          </li>
+          <li>
+            <ImportedStockAction brandId={brandId} brandName={brandName} />
           </li>
         </ul>
       ) : null}

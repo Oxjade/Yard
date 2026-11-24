@@ -195,6 +195,7 @@ export function ConfirmDialog({
   body,
   confirmLabel,
   onConfirm,
+  confirmDisabled = false,
   tone = "destructive",
   returnFocus,
   children,
@@ -205,6 +206,8 @@ export function ConfirmDialog({
   body: React.ReactNode
   confirmLabel: string
   onConfirm: () => void
+  /** Keeps the confirm button off until the dialog's own fields are valid. */
+  confirmDisabled?: boolean
   tone?: "destructive" | "primary" | "secondary"
   /** Where focus goes on close when the control that opened the dialog is gone or disabled. */
   returnFocus?: () => HTMLElement | null | undefined
@@ -223,6 +226,7 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             variant={tone}
+            disabled={confirmDisabled}
             onClick={() => {
               onConfirm()
               onOpenChange(false)

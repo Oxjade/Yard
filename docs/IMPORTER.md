@@ -63,18 +63,39 @@ to another platform skips a probe (a Labeld or Bumpa site isn't asked for `/prod
 
 | Platform | How it's read | What comes out |
 |---|---|---|
-| **Shopify** | `/products.json?limit=250&page=N` | options and variants, prices, compare-at, `available` per variant, images, type and tags. Currency from the home page (`Shopify.currency`, `og:price:currency`) or `/cart.js`. Stock counts aren't public. |
-| **WooCommerce** | Store API `/wp-json/wc/store/v1/products?per_page=100&page=N` | prices in minor units with the currency, sale prices, attributes with variations as options, `is_in_stock`, images, categories and tags. Stock counts aren't public. |
+| **Shopify** | `/products.json?limit=250&page=N` | options and variants, prices, compare-at, `available` per variant, images, type and tags. Currency from the home page (`Shopify.currency`, `og:price:currency`) or `/cart.js`. Stock counts aren't public: an available variant comes in as in stock, count not tracked (see Stock). |
+| **WooCommerce** | Store API `/wp-json/wc/store/v1/products?per_page=100&page=N` | prices in minor units with the currency, sale prices, attributes with variations as options, `is_in_stock`, images, categories and tags. Stock counts aren't public: in stock comes in as in stock, count not tracked (see Stock). |
 | **Labeld** (`<handle>.labeld.app`; `shop.labeld.app/<handle>` is mapped to it) | home page, `/sitemap.xml`, each `/drops/<id>` page, and the drops each page lists as related | Organization JSON-LD for the brand; Product JSON-LD plus the Next.js flight payload record per drop: `sizeOptions`, `colors` (with hex), `stockRemaining` with `stockMode` global (split evenly across variants, with a warning) or variant (`variantStock`), `variantPriceAdjustmentsMinor`, `galleryImages`, production days. The shop's listing loads in the browser, so the sitemap and related products are how every drop is found; no "load more" call is needed. |
-| **Bumpa** (`<shop>.bumpa.shop`, or the shop's own domain when its home page has Bumpa's Next.js `storeData` and a getbumpa.com/Bumpa reference) | the home page's `__NEXT_DATA__` `storeData`, then the shop's own JSON API: `/storefront/products?limit=200&page=N` until `last_page` (one request for up to 200 products), and `/storefront/products/<id>?with_variations=1` only for a product with `variation_count > 0` or options | the brand from `storeData`: name, logo (the CDN original, not the 200 px copy), hero banner when the theme has one, socials (never WhatsApp), and the place as city and country only (the phone, street and zip are never read). Prices are major-unit strings in the store currency; a `sales` price above 0 is the price with the regular price as compare-at, else `compare_at_price` is. Stock is `quantity` when `manage_stock` is on (untracked: in stock, count not shown), else `in_stock`. Images from `images[].path` on the CDN (`image_path`'s host), then `image_url`. Variations map to their options (Size, Colour, …) with their own price and quantity; when they can't be read the product stays One size with a warning. Category guesses from `tag` and the product's collections. |
+| **Bumpa** (`<shop>.bumpa.shop`, or the shop's own domain when its home page has Bumpa's Next.js `storeData` and a getbumpa.com/Bumpa reference) | the home page's `__NEXT_DATA__` `storeData`, then the shop's own JSON API: `/storefront/products?limit=200&page=N` until `last_page` (one request for up to 200 products), and `/storefront/products/<id>?with_variations=1` only for a product with `variation_count > 0` or options | the brand from `storeData`: name, logo (the CDN original, not the 200 px copy), hero banner when the theme has one, socials (never WhatsApp), and the place as city and country only (the phone, street and zip are never read). Prices are major-unit strings in the store currency; a `sales` price above 0 is the price with the regular price as compare-at, else `compare_at_price` is. Stock is `quantity` when `manage_stock` is on (untracked: in stock, count not tracked), else `in_stock`. Images from `images[].path` on the CDN (`image_path`'s host), then `image_url`. Variations map to their options (Size, Colour, …) with their own price and quantity; when they can't be read the product stays One size with a warning. Category guesses from `tag` and the product's collections. |
 | **Any other site** | `robots.txt` sitemaps or `/sitemap.xml` (an index is followed, product sitemaps first) plus the home page's links, product-looking paths first | schema.org Product / ProductGroup JSON-LD (variants' size and colour), then Product microdata, then OpenGraph product tags. ItemList JSON-LD adds the products it lists. |
 
 The brand comes from the site's own Organization/Store JSON-LD (a platform's node is skipped),
 then OpenGraph and the meta description.
 
 Warnings the preview shows per product include "No sizes found, defaulting to One size", "Price
-missing", "Stock count not shown on the site", "The site counts 10 in stock across all sizes", "No
-photos found", "Sold out on the site", and currency notes.
+missing", "In stock on the site, no count shown", "Stock count not shown on the site", "The site
+counts 10 in stock across all sizes", "No photos found", "Sold out on the site", and currency notes.
+
+## Stock
+
+| What the site shows | What the product gets |
+|---|---|
+| A count (Labeld, a Bumpa product that manages stock) | That count as opening stock. |
+| Available, no count (Shopify `available`, WooCommerce `is_in_stock`, a Bumpa product that doesn't manage stock, schema.org `InStock`) | **In stock, count not tracked** (`catalog_variants.track_stock = false`): always available, no number shown or made up. |
+| Sold out | 0 (sold out). |
+| Nothing either way | 0, with "Stock count not shown on the site". |
+
+A count the admin types in the preview always wins (0 included). In Studio a brand can set a count
+for any size (that turns tracking back on) or mark products "In stock, count not tracked" in bulk
+(Products › select › **Set stock**).
+
+Products imported before this rule came in at 0 and showed as sold out. **Admin › Brands › a brand
+› Products › Mark imported products as available** fixes them: the confirmation previews how many
+sizes change and which stay (sold out on the site, a count on the site, stock set or sold in Yard,
+or the site didn't say), then marks only sizes that came from the brand's site, are still at 0 with
+nothing held and no stock movement, and that the site showed as available without a count. Same
+permission as importing; audited `catalog.imported_stock_untracked`; anyone waiting on a size hears
+it's back.
 
 ## Currency
 

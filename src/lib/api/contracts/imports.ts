@@ -36,6 +36,13 @@ export type ImportVariantDto = {
   available: boolean | null
 }
 
+/**
+ * The site says this variant can be bought but shows no count (Shopify and WooCommerce never
+ * publish counts; a Bumpa product that doesn't manage stock): it is imported as "available, stock
+ * not tracked", never as 0 (sold out) and never with an invented count.
+ */
+export const availableUncounted = (v: Pick<ImportVariantDto, "stock" | "available">, availability: ImportAvailability) => v.stock == null && (v.available === true || (v.available == null && availability === "in_stock"))
+
 /** One product as the scan found it, normalised (prices in the source currency's minor units). */
 export type ImportProductDto = {
   /** Stable within a scan: the source's product id, else its URL. */
@@ -257,3 +264,21 @@ export const adminPiecesBulkBody = z.strictObject({ brandId: safeId(), action: z
 export const studioPieceActionBody = z.strictObject({ action: z.enum(["add", "skip"]) })
 /** POST /api/studio/catalog/website-pieces/add-all: `ids` = the selected pieces; no ids = every waiting one. */
 export const studioPiecesAddAllBody = z.strictObject({ ids: z.array(safeId()).min(1).max(100).optional(), idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, { error: "Send an action key of 8–80 letters, digits, - or _." }) })
+
+/**
+ * GET/POST /api/admin/brand-imports/stock?brandId= : Admin › Brands › Products › "Mark imported
+ * products as available (stock not tracked)". GET previews, POST applies (server/catalog/importer/imported-stock.ts).
+ */
+export type ImportedStockDto = {
+  brandName: string
+  /** Where the brand's products were imported from ("Shopify"). */
+  platforms: string[]
+  /** Products from the brand's website still in its catalogue. */
+  imported: number
+  /** Products and sizes that become (or became) "available, stock not tracked". */
+  products: number
+  variants: number
+  /** Sizes left as they are: sold out on the site, a count shown on the site, stock set or sold in Yard, or the site didn't say. */
+  skipped: { soldOutOnSite: number; countOnSite: number; stockSetInYard: number; unknown: number }
+}
+export const importedStockBody = z.strictObject({ brandId: safeId() })

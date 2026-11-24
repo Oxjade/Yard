@@ -17,6 +17,7 @@ import { brandByHandle } from "@/lib/data/brands"
 import { usePageSampleData } from "@/components/sample/sample-data-context"
 import { refreshServerSession, useServerSession } from "@/lib/session/use-server-session"
 import { useSearchParam, writeParams } from "@/hooks/use-search-param"
+import { ASK_AVAILABILITY } from "@/lib/ask-brand"
 import { ConversationList, SupportRow } from "./conversation-list"
 import { useBelowLg } from "./hooks"
 import { ShopperThread } from "./shopper-thread"
@@ -44,6 +45,8 @@ export function InboxSkeleton() {
  * The marketplace Inbox (§6.2). Query params: `?thread=<cv>` opens a conversation;
  * `?brand=<handle>[&product=&variant=|&order=]` opens that brand's conversation, or a new-thread
  * view whose first send creates it, with the product or order attached as a removable chip.
+ * `&ask=availability` (Ask the brand, on a sold-out piece) also puts "Is {piece} available, or
+ * coming back soon?" in the composer once, editable.
  * `?support=1[&order=<order id>&orderRef=<reference>]` opens the Yard Support thread (pinned at the
  * top of the list once it exists), with the order attached as a chip.
  * Desktop: a 360 px list and the thread. Phone: the list, and the thread as a full-screen layer.
@@ -55,6 +58,9 @@ export function InboxApp() {
   const productParam = useSearchParam("product")
   const variantParam = useSearchParam("variant")
   const orderParam = useSearchParam("order")
+  // "Ask the brand" from a sold-out piece: the availability question goes in the composer once.
+  const askParam = useSearchParam("ask") === ASK_AVAILABILITY
+  const onAskShown = useCallback(() => writeParams({ ask: null }), [])
   const supportParam = useSearchParam("support") === "1"
   const orderRefParam = useSearchParam("orderRef")
   const filterParam = useSearchParam("filter")
@@ -81,7 +87,7 @@ export function InboxApp() {
   const onSelect = useCallback(
     (c: ConversationSummary) => {
       remember(c.id, c.brand.id)
-      writeParams({ thread: c.id, brand: null, product: null, variant: null, order: null, support: null, orderRef: null })
+      writeParams({ thread: c.id, brand: null, product: null, variant: null, order: null, support: null, orderRef: null, ask: null })
     },
     [remember],
   )
@@ -94,7 +100,7 @@ export function InboxApp() {
     },
     [brandId, remember],
   )
-  const back = useCallback(() => writeParams({ thread: null, brand: null, product: null, variant: null, order: null, support: null, orderRef: null }), [])
+  const back = useCallback(() => writeParams({ thread: null, brand: null, product: null, variant: null, order: null, support: null, orderRef: null, ask: null }), [])
 
   // The Yard Support thread: pinned above the brand conversations once it exists.
   const supportQuery = useApi(session.shopper ? `inbox:support:${session.shopper.id}` : null, () => getSupportConversation("shopper"), { revalidateOnFocus: true })
@@ -188,7 +194,7 @@ export function InboxApp() {
     )
   } else if (thread) {
     threadView = threadBrandId ? (
-      <ShopperThread key={thread} conversationId={thread} brandId={threadBrandId} initialProduct={productParam ? { productId: productParam, variantId: variantParam } : null} onCreated={onCreated} onBack={phone ? back : undefined} onConversation={onConversation} layer={phone} />
+      <ShopperThread key={thread} conversationId={thread} brandId={threadBrandId} brandName={brand?.id === threadBrandId ? brand.name : undefined} initialProduct={productParam ? { productId: productParam, variantId: variantParam } : null} initialAsk={askParam} onAskShown={onAskShown} onCreated={onCreated} onBack={phone ? back : undefined} onConversation={onConversation} layer={phone} />
     ) : (
       <ThreadLoader id={thread} onResolved={(b) => remember(thread, b)} onBack={phone ? back : undefined} />
     )
@@ -213,6 +219,10 @@ export function InboxApp() {
         newThreadInteraction={byBrand.canMessage ? { canSend: true } : ({ canSend: false, reason: byBrand.reason === "blocked" ? "blocked_by_them" : byBrand.reason, until: byBrand.until ?? null } as Interaction)}
         initialProduct={productParam ? { productId: productParam, variantId: variantParam } : null}
         initialOrder={orderParam ? { orderId: orderParam, reference: orderParam } : null}
+        // An existing conversation opens as itself in a moment (the effect above): the question goes there.
+        initialAsk={askParam && !byBrand.conversation}
+        onAskShown={onAskShown}
+        brandName={brand.name}
         onCreated={onCreated}
         onBack={phone ? back : undefined}
         layer={phone}

@@ -270,7 +270,7 @@ export async function dashboardNumbers(d: Db, input: { brandId: string; timeZone
       .select({ variants: sql<number>`count(*)::int`, products: sql<number>`count(distinct ${catalogVariants.productId})::int` })
       .from(catalogVariants)
       .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
-      .where(and(eq(catalogVariants.brandId, input.brandId), eq(catalogVariants.status, "active"), ne(catalogProducts.status, "archived"), sql`${catalogVariants.onHand} - ${catalogVariants.held} <= ${LOW_STOCK_THRESHOLD}`)),
+      .where(and(eq(catalogVariants.brandId, input.brandId), eq(catalogVariants.status, "active"), eq(catalogVariants.trackStock, true), ne(catalogProducts.status, "archived"), sql`${catalogVariants.onHand} - ${catalogVariants.held} <= ${LOW_STOCK_THRESHOLD}`)),
     d
       .select({ day: chartEvents.day, n: sql<number>`count(*)::int` })
       .from(chartEvents)

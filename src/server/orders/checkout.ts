@@ -255,7 +255,7 @@ async function queueNewOrderPushes(tx: Tx, paid: (typeof orderRefs.$inferSelect)
         .select({ id: catalogVariants.id, productId: catalogVariants.productId, options: catalogVariants.options, left: sql<number>`(${catalogVariants.onHand} - ${catalogVariants.held})::int`, title: catalogProducts.title })
         .from(catalogVariants)
         .innerJoin(catalogProducts, eq(catalogProducts.id, catalogVariants.productId))
-        .where(and(eq(catalogVariants.brandId, brandId), inArray(catalogVariants.id, ids), eq(catalogVariants.status, "active"), sql`${catalogVariants.onHand} - ${catalogVariants.held} <= ${LOW_STOCK_THRESHOLD}`))
+        .where(and(eq(catalogVariants.brandId, brandId), inArray(catalogVariants.id, ids), eq(catalogVariants.status, "active"), eq(catalogVariants.trackStock, true), sql`${catalogVariants.onHand} - ${catalogVariants.held} <= ${LOW_STOCK_THRESHOLD}`))
       for (const v of low) {
         const opts = Object.values(v.options ?? {}).filter(Boolean).join(" / ")
         const name = opts ? `${v.title} (${opts})` : v.title

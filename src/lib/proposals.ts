@@ -50,7 +50,7 @@ export const proposalFieldLabels: Record<ProposalField, string> = {
 }
 
 export type ViewOption = { name: string; values: { value: string; hex?: string }[] }
-export type ViewVariant = { id?: string; sku: string; options: Record<string, string>; priceMinor: number | null; initialStock?: number }
+export type ViewVariant = { id?: string; sku: string; options: Record<string, string>; priceMinor: number | null; initialStock?: number; /** New variants only: "available, stock not tracked" (an imported shop that shows no count). */ untracked?: true }
 export type ViewImage = { id?: string; mediaId?: string; alt: string }
 
 export type ProductView = {
@@ -95,7 +95,7 @@ export function viewOf(body: {
   compareAtMinor?: number | null
   processingDays?: [number, number] | null
   options?: ViewOption[]
-  variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number }[]
+  variants: { id?: string; sku: string; options?: Record<string, string>; priceMinor?: number | null; initialStock?: number; untracked?: true }[]
   images?: { id?: string; mediaId?: string; alt?: string }[]
   collectionIds?: string[]
   stock?: Record<string, number>
@@ -112,7 +112,7 @@ export function viewOf(body: {
     compareAtMinor: body.compareAtMinor ?? null,
     processingDays: body.processingDays ?? null,
     options: body.options ?? [],
-    variants: body.variants.map((v) => ({ ...(v.id ? { id: v.id } : {}), sku: v.sku, options: v.options ?? {}, priceMinor: v.priceMinor ?? null, ...(v.initialStock !== undefined && !v.id ? { initialStock: v.initialStock } : {}) })),
+    variants: body.variants.map((v) => ({ ...(v.id ? { id: v.id } : {}), sku: v.sku, options: v.options ?? {}, priceMinor: v.priceMinor ?? null, ...(v.initialStock !== undefined && !v.id ? { initialStock: v.initialStock } : {}), ...(v.untracked && !v.id && !v.initialStock ? { untracked: true as const } : {}) })),
     images: (body.images ?? []).map((i) => ({ ...(i.id ? { id: i.id } : {}), ...(i.mediaId && !i.id ? { mediaId: i.mediaId } : {}), alt: i.alt ?? "" })),
     collectionIds: body.collectionIds ?? [],
     stock: body.stock ?? {},
@@ -140,7 +140,7 @@ export function normalize(v: ProductView): ProductView {
 /** What a field is compared by: photos by which upload and in what order (alt text is not a change). */
 function comparable(field: ProposalField, value: unknown): string {
   if (field === "images") return JSON.stringify(((value as ViewImage[]) ?? []).map((i) => i.id ?? i.mediaId ?? ""))
-  if (field === "variants") return JSON.stringify(((value as ViewVariant[]) ?? []).map((x) => [x.id ?? null, x.sku, x.options, x.priceMinor ?? null, x.initialStock ?? null]))
+  if (field === "variants") return JSON.stringify(((value as ViewVariant[]) ?? []).map((x) => [x.id ?? null, x.sku, x.options, x.priceMinor ?? null, x.initialStock ?? null, x.untracked ?? null]))
   if (field === "stock") {
     const s = (value as Record<string, number>) ?? {}
     return JSON.stringify(Object.keys(s).sort().map((k) => [k, s[k]]))
@@ -227,7 +227,7 @@ export function updateBodyOf(changes: ProposalChanges): { body: Record<string, u
     if (f === "stock" || !(f in changes)) continue
     const value = changes[f]
     if (f === "images") body.images = (value as ViewImage[]).map((i) => (i.id ? { id: i.id, alt: i.alt } : { mediaId: i.mediaId, alt: i.alt }))
-    else if (f === "variants") body.variants = (value as ViewVariant[]).map((v) => (v.id ? { id: v.id, sku: v.sku, options: v.options, priceMinor: v.priceMinor } : { sku: v.sku, options: v.options, priceMinor: v.priceMinor, ...(v.initialStock ? { initialStock: v.initialStock } : {}) }))
+    else if (f === "variants") body.variants = (value as ViewVariant[]).map((v) => (v.id ? { id: v.id, sku: v.sku, options: v.options, priceMinor: v.priceMinor } : { sku: v.sku, options: v.options, priceMinor: v.priceMinor, ...(v.initialStock ? { initialStock: v.initialStock } : {}), ...(v.untracked && !v.initialStock ? { untracked: true } : {}) }))
     else body[f] = value
   }
   return { body, stockDelta: { ...(changes.stock ?? {}) } }

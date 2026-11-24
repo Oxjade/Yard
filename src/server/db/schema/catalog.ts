@@ -1,4 +1,4 @@
-import { bigint, check, index, integer, jsonb, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core"
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core"
 import { brands } from "./brands"
 import { oneOf, raw, tz } from "./columns"
 import { mediaAssets } from "./media"
@@ -108,6 +108,10 @@ export const catalogOptions = pgTable(
 /**
  * Variants carry the stock counters. on_hand is the sellable physical count (changed only together
  * with a stock_movements row); held is the sum of active holds. available = on_hand - held.
+ * track_stock false: the brand doesn't count this variant ("available, stock not tracked", e.g. an
+ * imported shop that says in stock without a count). It is always available; holds and sales are
+ * still recorded (held may exceed on_hand), but on_hand never moves for a sale. Setting a count
+ * in Studio turns tracking back on (catalog/stock.ts).
  */
 export const catalogVariants = pgTable(
   "catalog_variants",
@@ -127,6 +131,7 @@ export const catalogVariants = pgTable(
     position: integer("position").notNull().default(0),
     onHand: integer("on_hand").notNull().default(0),
     held: integer("held").notNull().default(0),
+    trackStock: boolean("track_stock").notNull().default(true),
     createdAt: tz("created_at").notNull().defaultNow(),
     updatedAt: tz("updated_at").notNull().defaultNow(),
   },
@@ -134,7 +139,7 @@ export const catalogVariants = pgTable(
     index("catalog_variants_product_ix").on(t.productId),
     uniqueIndex("catalog_variants_brand_sku_ux").on(t.brandId, t.sku),
     oneOf("catalog_variants_status_ck", "status", VARIANT_STATUSES),
-    check("catalog_variants_stock_ck", raw("on_hand >= 0 and held >= 0 and held <= on_hand")),
+    check("catalog_variants_stock_ck", raw("on_hand >= 0 and held >= 0 and (held <= on_hand or not track_stock)")),
     check("catalog_variants_price_ck", raw("price_minor is null or price_minor > 0")),
   ],
 )

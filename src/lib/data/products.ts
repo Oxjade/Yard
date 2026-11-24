@@ -260,8 +260,11 @@ export function variantLabel(options: Record<string, string>) {
     .join(", ")
 }
 
+/** What an untracked variant ("available, stock not tracked") reports; the server's UNTRACKED_AVAILABLE. */
+export const UNTRACKED_AVAILABLE = 99
+
 export function availableStock(v: Variant) {
-  return Math.max(0, v.stock - v.reserved)
+  return v.untracked ? UNTRACKED_AVAILABLE : Math.max(0, v.stock - v.reserved)
 }
 
 export function productStock(p: Product) {

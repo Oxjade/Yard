@@ -4,6 +4,7 @@ import { asc, inArray } from "drizzle-orm"
 import { catalogCollectionProducts, catalogImages, catalogOptions, catalogProducts, catalogVariants } from "../db/schema/catalog"
 import type { Executor } from "../db"
 import { mediaSrc } from "../media"
+import { availableOf } from "./availability"
 
 /** "Size M, Black" — the same wording as src/lib/data/products.ts variantLabel. */
 export function variantLabelOf(options: Record<string, string> | null | undefined) {
@@ -16,7 +17,7 @@ export type ProductRow = typeof catalogProducts.$inferSelect
 
 export type ImageDto = { id: string; src: string; alt: string; width: number | null; height: number | null; mediaId: string | null }
 export type VariantDto = { id: string; sku: string; options: Record<string, string>; label: string; priceMinor: number; available: number; inStock: boolean }
-export type StudioVariantDto = VariantDto & { status: string; onHand: number; held: number; priceOverrideMinor: number | null }
+export type StudioVariantDto = VariantDto & { status: string; onHand: number; held: number; priceOverrideMinor: number | null; /** False: "available, stock not tracked". */ tracked: boolean }
 
 export type PublicProductDto = {
   id: string
@@ -129,7 +130,7 @@ export function toPublicProduct(p: ProductRow, kids: Loaded): PublicProductDto {
   const variants = (kids.variants.get(p.id) ?? [])
     .filter((v) => v.status === "active")
     .map((v) => {
-      const available = Math.max(0, v.onHand - v.held)
+      const available = availableOf(v)
       return { id: v.id, sku: v.sku, options: v.options, label: variantLabelOf(v.options), priceMinor: v.priceMinor ?? p.priceMinor, available, inStock: available > 0 }
     })
   return { ...base(p, kids), variants, available: variants.reduce((n, v) => n + v.available, 0) }
@@ -137,8 +138,8 @@ export function toPublicProduct(p: ProductRow, kids: Loaded): PublicProductDto {
 
 export function toStudioProduct(p: ProductRow, kids: Loaded): StudioProductDto {
   const variants = (kids.variants.get(p.id) ?? []).map((v) => {
-    const available = Math.max(0, v.onHand - v.held)
-    return { id: v.id, sku: v.sku, options: v.options, label: variantLabelOf(v.options), priceMinor: v.priceMinor ?? p.priceMinor, priceOverrideMinor: v.priceMinor, available, inStock: available > 0, status: v.status, onHand: v.onHand, held: v.held }
+    const available = availableOf(v)
+    return { id: v.id, sku: v.sku, options: v.options, label: variantLabelOf(v.options), priceMinor: v.priceMinor ?? p.priceMinor, priceOverrideMinor: v.priceMinor, available, inStock: available > 0, status: v.status, onHand: v.onHand, held: v.held, tracked: v.trackStock }
   })
   return {
     ...base(p, kids, "brand"),

@@ -30,6 +30,8 @@ const variantInput = z.strictObject({
   priceMinor: minor.nullable().optional(),
   /** New variants only: the opening stock (written as a stock movement). Existing stock changes go through the stock endpoint. */
   initialStock: qty.min(0).max(1_000_000).optional(),
+  /** New variants only, without initialStock: "available, stock not tracked" (always in stock, no count). */
+  untracked: z.literal(true).optional(),
 })
 
 const imageInput = z.strictObject({
@@ -92,6 +94,16 @@ export const stockAdjustBody = z.strictObject({
   note: safeLine({ max: 200 }).optional(),
 })
 export type StockAdjustBody = z.output<typeof stockAdjustBody>
+
+/**
+ * POST /api/studio/catalog/products/stock: Studio › Products bulk stock. `untracked`: every size of
+ * the selected products is "available, stock not tracked"; `set`: every size gets the count `qty`.
+ */
+export const bulkStockBody = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("untracked"), productIds: z.array(safeId()).min(1).max(200) }),
+  z.strictObject({ mode: z.literal("set"), productIds: z.array(safeId()).min(1).max(200), qty: qty.min(0).max(1_000_000) }),
+])
+export type BulkStockBody = z.output<typeof bulkStockBody>
 
 export const studioProductsQuery = z.object({
   status: z.enum(["draft", "scheduled", "published", "archived", "all"]).default("all"),
