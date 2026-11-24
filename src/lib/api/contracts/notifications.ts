@@ -61,3 +61,23 @@ export type PushDeviceBody = z.infer<typeof pushDeviceBody>
 
 /** DELETE /api/devices (the app calls it before it signs out). */
 export const pushDeviceDeleteBody = z.object({ token: z.string().min(1).max(4096) }).strict()
+
+/* ---------- iOS Live Activity push tokens (docs/APP.md › Live Activity push) ---------- */
+
+const liveActivityToken = z.string().regex(/^[0-9a-fA-F]{32,512}$/, "Send the push token as hex, as ActivityKit gave it.").transform((t) => t.toLowerCase())
+
+/**
+ * POST /api/orders/{id}/live-activity and POST /api/live-activity/push-to-start. `timeZone`: the
+ * phone's IANA zone (TimeZone.current.identifier), so the ETA lands at 20:00 on the phone's clock.
+ */
+export const liveActivityTokenBody = z
+  .object({
+    token: liveActivityToken,
+    timeZone: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*$/, "Send the time zone's identifier, e.g. Africa/Lagos.").optional(),
+    appVersion: z.string().trim().min(1).max(64).regex(/^[^\u0000-\u001f\u007f<>]+$/).optional(),
+  })
+  .strict()
+export type LiveActivityTokenBody = z.infer<typeof liveActivityTokenBody>
+
+/** DELETE of either: the token only. */
+export const liveActivityTokenDeleteBody = z.object({ token: liveActivityToken }).strict()

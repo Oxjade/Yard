@@ -6,6 +6,7 @@ import { formatShortRange } from "@/lib/shipping/format"
 import { db, withTx } from "../db"
 import { deliveryComplaints, deliveryEstimates, orderRefs } from "../db/schema"
 import { notifyAdmins } from "../notify"
+import { queueLiveActivityPush } from "../push/live-activity"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { notifyLateOnce, recomputeOrder, toEstimateDto, type EstimateCache } from "./orders"
@@ -50,6 +51,7 @@ export async function checkLate(now = Date.now()) {
       void _r
       void _c
       await publish(channels.user(o.customerId), "order.estimate", { orderId: o.id, estimate })
+      queueLiveActivityPush(o.id)
       await notifyLateOnce({ id: o.id, customerId: o.customerId }, brand, range, now)
       // More than 2 business days past the ship-by date (or the first arrival window): Yard's team looks.
       const [first] = await d.select().from(deliveryEstimates).where(eq(deliveryEstimates.orderRefId, o.id)).orderBy(asc(deliveryEstimates.computedAt)).limit(1)

@@ -135,6 +135,13 @@ export function startSchedulers() {
   every(8 * MIN, 30 * MIN, () => runFeatureJob("payments", "reconcileTransfers"))
   every(untilUtcMidnight() + 10 * MIN, untilUtcMidnight, () => runFeatureJob("payments", "purgeStaleCarts"))
   every(13 * MIN, HOUR, () => runFeatureJob("orders", "hourly"))
+  // iOS Live Activities: one boot line saying whether APNs is configured, then an hourly refresh of
+  // running activities (progress, "Arriving soon", stale date). Nothing runs while it's off.
+  void import("./push/live-activity").then((m) => m.logLiveActivityConfig()).catch((e) => log.error("[yard] Live Activity config check failed", e))
+  every(29 * MIN, HOUR, async () => {
+    const { refreshLiveActivities } = await import("./push/live-activity")
+    await refreshLiveActivities()
+  })
   // "Add your payout account" reminder (docs/BRAND-EMAILS.md): one indexed query a run on brands_payout_needed_ix,
   // more only for a brand that is due. Cost scales with time, not with orders.
   every(21 * MIN, HOUR, () => runFeatureJob("ledger", "payoutReminders"))

@@ -12,6 +12,7 @@ import { processState } from "./minutes"
 import { ACTIVITY_KINDS, RANGES, businessSeries, dailyRequests, dailyTotals, requestBuckets, requestSeries, utcDay, type MetricKey, type RangeKey } from "./series"
 import { flush, listDeploys, readRows, recordDeploy, rollupAndPrune, type Db } from "./store"
 import { attestConfig } from "../app-attest/config"
+import { liveActivityPushConfigured } from "../push/live-activity"
 
 /**
  * Admin › Health's real figures. Cost scales with time, not traffic: requests are counted in
@@ -185,6 +186,9 @@ export function operations() {
         searches: n("search"),
       },
       appAttest: appAttestCounts(ev),
+      // iOS Live Activity pushes to APNs (src/server/push/live-activity.ts): sent, refused or
+      // unreachable, and tokens APNs reported gone (deleted).
+      liveActivity: { configured: liveActivityPushConfigured(), sent: n("live_activity.sent"), failed: n("live_activity.failed"), removed: n("live_activity.removed") },
       deploys: deploys.map((x) => ({ id: x.id, version: x.version, gitSha: x.gitSha, firstSeenAt: x.firstSeenAt.toISOString(), lastBootAt: x.lastBootAt.toISOString(), boots: Number(x.boots), live: x.id === live })),
       process: { bootedAt: bootedAt().toISOString(), uptimeSec: Math.round(process.uptime()) },
     }

@@ -267,6 +267,13 @@
       "when": 1795540782252,
       "tag": "0037_untracked_stock",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795561272874,
+      "tag": "0038_live_activity_tokens",
+      "breakpoints": true
     }
   ]
 }

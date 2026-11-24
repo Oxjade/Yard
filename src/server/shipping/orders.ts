@@ -16,6 +16,7 @@ import type { OrderRefItem } from "../db/schema/orders"
 import { badRequest, conflict, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { notify, notifyAdmins } from "../notify"
+import { queueLiveActivityPush } from "../push/live-activity"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 import { loadBrandShipping, type BrandShipping } from "./profile"
@@ -529,6 +530,8 @@ export async function recordShipment(actor: BrandActor, loaded: OrderRefRow, bod
     await publish(channels.user(order.customerId), "order.estimate", { orderId: order.id, estimate, computedAt: delivery.estimate.computedAt, shippedOn: delivery.shippedOn })
     const range = estimate.arrivalFrom && estimate.arrivalTo ? formatShortRange(estimate.arrivalFrom, estimate.arrivalTo) : "soon"
     if (firstShip) await notify({ kind: "shopper", id: order.customerId }, { key: `shipped:${order.id}`, template: "delivery.shipped", vars: { brand: brandName, range }, href: `/you/orders/${order.id}` })
+    // The iOS Live Activity (Lock Screen, Dynamic Island), after commit; the first shipment may start one.
+    queueLiveActivityPush(order.id, { mayStart: firstShip })
     // "Running late" only for a delay the brand reported, or a recompute that turned late; a return
     // has no template of its own yet (requested), so it updates the order page without a notification.
     if (body.status === "exception" || (body.status !== "returned" && r.changed && estimate.basis === "late")) await notifyLateOnce(order, brandName, range, now)
@@ -655,6 +658,7 @@ export async function recordCarrierShipment(orderRefId: string, input: { status:
   await publish(channels.user(order.customerId), "order.estimate", { orderId: order.id, estimate, computedAt: delivery.estimate.computedAt, shippedOn: delivery.shippedOn })
   const range = estimate.arrivalFrom && estimate.arrivalTo ? formatShortRange(estimate.arrivalFrom, estimate.arrivalTo) : "soon"
   if (firstShip) await notify({ kind: "shopper", id: order.customerId }, { key: `shipped:${order.id}`, template: "delivery.shipped", vars: { brand: input.brandName, range }, href: `/you/orders/${order.id}` })
+  queueLiveActivityPush(order.id, { mayStart: firstShip })
   if (input.status === "delivered") await notify({ kind: "shopper", id: order.customerId }, { key: `delivered:${order.id}`, template: "delivery.delivered", vars: { brand: input.brandName, courier: input.carrier ?? undefined }, href: `/you/orders/${order.id}` })
   if (input.status === "exception") await notifyLateOnce(order, input.brandName, range, now)
   return { recorded: true as const, firstShip, range, order: { ...order, status: status ?? order.status } }

@@ -157,6 +157,54 @@ admin notifications are not pushed. Optional categories follow the in-app prefer
 
 A token FCM reports as gone (404, UNREGISTERED, INVALID_ARGUMENT) is deleted.
 
+## Live Activity push (iOS)
+
+The order-tracking Live Activity (ios/Docs/live-activity.md) is updated by APNs `liveactivity`
+pushes sent straight to Apple (not FCM), so the Lock Screen and Dynamic Island change while the app
+is closed. The app keeps updating it itself whenever it refreshes the order.
+
+**Tokens (shopper session; JSON + CSRF like every write):**
+
+- `POST /api/orders/{id}/live-activity { token, timeZone?, appVersion? }` → 204. `token`: the
+  activity's ActivityKit push token as hex (`pushTokenUpdates`); `timeZone`: `TimeZone.current.identifier`
+  (the ETA is 20:00 on the phone's clock, as the app computes it). Own orders only: another shopper's
+  order, or an unknown or malformed id, is 404. Upsert by token; a rotated token is just POSTed again
+  (and the old one DELETEd). At most 5 phones per order. Rate limit 30 per 10 minutes.
+- `DELETE /api/orders/{id}/live-activity { token }` → 204, when the activity ends on the phone.
+- `POST /api/live-activity/push-to-start { token, timeZone?, appVersion? }` → 204 (iOS 17.2+,
+  `Activity<…>.pushToStartTokenUpdates`); `DELETE` the same path `{ token }` → 204 before signing out.
+
+**When the server pushes:** after any change to an order's delivery (a brand's shipment update, the
+courier webhook or hourly poll, a cancellation, a return, delivery, the hourly late check) it works out
+the activity state exactly as `LiveActivityOrder.make(...)` does (port: `src/server/push/live-activity-state.ts`,
+parity cases in its test and in `ios/YardTests/LiveActivityOrderTests.swift`) and sends it to that
+order's tokens when it changed. Shipped / in transit / arriving soon / out for delivery → `update`
+(priority 10 on a new step, else 5); delivered → `end` with `dismissal-date` 2 hours later;
+cancelled or returned → `end`, dismissed at once. The token of an ended activity is deleted, and so
+is one APNs answers 410 or `BadDeviceToken` / `DeviceTokenNotForTopic`. Hourly, running activities
+are refreshed (progress, "Arriving soon", `stale-date`) when something moved or the last push is 6
+hours old. An order's **first** shipment with no activity running starts one through the shopper's
+push-to-start tokens (`event: start`, with an alert "<Brand> shipped your order").
+
+**Request:** `POST https://api.push.apple.com/3/device/<token>` (sandbox host with
+`APNS_ENV=development`), HTTP/2, `authorization: bearer <ES256 JWT, reused 50 minutes>`,
+`apns-push-type: liveactivity`, `apns-topic: space.yardstore.app.push-type.liveactivity`,
+`apns-priority: 10|5`. Body:
+
+```json
+{ "aps": { "timestamp": 1795262400, "event": "update",
+  "content-state": { "step": "outForDelivery", "etaDate": 817070400, "progress": 0.86, "statusLine": "Out for delivery in London" },
+  "stale-date": 1795291200, "relevance-score": 100 } }
+```
+
+`content-state` is `YardOrderActivityAttributes.ContentState` as Swift's synthesized `Codable` reads
+it: keys `step` (`packed`, `shipped`, `outForDelivery`, `arrivingSoon`, `delivered`), `etaDate`
+(omitted when unknown), `progress` (0…1), `statusLine`. ActivityKit decodes it with the default
+strategies, so `etaDate` is a **Date's default encoding: seconds since 2001-01-01** (Unix − 978307200;
+`817070400` is 2026-11-22 20:00 UTC). `timestamp`, `stale-date` and `dismissal-date` are Unix seconds
+(APNs). Settings: docs/DEPLOY.md › iOS Live Activity pushes. Code: `src/server/push/apns-core.ts`,
+`apns.ts`, `live-activity*.ts`; table `live_activity_tokens` (migration `0038_live_activity_tokens`).
+
 ## Environment
 
 - `FCM_SERVICE_ACCOUNT_FILE`: path to the Firebase service-account JSON on the server (e.g.

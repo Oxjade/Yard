@@ -216,6 +216,49 @@ once both are configured: they can still sign up on the website. If Google can't
 request goes ahead (counted as unavailable). To back out: `YARD_APP_ATTEST=monitor` (or `off`) and
 restart.
 
+## iOS Live Activity pushes: APNs (optional)
+
+The iOS app tracks a shipped order on the Lock Screen and in the Dynamic Island (a Live Activity).
+With the settings below the server pushes each delivery change (shipped, in transit, arriving soon,
+out for delivery, delivered, cancelled or returned) straight to Apple, so the activity updates even
+when the app is closed. Without them it is off and the activity updates only when the app refreshes
+the order. Apple charges nothing for APNs; each push is one HTTP/2 request from the server, sent only
+when an order with a running activity changes, plus at most one an hour per running activity.
+
+| Variable | |
+|---|---|
+| `APNS_KEY_PATH` | **path** of the `.p8` key file on the server, e.g. `/etc/yard/apns.p8` (never the key itself) |
+| `APNS_KEY_ID` | the key's 10-character Key ID |
+| `APNS_TEAM_ID` | Apple Developer Team ID (10 characters) |
+| `APNS_BUNDLE_ID` | the iOS bundle id, `space.yardstore.app` (the topic becomes `space.yardstore.app.push-type.liveactivity`) |
+| `APNS_ENV` | `production` (App Store and TestFlight builds; default) or `development` (Xcode debug builds; `api.sandbox.push.apple.com`) |
+
+Missing or unreadable settings: off, said once in the boot log
+(`[yard] push: iOS Live Activity pushes are off (APNS_KEY_PATH not set); …` or
+`[yard] push: iOS Live Activity pushes on (APNs production, topic …, key …)`).
+
+**Once (Apple Developer, then the server):**
+
+1. Certificates, Identifiers & Profiles › Identifiers › `space.yardstore.app` › enable **Push
+   Notifications** (the app carries the `aps-environment` entitlement: development for Debug,
+   production for Release), save, and regenerate the provisioning profiles.
+2. **Keys** › **+** › name it (e.g. "Yard APNs") › tick **Apple Push Notifications service (APNs)** ›
+   Continue › Register. Note the **Key ID**. **Download** the `.p8` file: Apple lets you download it
+   **once**. Keep it out of the repository, chat, issues and email.
+3. Copy it to the server and make it readable by the `yard` user only, e.g.
+   `scp AuthKey_XXXXXXXXXX.p8 you@server:` then
+   `sudo install -o root -g yard -m 640 AuthKey_XXXXXXXXXX.p8 /etc/yard/apns.p8` (or `-o yard -m 600`),
+   and delete the other copies.
+4. In `/etc/yard.env` (`sudo nano /etc/yard.env`; never in chat): `APNS_KEY_PATH=/etc/yard/apns.p8`,
+   `APNS_KEY_ID=…`, `APNS_TEAM_ID=…` (Membership details), `APNS_BUNDLE_ID=space.yardstore.app`. Leave
+   `APNS_ENV` unset (production) on the live server; a server that only serves Xcode debug builds
+   uses `development`.
+5. Check the configuration (above), `sudo systemctl restart yard`, and look for the boot line.
+
+Admin › Health › Auth failures shows "iOS Live Activity pushes": sent / failed in the last 24 hours
+and how many ended tokens APNs reported gone (those rows are deleted). One key serves every app of
+the team and doesn't expire; if it leaks, revoke it in Keys and repeat steps 2–5.
+
 ## Who can open which page (production)
 
 With the demo switch off, `src/proxy.ts` decides before a page renders (`src/lib/access-gate.ts`

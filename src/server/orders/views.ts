@@ -27,9 +27,14 @@ type Row = { order: OrderRefRow; state: OrderStateRow | null; brand: { id: strin
 /** Payment state for an order with or without a v3 state row. */
 const paymentOf = (o: OrderRefRow, s: OrderStateRow | null) => s?.paymentStatus ?? (o.status === "refunded" ? "refunded" : o.paid ? "paid" : "pending")
 
+/** Fulfilment as the order DTOs show it, with or without a v3 state row (also the iOS Live Activity's input, push/live-activity.ts). */
+export function fulfilmentOf(order: OrderRefRow, s: OrderStateRow | null, events: ShipmentEventLite[]) {
+  return deriveFulfilment({ fulfilmentStatus: s?.fulfilmentStatus ?? (order.status === "cancelled" ? "cancelled" : "unfulfilled"), deliveredAt: s?.deliveredAt ?? null, cancelledAt: s?.cancelledAt ?? (order.status === "cancelled" ? order.createdAt : null) }, order, events)
+}
+
 function statesOf(r: Row, events: ShipmentEventLite[]): OrderStatesDto & { deliveredAt: Date | null; returnWindowEndsAt: Date | null; shipped: boolean } {
   const s = r.state
-  const f = deriveFulfilment({ fulfilmentStatus: s?.fulfilmentStatus ?? (r.order.status === "cancelled" ? "cancelled" : "unfulfilled"), deliveredAt: s?.deliveredAt ?? null, cancelledAt: s?.cancelledAt ?? (r.order.status === "cancelled" ? r.order.createdAt : null) }, r.order, events)
+  const f = fulfilmentOf(r.order, s, events)
   return {
     merchant: r.order.status,
     payment: paymentOf(r.order, s),

@@ -175,9 +175,10 @@ export function AuthFailuresPanel({ className }: { className?: string }) {
       ]
     : []
   const at = q.data?.appAttest
+  const la = q.data?.liveActivity
   const platforms = at ? [at.android ? "Android" : null, at.ios ? "iOS" : null].filter(Boolean).join(" and ") : ""
   return (
-    <Panel id="auth-failures" title="Auth failures, last 24 hours" description="Sign-in and MFA failures across shoppers, brands and admins, rate-limit blocks and app attestation." className={cn("scroll-mt-24 rounded-[20px]", className)}>
+    <Panel id="auth-failures" title="Auth failures, last 24 hours" description="Sign-in and MFA failures across shoppers, brands and admins, rate-limit blocks, app attestation and iOS Live Activity pushes." className={cn("scroll-mt-24 rounded-[20px]", className)}>
       {q.error && !a ? (
         <PanelError message="Couldn't read the auth figures." onRetry={() => void q.revalidate()} />
       ) : !a ? (
@@ -206,6 +207,21 @@ export function AuthFailuresPanel({ className }: { className?: string }) {
               <dd className={cn("font-metric text-right text-[1.125rem] tabular", at.fail > 0 ? "text-acid" : "text-ink")}>
                 {int(at.pass)} / {int(at.fail)} / {int(at.missing)}
                 <span className="block text-[11px] font-normal text-ink-3">pass / fail / missing</span>
+              </dd>
+            </div>
+          ) : null}
+          {la ? (
+            <div className="flex items-start justify-between gap-3 py-2.5">
+              <dt className="min-w-0">
+                <span className="block text-[13px] text-ink">iOS Live Activity pushes</span>
+                <span className="block text-[11px] text-ink-3">
+                  {la.configured ? "Order tracking on the Lock Screen, sent to APNs" : "APNs isn't configured: activities update only when the app refreshes (docs/DEPLOY.md)"}
+                  {la.removed ? ` · ${int(la.removed)} ended tokens removed` : ""}
+                </span>
+              </dt>
+              <dd className={cn("font-metric text-right text-[1.125rem] tabular", la.failed > 0 ? "text-acid" : "text-ink")}>
+                {int(la.sent)} / {int(la.failed)}
+                <span className="block text-[11px] font-normal text-ink-3">sent / failed</span>
               </dd>
             </div>
           ) : null}

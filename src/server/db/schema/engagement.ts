@@ -1,5 +1,6 @@
 import { boolean, check, index, integer, jsonb, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core"
 import { brands } from "./brands"
+import { orderRefs } from "./orders"
 import { oneOf, raw, tsvector, tz } from "./columns"
 import { users } from "./people"
 
@@ -125,6 +126,45 @@ export const pushDevices = pgTable(
     lastSeenAt: tz("last_seen_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("push_devices_token_ux").on(t.token), index("push_devices_user_ix").on(t.userId, t.platform), oneOf("push_devices_platform_ck", "platform", PUSH_PLATFORMS)],
+)
+
+export const LIVE_ACTIVITY_TOKEN_KINDS = ["update", "start"] as const
+
+/**
+ * iOS Live Activity push tokens (docs/APP.md › Live Activity push; src/server/push/live-activity.ts).
+ * - `update`: the ActivityKit push token of one running order-tracking activity on one phone
+ *   (`order_ref_id` set). APNs `liveactivity` pushes update or end it when the order's delivery
+ *   changes. Deleted when the activity ends, when APNs says the token is gone, or with the order.
+ * - `start`: the phone's push-to-start token (iOS 17.2+, `order_ref_id` null). Used once, when an
+ *   order first ships and no activity is running for it yet, to start one remotely.
+ * One row per token: a token registered again moves to the caller and order. `time_zone` is the
+ * phone's (IANA), so the ETA lands at 20:00 on the phone's clock as the app computes it.
+ * `last_state` / `last_sent_at`: what was last pushed, so an unchanged state isn't sent twice.
+ */
+export const liveActivityTokens = pgTable(
+  "live_activity_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orderRefId: text("order_ref_id").references(() => orderRefs.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    token: text("token").notNull(),
+    timeZone: text("time_zone"),
+    appVersion: text("app_version"),
+    lastState: jsonb("last_state"),
+    lastSentAt: tz("last_sent_at"),
+    createdAt: tz("created_at").notNull().defaultNow(),
+    updatedAt: tz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("live_activity_tokens_token_ux").on(t.token),
+    index("live_activity_tokens_order_ix").on(t.orderRefId),
+    index("live_activity_tokens_user_ix").on(t.userId, t.kind),
+    oneOf("live_activity_tokens_kind_ck", "kind", LIVE_ACTIVITY_TOKEN_KINDS),
+    check("live_activity_tokens_order_ck", raw("(kind = 'update') = (order_ref_id is not null)")),
+  ],
 )
 
 /**

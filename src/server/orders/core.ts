@@ -9,6 +9,7 @@ import { orderRefs, shipmentEvents } from "../db/schema"
 import type { OrderRefItem } from "../db/schema/orders"
 import { FULFILMENT_STATES, orderEvents, orderLines, orderRefunds, orderStates, type OrderShipTo } from "../db/schema/orders-v3"
 import { newId } from "../ids"
+import { queueLiveActivityPush } from "../push/live-activity"
 import { publish } from "../realtime/bus"
 import { channels } from "../realtime/channels"
 
@@ -191,6 +192,8 @@ export async function announce(order: Pick<OrderRefRow, "id" | "customerId" | "b
   const payload = { orderId: order.id, reference: order.reference, change }
   await publish(channels.user(order.customerId), "order.updated", payload)
   await publish(channels.brand(order.brandId), "order.updated", payload)
+  // Cancelled, returned, delivered, refunded…: the iOS Live Activity follows (sent only if its state changed).
+  queueLiveActivityPush(order.id)
 }
 
 /** Sum of refunds that count against the cap (pending + succeeded). */
