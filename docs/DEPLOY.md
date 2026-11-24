@@ -13,9 +13,13 @@ So GitHub Actions builds every push to v3 (`.github/workflows/build-release.yml`
 1. `npm ci`, `npm run build` (Node 22, as on the server) with the same settings the server's build
    used: `YARD_PUBLIC_URL`, `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION` (repository
    variables, below), `YARD_DEPLOYMENT_ID` = the commit's first 12 characters, `YARD_SKIP_TYPECHECK=1`.
+   `npm run build` also bundles the command-line tools into `tools/` (its postbuild,
+   `scripts/bundle-tools.mjs`, with esbuild from the dev dependencies): `check-env.mjs`,
+   `db-migrate.mjs`, `create-admin.mjs`, plain JavaScript that needs only `node`.
 2. `npm prune --omit=dev`, then `server-scripts/yard-package.sh` packs `.next` (without its cache),
-   the production `node_modules`, `public/`, `package.json`, `package-lock.json` and `release.json`
-   (commit, build time and the settings above; `/api/health` reports this commit as `version`).
+   the production `node_modules`, `tools/`, `public/`, `package.json`, `package-lock.json` and
+   `release.json` (commit, build time and the settings above; `/api/health` reports this commit as
+   `version`). It refuses to pack a build without `tools/`.
 3. The archive `yard-build-<sha12>.tar.gz` and its `.sha256` are published as a prerelease tagged
    `build-<sha12>`. Only the 10 newest builds are kept.
 
@@ -106,6 +110,21 @@ sudo yard-update            # waits for GitHub's build, downloads it, migrates, 
 sudo yard-update --status   # from another SSH window: which step, how long
 curl -s http://127.0.0.1:3000/api/health   # "version" is the deployed commit
 ```
+
+## Checking the configuration
+
+After changing `/etc/yard.env` (and before restarting), check it with the release's bundled checker,
+as the `yard` user with the file loaded, from the live release:
+
+```sh
+sudo runuser -u yard -- bash -c 'set -a; . /etc/yard.env; set +a; cd /home/yard/app && node tools/check-env.mjs'
+```
+
+It lists every problem at once and exits 1, or prints `configuration OK: production, env …, Postgres
+(…), payments …` and exits 0. Nothing secret is printed. Then `sudo systemctl restart yard`.
+`node scripts/check-env.mjs` in the same folder hands over to `tools/check-env.mjs` (the script itself
+imports TypeScript sources through the `@/` alias, which a release can't load without the dev
+tooling). A release built before the tools were bundled has no `tools/`; deploy a newer build first.
 
 ## Options
 

@@ -22,14 +22,24 @@ BACHS_CHARGE_CURRENCIES=NGN             # optional; default NGN. Any of NGN, GHS
 | Variable | Required | Notes |
 | - | - | - |
 | `YARD_PAYMENTS` | yes | `bachs` turns Bachs on. Only the provider in use ever gets a key sent anywhere. |
-| `BACHS_SECRET_KEY` | yes | `sk_live_…` for real money (`sk_sandbox_…` also works, against the sandbox). Needs the scopes for checkout sessions and payments (`payments:read` / write) and refunds (`refunds:write`, `refunds:read`). |
+| `BACHS_SECRET_KEY` | yes | `sk_live_…` for real money (`sk_sandbox_…` also works, against the sandbox). Needs the scopes for checkout sessions and payments (`payments:read` / write) and refunds (`refunds:write`, `refunds:read`). Admin › Finance › Bachs also reads with `balance:read`, `disputes:read` and `payouts:read`, and optionally `webhooks:read` (below); without one, only that part says the key lacks it. |
 | `BACHS_WEBHOOK_SECRET` | yes in production | Without it every webhook is refused (400) and payments are confirmed only when the shopper comes back to Yard. |
 | `BACHS_CHARGE_CURRENCIES` | no | Comma separated. The checkout only charges in these; shoppers browsing in another currency are shown and charged in the first one that fits. ZAR is not possible with Bachs. |
 | `BACHS_API_BASE` | no | Default `https://api.bachs.io` for `sk_live_` keys, `https://sandbox-api.bachs.io` for `sk_sandbox_` keys. Must be `https://` in production. |
 
-`node scripts/check-env.mjs` (or the server at startup) lists every problem at once: a key that
-isn't `sk_live_…`/`sk_sandbox_…`, a missing webhook secret, an `http://` API base, an unsupported
-currency. The startup log says `[yard] payments: bachs (live)`.
+The configuration check (or the server at startup) lists every problem at once: a key that isn't
+`sk_live_…`/`sk_sandbox_…`, a missing webhook secret, an `http://` API base, an unsupported
+currency. On the server, run it from the live release as the `yard` user with `/etc/yard.env`
+loaded (the release is built by CI and has no TypeScript loader, so it runs the bundled
+`tools/check-env.mjs`, see docs/DEPLOY.md):
+
+```sh
+sudo runuser -u yard -- bash -c 'set -a; . /etc/yard.env; set +a; cd /home/yard/app && node tools/check-env.mjs'
+```
+
+It prints `configuration OK: production, …, payments bachs, …` and exits 0, or every problem and
+exits 1. (In a development checkout: `node --conditions=react-server --import tsx scripts/check-env.mjs`.)
+The startup log says `[yard] payments: bachs (live)`.
 
 ## Webhook
 
@@ -109,10 +119,62 @@ Payout runs don't send anything through Bachs: running a batch leaves each payou
 with `manual_payout_required`. Withdraw from the Bachs balance and pay brands as you do today, then
 record it. (Bachs balances are in USD and NGN; other currencies are converted when they settle.)
 
+Why not through Bachs: a Bachs payout (`POST /v1/payouts`) can only go to a payout destination that
+**belongs to the account holder** (Yard's own bank accounts; docs.bachs.io › Payouts › How payouts
+work). Paying a third party from the balance is Bachs Connect: a recipient account per brand (with
+its own identity checks), `POST /v1/transfers` to it, and a payout from that account. Payout model A
+doesn't use Connect, so brand payouts stay manual.
+
 ## Disputes
 
 `dispute.created` / `dispute.updated` are recorded in the event log only. Answer them in the Bachs
 dashboard.
+
+## Admin › Finance › Bachs (read-only)
+
+Admin › Finance › **Bachs** shows what the Bachs dashboard shows, so day-to-day checks don't need
+it: Owner and Finance roles only (others get 403, like the rest of Finance). The server reads Bachs
+with the configured key (`paymentsConfig()`, the same client as checkout); the browser never talks to
+Bachs and the key is never shown. Each Bachs answer is cached for **60 s** per server process (a
+failure for 20 s), so any number of admins costs at most about eight Bachs reads a minute, well inside
+the rate limit. A timeout (8 s) or an error shows "Bachs unavailable" in that part only; Yard's own
+figures and the rest of Finance keep working. With `YARD_PAYMENTS=off`, the stub or Paystack it
+reads nothing and says "Bachs isn't connected".
+
+There is **no money-moving action** here: no withdrawal, transfer or refund. Refunds stay in Orders
+as before; withdrawals and dispute answers are made in the Bachs dashboard.
+
+| Part | Bachs endpoint (GET) | Scope |
+| - | - | - |
+| Connection: live or sandbox key, key valid, account active / not activated, webhook secret set | `/v1/accounts/me` (+ every read below: `UNAUTHORIZED`, `ACCOUNT_NOT_ACTIVATED`) | none listed |
+| Live balance per currency (available, pending), settlements still to come | `/v1/balances` | `balance:read` |
+| Recent payments and collections (status, amount, method, fee, date), linked to the Yard order | `/v1/payments?limit=25` | `payments:read` |
+| Refunds, linked to the Yard order | `/v1/refunds?limit=25` | `refunds:read` |
+| Disputes, linked to the Yard order, with the response deadline | `/v1/disputes?limit=25` | `disputes:read` |
+| Withdrawals (payouts out of the Bachs balance) | `/v1/payouts?limit=10` | `payouts:read` |
+| Bachs' view of Yard's webhook endpoint: enabled, subscribed events, 7-day delivery counts | `/v1/webhooks/endpoints`, `/v1/webhooks/endpoints/{id}/metrics` | `webhooks:read` (optional) |
+
+How it reads:
+
+- **Reconciliation.** Per currency, Bachs total (available + pending) against the ledger's money at
+  Bachs (`provider_clearing`), which is what Yard owes brands (pending + available + reserve + in
+  payout) plus Yard's commission plus adjustments. Any difference is flagged as a **mismatch**
+  (typically Bachs fees, dispute holds or a withdrawal not recorded in Yard); less than Yard owes
+  brands is a **shortfall**. Bachs holds only NGN and USD: GHS and KES ledger balances are shown as
+  not comparable, and the USD line notes that it includes their conversions.
+- **Order links.** A Bachs payment is matched by its `reference` (Yard's payment reference),
+  `source.checkout_id` (the checkout session) or charge id; a refund by its `reference` (Yard's
+  refund id) or `refund_id`; a dispute by its `charge_id`.
+- **Account activated.** Bachs has no read-only "approved for live payments" flag. The account shows
+  as not activated when Bachs answers `ACCOUNT_NOT_ACTIVATED` (or `PAYMENTS_NOT_ENABLED`) to any read
+  or refused Yard's latest checkout with it; otherwise active per `is_active`.
+- **Disputes.** The API gives no dashboard URL per dispute, so "Open in Bachs" opens the dashboard
+  (app.bachs.io) and the dispute id is shown to search for.
+- **Webhook health** comes from Yard's own payment event log (last received, last processed,
+  failures still open, the latest events); with `webhooks:read` it adds Bachs' side (a delivery Yard
+  refused with a bad signature is never stored, so only Bachs counts it).
+- Not offered by the Bachs API: a list of checkout sessions (payments cover completed ones), a
+  settlements list (only `pending_settlements_by_day` on the balance), dashboard deep links.
 
 ## Going live
 
@@ -121,7 +183,8 @@ dashboard.
    in `BACHS_CHARGE_CURRENCIES`.
 2. Create the live secret key and the webhook endpoint above; put both in the environment with
    `YARD_PAYMENTS=bachs`.
-3. Run `node scripts/check-env.mjs`, then restart. Check the startup line and
+3. Run the configuration check above (`node tools/check-env.mjs` as `yard` with `/etc/yard.env`
+   loaded), then restart (`sudo systemctl restart yard`). Check the startup line and
    `GET /api/checkout/options` → `{"mode":"live","provider":"bachs",…}`.
 4. Place one small real order and check: the order turns paid, the event shows under Payment
    events as processed, the ledger shows the capture. Refund it from Studio and check `refund.paid`
@@ -130,11 +193,15 @@ dashboard.
 ## Testing without Bachs
 
 `scripts/checks/bachs-mock.mjs` is a local mock of the endpoints Yard uses, with shapes from the
-Bachs docs (it moves no money). `scripts/checks/bachs-e2e.mjs` runs it in-process and drives a
+Bachs docs (it moves no money), including the read endpoints Admin › Finance › Bachs uses
+(`node scripts/checks/bachs-mock.mjs 3248 --seed --fee-bps 150` adds a sample dispute, failed
+refund and withdrawal, and a Bachs fee so the reconciliation shows a mismatch). `scripts/checks/bachs-e2e.mjs` runs it in-process and drives a
 development server configured with `BACHS_API_BASE=http://127.0.0.1:3248` through checkout,
 signed webhooks, duplicates, one refund and the refused second refund (see the header of that file
 for the exact environment). Unit tests: `src/server/payments/bachs-core.test.ts` (amount
-conversion, signatures, status mapping), run by `npm test`.
+conversion, signatures, status mapping) and `src/server/payments/bachs-admin-core.test.ts` (the
+Admin › Bachs view: documented response fixtures, reconciliation, cache, permission refused,
+payments off), run by `npm test`.
 
 ## Limits
 

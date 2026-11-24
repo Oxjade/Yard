@@ -16,6 +16,8 @@ export class ProviderError extends Error {
     message: string,
     public definitive: boolean,
     public httpStatus?: number,
+    /** The provider's machine-readable error code when it sent one (Bachs `error_code`, e.g. ACCOUNT_NOT_ACTIVATED). */
+    public code?: string,
   ) {
     super(message)
     this.name = "ProviderError"
@@ -216,7 +218,7 @@ export const BACHS_ONE_REFUND_MESSAGE =
 
 type BachsError = { error_code?: string; code?: string; message?: string; detail?: string; error?: string | { message?: string; code?: string } }
 
-async function bachs<T>(cfg: BachsConfig, method: "GET" | "POST", path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
+async function bachs<T>(cfg: BachsConfig, method: "GET" | "POST", path: string, body?: unknown, idempotencyKey?: string, timeoutMs = 15_000): Promise<T> {
   let res: Response
   try {
     res = await fetch(cfg.apiBase + path, {
@@ -228,7 +230,7 @@ async function bachs<T>(cfg: BachsConfig, method: "GET" | "POST", path: string, 
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     })
   } catch (e) {
@@ -241,9 +243,18 @@ async function bachs<T>(cfg: BachsConfig, method: "GET" | "POST", path: string, 
     const message = json?.detail ?? json?.message ?? err?.message ?? (typeof json?.error === "string" ? json.error : null) ?? `HTTP ${res.status}`
     // 4xx (other than 408/429): Bachs read the request and refused it. 5xx, 408, 429, unparseable: unknown outcome.
     const definitive = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
-    throw new ProviderError(`Bachs ${method} ${path.split("?")[0]}: ${code ? `${code}: ` : ""}${String(message).slice(0, 200)}`, definitive, res.status)
+    throw new ProviderError(`Bachs ${method} ${path.split("?")[0]}: ${code ? `${code}: ` : ""}${String(message).slice(0, 200)}`, definitive, res.status, code ? String(code) : undefined)
   }
   return json as T
+}
+
+/**
+ * A READ-ONLY Bachs call (GET) with the configured key, for Admin › Finance › Bachs
+ * (bachs-admin.ts). Same client, headers and error mapping as the provider calls above; a shorter
+ * timeout, so a slow Bachs never holds an admin page for long. Never used for anything that moves money.
+ */
+export function bachsRead(cfg: BachsConfig, path: string, timeoutMs = 8_000): Promise<unknown> {
+  return bachs<unknown>(cfg, "GET", path, undefined, undefined, timeoutMs)
 }
 
 type BachsCharge = {
