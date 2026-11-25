@@ -98,6 +98,8 @@ export const templates = {
   // Founding brands: an owner claimed the store Yard set up.
   "brand.approved": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "Your brand")} is approved`, body: "You can sell on Yard now. Add your pieces, set up your storefront and plan your first drop. Need guidance? Message @support from Yard Support in Studio." }) },
   "founding.claimed": { category: "account_status", build: (v) => ({ title: `${s(v.brand, "A founding brand")} was claimed`, body: `${s(v.owner, "Its owner")} is now the owner. The shop can take orders now; they add a payout account so Yard can pay them.` }) },
+  // The payment provider refused checkouts for an account reason (not activated, suspended, bad key).
+  "payments.refused": { category: "system_alert", build: (v) => ({ title: `${s(v.provider, "The payment provider")} is refusing payments`, body: `Shoppers can't pay right now. ${s(v.provider, "The provider")} said: ${s(v.reason, "account problem")}. Nothing was charged.` }) },
   // F1 self-test (dev only)
   selftest: { category: "system_alert", build: (v) => ({ title: "Self-test notification", body: `Transaction self-test ${s(v.run)}.` }) },
 } satisfies Record<string, Template>

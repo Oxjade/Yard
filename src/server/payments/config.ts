@@ -78,6 +78,9 @@ export function chargeCurrencies(): ChargeCurrency[] {
 }
 
 /** What a shopper is told while YARD_PAYMENTS=off (checkout 503s and the checkout page). */
+/** Shown when the provider refuses for an account reason (not activated, suspended, wrong key): nothing the shopper can fix. */
+export const PAYMENTS_PAUSED_MESSAGE = "Payments are paused for a moment. Nothing was charged. Your cart is saved — try again a little later."
+
 export const PAYMENTS_OFF_MESSAGE = "Payments open soon. Your cart is saved — you can place your order once payments open."
 
 function bachsConfig(): BachsConfig | null {

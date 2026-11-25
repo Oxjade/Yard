@@ -14,9 +14,12 @@ import { checkouts, payments } from "../db/schema/payments"
 import { HttpError, badRequest, busy, conflict, notConfigured, notFound, rule } from "../http/errors"
 import { newId } from "../ids"
 import { log } from "../log"
+import { notifyAdminRoles } from "../notify"
+import { ADMIN_FINANCE_ROLES } from "@/lib/permissions"
+import { accountRefusalReason, PAUSED_PREFIX } from "./refusal"
 import { createOrdersFromCheckout, markCheckoutPaymentFailed } from "../orders"
 import { sha256hex } from "../security/crypto"
-import { chargeCurrencies, PAYMENTS_OFF_MESSAGE, paymentsConfig } from "./config"
+import { chargeCurrencies, PAYMENTS_OFF_MESSAGE, PAYMENTS_PAUSED_MESSAGE, paymentsConfig } from "./config"
 import { recordProviderEvent, processEvent } from "./events"
 import { bachsCorridorsFor } from "./bachs-core"
 import { getProvider, ProviderError } from "./providers"
@@ -191,7 +194,9 @@ function toView(c: CheckoutRow, p: PaymentRow | null): CheckoutView {
           message: stub
             ? "Payments aren't connected in this environment. Nothing will be charged, and this order won't be paid."
             : p.initError && p.status === "initialized" && !p.authorizationUrl
-              ? "We couldn't reach the payment provider. Nothing was charged. Try again."
+              ? p.initError.startsWith(PAUSED_PREFIX)
+                ? PAYMENTS_PAUSED_MESSAGE
+                : "We couldn't reach the payment provider. Nothing was charged. Try again."
               : null,
           channel: p.channel ?? null,
         }
@@ -473,8 +478,27 @@ async function ensureInitialized(actor: ShopperActor, c: CheckoutRow, channels?:
   } catch (e) {
     const message = e instanceof Error ? e.message.slice(0, 300) : "initialise failed"
     log.warn(`[yard] ${providerLabel(provider.kind)} initialise failed for checkout ${c.id}: ${message}`)
-    await d.update(payments).set({ initError: message, updatedAt: new Date() }).where(eq(payments.id, p.id))
+    const refusal = e instanceof ProviderError ? accountRefusalReason(e) : null
+    await d.update(payments).set({ initError: refusal ? `${PAUSED_PREFIX}${message}`.slice(0, 300) : message, updatedAt: new Date() }).where(eq(payments.id, p.id))
+    if (refusal) {
+      await alertPaymentsRefused(providerLabel(provider.kind), refusal)
+      throw busy(60, PAYMENTS_PAUSED_MESSAGE)
+    }
     throw busy(10, "We couldn't reach the payment provider. Nothing was charged. Try again in a moment.")
+  }
+}
+
+/** At most one admin alert per 30 minutes per process; the notification key is per day, so repeats re-mark one row. */
+let lastRefusalAlert = 0
+async function alertPaymentsRefused(provider: string, reason: string) {
+  const now = Date.now()
+  if (now - lastRefusalAlert < 30 * 60_000) return
+  lastRefusalAlert = now
+  try {
+    const day = new Date(now).toISOString().slice(0, 10)
+    await notifyAdminRoles(ADMIN_FINANCE_ROLES, { key: `payments-refused:${day}`, template: "payments.refused", vars: { provider, reason }, href: "/admin/finance" })
+  } catch (err) {
+    log.warn(`[yard] payments-refused alert failed: ${(err as Error).message}`)
   }
 }
 

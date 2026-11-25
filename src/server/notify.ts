@@ -123,6 +123,15 @@ export async function notifyAdmins(permission: AdminPermission, n: Parameters<ty
   return out
 }
 
+/** Notifies every admin holding one of `roles` (for alerts no single permission covers, such as finance). */
+export async function notifyAdminRoles(roles: readonly AdminRole[], n: Parameters<typeof notify>[1]) {
+  const d = await db()
+  const admins = await d.select({ id: adminMembers.userId }).from(adminMembers).where(inArray(adminMembers.role, [...roles]))
+  const out: NotificationDto[] = []
+  for (const a of admins) out.push(await notify({ kind: "admin", id: a.id }, n))
+  return out
+}
+
 /** A recipient's notifications, newest first (optionally only those after `after`). */
 export async function listNotifications(recipient: Recipient, after?: Date, limit = 100) {
   const d = await db()
